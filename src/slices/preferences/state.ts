@@ -25,19 +25,37 @@ export const usePreferencesStore = create<PreferencesSliceState>((set) => ({
     } catch {
       // Not running inside Tauri (plain browser dev) or the backend failed —
       // fall back to defaults so the app still renders.
+      // TODO(toast surface, later milestone): real backend errors are
+      // swallowed here too; the structured payload to inspect is
+      // AppErrorPayload in src/shared/api/error.ts.
     }
-    applyTheme(preferences);
-    set({ preferences, loaded: true });
+    // Guard against the load/set race: if a user set (or another load)
+    // already marked the store loaded while we were awaiting, that choice
+    // supersedes this stale result — discard it.
+    let applied = false;
+    set((state) => {
+      if (state.loaded) return state;
+      applied = true;
+      return { preferences, loaded: true };
+    });
+    if (applied) {
+      applyTheme(preferences);
+    }
   },
 
   setPreferences: async (preferences) => {
-    set({ preferences });
+    // A user choice supersedes any in-flight load: marking loaded here makes
+    // load() discard its result if it resolves after this.
+    set({ preferences, loaded: true });
     applyTheme(preferences);
     try {
       await prefsSet(preferences);
     } catch {
-      // Persistence is best-effort outside Tauri; the in-memory state and
-      // applied theme remain valid for the session.
+      // Swallows both "not running inside Tauri" (plain browser dev) and
+      // real backend persistence failures — the in-memory state and applied
+      // theme remain valid for the session, but a genuine write error is
+      // currently invisible to the user. A toast surface arrives in a later
+      // milestone (see AppErrorPayload in src/shared/api/error.ts).
     }
   },
 }));

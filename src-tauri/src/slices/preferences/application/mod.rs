@@ -6,12 +6,15 @@ use super::domain::Preferences;
 use super::ports::PreferencesStore;
 
 /// Fetch the user's current preferences.
-pub fn get_preferences<S: PreferencesStore>(store: &S) -> Result<Preferences, AppError> {
+///
+/// `?Sized` lets callers pass trait objects (`&dyn PreferencesStore + ...`)
+/// as well as concrete adapters and test fakes.
+pub fn get_preferences<S: PreferencesStore + ?Sized>(store: &S) -> Result<Preferences, AppError> {
     store.load()
 }
 
 /// Persist new preferences.
-pub fn set_preferences<S: PreferencesStore>(
+pub fn set_preferences<S: PreferencesStore + ?Sized>(
     store: &S,
     preferences: Preferences,
 ) -> Result<(), AppError> {

@@ -10,9 +10,10 @@ use slices::preferences::infrastructure::JsonFilePreferencesStore;
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
+            // Composition root: the only place a concrete adapter is chosen.
             let config_dir = app.path().app_config_dir()?;
             let store = JsonFilePreferencesStore::new(config_dir.join("preferences.json"));
-            app.manage(PreferencesState::new(store));
+            app.manage(PreferencesState::new(Box::new(store)));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

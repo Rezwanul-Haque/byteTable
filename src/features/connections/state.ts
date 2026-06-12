@@ -4,12 +4,20 @@
 
 import { create } from "zustand";
 
+import { isAppErrorPayload } from "../../shared/api/error";
 import { connectionDelete, connectionList, connectionSave, type SavedConnection } from "./api";
 
 interface ConnectionsFeatureState {
   savedConnections: SavedConnection[];
   /** True once the first load() settled — gates the connect screen's empty state. */
   loaded: boolean;
+  /**
+   * Human message when the backend itself failed to read the registry
+   * (structured AppError) — null when load succeeded or there is no Tauri at
+   * all (plain browser dev). The connect screen renders it instead of the
+   * empty-state copy.
+   */
+  loadError: string | null;
   /** Fetch the registry from the backend. Safe to call on every mount. */
   load: () => Promise<void>;
   /**
@@ -26,17 +34,25 @@ interface ConnectionsFeatureState {
 export const useConnectionsStore = create<ConnectionsFeatureState>((set) => ({
   savedConnections: [],
   loaded: false,
+  loadError: null,
 
   load: async () => {
-    let savedConnections: SavedConnection[] = [];
     try {
-      savedConnections = await connectionList();
-    } catch {
-      // Not running inside Tauri (plain browser dev) or the backend failed —
-      // present an empty registry so the connect screen still renders
-      // (pattern from features/preferences/state.ts).
+      const savedConnections = await connectionList();
+      set({ savedConnections, loaded: true, loadError: null });
+    } catch (error) {
+      if (isAppErrorPayload(error)) {
+        // The backend is there but could not read the registry (corrupt
+        // file, I/O failure) — be honest about it instead of presenting a
+        // convincing-but-false empty registry.
+        set({ savedConnections: [], loaded: true, loadError: error.message });
+      } else {
+        // Not running inside Tauri (plain browser dev) — present an empty
+        // registry so the connect screen still renders (pattern from
+        // features/preferences/state.ts).
+        set({ savedConnections: [], loaded: true, loadError: null });
+      }
     }
-    set({ savedConnections, loaded: true });
   },
 
   save: async (connection) => {
@@ -45,6 +61,8 @@ export const useConnectionsStore = create<ConnectionsFeatureState>((set) => ({
       savedConnections: state.savedConnections.some((c) => c.id === stored.id)
         ? state.savedConnections.map((c) => (c.id === stored.id ? stored : c))
         : [...state.savedConnections, stored],
+      // A successful save proves the backend registry is reachable, so the
+      // empty-state gate may open even if load() hasn't settled yet.
       loaded: true,
     }));
     return stored;

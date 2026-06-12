@@ -4,9 +4,10 @@
 // transition; instead these hooks await `connection_open` and only then call
 // `openWorkspace` with the real payload.
 //
-// Error contract: both hooks toast the backend's human message (spec §5) and
-// rethrow, so callers can keep their own UI state (card spinner) honest or
-// add inline display later without double-toasting.
+// Error contract: both hooks toast the backend's human message (spec §5)
+// themselves and resolve to a falsy value instead of rethrowing — falsy =
+// already handled + toasted, so callers only branch on the result (success
+// toast, spinner reset) and never need their own catch.
 
 import { useCallback } from "react";
 
@@ -40,9 +41,10 @@ function fileStem(path: string): string {
 
 /**
  * Connect to a saved registry entry and open a workspace around it.
- * On failure: toasts the backend message and rethrows (see module note).
+ * Resolves true when the workspace opened; false means the failure was
+ * already handled and toasted here (see module note).
  */
-export function useConnectAndOpen(): (saved: SavedConnection) => Promise<void> {
+export function useConnectAndOpen(): (saved: SavedConnection) => Promise<boolean> {
   const openWorkspace = useWorkspacesStore((state) => state.openWorkspace);
   const toast = useToast();
 
@@ -51,9 +53,10 @@ export function useConnectAndOpen(): (saved: SavedConnection) => Promise<void> {
       try {
         const opened = await connectionOpen({ id: saved.id });
         openWorkspace(toWorkspaceConnection(saved, opened));
+        return true;
       } catch (error) {
         toast(appErrorMessage(error, "Could not connect to “" + saved.name + "”"), "err");
-        throw error;
+        return false;
       }
     },
     [openWorkspace, toast],
@@ -64,7 +67,9 @@ export function useConnectAndOpen(): (saved: SavedConnection) => Promise<void> {
  * "Open SQLite file…": connect to a picked file path ad-hoc (no
  * `connection_test` round-trip — open *is* the test for a local file; the
  * test command is for the new-connection modal, Task 3), then open a
- * workspace. Resolves to the workspace display name for the success toast.
+ * workspace. Resolves to the workspace display name (for the success toast)
+ * when opened; null means the failure was already handled and toasted here
+ * (falsy = handled, see module note).
  *
  * Product decision: a successfully opened file is auto-saved to the registry
  * (name = file stem, env "local") so it appears in the connect list next
@@ -72,10 +77,8 @@ export function useConnectAndOpen(): (saved: SavedConnection) => Promise<void> {
  * files. If the auto-save itself fails, the open still succeeded, so the
  * workspace opens with an ephemeral (unsaved) entry and the failure is
  * surfaced as its own toast.
- *
- * On open failure: toasts the backend message and rethrows (see module note).
  */
-export function useOpenSqliteFile(): (path: string) => Promise<string> {
+export function useOpenSqliteFile(): (path: string) => Promise<string | null> {
   const openWorkspace = useWorkspacesStore((state) => state.openWorkspace);
   const saveConnection = useConnectionsStore((state) => state.save);
   const toast = useToast();
@@ -88,7 +91,7 @@ export function useOpenSqliteFile(): (path: string) => Promise<string> {
         opened = await connectionOpen({ params });
       } catch (error) {
         toast(appErrorMessage(error, "Could not open " + path), "err");
-        throw error;
+        return null;
       }
 
       let saved: SavedConnection = {

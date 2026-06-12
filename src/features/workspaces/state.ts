@@ -114,7 +114,9 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
     // as a no-op Ok, and errors here have no surface worth a toast.
     const closing = get().workspaces.find((ws) => ws.id === id);
     if (closing) {
-      connectionClose(closing.handleId).catch(() => {});
+      connectionClose(closing.handleId).catch((err: unknown) => {
+        console.warn("connection_close failed", err);
+      });
     }
     set((state) => {
       const idx = state.workspaces.findIndex((ws) => ws.id === id);

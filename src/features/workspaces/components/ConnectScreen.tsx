@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from "react";
 
+import { isAppErrorPayload } from "../../../shared/api/error";
 import { BrandMark } from "../../../shared/ui/BrandMark";
 import { Btn } from "../../../shared/ui/Btn";
 import { EngineBadge } from "../../../shared/ui/EngineBadge";
@@ -29,6 +30,7 @@ export function ConnectScreen() {
   const [connecting, setConnecting] = useState<string | null>(null);
   const savedConnections = useConnectionsStore((state) => state.savedConnections);
   const loaded = useConnectionsStore((state) => state.loaded);
+  const loadError = useConnectionsStore((state) => state.loadError);
   const load = useConnectionsStore((state) => state.load);
   const connectAndOpen = useConnectAndOpen();
   const openSqliteFile = useOpenSqliteFile();
@@ -42,35 +44,32 @@ export function ConnectScreen() {
 
   const connect = async (conn: SavedConnection) => {
     setConnecting(conn.id);
-    try {
-      await connectAndOpen(conn);
-      toast("Workspace “" + conn.name + OPENED_TOAST_SUFFIX, "ok");
-    } catch {
-      // Already toasted by the connect flow — only the spinner needs resetting.
-    } finally {
-      setConnecting(null);
-    }
+    // Failures are already toasted inside the connect flow (falsy = handled).
+    const opened = await connectAndOpen(conn);
+    if (opened) toast("Workspace “" + conn.name + OPENED_TOAST_SUFFIX, "ok");
+    setConnecting(null);
   };
 
   const openFile = async () => {
     let path: string | null = null;
     try {
       path = await pickSqliteFile();
-    } catch {
-      // Plain browser dev: the dialog plugin needs the Tauri shell.
-      toast("Native file dialog requires the desktop app", "info");
+    } catch (error) {
+      if (isAppErrorPayload(error)) {
+        // The desktop shell is there but the dialog itself failed.
+        toast(error.message, "err");
+      } else {
+        // Plain browser dev: the dialog plugin needs the Tauri shell.
+        toast("Native file dialog requires the desktop app", "info");
+      }
       return;
     }
     if (path === null) return; // user cancelled
     setConnecting(FILE_OPEN_ID);
-    try {
-      const name = await openSqliteFile(path);
-      toast("Workspace “" + name + OPENED_TOAST_SUFFIX, "ok");
-    } catch {
-      // Already toasted by the connect flow.
-    } finally {
-      setConnecting(null);
-    }
+    // Failures are already toasted inside the connect flow (falsy = handled).
+    const name = await openSqliteFile(path);
+    if (name) toast("Workspace “" + name + OPENED_TOAST_SUFFIX, "ok");
+    setConnecting(null);
   };
 
   return (
@@ -92,7 +91,11 @@ export function ConnectScreen() {
         </div>
 
         <div className="connect-list-label">Open a workspace</div>
-        {loaded && savedConnections.length === 0 ? (
+        {loaded && loadError !== null ? (
+          // §5-style inline error: the backend's human sentence, where the
+          // list would have been.
+          <div className="connect-load-error">{loadError}</div>
+        ) : loaded && savedConnections.length === 0 ? (
           <div className="connect-empty">
             No saved connections yet — open a SQLite file below to get started.
           </div>

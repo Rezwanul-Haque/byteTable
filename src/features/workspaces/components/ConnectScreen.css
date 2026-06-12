@@ -137,6 +137,14 @@
   border-radius: 11px;
 }
 
+/* §5-style inline error: registry load failure rendered where the list (or
+   empty state) would be — error tint, mono, footnote size. */
+.connect-load-error {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--error);
+}
+
 .connect-actions {
   display: flex;
   gap: 8px;

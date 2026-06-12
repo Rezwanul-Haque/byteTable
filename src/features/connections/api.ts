@@ -1,16 +1,30 @@
 // Typed invoke() wrappers for the connections slice's Tauri commands, plus
 // the TS mirrors of the Rust wire types. Field names are camelCase and enum
 // values lowercase per the serde attributes on the Rust side — keep in sync
-// with `src-tauri/src/shared/engine.rs` and
-// `src-tauri/src/features/connections/domain/mod.rs`.
+// with `src-tauri/src/features/connections/domain/mod.rs`. Engine-level
+// wire types (EngineInfo, SchemaInfo, query results, …) live in
+// `src/shared/api/engine.ts` and are re-exported here for back-compat.
 //
-// This module (with state.ts) is the slice's public contract: other slices
-// (workspaces) import these types and wrappers rather than reaching into
-// internals.
+// ARCHITECTURE pattern: this module (with state.ts) is the slice's public
+// contract — cross-feature consumption of another feature's `api.ts` /
+// `state.ts` is sanctioned; reaching into a feature's internals (components,
+// hooks) is not.
 
 import { invoke } from "@tauri-apps/api/core";
 
+import type { EngineInfo, SchemaInfo, TableInfo } from "../../shared/api/engine";
 import type { Engine, Env } from "../../shared/types";
+
+export {
+  queryRun,
+  type CellValue,
+  type ColumnMeta,
+  type EngineInfo,
+  type QueryOptions,
+  type QueryResult,
+  type SchemaInfo,
+  type TableInfo,
+} from "../../shared/api/engine";
 
 /**
  * Everything needed to reach a database, per engine. Internally tagged with
@@ -45,56 +59,6 @@ export interface SavedConnection {
   params: ConnectionParams;
   env: Env;
   createdAt?: number;
-}
-
-/** What a successful test/open learned about the target. */
-export interface EngineInfo {
-  engine: Engine;
-  /** Display version string, e.g. "SQLite 3.46.0". */
-  serverVersion: string;
-}
-
-/** A schema (SQLite: `main` + attached databases). */
-export interface SchemaInfo {
-  name: string;
-  /** Number of user tables, when cheaply known (`null` otherwise). */
-  tableCount: number | null;
-}
-
-/** A table within a schema. */
-export interface TableInfo {
-  name: string;
-  /** Approximate row count, when cheaply known (`null` otherwise). */
-  approxRowCount: number | null;
-}
-
-/** Column metadata accompanying a query result. */
-export interface ColumnMeta {
-  name: string;
-  /** Best-effort type label — a display hint, never for logic. */
-  typeHint: string;
-}
-
-/** Options for a single query execution (backend defaults: rowLimit 500). */
-export interface QueryOptions {
-  rowLimit?: number;
-  schema?: string;
-}
-
-/**
- * One result cell. Engine values map to JSON: NULL → null, integers/reals →
- * numbers, text → strings; integers beyond ±2^53 arrive as strings to
- * preserve precision (see the SQLite adapter docs).
- */
-export type CellValue = string | number | null;
-
-/** The outcome of a query: column metadata, row-major values, timing. */
-export interface QueryResult {
-  columns: ColumnMeta[];
-  rows: CellValue[][];
-  rowCount: number;
-  truncated: boolean;
-  elapsedMs: number;
 }
 
 /**
@@ -148,14 +112,6 @@ export function connectionSchemas(handleId: string): Promise<SchemaInfo[]> {
 
 export function connectionTables(handleId: string, schema: string): Promise<TableInfo[]> {
   return invoke<TableInfo[]>("connection_tables", { handleId, schema });
-}
-
-export function queryRun(
-  handleId: string,
-  sql: string,
-  options?: QueryOptions,
-): Promise<QueryResult> {
-  return invoke<QueryResult>("query_run", { handleId, sql, options });
 }
 
 /**

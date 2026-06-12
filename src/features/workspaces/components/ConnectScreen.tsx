@@ -131,7 +131,12 @@ export function ConnectScreen() {
         )}
 
         <div className="connect-actions">
-          <Btn icon="add" variant="tonal" onClick={() => setShowNew(true)}>
+          <Btn
+            icon="add"
+            variant="tonal"
+            disabled={connecting !== null}
+            onClick={() => setShowNew(true)}
+          >
             New connection
           </Btn>
           <Btn

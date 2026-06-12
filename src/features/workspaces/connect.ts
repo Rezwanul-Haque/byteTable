@@ -74,9 +74,11 @@ export function useConnectAndOpen(): (saved: SavedConnection) => Promise<boolean
  * Product decision: a successfully opened file is auto-saved to the registry
  * (name = file stem, env "local") so it appears in the connect list next
  * launch — "open once, saved forever" beats a separate save step for local
- * files. If the auto-save itself fails, the open still succeeded, so the
- * workspace opens with an ephemeral (unsaved) entry and the failure is
- * surfaced as its own toast.
+ * files. If the registry already holds an entry for the same file path, that
+ * entry is reused instead (repeated opens must not stack duplicate cards).
+ * If the auto-save itself fails, the open still succeeded, so the workspace
+ * opens with an ephemeral (unsaved) entry and the failure is surfaced as its
+ * own toast.
  */
 export function useOpenSqliteFile(): (path: string) => Promise<string | null> {
   const openWorkspace = useWorkspacesStore((state) => state.openWorkspace);
@@ -92,6 +94,18 @@ export function useOpenSqliteFile(): (path: string) => Promise<string | null> {
       } catch (error) {
         toast(appErrorMessage(error, "Could not open " + path), "err");
         return null;
+      }
+
+      // Reuse an existing registry entry for this exact file before saving a
+      // new one — auto-save on every open would otherwise stack duplicate
+      // cards. Read via getState() at call time: no subscription needed, and
+      // the list is current even if it changed since this callback was made.
+      const existing = useConnectionsStore
+        .getState()
+        .savedConnections.find((c) => c.params.engine === "sqlite" && c.params.path === path);
+      if (existing) {
+        openWorkspace(toWorkspaceConnection(existing, opened));
+        return existing.name;
       }
 
       let saved: SavedConnection = {

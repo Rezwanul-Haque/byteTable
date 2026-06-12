@@ -1,0 +1,55 @@
+/*
+ * App shell — .app-frame / .app-body ported exactly from ByteTable.html.
+ * The .rail rules here are the placeholder subset of the prototype's rail
+ * CSS (base column + logo + separator); the full rail lands in M1 Task 2.
+ */
+
+.app-frame {
+  height: 100%;
+  display: flex;
+}
+
+.app-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.rail {
+  width: 56px;
+  flex: none;
+  background: var(--bg1);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 0;
+  gap: 8px;
+  position: relative;
+  z-index: 30;
+}
+
+.rail-logo {
+  padding: 4px 0 2px;
+}
+
+/* Let mousedown on the logo hit the drag-region wrapper, not the svg. */
+.rail-logo svg {
+  pointer-events: none;
+}
+
+.rail-sep {
+  width: 28px;
+  height: 1px;
+  background: var(--border);
+}
+
+/* Dev-only gallery overlay (⌘⇧G) — sits over the whole shell. */
+.dev-gallery-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  overflow: auto;
+  background: var(--bg0);
+}

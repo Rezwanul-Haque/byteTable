@@ -1,3 +1,0 @@
-# Clippy configuration for ByteTable core.
-# Warnings are denied in CI via `cargo clippy -- -D warnings`.
-msrv = "1.77.2"

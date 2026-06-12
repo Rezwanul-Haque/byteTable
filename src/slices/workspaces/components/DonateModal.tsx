@@ -10,7 +10,7 @@
 
 import { openUrl } from "@tauri-apps/plugin-opener";
 
-import { BTLogo } from "../../../shared/ui/BTLogo";
+import { BrandMark } from "../../../shared/ui/BrandMark";
 import { Btn } from "../../../shared/ui/Btn";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Modal } from "../../../shared/ui/Modal";
@@ -24,16 +24,18 @@ const GITHUB_SPONSORS_URL = "https://github.com/sponsors/bytetable";
 const BUY_ME_A_COFFEE_URL = "https://buymeacoffee.com/bytetable";
 
 /**
- * Open a URL in the OS default browser via the opener plugin. In plain-
- * browser dev (`pnpm dev:vite`) there is no Tauri IPC, so openUrl throws —
- * fall back to window.open so the flow stays testable in a browser.
+ * Open a URL in the OS default browser. Inside Tauri (detected via the
+ * `__TAURI_INTERNALS__` global the runtime injects) the opener plugin is
+ * used, and a rejection — e.g. a capability/scope denial — propagates to the
+ * caller. In plain-browser dev (`pnpm dev:vite`) there is no Tauri IPC, so
+ * fall back to window.open to keep the flow testable in a browser.
  */
 async function openExternal(url: string): Promise<void> {
-  try {
+  if ("__TAURI_INTERNALS__" in window) {
     await openUrl(url);
-  } catch {
-    window.open(url, "_blank", "noopener,noreferrer");
+    return;
   }
+  window.open(url, "_blank", "noopener,noreferrer");
 }
 
 interface DonateModalProps {
@@ -43,9 +45,16 @@ interface DonateModalProps {
 export function DonateModal({ onClose }: DonateModalProps) {
   const toast = useToast();
 
-  // Prototype thank(): toast + close — plus the real browser hand-off.
-  const thank = (what: string, url: string) => {
-    void openExternal(url);
+  // Prototype thank(): toast + close — plus the real browser hand-off. The
+  // open is awaited so a failed hand-off surfaces an error toast instead of
+  // a false "Thank you!", and the modal stays open for a retry.
+  const thank = async (what: string, url: string) => {
+    try {
+      await openExternal(url);
+    } catch {
+      toast("Couldn't open browser — visit " + url, "err");
+      return;
+    }
     toast("Thank you! " + what, "ok");
     onClose();
   };
@@ -53,9 +62,7 @@ export function DonateModal({ onClose }: DonateModalProps) {
   return (
     <Modal className="donate-modal" label="Support ByteTable" onClose={onClose}>
       <div className="donate-head">
-        <div className="brand-mark">
-          <BTLogo size={26} accent="var(--accent)" fg="var(--text)" />
-        </div>
+        <BrandMark size={26} />
         <div>
           <div className="modal-title-text">Support ByteTable</div>
           <p className="donate-sub">
@@ -69,7 +76,7 @@ export function DonateModal({ onClose }: DonateModalProps) {
         <button
           type="button"
           className="donate-amount"
-          onClick={() => thank("One coffee ☕", BUY_ME_A_COFFEE_URL)}
+          onClick={() => void thank("One coffee ☕", BUY_ME_A_COFFEE_URL)}
         >
           <span className="donate-amount-n">$3</span>
           <span>coffee</span>
@@ -77,7 +84,7 @@ export function DonateModal({ onClose }: DonateModalProps) {
         <button
           type="button"
           className="donate-amount"
-          onClick={() => thank("A generous coffee", BUY_ME_A_COFFEE_URL)}
+          onClick={() => void thank("A generous coffee", BUY_ME_A_COFFEE_URL)}
         >
           <span className="donate-amount-n">$5</span>
           <span>big coffee</span>
@@ -85,7 +92,7 @@ export function DonateModal({ onClose }: DonateModalProps) {
         <button
           type="button"
           className="donate-amount popular"
-          onClick={() => thank("Monthly support 💛", GITHUB_SPONSORS_URL)}
+          onClick={() => void thank("Monthly support 💛", GITHUB_SPONSORS_URL)}
         >
           <span className="donate-amount-n">
             $10<small>/mo</small>
@@ -98,14 +105,14 @@ export function DonateModal({ onClose }: DonateModalProps) {
         <Btn
           icon="favorite"
           variant="filled"
-          onClick={() => thank("GitHub Sponsors", GITHUB_SPONSORS_URL)}
+          onClick={() => void thank("GitHub Sponsors", GITHUB_SPONSORS_URL)}
         >
           GitHub Sponsors
         </Btn>
         <Btn
           icon="local_cafe"
           variant="tonal"
-          onClick={() => thank("Buy Me a Coffee", BUY_ME_A_COFFEE_URL)}
+          onClick={() => void thank("Buy Me a Coffee", BUY_ME_A_COFFEE_URL)}
         >
           Buy Me a Coffee
         </Btn>

@@ -5,7 +5,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { BTLogo } from "../../../shared/ui/BTLogo";
+import { BrandMark } from "../../../shared/ui/BrandMark";
 import { Btn } from "../../../shared/ui/Btn";
 import { EngineBadge } from "../../../shared/ui/EngineBadge";
 import { EnvTag } from "../../../shared/ui/EnvTag";
@@ -50,9 +50,7 @@ export function ConnectScreen() {
     <div className="connect-screen" data-tauri-drag-region>
       <div className="connect-panel">
         <div className="connect-brand">
-          <div className="brand-mark">
-            <BTLogo size={28} accent="var(--accent)" fg="var(--text)" blink />
-          </div>
+          <BrandMark size={28} blink />
           <div>
             <h1>ByteTable</h1>
             <p>Local-first database client · free forever</p>

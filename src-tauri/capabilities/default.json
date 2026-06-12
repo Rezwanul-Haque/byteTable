@@ -10,7 +10,10 @@
     "core:window:allow-close",
     {
       "identifier": "opener:allow-open-url",
-      "allow": [{ "url": "https://**" }]
+      "allow": [
+        { "url": "https://github.com/sponsors/*" },
+        { "url": "https://buymeacoffee.com/*" }
+      ]
     }
   ]
 }

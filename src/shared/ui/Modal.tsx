@@ -18,6 +18,16 @@ const FOCUSABLE_SELECTOR =
   "a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), " +
   'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
+/**
+ * Tabbable elements inside the panel, excluding hidden ones (display:none /
+ * detached / zero-box elements have no client rects and cannot take focus).
+ */
+function tabbablesIn(panel: HTMLElement): HTMLElement[] {
+  return Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
+    (el) => el.getClientRects().length > 0,
+  );
+}
+
 interface ModalProps {
   children: ReactNode;
   onClose: () => void;
@@ -46,13 +56,18 @@ export function Modal({ children, onClose, label, width, className }: ModalProps
 
   // Initial focus + restore: move focus into the panel on mount (first
   // tabbable element, else the panel itself) and hand it back to whatever
-  // was focused before — e.g. the rail's donate button — on unmount.
+  // was focused before — e.g. the rail's donate button — on unmount. If the
+  // opener got removed from the DOM in the meantime, fall back to the body
+  // so focus does not silently stay on a detached node.
   useEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const panel = panelRef.current;
-    const first = panel?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
+    const first = panel ? tabbablesIn(panel)[0] : undefined;
     (first ?? panel)?.focus();
-    return () => opener?.focus();
+    return () => {
+      if (opener?.isConnected) opener.focus();
+      else document.body.focus();
+    };
   }, []);
 
   // Esc + Tab handling for the top-most modal only. Tab wraps within the
@@ -62,13 +77,14 @@ export function Modal({ children, onClose, label, width, className }: ModalProps
     const onKeyDown = (e: KeyboardEvent) => {
       if (modalStack[modalStack.length - 1] !== stackToken.current) return;
       if (e.key === "Escape") {
+        e.preventDefault();
         onClose();
         return;
       }
       if (e.key !== "Tab") return;
       const panel = panelRef.current;
       if (!panel) return;
-      const focusable = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
+      const focusable = tabbablesIn(panel);
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
       if (!first || !last) {

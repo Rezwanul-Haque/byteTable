@@ -17,19 +17,7 @@
   flex: 1;
 }
 
-/* Same .brand-mark rule as ConnectScreen.css — the prototype declares it
-   once globally; duplicated here so the modal does not depend on the
-   connect screen's stylesheet having been loaded. */
-.brand-mark {
-  width: 46px;
-  height: 46px;
-  border-radius: 13px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: color-mix(in oklab, var(--accent) 18%, var(--bg2));
-  color: var(--accent);
-}
+/* The brand tile is the shared BrandMark component (BrandMark.css). */
 
 .modal-title-text {
   font-size: 15px;

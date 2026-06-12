@@ -39,16 +39,7 @@
   gap: 14px;
 }
 
-.brand-mark {
-  width: 46px;
-  height: 46px;
-  border-radius: 13px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: color-mix(in oklab, var(--accent) 18%, var(--bg2));
-  color: var(--accent);
-}
+/* The brand tile itself is the shared BrandMark component (BrandMark.css). */
 
 .connect-brand h1 {
   font-size: 20px;

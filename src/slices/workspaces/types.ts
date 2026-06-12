@@ -1,8 +1,7 @@
 // Workspaces slice types — Connection mirrors the prototype's data.js
 // connection objects field-for-field; Workspace mirrors app.jsx addWorkspace.
 
-import type { Engine } from "../../shared/ui/EngineBadge";
-import type { Env } from "../../shared/ui/EnvTag";
+import type { Engine, Env } from "../../shared/types";
 
 /**
  * A saved database connection. M1: hardcoded mocks (see mockConnections.ts);
@@ -15,11 +14,6 @@ export interface Connection {
   /** Display line — file path (sqlite) or "host:port · db" (server engines). */
   detail: string;
   env: Env;
-  /**
-   * Env tint hex, carried verbatim from the prototype data. The shared EnvTag
-   * derives the identical color from `env`, so UI code can ignore this field.
-   */
-  envColor: string;
   /** Server version string, shown in the sidebar header (M3). */
   version: string;
   /** Available schema names for this connection. */
@@ -44,6 +38,13 @@ export interface Connection {
  * expanded tables; M4: open tabs + active tab) and add a
  * `patchWorkspaceUi(id, patch)` action alongside rename/recolor.
  * Empty for now — M1 is the shell only.
+ *
+ * Churn rule: only low-frequency state belongs here. High-frequency state
+ * (scroll offsets, drag-in-progress) lives in refs/local component state and
+ * is committed to `ui` only on tab/workspace switch or unmount — never on
+ * every frame. M3/M4 components must select narrow slices from the store
+ * (e.g. one `ui` field), not whole workspace objects, to avoid re-rendering
+ * on unrelated `ui` writes.
  */
 export type WorkspaceUiState = Record<string, never>;
 

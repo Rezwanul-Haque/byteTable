@@ -91,17 +91,22 @@
   width: 100%;
 }
 
-.connect-card:hover {
+.connect-card:hover:not(:disabled) {
   border-color: color-mix(in oklab, var(--accent) 45%, transparent);
   background: var(--bg3);
 }
 
-.connect-card:hover .connect-arrow {
-  color: var(--accent) !important;
+.connect-card:disabled {
+  cursor: default;
+}
+
+.connect-card:hover:not(:disabled) .connect-arrow {
+  color: var(--accent);
   transform: translateX(2px);
 }
 
 .connect-arrow {
+  color: var(--text-faint);
   transition:
     transform 0.12s,
     color 0.12s;

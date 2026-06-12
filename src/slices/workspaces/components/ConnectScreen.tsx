@@ -85,12 +85,7 @@ export function ConnectScreen() {
               {connecting === c.id ? (
                 <span className="spinner" />
               ) : (
-                <Icon
-                  name="arrow_forward"
-                  size={18}
-                  style={{ color: "var(--text-faint)" }}
-                  className="connect-arrow"
-                />
+                <Icon name="arrow_forward" size={18} className="connect-arrow" />
               )}
             </button>
           ))}

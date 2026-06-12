@@ -1,0 +1,11 @@
+/* Logo cursor blink — ported from ByteTable.html (spec §1.6: 1.2s steps(2)). */
+
+.logo-cursor {
+  animation: logo-blink 1.2s steps(2, start) infinite;
+}
+
+@keyframes logo-blink {
+  50% {
+    opacity: 0.15;
+  }
+}

@@ -1,0 +1,32 @@
+/* Icon buttons — ported byte-identical from ByteTable.html.
+   #e06c75 == var(--error); the 22-suffixed fill keeps the prototype's
+   literal alpha pattern. */
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  color: var(--text-faint);
+  transition:
+    background 0.12s,
+    color 0.12s;
+  flex: none;
+}
+
+.icon-btn:hover {
+  background: var(--bg3);
+  color: var(--text);
+}
+
+.icon-btn.active {
+  background: color-mix(in oklab, var(--accent) 18%, transparent);
+  color: var(--accent);
+}
+
+.icon-btn.danger:hover {
+  background: #e06c7522;
+  color: var(--error);
+}

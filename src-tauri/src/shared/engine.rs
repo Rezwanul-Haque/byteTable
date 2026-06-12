@@ -167,8 +167,10 @@ impl Default for QueryOptions {
 pub struct QueryResult {
     pub columns: Vec<ColumnMeta>,
     /// Row-major values. Engine values map to JSON: NULL → null,
-    /// integers/reals → numbers, text → strings; engine-specific types
-    /// (e.g. blobs) are mapped by the adapter and documented there.
+    /// integers/reals → numbers, text → strings; integers beyond ±2^53
+    /// (JavaScript's safe-integer range) arrive as strings to preserve
+    /// precision. Engine-specific types (e.g. blobs) are mapped by the
+    /// adapter and documented there.
     pub rows: Vec<Vec<serde_json::Value>>,
     pub row_count: usize,
     /// True when `row_limit` cut the result short.
@@ -212,6 +214,12 @@ pub trait EngineConnection: Send + Sync {
     /// Release the underlying driver resources. For drop-managed drivers
     /// (rusqlite) this may be a no-op; server engines use it for an orderly
     /// goodbye.
+    ///
+    /// Concurrency: the manager hands out `Arc` clones of the connection,
+    /// so `close` may be called while other clones are mid-operation (e.g.
+    /// app teardown racing a slow query). Adapters must tolerate that —
+    /// either by being a no-op and letting the last `Arc` drop do the real
+    /// teardown (SQLite), or by serializing close against in-flight work.
     async fn close(&self) -> Result<(), AppError>;
 }
 

@@ -19,6 +19,10 @@
 //!   local files M2 targets. Counting stops after
 //!   [`MAX_COUNTED_TABLES`] tables (remaining tables get `None`) so a
 //!   pathological schema cannot stall introspection; M3 revisits caching.
+//! - Integers whose magnitude exceeds 2^53 − 1 (JavaScript's
+//!   `Number.MAX_SAFE_INTEGER`) map to JSON strings, not numbers — the
+//!   renderer would otherwise round them on parse. See
+//!   [`JS_MAX_SAFE_INTEGER`].
 //! - BLOB values map to the placeholder string `"[blob N bytes]"` rather
 //!   than base64: the renderer has no blob viewer yet, and shipping
 //!   megabytes of base64 across IPC for a grid cell helps no one. A real
@@ -46,6 +50,11 @@ use crate::shared::error::AppError;
 /// Stop running per-table `count(*)` after this many tables; the rest get
 /// `approx_row_count: None`. Keeps introspection bounded on huge schemas.
 const MAX_COUNTED_TABLES: usize = 200;
+
+/// JavaScript's `Number.MAX_SAFE_INTEGER` (2^53 − 1). SQLite integers whose
+/// magnitude exceeds this serialize as JSON *strings* — a JSON number would
+/// silently lose precision the moment the renderer parses it into a `number`.
+const JS_MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
 
 /// Opens SQLite database files. Stateless; registered once in `lib.rs`.
 pub struct SqliteConnector;
@@ -328,11 +337,16 @@ fn run_query_blocking(
 }
 
 /// SQLite value → JSON. Blobs become a `"[blob N bytes]"` placeholder (see
-/// module docs); non-finite reals become null (JSON has no NaN/Infinity).
+/// module docs); non-finite reals become null (JSON has no NaN/Infinity);
+/// integers beyond ±[`JS_MAX_SAFE_INTEGER`] become decimal strings so the
+/// renderer never rounds them (see `QueryResult::rows` in `shared::engine`).
 fn value_to_json(value: ValueRef<'_>) -> serde_json::Value {
     match value {
         ValueRef::Null => serde_json::Value::Null,
-        ValueRef::Integer(i) => serde_json::Value::from(i),
+        ValueRef::Integer(i) if i.unsigned_abs() <= JS_MAX_SAFE_INTEGER as u64 => {
+            serde_json::Value::from(i)
+        }
+        ValueRef::Integer(i) => serde_json::Value::String(i.to_string()),
         ValueRef::Real(f) => serde_json::Number::from_f64(f)
             .map(serde_json::Value::Number)
             .unwrap_or(serde_json::Value::Null),
@@ -710,6 +724,59 @@ mod tests {
         assert!(
             !message.contains("rusqlite") && !message.contains("Error {"),
             "driver chains must not leak: {message:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn integers_beyond_js_safe_range_round_trip_as_strings() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("big.db");
+        {
+            let conn = Connection::open(&path).expect("create db");
+            conn.execute_batch(&format!(
+                "CREATE TABLE nums (val INTEGER);
+                 INSERT INTO nums (val) VALUES ({max}), ({min}), (42);",
+                max = i64::MAX,
+                min = i64::MIN,
+            ))
+            .expect("seed db");
+        }
+        let conn = SqliteConnector
+            .open(&params_for(&path))
+            .await
+            .expect("open db");
+        let result = conn
+            .run_query(
+                "SELECT val FROM nums ORDER BY rowid",
+                QueryOptions::default(),
+            )
+            .await
+            .expect("run query");
+        // Beyond ±2^53 − 1: strings, preserving every digit.
+        assert_eq!(result.rows[0][0], serde_json::json!("9223372036854775807"));
+        assert_eq!(result.rows[1][0], serde_json::json!("-9223372036854775808"));
+        // Within the safe range: a plain JSON number.
+        assert_eq!(result.rows[2][0], serde_json::json!(42));
+    }
+
+    #[test]
+    fn value_to_json_switches_to_strings_exactly_past_the_safe_boundary() {
+        let safe = JS_MAX_SAFE_INTEGER;
+        assert_eq!(
+            value_to_json(ValueRef::Integer(safe)),
+            serde_json::json!(9_007_199_254_740_991_i64)
+        );
+        assert_eq!(
+            value_to_json(ValueRef::Integer(-safe)),
+            serde_json::json!(-9_007_199_254_740_991_i64)
+        );
+        assert_eq!(
+            value_to_json(ValueRef::Integer(safe + 1)),
+            serde_json::json!("9007199254740992")
+        );
+        assert_eq!(
+            value_to_json(ValueRef::Integer(-safe - 1)),
+            serde_json::json!("-9007199254740992")
         );
     }
 

@@ -20,6 +20,19 @@ use super::application::{
 use super::domain::SavedConnection;
 use super::ports::ConnectionRepository;
 
+/// Hard ceiling for `QueryOptions::row_limit`, enforced at the command
+/// boundary regardless of what the renderer asks for. 10 000 rows is already
+/// far beyond what a grid usefully shows; the clamp keeps a renderer bug (or
+/// a hand-crafted invoke) from marshalling an unbounded result set across
+/// IPC. Engines still set `truncated` when the clamped limit cuts a result.
+const MAX_ROW_LIMIT: usize = 10_000;
+
+/// Clamp the requested row limit to [`MAX_ROW_LIMIT`].
+fn clamp_row_limit(mut options: QueryOptions) -> QueryOptions {
+    options.row_limit = options.row_limit.min(MAX_ROW_LIMIT);
+    options
+}
+
 /// Managed state for the connections slice, registered in `lib.rs`.
 ///
 /// Commands depend only on ports (`ConnectionRepository`, the shared
@@ -42,6 +55,12 @@ impl ConnectionsState {
             registry,
             manager,
         }
+    }
+
+    /// The open-handle manager, for app-teardown hooks in the composition
+    /// root (`lib.rs` calls `close_all` on exit).
+    pub fn manager(&self) -> &ConnectionManager {
+        &self.manager
     }
 }
 
@@ -87,9 +106,14 @@ pub async fn connection_open(
     let target = match (id, params) {
         (Some(id), None) => OpenTarget::SavedId(id),
         (None, Some(params)) => OpenTarget::Params(params),
-        _ => {
+        (Some(_), Some(_)) => {
             return Err(AppError::Invalid(
                 "provide either a saved connection id or connection params, not both".into(),
+            ))
+        }
+        (None, None) => {
+            return Err(AppError::Invalid(
+                "provide either a saved connection id or connection params".into(),
             ))
         }
     };
@@ -138,7 +162,31 @@ pub async fn query_run(
         &state.manager,
         &handle_id,
         &sql,
-        options.unwrap_or_default(),
+        clamp_row_limit(options.unwrap_or_default()),
     )
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn row_limit_is_clamped_to_the_ceiling_and_smaller_values_pass_through() {
+        let huge = clamp_row_limit(QueryOptions {
+            row_limit: usize::MAX,
+            schema: None,
+        });
+        assert_eq!(huge.row_limit, MAX_ROW_LIMIT);
+
+        let at_ceiling = clamp_row_limit(QueryOptions {
+            row_limit: MAX_ROW_LIMIT,
+            schema: Some("main".into()),
+        });
+        assert_eq!(at_ceiling.row_limit, MAX_ROW_LIMIT);
+        assert_eq!(at_ceiling.schema, Some("main".into()));
+
+        let small = clamp_row_limit(QueryOptions::default());
+        assert_eq!(small.row_limit, 500, "the default stays untouched");
+    }
 }

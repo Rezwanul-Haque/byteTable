@@ -97,17 +97,24 @@ impl ConnectionManager {
         })
     }
 
-    /// Remove a handle, returning the connection for teardown.
-    pub async fn remove(
-        &self,
-        handle: &ConnectionHandleId,
-    ) -> Result<Arc<dyn EngineConnection>, AppError> {
-        self.open.write().await.remove(handle).ok_or_else(|| {
-            AppError::NotFound(format!(
-                "connection handle '{}' is not open (it may have been closed)",
-                handle.0
-            ))
-        })
+    /// Remove a handle, returning the connection for teardown — or `None`
+    /// when the handle is unknown (already closed); see [`close_connection`]
+    /// for why that is not an error.
+    pub async fn remove(&self, handle: &ConnectionHandleId) -> Option<Arc<dyn EngineConnection>> {
+        self.open.write().await.remove(handle)
+    }
+
+    /// Drain every open handle and `close()` each connection. Called once at
+    /// app teardown (see the `RunEvent::ExitRequested` hook in `lib.rs`).
+    ///
+    /// Close errors are swallowed: the process is exiting and there is no
+    /// renderer left to show them to; drop-managed drivers release their
+    /// resources regardless.
+    pub async fn close_all(&self) {
+        let connections: Vec<_> = self.open.write().await.drain().collect();
+        for (_, connection) in connections {
+            let _ = connection.close().await;
+        }
     }
 
     /// Number of currently open handles (used by tests and diagnostics).
@@ -226,12 +233,19 @@ pub async fn open_connection<R: ConnectionRepository + ?Sized>(
 }
 
 /// Close an open connection and forget its handle.
+///
+/// Closing an unknown handle is a no-op `Ok(())`, not an error: teardown
+/// races are benign (renderer disconnect racing app shutdown's `close_all`,
+/// a double-fired close from the UI) and surfacing them would only produce
+/// spurious error toasts for a connection that is already gone.
 pub async fn close_connection(
     manager: &ConnectionManager,
     handle: &ConnectionHandleId,
 ) -> Result<(), AppError> {
-    let connection = manager.remove(handle).await?;
-    connection.close().await
+    match manager.remove(handle).await {
+        Some(connection) => connection.close().await,
+        None => Ok(()),
+    }
 }
 
 /// Schemas visible on an open connection.
@@ -533,6 +547,41 @@ mod tests {
             .unwrap_err();
         assert!(matches!(err, AppError::NotFound(_)));
         assert!(err.to_string().contains("closed"));
+
+        // Closing again is a benign no-op, not an error: teardown races
+        // (double-fired UI close, shutdown's close_all) must stay silent.
+        close_connection(&manager, &opened.handle_id)
+            .await
+            .expect("double close is idempotent");
+    }
+
+    #[tokio::test]
+    async fn close_all_drains_the_manager_and_closes_every_connection() {
+        let manager = ConnectionManager::new();
+        let flags: Vec<Arc<AtomicBool>> =
+            (0..3).map(|_| Arc::new(AtomicBool::new(false))).collect();
+        for flag in &flags {
+            manager
+                .insert(Box::new(FakeConnection {
+                    closed: Arc::clone(flag),
+                }))
+                .await;
+        }
+        assert_eq!(manager.open_count().await, 3);
+
+        manager.close_all().await;
+
+        assert_eq!(manager.open_count().await, 0);
+        for (index, flag) in flags.iter().enumerate() {
+            assert!(
+                flag.load(Ordering::SeqCst),
+                "connection {index} was not closed"
+            );
+        }
+
+        // A second close_all on an empty manager is a no-op.
+        manager.close_all().await;
+        assert_eq!(manager.open_count().await, 0);
     }
 
     #[tokio::test]

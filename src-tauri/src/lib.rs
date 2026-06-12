@@ -54,6 +54,18 @@ pub fn run() {
             features::connections::commands::connection_tables,
             features::connections::commands::query_run,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        // Teardown hook: `RunEvent::ExitRequested` is the reliable app-level
+        // signal for a single-window app — it fires once when the last
+        // window closes (and on programmatic `app.exit()`), unlike
+        // `WindowEvent::Destroyed`, which is per-window and also fires
+        // during window re-creation. `block_on` (not spawn) so every
+        // connection's `close()` completes before the process exits.
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                let state = app_handle.state::<ConnectionsState>();
+                tauri::async_runtime::block_on(state.manager().close_all());
+            }
+        });
 }

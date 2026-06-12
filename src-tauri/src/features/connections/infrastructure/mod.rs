@@ -41,6 +41,19 @@ impl JsonFileConnectionRepository {
         }
     }
 
+    /// Take the write lock, mapping poison to a graceful `AppError` instead
+    /// of panicking — same policy as the SQLite adapter's connection mutex:
+    /// one earlier crash must not start a panic cascade across commands.
+    fn lock_for_write(&self) -> Result<std::sync::MutexGuard<'_, ()>, AppError> {
+        self.write_lock.lock().map_err(|_| {
+            AppError::Io(
+                "the saved-connections registry is in a broken state after an \
+                 earlier crash; restart the app to continue"
+                    .into(),
+            )
+        })
+    }
+
     fn read_all(&self) -> Result<Vec<SavedConnection>, AppError> {
         let contents = match fs::read_to_string(&self.path) {
             Ok(contents) => contents,
@@ -78,7 +91,7 @@ impl ConnectionRepository for JsonFileConnectionRepository {
     }
 
     fn save(&self, connection: &SavedConnection) -> Result<(), AppError> {
-        let _guard = self.write_lock.lock().expect("repository lock poisoned");
+        let _guard = self.lock_for_write()?;
         let mut connections = self.read_all()?;
         if let Some(existing) = connections.iter_mut().find(|c| c.id == connection.id) {
             *existing = connection.clone();
@@ -89,7 +102,7 @@ impl ConnectionRepository for JsonFileConnectionRepository {
     }
 
     fn delete(&self, id: &str) -> Result<(), AppError> {
-        let _guard = self.write_lock.lock().expect("repository lock poisoned");
+        let _guard = self.lock_for_write()?;
         let mut connections = self.read_all()?;
         let before = connections.len();
         connections.retain(|c| c.id != id);

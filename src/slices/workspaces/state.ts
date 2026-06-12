@@ -63,6 +63,14 @@ function patchWorkspace(
   return workspaces.map((ws) => (ws.id === id ? { ...ws, ...patch } : ws));
 }
 
+/**
+ * Prototype app.jsx `showConnect`: the connect screen shows while the user is
+ * adding another workspace or none are open. Shared by App (which screen
+ * renders) and the rail (which tile lights up).
+ */
+export const selectShowConnect = (state: WorkspacesSliceState): boolean =>
+  state.adding || state.workspaces.length === 0;
+
 export const useWorkspacesStore = create<WorkspacesSliceState>((set) => ({
   workspaces: [],
   activeWorkspaceId: null,

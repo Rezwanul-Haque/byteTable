@@ -8,7 +8,7 @@ import { usePreferencesStore } from "./slices/preferences/state";
 import { ConnectScreen } from "./slices/workspaces/components/ConnectScreen";
 import { Rail } from "./slices/workspaces/components/Rail";
 import { WorkspacePlaceholder } from "./slices/workspaces/components/WorkspacePlaceholder";
-import { useWorkspacesStore } from "./slices/workspaces/state";
+import { selectShowConnect, useWorkspacesStore } from "./slices/workspaces/state";
 import "./App.css";
 
 // Dev gallery (M0) is no longer the main screen: in dev builds it is toggled
@@ -23,11 +23,10 @@ export function App() {
   const loadPreferences = usePreferencesStore((state) => state.load);
   const workspaces = useWorkspacesStore((state) => state.workspaces);
   const activeWorkspaceId = useWorkspacesStore((state) => state.activeWorkspaceId);
-  const adding = useWorkspacesStore((state) => state.adding);
   const activeWorkspace = workspaces.find((ws) => ws.id === activeWorkspaceId) ?? null;
   // Prototype app.jsx `showConnect`: the rail's "+" tile shows the connect
   // screen without dropping the (still-open) active workspace.
-  const showConnect = adding || !activeWorkspace;
+  const showConnect = useWorkspacesStore(selectShowConnect);
 
   const [galleryOpen, setGalleryOpen] = useState(false);
 

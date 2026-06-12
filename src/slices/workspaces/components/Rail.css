@@ -128,6 +128,11 @@
   border-color: var(--accent);
 }
 
+/* Pushes the donate button to the bottom; doubles as window drag area. */
+.rail-spacer {
+  flex: 1;
+}
+
 .rail-donate {
   width: 38px;
   height: 38px;

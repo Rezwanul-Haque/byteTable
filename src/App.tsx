@@ -3,10 +3,10 @@
 
 import { lazy, Suspense, useEffect, useState } from "react";
 
-import { BTLogo } from "./shared/ui/BTLogo";
 import { ToastProvider } from "./shared/ui/ToastProvider";
 import { usePreferencesStore } from "./slices/preferences/state";
 import { ConnectScreen } from "./slices/workspaces/components/ConnectScreen";
+import { Rail } from "./slices/workspaces/components/Rail";
 import { WorkspacePlaceholder } from "./slices/workspaces/components/WorkspacePlaceholder";
 import { useWorkspacesStore } from "./slices/workspaces/state";
 import "./App.css";
@@ -23,7 +23,11 @@ export function App() {
   const loadPreferences = usePreferencesStore((state) => state.load);
   const workspaces = useWorkspacesStore((state) => state.workspaces);
   const activeWorkspaceId = useWorkspacesStore((state) => state.activeWorkspaceId);
+  const adding = useWorkspacesStore((state) => state.adding);
   const activeWorkspace = workspaces.find((ws) => ws.id === activeWorkspaceId) ?? null;
+  // Prototype app.jsx `showConnect`: the rail's "+" tile shows the connect
+  // screen without dropping the (still-open) active workspace.
+  const showConnect = adding || !activeWorkspace;
 
   const [galleryOpen, setGalleryOpen] = useState(false);
 
@@ -47,24 +51,10 @@ export function App() {
   return (
     <ToastProvider>
       <div className="app-frame">
-        {/*
-          Rail PLACEHOLDER — the real workspace rail (tiles, "+", donate) is
-          M1 Task 2; this keeps the 56px column so the layout is true.
-          data-tauri-drag-region makes the rail chrome a window-drag area in
-          the frameless window (Tauri drags only when the mousedown target
-          itself has the attribute). Window controls (min/max/close buttons)
-          are intentionally NOT in the design — macOS keyboard close (⌘W/⌘Q)
-          works; cross-platform window controls are tracked for a later
-          milestone.
-        */}
-        <div className="rail" data-tauri-drag-region>
-          <div className="rail-logo" title="ByteTable" data-tauri-drag-region>
-            <BTLogo size={22} accent="var(--accent)" fg="var(--text)" />
-          </div>
-          <div className="rail-sep" />
-        </div>
+        {/* TODO(M1-T3): replace the no-op with the DonateModal open action. */}
+        <Rail onDonate={() => {}} />
         <div className="app-body">
-          {activeWorkspace ? (
+          {!showConnect && activeWorkspace ? (
             <WorkspacePlaceholder workspace={activeWorkspace} />
           ) : (
             <ConnectScreen />

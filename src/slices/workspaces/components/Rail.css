@@ -1,0 +1,232 @@
+/*
+ * Workspace rail — .rail*, .ws-tile*, .ws-add, .rail-donate and the
+ * .ws-edit-* popover rules ported exactly from the ByteTable.html prototype.
+ * Tiles set --ws-color inline; every derived tint uses color-mix on it.
+ */
+
+.rail {
+  width: 56px;
+  flex: none;
+  background: var(--bg1);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 0;
+  gap: 8px;
+  position: relative;
+  z-index: 30;
+}
+
+.rail-logo {
+  padding: 4px 0 2px;
+}
+
+/* Let mousedown on the logo hit the drag-region wrapper, not the svg. */
+.rail-logo svg {
+  pointer-events: none;
+}
+
+.rail-sep {
+  width: 28px;
+  height: 1px;
+  background: var(--border);
+}
+
+.rail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.rail-list::-webkit-scrollbar {
+  display: none;
+}
+
+.ws-tile {
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  position: relative;
+  background: color-mix(in oklab, var(--ws-color) 16%, var(--bg2));
+  border: 1px solid color-mix(in oklab, var(--ws-color) 35%, transparent);
+  color: var(--ws-color);
+  font-weight: 600;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    transform 0.1s,
+    border-color 0.12s,
+    box-shadow 0.12s;
+  flex: none;
+}
+
+.ws-tile:hover {
+  transform: translateY(-1px);
+}
+
+.ws-tile.active {
+  border-color: var(--ws-color);
+  box-shadow:
+    0 0 0 1px var(--ws-color),
+    0 4px 14px color-mix(in oklab, var(--ws-color) 30%, transparent);
+}
+
+.ws-tile.active::before {
+  content: "";
+  position: absolute;
+  left: -9px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 22px;
+  border-radius: 2px;
+  background: var(--ws-color);
+}
+
+.ws-tile-initials {
+  letter-spacing: 0.02em;
+}
+
+.ws-tile-engine {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  font-family: var(--mono);
+  font-size: 7.5px;
+  font-weight: 600;
+  background: var(--bg3);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 3px;
+}
+
+.ws-add {
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  flex: none;
+  border: 1px dashed var(--border);
+  color: var(--text-faint);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    color 0.12s,
+    border-color 0.12s;
+}
+
+.ws-add:hover,
+.ws-add.active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.rail-donate {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  flex: none;
+  color: #ef7fb1;
+  background: #ef7fb114;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background 0.12s,
+    transform 0.12s;
+}
+
+.rail-donate:hover {
+  background: #ef7fb128;
+  transform: scale(1.08);
+}
+
+.ws-edit-pop {
+  position: fixed;
+  left: 62px;
+  z-index: 70;
+  width: 224px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.ws-edit-title {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-faint);
+}
+
+.ws-edit-input {
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 12.5px;
+  outline: none;
+  width: 100%;
+}
+
+.ws-edit-input:focus {
+  border-color: var(--accent);
+}
+
+.ws-edit-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-faint);
+}
+
+.ws-colors {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ws-color-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 7px;
+  border: 2px solid transparent;
+  transition: transform 0.1s;
+}
+
+.ws-color-swatch:hover {
+  transform: scale(1.12);
+}
+
+.ws-color-swatch.active {
+  border-color: var(--text);
+}
+
+.ws-edit-close {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  font-size: 12px;
+  color: #e06c75;
+  background: #e06c7510;
+  margin-top: 2px;
+}
+
+.ws-edit-close:hover {
+  background: #e06c7522;
+}

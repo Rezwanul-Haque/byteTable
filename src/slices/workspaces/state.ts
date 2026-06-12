@@ -27,6 +27,14 @@ interface WorkspacesSliceState {
   /** null → no active workspace → the connect screen is shown. */
   activeWorkspaceId: string | null;
   /**
+   * True while the user is adding another workspace — prototype app.jsx
+   * `adding`. The rail's "+" tile sets it; opening or selecting a workspace
+   * clears it. The connect screen shows when `adding || workspaces.length
+   * === 0` (prototype `showConnect`), so the active workspace is preserved
+   * while the user browses connections.
+   */
+  adding: boolean;
+  /**
    * Internal: monotonic palette cursor. Matches the prototype's app.jsx
    * `colorIdx` ref — it only ever increments (cycling mod 8) and is never
    * rewound when a workspace closes.
@@ -41,6 +49,8 @@ interface WorkspacesSliceState {
    */
   closeWorkspace: (id: string) => void;
   setActive: (id: string) => void;
+  /** Rail "+" tile: show the connect screen to open another workspace. */
+  startAdding: () => void;
   renameWorkspace: (id: string, name: string) => void;
   recolorWorkspace: (id: string, color: string) => void;
 }
@@ -56,6 +66,9 @@ function patchWorkspace(
 export const useWorkspacesStore = create<WorkspacesSliceState>((set) => ({
   workspaces: [],
   activeWorkspaceId: null,
+  // Initially true, like the prototype — with no workspaces the connect
+  // screen shows either way.
+  adding: true,
   colorCursor: 0,
 
   openWorkspace: (connection) =>
@@ -72,6 +85,7 @@ export const useWorkspacesStore = create<WorkspacesSliceState>((set) => ({
       return {
         workspaces: [...state.workspaces, workspace],
         activeWorkspaceId: workspace.id,
+        adding: false,
         colorCursor: state.colorCursor + 1,
       };
     }),
@@ -82,19 +96,28 @@ export const useWorkspacesStore = create<WorkspacesSliceState>((set) => ({
       if (idx === -1) return state;
       const workspaces = state.workspaces.filter((ws) => ws.id !== id);
       let activeWorkspaceId = state.activeWorkspaceId;
+      let adding = state.adding;
       if (activeWorkspaceId === id) {
         const neighbour = workspaces[Math.max(0, idx - 1)];
         activeWorkspaceId = neighbour ? neighbour.id : null;
+        // Closing the last workspace routes back to the connect screen
+        // (prototype: setActiveWsId(null); setAdding(true)).
+        if (!neighbour) adding = true;
       }
-      return { workspaces, activeWorkspaceId };
+      return { workspaces, activeWorkspaceId, adding };
     }),
 
   setActive: (id) =>
     set((state) =>
       // Guard the invariant that activeWorkspaceId always references an
-      // existing workspace (or is null).
-      state.workspaces.some((ws) => ws.id === id) ? { activeWorkspaceId: id } : state,
+      // existing workspace (or is null). Selecting a tile also leaves the
+      // connect screen (prototype rail onSelect: setAdding(false)).
+      state.workspaces.some((ws) => ws.id === id)
+        ? { activeWorkspaceId: id, adding: false }
+        : state,
     ),
+
+  startAdding: () => set({ adding: true }),
 
   renameWorkspace: (id, name) =>
     set((state) => ({ workspaces: patchWorkspace(state.workspaces, id, { name }) })),

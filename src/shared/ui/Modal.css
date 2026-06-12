@@ -27,6 +27,16 @@
   animation: modal-in 0.18s ease-out;
 }
 
+/* Visually hidden dialog name target for aria-labelledby (label prop). */
+.modal-sr-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .modal-title {
   display: flex;
   align-items: center;

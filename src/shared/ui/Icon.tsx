@@ -12,10 +12,10 @@ interface IconProps {
   style?: CSSProperties;
 }
 
-export function Icon({ name, size = 18, fill = 0, className = "", style }: IconProps) {
+export function Icon({ name, size = 18, fill = 0, className, style }: IconProps) {
   return (
     <span
-      className={"msym " + className}
+      className={className ? "msym " + className : "msym"}
       style={{ fontSize: size, "--msym-fill": fill, ...style } as CSSProperties}
       aria-hidden="true"
     >

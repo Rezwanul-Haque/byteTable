@@ -1,6 +1,7 @@
 /* Icon buttons — ported byte-identical from ByteTable.html.
-   #e06c75 == var(--error); the 22-suffixed fill keeps the prototype's
-   literal alpha pattern. */
+   The prototype's literal #e06c7522 danger fill (alpha 0x22 = 34/255 ≈ 13.3%)
+   is expressed as color-mix(var(--error) 13.3%, transparent) so it tracks the
+   token. The prototype declares no disabled style: opacity .5 + no hover. */
 
 .icon-btn {
   display: inline-flex;
@@ -16,9 +17,14 @@
   flex: none;
 }
 
-.icon-btn:hover {
+.icon-btn:hover:not(:disabled) {
   background: var(--bg3);
   color: var(--text);
+}
+
+.icon-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .icon-btn.active {
@@ -26,7 +32,7 @@
   color: var(--accent);
 }
 
-.icon-btn.danger:hover {
-  background: #e06c7522;
+.icon-btn.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--error) 13.3%, transparent);
   color: var(--error);
 }

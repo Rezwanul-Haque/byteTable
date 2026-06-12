@@ -25,6 +25,7 @@ export function BTLogo({
       height={size}
       viewBox="0 0 24 24"
       fill="none"
+      role="img"
       aria-label="ByteTable"
       style={{ display: "block" }}
     >

@@ -11,7 +11,7 @@ import { EnvTag, type Env } from "../shared/ui/EnvTag";
 import { Icon } from "../shared/ui/Icon";
 import { IconBtn } from "../shared/ui/IconBtn";
 import { Kbd } from "../shared/ui/Kbd";
-import { Modal } from "../shared/ui/Modal";
+import { Modal, ModalActions, ModalTitle } from "../shared/ui/Modal";
 import { useToast } from "../shared/ui/toastContext";
 import { PreferencesPanel } from "../slices/preferences/components/PreferencesPanel";
 import "./Gallery.css";
@@ -161,16 +161,16 @@ export function Gallery() {
       </Section>
 
       {modalOpen ? (
-        <Modal onClose={() => setModalOpen(false)}>
-          <div className="modal-title">
+        <Modal label="Example modal" onClose={() => setModalOpen(false)}>
+          <ModalTitle>
             <span>Example modal</span>
             <IconBtn icon="close" onClick={() => setModalOpen(false)} title="Close" />
-          </div>
+          </ModalTitle>
           <p className="gallery-modal-body">
             Scrim + centered panel per the prototype. Press <Kbd>esc</Kbd> or click the scrim to
             close.
           </p>
-          <div className="modal-actions">
+          <ModalActions>
             <Btn variant="text" onClick={() => setModalOpen(false)}>
               Cancel
             </Btn>
@@ -183,7 +183,7 @@ export function Gallery() {
             >
               Confirm
             </Btn>
-          </div>
+          </ModalActions>
         </Modal>
       ) : null}
     </main>

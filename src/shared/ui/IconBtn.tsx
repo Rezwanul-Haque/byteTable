@@ -1,29 +1,48 @@
 // Icon button — ported from ui.jsx IconBtn. Minimum 26×26 hit target (§1.5).
+// Renders type="button" by default (overridable) and forwards all native
+// button props + ref. Falls back to title for aria-label when none is given.
 
-import type { CSSProperties, MouseEventHandler } from "react";
+import { forwardRef, type ButtonHTMLAttributes } from "react";
 
 import { Icon } from "./Icon";
 import "./IconBtn.css";
 
-interface IconBtnProps {
+interface IconBtnProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   icon: string;
-  onClick?: MouseEventHandler<HTMLButtonElement>;
-  title?: string;
   size?: number;
   active?: boolean;
   danger?: boolean;
-  style?: CSSProperties;
 }
 
-export function IconBtn({ icon, onClick, title, size = 18, active, danger, style }: IconBtnProps) {
+export const IconBtn = forwardRef<HTMLButtonElement, IconBtnProps>(function IconBtn(
+  {
+    icon,
+    size = 18,
+    active,
+    danger,
+    className,
+    type = "button",
+    title,
+    "aria-label": ariaLabel,
+    ...rest
+  },
+  ref,
+) {
+  const classes =
+    "icon-btn" +
+    (active ? " active" : "") +
+    (danger ? " danger" : "") +
+    (className ? " " + className : "");
   return (
     <button
-      className={"icon-btn" + (active ? " active" : "") + (danger ? " danger" : "")}
-      onClick={onClick}
+      ref={ref}
+      type={type}
+      className={classes}
       title={title}
-      style={style}
+      aria-label={ariaLabel ?? title}
+      {...rest}
     >
       <Icon name={icon} size={size} />
     </button>
   );
-}
+});

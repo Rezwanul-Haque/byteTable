@@ -1,0 +1,11 @@
+/* Engine badge — ported byte-identical from ByteTable.html. */
+
+.engine-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  font-family: var(--mono);
+  font-weight: 600;
+  flex: none;
+}

@@ -1,0 +1,12 @@
+/* Environment tag — ported byte-identical from ByteTable.html. */
+
+.env-tag {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 1px 6px;
+  border-radius: 99px;
+  border: 1px solid;
+}

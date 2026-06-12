@@ -1,0 +1,53 @@
+/* Buttons — ported byte-identical from ByteTable.html. */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 500;
+  transition:
+    background 0.12s,
+    filter 0.12s;
+  white-space: nowrap;
+}
+
+.btn-small {
+  padding: 5px 11px;
+  font-size: 12px;
+  border-radius: 7px;
+}
+
+.btn-filled {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.btn-filled:hover {
+  filter: brightness(1.1);
+}
+
+.btn-filled:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btn-tonal {
+  background: color-mix(in oklab, var(--accent) 14%, var(--bg2));
+  color: var(--accent);
+}
+
+.btn-tonal:hover {
+  background: color-mix(in oklab, var(--accent) 22%, var(--bg2));
+}
+
+.btn-text {
+  color: var(--text-dim);
+}
+
+.btn-text:hover {
+  background: var(--bg2);
+  color: var(--text);
+}

@@ -1,0 +1,34 @@
+[package]
+name = "bytetable"
+version = "0.1.0"
+description = "A free open-source local-first desktop database client"
+authors = ["ByteTable contributors"]
+edition = "2021"
+rust-version = "1.77.2"
+license = "MIT"
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "bytetable_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

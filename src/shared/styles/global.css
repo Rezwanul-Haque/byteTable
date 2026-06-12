@@ -1,0 +1,85 @@
+/*
+ * ByteTable global base styles — ported from the ByteTable.html prototype
+ * (reset, body, icon class, form inheritance, selection, scrollbars).
+ */
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  font-family: var(--ui);
+  background: var(--bg0);
+  color: var(--text);
+  font-size: 13px;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * Icon class — Material Symbols Rounded (bundled variable font).
+ * Spec §1.4: FILL 0–1 (variable per icon via --msym-fill), wght 400, opsz 20.
+ */
+.msym {
+  font-family: "Material Symbols Rounded";
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  user-select: none;
+  vertical-align: middle;
+  font-variation-settings:
+    "FILL" var(--msym-fill, 0),
+    "wght" 400,
+    "GRAD" 0,
+    "opsz" 20;
+}
+
+input,
+textarea,
+button {
+  font-family: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--accent) 35%, transparent);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--bg3);
+  border-radius: 5px;
+  border: 2px solid var(--bg0);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-faint);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}

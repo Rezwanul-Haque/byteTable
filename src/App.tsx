@@ -1,5 +1,15 @@
+import { useEffect } from "react";
+
+import { usePreferencesStore } from "./slices/preferences/state";
+
 // Temporary placeholder proving the token layer loads — replaced in a later task.
 export function App() {
+  const load = usePreferencesStore((state) => state.load);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
   return (
     <main
       style={{

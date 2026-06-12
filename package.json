@@ -20,7 +20,8 @@
     "@tauri-apps/api": "^2.9.0",
     "material-symbols": "^0.45.1",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",

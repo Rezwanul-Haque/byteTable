@@ -1,42 +1,78 @@
 // Connect screen — ported from the prototype's connect.jsx ConnectScreen
-// (spec §3.2). The NewConnectionModal is intentionally NOT ported here: the
-// connection manager is M2, so both actions render disabled with a
-// "Coming in M2" title.
+// (spec §3.2), now wired to the real backend (M2): the card list is the
+// saved-connection registry, clicking a card runs a real `connection_open`
+// (the spinner shows actual latency, the prototype's simulated 650ms delay
+// is gone), "Open SQLite file…" opens a native file dialog, and "New
+// connection" opens the NewConnectionModal (conditionally mounted, so its
+// form state resets on every open, per the prototype).
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
+import { isAppErrorPayload } from "../../../shared/api/error";
 import { BrandMark } from "../../../shared/ui/BrandMark";
 import { Btn } from "../../../shared/ui/Btn";
 import { EngineBadge } from "../../../shared/ui/EngineBadge";
 import { EnvTag } from "../../../shared/ui/EnvTag";
 import { Icon } from "../../../shared/ui/Icon";
 import { useToast } from "../../../shared/ui/toastContext";
-import { MOCK_CONNECTIONS } from "../mockConnections";
-import { useWorkspacesStore } from "../state";
-import type { Connection } from "../types";
+import { connectionDetail, type SavedConnection } from "../../connections/api";
+import { NewConnectionModal } from "../../connections/components/NewConnectionModal";
+import { pickSqliteFile } from "../../connections/dialog";
+import { useConnectionsStore } from "../../connections/state";
+import { useConnectAndOpen, useOpenSqliteFile } from "../connect";
 import "./ConnectScreen.css";
+
+// Sentinel for `connecting` while the file-open flow runs — saved-connection
+// ids are UUIDs (or "" pre-save), so this can never collide with a card.
+const FILE_OPEN_ID = "__open-sqlite-file__";
+
+const OPENED_TOAST_SUFFIX = "” opened — right-click its tile to rename or recolor";
 
 export function ConnectScreen() {
   const [connecting, setConnecting] = useState<string | null>(null);
-  const openWorkspace = useWorkspacesStore((state) => state.openWorkspace);
+  const [showNew, setShowNew] = useState(false);
+  const savedConnections = useConnectionsStore((state) => state.savedConnections);
+  const loaded = useConnectionsStore((state) => state.loaded);
+  const loadError = useConnectionsStore((state) => state.loadError);
+  const load = useConnectionsStore((state) => state.load);
+  const connectAndOpen = useConnectAndOpen();
+  const openSqliteFile = useOpenSqliteFile();
   const toast = useToast();
-  const timerRef = useRef<number | undefined>(undefined);
 
-  // Clear a pending fake-connect timer if the screen unmounts mid-spin.
-  useEffect(() => () => window.clearTimeout(timerRef.current), []);
+  // Refresh the registry on every mount: cheap (local JSON read) and keeps
+  // the list current after saves/deletes made while the screen was away.
+  useEffect(() => {
+    void load();
+  }, [load]);
 
-  const connect = (conn: Connection) => {
+  const connect = async (conn: SavedConnection) => {
     setConnecting(conn.id);
-    // Simulated 650ms connect delay, ported from the prototype — replaced by
-    // a real backend connect (Tauri command) in M2.
-    timerRef.current = window.setTimeout(() => {
-      setConnecting(null);
-      openWorkspace(conn);
-      toast(
-        "Workspace “" + conn.name + "” opened — right-click its tile to rename or recolor",
-        "ok",
-      );
-    }, 650);
+    // Failures are already toasted inside the connect flow (falsy = handled).
+    const opened = await connectAndOpen(conn);
+    if (opened) toast("Workspace “" + conn.name + OPENED_TOAST_SUFFIX, "ok");
+    setConnecting(null);
+  };
+
+  const openFile = async () => {
+    let path: string | null = null;
+    try {
+      path = await pickSqliteFile();
+    } catch (error) {
+      if (isAppErrorPayload(error)) {
+        // The desktop shell is there but the dialog itself failed.
+        toast(error.message, "err");
+      } else {
+        // Plain browser dev: the dialog plugin needs the Tauri shell.
+        toast("Native file dialog requires the desktop app", "info");
+      }
+      return;
+    }
+    if (path === null) return; // user cancelled
+    setConnecting(FILE_OPEN_ID);
+    // Failures are already toasted inside the connect flow (falsy = handled).
+    const name = await openSqliteFile(path);
+    if (name) toast("Workspace “" + name + OPENED_TOAST_SUFFIX, "ok");
+    setConnecting(null);
   };
 
   return (
@@ -58,44 +94,60 @@ export function ConnectScreen() {
         </div>
 
         <div className="connect-list-label">Open a workspace</div>
-        <div className="connect-list">
-          {MOCK_CONNECTIONS.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              className="connect-card"
-              onClick={() => connect(c)}
-              disabled={connecting !== null}
-            >
-              <EngineBadge engine={c.engine} size={34} />
-              <div className="connect-card-info">
-                <div className="connect-card-name">
-                  {c.name}
-                  <EnvTag env={c.env} />
-                  {c.tunnel ? (
-                    <span className="tunnel-tag" title={c.tunnel}>
-                      <Icon name="vpn_lock" size={11} /> ssh
-                    </span>
-                  ) : null}
+        {loaded && loadError !== null ? (
+          // §5-style inline error: the backend's human sentence, where the
+          // list would have been.
+          <div className="connect-load-error">{loadError}</div>
+        ) : loaded && savedConnections.length === 0 ? (
+          <div className="connect-empty">
+            No saved connections yet — open a SQLite file below to get started.
+          </div>
+        ) : (
+          <div className="connect-list">
+            {savedConnections.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                className="connect-card"
+                onClick={() => void connect(c)}
+                disabled={connecting !== null}
+              >
+                <EngineBadge engine={c.engine} size={34} />
+                <div className="connect-card-info">
+                  <div className="connect-card-name">
+                    {c.name}
+                    <EnvTag env={c.env} />
+                  </div>
+                  <div className="connect-card-detail">{connectionDetail(c.params)}</div>
                 </div>
-                <div className="connect-card-detail">{c.detail}</div>
-              </div>
-              {connecting === c.id ? (
-                <span className="spinner" />
-              ) : (
-                <Icon name="arrow_forward" size={18} className="connect-arrow" />
-              )}
-            </button>
-          ))}
-        </div>
+                {connecting === c.id ? (
+                  <span className="spinner" />
+                ) : (
+                  <Icon name="arrow_forward" size={18} className="connect-arrow" />
+                )}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="connect-actions">
-          <Btn icon="add" variant="tonal" disabled title="Coming in M2">
+          <Btn
+            icon="add"
+            variant="tonal"
+            disabled={connecting !== null}
+            onClick={() => setShowNew(true)}
+          >
             New connection
           </Btn>
-          <Btn icon="folder_open" variant="text" disabled title="Coming in M2">
+          <Btn
+            icon="folder_open"
+            variant="text"
+            disabled={connecting !== null}
+            onClick={() => void openFile()}
+          >
             Open SQLite file…
           </Btn>
+          {connecting === FILE_OPEN_ID ? <span className="spinner" /> : null}
         </div>
       </div>
 
@@ -103,6 +155,8 @@ export function ConnectScreen() {
         SQLite · MySQL · PostgreSQL — more engines coming. Your credentials never leave this
         machine.
       </div>
+
+      {showNew ? <NewConnectionModal onClose={() => setShowNew(false)} /> : null}
     </div>
   );
 }

@@ -7,12 +7,27 @@
 // `AppErrorPayload` before reading `kind`.
 
 /** Machine-readable error category. Mirrors `AppError::kind()` in Rust. */
-export type AppErrorKind = "io" | "serialization" | "notFound" | "invalid";
+export type AppErrorKind =
+  | "io"
+  | "serialization"
+  | "notFound"
+  | "invalid"
+  | "database"
+  | "unsupported";
 
 /** Shape of the rejection value from `invoke()` when a command fails. */
 export interface AppErrorPayload {
   kind: AppErrorKind;
   message: string;
+}
+
+/**
+ * The human message from an `invoke()` rejection, or `fallback` when the
+ * rejection is not a structured backend error (e.g. plain browser dev where
+ * there is no Tauri at all).
+ */
+export function appErrorMessage(value: unknown, fallback: string): string {
+  return isAppErrorPayload(value) ? value.message : fallback;
 }
 
 /** Type guard for narrowing an `unknown` invoke() rejection. */

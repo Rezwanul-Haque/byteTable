@@ -151,11 +151,11 @@ export function Rail({ onDonate }: RailProps) {
               aria-label={ws.name}
               aria-current={isActive ? "true" : undefined}
               title={
-                ws.name + " · " + ENGINE_META[ws.connection.engine].label + " (right-click to edit)"
+                ws.name + " · " + ENGINE_META[ws.saved.engine].label + " (right-click to edit)"
               }
             >
               <span className="ws-tile-initials">{wsInitials(ws.name)}</span>
-              <span className="ws-tile-engine">{ENGINE_META[ws.connection.engine].short}</span>
+              <span className="ws-tile-engine">{ENGINE_META[ws.saved.engine].short}</span>
             </button>
           );
         })}
@@ -197,7 +197,7 @@ export function Rail({ onDonate }: RailProps) {
               // Live-commit the rename (prototype behavior); an emptied or
               // whitespace-only input falls back to the connection name.
               setDraftName(event.target.value);
-              renameWorkspace(editPop.id, event.target.value.trim() || editingWs.connection.name);
+              renameWorkspace(editPop.id, event.target.value.trim() || editingWs.saved.name);
             }}
             onKeyDown={(event) => {
               if (event.key === "Enter" || event.key === "Escape") closeEdit();

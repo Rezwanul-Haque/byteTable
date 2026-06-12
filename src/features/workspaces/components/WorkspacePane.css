@@ -1,0 +1,110 @@
+/* Minimal workspace pane (M2, replaces WorkspacePlaceholder.css) — not in
+   the prototype, so these rules are free-form but token-driven. Kept
+   visually quiet on purpose: M3's sidebar + M4's grid replace this. The
+   loading spinner reuses the global .spinner rule (ConnectScreen.css, same
+   bundle). */
+
+.ws-pane {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  justify-content: center;
+  background: var(--bg0);
+}
+
+.ws-pane-inner {
+  width: 100%;
+  max-width: 520px;
+  padding: 56px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ws-pane-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ws-pane-titles {
+  min-width: 0;
+}
+
+.ws-pane-name {
+  font-size: 15px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ws-pane-meta {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-pane-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-faint);
+}
+
+.ws-pane-tables {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ws-pane-table {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 2px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+}
+
+.ws-pane-table-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-pane-table-count {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  flex: none;
+}
+
+.ws-pane-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* §5-style inline error: a human sentence in the error tint, where the
+   action happened. */
+.ws-pane-error {
+  font-size: 12px;
+  color: var(--error);
+}
+
+.ws-pane-empty {
+  font-size: 12px;
+  color: var(--text-faint);
+}

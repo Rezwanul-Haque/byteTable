@@ -134,6 +134,10 @@ pub async fn connection_close(
     application::close_connection(&state.manager, &handle_id).await
 }
 
+// NOTE: `connection_schemas` / `connection_tables` predate the introspection
+// slice (`features::introspection`), which owns all NEW introspection
+// surface (M3's `table_meta` onward). Moving these two over is deferred —
+// the renderer already depends on their names.
 #[tauri::command]
 pub async fn connection_schemas(
     state: State<'_, ConnectionsState>,

@@ -354,6 +354,14 @@ mod tests {
             Ok(vec![])
         }
 
+        async fn table_meta(
+            &self,
+            _schema: &str,
+            _table: &str,
+        ) -> Result<crate::shared::engine::TableMeta, AppError> {
+            Ok(crate::shared::engine::TableMeta { columns: vec![] })
+        }
+
         async fn run_query(
             &self,
             _sql: &str,

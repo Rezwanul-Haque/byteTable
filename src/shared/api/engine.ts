@@ -33,6 +33,37 @@ export interface TableInfo {
   approxRowCount: number | null;
 }
 
+/** The target of a foreign-key reference: a column in another table. */
+export interface FkRef {
+  table: string;
+  /**
+   * Empty string when the engine could not resolve an implicit fk target
+   * (e.g. SQLite `REFERENCES t` to a table without a resolvable pk).
+   */
+  column: string;
+}
+
+/** One column of a table (M3 sidebar: pk/fk icons + type labels). */
+export interface ColumnInfo {
+  name: string;
+  /** Declared type as written in the DDL (may be empty). Display only. */
+  dataType: string;
+  /** True when the column has no NOT NULL constraint declared. */
+  nullable: boolean;
+  /** True when part of the primary key (every member of a composite pk). */
+  pk: boolean;
+  /** The foreign-key target, when this column references another table. */
+  fk: FkRef | null;
+}
+
+/**
+ * Column-level metadata for one table. Deliberately minimal — the M7
+ * structure view will extend this shape (indexes, defaults, …).
+ */
+export interface TableMeta {
+  columns: ColumnInfo[];
+}
+
 /** Column metadata accompanying a query result. */
 export interface ColumnMeta {
   name: string;
@@ -60,6 +91,11 @@ export interface QueryResult {
   rowCount: number;
   truncated: boolean;
   elapsedMs: number;
+}
+
+/** Column-level metadata for one table (the `table_meta` command). */
+export function tableMeta(handleId: string, schema: string, table: string): Promise<TableMeta> {
+  return invoke<TableMeta>("table_meta", { handleId, schema, table });
 }
 
 export function queryRun(

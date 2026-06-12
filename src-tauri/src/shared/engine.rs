@@ -129,6 +129,42 @@ pub struct TableInfo {
     pub approx_row_count: Option<u64>,
 }
 
+/// Column-level metadata for one table, powering the M3 sidebar's
+/// expandable column lists (pk/fk icons + type labels).
+///
+/// Deliberately minimal: the M7 structure view will extend this shape
+/// (indexes, defaults, collation, …) — do not add fields speculatively.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TableMeta {
+    pub columns: Vec<ColumnInfo>,
+}
+
+/// One column of a table.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ColumnInfo {
+    pub name: String,
+    /// Declared type as written in the DDL (may be empty — SQLite allows
+    /// untyped columns). A display label, never for logic.
+    pub data_type: String,
+    /// True when the column has no NOT NULL constraint declared.
+    pub nullable: bool,
+    /// True when the column is part of the primary key (composite pks mark
+    /// every member column).
+    pub pk: bool,
+    /// The foreign-key target, when this column references another table.
+    pub fk: Option<FkRef>,
+}
+
+/// The target of a foreign-key reference: a column in another table.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FkRef {
+    pub table: String,
+    pub column: String,
+}
+
 /// Column metadata accompanying a query result.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -206,6 +242,10 @@ pub trait EngineConnection: Send + Sync {
     /// User tables in the given schema.
     async fn list_tables(&self, schema: &str) -> Result<Vec<TableInfo>, AppError>;
 
+    /// Column-level metadata for one table (M3 sidebar). Unknown tables are
+    /// a §5 human error ("Table 'x' does not exist. Available tables: …").
+    async fn table_meta(&self, schema: &str, table: &str) -> Result<TableMeta, AppError>;
+
     /// Execute SQL verbatim with a row limit and timing. Read/write context
     /// enforcement is a higher-level concern (M6); the adapter runs what it
     /// is given but always enforces `row_limit`.
@@ -263,6 +303,56 @@ mod tests {
         let json = serde_json::to_string(&params).unwrap();
         let back: ConnectionParams = serde_json::from_str(&json).unwrap();
         assert_eq!(back, params);
+    }
+
+    #[test]
+    fn table_meta_wire_shape_is_camel_case_with_nullable_fk() {
+        let meta = TableMeta {
+            columns: vec![
+                ColumnInfo {
+                    name: "author_id".into(),
+                    data_type: "INTEGER".into(),
+                    nullable: false,
+                    pk: false,
+                    fk: Some(FkRef {
+                        table: "authors".into(),
+                        column: "id".into(),
+                    }),
+                },
+                ColumnInfo {
+                    name: "note".into(),
+                    data_type: String::new(),
+                    nullable: true,
+                    pk: true,
+                    fk: None,
+                },
+            ],
+        };
+        let json = serde_json::to_value(&meta).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "columns": [
+                    {
+                        "name": "author_id",
+                        "dataType": "INTEGER",
+                        "nullable": false,
+                        "pk": false,
+                        "fk": { "table": "authors", "column": "id" }
+                    },
+                    {
+                        "name": "note",
+                        "dataType": "",
+                        "nullable": true,
+                        "pk": true,
+                        "fk": null
+                    }
+                ]
+            })
+        );
+        // And the shape round-trips.
+        let back: TableMeta = serde_json::from_value(json).unwrap();
+        assert_eq!(back, meta);
     }
 
     #[test]

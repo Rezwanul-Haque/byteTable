@@ -32,7 +32,29 @@
 //! - `run_query` executes whatever SQL it is given (read/write contexts are
 //!   M6's job) but always enforces `row_limit`, reading one extra row to set
 //!   `truncated`.
+//!
+//! # Documented choices (M3, `table_meta`)
+//!
+//! - Column metadata comes from `PRAGMA "schema".table_info("table")` and
+//!   `PRAGMA "schema".foreign_key_list("table")` — no parsing of DDL text.
+//! - `nullable` is the raw declared constraint (`notnull == 0`): SQLite does
+//!   not set the flag for bare `PRIMARY KEY` columns (and, by a documented
+//!   legacy quirk, non-INTEGER primary keys really can hold NULLs), so
+//!   "nullable" here means "no NOT NULL constraint declared".
+//! - `foreign_key_list` reports `to` as NULL for the implicit form
+//!   `REFERENCES t` (no column list). We resolve it to the referenced
+//!   table's primary-key column at the fk's `seq` position (same schema —
+//!   SQLite fks never cross databases); when that fails (referenced table
+//!   missing or without a declared pk) the column falls back to an **empty
+//!   string** — an honest "unknown" beats guessing "id".
+//! - A column appearing in several foreign keys keeps the first one
+//!   `foreign_key_list` reports; `ColumnInfo.fk` is a single ref by design
+//!   (sidebar icon + tooltip), M7's structure view gets the full list.
+//! - `PRAGMA table_info` returns zero rows (not an error) for an unknown
+//!   table, so existence is checked against `sqlite_schema` first to produce
+//!   the §5 "Table 'x' does not exist. Available tables: …" message.
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -42,8 +64,8 @@ use rusqlite::types::ValueRef;
 use rusqlite::{Connection, OpenFlags};
 
 use crate::shared::engine::{
-    ColumnMeta, ConnectionParams, Connector, Engine, EngineConnection, EngineInfo, QueryOptions,
-    QueryResult, SchemaInfo, TableInfo,
+    ColumnInfo, ColumnMeta, ConnectionParams, Connector, Engine, EngineConnection, EngineInfo,
+    FkRef, QueryOptions, QueryResult, SchemaInfo, TableInfo, TableMeta,
 };
 use crate::shared::error::AppError;
 
@@ -95,6 +117,13 @@ impl EngineConnection for SqliteEngineConnection {
     async fn list_tables(&self, schema: &str) -> Result<Vec<TableInfo>, AppError> {
         let schema = schema.to_string();
         self.with_conn(move |conn| list_tables_blocking(conn, &schema))
+            .await
+    }
+
+    async fn table_meta(&self, schema: &str, table: &str) -> Result<TableMeta, AppError> {
+        let schema = schema.to_string();
+        let table = table.to_string();
+        self.with_conn(move |conn| table_meta_blocking(conn, &schema, &table))
             .await
     }
 
@@ -243,14 +272,22 @@ fn count_tables(conn: &Connection, schema: &str) -> Result<u64, rusqlite::Error>
     )
 }
 
-fn list_tables_blocking(conn: &Connection, schema: &str) -> Result<Vec<TableInfo>, AppError> {
+/// Fail with the §5 "Schema 'x' does not exist…" message unless `schema` is
+/// one of the connection's databases.
+fn ensure_schema_exists(conn: &Connection, schema: &str) -> Result<(), AppError> {
     let schemas = schema_names(conn)?;
-    if !schemas.iter().any(|s| s == schema) {
-        return Err(AppError::Database(format!(
+    if schemas.iter().any(|s| s == schema) {
+        Ok(())
+    } else {
+        Err(AppError::Database(format!(
             "Schema '{schema}' does not exist. Available schemas: {}.",
             schemas.join(", ")
-        )));
+        )))
     }
+}
+
+fn list_tables_blocking(conn: &Connection, schema: &str) -> Result<Vec<TableInfo>, AppError> {
+    ensure_schema_exists(conn, schema)?;
 
     let mut stmt = conn
         .prepare(&format!(
@@ -287,6 +324,140 @@ fn list_tables_blocking(conn: &Connection, schema: &str) -> Result<Vec<TableInfo
         });
     }
     Ok(tables)
+}
+
+fn table_meta_blocking(
+    conn: &Connection,
+    schema: &str,
+    table: &str,
+) -> Result<TableMeta, AppError> {
+    ensure_schema_exists(conn, schema)?;
+
+    // `PRAGMA table_info` returns zero rows for an unknown table instead of
+    // erroring, so prove existence first to get the §5 message (see module
+    // docs).
+    let exists: i64 = conn
+        .query_row(
+            &format!(
+                "SELECT count(*) FROM {}.sqlite_schema WHERE type = 'table' AND name = ?1",
+                quote_ident(schema)
+            ),
+            [table],
+            |row| row.get(0),
+        )
+        .map_err(|err| map_query_error(conn, err))?;
+    if exists == 0 {
+        return Err(missing_table_error(conn, table));
+    }
+
+    let mut fk_by_column = foreign_keys_by_column(conn, schema, table)?;
+
+    // table_info columns: cid(0), name(1), type(2), notnull(3), dflt(4), pk(5).
+    // `pk` is the 1-based position within the primary key (0 = not part).
+    let mut stmt = conn
+        .prepare(&format!(
+            "PRAGMA {}.table_info({})",
+            quote_ident(schema),
+            quote_ident(table)
+        ))
+        .map_err(|err| map_query_error(conn, err))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, i64>(5)?,
+            ))
+        })
+        .and_then(Iterator::collect::<Result<Vec<_>, _>>)
+        .map_err(|err| map_query_error(conn, err))?;
+
+    let columns = rows
+        .into_iter()
+        .map(|(name, data_type, notnull, pk)| ColumnInfo {
+            fk: fk_by_column.remove(&name),
+            name,
+            data_type,
+            nullable: notnull == 0,
+            pk: pk > 0,
+        })
+        .collect();
+    Ok(TableMeta { columns })
+}
+
+/// Foreign keys of `table`, keyed by the local (from) column. A column in
+/// several fks keeps the first one reported (see module docs).
+fn foreign_keys_by_column(
+    conn: &Connection,
+    schema: &str,
+    table: &str,
+) -> Result<HashMap<String, FkRef>, AppError> {
+    // foreign_key_list columns: id(0), seq(1), table(2), from(3), to(4), ….
+    let mut stmt = conn
+        .prepare(&format!(
+            "PRAGMA {}.foreign_key_list({})",
+            quote_ident(schema),
+            quote_ident(table)
+        ))
+        .map_err(|err| map_query_error(conn, err))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, Option<String>>(4)?,
+            ))
+        })
+        .and_then(Iterator::collect::<Result<Vec<_>, _>>)
+        .map_err(|err| map_query_error(conn, err))?;
+
+    let mut by_column = HashMap::new();
+    for (seq, ref_table, from, to) in rows {
+        let column = match to {
+            Some(column) => column,
+            // Implicit `REFERENCES t`: resolve to the referenced table's pk
+            // (same schema — SQLite fks never cross databases).
+            None => referenced_pk_column(conn, schema, &ref_table, seq.max(0) as usize),
+        };
+        by_column.entry(from).or_insert(FkRef {
+            table: ref_table,
+            column,
+        });
+    }
+    Ok(by_column)
+}
+
+/// The referenced table's primary-key column at position `seq`, for
+/// resolving implicit fk targets. Best effort: an unresolvable pk (missing
+/// table, no declared pk) yields an empty string — an honest "unknown"
+/// rather than a guessed "id" (see module docs).
+fn referenced_pk_column(conn: &Connection, schema: &str, ref_table: &str, seq: usize) -> String {
+    let sql = format!(
+        "PRAGMA {}.table_info({})",
+        quote_ident(schema),
+        quote_ident(ref_table)
+    );
+    let Ok(mut stmt) = conn.prepare(&sql) else {
+        return String::new();
+    };
+    let Ok(columns) = stmt
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(5)?, row.get::<_, String>(1)?))
+        })
+        .and_then(Iterator::collect::<Result<Vec<(i64, String)>, _>>)
+    else {
+        return String::new();
+    };
+    let mut pk_columns: Vec<(i64, String)> =
+        columns.into_iter().filter(|(pk, _)| *pk > 0).collect();
+    pk_columns.sort_by_key(|(position, _)| *position);
+    pk_columns
+        .into_iter()
+        .nth(seq)
+        .map(|(_, name)| name)
+        .unwrap_or_default()
 }
 
 fn run_query_blocking(
@@ -379,16 +550,7 @@ fn driver_message(err: &rusqlite::Error) -> String {
 fn map_query_error(conn: &Connection, err: rusqlite::Error) -> AppError {
     let raw = driver_message(&err);
     if let Some(table) = raw.strip_prefix("no such table: ") {
-        let tables = all_table_names(conn);
-        let listing = if tables.is_empty() {
-            "(none)".to_string()
-        } else {
-            tables.join(", ")
-        };
-        return AppError::Database(format!(
-            "Table '{}' does not exist. Available tables: {listing}.",
-            strip_location_suffix(table)
-        ));
+        return missing_table_error(conn, strip_location_suffix(table));
     }
     if let Some(column) = raw.strip_prefix("no such column: ") {
         return AppError::Database(format!(
@@ -397,6 +559,19 @@ fn map_query_error(conn: &Connection, err: rusqlite::Error) -> AppError {
         ));
     }
     AppError::Database(humanize(&raw))
+}
+
+/// The §5 unknown-table message, with the "available tables" listing.
+fn missing_table_error(conn: &Connection, table: &str) -> AppError {
+    let tables = all_table_names(conn);
+    let listing = if tables.is_empty() {
+        "(none)".to_string()
+    } else {
+        tables.join(", ")
+    };
+    AppError::Database(format!(
+        "Table '{table}' does not exist. Available tables: {listing}."
+    ))
 }
 
 /// Newer SQLite appends ` in <sql> at offset N` to "no such …" messages;
@@ -614,6 +789,155 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let conn = open_fixture(&dir).await;
         let err = conn.list_tables("warehouse").await.unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Schema 'warehouse' does not exist. Available schemas: main."
+        );
+    }
+
+    /// Open a db exercising every `table_meta` facet: explicit + implicit
+    /// fk targets, composite pk, NOT NULL, untyped columns, a non-"id" pk
+    /// on the implicitly referenced table.
+    async fn open_meta_fixture(dir: &tempfile::TempDir) -> Box<dyn EngineConnection> {
+        let path = dir.path().join("meta.db");
+        {
+            let conn = Connection::open(&path).expect("create db");
+            conn.execute_batch(
+                "CREATE TABLE authors (id INTEGER PRIMARY KEY, name TEXT NOT NULL);
+                 CREATE TABLE series (series_code TEXT PRIMARY KEY, title TEXT);
+                 CREATE TABLE books (
+                     id INTEGER PRIMARY KEY,
+                     title TEXT NOT NULL,
+                     author_id INTEGER NOT NULL REFERENCES authors(id),
+                     series_code TEXT REFERENCES series,
+                     ghost_id INTEGER REFERENCES phantoms,
+                     notes
+                 );
+                 CREATE TABLE order_items (
+                     order_id INTEGER,
+                     item_no INTEGER,
+                     qty INTEGER NOT NULL,
+                     PRIMARY KEY (order_id, item_no)
+                 );",
+            )
+            .expect("seed db");
+        }
+        SqliteConnector
+            .open(&params_for(&path))
+            .await
+            .expect("open meta fixture")
+    }
+
+    #[tokio::test]
+    async fn table_meta_reports_types_nullability_pk_and_fks() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_meta_fixture(&dir).await;
+        let meta = conn.table_meta("main", "books").await.expect("table meta");
+
+        let expected = vec![
+            ColumnInfo {
+                name: "id".into(),
+                data_type: "INTEGER".into(),
+                // SQLite does not set `notnull` for bare PRIMARY KEY columns;
+                // `nullable` reports the declared constraint (module docs).
+                nullable: true,
+                pk: true,
+                fk: None,
+            },
+            ColumnInfo {
+                name: "title".into(),
+                data_type: "TEXT".into(),
+                nullable: false,
+                pk: false,
+                fk: None,
+            },
+            ColumnInfo {
+                name: "author_id".into(),
+                data_type: "INTEGER".into(),
+                nullable: false,
+                pk: false,
+                // Explicit target: REFERENCES authors(id).
+                fk: Some(FkRef {
+                    table: "authors".into(),
+                    column: "id".into(),
+                }),
+            },
+            ColumnInfo {
+                name: "series_code".into(),
+                data_type: "TEXT".into(),
+                nullable: true,
+                pk: false,
+                // Implicit target (`REFERENCES series`): resolved to the
+                // referenced table's pk, which is deliberately not "id".
+                fk: Some(FkRef {
+                    table: "series".into(),
+                    column: "series_code".into(),
+                }),
+            },
+            ColumnInfo {
+                name: "ghost_id".into(),
+                data_type: "INTEGER".into(),
+                nullable: true,
+                pk: false,
+                // Implicit target on a table that does not exist: the table
+                // name survives, the column falls back to "" (module docs).
+                fk: Some(FkRef {
+                    table: "phantoms".into(),
+                    column: String::new(),
+                }),
+            },
+            ColumnInfo {
+                name: "notes".into(),
+                // Untyped column: empty declared type, not a made-up one.
+                data_type: String::new(),
+                nullable: true,
+                pk: false,
+                fk: None,
+            },
+        ];
+        assert_eq!(meta.columns, expected);
+    }
+
+    #[tokio::test]
+    async fn table_meta_marks_every_member_of_a_composite_pk() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_meta_fixture(&dir).await;
+        let meta = conn
+            .table_meta("main", "order_items")
+            .await
+            .expect("table meta");
+        let flags: Vec<(&str, bool, bool)> = meta
+            .columns
+            .iter()
+            .map(|c| (c.name.as_str(), c.pk, c.nullable))
+            .collect();
+        assert_eq!(
+            flags,
+            vec![
+                ("order_id", true, true),
+                ("item_no", true, true),
+                ("qty", false, false),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn table_meta_for_unknown_table_lists_available_tables() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_fixture(&dir).await;
+        let err = conn.table_meta("main", "customers").await.unwrap_err();
+        assert!(matches!(err, AppError::Database(_)));
+        assert_eq!(
+            err.to_string(),
+            "Table 'customers' does not exist. Available tables: orders, users."
+        );
+    }
+
+    #[tokio::test]
+    async fn table_meta_for_unknown_schema_is_a_human_error() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_fixture(&dir).await;
+        let err = conn.table_meta("warehouse", "users").await.unwrap_err();
         assert_eq!(
             err.to_string(),
             "Schema 'warehouse' does not exist. Available schemas: main."

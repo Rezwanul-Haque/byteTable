@@ -17,7 +17,7 @@
 // state.ts — the workspaces connect screen mounts it directly (the modal is
 // a connections concern; the screen that hosts it is not).
 
-import { useId, useState } from "react";
+import { useId, useRef, useState, type KeyboardEvent } from "react";
 
 import { isAppErrorPayload } from "../../../shared/api/error";
 import type { Engine } from "../../../shared/types";
@@ -85,6 +85,25 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
   const saveConnection = useConnectionsStore((state) => state.save);
   const toast = useToast();
   const sshToggleId = useId();
+
+  // ARIA tabs wiring (tab ↔ tabpanel) plus refs for arrow-key focus moves.
+  const tabsBaseId = useId();
+  const generalTabId = tabsBaseId + "-tab-general";
+  const tunnelTabId = tabsBaseId + "-tab-tunnel";
+  const generalPanelId = tabsBaseId + "-panel-general";
+  const tunnelPanelId = tabsBaseId + "-panel-tunnel";
+  const generalTabRef = useRef<HTMLButtonElement>(null);
+  const tunnelTabRef = useRef<HTMLButtonElement>(null);
+
+  // Left/Right arrows move between the two tabs (selection follows focus,
+  // per the ARIA tabs pattern); with exactly two tabs both arrows toggle.
+  const onTablistKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const next = section === "general" ? "tunnel" : "general";
+    setSection(next);
+    (next === "general" ? generalTabRef : tunnelTabRef).current?.focus();
+  };
 
   const isFileBased = engine === "sqlite";
 
@@ -216,11 +235,13 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
         <IconBtn icon="close" onClick={onClose} title="Close" />
       </ModalTitle>
 
-      <div className="engine-picker">
+      <div className="engine-picker" role="radiogroup" aria-label="Database engine">
         {ENGINES.map((e) => (
           <button
             key={e.engine}
             type="button"
+            role="radio"
+            aria-checked={engine === e.engine}
             className={"engine-choice" + (engine === e.engine ? " active" : "")}
             onClick={() => pickEngine(e.engine)}
           >
@@ -231,16 +252,33 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
       </div>
 
       {!isFileBased ? (
-        <div className="modal-tabs">
+        <div
+          className="modal-tabs"
+          role="tablist"
+          aria-label="Server connection settings"
+          onKeyDown={onTablistKeyDown}
+        >
           <button
+            ref={generalTabRef}
             type="button"
+            role="tab"
+            id={generalTabId}
+            aria-selected={section === "general"}
+            aria-controls={generalPanelId}
+            tabIndex={section === "general" ? 0 : -1}
             className={"modal-tab" + (section === "general" ? " active" : "")}
             onClick={() => setSection("general")}
           >
             General
           </button>
           <button
+            ref={tunnelTabRef}
             type="button"
+            role="tab"
+            id={tunnelTabId}
+            aria-selected={section === "tunnel"}
+            aria-controls={tunnelPanelId}
+            tabIndex={section === "tunnel" ? 0 : -1}
             className={"modal-tab" + (section === "tunnel" ? " active" : "")}
             onClick={() => setSection("tunnel")}
           >
@@ -279,177 +317,194 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
             needed.
           </div>
         </div>
-      ) : section === "general" ? (
-        <div className="form-grid">
-          <label>
-            Name
-            <input
-              value={name}
-              onChange={(e) => edit(() => setName(e.target.value))}
-              placeholder="my_database"
-              spellCheck={false}
-            />
-          </label>
-          <label>
-            TLS mode
-            <select
-              value={tls}
-              onChange={(e) => edit(() => setTls(e.target.value))}
-              className="form-select"
-            >
-              <option value="disable">disable</option>
-              <option value="prefer">prefer</option>
-              <option value="require">require</option>
-              <option value="verify-full">verify-full</option>
-            </select>
-          </label>
-          <label>
-            Host
-            <input
-              value={host}
-              onChange={(e) => edit(() => setHost(e.target.value))}
-              spellCheck={false}
-            />
-          </label>
-          <label>
-            Port
-            <input
-              value={port}
-              onChange={(e) =>
-                edit(() => {
-                  setPort(e.target.value);
-                  setPortTouched(true);
-                })
-              }
-              spellCheck={false}
-            />
-          </label>
-          <label>
-            Database
-            <input
-              value={db}
-              onChange={(e) => edit(() => setDb(e.target.value))}
-              placeholder={engine === "postgres" ? "postgres" : "mysql"}
-              spellCheck={false}
-            />
-          </label>
-          <label>
-            User
-            <input
-              value={user}
-              onChange={(e) => edit(() => setUser(e.target.value))}
-              placeholder={engine === "postgres" ? "postgres" : "root"}
-              spellCheck={false}
-            />
-          </label>
-          {/* Present per design but intentionally uncontrolled and never
+      ) : (
+        // Both server panels stay mounted; the inactive one is hidden via the
+        // `hidden` attribute so the uncontrolled password inputs keep their
+        // values across General ↔ SSH switches (the Modal focus trap already
+        // skips hidden elements via getClientRects()).
+        <>
+          <div
+            className="form-grid"
+            role="tabpanel"
+            id={generalPanelId}
+            aria-labelledby={generalTabId}
+            hidden={section !== "general"}
+          >
+            <label>
+              Name
+              <input
+                value={name}
+                onChange={(e) => edit(() => setName(e.target.value))}
+                placeholder="my_database"
+                spellCheck={false}
+              />
+            </label>
+            <label>
+              TLS mode
+              <select
+                value={tls}
+                onChange={(e) => edit(() => setTls(e.target.value))}
+                className="form-select"
+              >
+                <option value="disable">disable</option>
+                <option value="prefer">prefer</option>
+                <option value="require">require</option>
+                <option value="verify-full">verify-full</option>
+              </select>
+            </label>
+            <label>
+              Host
+              <input
+                value={host}
+                onChange={(e) => edit(() => setHost(e.target.value))}
+                spellCheck={false}
+              />
+            </label>
+            <label>
+              Port
+              <input
+                value={port}
+                onChange={(e) =>
+                  edit(() => {
+                    setPort(e.target.value);
+                    setPortTouched(true);
+                  })
+                }
+                spellCheck={false}
+              />
+            </label>
+            <label>
+              Database
+              <input
+                value={db}
+                onChange={(e) => edit(() => setDb(e.target.value))}
+                placeholder={engine === "postgres" ? "postgres" : "mysql"}
+                spellCheck={false}
+              />
+            </label>
+            <label>
+              User
+              <input
+                value={user}
+                onChange={(e) => edit(() => setUser(e.target.value))}
+                placeholder={engine === "postgres" ? "postgres" : "root"}
+                spellCheck={false}
+              />
+            </label>
+            {/* Present per design but intentionally uncontrolled and never
               persisted — ConnectionParams has no password field by design;
               secrets go to the OS keychain in M12. */}
-          <label className="span-2">
-            Password
-            <input type="password" placeholder="••••••••" />
-          </label>
-        </div>
-      ) : (
-        <div className="form-grid">
-          <div className="span-2 ssh-toggle-row">
-            <label className="switch-label" htmlFor={sshToggleId}>
-              <input
-                id={sshToggleId}
-                type="checkbox"
-                checked={useSsh}
-                onChange={(e) => setUseSsh(e.target.checked)}
-                className="switch-input"
-              />
-              <span className={"switch" + (useSsh ? " on" : "")}>
-                <span className="switch-knob" />
-              </span>
-              Connect through an SSH tunnel
+            <label className="span-2">
+              Password
+              <input type="password" placeholder="••••••••" />
             </label>
           </div>
-          {useSsh ? (
-            <>
-              <label>
-                SSH host
+          <div
+            className="form-grid"
+            role="tabpanel"
+            id={tunnelPanelId}
+            aria-labelledby={tunnelTabId}
+            hidden={section !== "tunnel"}
+          >
+            <div className="span-2 ssh-toggle-row">
+              <label className="switch-label" htmlFor={sshToggleId}>
                 <input
-                  value={sshHost}
-                  onChange={(e) => setSshHost(e.target.value)}
-                  placeholder="bastion.example.com"
-                  spellCheck={false}
+                  id={sshToggleId}
+                  type="checkbox"
+                  checked={useSsh}
+                  onChange={(e) => setUseSsh(e.target.checked)}
+                  className="switch-input"
                 />
+                <span className={"switch" + (useSsh ? " on" : "")}>
+                  <span className="switch-knob" />
+                </span>
+                Connect through an SSH tunnel
               </label>
-              <label>
-                SSH port
-                <input
-                  value={sshPort}
-                  onChange={(e) => setSshPort(e.target.value)}
-                  spellCheck={false}
-                />
-              </label>
-              <label>
-                SSH user
-                <input
-                  value={sshUser}
-                  onChange={(e) => setSshUser(e.target.value)}
-                  placeholder="deploy"
-                  spellCheck={false}
-                />
-              </label>
-              <label>
-                Auth method
-                <select
-                  value={sshAuth}
-                  onChange={(e) => setSshAuth(e.target.value as typeof sshAuth)}
-                  className="form-select"
-                >
-                  <option value="key">Private key</option>
-                  <option value="password">Password</option>
-                  <option value="agent">SSH agent</option>
-                </select>
-              </label>
-              {sshAuth === "key" ? (
-                <label className="span-2">
-                  Private key
-                  <div className="file-row">
-                    <input
-                      value={sshKey}
-                      onChange={(e) => setSshKey(e.target.value)}
-                      spellCheck={false}
-                    />
-                    <Btn variant="tonal" small onClick={() => void browseKeyFile()}>
-                      Browse…
-                    </Btn>
-                  </div>
-                </label>
-              ) : sshAuth === "password" ? (
-                // Uncontrolled + never persisted, same as the database
-                // password above (keychain in M12).
-                <label className="span-2">
-                  SSH password
-                  <input type="password" placeholder="••••••••" />
-                </label>
-              ) : (
-                <div className="span-2 form-note">
-                  <Icon name="key" size={14} /> Keys are read from your local ssh-agent. Nothing is
-                  stored.
-                </div>
-              )}
-              <div className="span-2 form-note">
-                <Icon name="vpn_lock" size={14} /> The tunnel is opened locally:{" "}
-                {sshUser || "user"}@{sshHost || "bastion"} → {host}:{port}
-              </div>
-            </>
-          ) : (
-            <div className="span-2 form-note">
-              <Icon name="info" size={14} /> Enable this when the database is only reachable through
-              a bastion / jump host.
             </div>
-          )}
-        </div>
+            {useSsh ? (
+              <>
+                <label>
+                  SSH host
+                  <input
+                    value={sshHost}
+                    onChange={(e) => setSshHost(e.target.value)}
+                    placeholder="bastion.example.com"
+                    spellCheck={false}
+                  />
+                </label>
+                <label>
+                  SSH port
+                  <input
+                    value={sshPort}
+                    onChange={(e) => setSshPort(e.target.value)}
+                    spellCheck={false}
+                  />
+                </label>
+                <label>
+                  SSH user
+                  <input
+                    value={sshUser}
+                    onChange={(e) => setSshUser(e.target.value)}
+                    placeholder="deploy"
+                    spellCheck={false}
+                  />
+                </label>
+                <label>
+                  Auth method
+                  <select
+                    value={sshAuth}
+                    onChange={(e) => setSshAuth(e.target.value as typeof sshAuth)}
+                    className="form-select"
+                  >
+                    <option value="key">Private key</option>
+                    <option value="password">Password</option>
+                    <option value="agent">SSH agent</option>
+                  </select>
+                </label>
+                {sshAuth === "key" ? (
+                  <label className="span-2">
+                    Private key
+                    <div className="file-row">
+                      <input
+                        value={sshKey}
+                        onChange={(e) => setSshKey(e.target.value)}
+                        spellCheck={false}
+                      />
+                      <Btn variant="tonal" small onClick={() => void browseKeyFile()}>
+                        Browse…
+                      </Btn>
+                    </div>
+                  </label>
+                ) : sshAuth === "password" ? (
+                  // Uncontrolled + never persisted, same as the database
+                  // password above (keychain in M12).
+                  <label className="span-2">
+                    SSH password
+                    <input type="password" placeholder="••••••••" />
+                  </label>
+                ) : (
+                  <div className="span-2 form-note">
+                    <Icon name="key" size={14} /> Keys are read from your local ssh-agent. Nothing
+                    is stored.
+                  </div>
+                )}
+                <div className="span-2 form-note">
+                  <Icon name="vpn_lock" size={14} /> The tunnel is opened locally:{" "}
+                  {sshUser || "user"}@{sshHost || "bastion"} → {host}:{port}
+                </div>
+              </>
+            ) : (
+              <div className="span-2 form-note">
+                <Icon name="info" size={14} /> Enable this when the database is only reachable
+                through a bastion / jump host.
+              </div>
+            )}
+          </div>
+        </>
       )}
 
       <ModalActions>
-        <div className="test-result">
+        <div className="test-result" aria-live="polite">
           {testState.phase === "testing" ? (
             <>
               <span className="spinner" /> Testing…

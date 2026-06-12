@@ -38,6 +38,14 @@
   gap: 12px;
 }
 
+/* The inactive section tabpanel stays mounted (so uncontrolled password
+   inputs keep their values) and is hidden via the `hidden` attribute; this
+   guard is needed because `display: grid` above would otherwise win over
+   the UA's [hidden] { display: none }. */
+.form-grid[hidden] {
+  display: none;
+}
+
 .form-grid label {
   display: flex;
   flex-direction: column;
@@ -178,6 +186,12 @@
   position: absolute;
   opacity: 0;
   pointer-events: none;
+}
+
+/* Keyboard focus ring for the visually-hidden checkbox's switch visual. */
+.switch-input:focus-visible + .switch {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .switch {

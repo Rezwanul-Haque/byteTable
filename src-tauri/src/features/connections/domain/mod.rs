@@ -1,0 +1,100 @@
+//! Domain model for saved connections. Pure value objects; the only outward
+//! dependency is the shared kernel (`Engine`, `ConnectionParams`), which is
+//! allowed by the layering rules.
+//!
+//! Design note: as in the preferences slice, the plain `serde` derives below
+//! double as the wire/persisted representation (camelCase fields, lowercase
+//! enum values) so the renderer's TS literals match exactly.
+
+use serde::{Deserialize, Serialize};
+
+use crate::shared::engine::{ConnectionParams, Engine};
+
+/// Deployment environment a connection points at (drives the EnvTag tint).
+/// Mirrors `Env` in `src/shared/types.ts`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Env {
+    #[default]
+    Local,
+    Staging,
+    Production,
+}
+
+/// A connection the user has saved in the registry.
+///
+/// - `id` is a UUID assigned by the save use-case when empty (new entry).
+/// - `engine` is denormalized from `params` for renderer convenience; the
+///   save use-case rejects mismatches.
+/// - `created_at` is Unix epoch milliseconds, assigned on first save (kept
+///   as a plain integer to avoid pulling a date-time crate for one field).
+/// - SQLite params carry only a file path — no secrets — so persisting the
+///   whole struct as plain JSON is fine. Server passwords never live here
+///   (OS keychain, M12).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedConnection {
+    pub id: String,
+    pub name: String,
+    pub engine: Engine,
+    pub params: ConnectionParams,
+    pub env: Env,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<u64>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample() -> SavedConnection {
+        SavedConnection {
+            id: "abc-123".into(),
+            name: "Local dev".into(),
+            engine: Engine::Sqlite,
+            params: ConnectionParams::Sqlite {
+                path: "/tmp/dev.db".into(),
+            },
+            env: Env::Local,
+            created_at: Some(1_700_000_000_000),
+        }
+    }
+
+    #[test]
+    fn wire_format_is_camel_case_with_lowercase_enums() {
+        let json = serde_json::to_value(sample()).expect("serialize");
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "id": "abc-123",
+                "name": "Local dev",
+                "engine": "sqlite",
+                "params": { "engine": "sqlite", "path": "/tmp/dev.db" },
+                "env": "local",
+                "createdAt": 1_700_000_000_000u64,
+            })
+        );
+    }
+
+    #[test]
+    fn serde_round_trip_preserves_all_fields() {
+        let conn = sample();
+        let json = serde_json::to_string(&conn).expect("serialize");
+        let back: SavedConnection = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, conn);
+    }
+
+    #[test]
+    fn created_at_is_optional_on_the_wire() {
+        let json = serde_json::json!({
+            "id": "x",
+            "name": "n",
+            "engine": "sqlite",
+            "params": { "engine": "sqlite", "path": "/p" },
+            "env": "staging",
+        });
+        let conn: SavedConnection = serde_json::from_value(json).expect("deserialize");
+        assert_eq!(conn.created_at, None);
+        assert_eq!(conn.env, Env::Staging);
+    }
+}

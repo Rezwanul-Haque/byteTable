@@ -7,7 +7,13 @@
 // `AppErrorPayload` before reading `kind`.
 
 /** Machine-readable error category. Mirrors `AppError::kind()` in Rust. */
-export type AppErrorKind = "io" | "serialization" | "notFound" | "invalid";
+export type AppErrorKind =
+  | "io"
+  | "serialization"
+  | "notFound"
+  | "invalid"
+  | "database"
+  | "unsupported";
 
 /** Shape of the rejection value from `invoke()` when a command fails. */
 export interface AppErrorPayload {

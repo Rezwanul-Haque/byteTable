@@ -1,51 +1,268 @@
-//! Engine abstraction: the port traits every database engine adapter will
-//! implement in later milestones (M5+). Slices depend only on these traits;
-//! engine-specific SQL and drivers live exclusively in infrastructure
-//! adapters (`engine_sqlite`, `engine_mysql`, `engine_postgres`).
+//! Engine abstraction: the port traits every database engine adapter
+//! implements. Slices depend only on these traits; engine-specific SQL and
+//! drivers live exclusively in adapter modules under `crate::engines`
+//! (`engines::sqlite` today; `engines::mysql` / `engines::postgres` in M12).
 //!
-//! These are intentionally stubs in M0 — they exist so the dependency shape
-//! is fixed from the start. Method sets are filled in by the milestones that
-//! need them.
+//! M2 note: the original `SchemaReader` / `QueryExecutor` stub traits were
+//! folded into [`EngineConnection`] — introspection and query execution are
+//! operations *on an open connection*, so one object owning the driver
+//! handle is the natural seam. [`DdlDialect`] remains a stub until M8/M14.
 //!
 //! # Async commands rule
 //!
 //! Any slice that touches a database MUST expose `async fn` Tauri commands
-//! and define its port traits as async. Sync commands run on the main
-//! thread, so a slow query or connection attempt would freeze the entire UI
-//! for its duration. When these traits grow methods, they grow *async*
-//! methods.
+//! and these port traits are async (`async_trait`). Sync commands run on the
+//! main thread, so a slow query or connection attempt would freeze the
+//! entire UI for its duration.
 //!
 //! Driver caveats:
-//! - `rusqlite` is synchronous — adapters must wrap calls in
-//!   `tauri::async_runtime::spawn_blocking` (or an equivalent blocking-pool
-//!   hop) so the async command never blocks an executor thread.
-//! - `sqlx` (MySQL/Postgres) is natively async and can be awaited directly.
+//! - `rusqlite` is synchronous and its `Connection` is `!Sync` — the SQLite
+//!   adapter wraps it in `Arc<std::sync::Mutex<…>>` and hops every operation
+//!   through `tokio::task::spawn_blocking` so async executor threads never
+//!   block (Tauri's async runtime *is* tokio).
+//! - `sqlx` (MySQL/Postgres, M12) is natively async and can be awaited
+//!   directly.
 //!
 //! The preferences slice is the one deliberate exception: it stays sync
 //! because it only reads/writes a tiny local JSON file (see
 //! `features::preferences`). Do not copy its sync commands into DB-touching
 //! slices.
 
-/// Database engines ByteTable supports.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+
+use crate::shared::error::AppError;
+
+/// Database engines ByteTable supports. Lowercase on the wire, matching the
+/// renderer's `Engine` type in `src/shared/types.ts`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Engine {
     Sqlite,
     Mysql,
     Postgres,
 }
 
-/// Opens, tests, and closes connections for one engine (M5, M12).
+impl Engine {
+    /// Human display name for error messages and UI copy.
+    pub fn display_name(self) -> &'static str {
+        match self {
+            Self::Sqlite => "SQLite",
+            Self::Mysql => "MySQL",
+            Self::Postgres => "PostgreSQL",
+        }
+    }
+}
+
+/// Everything needed to reach a database, per engine.
 ///
-/// Will grow methods such as `connect`, `test`, and `close`; the renderer
-/// only ever sees opaque connection ids, never driver handles.
-pub trait Connector {}
+/// Internally tagged with `engine` (lowercase) so the wire shape is
+/// `{ "engine": "sqlite", "path": "…" }` — the tag doubles as the engine
+/// discriminant the renderer already uses.
+///
+/// Security: server variants intentionally have NO password field. Secrets
+/// go to the OS keychain in M12; until then server engines are unsupported
+/// and these variants exist only to fix the shape.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "engine",
+    rename_all = "lowercase",
+    rename_all_fields = "camelCase"
+)]
+pub enum ConnectionParams {
+    /// A SQLite database file on disk. No secrets involved.
+    Sqlite { path: String },
+    /// A MySQL server (M12). Password lives in the keychain, never here.
+    Mysql {
+        host: String,
+        port: u16,
+        database: String,
+        user: String,
+        tls: bool,
+    },
+    /// A PostgreSQL server (M12). Password lives in the keychain, never here.
+    Postgres {
+        host: String,
+        port: u16,
+        database: String,
+        user: String,
+        tls: bool,
+    },
+}
 
-/// Introspects schemas, tables, columns, indexes, and foreign keys (M6).
-pub trait SchemaReader {}
+impl ConnectionParams {
+    /// The engine these parameters target.
+    pub fn engine(&self) -> Engine {
+        match self {
+            Self::Sqlite { .. } => Engine::Sqlite,
+            Self::Mysql { .. } => Engine::Mysql,
+            Self::Postgres { .. } => Engine::Postgres,
+        }
+    }
+}
 
-/// Executes SQL with parameter binding, timing, and cancellation (M7).
-pub trait QueryExecutor {}
+/// What a successful test/open learned about the target.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EngineInfo {
+    pub engine: Engine,
+    /// Display version string, e.g. "SQLite 3.46.0" (sidebar header, M3).
+    pub server_version: String,
+}
+
+/// A schema (SQLite: `main` + attached databases; server engines: schemas).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SchemaInfo {
+    pub name: String,
+    /// Number of user tables, when cheaply known.
+    pub table_count: Option<u64>,
+}
+
+/// A table within a schema.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TableInfo {
+    pub name: String,
+    /// Approximate row count, when cheaply known (may be an estimate for
+    /// server engines; exact `COUNT(*)` for SQLite in M2).
+    pub approx_row_count: Option<u64>,
+}
+
+/// Column metadata accompanying a query result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ColumnMeta {
+    pub name: String,
+    /// Best-effort type label (declared type for SQLite; may be empty for
+    /// computed expressions). A hint for display, never for logic.
+    pub type_hint: String,
+}
+
+/// Options for a single query execution.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct QueryOptions {
+    /// Maximum rows to return; the adapter reads one extra row to set
+    /// `QueryResult::truncated`.
+    pub row_limit: usize,
+    /// Schema context for unqualified names. Server engines apply it
+    /// (search_path / USE) in M12; for SQLite it is advisory — unqualified
+    /// names resolve per SQLite's own rules (`main` first, then attached).
+    pub schema: Option<String>,
+}
+
+impl Default for QueryOptions {
+    fn default() -> Self {
+        Self {
+            row_limit: 500,
+            schema: None,
+        }
+    }
+}
+
+/// The outcome of a query: column metadata, JSON-mapped rows, and timing.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueryResult {
+    pub columns: Vec<ColumnMeta>,
+    /// Row-major values. Engine values map to JSON: NULL → null,
+    /// integers/reals → numbers, text → strings; engine-specific types
+    /// (e.g. blobs) are mapped by the adapter and documented there.
+    pub rows: Vec<Vec<serde_json::Value>>,
+    pub row_count: usize,
+    /// True when `row_limit` cut the result short.
+    pub truncated: bool,
+    pub elapsed_ms: u64,
+}
+
+/// Opens and tests connections for one engine. One implementation per
+/// engine, registered by `Engine` in the composition root; the renderer
+/// only ever sees opaque handle ids, never driver handles.
+#[async_trait]
+pub trait Connector: Send + Sync {
+    /// Verify the target is reachable and really is this engine, without
+    /// keeping a connection open.
+    async fn test(&self, params: &ConnectionParams) -> Result<EngineInfo, AppError>;
+
+    /// Open a live connection.
+    async fn open(&self, params: &ConnectionParams) -> Result<Box<dyn EngineConnection>, AppError>;
+}
+
+/// A live connection to one database: introspection + query execution.
+///
+/// All errors carry human messages per DESIGN_SPEC §5 — adapters map driver
+/// errors before they cross this boundary.
+#[async_trait]
+pub trait EngineConnection: Send + Sync {
+    /// What `open` learned about the target (engine + version).
+    fn engine_info(&self) -> EngineInfo;
+
+    /// Schemas visible on this connection (SQLite: `main` + attached).
+    async fn list_schemas(&self) -> Result<Vec<SchemaInfo>, AppError>;
+
+    /// User tables in the given schema.
+    async fn list_tables(&self, schema: &str) -> Result<Vec<TableInfo>, AppError>;
+
+    /// Execute SQL verbatim with a row limit and timing. Read/write context
+    /// enforcement is a higher-level concern (M6); the adapter runs what it
+    /// is given but always enforces `row_limit`.
+    async fn run_query(&self, sql: &str, options: QueryOptions) -> Result<QueryResult, AppError>;
+
+    /// Release the underlying driver resources. For drop-managed drivers
+    /// (rusqlite) this may be a no-op; server engines use it for an orderly
+    /// goodbye.
+    async fn close(&self) -> Result<(), AppError>;
+}
 
 /// Generates engine-specific DDL: ALTER dialects, identifier quoting,
-/// type mappings (M14).
+/// type mappings. Still a deliberate stub — methods arrive with the
+/// structure editor milestones (M8/M14).
 pub trait DdlDialect {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn engine_serializes_lowercase_matching_renderer() {
+        assert_eq!(serde_json::to_value(Engine::Sqlite).unwrap(), "sqlite");
+        assert_eq!(serde_json::to_value(Engine::Mysql).unwrap(), "mysql");
+        assert_eq!(serde_json::to_value(Engine::Postgres).unwrap(), "postgres");
+    }
+
+    #[test]
+    fn sqlite_params_wire_shape_is_engine_tagged_camel_case() {
+        let params = ConnectionParams::Sqlite {
+            path: "/tmp/db.sqlite".into(),
+        };
+        assert_eq!(
+            serde_json::to_value(&params).unwrap(),
+            serde_json::json!({ "engine": "sqlite", "path": "/tmp/db.sqlite" })
+        );
+    }
+
+    #[test]
+    fn server_params_round_trip_and_report_their_engine() {
+        let params = ConnectionParams::Mysql {
+            host: "db.internal".into(),
+            port: 3306,
+            database: "shop".into(),
+            user: "app".into(),
+            tls: true,
+        };
+        assert_eq!(params.engine(), Engine::Mysql);
+        let json = serde_json::to_string(&params).unwrap();
+        let back: ConnectionParams = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, params);
+    }
+
+    #[test]
+    fn query_options_default_limit_and_camel_case_wire_field() {
+        let opts: QueryOptions = serde_json::from_str("{}").unwrap();
+        assert_eq!(opts.row_limit, 500);
+        assert_eq!(opts.schema, None);
+        let opts: QueryOptions = serde_json::from_str(r#"{"rowLimit": 10}"#).unwrap();
+        assert_eq!(opts.row_limit, 10);
+    }
+}

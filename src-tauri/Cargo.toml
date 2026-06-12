@@ -23,9 +23,14 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 tauri-plugin-opener = "2.5.4"
+async-trait = "0.1.89"
+uuid = { version = "1.20.0", features = ["v4", "serde"] }
+tokio = { version = "1.52.3", features = ["sync", "rt"] }
+rusqlite = { version = "0.37", features = ["bundled", "column_decltype"] }
 
 [dev-dependencies]
 tempfile = "3"
+tokio = { version = "1.52.3", features = ["sync", "rt", "macros"] }
 
 [profile.release]
 codegen-units = 1

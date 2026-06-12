@@ -29,6 +29,22 @@ pub enum AppError {
     /// Input or state failed validation.
     #[error("Invalid: {0}")]
     Invalid(String),
+
+    /// A database engine operation failed (connect, introspect, query).
+    ///
+    /// The payload is a complete, human-readable sentence produced by the
+    /// engine adapter per DESIGN_SPEC §5 (e.g. "Table 'foo' does not exist.
+    /// Available tables: …") — so `Display` passes it through verbatim
+    /// instead of prefixing it.
+    #[error("{0}")]
+    Database(String),
+
+    /// The requested capability is not implemented (yet).
+    ///
+    /// Like `Database`, the payload is already a full sentence (e.g.
+    /// "MySQL connections arrive in a later milestone").
+    #[error("{0}")]
+    Unsupported(String),
 }
 
 impl From<std::io::Error> for AppError {
@@ -52,6 +68,8 @@ impl AppError {
             Self::Serialization(_) => "serialization",
             Self::NotFound(_) => "notFound",
             Self::Invalid(_) => "invalid",
+            Self::Database(_) => "database",
+            Self::Unsupported(_) => "unsupported",
         }
     }
 }
@@ -97,12 +115,29 @@ mod tests {
             (AppError::Serialization("x".into()), "serialization"),
             (AppError::NotFound("x".into()), "notFound"),
             (AppError::Invalid("x".into()), "invalid"),
+            (AppError::Database("x".into()), "database"),
+            (AppError::Unsupported("x".into()), "unsupported"),
         ];
         for (err, expected_kind) in cases {
             let json = serde_json::to_value(&err).expect("serialize");
             assert_eq!(json["kind"], expected_kind);
             assert!(json["message"].is_string());
         }
+    }
+
+    #[test]
+    fn database_and_unsupported_messages_pass_through_verbatim() {
+        let db = AppError::Database("Table 'foo' does not exist. Available tables: a, b".into());
+        assert_eq!(
+            db.to_string(),
+            "Table 'foo' does not exist. Available tables: a, b"
+        );
+        let unsupported =
+            AppError::Unsupported("MySQL connections arrive in a later milestone".into());
+        assert_eq!(
+            unsupported.to_string(),
+            "MySQL connections arrive in a later milestone"
+        );
     }
 
     #[test]

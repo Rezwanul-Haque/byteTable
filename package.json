@@ -15,7 +15,10 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@fontsource/ibm-plex-sans": "^5.2.8",
+    "@fontsource/jetbrains-mono": "^5.2.8",
     "@tauri-apps/api": "^2.9.0",
+    "material-symbols": "^0.45.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

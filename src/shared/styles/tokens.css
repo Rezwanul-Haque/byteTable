@@ -1,0 +1,100 @@
+/*
+ * ByteTable design tokens — values are normative per DESIGN_SPEC.md §1 and
+ * the ByteTable.html prototype (app.jsx DEPTHS / DENSITIES / TWEAK_DEFAULTS).
+ *
+ * Theming is switched via data attributes on <html>:
+ *   data-darkness="charcoal" | "black" | "soft"   (charcoal = default)
+ *   data-accent="blue" | "violet" | "amber"       (teal = default)
+ *   data-density="comfortable"                    (compact = default)
+ */
+
+:root {
+  /* Surfaces — charcoal (default). Lighter surface = higher elevation. */
+  --bg0: #131418;
+  --bg1: #191b20;
+  --bg2: #20232a;
+  --bg3: #282c35;
+  --border: #2c3039;
+
+  /* Text */
+  --text: #e3e6eb;
+  --text-dim: #9aa1ad;
+  --text-faint: #5d6470;
+
+  /* Accent — teal (default) */
+  --accent: #2dd4a7;
+  --on-accent: #0c1512;
+
+  /* Semantic */
+  --success: #34d39e;
+  --info: #61afef;
+  --warn: #e2b340;
+  --error: #e06c75;
+  --purple: #c678dd;
+  --string: #e5c07b;
+  --number: #7fb8e8;
+  --donate-pink: #ef7fb1;
+
+  /* Engine identity */
+  --engine-sqlite: #56b6c2;
+  --engine-mysql: #e2b340;
+  --engine-postgres: #61afef;
+
+  /* Environment tags */
+  --env-local: #56b6c2;
+  --env-staging: #e2b340;
+  --env-production: #e06c75;
+
+  /* Workspace palette (8 user-pickable colors) */
+  --ws-1: #2dd4a7;
+  --ws-2: #5aa7f5;
+  --ws-3: #b08cff;
+  --ws-4: #f5b54a;
+  --ws-5: #e06c75;
+  --ws-6: #ef7fb1;
+  --ws-7: #8fce5a;
+  --ws-8: #8b93a3;
+
+  /* Density — compact (default) */
+  --grid-row-h: 26px;
+  --grid-fs: 12px;
+
+  /* Font stacks */
+  --ui: "IBM Plex Sans", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* data-darkness="charcoal" is the default :root values above. */
+
+:root[data-darkness="black"] {
+  --bg0: #0b0b0d;
+  --bg1: #111114;
+  --bg2: #17171c;
+  --bg3: #1f1f26;
+  --border: #232329;
+}
+
+:root[data-darkness="soft"] {
+  --bg0: #1d2026;
+  --bg1: #23262e;
+  --bg2: #2b2f39;
+  --bg3: #343945;
+  --border: #383e4b;
+}
+
+:root[data-accent="blue"] {
+  --accent: #5aa7f5;
+}
+
+:root[data-accent="violet"] {
+  --accent: #b08cff;
+}
+
+:root[data-accent="amber"] {
+  --accent: #f5b54a;
+}
+
+:root[data-density="comfortable"] {
+  --grid-row-h: 32px;
+  --grid-fs: 12.5px;
+}

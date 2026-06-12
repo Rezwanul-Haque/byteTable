@@ -5,7 +5,7 @@ import { create } from "zustand";
 import { defaultPreferences, prefsGet, prefsSet, type Preferences } from "./api";
 import { applyTheme } from "./applyTheme";
 
-interface PreferencesSliceState {
+interface PreferencesFeatureState {
   preferences: Preferences;
   loaded: boolean;
   /** Load persisted preferences from the backend and apply the theme. */
@@ -14,7 +14,7 @@ interface PreferencesSliceState {
   setPreferences: (preferences: Preferences) => Promise<void>;
 }
 
-export const usePreferencesStore = create<PreferencesSliceState>((set) => ({
+export const usePreferencesStore = create<PreferencesFeatureState>((set) => ({
   preferences: defaultPreferences,
   loaded: false,
 

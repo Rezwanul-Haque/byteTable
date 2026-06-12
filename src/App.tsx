@@ -4,12 +4,12 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 
 import { ToastProvider } from "./shared/ui/ToastProvider";
-import { usePreferencesStore } from "./slices/preferences/state";
-import { ConnectScreen } from "./slices/workspaces/components/ConnectScreen";
-import { DonateModal } from "./slices/workspaces/components/DonateModal";
-import { Rail } from "./slices/workspaces/components/Rail";
-import { WorkspacePlaceholder } from "./slices/workspaces/components/WorkspacePlaceholder";
-import { selectShowConnect, useWorkspacesStore } from "./slices/workspaces/state";
+import { usePreferencesStore } from "./features/preferences/state";
+import { ConnectScreen } from "./features/workspaces/components/ConnectScreen";
+import { DonateModal } from "./features/workspaces/components/DonateModal";
+import { Rail } from "./features/workspaces/components/Rail";
+import { WorkspacePlaceholder } from "./features/workspaces/components/WorkspacePlaceholder";
+import { selectShowConnect, useWorkspacesStore } from "./features/workspaces/state";
 import "./App.css";
 
 // Dev gallery (M0) is no longer the main screen: in dev builds it is toggled

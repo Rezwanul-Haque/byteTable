@@ -26,7 +26,7 @@ mod tests {
     use std::cell::RefCell;
 
     use super::*;
-    use crate::slices::preferences::domain::{Accent, Darkness, Density};
+    use crate::features::preferences::domain::{Accent, Darkness, Density};
 
     /// In-memory fake implementing the port.
     #[derive(Default)]

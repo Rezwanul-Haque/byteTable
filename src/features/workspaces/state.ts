@@ -22,7 +22,7 @@ export const WORKSPACE_COLORS = [
   "#8b93a3",
 ] as const;
 
-interface WorkspacesSliceState {
+interface WorkspacesFeatureState {
   workspaces: Workspace[];
   /** null → no active workspace → the connect screen is shown. */
   activeWorkspaceId: string | null;
@@ -68,10 +68,10 @@ function patchWorkspace(
  * adding another workspace or none are open. Shared by App (which screen
  * renders) and the rail (which tile lights up).
  */
-export const selectShowConnect = (state: WorkspacesSliceState): boolean =>
+export const selectShowConnect = (state: WorkspacesFeatureState): boolean =>
   state.adding || state.workspaces.length === 0;
 
-export const useWorkspacesStore = create<WorkspacesSliceState>((set) => ({
+export const useWorkspacesStore = create<WorkspacesFeatureState>((set) => ({
   workspaces: [],
   activeWorkspaceId: null,
   // Initially true, like the prototype — with no workspaces the connect

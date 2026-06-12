@@ -64,7 +64,7 @@ impl PreferencesStore for JsonFilePreferencesStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::slices::preferences::domain::{Accent, Darkness, Density};
+    use crate::features::preferences::domain::{Accent, Darkness, Density};
 
     fn store_in(dir: &tempfile::TempDir) -> JsonFilePreferencesStore {
         JsonFilePreferencesStore::new(dir.path().join("preferences.json"))

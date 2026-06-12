@@ -51,3 +51,21 @@
   background: var(--bg2);
   color: var(--text);
 }
+
+/* M1 addition: tonal/text buttons can be disabled too (connect screen's
+   "Coming in M2" actions). The prototype only ever disabled filled buttons —
+   same treatment (opacity .5, no hover effect), expressed as overrides so
+   the ported rules above stay byte-identical. */
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btn-tonal:disabled:hover {
+  background: color-mix(in oklab, var(--accent) 14%, var(--bg2));
+}
+
+.btn-text:disabled:hover {
+  background: none;
+  color: var(--text-dim);
+}

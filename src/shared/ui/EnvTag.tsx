@@ -3,9 +3,12 @@
 // ported from connect.jsx / workspace.jsx usage. Hexes mirror --env-* in
 // tokens.css; literals are kept for the prototype's alpha-suffix pattern.
 
+import type { Env } from "../types";
+
 import "./EnvTag.css";
 
-export type Env = "local" | "staging" | "production";
+// Re-exported for back-compat — Env now lives in src/shared/types.ts.
+export type { Env };
 
 const ENV_COLORS: Record<Env, string> = {
   local: "#56b6c2",

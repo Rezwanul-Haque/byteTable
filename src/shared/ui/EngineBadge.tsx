@@ -3,9 +3,12 @@
 // font-size = 0.42 × badge size. Hexes mirror --engine-* in tokens.css;
 // literals are kept so the prototype's alpha-suffix pattern stays exact.
 
+import type { Engine } from "../types";
+
 import "./EngineBadge.css";
 
-export type Engine = "sqlite" | "mysql" | "postgres";
+// Re-exported for back-compat — Engine now lives in src/shared/types.ts.
+export type { Engine };
 
 const ENGINE_META: Record<Engine, { label: string; short: string; color: string }> = {
   sqlite: { label: "SQLite", short: "SQ", color: "#56b6c2" },

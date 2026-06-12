@@ -13,7 +13,7 @@ import { IconBtn } from "../shared/ui/IconBtn";
 import { Kbd } from "../shared/ui/Kbd";
 import { Modal, ModalActions, ModalTitle } from "../shared/ui/Modal";
 import { useToast } from "../shared/ui/toastContext";
-import { PreferencesPanel } from "../slices/preferences/components/PreferencesPanel";
+import { PreferencesPanel } from "../features/preferences/components/PreferencesPanel";
 import "./Gallery.css";
 
 const ENGINES: Engine[] = ["sqlite", "mysql", "postgres"];

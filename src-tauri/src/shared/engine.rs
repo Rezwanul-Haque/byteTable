@@ -23,7 +23,7 @@
 //!
 //! The preferences slice is the one deliberate exception: it stays sync
 //! because it only reads/writes a tiny local JSON file (see
-//! `slices::preferences`). Do not copy its sync commands into DB-touching
+//! `features::preferences`). Do not copy its sync commands into DB-touching
 //! slices.
 
 /// Database engines ByteTable supports.

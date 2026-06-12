@@ -1,0 +1,14 @@
+/* Brand mark tile — ported byte-identical from the prototype's global
+   .brand-mark rule (previously duplicated in ConnectScreen.css and
+   DonateModal.css). */
+
+.brand-mark {
+  width: 46px;
+  height: 46px;
+  border-radius: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in oklab, var(--accent) 18%, var(--bg2));
+  color: var(--accent);
+}

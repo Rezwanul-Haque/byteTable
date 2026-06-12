@@ -1,0 +1,170 @@
+/*
+ * Connect screen — .connect-*, .spinner and .tunnel-tag rules ported exactly
+ * from the ByteTable.html prototype.
+ */
+
+.connect-screen {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  background:
+    radial-gradient(
+      800px 500px at 50% -10%,
+      color-mix(in oklab, var(--accent) 7%, transparent),
+      transparent 70%
+    ),
+    var(--bg0);
+}
+
+.connect-panel {
+  width: 460px;
+  max-width: calc(100vw - 48px);
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+
+.connect-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+/* The brand tile itself is the shared BrandMark component (BrandMark.css). */
+
+.connect-brand h1 {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.connect-brand p {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+.connect-list-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-faint);
+}
+
+.connect-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.connect-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: 11px;
+  background: var(--bg2);
+  border: 1px solid transparent;
+  transition:
+    border-color 0.12s,
+    background 0.12s;
+  width: 100%;
+}
+
+.connect-card:hover:not(:disabled) {
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+  background: var(--bg3);
+}
+
+.connect-card:disabled {
+  cursor: default;
+}
+
+.connect-card:hover:not(:disabled) .connect-arrow {
+  color: var(--accent);
+  transform: translateX(2px);
+}
+
+.connect-arrow {
+  color: var(--text-faint);
+  transition:
+    transform 0.12s,
+    color 0.12s;
+}
+
+.connect-card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.connect-card-name {
+  font-weight: 600;
+  font-size: 13.5px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.connect-card-detail {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connect-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.connect-footnote {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+/* Spinner — ported from the prototype's base section (used on the card while
+   the simulated 650ms connect runs). */
+.spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex: none;
+  border: 2px solid var(--bg3);
+  border-top-color: var(--accent);
+  animation: spin 0.7s linear infinite;
+  display: inline-block;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* SSH pill on tunneled connection cards. */
+.tunnel-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 1px 7px;
+}

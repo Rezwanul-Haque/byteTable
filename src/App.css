@@ -1,0 +1,25 @@
+/*
+ * App shell — .app-frame / .app-body ported exactly from ByteTable.html.
+ * The rail's CSS lives with its component (Rail.css).
+ */
+
+.app-frame {
+  height: 100%;
+  display: flex;
+}
+
+.app-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Dev-only gallery overlay (⌘⇧G) — sits over the whole shell. */
+.dev-gallery-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  overflow: auto;
+  background: var(--bg0);
+}

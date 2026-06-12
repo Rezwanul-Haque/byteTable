@@ -2,8 +2,9 @@
 // (spec §3.2), now wired to the real backend (M2): the card list is the
 // saved-connection registry, clicking a card runs a real `connection_open`
 // (the spinner shows actual latency, the prototype's simulated 650ms delay
-// is gone), and "Open SQLite file…" opens a native file dialog. The
-// NewConnectionModal is Task 3 — its button stays disabled.
+// is gone), "Open SQLite file…" opens a native file dialog, and "New
+// connection" opens the NewConnectionModal (conditionally mounted, so its
+// form state resets on every open, per the prototype).
 
 import { useEffect, useState } from "react";
 
@@ -15,6 +16,7 @@ import { EnvTag } from "../../../shared/ui/EnvTag";
 import { Icon } from "../../../shared/ui/Icon";
 import { useToast } from "../../../shared/ui/toastContext";
 import { connectionDetail, type SavedConnection } from "../../connections/api";
+import { NewConnectionModal } from "../../connections/components/NewConnectionModal";
 import { pickSqliteFile } from "../../connections/dialog";
 import { useConnectionsStore } from "../../connections/state";
 import { useConnectAndOpen, useOpenSqliteFile } from "../connect";
@@ -28,6 +30,7 @@ const OPENED_TOAST_SUFFIX = "” opened — right-click its tile to rename or re
 
 export function ConnectScreen() {
   const [connecting, setConnecting] = useState<string | null>(null);
+  const [showNew, setShowNew] = useState(false);
   const savedConnections = useConnectionsStore((state) => state.savedConnections);
   const loaded = useConnectionsStore((state) => state.loaded);
   const loadError = useConnectionsStore((state) => state.loadError);
@@ -128,7 +131,7 @@ export function ConnectScreen() {
         )}
 
         <div className="connect-actions">
-          <Btn icon="add" variant="tonal" disabled title="Coming in M2 (Task 3)">
+          <Btn icon="add" variant="tonal" onClick={() => setShowNew(true)}>
             New connection
           </Btn>
           <Btn
@@ -147,6 +150,8 @@ export function ConnectScreen() {
         SQLite · MySQL · PostgreSQL — more engines coming. Your credentials never leave this
         machine.
       </div>
+
+      {showNew ? <NewConnectionModal onClose={() => setShowNew(false)} /> : null}
     </div>
   );
 }

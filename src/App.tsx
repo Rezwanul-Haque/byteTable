@@ -8,7 +8,7 @@ import { usePreferencesStore } from "./features/preferences/state";
 import { ConnectScreen } from "./features/workspaces/components/ConnectScreen";
 import { DonateModal } from "./features/workspaces/components/DonateModal";
 import { Rail } from "./features/workspaces/components/Rail";
-import { WorkspacePlaceholder } from "./features/workspaces/components/WorkspacePlaceholder";
+import { WorkspacePane } from "./features/workspaces/components/WorkspacePane";
 import { selectShowConnect, useWorkspacesStore } from "./features/workspaces/state";
 import "./App.css";
 
@@ -57,7 +57,7 @@ export function App() {
         <Rail onDonate={() => setDonateOpen(true)} />
         <div className="app-body">
           {!showConnect && activeWorkspace ? (
-            <WorkspacePlaceholder workspace={activeWorkspace} />
+            <WorkspacePane workspace={activeWorkspace} />
           ) : (
             <ConnectScreen />
           )}

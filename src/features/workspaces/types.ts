@@ -1,30 +1,26 @@
-// Workspaces slice types — Connection mirrors the prototype's data.js
-// connection objects field-for-field; Workspace mirrors app.jsx addWorkspace.
+// Workspaces slice types. M1's mock `Connection` is gone — a workspace now
+// wraps a real open backend connection: the registry entry it came from plus
+// the live handle and what opening it learned (M2).
+//
+// Cross-slice note: importing the connections slice's wire types here is the
+// sanctioned direction (workspaces → connections public contract in api.ts);
+// nothing in connections imports workspaces back.
 
-import type { Engine, Env } from "../../shared/types";
+import type { EngineInfo, SavedConnection, SchemaInfo } from "../connections/api";
 
 /**
- * A saved database connection. M1: hardcoded mocks (see mockConnections.ts);
- * M2 introduces the real connection manager (create/edit/persist).
+ * The live-connection payload a workspace is opened with — produced by the
+ * connect flow (`connect.ts`) from `connection_open`'s result.
  */
-export interface Connection {
-  id: string;
-  name: string;
-  engine: Engine;
-  /** Display line — file path (sqlite) or "host:port · db" (server engines). */
-  detail: string;
-  env: Env;
-  /** Server version string, shown in the sidebar header (M3). */
-  version: string;
-  /** Available schema names for this connection. */
-  schemas: string[];
-  /** Schema opened first when the workspace starts. */
-  defaultSchema: string;
-  /**
-   * SSH tunnel description (e.g. "SSH · bastion.byteshop.dev"); presence marks
-   * a tunneled connection (renders the `ssh` pill on the connect card).
-   */
-  tunnel?: string;
+export interface WorkspaceConnection {
+  /** The registry entry this workspace was opened from. */
+  saved: SavedConnection;
+  /** Opaque backend handle; every follow-up command takes it. */
+  handleId: string;
+  /** What opening learned about the target (engine + server version). */
+  info: EngineInfo;
+  /** Schemas visible on the connection (SQLite: `main` + attached). */
+  schemas: SchemaInfo[];
 }
 
 /**
@@ -37,7 +33,7 @@ export interface Connection {
  * milestones extend this type (M3: sidebar — selected schema, table filter,
  * expanded tables; M4: open tabs + active tab) and add a
  * `patchWorkspaceUi(id, patch)` action alongside rename/recolor.
- * Empty for now — M1 is the shell only.
+ * Empty for now — M2 still renders only a minimal table list.
  *
  * Churn rule: only low-frequency state belongs here. High-frequency state
  * (scroll offsets, drag-in-progress) lives in refs/local component state and
@@ -48,10 +44,9 @@ export interface Connection {
  */
 export type WorkspaceUiState = Record<string, never>;
 
-/** An open workspace — one per connection the user has opened. */
-export interface Workspace {
+/** An open workspace — one per live connection the user has opened. */
+export interface Workspace extends WorkspaceConnection {
   id: string;
-  connection: Connection;
   /** Display name; defaults to the connection name, user-renamable (rail). */
   name: string;
   /** Tile color, auto-assigned from the 8-color palette; user-recolorable. */

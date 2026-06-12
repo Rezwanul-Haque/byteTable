@@ -21,6 +21,10 @@ pub fn run() {
         // in the OS default browser. Scoped to https URLs in
         // capabilities/default.json.
         .plugin(tauri_plugin_opener::init())
+        // Dialog plugin: native file pickers ("Open SQLite file…" on the
+        // connect screen). Only `dialog:allow-open` is granted in
+        // capabilities/default.json — no save/message dialogs yet.
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // Composition root: the only place concrete adapters are chosen.
             let config_dir = app.path().app_config_dir()?;

@@ -1,0 +1,115 @@
+// Connect flow — the async bridge between the connections backend and the
+// synchronous workspaces store. Lives outside the store on purpose: a store
+// action that awaits IPC would smear connection latency into every state
+// transition; instead these hooks await `connection_open` and only then call
+// `openWorkspace` with the real payload.
+//
+// Error contract: both hooks toast the backend's human message (spec §5) and
+// rethrow, so callers can keep their own UI state (card spinner) honest or
+// add inline display later without double-toasting.
+
+import { useCallback } from "react";
+
+import { appErrorMessage } from "../../shared/api/error";
+import { useToast } from "../../shared/ui/toastContext";
+import {
+  connectionOpen,
+  type ConnectionParams,
+  type OpenResult,
+  type SavedConnection,
+} from "../connections/api";
+import { useConnectionsStore } from "../connections/state";
+import { useWorkspacesStore } from "./state";
+import type { WorkspaceConnection } from "./types";
+
+function toWorkspaceConnection(saved: SavedConnection, opened: OpenResult): WorkspaceConnection {
+  return {
+    saved,
+    handleId: opened.handleId,
+    info: opened.engineInfo,
+    schemas: opened.schemas,
+  };
+}
+
+/** "name.db" → "name"; a stem-less name like ".db" falls back whole. */
+function fileStem(path: string): string {
+  const base = path.split(/[\\/]/).pop() ?? path;
+  const stem = base.replace(/\.[^.]+$/, "");
+  return stem || base;
+}
+
+/**
+ * Connect to a saved registry entry and open a workspace around it.
+ * On failure: toasts the backend message and rethrows (see module note).
+ */
+export function useConnectAndOpen(): (saved: SavedConnection) => Promise<void> {
+  const openWorkspace = useWorkspacesStore((state) => state.openWorkspace);
+  const toast = useToast();
+
+  return useCallback(
+    async (saved) => {
+      try {
+        const opened = await connectionOpen({ id: saved.id });
+        openWorkspace(toWorkspaceConnection(saved, opened));
+      } catch (error) {
+        toast(appErrorMessage(error, "Could not connect to “" + saved.name + "”"), "err");
+        throw error;
+      }
+    },
+    [openWorkspace, toast],
+  );
+}
+
+/**
+ * "Open SQLite file…": connect to a picked file path ad-hoc (no
+ * `connection_test` round-trip — open *is* the test for a local file; the
+ * test command is for the new-connection modal, Task 3), then open a
+ * workspace. Resolves to the workspace display name for the success toast.
+ *
+ * Product decision: a successfully opened file is auto-saved to the registry
+ * (name = file stem, env "local") so it appears in the connect list next
+ * launch — "open once, saved forever" beats a separate save step for local
+ * files. If the auto-save itself fails, the open still succeeded, so the
+ * workspace opens with an ephemeral (unsaved) entry and the failure is
+ * surfaced as its own toast.
+ *
+ * On open failure: toasts the backend message and rethrows (see module note).
+ */
+export function useOpenSqliteFile(): (path: string) => Promise<string> {
+  const openWorkspace = useWorkspacesStore((state) => state.openWorkspace);
+  const saveConnection = useConnectionsStore((state) => state.save);
+  const toast = useToast();
+
+  return useCallback(
+    async (path) => {
+      const params: ConnectionParams = { engine: "sqlite", path };
+      let opened: OpenResult;
+      try {
+        opened = await connectionOpen({ params });
+      } catch (error) {
+        toast(appErrorMessage(error, "Could not open " + path), "err");
+        throw error;
+      }
+
+      let saved: SavedConnection = {
+        id: "",
+        name: fileStem(path),
+        engine: "sqlite",
+        params,
+        env: "local",
+      };
+      try {
+        saved = await saveConnection(saved);
+      } catch (error) {
+        toast(
+          appErrorMessage(error, "Connected, but the file could not be added to saved connections"),
+          "err",
+        );
+      }
+
+      openWorkspace(toWorkspaceConnection(saved, opened));
+      return saved.name;
+    },
+    [openWorkspace, saveConnection, toast],
+  );
+}

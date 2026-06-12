@@ -21,6 +21,15 @@ export interface AppErrorPayload {
   message: string;
 }
 
+/**
+ * The human message from an `invoke()` rejection, or `fallback` when the
+ * rejection is not a structured backend error (e.g. plain browser dev where
+ * there is no Tauri at all).
+ */
+export function appErrorMessage(value: unknown, fallback: string): string {
+  return isAppErrorPayload(value) ? value.message : fallback;
+}
+
 /** Type guard for narrowing an `unknown` invoke() rejection. */
 export function isAppErrorPayload(value: unknown): value is AppErrorPayload {
   return (

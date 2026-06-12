@@ -6,6 +6,7 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { ToastProvider } from "./shared/ui/ToastProvider";
 import { usePreferencesStore } from "./slices/preferences/state";
 import { ConnectScreen } from "./slices/workspaces/components/ConnectScreen";
+import { DonateModal } from "./slices/workspaces/components/DonateModal";
 import { Rail } from "./slices/workspaces/components/Rail";
 import { WorkspacePlaceholder } from "./slices/workspaces/components/WorkspacePlaceholder";
 import { selectShowConnect, useWorkspacesStore } from "./slices/workspaces/state";
@@ -27,6 +28,9 @@ export function App() {
   // Prototype app.jsx `showConnect`: the rail's "+" tile shows the connect
   // screen without dropping the (still-open) active workspace.
   const showConnect = useWorkspacesStore(selectShowConnect);
+
+  // Prototype app.jsx `donateOpen`: local app state, not a store concern.
+  const [donateOpen, setDonateOpen] = useState(false);
 
   const [galleryOpen, setGalleryOpen] = useState(false);
 
@@ -50,8 +54,7 @@ export function App() {
   return (
     <ToastProvider>
       <div className="app-frame">
-        {/* TODO(M1-T3): replace the no-op with the DonateModal open action. */}
-        <Rail onDonate={() => {}} />
+        <Rail onDonate={() => setDonateOpen(true)} />
         <div className="app-body">
           {!showConnect && activeWorkspace ? (
             <WorkspacePlaceholder workspace={activeWorkspace} />
@@ -60,6 +63,8 @@ export function App() {
           )}
         </div>
       </div>
+
+      {donateOpen ? <DonateModal onClose={() => setDonateOpen(false)} /> : null}
 
       {Gallery && galleryOpen ? (
         <Suspense fallback={null}>

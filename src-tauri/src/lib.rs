@@ -9,6 +9,10 @@ use slices::preferences::infrastructure::JsonFilePreferencesStore;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Opener plugin: lets the frontend open external links (donate modal)
+        // in the OS default browser. Scoped to https URLs in
+        // capabilities/default.json.
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             // Composition root: the only place a concrete adapter is chosen.
             let config_dir = app.path().app_config_dir()?;

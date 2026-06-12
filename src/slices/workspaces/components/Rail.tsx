@@ -1,8 +1,8 @@
 // Workspace rail — ported from the prototype's rail.jsx WorkspaceRail (spec
 // §3.1): logo, hairline separator, one tile per open workspace, dashed "+"
 // add tile, spacer, donate button. Right-clicking a tile opens the edit
-// popover (rename / recolor / close). The DonateModal is M1 Task 3 — the
-// donate button calls the `onDonate` prop, stubbed in App.tsx for now.
+// popover (rename / recolor / close). The donate button calls the `onDonate`
+// prop — App.tsx opens the DonateModal with it.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
@@ -38,7 +38,7 @@ interface EditPop {
 }
 
 interface RailProps {
-  /** Donate button click — opens the donate modal (M1 Task 3). */
+  /** Donate button click — opens the donate modal. */
   onDonate: () => void;
 }
 
@@ -151,10 +151,7 @@ export function Rail({ onDonate }: RailProps) {
               aria-label={ws.name}
               aria-current={isActive ? "true" : undefined}
               title={
-                ws.name +
-                " · " +
-                ENGINE_META[ws.connection.engine].label +
-                " (right-click to edit)"
+                ws.name + " · " + ENGINE_META[ws.connection.engine].label + " (right-click to edit)"
               }
             >
               <span className="ws-tile-initials">{wsInitials(ws.name)}</span>

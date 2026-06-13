@@ -1,0 +1,221 @@
+/* SchemaMap (M9 §3.8) — SVG-native ER diagram. Visual baseline is the
+ * prototype's .map* CSS (ByteTable.html / schemamap.jsx), re-expressed for SVG
+ * primitives: cards are <g>+<rect>+<text>, edges are <path>. Geometry/colours/
+ * fonts match the prototype; only the substrate is SVG (so Task 3 can export
+ * to PNG/SVG without foreignObject tainting the canvas).
+ *
+ * Reuses the shared .dg-state / .dg-error / .dg-retry loading+error styles. */
+
+.schema-map {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- toolbar (§3.8) ---------- */
+.map-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+
+.map-title {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.map-sub,
+.map-hint {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.map-zoom {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  width: 38px;
+  text-align: center;
+}
+
+/* ---------- canvas ---------- */
+.map-canvas-wrap {
+  position: relative;
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+  /* Dot grid (22px) — CSS background behind the SVG. Lives on the wrapper, not
+   * in the SVG, so it scrolls with the content but is excluded from export
+   * (Task 3 paints its own grid if it wants one in the exported file). */
+  background-image: radial-gradient(
+    color-mix(in oklab, var(--border) 70%, transparent) 1px,
+    transparent 1px
+  );
+  background-size: 22px 22px;
+}
+
+.map-svg {
+  position: absolute;
+  inset: 0;
+  display: block;
+  /* Empty-canvas drag = pan; cards stop propagation so they drag instead. */
+  cursor: grab;
+  touch-action: none;
+}
+
+.map-svg:active {
+  cursor: grabbing;
+}
+
+/* Invisible spacer that reserves scroll room for large/spread layouts. */
+.map-extent {
+  pointer-events: none;
+  visibility: hidden;
+}
+
+/* ---------- edges ---------- */
+.map-edges-layer {
+  pointer-events: none;
+}
+
+.map-edge-path {
+  fill: none;
+  stroke: color-mix(in oklab, var(--accent) 55%, var(--border));
+  stroke-width: 1.5;
+}
+
+.map-edge-dot {
+  fill: var(--accent);
+}
+
+.map-edge-ring {
+  fill: color-mix(in oklab, var(--accent) 25%, var(--bg0));
+  stroke: var(--accent);
+  stroke-width: 1;
+}
+
+/* ---------- cards ---------- */
+.map-card-box {
+  fill: var(--bg1);
+  stroke: var(--border);
+  stroke-width: 1;
+  /* Drop shadow via SVG filter would taint less, but a CSS drop-shadow on the
+   * group reads identically and exports fine in SVG serialisation. */
+  filter: drop-shadow(0 8px 26px rgba(0, 0, 0, 0.35));
+}
+
+.map-card:hover .map-card-box {
+  stroke: color-mix(in oklab, var(--accent) 45%, var(--border));
+}
+
+.map-card-head {
+  cursor: grab;
+}
+
+.map-card-head:active {
+  cursor: grabbing;
+}
+
+.map-card-head-bg {
+  fill: var(--bg2);
+}
+
+.map-card-head-rule {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.map-card-icon {
+  fill: var(--accent);
+  font-size: 14px;
+}
+
+.map-card-name {
+  fill: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.map-card-count {
+  fill: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.map-card-open {
+  cursor: pointer;
+}
+
+.map-card-open-hit {
+  fill: transparent;
+}
+
+.map-card-open:hover .map-card-open-hit {
+  fill: var(--bg3);
+}
+
+.map-card-open-icon {
+  fill: var(--text-faint);
+  font-size: 13px;
+}
+
+.map-card-open:hover .map-card-open-icon {
+  fill: var(--accent);
+}
+
+/* ---------- column rows ---------- */
+.map-col-icon {
+  font-size: 11px;
+}
+
+.map-col-pk {
+  fill: var(--accent);
+}
+
+.map-col-fk {
+  fill: var(--text-dim);
+}
+
+.map-col-name {
+  fill: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.map-col-name.is-fk {
+  fill: var(--text);
+}
+
+.map-col-type {
+  fill: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+.map-col-more {
+  fill: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-style: italic;
+}
+
+/* Material Symbols inside SVG <text>. The global .msym targets inline-block
+ * HTML spans; SVG glyphs need the same font + variation settings expressed for
+ * a <text> node. */
+.msym-svg {
+  font-family: "Material Symbols Rounded";
+  font-weight: normal;
+  font-style: normal;
+  font-variation-settings:
+    "FILL" 0,
+    "wght" 400,
+    "GRAD" 0,
+    "opsz" 20;
+  user-select: none;
+}

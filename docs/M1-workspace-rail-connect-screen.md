@@ -1,0 +1,125 @@
+# M1 — Workspace rail + connect screen (UI only)
+
+Status: shipped, merged on `main` (`feat: M1 — workspace rail + connect screen (UI only)`).
+
+> **PROVENANCE — source of truth is the shipped code, not this prose.** This spec reconstructs M1 as it was *designed* (the renderer chrome with **mocked** connections) from the code that shipped it, cross-checked against `MILESTONES.md` (M1 entry) and `DESIGN_SPEC.md` §3.1 (rail / donate) + §3.2 (connect screen). M1 was **UI-only**; later milestones wired the same surfaces to the Rust backend. Where a file now contains backend wiring, this spec calls out the seam: **build the M1 SHELL behavior described here; the backend integration belongs to M2+.** Imperative voice ("Render…", "Clamp…") = a requirement a code-gen agent must satisfy. Files cited are under `src/features/workspaces/` and `src/shared/ui/` unless noted. Geometry that says "§3.1/§3.2" is normative from the design spec and is reproduced byte-for-byte from the prototype CSS.
+
+## Goal
+
+The multi-workspace **chrome**: a permanent 56px left **rail** of workspace tiles, and a centered **connect screen** that opens workspaces from a list of (in M1, hardcoded) sample connections. A right-click tile popover renames / recolors / closes a workspace. A donate button opens a modal whose provider buttons open real URLs in the OS browser. App state is `workspaces[]` + `activeWorkspaceId`; **switching workspaces preserves each workspace's per-workspace UI state**, and **closing the last workspace returns to the connect screen**.
+
+This is renderer-only. No Tauri commands, no Rust, no persistence in M1. The connect list is sample data; clicking a card runs a **650ms simulated** connect (a `setTimeout`, not IPC) and then opens a workspace around a mock connection object.
+
+> **What shipped vs. MILESTONES.md (divergences, all later-milestone wiring on M1 surfaces):**
+> - **Connect list is now the real registry** (M2): `ConnectScreen.tsx` reads `useConnectionsStore().savedConnections` and the card click runs `connection_open` via `useConnectAndOpen` (`connect.ts`) — the spinner now shows *real* latency, **the simulated 650ms delay is gone**. M1 = hardcoded sample cards + 650ms `setTimeout`.
+> - **"New connection"** opens the real `NewConnectionModal` (`features/connections/`) (M2/M12/M15). M1 had no working modal behind it (or a stub); the engine picker / env picker / SSH tab (§3.2) are **not M1 scope** — that markup lives in `features/connections`, built later.
+> - **"Open SQLite file…"** opens a native dialog + auto-saves to the registry (`useOpenSqliteFile`, M2). Not M1.
+> - **Workspace tile routing** (`App.tsx`) branches `kind === "kv"` → `RedisWorkspace` (M13). M1 had one workspace shell.
+> - **`Workspace`** now carries `{saved, handleId, info, schemas, kind}` from a live connection (`types.ts`); in M1 it wrapped a **mock** `Connection` (engine + name + sample detail line). The rail/popover/state actions below are otherwise unchanged from M1.
+> - **DonateModal** opens real provider URLs *and* toasts; the prototype only toasted ("simulated in this prototype"). The real-URL behavior **is** M1 scope per MILESTONES ("links open real URLs in default browser").
+
+## Dependencies
+
+- **M0 — Scaffold + design system.** This milestone consumes M0 wholesale: design tokens (`--bg0..3`, `--border`, `--text`/`--text-dim`/`--text-faint`, `--accent`, `--on-accent`, `--mono`, the 8 `--ws-*` colors) and the base primitives `Btn` (`variant` filled/tonal/text, `icon`), `IconBtn`, `EngineBadge`, `EnvTag`, `Icon` (Material Symbols Rounded), `BTLogo`, `BrandMark`, `Modal` (scrim + Esc + focus-trap + focus-restore), and the toast system (`ToastProvider` / `useToast`). Do not reinvent any of these.
+- **JS libs:** **Zustand** (`create`) for the workspaces store; **React 18** + TypeScript; Vite. **`@tauri-apps/plugin-opener`** (`openUrl`) for the donate links — with a `window.open` fallback in plain-browser dev (detect Tauri via the `__TAURI_INTERNALS__` global). No CodeMirror / grid / introspection libs at this milestone.
+- **No backend dependency.** M1 ships before M2; the store is fully synchronous and never invokes a command.
+
+## Frontend (React)
+
+**There is no backend in M1.** Everything below is renderer state + components. The async connect *bridge* (`connect.ts`) and the connections registry store do **not** exist yet in M1 — the connect screen drives the store directly with mock data and a `setTimeout`.
+
+### State — workspaces store (`state.ts`, Zustand)
+
+Single store `useWorkspacesStore`. Fields:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `workspaces` | `Workspace[]` | Open workspaces, left-to-right rail order. Starts `[]`. |
+| `activeWorkspaceId` | `string \| null` | The focused workspace, or `null` → connect screen. |
+| `adding` | `boolean` | True while the user is opening *another* workspace (rail "+" pressed). Starts `true`. **The connect screen shows when `adding || workspaces.length === 0`** — so browsing connections preserves the still-open active workspace. |
+| `colorCursor` | `number` | Monotonic palette cursor; only increments (mod 8), never rewound on close. |
+
+`Workspace` (`types.ts`) in the M1 shell: `{ id, name, color, ui: WorkspaceUiState }` plus the connection it wraps. **M1 connection = a mock object** (engine, display name, sample detail line); later it became `{saved, handleId, info, schemas, kind}`. `name` defaults to the connection name and is user-renamable; `color` is auto-assigned from the palette and user-recolorable.
+
+**`WorkspaceUiState`** (`types.ts`) is the **per-workspace UI bag** under `workspace.ui`, the heart of the state-preservation contract. Every piece of per-workspace UI state lives here, keyed by workspace — so switching workspaces preserves it *for free* and closing a workspace drops it with the object. In M1 it is effectively empty (`{}` on open); later milestones add `tabs`, `activeTabId`, `schemaName`, `expandedTables`, `filters`, `structureEdits`. **Spec the bag and the `ui: {}` initialization now**; the tab actions are M4+. Churn rule (carry forward): only low-frequency state belongs in `ui`; high-frequency state (scroll, drag) stays in refs.
+
+Actions (M1-relevant; later tab/SQL/filter actions omitted):
+
+- **`openWorkspace(connection)`** — append a new workspace `{ id: "ws-"+crypto.randomUUID(), ...connection, name: connection.name, color, ui: {} }`, set it active, set `adding = false`. **Color:** if the connection carries its own color use it; else `WORKSPACE_COLORS[colorCursor % 8]` and increment `colorCursor` (only when the palette is actually used). (In M1, mock connections have no color → always palette-assigned.)
+- **`closeWorkspace(id)`** — remove it. If it was active, the **left neighbour** (`workspaces[max(0, idx-1)]`) becomes active; **if there is no neighbour (last workspace closed), set `activeWorkspaceId = null` and `adding = true`** → routes to connect screen. (The shipped action also fires `connection_close` + invalidates the introspection cache — **that is M2+; omit in M1.**)
+- **`setActive(id)`** — set active *and* clear `adding` (selecting a tile leaves the connect screen). Guarded: ignore ids not in `workspaces`.
+- **`startAdding()`** — `set({ adding: true })`. The rail "+" tile calls this; it shows the connect screen without dropping the active workspace.
+- **`renameWorkspace(id, name)`** — patch that workspace's `name`.
+- **`recolorWorkspace(id, color)`** — patch that workspace's `color`.
+- **`patchWorkspaceUi(id, patch)`** — shallow-merge a patch into `workspace.ui` (the extension point later milestones write through).
+
+Selector **`selectShowConnect(state) = state.adding || state.workspaces.length === 0`** — exported and shared by `App` (which screen renders) and `Rail` (which tile lights up).
+
+Palette constant **`WORKSPACE_COLORS`** (8, normative from tokens §1 / `data.js workspaceColors`):
+```
+#2dd4a7  #5aa7f5  #b08cff  #f5b54a  #e06c75  #ef7fb1  #8fce5a  #8b93a3
+```
+(Note: the popover swatches use *this* set. The §3.2 **environment** picker uses a *different* 8-color set — that picker is in `features/connections`, not M1.)
+
+### Components
+
+| Component | File | Responsibility | Key props / state |
+|---|---|---|---|
+| `App` | `src/App.tsx` | Top-level layout: `.app-frame` = `<Rail>` + `.app-body`. Renders `WorkspaceShell` when `!showConnect && activeWorkspace`, else `<ConnectScreen>`. Owns `donateOpen` local state; renders `<DonateModal>` when open. **Keys the shell by `activeWorkspace.id`** so transient local state resets per workspace while `ui` survives. | reads `workspaces`, `activeWorkspaceId`, `selectShowConnect` |
+| `Rail` | `Rail.tsx` / `Rail.css` | The 56px nav: `BTLogo`, hairline separator, one **tile** per workspace, dashed **add** tile, spacer, **donate** button. Owns the right-click **edit popover** (rename/recolor/close). `data-tauri-drag-region` on the nav/logo/spacer so frameless-window drag works without breaking tiles/buttons. | `onDonate: () => void` |
+| Workspace tile | (in `Rail.tsx`, `.ws-tile`) | A `<button>` per workspace: initials + engine chip; click → `setActive`; right-click / `ContextMenu` / `Shift+F10` → open edit popover. Active when `id === activeWorkspaceId && !showConnect`. | `style={{"--ws-color": ws.color}}`, `aria-current`, `title="{name} · {engineLabel} (right-click to edit)"` |
+| Add tile | (in `Rail.tsx`, `.ws-add`) | Dashed `+` tile; click → `startAdding()`. Gets `.active` (accent) while `showConnect`. | — |
+| Donate button | (in `Rail.tsx`, `.rail-donate`) | 38px pink circle, **animated coffee-cup SVG** (periodic shake + rising steam; shake speeds up on hover; both respect `prefers-reduced-motion`). Click → `onDonate()`. | — |
+| Tile popover | (in `Rail.tsx`, `.ws-edit-pop`) | 224px `role="dialog"` at `left:62px`: "Workspace" label, name `<input>` (live-commits rename; empty → falls back to connection name), "Color" label, 8 swatches (`WORKSPACE_COLORS`), destructive "Close workspace" row. Closes on outside mousedown / Esc / window resize / list scroll; restores focus to the opener tile. Drops itself if its workspace vanishes. | local `editPop {id, y}`, `draftName` |
+| `ConnectScreen` | `ConnectScreen.tsx` / `ConnectScreen.css` | Centered 460px panel over an accent radial glow: brand row, "Open a workspace" label, **connection card list**, actions ("New connection" tonal + "Open SQLite file…" text), footnote. **M1:** cards are sample data; card click → 650ms spinner → `openWorkspace(mock)`. `data-tauri-drag-region` on the screen container. | (M1: hardcoded sample list; shipped: reads registry store) |
+| Connection card | (in `ConnectScreen.tsx`, `.connect-card`) | `<button>`: `EngineBadge` (34px) + name (13.5/600) + `EnvTag` (+ optional `ssh` `.tunnel-tag` pill) + mono dim detail line; trailing `arrow_forward` `Icon` that **slides 2px + tints accent on hover**, swapped for a `.spinner` while connecting. Disabled while any connect is in flight. | the connection |
+| `DonateModal` | `DonateModal.tsx` / `DonateModal.css` | Built on shared `Modal` (`className="donate-modal"`). `BrandMark` + "Support ByteTable" copy, **3 amount cards** (radiogroup, default selects $5 "big coffee"; $10/mo card has a "popular" accent tag), provider buttons (`GitHub Sponsors` filled + `Buy Me a Coffee` tonal + `Maybe later` text), footer line. Picking an amount selects it; a provider button opens that provider's deep-linked URL in the OS browser, toasts thanks, and closes. | `onClose: () => void` |
+
+**Helper — `wsInitials(name)`** (`Rail.tsx`): two chars — first letters of the first two words (split on whitespace / `_` / `-`), else the first two chars of a single word; uppercased. **`ENGINE_META`** maps engine → `{label, short}` (sqlite `SQ`, mysql `My`, postgres `Pg`, redis `Rd`) for the chip + tooltip (badge *colors* live in `EngineBadge`).
+
+### Styling — exact geometry (DESIGN_SPEC §3.1 / §3.2; byte-identical to `Rail.css` / `ConnectScreen.css` / `DonateModal.css`)
+
+**Rail (`.rail`)** — `width:56px`, `background:var(--bg1)`, `border-right:1px solid var(--border)`, flex column, `align-items:center`, `padding:10px 0`, `gap:8px`, `position:relative`, `z-index:30`. `.rail-logo` `padding:4px 0 2px` (logo `BTLogo size={22}`); its `svg` has `pointer-events:none` (so the drag-region wrapper, not the SVG, catches mousedown). `.rail-sep` = `28px × 1px` `var(--border)`. `.rail-list` flex column `gap:8px`, `overflow-y:auto`, hidden scrollbar, `padding:2px 0` (so the first tile's hover-lift + active glow aren't clipped). `.rail-spacer` `flex:1`.
+
+**Tile (`.ws-tile`)** — `40×40`, `border-radius:11px`, `position:relative`. `background: color-mix(in oklab, var(--ws-color) 16%, var(--bg2))`; `border:1px solid color-mix(in oklab, var(--ws-color) 35%, transparent)`; `color:var(--ws-color)`; `font-weight:600`; `font-size:13px`; centered. Transition `transform .1s, border-color .12s, box-shadow .12s`. **Hover:** `transform:translateY(-1px)`. **Active (`.ws-tile.active`):** `border-color:var(--ws-color)` + `box-shadow: 0 0 0 1px var(--ws-color), 0 4px 14px color-mix(in oklab, var(--ws-color) 30%, transparent)`. **Left indicator bar (`.ws-tile.active::before`):** `position:absolute; left:-9px; top:50%; transform:translateY(-50%); width:3px; height:22px; border-radius:2px; background:var(--ws-color)`. **Engine chip (`.ws-tile-engine`):** `position:absolute; right:-4px; bottom:-4px` (the spec's -4px overhang); `font-family:var(--mono)`; `font-size:7.5px`; `font-weight:600`; `background:var(--bg3)`; `color:var(--text-dim)`; `border:1px solid var(--border)`; `border-radius:5px`; `padding:1px 3px`.
+
+**Add tile (`.ws-add`)** — `40×40 r11`, `border:1px dashed var(--border)`, `color:var(--text-faint)`; hover **and** `.active`: `color/border-color: var(--accent)`.
+
+**Donate (`.rail-donate`)** — `38px` circle, `color:#e2b340`, `background:#e2b34014`; hover `background:#e2b34028` + `transform:scale(1.08)`. (Design spec calls for a pink heart `#ef7fb1@14%`; **shipped uses the amber coffee-cup `#e2b340`** with an inline animated SVG — keep the shipped coffee-cup.) `.coffee-icon` shakes (`coffee-shake 4.5s`, faster `0.5s` on hover); `.coffee-smoke .smoke` rises (`coffee-smoke 2.8s`, `.s2` delayed `1.1s`); all animations `none` under `prefers-reduced-motion: reduce`.
+
+**Tile popover (`.ws-edit-pop`)** — `position:fixed; left:62px; z-index:70; width:224px; background:var(--bg2); border:1px solid var(--border); border-radius:12px; padding:12px; box-shadow:0 16px 44px rgba(0,0,0,.5); display:flex; flex-direction:column; gap:9px`. Top position computed from the opener tile's `getBoundingClientRect().top`, **clamped `max(8, min(rect.top, innerHeight - 280))`** so the ~280px body never leaves the viewport. `.ws-edit-title` / `.ws-edit-label`: `10px/600` uppercase, `letter-spacing:.1em`, `var(--text-faint)`. `.ws-edit-input`: `bg var(--bg0)`, `border var(--border)`, `r8`, `padding:7px 10px`, `12.5px`; focus `border-color:var(--accent)`. `.ws-colors`: flex `gap:6px` wrap. `.ws-color-swatch`: **`20×20`, `border-radius:7px`, `2px solid transparent`**; hover `scale(1.12)`; **`.active` → `border-color:var(--text)`** (the 2px text ring). `.ws-edit-close`: destructive row, `color:#e06c75`, `background:#e06c7510`, hover `#e06c7522`, `power_settings_new` icon + "Close workspace".
+
+**Connect screen (`.connect-screen`)** — `flex:1`, centered column, `gap:20px`; background = an accent radial glow over `--bg0`: `radial-gradient(800px 500px at 50% -10%, color-mix(in oklab, var(--accent) 7%, transparent), transparent 70%), var(--bg0)`. **`.connect-panel`:** `width:460px`, `max-width:calc(100vw - 48px)`, `bg var(--bg1)`, `border var(--border)`, `border-radius:16px`, `padding:28px`, `gap:18px`, `box-shadow:0 24px 60px rgba(0,0,0,.45)`. `.connect-brand` `gap:14px` (`BrandMark size={28} blink`, `h1` 20/600, `p` 12 dim). `.connect-list-label` `10.5/600` uppercase `.1em` faint. **`.connect-card`:** flex `gap:12px`, `padding:12px 14px`, `r11`, `bg var(--bg2)`, `border:1px solid transparent`; **hover (`:not(:disabled)`)** `border-color: color-mix(in oklab, var(--accent) 45%, transparent)` + `bg var(--bg3)`. `.connect-card-name` 13.5/600 flex `gap:8px`; `.connect-card-detail` mono `11px` dim, ellipsized. **Arrow:** `.connect-arrow` `color:var(--text-faint)`, transition `transform .12s, color .12s`; **on card hover → `color:var(--accent); transform:translateX(2px)`**. `.spinner` `14×14` ring, `border 2px var(--bg3)`, `border-top-color:var(--accent)`, `spin .7s linear infinite`. `.connect-actions` flex `gap:8px`. `.tunnel-tag` / `.connect-footnote` `11.5px` faint.
+
+**Donate modal (`.donate-modal`)** — `width:430px; gap:14px`. `.donate-head` flex `gap:13px` (BrandMark + title block + close `IconBtn`). `.donate-amounts` `grid-template-columns: repeat(3,1fr); gap:8px`. `.donate-amount` column card, `padding:13px 8px 10px`, `r11`, `bg var(--bg2)`, `border var(--border)`, `11px` dim; hover `border-color:var(--accent)`; `.donate-amount-n` 17/600; **`.popular`** `border-color: color-mix(in oklab, var(--accent) 55%, var(--border))`; **`.selected`** accent border + `color-mix(in oklab, var(--accent) 12%, var(--bg2))` tint + accent number. `.donate-pop-tag` absolute `top:-8px`, centered, accent bg / `var(--on-accent)` text, `8.5/600` uppercase pill. `.donate-links` flex `gap:8px`.
+
+## Behavior & edge cases
+
+- **Workspace switching preserves per-workspace UI state.** All per-workspace state lives under `workspace.ui` keyed by workspace id; switching active workspace re-renders the shell against a different `ui` with nothing lost. `App` **keys the shell by `activeWorkspace.id`** so only *transient* local component state (open popovers, search text) resets on switch — the `ui` bag survives. (In M1 the bag is near-empty; the contract and `ui:{}` init must exist so M4+ inherit it free.)
+- **Closing the last workspace → connect screen.** `closeWorkspace` sets `activeWorkspaceId = null` *and* `adding = true` when no neighbour remains; `selectShowConnect` then returns true and `App` renders `ConnectScreen`. Closing a *non-last* workspace activates the left neighbour.
+- **"+" preserves the active workspace.** `startAdding` only flips `adding`; the connect screen shows over (not instead of) the still-open active workspace, which the rail keeps listed. Selecting any tile (`setActive`) or opening a new one (`openWorkspace`) clears `adding`.
+- **Connect simulation (M1).** Card click → set a `connecting` id (drives the spinner) → `setTimeout(650ms)` → `openWorkspace(mockConnection)` → clear `connecting`. Cards are `disabled` while any connect is in flight. (Shipped: this is real `connection_open` IPC; the 650ms timer is removed.)
+- **Live rename.** The popover name input commits on every change (`renameWorkspace`); an emptied / whitespace-only value falls back to the connection's own name, never blank.
+- **Popover dismissal & focus.** Outside mousedown, Esc, window resize, and rail-list scroll all close the popover (a `position:fixed` popover would otherwise detach from a scrolled/resized tile). Closing returns focus to the opener tile. Keyboard entry: `Shift+F10` or the `ContextMenu` key on a focused tile opens it. If the popover's workspace is closed out from under it, it drops itself at render time.
+- **Donate links open real URLs.** Provider buttons build deep links — GitHub Sponsors `…/sponsors/bytetable?frequency=one-time|recurring&amount=<n>`, Buy Me a Coffee `…/bytetable?amount=<n>` — from the **selected** amount card, then open them via `@tauri-apps/plugin-opener`'s `openUrl` inside Tauri (detected by `__TAURI_INTERNALS__`), falling back to `window.open(url, "_blank", "noopener,noreferrer")` in browser dev. The open is **awaited**: a failed hand-off toasts an error and leaves the modal open for retry; success toasts `Thank you! ($N[/mo])` and closes. (Slugs `bytetable` are placeholders until real accounts exist.)
+- **Frameless drag.** The rail nav, logo wrapper, and spacer carry `data-tauri-drag-region` (and the connect-screen container) so the empty chrome drags the window; tiles/buttons stay interactive because Tauri only starts a drag when the mousedown target itself carries the attribute.
+
+## Acceptance criteria
+
+1. Open **3 workspaces** from the connect screen (sample cards in M1); each appears as a rail tile with correct initials, engine chip, and an auto-assigned palette color, and becomes active on open.
+2. **Right-click** a tile → popover at `left:62px`: rename (live-commits, blank falls back to connection name), recolor via the 8 swatches (active swatch shows the 2px `--text` ring), and "Close workspace".
+3. **Switch** between the 3 workspaces via tile click; the active tile shows the glow + left bar, and each workspace's per-workspace `ui` state is intact across switches.
+4. **Close** workspaces one by one; the left neighbour activates; **closing the last returns to the connect screen**.
+5. **Donate modal** opens from the rail button and closes via the close icon, "Maybe later", scrim click, or Esc; provider buttons open the real provider URL in the default browser and toast thanks.
+6. Pressing the rail **"+"** shows the connect screen without losing the open workspaces (they stay in the rail; selecting one returns to it).
+
+## Pixel / UX checklist
+
+- **Rail:** 56px wide, `--bg1`, right hairline border; logo `BTLogo size={22}`; 28px×1px separator; `gap:8px`; donate button pinned to the bottom by the flexible spacer.
+- **Tile:** exactly **40×40, `border-radius:11px`**; bg = `ws-color@16%` over `--bg2`; border `ws-color@35%`; initials 13px/600 in `ws-color`; engine chip pinned bottom-right with -4px overhang, mono 7.5px on `--bg3`.
+- **Hover** lifts the tile `translateY(-1px)`; **active** shows the full-color border, glow, and a **3×22px** left indicator bar at `left:-9px`, vertically centered.
+- **Add tile** dashed, 40×40 r11; turns accent on hover and while the connect screen is showing.
+- **Popover** 224px at `left:62px`, top-clamped into the viewport; swatches **20×20 r7**, active = 2px `--text` ring; "Close workspace" row in destructive red `#e06c75`.
+- **Donate** 38px circle, hover scale 1.08; coffee-cup shakes/steams (disabled under reduced-motion). Modal 430px; 3 amount cards in a 3-up grid; "popular" tag on the $10/mo card; selected card shows accent border + tint.
+- **Connect panel** 460px, r16, 28px padding, `--bg1`, over the accent radial glow on `--bg0`.
+- **Connection card** hover: border tints accent@45%, bg → `--bg3`, and the trailing arrow **slides 2px right + tints accent**; the arrow is replaced by the spin ring while connecting. Engine badge 34px; name 13.5/600 with env tag; detail line mono 11px dim, ellipsized.

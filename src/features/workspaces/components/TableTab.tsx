@@ -172,17 +172,22 @@ export function TableTab({
   // the count is unknown (pre-fetch `undefined`, or the backend returned null):
   // the readout shows "—" and next is disabled.
   const pagerTotal: number | null = meta?.totalRows ?? null;
-  // The "{from}–{to} of {total}" readout (prototype `.pager-range`).
+  // Readout: the precise row range "{from}–{to} of {total}" plus a page
+  // orientation "· Page {p} of {pages}" so it's clear it's rows, not pages.
   const pagerRange =
     pagerTotal === null
       ? "— of —"
       : pagerTotal === 0
-        ? "0 of 0"
+        ? "0 of 0 · Page 1 of 1"
         : (offset + 1).toLocaleString() +
           "–" +
           Math.min(offset + pageSize, pagerTotal).toLocaleString() +
           " of " +
-          pagerTotal.toLocaleString();
+          pagerTotal.toLocaleString() +
+          " · Page " +
+          (Math.floor(offset / pageSize) + 1).toLocaleString() +
+          " of " +
+          Math.max(1, Math.ceil(pagerTotal / pageSize)).toLocaleString();
 
   // Ensure a draft exists (lazily) when the panel opens.
   const ensuredState: TabFilterState = filterState ?? {

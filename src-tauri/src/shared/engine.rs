@@ -248,6 +248,13 @@ impl ConnectionParams {
             }
         }
     }
+
+    /// Whether this engine authenticates with a password kept in the OS
+    /// keychain (server engines do; SQLite does not). Used to skip a needless
+    /// keychain read — and the OS access prompt it triggers — for SQLite.
+    pub fn uses_password(&self) -> bool {
+        !matches!(self, Self::Sqlite { .. })
+    }
 }
 
 /// Custom deserialize for [`ConnectionParams`] that accepts BOTH the current

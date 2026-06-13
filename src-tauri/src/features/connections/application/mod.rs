@@ -236,12 +236,18 @@ pub fn save_connection<R: ConnectionRepository + ?Sized, S: SecretStore + ?Sized
     }
     repository.save(&connection)?;
 
-    // Persist secrets only after the id is settled, and only the ones supplied.
+    // Persist secrets only after the id is settled, and only the ones supplied
+    // AND non-empty — storing an empty string would create a keychain item that
+    // later reads (and prompts) needlessly.
     if let Some(password) = &secrets.password {
-        secret_store.set(&secrets_mod::db_account(&connection.id), password)?;
+        if !password.is_empty() {
+            secret_store.set(&secrets_mod::db_account(&connection.id), password)?;
+        }
     }
     if let Some(ssh) = &secrets.ssh {
-        secret_store.set(&secrets_mod::ssh_account(&connection.id), ssh)?;
+        if !ssh.is_empty() {
+            secret_store.set(&secrets_mod::ssh_account(&connection.id), ssh)?;
+        }
     }
     Ok(connection)
 }
@@ -379,7 +385,7 @@ pub async fn open_connection<R: ConnectionRepository + ?Sized, S: SecretStore + 
     };
 
     // Merge keychain-stored secrets with transient ones (transient wins).
-    let secret = resolve_open_secret(secret_store, saved_id.as_deref(), transient)?;
+    let secret = resolve_open_secret(secret_store, &params, saved_id.as_deref(), transient)?;
 
     let connection = registry
         .get(params.engine())?
@@ -420,16 +426,21 @@ pub async fn open_connection<R: ConnectionRepository + ?Sized, S: SecretStore + 
 /// nothing applies (SQLite, passwordless direct connections).
 fn resolve_open_secret<S: SecretStore + ?Sized>(
     secret_store: &S,
+    params: &ConnectionParams,
     saved_id: Option<&str>,
     transient: &TransientSecrets,
 ) -> Result<Option<ConnectSecret>, AppError> {
     let mut password = transient.password.clone();
     let mut ssh = transient.ssh.clone();
     if let Some(id) = saved_id {
-        if password.is_none() {
+        // Read only the keychain items this connection actually needs. A
+        // passwordless (SQLite) or non-tunnelled connection must NOT read the
+        // db/ssh accounts — each keychain access pops an OS prompt, so a local
+        // server with no tunnel was prompting twice (db + ssh).
+        if password.is_none() && params.uses_password() {
             password = secret_store.get(&secrets_mod::db_account(id))?;
         }
-        if ssh.is_none() {
+        if ssh.is_none() && params.ssh().is_some() {
             ssh = secret_store.get(&secrets_mod::ssh_account(id))?;
         }
     }
@@ -931,12 +942,29 @@ mod tests {
 
     #[test]
     fn resolve_open_secret_merges_keychain_and_transient() {
+        use crate::shared::engine::{SshAuth, SshConfig, TlsMode};
+        let pg = |ssh: Option<SshConfig>| ConnectionParams::Postgres {
+            host: "db".into(),
+            port: 5432,
+            database: "app".into(),
+            user: "u".into(),
+            tls_mode: TlsMode::Disable,
+            ssh,
+        };
+        let pg_ssh = pg(Some(SshConfig {
+            host: "bastion".into(),
+            port: 22,
+            user: "t".into(),
+            auth: SshAuth::Agent,
+        }));
+        let pg_no_ssh = pg(None);
+
         let store = InMemorySecretStore::default();
         store.set(&db_account("id1"), "stored-pw").unwrap();
         store.set(&ssh_account("id1"), "stored-ssh").unwrap();
 
-        // No transient → keychain values are used.
-        let secret = resolve_open_secret(&store, Some("id1"), &no_secrets())
+        // SSH connection, no transient → both keychain values are used.
+        let secret = resolve_open_secret(&store, &pg_ssh, Some("id1"), &no_secrets())
             .unwrap()
             .expect("some secret");
         assert_eq!(secret.password(), Some("stored-pw"));
@@ -944,16 +972,32 @@ mod tests {
 
         // A transient password overrides the stored one (first connect / retype).
         let transient = TransientSecrets::new(Some("typed".into()), None);
-        let secret = resolve_open_secret(&store, Some("id1"), &transient)
+        let secret = resolve_open_secret(&store, &pg_ssh, Some("id1"), &transient)
             .unwrap()
             .expect("some secret");
         assert_eq!(secret.password(), Some("typed"));
         // ssh still falls back to the keychain.
         assert_eq!(secret.ssh(), Some("stored-ssh"));
 
-        // No id and no transient → nothing applies (SQLite / passwordless).
-        assert!(resolve_open_secret(&store, None, &no_secrets())
+        // No id and no transient → nothing applies.
+        assert!(resolve_open_secret(&store, &pg_no_ssh, None, &no_secrets())
             .unwrap()
             .is_none());
+
+        // FIX (double-prompt): a non-tunnelled server reads the db password but
+        // NOT the ssh secret — even though one is stored — so it only touches the
+        // keychain once.
+        let secret = resolve_open_secret(&store, &pg_no_ssh, Some("id1"), &no_secrets())
+            .unwrap()
+            .expect("some secret");
+        assert_eq!(secret.password(), Some("stored-pw"));
+        assert_eq!(secret.ssh(), None);
+
+        // SQLite reads neither account (no keychain access / prompt at all).
+        assert!(
+            resolve_open_secret(&store, &sqlite_params(), Some("id1"), &no_secrets())
+                .unwrap()
+                .is_none()
+        );
     }
 }

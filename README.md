@@ -13,6 +13,7 @@ in the OS keychain, and the renderer only ever sees opaque connection ids.
 each with its own tab set and sidebar state.
 
 **SQL engines (SQLite / MySQL / PostgreSQL)**
+
 - Virtualized data grid: type-aware cells, sort, server-side paging (rows-per-page footer), inline cell editing (parameterized `UPDATE`, production-confirm).
 - Stackable filter builder (13 operators, parameterized) + raw `WHERE` escape hatch.
 - SQL editor: syntax highlighting, `⌘↩` run, per-tab history, **global saved queries** (optionally scoped to a workspace), and an **Explain** panel + execution-order minimap.
@@ -56,16 +57,16 @@ compiles the Rust core, so it takes a few minutes; subsequent runs are fast.
 
 ## Common commands (Makefile)
 
-| Command | What it does |
-|---|---|
-| `make dev` | Run the app in development (Tauri + Vite, hot reload) |
-| `make test` | Rust unit + integration tests + TS typecheck |
-| `make lint` | ESLint + Prettier check + `cargo fmt --check` + `cargo clippy -D warnings` |
-| `make fmt` | Auto-format (Prettier + rustfmt) |
-| `make build` | Production desktop bundle (`tauri build`) |
-| `make build-debug` / `make run` | Fast debug build / build-then-launch |
-| `make db-up` / `make db-down` | Start+seed / wipe the test databases |
-| `make` | List all targets |
+| Command                         | What it does                                                               |
+| ------------------------------- | -------------------------------------------------------------------------- |
+| `make dev`                      | Run the app in development (Tauri + Vite, hot reload)                      |
+| `make test`                     | Rust unit + integration tests + TS typecheck                               |
+| `make lint`                     | ESLint + Prettier check + `cargo fmt --check` + `cargo clippy -D warnings` |
+| `make fmt`                      | Auto-format (Prettier + rustfmt)                                           |
+| `make build`                    | Production desktop bundle (`tauri build`)                                  |
+| `make build-debug` / `make run` | Fast debug build / build-then-launch                                       |
+| `make db-up` / `make db-down`   | Start+seed / wipe the test databases                                       |
+| `make`                          | List all targets                                                           |
 
 (Each maps to the underlying `pnpm` / `cargo` command — run those directly if you prefer.)
 

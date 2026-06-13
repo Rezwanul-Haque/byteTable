@@ -251,17 +251,159 @@ pub struct SortSpec {
     pub direction: SortDirection,
 }
 
-/// A request for one page of rows from a table, powering the M4 data grid.
+/// The comparison applied by a single structured [`Condition`]. The wire
+/// tokens are explicit camelCase strings the renderer's filter builder sends
+/// — they map to (but are *not* identical to) the prototype's internal op ids
+/// in `bytetable/filters.jsx`. The mapping the renderer must honour:
 ///
-/// M4 scope: paging (`offset`/`limit`) plus an optional single-column sort.
-/// Row filtering is M5 — there is deliberately no predicate field yet.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// | prototype id (filters.jsx) | label        | wire token (this enum) | SQLite |
+/// |----------------------------|--------------|------------------------|--------|
+/// | `eq`                       | `=`          | `eq`                   | `"c" = ?` |
+/// | `neq`                      | `≠`          | `ne`                   | `"c" <> ?` |
+/// | `gt`                       | `>`          | `gt`                   | `"c" > ?` |
+/// | `gte`                      | `≥`          | `gte`                  | `"c" >= ?` |
+/// | `lt`                       | `<`          | `lt`                   | `"c" < ?` |
+/// | `lte`                      | `≤`          | `lte`                  | `"c" <= ?` |
+/// | `contains`                 | `contains`   | `contains`             | `"c" LIKE ? ESCAPE '\'` (`%v%`) |
+/// | `ncontains`                | `not contains` | `notContains`        | `"c" NOT LIKE ? ESCAPE '\'` (`%v%`) |
+/// | `begins`                   | `begins with` | `beginsWith`          | `"c" LIKE ? ESCAPE '\'` (`v%`) |
+/// | `ends`                     | `ends with`  | `endsWith`             | `"c" LIKE ? ESCAPE '\'` (`%v`) |
+/// | `in`                       | `in list`    | `inList`               | `"c" IN (?, ?, …)` |
+/// | `null`                     | `is null`    | `isNull`               | `"c" IS NULL` |
+/// | `nnull`                    | `is not null` | `isNotNull`           | `"c" IS NOT NULL` |
+///
+/// Security: this enum is the *only* thing that selects a comparison operator
+/// in [`EngineConnection::fetch_rows`] — adapters emit fixed SQL fragments per
+/// variant and bind the user's value as a parameter (`?`), never interpolating
+/// it. The LIKE family escapes `%`/`_`/`\` in the bound value so user wildcards
+/// match literally (see the SQLite adapter).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FilterOp {
+    Eq,
+    Ne,
+    Gt,
+    Gte,
+    Lt,
+    Lte,
+    Contains,
+    NotContains,
+    BeginsWith,
+    EndsWith,
+    InList,
+    IsNull,
+    IsNotNull,
+}
+
+impl FilterOp {
+    /// Whether this operator takes a value. The null checks do not; every
+    /// other operator requires a non-null [`FilterValue`] (a §5 error
+    /// otherwise — see the adapter).
+    pub fn needs_value(self) -> bool {
+        !matches!(self, Self::IsNull | Self::IsNotNull)
+    }
+}
+
+/// The value a [`Condition`] compares against. Either a single JSON scalar
+/// (string / number / bool) for the comparison and LIKE operators, or a list
+/// of scalars for `inList`. `null` values inside are rejected by the adapter
+/// with the §5 "use IS NULL / IS NOT NULL" message — SQL `= NULL` never
+/// matches, so a NULL comparison is always a mistake.
+///
+/// Untagged on the wire: a JSON array deserializes to [`FilterValue::List`],
+/// anything else (string/number/bool) to [`FilterValue::Scalar`]. Security:
+/// every contained value is *bound* as a parameter, never interpolated.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum FilterValue {
+    /// A list of scalars for `inList` (`IN (?, ?, …)`).
+    List(Vec<serde_json::Value>),
+    /// A single scalar for the comparison / LIKE operators.
+    Scalar(serde_json::Value),
+}
+
+/// One structured filter row: a column, an operator, and (unless the operator
+/// is a null check) a value. `column` is a real column name the adapter MUST
+/// validate against the table's columns before quoting it — an unknown column
+/// is a §5 error, identical to the sort-column check.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Condition {
+    pub column: String,
+    pub op: FilterOp,
+    /// `None` for `isNull` / `isNotNull`; required for every other operator.
+    pub value: Option<FilterValue>,
+}
+
+/// How structured [`Condition`]s combine into one WHERE clause. Lowercase on
+/// the wire ("and" / "or"). The prototype's builder only renders `WHERE … AND
+/// …` between rows, so the renderer defaults to `And`; `Or` is supported here
+/// so the builder can offer it without a backend change. (Mixed/nested
+/// boolean logic is the job of the raw "Edit as SQL" escape hatch.)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Combinator {
+    And,
+    Or,
+}
+
+impl Combinator {
+    /// The SQL keyword joining conditions — a fixed literal, never
+    /// caller-derived.
+    pub fn sql_keyword(self) -> &'static str {
+        match self {
+            Self::And => "AND",
+            Self::Or => "OR",
+        }
+    }
+}
+
+/// The filter applied to a browsed table (M5 stackable filter builder). Two
+/// mutually exclusive modes, discriminated by `mode` on the wire:
+///
+/// - `{ "mode": "conditions", "items": [...], "combinator": "and" }` — the
+///   structured builder. Every condition compiles to **bound-parameter** SQL;
+///   there is no SQL-injection surface (operators are enum-driven, values are
+///   bound).
+/// - `{ "mode": "raw", "sql": "status = 'paid' AND total > 100" }` — the
+///   "Edit as SQL" escape hatch. The string is the body of the WHERE clause
+///   and is **interpolated verbatim** (wrapped in parentheses). See the
+///   adapter for the explicit threat model: this is an intentional power-user
+///   feature on a local-first single-user tool that already grants full SQL
+///   access via the query editor (M6), so the only "validation" is execution
+///   — a bad clause surfaces as a §5 error.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "mode", rename_all = "lowercase")]
+pub enum FilterSpec {
+    /// The structured builder: parameterized conditions joined by one
+    /// top-level combinator.
+    Conditions {
+        items: Vec<Condition>,
+        combinator: Combinator,
+    },
+    /// The raw "Edit as SQL" WHERE body, interpolated verbatim (escape hatch).
+    Raw { sql: String },
+}
+
+/// A request for one page of rows from a table, powering the M4 data grid and
+/// the M5 filter builder.
+///
+/// Scope: paging (`offset`/`limit`), an optional single-column sort, and an
+/// optional [`FilterSpec`] (M5). When a filter is present it applies to BOTH
+/// the page query and the `COUNT(*)`, so `RowsPage::total_rows` is the
+/// *filtered* row count (the "n of N rows" status shows the filtered total).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FetchRowsRequest {
     pub schema: String,
     pub table: String,
     /// Optional single-column sort; `None` leaves row order to the engine.
     pub sort: Option<SortSpec>,
+    /// Optional row filter (M5); `None` returns the whole table. Structured
+    /// conditions are fully parameterized; the raw mode is a documented
+    /// escape hatch (see [`FilterSpec`]).
+    #[serde(default)]
+    pub filter: Option<FilterSpec>,
     /// Zero-based row offset of the page (bound as a parameter, never
     /// interpolated).
     pub offset: u64,
@@ -283,12 +425,15 @@ pub struct RowsPage {
     pub offset: u64,
     /// The effective page size after clamping (echoes the request).
     pub limit: u32,
-    /// Exact `COUNT(*)` of the table (unfiltered in M4 — filters are M5).
+    /// Exact `COUNT(*)` matching the request: the whole table when the
+    /// request carries no filter, the *filtered* count when
+    /// [`FetchRowsRequest::filter`] is present (so the renderer's "n of N
+    /// rows" status reflects the filter, §3.5).
     ///
-    /// Computed per fetch in M4 for correctness and simplicity; a later
-    /// milestone may cache it or fall back to an engine estimate for very
-    /// large tables, at which point this becomes `None` when unknown. `None`
-    /// today means the count could not be obtained.
+    /// Computed per fetch for correctness and simplicity; a later milestone
+    /// may cache it or fall back to an engine estimate for very large tables,
+    /// at which point this becomes `None` when unknown. `None` today means the
+    /// count could not be obtained.
     pub total_rows: Option<u64>,
     pub elapsed_ms: u64,
 }
@@ -330,14 +475,17 @@ pub trait EngineConnection: Send + Sync {
     /// is given but always enforces `row_limit`.
     async fn run_query(&self, sql: &str, options: QueryOptions) -> Result<QueryResult, AppError>;
 
-    /// Fetch one page of rows from a table for the data grid (M4): paged
-    /// (`offset`/`limit`) and optionally sorted by a single column, with an
-    /// exact unfiltered `COUNT(*)` for the "N rows" status. The adapter
-    /// validates `sort.column` against the table's columns, quotes every
-    /// identifier, binds offset/limit as parameters, and emits the ORDER BY
-    /// direction only as the enum-driven `ASC`/`DESC` keyword — see
-    /// [`SortDirection`] for the no-injection guarantee. Unknown
-    /// schema/table/sort-column are §5 human errors.
+    /// Fetch one page of rows from a table for the data grid (M4 + M5): paged
+    /// (`offset`/`limit`), optionally sorted by a single column, and
+    /// optionally filtered (M5), with an exact `COUNT(*)` for the row-count
+    /// status — the *filtered* count when a filter applies (§3.5 "n of N
+    /// rows"). The adapter validates `sort.column` and every filter column
+    /// against the table's columns, quotes every identifier, binds
+    /// offset/limit and structured filter values as parameters, and emits the
+    /// ORDER BY direction only as the enum-driven `ASC`/`DESC` keyword — see
+    /// [`SortDirection`] for the no-injection guarantee. The raw filter mode
+    /// is a documented "Edit as SQL" escape hatch (see [`FilterSpec`]).
+    /// Unknown schema/table/sort-column/filter-column are §5 human errors.
     async fn fetch_rows(&self, req: FetchRowsRequest) -> Result<RowsPage, AppError>;
 
     /// Release the underlying driver resources. For drop-managed drivers
@@ -470,6 +618,7 @@ mod tests {
                 column: "name".into(),
                 direction: SortDirection::Desc,
             }),
+            filter: None,
             offset: 100,
             limit: 50,
         };
@@ -480,6 +629,7 @@ mod tests {
                 "schema": "main",
                 "table": "users",
                 "sort": { "column": "name", "direction": "desc" },
+                "filter": null,
                 "offset": 100,
                 "limit": 50
             })
@@ -496,6 +646,125 @@ mod tests {
         assert_eq!(json["sort"], serde_json::Value::Null);
         let back: FetchRowsRequest = serde_json::from_value(json).unwrap();
         assert_eq!(back, unsorted);
+
+        // `filter` is optional on the wire: an absent key deserializes to None.
+        let no_filter_key: FetchRowsRequest = serde_json::from_value(serde_json::json!({
+            "schema": "main",
+            "table": "users",
+            "sort": null,
+            "offset": 0,
+            "limit": 10
+        }))
+        .unwrap();
+        assert_eq!(no_filter_key.filter, None);
+    }
+
+    #[test]
+    fn filter_op_wire_tokens_are_camel_case_and_round_trip() {
+        let cases = [
+            (FilterOp::Eq, "eq"),
+            (FilterOp::Ne, "ne"),
+            (FilterOp::Gt, "gt"),
+            (FilterOp::Gte, "gte"),
+            (FilterOp::Lt, "lt"),
+            (FilterOp::Lte, "lte"),
+            (FilterOp::Contains, "contains"),
+            (FilterOp::NotContains, "notContains"),
+            (FilterOp::BeginsWith, "beginsWith"),
+            (FilterOp::EndsWith, "endsWith"),
+            (FilterOp::InList, "inList"),
+            (FilterOp::IsNull, "isNull"),
+            (FilterOp::IsNotNull, "isNotNull"),
+        ];
+        for (op, token) in cases {
+            assert_eq!(serde_json::to_value(op).unwrap(), token);
+            let back: FilterOp = serde_json::from_value(serde_json::json!(token)).unwrap();
+            assert_eq!(back, op);
+        }
+        assert!(FilterOp::Eq.needs_value());
+        assert!(!FilterOp::IsNull.needs_value());
+        assert!(!FilterOp::IsNotNull.needs_value());
+    }
+
+    #[test]
+    fn combinator_serializes_lowercase_and_maps_to_keywords() {
+        assert_eq!(serde_json::to_value(Combinator::And).unwrap(), "and");
+        assert_eq!(serde_json::to_value(Combinator::Or).unwrap(), "or");
+        assert_eq!(Combinator::And.sql_keyword(), "AND");
+        assert_eq!(Combinator::Or.sql_keyword(), "OR");
+    }
+
+    #[test]
+    fn filter_value_untagged_distinguishes_scalar_from_list() {
+        // A JSON array → List; a bare scalar → Scalar.
+        let list: FilterValue = serde_json::from_value(serde_json::json!(["DE", "FR"])).unwrap();
+        assert_eq!(
+            list,
+            FilterValue::List(vec![serde_json::json!("DE"), serde_json::json!("FR")])
+        );
+        let scalar: FilterValue = serde_json::from_value(serde_json::json!(42)).unwrap();
+        assert_eq!(scalar, FilterValue::Scalar(serde_json::json!(42)));
+        let text: FilterValue = serde_json::from_value(serde_json::json!("paid")).unwrap();
+        assert_eq!(text, FilterValue::Scalar(serde_json::json!("paid")));
+    }
+
+    #[test]
+    fn filter_spec_conditions_mode_wire_shape_round_trips() {
+        let spec = FilterSpec::Conditions {
+            items: vec![
+                Condition {
+                    column: "status".into(),
+                    op: FilterOp::Eq,
+                    value: Some(FilterValue::Scalar(serde_json::json!("paid"))),
+                },
+                Condition {
+                    column: "deleted_at".into(),
+                    op: FilterOp::IsNull,
+                    value: None,
+                },
+                Condition {
+                    column: "country".into(),
+                    op: FilterOp::InList,
+                    value: Some(FilterValue::List(vec![
+                        serde_json::json!("DE"),
+                        serde_json::json!("FR"),
+                    ])),
+                },
+            ],
+            combinator: Combinator::And,
+        };
+        let json = serde_json::to_value(&spec).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "mode": "conditions",
+                "items": [
+                    { "column": "status", "op": "eq", "value": "paid" },
+                    { "column": "deleted_at", "op": "isNull", "value": null },
+                    { "column": "country", "op": "inList", "value": ["DE", "FR"] }
+                ],
+                "combinator": "and"
+            })
+        );
+        let back: FilterSpec = serde_json::from_value(json).unwrap();
+        assert_eq!(back, spec);
+    }
+
+    #[test]
+    fn filter_spec_raw_mode_wire_shape_round_trips() {
+        let spec = FilterSpec::Raw {
+            sql: "total > 100 AND country IN ('DE', 'FR')".into(),
+        };
+        let json = serde_json::to_value(&spec).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "mode": "raw",
+                "sql": "total > 100 AND country IN ('DE', 'FR')"
+            })
+        );
+        let back: FilterSpec = serde_json::from_value(json).unwrap();
+        assert_eq!(back, spec);
     }
 
     #[test]

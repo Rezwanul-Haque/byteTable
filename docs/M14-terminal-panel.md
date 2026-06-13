@@ -2,6 +2,11 @@
 
 Status: design approved (brainstorm 2026-06-13). Build on branch `m14-terminal-panel`; **do not merge until the user has tested and confirmed.**
 
+> **AUTHORITATIVE PROTOTYPE (supersedes the from-scratch sketch below where they differ):** the user provided the real design in `ByteTable_latest/bytetable/terminal.jsx` (`TerminalPanel` + `SqlTerminalTab`) and `redis-tabs.jsx` (`RedisCli`), with `.term-*`/`.rcli-*` CSS in `ByteTable_latest/ByteTable.html`. Port these faithfully. Two deltas from the sketch:
+> 1. **Multi-session panel**: `TerminalPanel` is VS Code–style with *multiple* terminal sessions (session tabs with add/close, a `+` new-session button), a **maximize** toggle (`open_in_full`/`close_fullscreen`), top-edge resize (clamp [120, innerHeight−160]), and a hide button (Ctrl+`). The tab-bar toggle is a `tabbar-tool` button ("Terminal", `terminal` icon, title "Toggle terminal (Ctrl+`)").
+> 2. **SQL output is a psql/mysql/sqlite3-style ASCII REPL, not a compact grid** (this supersedes the earlier grid choice). `SqlTerminalTab` is a real REPL: engine-specific prompt/banner/errPrefix (`termConfig`: `mysql>` / `sqlite>` / `{conn}=#`), meta-commands (`\dt \d NAME \dn \l \c \timing \! clear \q`; `SHOW TABLES/DATABASES`, `DESCRIBE`, `USE`; `.tables .schema .databases .timing .clear .quit`), multi-line statement buffering until `;`, `asciiTable` output (centered headers, `--+--` rule, right-aligned numerics), history (↑/↓, cap 80), Ctrl+L clear, Ctrl+C cancel-line. **Wire the prototype's mock calls to the real backend**: SQL → `query_run`; `\dt`/list-tables → `connection_tables`; `\d`/DESCRIBE → `table_meta` (format columns/indexes/FKs as ASCII); `.schema`/DDL → `table_meta.ddl`; `\dn`/`\l`/SHOW DATABASES → `connection_schemas`; `\c`/USE → set workspace `ui.schemaName`. Redis session body = `RedisCli` (real `kv_command`).
+> No backend changes (all commands already exist). Revise the Task-1 panel/console to match `terminal.jsx`.
+
 ## Goal
 
 A persistent, dockable **bottom console panel** (like the VS Code panel) available in every workspace, for users who prefer typing commands over the tab UI. The panel is **attached to the active workspace's live connection** and adapts to its engine:

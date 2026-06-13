@@ -1,30 +1,25 @@
 // Redis tab bar (REDIS_SPEC §5) — ported from `redis.jsx` RedisTabBar. Same
 // 37px `.tabbar`/`.tab` chrome as the SQL workspace, but the leading glyph is
-// a type badge for key tabs (not a generic icon), and the `+` / ⌘T opens a new
-// CLI console rather than a SQL tab. The dashboard tab is non-closable.
+// a type badge for key tabs (not a generic icon). The Redis tab kinds are
+// `{dashboard, key}` — the M13 cli tab is gone (M14: command work lives in the
+// docked console panel). The right-aligned terminal IconBtn toggles that panel
+// (mirrors the SQL TabBar). The dashboard tab is non-closable.
 
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 
 import { Icon } from "../../../shared/ui/Icon";
+import { IconBtn } from "../../../shared/ui/IconBtn";
 import type { RedisTab } from "../state";
 import { RedisTypeBadge } from "./RedisTypeBadge";
 import "./RedisTabBar.css";
 
-/** Non-key tab kinds → Material Symbol (REDIS_SPEC §5). */
-const TAB_ICON: Record<"dashboard" | "cli", string> = {
-  dashboard: "monitoring",
-  cli: "terminal",
-};
-
-/** The visible label: the key name, the CLI's "CLI N", or "Dashboard". */
+/** The visible label: the key name, or "Dashboard". */
 function tabTitle(tab: RedisTab): string {
   switch (tab.kind) {
     case "dashboard":
       return "Dashboard";
     case "key":
       return tab.key;
-    case "cli":
-      return tab.title;
   }
 }
 
@@ -33,10 +28,20 @@ interface RedisTabBarProps {
   activeTabId: string;
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
-  onNewCli: () => void;
+  /** True when the docked console panel is open (M14) — lights the toggle. */
+  consoleOpen: boolean;
+  /** Toggle the docked console panel (M14). */
+  onToggleConsole: () => void;
 }
 
-export function RedisTabBar({ tabs, activeTabId, onSelect, onClose, onNewCli }: RedisTabBarProps) {
+export function RedisTabBar({
+  tabs,
+  activeTabId,
+  onSelect,
+  onClose,
+  consoleOpen,
+  onToggleConsole,
+}: RedisTabBarProps) {
   return (
     <div className="tabbar" role="tablist" aria-label="Redis tabs">
       <div className="tabbar-tabs">
@@ -76,7 +81,7 @@ export function RedisTabBar({ tabs, activeTabId, onSelect, onClose, onNewCli }: 
                 <RedisTypeBadge type={tab.keyType} size={13} />
               ) : (
                 <Icon
-                  name={TAB_ICON[tab.kind]}
+                  name="monitoring"
                   size={14}
                   style={{ color: active ? "var(--accent)" : "var(--text-faint)" }}
                 />
@@ -100,9 +105,16 @@ export function RedisTabBar({ tabs, activeTabId, onSelect, onClose, onNewCli }: 
           );
         })}
       </div>
-      <button type="button" className="tab-new" onClick={onNewCli} title="New CLI console (⌘T)">
-        <Icon name="add" size={16} />
-      </button>
+      <div className="tabbar-spacer" />
+      <IconBtn
+        className="tabbar-console-btn"
+        icon="terminal"
+        size={16}
+        active={consoleOpen}
+        title="Toggle console (Ctrl+`)"
+        aria-label="Toggle console (Ctrl+`)"
+        onClick={onToggleConsole}
+      />
     </div>
   );
 }

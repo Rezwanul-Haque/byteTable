@@ -89,19 +89,14 @@
   color: var(--text);
 }
 
-.redis-main .tab-new {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  color: var(--text-faint);
-  transition:
-    color 0.1s,
-    background 0.1s;
-  flex: none;
+/* Pushes the console toggle to the right edge of the strip (M14). */
+.redis-main .tabbar-spacer {
+  flex: 1;
 }
 
-.redis-main .tab-new:hover {
-  color: var(--accent);
-  background: var(--bg2);
+/* Console toggle button — right-aligned, vertically centred in the 37px strip
+   (mirrors the SQL TabBar's console toggle). */
+.redis-main .tabbar-console-btn {
+  align-self: center;
+  margin-right: 6px;
 }

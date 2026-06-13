@@ -31,10 +31,26 @@ export const CONSOLE_DEFAULT_FRACTION = 0.33;
 export const CONSOLE_MAX_FRACTION = 0.7;
 
 /**
- * One echoed command + its outcome in the console log. The shape covers SQL
- * (this task) — `result` carries a row-returning QueryResult for the inline
- * grid; `error` carries a §5 message; both null on a non-row "Query OK".
- * Redis (Task 2) reuses the same envelope with its own status text.
+ * One formatted reply line of a Redis console entry — `cls` is the CSS class
+ * that colors it exactly like redis-cli (`cli-status`/`cli-error`/`cli-int`/
+ * `cli-bulk`/`cli-nil`/`cli-idx`), `text` is the already-formatted line. This
+ * mirrors redis_browse's `CliLine` shape, but is declared here so the
+ * slice-neutral console store never imports the Redis slice (ARCHITECTURE §11);
+ * RedisConsole (the host wire-point) maps `formatReply`'s output into this.
+ */
+export interface ConsoleReplyLine {
+  cls: string;
+  text: string;
+}
+
+/**
+ * One echoed command + its outcome in the console log. The shape covers both
+ * engines (the panel is a single per-workspace console):
+ * - **SQL** — `result` carries a row-returning QueryResult for the inline grid;
+ *   `error` carries a §5 message; both absent on a non-row "Query OK".
+ * - **Redis** — `replyLines` carries the redis-cli-formatted reply (status/
+ *   error/integer/bulk/nil/nested-array) rendered as colored text lines; the
+ *   prompt echo is rebuilt at render time from `{conn}:db{N}>`.
  */
 export interface ConsoleEntry {
   /** Monotonic id for React keys (commands can repeat verbatim). */
@@ -55,6 +71,12 @@ export interface ConsoleEntry {
    * for engines/contexts without one.
    */
   schema?: string;
+  /**
+   * The redis-cli-formatted reply lines (Redis console). Absent for SQL
+   * entries; present for every Redis entry (an error reply is one
+   * `cli-error` line).
+   */
+  replyLines?: ConsoleReplyLine[];
 }
 
 /** One workspace's console state. */

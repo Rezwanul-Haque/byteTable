@@ -20,7 +20,9 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { Icon } from "../../shared/ui/Icon";
 import { IconBtn } from "../../shared/ui/IconBtn";
 import type { Workspace } from "../workspaces/types";
+import { RedisConsole } from "./RedisConsole";
 import { SqlConsole } from "./SqlConsole";
+import { useRedisBrowseStore } from "../redis_browse/state";
 import {
   CONSOLE_DEFAULT_FRACTION,
   CONSOLE_MAX_FRACTION,
@@ -30,9 +32,12 @@ import {
 } from "./state";
 import "./ConsolePanel.css";
 
-/** The panel's title strip text per engine (SQL: `{conn} · {schema}`). */
-function panelTitle(workspace: Workspace): string {
-  if (workspace.kind === "kv") return workspace.name; // Redis lineage: Task 2.
+/**
+ * The panel's title strip text per engine (SQL: `{conn} · {schema}`; Redis:
+ * `{conn}:db{N}>`). `redisDb` is the active Redis db (only used for `kv`).
+ */
+function panelTitle(workspace: Workspace, redisDb: number): string {
+  if (workspace.kind === "kv") return workspace.name + ":db" + redisDb + ">";
   const schema =
     (workspace.ui.schemaName !== undefined &&
     workspace.schemas.some((s) => s.name === workspace.ui.schemaName)
@@ -54,6 +59,12 @@ export function ConsolePanel({ workspace }: { workspace: Workspace }) {
   const closePanel = useConsoleStore((s) => s.closePanel);
   const clearLog = useConsoleStore((s) => s.clearLog);
   const setHeight = useConsoleStore((s) => s.setHeight);
+
+  // The Redis title shows the active db (`{conn}:db{N}>`). Read it from the
+  // redis_browse slice; for SQL workspaces this is just an unused subscription
+  // that stays at the seed default. The host wires both slices (ARCHITECTURE
+  // §11) — the SQL/Redis bodies never import each other.
+  const redisDb = useRedisBrowseStore((s) => s.byWorkspace[wsId]?.dbIndex ?? 0);
 
   const rootRef = useRef<HTMLDivElement>(null);
   // The content column height, measured (never read off a ref during render).
@@ -112,7 +123,7 @@ export function ConsolePanel({ workspace }: { workspace: Workspace }) {
       />
       <div className="console-header">
         <Icon name="terminal" size={14} style={{ color: "var(--accent)" }} />
-        <span className="console-title">{panelTitle(workspace)}</span>
+        <span className="console-title">{panelTitle(workspace, redisDb)}</span>
         <div className="console-header-spacer" />
         <IconBtn
           icon="delete_sweep"
@@ -124,7 +135,7 @@ export function ConsolePanel({ workspace }: { workspace: Workspace }) {
       </div>
       <div className="console-body-wrap">
         {workspace.kind === "kv" ? (
-          <div className="console-placeholder">Redis console — Task 2</div>
+          <RedisConsole workspace={workspace} />
         ) : (
           <SqlConsole workspace={workspace} />
         )}

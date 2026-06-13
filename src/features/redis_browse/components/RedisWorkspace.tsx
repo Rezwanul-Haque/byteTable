@@ -14,6 +14,8 @@ import {
   tunnelTitle,
   type KvDbInfo,
 } from "../../connections/api";
+import { ConsolePanel } from "../../console/ConsolePanel";
+import { useConsoleStore } from "../../console/state";
 import { useWorkspacesStore } from "../../workspaces/state";
 import type { Workspace } from "../../workspaces/types";
 import type { KeyType } from "../api";
@@ -46,20 +48,31 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
   const setDbIndex = useRedisBrowseStore((state) => state.setDbIndex);
   const bumpVersion = useRedisBrowseStore((state) => state.bumpVersion);
   const openKeyTab = useRedisBrowseStore((state) => state.openKeyTab);
-  const openCliTab = useRedisBrowseStore((state) => state.openCliTab);
   const openDashboardTab = useRedisBrowseStore((state) => state.openDashboardTab);
   const setActiveTab = useRedisBrowseStore((state) => state.setActiveTab);
   const closeTab = useRedisBrowseStore((state) => state.closeTab);
-  const setCliState = useRedisBrowseStore((state) => state.setCliState);
+  // M14: the docked console panel REPLACES the M13 cli tab. ⌘T / the tab-bar +
+  // / the sidebar "New CLI console" / the palette entry all open it now.
+  const togglePanel = useConsoleStore((state) => state.togglePanel);
+  const openPanel = useConsoleStore((state) => state.openPanel);
+  const consoleOpen = useConsoleStore((state) => state.byWorkspace[wsId]?.open ?? false);
   // Subscribe to this workspace's slice so tab/db/version changes re-render.
   const slice = useRedisBrowseStore((state) => state.byWorkspace[wsId]);
   const rs = slice ?? ensure(wsId, initialDb);
 
   const [paletteOpen, setPaletteOpen] = useState(false);
 
-  // ⌘K palette toggle, ⌘T new CLI (REDIS_SPEC §5: ⌘T opens a CLI).
+  // ⌘K palette toggle; ⌘T opens the console panel (M14: was "new CLI tab", now
+  // the docked panel); ⌃` (Ctrl+backtick, the VS Code convention) toggles it —
+  // mirrors WorkspaceShell.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      // ⌃` is its own binding (Ctrl, not the ⌘/Ctrl `mod`) — handle it first.
+      if (event.ctrlKey && event.key === "`") {
+        event.preventDefault();
+        togglePanel(wsId);
+        return;
+      }
       const mod = event.metaKey || event.ctrlKey;
       if (!mod) return;
       const key = event.key.toLowerCase();
@@ -68,12 +81,12 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
         setPaletteOpen((open) => !open);
       } else if (key === "t") {
         event.preventDefault();
-        openCliTab(wsId, initialDb);
+        openPanel(wsId);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [openCliTab, wsId, initialDb]);
+  }, [openPanel, togglePanel, wsId]);
 
   const activeTab = rs.tabs.find((t) => t.id === rs.activeTabId) ?? rs.tabs[0];
   const activeKey =
@@ -97,11 +110,6 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
   const onSelectDb = useCallback(
     (db: number) => setDbIndex(wsId, initialDb, db),
     [setDbIndex, wsId, initialDb],
-  );
-  const onPersistCli = useCallback(
-    (tabId: string, state: Parameters<typeof setCliState>[3]) =>
-      setCliState(wsId, initialDb, tabId, state),
-    [setCliState, wsId, initialDb],
   );
   const onKeyMeta = useCallback(
     (tabId: string, meta: { keyType: KeyType; memory: number | null }) =>
@@ -134,7 +142,7 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
         onDbChange={(db) => setDbIndex(wsId, initialDb, db)}
         onRefresh={() => bumpVersion(wsId, initialDb)}
         onOpenKey={(db, key, keyType) => openKeyTab(wsId, initialDb, db, key, keyType)}
-        onOpenCli={() => openCliTab(wsId, initialDb)}
+        onOpenCli={() => openPanel(wsId)}
         onOpenDashboard={() => openDashboardTab(wsId, initialDb)}
         onCloseWorkspace={() => closeWorkspace(wsId)}
       />
@@ -144,24 +152,19 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
           activeTabId={rs.activeTabId}
           onSelect={(id) => setActiveTab(wsId, initialDb, id)}
           onClose={(id) => closeTab(wsId, initialDb, id)}
-          onNewCli={() => openCliTab(wsId, initialDb)}
+          consoleOpen={consoleOpen}
+          onToggleConsole={() => togglePanel(wsId)}
         />
         <div className="redis-tab-content">
           {activeTab ? (
             <RedisTabContent
               tab={activeTab}
               handleId={workspace.handleId}
-              connName={workspace.name}
               serverInfo={serverInfo}
-              serverVersion={
-                serverInfo ? "Redis " + serverInfo.serverVersion : workspace.info.serverVersion
-              }
               dbIndex={rs.dbIndex}
               databases={databases}
               version={rs.version}
               isProduction={env === "production"}
-              cli={rs.cli}
-              onPersistCli={onPersistCli}
               onKeyMeta={onKeyMeta}
               onMutated={onMutated}
               onSelectDb={onSelectDb}
@@ -169,6 +172,9 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
             />
           ) : null}
         </div>
+        {/* Docks at the bottom of the content column, above the status bar
+            (M14) — the Redis console; only renders when the panel is open. */}
+        <ConsolePanel workspace={workspace} />
       </main>
       <RedisStatusBar
         workspaceColor={workspace.color}

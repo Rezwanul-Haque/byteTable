@@ -22,6 +22,35 @@ pub async fn update_cell(
     manager.get_sql(handle).await?.update_cell(req).await
 }
 
+/// Empty a table of all rows, keeping its structure (M15 truncate). **Mutates
+/// user data.** The adapter is engine-aware (Postgres/MySQL `TRUNCATE TABLE`;
+/// SQLite `DELETE` in a transaction), validates the table exists, and quotes
+/// identifiers per engine (see `EngineConnection::truncate_table`). Returns the
+/// number of rows removed. The production-confirm dialog is renderer-side
+/// (Task 2); this use-case only routes the request.
+pub async fn truncate_table(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    schema: &str,
+    table: &str,
+) -> Result<TruncateResult, AppError> {
+    let affected = manager
+        .get_sql(handle)
+        .await?
+        .truncate_table(schema, table)
+        .await?;
+    Ok(TruncateResult { affected })
+}
+
+/// The outcome of a `truncate_table` call: the number of rows removed
+/// (`affected`). Camel-case on the wire to match the renderer's
+/// `{ affected: number }`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TruncateResult {
+    pub affected: u64,
+}
+
 #[cfg(test)]
 mod tests {
     use async_trait::async_trait;
@@ -89,6 +118,12 @@ mod tests {
             })
         }
 
+        async fn truncate_table(&self, schema: &str, table: &str) -> Result<u64, AppError> {
+            // Echo a deterministic count derived from the names so the use-case
+            // wiring (and the TruncateResult mapping) is observable.
+            Ok((schema.len() + table.len()) as u64)
+        }
+
         async fn close(&self) -> Result<(), AppError> {
             Ok(())
         }
@@ -118,6 +153,29 @@ mod tests {
             .expect("update cell");
         assert_eq!(result.affected, 1);
         assert_eq!(result.statement, "main.users SET name (pk 1)");
+    }
+
+    #[tokio::test]
+    async fn truncate_delegates_to_the_connection_behind_the_handle() {
+        let manager = ConnectionManager::new();
+        let handle = manager
+            .insert(crate::shared::engine::OpenConnection::sql(FakeConnection))
+            .await;
+        let result = truncate_table(&manager, &handle, "main", "users")
+            .await
+            .expect("truncate");
+        // "main" (4) + "users" (5) = 9 from the fake.
+        assert_eq!(result.affected, 9);
+    }
+
+    #[tokio::test]
+    async fn truncate_on_a_closed_handle_is_a_not_found() {
+        let manager = ConnectionManager::new();
+        let handle = ConnectionHandleId("ghost".into());
+        let err = truncate_table(&manager, &handle, "main", "users")
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::NotFound(_)));
     }
 
     #[tokio::test]

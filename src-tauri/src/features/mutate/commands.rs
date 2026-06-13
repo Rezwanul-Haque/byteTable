@@ -18,6 +18,7 @@ use crate::shared::engine::{UpdateCellRequest, UpdateResult};
 use crate::shared::error::AppError;
 
 use super::application;
+use super::application::TruncateResult;
 
 /// Update a single cell for M11 inline editing (`row_update` command): set one
 /// column to a new value on the row identified by its full primary key.
@@ -32,4 +33,19 @@ pub async fn row_update(
     req: UpdateCellRequest,
 ) -> Result<UpdateResult, AppError> {
     application::update_cell(state.manager(), &handle_id, req).await
+}
+
+/// Empty a table of all rows, keeping its structure (M15 `truncate_table`
+/// command). **Mutates user data.** Engine-aware in the adapter (Postgres/MySQL
+/// `TRUNCATE`, SQLite `DELETE` in a transaction). Returns `{ affected }`, the
+/// number of rows removed. Unknown schema/table surface as `{ kind, message }`
+/// §5 errors. The production-confirm dialog is renderer-side (Task 2).
+#[tauri::command]
+pub async fn truncate_table(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+    schema: String,
+    table: String,
+) -> Result<TruncateResult, AppError> {
+    application::truncate_table(state.manager(), &handle_id, &schema, &table).await
 }

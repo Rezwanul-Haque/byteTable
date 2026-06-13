@@ -425,6 +425,14 @@ impl EngineConnection for MysqlEngineConnection {
         update_cell(&self.pool, &req).await
     }
 
+    fn quote_identifier(&self, ident: &str) -> String {
+        quote_ident(ident)
+    }
+
+    async fn truncate_table(&self, schema: &str, table: &str) -> Result<u64, AppError> {
+        truncate_table(&self.pool, schema, table).await
+    }
+
     async fn alter_table(
         &self,
         schema: &str,
@@ -1298,6 +1306,28 @@ fn no_row_matched_error() -> AppError {
     AppError::Database(
         "No row matched (it may have been deleted or changed since you loaded it).".to_string(),
     )
+}
+
+/// Empty a table, keeping its structure (M15 truncate). MySQL has a native
+/// `TRUNCATE TABLE`, which reports no affected-row count, so we `COUNT(*)`
+/// first and return that as the number removed (0 for an already-empty table).
+/// The table must exist (reuse `table_meta` for the §5 "Table 'x' does not
+/// exist…" message).
+async fn truncate_table(pool: &MySqlPool, schema: &str, table: &str) -> Result<u64, AppError> {
+    table_meta(pool, schema, table).await?;
+    let qualified = qualified(schema, table);
+
+    let prior: i64 = sqlx::query_scalar(&format!("SELECT count(*) FROM {qualified}"))
+        .fetch_one(pool)
+        .await
+        .map_err(map_query_error)?;
+
+    sqlx::query(&format!("TRUNCATE TABLE {qualified}"))
+        .execute(pool)
+        .await
+        .map_err(map_query_error)?;
+
+    Ok(prior.max(0) as u64)
 }
 
 /// Enforce the full-primary-key policy (mass-update prevention). Identical
@@ -2595,6 +2625,103 @@ mod integration {
         assert!(matches!(drop_pk, Err(AppError::Database(_))));
 
         conn.close().await.expect("close");
+        drop_fixture(&pool, schema, other).await;
+    }
+
+    // ---- M15: truncate + export against live MySQL ----
+
+    #[tokio::test]
+    async fn truncate_empties_table_and_reports_prior_count() {
+        let Some((params, secret)) = gate("truncate_empties_table_and_reports_prior_count") else {
+            return;
+        };
+        let pool = raw_pool(&params, &secret).await;
+        let (schema, other) = ("bt_it_truncate", "bt_it_truncate_other");
+        setup_fixture(&pool, schema, other).await;
+        let conn = open_conn(&params, &secret).await;
+
+        // books (the child of the FK) has 4 rows; truncating the child is safe.
+        let affected = conn
+            .truncate_table(schema, "books")
+            .await
+            .expect("truncate books");
+        assert_eq!(affected, 4);
+        let after: i64 = sqlx::query_scalar(&format!("SELECT count(*) FROM `{schema}`.`books`"))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(after, 0);
+
+        let again = conn
+            .truncate_table(schema, "books")
+            .await
+            .expect("re-truncate");
+        assert_eq!(again, 0);
+
+        let err = conn.truncate_table(schema, "ghost").await.unwrap_err();
+        assert!(matches!(err, AppError::Database(_)));
+        assert!(err.to_string().contains("does not exist"));
+
+        conn.close().await.expect("close");
+        drop_fixture(&pool, schema, other).await;
+    }
+
+    #[tokio::test]
+    async fn export_csv_and_sql_against_live_mysql() {
+        use crate::features::connections::application::ConnectionManager;
+        use crate::features::export::application::{export_schema_sql, export_table};
+        use crate::features::export::domain::ExportFormat;
+
+        let Some((params, secret)) = gate("export_csv_and_sql_against_live_mysql") else {
+            return;
+        };
+        let pool = raw_pool(&params, &secret).await;
+        let (schema, other) = ("bt_it_export", "bt_it_export_other");
+        setup_fixture(&pool, schema, other).await;
+
+        let open = MysqlConnector
+            .open_with_secret(&params, secret.as_ref())
+            .await
+            .expect("open");
+        let manager = ConnectionManager::new();
+        let handle = manager.insert(open).await;
+
+        // CSV: header + every authors row (3); NULL bio → empty field.
+        let csv = export_table(&manager, &handle, schema, "authors", ExportFormat::Csv)
+            .await
+            .expect("export csv");
+        assert_eq!(csv.lines().next().unwrap(), "id,name,bio");
+        assert_eq!(csv.lines().count(), 4);
+        assert!(csv.contains("2,Grace,"));
+
+        // SQL: DDL + one INSERT per row, MySQL backtick identifiers.
+        let sql = export_table(&manager, &handle, schema, "books", ExportFormat::Sql)
+            .await
+            .expect("export sql");
+        assert!(sql.contains(&format!("INSERT INTO `{schema}`.`books`")));
+        assert_eq!(sql.matches("INSERT INTO").count(), 4);
+        assert!(sql.contains("NULL"));
+
+        let dump = export_schema_sql(&manager, &handle, schema)
+            .await
+            .expect("export schema");
+        assert!(dump.contains("-- ByteTable schema dump"));
+        assert!(dump.contains("authors"));
+        assert!(dump.contains("books"));
+
+        // Empty table after truncate exports the no-rows marker.
+        manager
+            .get_sql(&handle)
+            .await
+            .unwrap()
+            .truncate_table(schema, "books")
+            .await
+            .expect("truncate");
+        let empty_sql = export_table(&manager, &handle, schema, "books", ExportFormat::Sql)
+            .await
+            .expect("export empty");
+        assert!(empty_sql.contains("-- (no rows)"));
+
         drop_fixture(&pool, schema, other).await;
     }
 }

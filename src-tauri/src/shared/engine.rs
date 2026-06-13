@@ -1343,6 +1343,41 @@ pub trait EngineConnection: Send + Sync {
         ))
     }
 
+    /// Quote a single SQL identifier (column / table / schema name) the way
+    /// THIS engine requires, doubling any embedded quote character (M15 export).
+    ///
+    /// The export use-cases run in the engine-agnostic application layer but
+    /// must emit engine-correct `INSERT` statements (Postgres/SQLite wrap in
+    /// double quotes, MySQL in backticks). Rather than leak per-engine quoting
+    /// up the stack, the application layer asks the open connection to quote.
+    /// This is a pure, synchronous string transform — no driver I/O — so it is
+    /// a plain method, not `async`.
+    ///
+    /// Default impl: ANSI double-quoting (`"name"`, embedded `"` doubled),
+    /// which is correct for SQLite and Postgres; MySQL overrides it to use
+    /// backticks. Test fakes inherit the default unchanged.
+    fn quote_identifier(&self, ident: &str) -> String {
+        format!("\"{}\"", ident.replace('"', "\"\""))
+    }
+
+    /// Empty a table of all rows, keeping its structure (M15 truncate).
+    ///
+    /// **Mutates user data.** Engine-aware: Postgres/MySQL run `TRUNCATE TABLE`;
+    /// SQLite, which has no `TRUNCATE`, runs `DELETE FROM …` inside a
+    /// transaction (so `affected` reflects the prior row count). The adapter
+    /// validates the table exists (a §5 error otherwise) and quotes both
+    /// identifiers. Returns the number of rows removed — exact for SQLite's
+    /// `DELETE`; for the server engines `TRUNCATE` does not report a row count,
+    /// so the adapter counts the rows first and returns that (0 for an
+    /// already-empty table).
+    ///
+    /// Default impl: `Unsupported` — only engines that implement it override it.
+    async fn truncate_table(&self, _schema: &str, _table: &str) -> Result<u64, AppError> {
+        Err(AppError::Unsupported(
+            "Truncating tables is not supported for this engine yet.".into(),
+        ))
+    }
+
     /// Release the underlying driver resources. For drop-managed drivers
     /// (rusqlite) this may be a no-op; server engines use it for an orderly
     /// goodbye.

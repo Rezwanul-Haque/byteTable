@@ -219,6 +219,17 @@ impl EngineConnection for SqliteEngineConnection {
             .await
     }
 
+    fn quote_identifier(&self, ident: &str) -> String {
+        quote_ident(ident)
+    }
+
+    async fn truncate_table(&self, schema: &str, table: &str) -> Result<u64, AppError> {
+        let schema = schema.to_string();
+        let table = table.to_string();
+        self.with_conn(move |conn| truncate_table_blocking(conn, &schema, &table))
+            .await
+    }
+
     async fn close(&self) -> Result<(), AppError> {
         // rusqlite closes on drop; the manager dropping its Arc is the real
         // teardown. This hook exists for engines that need an explicit
@@ -1282,6 +1293,34 @@ fn update_cell_blocking(
         affected,
         statement: display_update_statement(&qualified, &req.column, &req.value, &req.pk),
     })
+}
+
+/// Empty a table, keeping its structure (M15 truncate). SQLite has no
+/// `TRUNCATE`, so this runs `DELETE FROM "schema"."table"` inside a
+/// transaction; the affected count is the number of rows removed (0 for an
+/// already-empty table). The table must exist (a §5 error otherwise) — we
+/// reuse `table_meta_blocking` for the same "Table 'x' does not exist…"
+/// message the rest of the adapter produces.
+fn truncate_table_blocking(conn: &Connection, schema: &str, table: &str) -> Result<u64, AppError> {
+    // Existence + schema validation, identical message vocabulary to update.
+    table_meta_blocking(conn, schema, table)?;
+
+    let qualified = format!("{}.{}", quote_ident(schema), quote_ident(table));
+    let delete_sql = format!("DELETE FROM {qualified}");
+
+    let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
+    conn.execute_batch("BEGIN")
+        .map_err(|err| map_query_error(conn, err))?;
+    let affected = match conn.execute(&delete_sql, []) {
+        Ok(affected) => affected as u64,
+        Err(err) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            return Err(map_query_error(conn, err));
+        }
+    };
+    conn.execute_batch("COMMIT")
+        .map_err(|err| map_query_error(conn, err))?;
+    Ok(affected)
 }
 
 /// The §5 "no row matched" error shared by the null-pk short-circuit and the
@@ -4250,5 +4289,63 @@ mod tests {
             cell(&conn, "SELECT note FROM t WHERE id = 1"),
             serde_json::json!("O'Brien")
         );
+    }
+
+    // ---- M15 truncate + identifier quoting ----
+
+    #[test]
+    fn quote_identifier_uses_double_quotes_and_doubles_embedded() {
+        let conn = SqliteEngineConnection {
+            conn: Arc::new(Mutex::new(Connection::open_in_memory().unwrap())),
+            info: sqlite_engine_info(),
+        };
+        assert_eq!(conn.quote_identifier("users"), "\"users\"");
+        assert_eq!(conn.quote_identifier("we\"ird"), "\"we\"\"ird\"");
+    }
+
+    #[tokio::test]
+    async fn truncate_empties_a_table_and_reports_prior_count() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_fixture(&dir).await;
+        // users has 3 rows.
+        let affected = conn
+            .truncate_table("main", "users")
+            .await
+            .expect("truncate");
+        assert_eq!(affected, 3);
+        let page = conn
+            .fetch_rows(FetchRowsRequest {
+                schema: "main".into(),
+                table: "users".into(),
+                sort: None,
+                filter: None,
+                offset: 0,
+                limit: 100,
+            })
+            .await
+            .expect("fetch after truncate");
+        assert_eq!(page.total_rows, Some(0));
+        assert!(page.rows.is_empty());
+    }
+
+    #[tokio::test]
+    async fn truncate_empty_table_is_zero() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_fixture(&dir).await;
+        // orders is created empty.
+        let affected = conn
+            .truncate_table("main", "orders")
+            .await
+            .expect("truncate");
+        assert_eq!(affected, 0);
+    }
+
+    #[tokio::test]
+    async fn truncate_unknown_table_is_a_human_error() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_fixture(&dir).await;
+        let err = conn.truncate_table("main", "ghost").await.unwrap_err();
+        assert!(matches!(err, AppError::Database(_)));
+        assert!(err.to_string().contains("does not exist"));
     }
 }

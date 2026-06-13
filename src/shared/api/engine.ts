@@ -459,6 +459,78 @@ export function rowUpdate(handleId: string, req: UpdateCellRequest): Promise<Upd
 }
 
 // ---------------------------------------------------------------------------
+// Export + truncate (M15, DESIGN_SPEC §3.5/§3.6).
+//
+// Export generates text in the Rust backend (the prototype downloaded via a
+// browser Blob; ByteTable produces the text server-side and writes it through
+// the native save dialog). `exportTable` / `exportSchema` return the text;
+// `exportSave` writes it to the path the renderer obtained from the save
+// dialog. `truncateTable` empties a table (engine-aware server-side: Postgres/
+// MySQL `TRUNCATE`, SQLite `DELETE` in a transaction). The Task-2 UI (table-
+// actions menu, sidebar entries, column popover, TruncateModal) consumes these
+// wrappers; the save-dialog → `exportSave` flow is the export download path.
+// ---------------------------------------------------------------------------
+
+/** The export output format (`csv` / `sql`). Lowercase, matching the Rust enum. */
+export type ExportFormat = "csv" | "sql";
+
+/** The outcome of {@link truncateTable}: the number of rows removed. */
+export interface TruncateResult {
+  affected: number;
+}
+
+/**
+ * Generate the export text for one table (`export_table` command). `format`
+ * picks CSV (header + every row, prototype `csvVal` escaping) or SQL (the
+ * `CREATE TABLE` DDL + one INSERT per row, prototype `sqlVal` literals,
+ * engine-correct identifier quoting). Unknown schema/table surface as
+ * `{ kind, message }` §5 errors. The text is built from ALL rows (not the
+ * grid's page).
+ */
+export function exportTable(
+  handleId: string,
+  schema: string,
+  table: string,
+  format: ExportFormat,
+): Promise<string> {
+  return invoke<string>("export_table", { handleId, schema, table, format });
+}
+
+/**
+ * Generate a SQL dump (DDL + data) for every base table in a schema
+ * (`export_schema` command), concatenated under a header comment. Tables are
+ * dumped in listing order, not foreign-key order (the dump notes a restore may
+ * need FK checks disabled).
+ */
+export function exportSchema(handleId: string, schema: string): Promise<string> {
+  return invoke<string>("export_schema", { handleId, schema });
+}
+
+/**
+ * Write generated export text to a user-chosen path (`export_save` command).
+ * The `path` comes from the native save dialog (the `dialog:allow-save`
+ * capability). IO failures surface a §5 error naming the path.
+ */
+export function exportSave(path: string, contents: string): Promise<void> {
+  return invoke<void>("export_save", { path, contents });
+}
+
+/**
+ * Empty a table of all rows, keeping its structure (`truncate_table` command).
+ * **Mutates user data.** Engine-aware server-side (Postgres/MySQL `TRUNCATE`,
+ * SQLite `DELETE` in a transaction). Returns `{ affected }`, the number of rows
+ * removed. Unknown schema/table surface as `{ kind, message }` §5 errors. The
+ * production-confirm dialog (TruncateModal) is the caller's responsibility.
+ */
+export function truncateTable(
+  handleId: string,
+  schema: string,
+  table: string,
+): Promise<TruncateResult> {
+  return invoke<TruncateResult>("truncate_table", { handleId, schema, table });
+}
+
+// ---------------------------------------------------------------------------
 // Structure editing (M8, DESIGN_SPEC §3.6) — staged ALTER pipeline.
 //
 // One inline edit = one staged `AlterOp`. The structure view accumulates a

@@ -56,12 +56,80 @@ export interface ColumnInfo {
   fk: FkRef | null;
 }
 
+/** One index on a table (M7 structure view §3.6). */
+export interface IndexInfo {
+  name: string;
+  /** Indexed columns, in index order (may be empty for an expression index). */
+  columns: string[];
+  /** True for a UNIQUE index (includes the implicit primary-key index). */
+  unique: boolean;
+  /** True for the implicit primary-key index (SQLite `origin == "pk"`). */
+  primary: boolean;
+  /**
+   * How the index came to exist, when known. SQLite: `"c"` (CREATE INDEX),
+   * `"u"` (a UNIQUE constraint), or `"pk"` (the primary key). `null` for
+   * engines that do not report it.
+   */
+  origin: string | null;
+}
+
 /**
- * Column-level metadata for one table. Deliberately minimal — the M7
- * structure view will extend this shape (indexes, defaults, …).
+ * One foreign key declared on a table (outbound), grouped per constraint so a
+ * composite key is one entry with parallel column lists (`columns[i]`
+ * references `refColumns[i]`).
+ */
+export interface ForeignKeyInfo {
+  /** The constraint name, when the engine exposes one. SQLite: always `null`. */
+  name: string | null;
+  /** Local columns of this table, in constraint order. */
+  columns: string[];
+  refTable: string;
+  /** Referenced columns of `refTable`, parallel to `columns`. */
+  refColumns: string[];
+  /** The `ON DELETE` action (e.g. "CASCADE", "SET NULL"); `null` if unknown. */
+  onDelete: string | null;
+  /** The `ON UPDATE` action; `null` if unknown. */
+  onUpdate: string | null;
+}
+
+/**
+ * A foreign key pointing *at* this table from another table in the same
+ * schema (M7 §3.6 "referenced by"). Grouped per constraint like
+ * {@link ForeignKeyInfo}.
+ */
+export interface InboundFkInfo {
+  /** The child table that holds the foreign key. */
+  table: string;
+  /** The child table's foreign-key columns, in constraint order. */
+  columns: string[];
+  /** This table's referenced columns, parallel to `columns`. */
+  refColumns: string[];
+  /** The `ON DELETE` action on the child's constraint; `null` if unknown. */
+  onDelete: string | null;
+}
+
+/**
+ * Metadata for one table. `columns` powers the M3 sidebar / M4 grid headers
+ * (its shape is unchanged); the rest powers the M7 structure view (§3.6):
+ * indexes, outbound + inbound foreign keys, and the CREATE TABLE DDL. The
+ * `Vec` fields are always present (empty when none); `comment`/`ddl` are
+ * `null` when absent.
  */
 export interface TableMeta {
   columns: ColumnInfo[];
+  /**
+   * The table's comment, when the engine has one. SQLite has none (always
+   * `null`); modelled for the §3.6 header and server engines (M12).
+   */
+  comment?: string | null;
+  /** Indexes, including the implicit primary-key index (`primary: true`). */
+  indexes: IndexInfo[];
+  /** Foreign keys declared on this table (outbound), grouped per constraint. */
+  foreignKeys: ForeignKeyInfo[];
+  /** Foreign keys pointing at this table (inbound) from the same schema. */
+  referencedBy: InboundFkInfo[];
+  /** The verbatim CREATE TABLE statement for the §3.6 DDL modal; `null` if absent. */
+  ddl?: string | null;
 }
 
 /** Column metadata accompanying a query result. */

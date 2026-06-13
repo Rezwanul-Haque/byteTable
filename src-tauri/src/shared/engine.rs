@@ -129,15 +129,98 @@ pub struct TableInfo {
     pub approx_row_count: Option<u64>,
 }
 
-/// Column-level metadata for one table, powering the M3 sidebar's
-/// expandable column lists (pk/fk icons + type labels).
+/// Metadata for one table. Powers the M3 sidebar (`columns` with pk/fk icons
+/// and type labels) and, since M7, the structure view's 348px rail
+/// (DESIGN_SPEC §3.6): indexes, table-level and inbound foreign keys, plus the
+/// `CREATE TABLE` DDL.
 ///
-/// Deliberately minimal: the M7 structure view will extend this shape
-/// (indexes, defaults, collation, …) — do not add fields speculatively.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// M7 additions (everything past `columns`) are additive — `columns` keeps
+/// its M3 shape so the sidebar and the M4 grid headers, which read only
+/// `columns`, are unaffected. New `Vec` fields are always present (empty when
+/// none); `comment`/`ddl` are `Option` (always present on the wire, `null`
+/// when absent). `Default` is derived so test fakes can build a bare
+/// `TableMeta { columns, ..Default::default() }` without enumerating M7
+/// fields, and so future additive fields do not break them.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TableMeta {
     pub columns: Vec<ColumnInfo>,
+    /// The table's comment/description, when the engine has one. SQLite has
+    /// no table comments, so this is always `None` there; it is modelled now
+    /// for the §3.6 header's "table comment" slot and for server engines
+    /// (MySQL `COMMENT`, Postgres `COMMENT ON TABLE`) in M12.
+    pub comment: Option<String>,
+    /// Indexes declared on the table, including the implicit primary-key
+    /// index (`primary == true`). Empty when the table has none.
+    pub indexes: Vec<IndexInfo>,
+    /// Foreign keys declared *on this table* (outbound), grouped per
+    /// constraint so a composite fk is one entry with ordered column lists.
+    /// `ColumnInfo.fk` carries the same targets per-column for the sidebar
+    /// icon; this is the table-level view §3.6 renders.
+    pub foreign_keys: Vec<ForeignKeyInfo>,
+    /// Foreign keys *pointing at this table* (inbound) from other tables in
+    /// the same schema — §3.6's "referenced by". Empty when nothing
+    /// references it. See the SQLite adapter for the per-table scan cost note.
+    pub referenced_by: Vec<InboundFkInfo>,
+    /// The `CREATE TABLE` statement, verbatim, for the §3.6 DDL modal
+    /// (rendered syntax-highlighted — verbatim is truthful). `None` when the
+    /// engine cannot supply it.
+    pub ddl: Option<String>,
+}
+
+/// One index on a table (§3.6 structure view).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IndexInfo {
+    pub name: String,
+    /// Indexed columns, in index order. May be empty for an expression index
+    /// (SQLite reports expression members as unnamed).
+    pub columns: Vec<String>,
+    /// True for a UNIQUE index (includes the implicit primary-key index).
+    pub unique: bool,
+    /// True for the implicit primary-key index (SQLite `origin == "pk"`).
+    pub primary: bool,
+    /// How the index came to exist, when the engine reports it. SQLite uses
+    /// `"c"` (CREATE INDEX), `"u"` (a UNIQUE constraint), or `"pk"` (the
+    /// primary key); other engines leave this `None`.
+    pub origin: Option<String>,
+}
+
+/// One foreign key declared on a table (outbound), grouped per constraint so
+/// composite keys are a single entry with parallel, ordered column lists
+/// (`columns[i]` references `ref_columns[i]`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForeignKeyInfo {
+    /// The constraint name, when the engine exposes one. SQLite's
+    /// `foreign_key_list` has no name, so this is always `None` there; server
+    /// engines populate it.
+    pub name: Option<String>,
+    /// Local columns of this table, in constraint order.
+    pub columns: Vec<String>,
+    pub ref_table: String,
+    /// Referenced columns of `ref_table`, parallel to `columns`.
+    pub ref_columns: Vec<String>,
+    /// The `ON DELETE` action (e.g. `"CASCADE"`, `"SET NULL"`,
+    /// `"NO ACTION"`), as the engine reports it; `None` if unknown.
+    pub on_delete: Option<String>,
+    /// The `ON UPDATE` action, as the engine reports it; `None` if unknown.
+    pub on_update: Option<String>,
+}
+
+/// A foreign key from another table pointing *at* this table (§3.6
+/// "referenced by"). Grouped per constraint like [`ForeignKeyInfo`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InboundFkInfo {
+    /// The child table that holds the foreign key.
+    pub table: String,
+    /// The child table's foreign-key columns, in constraint order.
+    pub columns: Vec<String>,
+    /// This table's referenced columns, parallel to `columns`.
+    pub ref_columns: Vec<String>,
+    /// The `ON DELETE` action on the child's constraint; `None` if unknown.
+    pub on_delete: Option<String>,
 }
 
 /// One column of a table.
@@ -564,6 +647,7 @@ mod tests {
                     fk: None,
                 },
             ],
+            ..Default::default()
         };
         let json = serde_json::to_value(&meta).unwrap();
         assert_eq!(
@@ -584,10 +668,108 @@ mod tests {
                         "pk": true,
                         "fk": null
                     }
-                ]
+                ],
+                // M7 additions: always present on the wire, empty/null by default.
+                "comment": null,
+                "indexes": [],
+                "foreignKeys": [],
+                "referencedBy": [],
+                "ddl": null
             })
         );
         // And the shape round-trips.
+        let back: TableMeta = serde_json::from_value(json).unwrap();
+        assert_eq!(back, meta);
+    }
+
+    #[test]
+    fn table_meta_m7_structure_fields_wire_shape_round_trips() {
+        let meta = TableMeta {
+            columns: vec![ColumnInfo {
+                name: "id".into(),
+                data_type: "INTEGER".into(),
+                nullable: true,
+                pk: true,
+                fk: None,
+            }],
+            comment: Some("the books table".into()),
+            indexes: vec![
+                IndexInfo {
+                    name: "sqlite_autoindex_books_1".into(),
+                    columns: vec!["id".into()],
+                    unique: true,
+                    primary: true,
+                    origin: Some("pk".into()),
+                },
+                IndexInfo {
+                    name: "idx_books_author_title".into(),
+                    columns: vec!["author_id".into(), "title".into()],
+                    unique: false,
+                    primary: false,
+                    origin: Some("c".into()),
+                },
+            ],
+            foreign_keys: vec![ForeignKeyInfo {
+                name: None,
+                columns: vec!["author_id".into()],
+                ref_table: "authors".into(),
+                ref_columns: vec!["id".into()],
+                on_delete: Some("CASCADE".into()),
+                on_update: Some("NO ACTION".into()),
+            }],
+            referenced_by: vec![InboundFkInfo {
+                table: "reviews".into(),
+                columns: vec!["book_id".into()],
+                ref_columns: vec!["id".into()],
+                on_delete: Some("SET NULL".into()),
+            }],
+            ddl: Some("CREATE TABLE books (id INTEGER PRIMARY KEY)".into()),
+        };
+        let json = serde_json::to_value(&meta).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "columns": [
+                    { "name": "id", "dataType": "INTEGER", "nullable": true, "pk": true, "fk": null }
+                ],
+                "comment": "the books table",
+                "indexes": [
+                    {
+                        "name": "sqlite_autoindex_books_1",
+                        "columns": ["id"],
+                        "unique": true,
+                        "primary": true,
+                        "origin": "pk"
+                    },
+                    {
+                        "name": "idx_books_author_title",
+                        "columns": ["author_id", "title"],
+                        "unique": false,
+                        "primary": false,
+                        "origin": "c"
+                    }
+                ],
+                "foreignKeys": [
+                    {
+                        "name": null,
+                        "columns": ["author_id"],
+                        "refTable": "authors",
+                        "refColumns": ["id"],
+                        "onDelete": "CASCADE",
+                        "onUpdate": "NO ACTION"
+                    }
+                ],
+                "referencedBy": [
+                    {
+                        "table": "reviews",
+                        "columns": ["book_id"],
+                        "refColumns": ["id"],
+                        "onDelete": "SET NULL"
+                    }
+                ],
+                "ddl": "CREATE TABLE books (id INTEGER PRIMARY KEY)"
+            })
+        );
         let back: TableMeta = serde_json::from_value(json).unwrap();
         assert_eq!(back, meta);
     }

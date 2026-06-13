@@ -359,7 +359,7 @@ mod tests {
             _schema: &str,
             _table: &str,
         ) -> Result<crate::shared::engine::TableMeta, AppError> {
-            Ok(crate::shared::engine::TableMeta { columns: vec![] })
+            Ok(crate::shared::engine::TableMeta::default())
         }
 
         async fn run_query(

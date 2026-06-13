@@ -34,7 +34,9 @@ import {
   type SchemaInfo,
 } from "../../connections/api";
 import { TruncateModal } from "../../export/components/TruncateModal";
-import { runExport, runImport, type ExportKind } from "../../export/exportFlow";
+import { runExport, type ExportKind } from "../../export/exportFlow";
+import { ImportModal } from "../../import/components/ImportModal";
+import { SchemaImportModal } from "../../import/components/SchemaImportModal";
 import { tablesKey, columnsKey, useIntrospectionStore } from "../../introspection/state";
 import { useWorkspacesStore } from "../state";
 import { useTabMetaStore } from "../tabMeta";
@@ -131,6 +133,13 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   const [refreshing, setRefreshing] = useState(false);
   // M15 Task 2: which table the truncate modal targets (null when closed).
   const [truncateTarget, setTruncateTarget] = useState<string | null>(null);
+  // M15 SQL enhancements: the schema-actions three-dot menu, the table-level
+  // import modal target, and the schema-level dump-import modal.
+  const [schemaMenu, setSchemaMenu] = useState(false);
+  const [importTarget, setImportTarget] = useState<string | null>(null);
+  const [schemaImportOpen, setSchemaImportOpen] = useState(false);
+  const secActionsRef = useRef<HTMLDivElement | null>(null);
+  const secActionsBtnRef = useRef<HTMLButtonElement | null>(null);
 
   // Focus bookkeeping for the popover/menu (Rail pattern): focus moves into
   // the menu on open and back to its opener on close.
@@ -159,15 +168,16 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   // Outside mousedown / Escape / window blur close the popover and context
   // menu (prototype effect + the Rail's Escape handling).
   useEffect(() => {
-    if (!ctxMenu && !schemaOpen) return;
+    if (!ctxMenu && !schemaOpen && !schemaMenu) return;
     const close = () => {
       setCtxMenu(null);
       setSchemaOpen(false);
+      setSchemaMenu(false);
     };
     const onDown = (event: MouseEvent) => {
       if (
         event.target instanceof Element &&
-        event.target.closest(".schema-pop, .schema-btn, .ctx-menu")
+        event.target.closest(".schema-pop, .schema-btn, .ctx-menu, .sec-actions")
       )
         return;
       close();
@@ -177,6 +187,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
       close();
       // Return focus to the element that opened whatever was on top.
       if (ctxMenu) ctxOpenerRef.current?.focus();
+      else if (schemaMenu) secActionsBtnRef.current?.focus();
       else schemaBtnRef.current?.focus();
     };
     window.addEventListener("mousedown", onDown);
@@ -187,7 +198,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("blur", close);
     };
-  }, [ctxMenu, schemaOpen]);
+  }, [ctxMenu, schemaOpen, schemaMenu]);
 
   // Move focus into the menu/popover when it opens (a11y: keyboard users
   // land on the first item / the active schema).
@@ -203,6 +214,12 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
       pop?.querySelector<HTMLElement>("[role^='menuitem']")
     )?.focus();
   }, [schemaOpen]);
+  useEffect(() => {
+    if (!schemaMenu) return;
+    secActionsRef.current
+      ?.querySelector<HTMLElement>(".sec-actions-menu [role='menuitem']")
+      ?.focus();
+  }, [schemaMenu]);
 
   const tables = tablesEntry?.tables ?? null;
   const tablesError = errorsMap[tKey];
@@ -285,9 +302,6 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   const doExport = (kind: ExportKind, table?: string) =>
     void runExport(kind, { handleId, schema: schemaName, table }, toast);
 
-  // M15: import a .sql dump into the CURRENTLY SELECTED schema (open dialog →
-  // read+run server-side → toast + refresh the sidebar/grids).
-  const doImport = () => void runImport({ handleId, schema: schemaName }, toast);
 
   const onRowKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>, table: string) => {
     // Keydowns on the nested expand chevron bubble up here — they belong to
@@ -393,11 +407,6 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
           onClick={() => doExport("schemaSql")}
         />
         <IconBtn
-          icon="upload"
-          title={"Import .sql into “" + schemaName + "”"}
-          onClick={doImport}
-        />
-        <IconBtn
           icon="sync"
           title="Refresh schema"
           onClick={refresh}
@@ -421,7 +430,56 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
 
       <div className="sidebar-section-label">
         <span>Tables</span>
-        <span className="sidebar-count">{tables === null ? "" : tables.length}</span>
+        <div className="sec-actions" ref={secActionsRef}>
+          <span className="sidebar-count">{tables === null ? "" : tables.length}</span>
+          <button
+            ref={secActionsBtnRef}
+            type="button"
+            className="sec-actions-btn"
+            title="Schema actions"
+            aria-haspopup="menu"
+            aria-expanded={schemaMenu}
+            onClick={() => {
+              setSchemaOpen(false);
+              setCtxMenu(null);
+              setSchemaMenu((o) => !o);
+            }}
+          >
+            <Icon name="more_horiz" size={15} />
+          </button>
+          {schemaMenu ? (
+            <div
+              className="ctx-menu sec-actions-menu"
+              role="menu"
+              aria-label={"Schema actions for " + schemaName}
+              onKeyDown={onMenuKeyDown}
+            >
+              <div className="ctx-menu-label">Schema · {schemaName}</div>
+              <button
+                type="button"
+                className="ctx-item"
+                role="menuitem"
+                onClick={() => {
+                  setSchemaMenu(false);
+                  setSchemaImportOpen(true);
+                }}
+              >
+                <Icon name="upload" size={15} /> Import .sql into schema…
+              </button>
+              <button
+                type="button"
+                className="ctx-item"
+                role="menuitem"
+                onClick={() => {
+                  setSchemaMenu(false);
+                  doExport("schemaSql");
+                }}
+              >
+                <Icon name="download" size={15} /> Export schema as .sql
+              </button>
+            </div>
+          ) : null}
+        </div>
       </div>
 
       <div className="sidebar-tables">
@@ -606,6 +664,18 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
           >
             <Icon name="code" size={15} /> Export as SQL
           </button>
+          <button
+            type="button"
+            className="ctx-item"
+            role="menuitem"
+            onClick={() => {
+              const t = ctxMenu.table;
+              closeCtxMenu(false);
+              setImportTarget(t);
+            }}
+          >
+            <Icon name="upload" size={15} /> Import data…
+          </button>
           <div className="ctx-sep" />
           <button
             type="button"
@@ -640,6 +710,26 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
               }
             }
           }}
+        />
+      ) : null}
+
+      {/* Table-level import (M15 SQL enhancements): CSV / SQL-INSERT data into
+          one table. Refreshes the sidebar counts + the open grid itself. */}
+      {importTarget ? (
+        <ImportModal
+          handleId={handleId}
+          schemaName={schemaName}
+          table={importTarget}
+          onClose={() => setImportTarget(null)}
+        />
+      ) : null}
+
+      {/* Schema-level import: a multi-table .sql dump into this schema. */}
+      {schemaImportOpen ? (
+        <SchemaImportModal
+          handleId={handleId}
+          schemaName={schemaName}
+          onClose={() => setSchemaImportOpen(false)}
         />
       ) : null}
     </aside>

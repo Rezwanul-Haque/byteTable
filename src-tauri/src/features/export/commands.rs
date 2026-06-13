@@ -49,6 +49,30 @@ pub async fn export_save(path: String, contents: String) -> Result<(), AppError>
     application::export_save(&path, &contents)
 }
 
+/// Read a user-picked text file (CSV or `.sql`) for the renderer to
+/// preview/parse. The `path` comes from the native open dialog (the user's
+/// choice is the consent — same path handling as `export_save`). A
+/// missing/unreadable file surfaces a §5 IO error naming the path.
+#[tauri::command]
+pub async fn read_text_file(path: String) -> Result<String, AppError> {
+    application::read_text_file(&path)
+}
+
+/// Run a multi-statement SQL script given as TEXT (not a file path) into
+/// `schema` — the in-memory counterpart of `import_sql`, so the renderer can
+/// apply generated SQL (e.g. INSERTs built from a parsed CSV) without a temp
+/// file. Engine-aware atomicity (see `execute_script`); a script failure
+/// surfaces a §5 error. Returns the number of statements executed.
+#[tauri::command]
+pub async fn execute_script_text(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+    schema: String,
+    sql: String,
+) -> Result<ImportResult, AppError> {
+    application::execute_script_text(state.manager(), &handle_id, &schema, &sql).await
+}
+
 /// Import a `.sql` dump (the I/O counterpart of `export_save`): read the file at
 /// `path` (obtained from the renderer's native open dialog — the user's choice
 /// is the consent) and run the whole multi-statement script into `schema`. A

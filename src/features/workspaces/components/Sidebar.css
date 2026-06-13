@@ -211,6 +211,45 @@
   font-family: var(--mono);
 }
 
+/* Schema actions group beside the Tables count (ByteTable.html "schema actions
+   menu"). The three-dot button opens `.sec-actions-menu` (a `.ctx-menu`
+   anchored under the count). */
+.sec-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+}
+
+.sec-actions-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  color: var(--text-faint);
+}
+
+.sec-actions-btn:hover {
+  color: var(--text);
+  background: var(--bg3);
+}
+
+.sec-actions-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  min-width: 200px;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
+}
+
+.sec-actions-menu .ctx-item {
+  font-weight: 400;
+}
+
 .sidebar-tables {
   flex: 1;
   overflow-y: auto;

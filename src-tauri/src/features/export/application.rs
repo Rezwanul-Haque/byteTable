@@ -90,14 +90,43 @@ pub fn export_save(path: &str, contents: &str) -> Result<(), AppError> {
         .map_err(|err| AppError::Io(format!("Could not write {path}: {err}")))
 }
 
+/// Read a user-picked text file (CSV or `.sql`) into a `String` for the
+/// renderer to preview/parse. The `path` comes from the native open dialog, so
+/// the user's choice is the consent — no scope check (mirrors `export_save`'s
+/// path handling). A missing / unreadable file is a §5 IO error naming the
+/// path (the same shape `import_sql`'s read used).
+pub fn read_text_file(path: &str) -> Result<String, AppError> {
+    std::fs::read_to_string(path)
+        .map_err(|err| AppError::Io(format!("Could not read {path}: {err}")))
+}
+
+/// Run a multi-statement SQL script given as TEXT (not a file path) into
+/// `schema` via the engine's `execute_script`. This is the in-memory
+/// counterpart of `import_sql`: the renderer can hand over generated SQL (e.g.
+/// `INSERT`s built from a parsed CSV) without round-tripping through a temp
+/// file. Engine-aware atomicity is the engine's (atomic for SQLite/Postgres,
+/// non-atomic for MySQL — see `EngineConnection::execute_script`); any SQL
+/// failure surfaces its §5 message. Returns the number of statements executed.
+pub async fn execute_script_text(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    schema: &str,
+    sql: &str,
+) -> Result<ImportResult, AppError> {
+    let connection = manager.get_sql(handle).await?;
+    connection.execute_script(schema, sql).await
+}
+
 /// Import a `.sql` dump: read the file at `path` (the path comes from the
 /// renderer's native open dialog, so the user's choice is the consent — no
 /// scope check, mirroring `export_save`'s write side), then run the whole
 /// multi-statement script into `schema` via the engine's `execute_script`.
 ///
-/// The read is the I/O counterpart of `export_save`'s write: a missing /
-/// unreadable file is a §5 IO error naming the path. The script itself runs
-/// engine-aware (atomic for SQLite/Postgres, non-atomic for MySQL — see
+/// Composed from `read_text_file` + `execute_script_text` so the file-path
+/// import and the text import share one code path. The read is the I/O
+/// counterpart of `export_save`'s write: a missing / unreadable file is a §5 IO
+/// error naming the path. The script itself runs engine-aware (atomic for
+/// SQLite/Postgres, non-atomic for MySQL — see
 /// `EngineConnection::execute_script`); any SQL failure surfaces its §5 message.
 /// Returns the number of statements executed.
 pub async fn import_sql(
@@ -106,10 +135,8 @@ pub async fn import_sql(
     schema: &str,
     path: &str,
 ) -> Result<ImportResult, AppError> {
-    let contents = std::fs::read_to_string(path)
-        .map_err(|err| AppError::Io(format!("Could not read {path}: {err}")))?;
-    let connection = manager.get_sql(handle).await?;
-    connection.execute_script(schema, &contents).await
+    let contents = read_text_file(path)?;
+    execute_script_text(manager, handle, schema, &contents).await
 }
 
 // ---------------------------------------------------------------------------
@@ -476,6 +503,24 @@ mod tests {
         assert!(err.to_string().contains("Could not write"));
     }
 
+    #[test]
+    fn read_text_file_round_trips_a_tempdir_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("in.csv");
+        let contents = "id,name\n1,Ada\n2,O'Brien\n";
+        std::fs::write(&path, contents).unwrap();
+        assert_eq!(read_text_file(&path.to_string_lossy()).unwrap(), contents);
+    }
+
+    #[test]
+    fn read_text_file_on_a_missing_path_is_an_io_error_naming_the_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("nope.csv");
+        let err = read_text_file(&missing.to_string_lossy()).unwrap_err();
+        assert!(matches!(err, AppError::Io(_)));
+        assert!(err.to_string().contains("Could not read"));
+    }
+
     #[tokio::test]
     async fn closed_handle_is_a_not_found() {
         let manager = ConnectionManager::new();
@@ -767,5 +812,61 @@ mod sqlite_integration {
             .unwrap_err();
         assert!(matches!(err, AppError::Io(_)));
         assert!(err.to_string().contains("Could not read"));
+    }
+
+    #[tokio::test]
+    async fn execute_script_text_runs_a_multi_statement_string_against_real_sqlite() {
+        // The text counterpart of import_sql: hand the engine generated SQL
+        // (no temp file) and verify the rows landed.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (mgr, handle) = open_empty(&dir).await;
+        let sql = "CREATE TABLE gadgets (id INTEGER PRIMARY KEY, label TEXT);\n\
+                   INSERT INTO gadgets (id, label) VALUES (1, 'one');\n\
+                   INSERT INTO gadgets (id, label) VALUES (2, 'O''Brien');\n";
+        let result = execute_script_text(&mgr, &handle, "main", sql)
+            .await
+            .expect("execute_script_text");
+        assert_eq!(result.statements, 3);
+
+        let conn = mgr.get_sql(&handle).await.unwrap();
+        let tables = conn.list_tables("main").await.unwrap();
+        let gadgets = tables
+            .iter()
+            .find(|t| t.name == "gadgets")
+            .expect("gadgets table created");
+        assert_eq!(gadgets.approx_row_count, Some(2));
+        // The apostrophe-bearing row round-trips through the SQL string literal.
+        let csv = export_table(&mgr, &handle, "main", "gadgets", ExportFormat::Csv)
+            .await
+            .expect("read back");
+        assert!(csv.contains("O'Brien"));
+    }
+
+    #[tokio::test]
+    async fn execute_script_text_insert_only_into_a_seeded_table() {
+        // The CSV-import code path: INSERTs (no DDL) into a table that already
+        // exists, the way ImportModal generates them.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (mgr, handle) = open_fixture(&dir).await;
+        let sql = "INSERT INTO \"main\".\"users\" (\"id\", \"name\", \"note\") \
+                   VALUES (10, 'Imported', 'via text');\n";
+        let result = execute_script_text(&mgr, &handle, "main", sql)
+            .await
+            .expect("execute_script_text");
+        assert_eq!(result.statements, 1);
+        let csv = export_table(&mgr, &handle, "main", "users", ExportFormat::Csv)
+            .await
+            .expect("read back");
+        assert!(csv.contains("Imported"));
+    }
+
+    #[tokio::test]
+    async fn execute_script_text_with_a_bad_statement_is_a_human_error() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (mgr, handle) = open_empty(&dir).await;
+        let err = execute_script_text(&mgr, &handle, "main", "INSERT INTO ghost (id) VALUES (1);")
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Database(_)));
     }
 }

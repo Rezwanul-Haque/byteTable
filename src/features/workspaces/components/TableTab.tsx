@@ -23,6 +23,7 @@ import { StructureView } from "../../browse/components/StructureView";
 import { appliedDisplaySql, compileToSpec, emptyDraft } from "../../browse/filter";
 import { TruncateModal } from "../../export/components/TruncateModal";
 import { runExport } from "../../export/exportFlow";
+import { ImportModal } from "../../import/components/ImportModal";
 import { useIntrospectionStore, columnsKey } from "../../introspection/state";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Icon } from "../../../shared/ui/Icon";
@@ -93,6 +94,7 @@ export function TableTab({
   const [colOpen, setColOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [truncateOpen, setTruncateOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   // --- Bug 2: explicit paging (the prototype's `.table-footer` pager) -------
   // The tab owns pageSize + offset; the grid fetches exactly the current page
@@ -385,6 +387,17 @@ export function TableTab({
                   >
                     <Icon name="code" size={15} /> Export as SQL (schema + data)
                   </button>
+                  <button
+                    type="button"
+                    className="ctx-item"
+                    role="menuitem"
+                    onClick={() => {
+                      setActionsOpen(false);
+                      setImportOpen(true);
+                    }}
+                  >
+                    <Icon name="upload" size={15} /> Import data…
+                  </button>
                   <div className="ctx-sep" />
                   <button
                     type="button"
@@ -508,6 +521,19 @@ export function TableTab({
           table={tab.table}
           env={env}
           onClose={() => setTruncateOpen(false)}
+          onDone={() => requestRefetch(tab.id)}
+        />
+      ) : null}
+
+      {/* Table-level import (M15 SQL enhancements): CSV / SQL-INSERT data into
+          this table. The modal refreshes the sidebar counts itself; onDone
+          re-fetches this tab's grid so the new rows appear. */}
+      {importOpen ? (
+        <ImportModal
+          handleId={handleId}
+          schemaName={tab.schema}
+          table={tab.table}
+          onClose={() => setImportOpen(false)}
           onDone={() => requestRefetch(tab.id)}
         />
       ) : null}

@@ -540,6 +540,34 @@ export function importSql(
 }
 
 /**
+ * Read a user-picked text file (CSV or `.sql`) for preview/parse (the
+ * `read_text_file` command). The `path` comes from the native open dialog (the
+ * `dialog:allow-open` capability — the user's choice is the consent). A
+ * missing/unreadable file surfaces a `{ kind, message }` §5 IO error naming the
+ * path. Used by the import modals to load a file before previewing it client-
+ * side (CSV columns / INSERT statements).
+ */
+export function readTextFile(path: string): Promise<string> {
+  return invoke<string>("read_text_file", { path });
+}
+
+/**
+ * Run a multi-statement SQL script given as TEXT into a schema (the
+ * `execute_script_text` command — the in-memory counterpart of
+ * {@link importSql}). Lets the renderer apply generated SQL (e.g. INSERTs built
+ * from a parsed CSV) without a temp file. Engine-aware atomicity matches
+ * {@link importSql}; a script failure surfaces a `{ kind, message }` §5 error.
+ * Returns `{ statements }`, the number of statements executed.
+ */
+export function executeScriptText(
+  handleId: string,
+  schema: string,
+  sql: string,
+): Promise<ImportResult> {
+  return invoke<ImportResult>("execute_script_text", { handleId, schema, sql });
+}
+
+/**
  * Empty a table of all rows, keeping its structure (`truncate_table` command).
  * **Mutates user data.** Engine-aware server-side (Postgres/MySQL `TRUNCATE`,
  * SQLite `DELETE` in a transaction). Returns `{ affected }`, the number of rows

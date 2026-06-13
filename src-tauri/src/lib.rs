@@ -166,6 +166,8 @@ pub fn run() {
             features::export::commands::export_schema,
             features::export::commands::export_save,
             features::export::commands::import_sql,
+            features::export::commands::read_text_file,
+            features::export::commands::execute_script_text,
             features::structure::commands::alter_preview,
             features::structure::commands::alter_apply,
             features::saved_queries::commands::saved_query_list,

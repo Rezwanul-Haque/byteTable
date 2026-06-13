@@ -2902,6 +2902,23 @@ mod integration {
         assert!(matches!(err, AppError::Io(_)), "got {err:?}");
         assert!(err.to_string().contains("Could not read"));
 
+        // --- EXECUTE_SCRIPT_TEXT: run generated SQL directly (no temp file),
+        // the way ImportModal applies CSV-derived INSERTs.
+        {
+            use crate::features::export::application::execute_script_text;
+            let text = "CREATE TABLE from_text (id INT PRIMARY KEY, label TEXT);\n\
+                        INSERT INTO from_text (id, label) VALUES (1, 'O''Brien');\n";
+            let result = execute_script_text(&manager, &handle, fresh, text)
+                .await
+                .expect("execute_script_text");
+            assert_eq!(result.statements, 2);
+            let n: i64 = sqlx::query_scalar(&format!("SELECT count(*) FROM `{fresh}`.`from_text`"))
+                .fetch_one(&pool)
+                .await
+                .expect("count from_text");
+            assert_eq!(n, 1);
+        }
+
         let _ = sqlx::query(&format!("DROP DATABASE IF EXISTS `{fresh}`"))
             .execute(&pool)
             .await;

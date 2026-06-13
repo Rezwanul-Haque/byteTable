@@ -144,6 +144,7 @@ pub fn run() {
             features::browse::commands::rows_fetch,
             features::browse::commands::row_lookup,
             features::insights::commands::column_stats,
+            features::mutate::commands::row_update,
             features::structure::commands::alter_preview,
             features::structure::commands::alter_apply,
             features::saved_queries::commands::saved_query_list,

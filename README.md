@@ -99,9 +99,54 @@ docs/                    design specs
 
 ## Building a distributable
 
+`make build` (= `pnpm tauri build`) produces installers for the **OS you run it on** — Tauri
+builds natively per platform, so build each target on that OS (or in CI). Output lands in
+`src-tauri/target/release/bundle/`.
+
+### macOS
+
 ```sh
-make build          # → src-tauri/target/release/bundle/ (.app / .dmg / .deb / .msi per OS)
+make build                                   # → bundle/macos/ByteTable.app + bundle/dmg/*.dmg
+# Apple-silicon + Intel universal binary:
+rustup target add aarch64-apple-darwin x86_64-apple-darwin
+pnpm tauri build --target universal-apple-darwin
 ```
+
+Requires Xcode command-line tools. Distributing outside your own machine needs **code signing +
+notarization** (an Apple Developer ID); set `APPLE_CERTIFICATE`, `APPLE_ID`, `APPLE_PASSWORD`,
+`APPLE_TEAM_ID` env vars and Tauri signs/notarizes during the build. Unsigned `.app`s run locally
+but Gatekeeper blocks them elsewhere.
+
+### Linux
+
+```sh
+make build          # → bundle/deb/*.deb + bundle/appimage/*.AppImage  (+ bundle/rpm/*.rpm)
+```
+
+Install the Tauri 2 Linux deps first (Debian/Ubuntu):
+
+```sh
+sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+                 librsvg2-dev build-essential curl wget file
+```
+
+`.deb`/`.rpm` are tied to the building distro's libraries; the **`.AppImage`** is the most
+portable single-file artifact. Build on the oldest distro you intend to support (glibc
+compatibility is forward, not backward).
+
+### Windows
+
+```powershell
+make build          # → bundle\msi\*.msi (WiX) + bundle\nsis\*-setup.exe (NSIS)
+```
+
+Requires the **Microsoft C++ Build Tools** (MSVC) and **WebView2** (preinstalled on Windows 11; the
+installer auto-fetches it on older Windows). Signing is optional — set `WINDOWS_CERTIFICATE` /
+`WINDOWS_CERTIFICATE_PASSWORD` to sign the installers and avoid SmartScreen warnings.
+
+> **Cross-OS builds:** Tauri does not reliably cross-compile desktop bundles (each needs that OS's
+> webview + toolchain). The repo's GitHub Actions CI already builds on an ubuntu/macos/windows
+> matrix — use that to produce all three from one push, or run `make build` on each OS.
 
 ## License & funding
 

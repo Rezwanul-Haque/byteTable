@@ -1,8 +1,8 @@
 // Redis tab content router — renders the active Redis tab's body (REDIS_SPEC
-// §5). The three kinds: the keyspace dashboard (default, non-closable — Task
-// 4), the type-aware key viewers (Task 3), and the CLI console (Task 4). The
-// tab model + open/close/focus actions live in redis_browse/state.ts; this just
-// switches on the active tab's kind and hands each its props.
+// §5). The three kinds: the keyspace dashboard (default, non-closable), the
+// type-aware key viewers, and the CLI console. The tab model + open/close/focus
+// actions live in redis_browse/state.ts; this just switches on the active tab's
+// kind and hands each its props.
 
 import type { KvDbInfo, KvServerInfo } from "../../connections/api";
 import type { KeyType } from "../api";

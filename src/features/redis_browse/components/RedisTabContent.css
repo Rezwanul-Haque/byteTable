@@ -1,6 +1,6 @@
-/* Redis tab content — the placeholder bodies Tasks 3–4 replace. The
-   `.tab-content` flex column is re-declared here (the Redis workspace does not
-   mount the SQL content area) so the bodies fill the main column. */
+/* Redis tab content host. The `.tab-content` flex column is re-declared here
+   (the Redis workspace does not mount the SQL content area) so the dashboard /
+   key / CLI tab bodies fill the main column. */
 
 .redis-tab-content {
   flex: 1;
@@ -8,35 +8,4 @@
   display: flex;
   flex-direction: column;
   background: var(--bg0);
-}
-
-.redis-placeholder {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  background: var(--bg0);
-  color: var(--text-faint);
-}
-
-.redis-placeholder p {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-dim);
-}
-
-.redis-placeholder span {
-  font-family: var(--mono);
-  font-size: 11px;
-}
-
-.redis-placeholder-key {
-  font-family: var(--mono);
-  max-width: 80%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }

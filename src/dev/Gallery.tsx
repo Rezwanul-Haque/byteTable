@@ -17,7 +17,7 @@ import { PreferencesPanel } from "../features/preferences/components/Preferences
 import "./Gallery.css";
 
 const ENGINES: Engine[] = ["sqlite", "mysql", "postgres"];
-const ENVS: Env[] = ["local", "staging", "production"];
+const ENVS: Env[] = ["dev", "staging", "production"];
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (

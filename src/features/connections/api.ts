@@ -111,6 +111,14 @@ export interface SavedConnection {
   engine: Engine;
   params: ConnectionParams;
   env: Env;
+  /**
+   * Tile/accent color for this connection (m15 env picker). The new-connection
+   * modal stores the env's chosen swatch here; the workspace uses it for the
+   * rail tile + sidebar bar (falling back to the auto-cycle palette when
+   * absent — connections saved before m15, or the SQLite file auto-open).
+   * Optional + omitted-when-absent on the Rust side.
+   */
+  color?: string;
   createdAt?: number;
 }
 

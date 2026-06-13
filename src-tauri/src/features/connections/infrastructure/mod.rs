@@ -131,7 +131,8 @@ mod tests {
             params: ConnectionParams::Sqlite {
                 path: format!("/tmp/{id}.db"),
             },
-            env: Env::Local,
+            env: Env::Dev,
+            color: None,
             created_at: Some(1_700_000_000_000),
         }
     }

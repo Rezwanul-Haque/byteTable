@@ -23,7 +23,9 @@ import { Btn } from "../../../shared/ui/Btn";
 import { EngineBadge } from "../../../shared/ui/EngineBadge";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
+import { ENV_COLOR } from "../../../shared/ui/envColors";
 import { useToast } from "../../../shared/ui/toastContext";
+import { normalizeEnv } from "../../../shared/types";
 import {
   connectionDetail,
   connectionIsTunneled,
@@ -318,8 +320,8 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
             {workspace.name}
             <span
               className="env-dot"
-              style={{ background: "var(--env-" + workspace.saved.env + ")" }}
-              title={workspace.saved.env}
+              style={{ background: ENV_COLOR[normalizeEnv(workspace.saved.env)] }}
+              title={normalizeEnv(workspace.saved.env)}
             />
           </div>
           {/* Tunnel lock (M12 Task 3): shown when the connection is reached

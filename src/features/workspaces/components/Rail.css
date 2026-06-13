@@ -146,26 +146,11 @@
   transition:
     background 0.12s,
     transform 0.12s;
-  /* Subtle pulsing ring draws the eye to the donate ("buy us a coffee")
-     button. Animates box-shadow only (not transform) so the hover scale below
-     still works; paused on hover. */
-  animation: rail-donate-pulse 3s ease-in-out infinite;
-}
-
-@keyframes rail-donate-pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 #ef7fb100;
-  }
-  50% {
-    box-shadow: 0 0 0 4px #ef7fb12e;
-  }
 }
 
 .rail-donate:hover {
   background: #ef7fb128;
   transform: scale(1.08);
-  animation: none;
 }
 
 /* The cup itself wiggles briefly each cycle (mostly at rest) — a playful
@@ -201,7 +186,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .rail-donate,
   .rail-donate .msym {
     animation: none;
   }

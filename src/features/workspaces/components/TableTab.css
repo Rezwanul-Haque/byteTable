@@ -91,16 +91,12 @@
   color: var(--accent);
 }
 
-/* M4: the filter button is disabled until M5 — dim it so it reads as
-   not-yet-available rather than broken (not a prototype state; the
-   prototype's button is always live). */
-.filter-toggle:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.filter-toggle:disabled:hover {
-  color: var(--text-dim);
+/* Accent dot shown on the Filters button when a filter is applied (§3.5). */
+.filter-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
 }
 
 .applied-where {

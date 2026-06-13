@@ -92,6 +92,7 @@ mod tests {
             schema: "main".into(),
             table: "users".into(),
             sort: None,
+            filter: None,
             offset: 20,
             limit: 10,
         }

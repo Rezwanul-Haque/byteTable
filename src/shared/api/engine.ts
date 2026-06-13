@@ -103,15 +103,76 @@ export interface SortSpec {
 }
 
 /**
- * A request for one page of rows from a table (M4 data grid). M4 scope:
- * paging plus an optional single-column sort — row filtering is M5, so there
- * is no predicate field yet.
+ * The comparison applied by one structured filter [`Condition`] (M5). Wire
+ * tokens are camelCase, matching the Rust `FilterOp` serde. The prototype's
+ * internal op ids in `bytetable/filters.jsx` differ — the builder maps them:
+ * `neq`→`ne`, `ncontains`→`notContains`, `begins`→`beginsWith`,
+ * `ends`→`endsWith`, `in`→`inList`, `null`→`isNull`, `nnull`→`isNotNull`;
+ * the rest (`eq`/`gt`/`gte`/`lt`/`lte`/`contains`) are unchanged.
+ */
+export type FilterOp =
+  | "eq"
+  | "ne"
+  | "gt"
+  | "gte"
+  | "lt"
+  | "lte"
+  | "contains"
+  | "notContains"
+  | "beginsWith"
+  | "endsWith"
+  | "inList"
+  | "isNull"
+  | "isNotNull";
+
+/** How structured conditions combine. Lowercase on the wire ("and"/"or"). */
+export type Combinator = "and" | "or";
+
+/**
+ * The value a condition compares against: a single scalar for the comparison
+ * and LIKE operators, or an array for `inList`. Untagged on the wire — an
+ * array is the list form, anything else is the scalar form. `null` values are
+ * rejected by the backend (use `isNull` / `isNotNull` instead).
+ */
+export type FilterValue = CellValue | CellValue[];
+
+/**
+ * One structured filter row: a column, an operator, and (unless the operator
+ * is a null check) a value. `value` is `null` for `isNull` / `isNotNull`.
+ */
+export interface Condition {
+  column: string;
+  op: FilterOp;
+  value: FilterValue | null;
+}
+
+/**
+ * The filter applied to a browsed table (M5 stackable filter builder). Two
+ * mutually exclusive modes, discriminated by `mode`:
+ *
+ * - `conditions` — the structured builder. Every condition compiles to
+ *   bound-parameter SQL on the backend; no SQL-injection surface.
+ * - `raw` — the "Edit as SQL" escape hatch. `sql` is the WHERE body,
+ *   interpolated verbatim by the backend (a documented power-user feature,
+ *   same trust level as the M6 query editor).
+ */
+export type FilterSpec =
+  | { mode: "conditions"; items: Condition[]; combinator: Combinator }
+  | { mode: "raw"; sql: string };
+
+/**
+ * A request for one page of rows from a table (M4 data grid + M5 filters):
+ * paging, an optional single-column sort, and an optional filter. When a
+ * filter is present it applies to both the page query and the count, so
+ * `RowsPage.totalRows` is the *filtered* total ("n of N rows").
  */
 export interface FetchRowsRequest {
   schema: string;
   table: string;
   /** Optional single-column sort; `null` leaves order to the engine. */
   sort: SortSpec | null;
+  /** Optional row filter (M5); omit or `null` to return the whole table. */
+  filter?: FilterSpec | null;
   /** Zero-based row offset of the page. */
   offset: number;
   /** Maximum rows in the page. The backend clamps this to its page ceiling. */
@@ -127,9 +188,11 @@ export interface RowsPage {
   /** The effective page size after clamping (echoes the request). */
   limit: number;
   /**
-   * Exact `COUNT(*)` of the table (unfiltered in M4 — filters are M5).
-   * Computed per fetch in M4; `null` when the count could not be obtained
-   * (a later milestone may also return `null` for an estimate fallback).
+   * Exact `COUNT(*)` matching the request: the whole table when no filter is
+   * set, the *filtered* count when `FetchRowsRequest.filter` is present (this
+   * drives the "n of N rows" status). Computed per fetch; `null` when the
+   * count could not be obtained (a later milestone may also return `null` for
+   * an estimate fallback).
    */
   totalRows: number | null;
   elapsedMs: number;

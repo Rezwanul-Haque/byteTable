@@ -6,7 +6,58 @@
 // sanctioned direction (workspaces → connections public contract in api.ts);
 // nothing in connections imports workspaces back.
 
+import type { Combinator, FilterOp } from "../../shared/api/engine";
 import type { EngineInfo, SavedConnection, SchemaInfo } from "../connections/api";
+
+/**
+ * One editing row in the filter builder (M5). The UI-side mirror of a wire
+ * [`Condition`], plus a stable `id` (for React keys + edit targeting) and an
+ * `enabled` flag (the per-row enable checkbox — disabled rows are skipped when
+ * compiling to the wire filter). `value` is always a string here (what the
+ * text input holds); compilation types it per the column's declared type and,
+ * for `inList`, splits it on commas. `value` is ignored for the null-check
+ * operators (`isNull` / `isNotNull`).
+ */
+export interface UiCondition {
+  id: string;
+  enabled: boolean;
+  column: string;
+  op: FilterOp;
+  value: string;
+}
+
+/**
+ * The editable filter state for one table tab — a "builder" mode (stacked
+ * conditions + combinator) and a "raw" SQL mode, mirroring the wire
+ * [`FilterSpec`] union. Both modes are kept so toggling between them does not
+ * lose the other's content; the active `rawMode` flag selects which compiles.
+ */
+export interface FilterDraft {
+  conditions: UiCondition[];
+  combinator: Combinator;
+  rawMode: boolean;
+  rawSql: string;
+}
+
+/**
+ * A table tab's filter state (M5 stackable filter builder), kept per tab so it
+ * survives workspace switches (the WorkspaceUiState rule). Two slots:
+ *
+ * - `draft` — what the builder panel is currently editing. Column/operator/
+ *   value edits mutate the draft without re-fetching (a dirty state).
+ * - `applied` — what the grid actually fetches with; `null` means no filter.
+ *   Pressing **Apply** (or toggling a row's enable checkbox, which re-applies
+ *   immediately per §3.5) commits the draft into `applied`. The grid's reset
+ *   machinery keys on `applied`, so committing re-windows + re-counts exactly
+ *   like a sort change.
+ *
+ * Filter input is low-frequency (only on apply/toggle), so it belongs in the
+ * persisted per-workspace `ui` — not the ephemeral tabMeta result store.
+ */
+export interface TabFilterState {
+  draft: FilterDraft;
+  applied: FilterDraft | null;
+}
 
 /**
  * The live-connection payload a workspace is opened with — produced by the
@@ -85,6 +136,14 @@ export interface WorkspaceUiState {
    * tab in `tabs` (or null) — the store maintains this invariant on close.
    */
   activeTabId?: string | null;
+  /**
+   * Per-table-tab filter state (M5), keyed by tab id. Lives here (not in the
+   * ephemeral tabMeta store) because it is low-frequency editing *input* that
+   * must survive workspace switches per this contract. Sparse — only tabs the
+   * user has opened the filter panel for. A closed tab's stale entry is
+   * harmless; `closeTab` prunes it.
+   */
+  filters?: Record<string, TabFilterState>;
 }
 
 /** An open workspace — one per live connection the user has opened. */

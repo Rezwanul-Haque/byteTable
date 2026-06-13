@@ -11,7 +11,14 @@ import { create } from "zustand";
 import type { SchemaInfo } from "../connections/api";
 import { connectionClose } from "../connections/api";
 import { useIntrospectionStore } from "../introspection/state";
-import type { Tab, TableTabMode, Workspace, WorkspaceConnection, WorkspaceUiState } from "./types";
+import type {
+  Tab,
+  TableTabMode,
+  TabFilterState,
+  Workspace,
+  WorkspaceConnection,
+  WorkspaceUiState,
+} from "./types";
 
 /**
  * The 8-color workspace palette — prototype data.js `workspaceColors`,
@@ -110,6 +117,15 @@ interface WorkspacesFeatureState {
    * can wire it without a store change.
    */
   setTableTabMode: (tabId: string, mode: TableTabMode) => void;
+
+  // --- Filters (M5) ------------------------------------------------------
+  /**
+   * Replace a table tab's filter state on the active workspace's `ui`
+   * (creating the `filters` map lazily). The FilterPanel owns the draft-vs-
+   * applied shape; this action just persists it per tab so it survives
+   * workspace switches. No-op when there is no active workspace.
+   */
+  setTabFilter: (tabId: string, filter: TabFilterState) => void;
 }
 
 /**
@@ -302,7 +318,13 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
           ui.activeTabId === tabId
             ? (next[Math.max(0, idx - 1)]?.id ?? null)
             : ui.activeTabId;
-        return { tabs: next, activeTabId };
+        // Drop the closed tab's filter state (if any) so it does not linger.
+        let filters = ui.filters;
+        if (filters && tabId in filters) {
+          filters = { ...filters };
+          delete filters[tabId];
+        }
+        return { tabs: next, activeTabId, filters };
       }),
     })),
 
@@ -319,6 +341,13 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
         tabs: (ui.tabs ?? []).map((t) =>
           t.id === tabId && t.kind === "table" ? { ...t, mode } : t,
         ),
+      })),
+    })),
+
+  setTabFilter: (tabId, filter) =>
+    set((state) => ({
+      workspaces: patchActiveUi(state, (ui) => ({
+        filters: { ...(ui.filters ?? {}), [tabId]: filter },
       })),
     })),
 }));

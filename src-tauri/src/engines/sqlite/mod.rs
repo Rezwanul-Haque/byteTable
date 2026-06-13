@@ -63,10 +63,12 @@ use async_trait::async_trait;
 use rusqlite::types::ValueRef;
 use rusqlite::{Connection, OpenFlags};
 
+use rusqlite::types::Value as SqlValue;
+
 use crate::shared::engine::{
-    ColumnInfo, ColumnMeta, ConnectionParams, Connector, Engine, EngineConnection, EngineInfo,
-    FetchRowsRequest, FkRef, QueryOptions, QueryResult, RowsPage, SchemaInfo, SortSpec, TableInfo,
-    TableMeta,
+    ColumnInfo, ColumnMeta, Condition, ConnectionParams, Connector, Engine, EngineConnection,
+    EngineInfo, FetchRowsRequest, FilterOp, FilterSpec, FilterValue, FkRef, QueryOptions,
+    QueryResult, RowsPage, SchemaInfo, SortSpec, TableInfo, TableMeta,
 };
 use crate::shared::error::AppError;
 
@@ -519,9 +521,10 @@ fn run_query_blocking(
     })
 }
 
-/// Fetch one page of rows from a table for the M4 data grid: paged
-/// (`LIMIT`/`OFFSET`), optionally sorted by a single validated column, with
-/// an exact unfiltered `COUNT(*)` for the row-count status.
+/// Fetch one page of rows from a table for the data grid (M4 + M5 filters):
+/// paged (`LIMIT`/`OFFSET`), optionally sorted by a single validated column,
+/// optionally filtered (M5), with an exact `COUNT(*)` for the row-count
+/// status.
 ///
 /// SQL safety: schema and table existence are checked first (yielding the §5
 /// messages), the sort column is validated against the table's real columns
@@ -529,12 +532,42 @@ fn run_query_blocking(
 /// `ASC`/`DESC` keyword — never a caller string. `limit` and `offset` are
 /// bound as parameters, not interpolated. The only interpolated identifiers
 /// are quoted via [`quote_ident`].
+///
+/// # M5 filtering
+///
+/// When `req.filter` is present, the same WHERE clause is applied to BOTH the
+/// page query and the `COUNT(*)`, so `total_rows` is the *filtered* count (the
+/// "n of N rows" status shows the filtered total).
+///
+/// Two filter modes (see [`FilterSpec`]):
+///
+/// - **Structured conditions** — each [`Condition`]'s column is validated
+///   against the table (same check as the sort column), its operator selects a
+///   fixed SQL fragment, and its value is *bound as a parameter* (`?`). There
+///   is **no SQL-injection surface**: a value such as `'; DROP TABLE t; --`
+///   binds as a literal string that simply matches nothing. The `LIKE` family
+///   escapes `%`/`_`/`\` in the bound value (`… ESCAPE '\'`) so a literal `%`
+///   in user input matches literally rather than as a wildcard.
+///
+/// - **Raw WHERE** — the user-typed string is interpolated verbatim into
+///   `WHERE (<raw>)`. **Threat model (documented decision):** this is the
+///   "Edit as SQL" escape hatch every DB GUI offers. We deliberately do NOT
+///   parse or sanitize it — there is no safe way to do so, and any attempt
+///   would just be a worse SQL parser. It runs with the connection's
+///   privileges, exactly like the SQL query editor will (M6) on this
+///   local-first, single-user tool where the user already has full SQL
+///   access. The string *can* in principle break out of the WHERE context
+///   (e.g. `1=1); DROP TABLE t; --`) the same way the M6 editor allows
+///   arbitrary statements; this is accepted for that threat model, not a
+///   defect. The only "validation" is execution: a malformed clause surfaces
+///   as a §5 error (`map_query_error`). Structured conditions remain fully
+///   parameterized — only this explicit escape hatch is interpolated.
 fn fetch_rows_blocking(conn: &Connection, req: &FetchRowsRequest) -> Result<RowsPage, AppError> {
     let started = Instant::now();
 
     // Existence first: unknown schema/table get the §5 human messages
     // (`table_meta_blocking` performs both checks and gives us the real
-    // column list we need to validate the sort column against).
+    // column list we need to validate the sort/filter columns against).
     let meta = table_meta_blocking(conn, &req.schema, &req.table)?;
 
     let order_by = match &req.sort {
@@ -542,23 +575,47 @@ fn fetch_rows_blocking(conn: &Connection, req: &FetchRowsRequest) -> Result<Rows
         None => None,
     };
 
+    // Build the WHERE body + bound parameters from the filter (if any).
+    let where_clause = match &req.filter {
+        Some(filter) => where_clause(&meta, &req.table, filter)?,
+        None => WhereClause::default(),
+    };
+    let where_sql = match &where_clause.sql {
+        Some(body) => format!(" WHERE {body}"),
+        None => String::new(),
+    };
+
     let limit = req.limit.min(MAX_PAGE_ROWS);
     let qualified = format!("{}.{}", quote_ident(&req.schema), quote_ident(&req.table));
 
-    // Exact unfiltered count for the "N rows" status (filters are M5).
+    // Exact count for the "N rows" status — filtered when a filter applies, so
+    // `total_rows` matches the result set ("n of N rows", §3.5). The WHERE
+    // params bind first; the count query has no limit/offset.
+    let count_sql = format!("SELECT count(*) FROM {qualified}{where_sql}");
     let total_rows = conn
-        .query_row(&format!("SELECT count(*) FROM {qualified}"), [], |row| {
-            row.get::<_, u64>(0)
-        })
+        .query_row(
+            &count_sql,
+            rusqlite::params_from_iter(where_clause.params.iter()),
+            |row| row.get::<_, u64>(0),
+        )
         .map_err(|err| map_query_error(conn, err))?;
 
-    let sql = match &order_by {
-        Some(clause) => format!("SELECT * FROM {qualified} ORDER BY {clause} LIMIT ?1 OFFSET ?2"),
-        None => format!("SELECT * FROM {qualified} LIMIT ?1 OFFSET ?2"),
-    };
+    // Build order: WHERE, then ORDER BY, then LIMIT/OFFSET. The WHERE params
+    // bind first, then limit, then offset (positional `?` placeholders).
+    let mut page_sql = format!("SELECT * FROM {qualified}{where_sql}");
+    if let Some(clause) = &order_by {
+        page_sql.push_str(&format!(" ORDER BY {clause}"));
+    }
+    page_sql.push_str(" LIMIT ? OFFSET ?");
+
+    let mut page_params = where_clause.params.clone();
+    // offset/limit bound as parameters (i64 — SQLite's integer affinity);
+    // limit is already clamped to MAX_PAGE_ROWS, offset is a plain u64.
+    page_params.push(SqlValue::Integer(limit as i64));
+    page_params.push(SqlValue::Integer(req.offset as i64));
 
     let mut stmt = conn
-        .prepare(&sql)
+        .prepare(&page_sql)
         .map_err(|err| map_query_error(conn, err))?;
 
     let columns: Vec<ColumnMeta> = stmt
@@ -572,10 +629,8 @@ fn fetch_rows_blocking(conn: &Connection, req: &FetchRowsRequest) -> Result<Rows
     let column_count = columns.len();
 
     let mut out_rows: Vec<Vec<serde_json::Value>> = Vec::new();
-    // offset/limit bound as parameters (i64 — SQLite's integer affinity);
-    // limit is already clamped to MAX_PAGE_ROWS, offset is a plain u64.
     let mut rows = stmt
-        .query(rusqlite::params![limit as i64, req.offset as i64])
+        .query(rusqlite::params_from_iter(page_params.iter()))
         .map_err(|err| map_query_error(conn, err))?;
     while let Some(row) = rows.next().map_err(|err| map_query_error(conn, err))? {
         let mut values = Vec::with_capacity(column_count);
@@ -596,6 +651,234 @@ fn fetch_rows_blocking(conn: &Connection, req: &FetchRowsRequest) -> Result<Rows
         total_rows: Some(total_rows),
         elapsed_ms: started.elapsed().as_millis() as u64,
     })
+}
+
+/// A compiled WHERE clause: the SQL body (without the `WHERE` keyword) and the
+/// values to bind, in placeholder order. `sql == None` means "no predicate"
+/// (an empty structured filter), which the caller renders as no WHERE clause
+/// at all.
+#[derive(Default)]
+struct WhereClause {
+    sql: Option<String>,
+    params: Vec<SqlValue>,
+}
+
+/// The character used in `ESCAPE '\'` for the LIKE family. A backslash is the
+/// conventional choice and never appears unescaped in our patterns.
+const LIKE_ESCAPE: char = '\\';
+
+/// Compile a [`FilterSpec`] into a WHERE body + bound parameters.
+///
+/// Structured conditions validate every column against `meta`, emit a fixed
+/// per-operator SQL fragment, and bind every value as a parameter. The raw
+/// mode wraps the user string in parentheses verbatim (the documented escape
+/// hatch — see [`fetch_rows_blocking`]).
+fn where_clause(
+    meta: &TableMeta,
+    table: &str,
+    filter: &FilterSpec,
+) -> Result<WhereClause, AppError> {
+    match filter {
+        FilterSpec::Raw { sql } => {
+            let trimmed = sql.trim();
+            if trimmed.is_empty() {
+                // An empty raw clause is "no filter", not a syntax error.
+                return Ok(WhereClause::default());
+            }
+            // Interpolated verbatim, wrapped in parens (escape hatch). No
+            // parameters — the string carries its own literals.
+            Ok(WhereClause {
+                sql: Some(format!("({trimmed})")),
+                params: Vec::new(),
+            })
+        }
+        FilterSpec::Conditions { items, combinator } => {
+            let mut fragments: Vec<String> = Vec::with_capacity(items.len());
+            let mut params: Vec<SqlValue> = Vec::new();
+            for condition in items {
+                let fragment = condition_sql(meta, table, condition, &mut params)?;
+                fragments.push(fragment);
+            }
+            if fragments.is_empty() {
+                // No conditions → no predicate (whole table).
+                return Ok(WhereClause::default());
+            }
+            let joiner = format!(" {} ", combinator.sql_keyword());
+            Ok(WhereClause {
+                sql: Some(fragments.join(&joiner)),
+                params,
+            })
+        }
+    }
+}
+
+/// Compile one structured [`Condition`] into a SQL fragment, pushing any bound
+/// values onto `params`. The column is validated against `meta` (a §5 error
+/// for an unknown column, identical to the sort-column check); the operator
+/// selects a fixed fragment; values are bound, never interpolated.
+fn condition_sql(
+    meta: &TableMeta,
+    table: &str,
+    condition: &Condition,
+    params: &mut Vec<SqlValue>,
+) -> Result<String, AppError> {
+    let known = meta.columns.iter().any(|c| c.name == condition.column);
+    if !known {
+        let listing: Vec<&str> = meta.columns.iter().map(|c| c.name.as_str()).collect();
+        return Err(AppError::Database(format!(
+            "Column '{}' does not exist on '{}' (columns: {}).",
+            condition.column,
+            table,
+            listing.join(", ")
+        )));
+    }
+    let col = quote_ident(&condition.column);
+
+    match condition.op {
+        FilterOp::IsNull => Ok(format!("{col} IS NULL")),
+        FilterOp::IsNotNull => Ok(format!("{col} IS NOT NULL")),
+        FilterOp::Eq
+        | FilterOp::Ne
+        | FilterOp::Gt
+        | FilterOp::Gte
+        | FilterOp::Lt
+        | FilterOp::Lte => {
+            let value = require_scalar(condition)?;
+            params.push(json_to_sql_value(value)?);
+            let operator = match condition.op {
+                FilterOp::Eq => "=",
+                FilterOp::Ne => "<>",
+                FilterOp::Gt => ">",
+                FilterOp::Gte => ">=",
+                FilterOp::Lt => "<",
+                FilterOp::Lte => "<=",
+                _ => unreachable!("comparison arm"),
+            };
+            Ok(format!("{col} {operator} ?"))
+        }
+        FilterOp::Contains | FilterOp::NotContains | FilterOp::BeginsWith | FilterOp::EndsWith => {
+            let value = require_scalar(condition)?;
+            let text = like_operand(value)?;
+            let escaped = escape_like(&text);
+            let pattern = match condition.op {
+                FilterOp::Contains | FilterOp::NotContains => format!("%{escaped}%"),
+                FilterOp::BeginsWith => format!("{escaped}%"),
+                FilterOp::EndsWith => format!("%{escaped}"),
+                _ => unreachable!("like arm"),
+            };
+            params.push(SqlValue::Text(pattern));
+            let keyword = if matches!(condition.op, FilterOp::NotContains) {
+                "NOT LIKE"
+            } else {
+                "LIKE"
+            };
+            Ok(format!("{col} {keyword} ? ESCAPE '{LIKE_ESCAPE}'"))
+        }
+        FilterOp::InList => {
+            let values = match &condition.value {
+                Some(FilterValue::List(values)) => values,
+                Some(FilterValue::Scalar(_)) => {
+                    return Err(AppError::Database(format!(
+                        "The 'in list' filter on '{}' needs a list of values.",
+                        condition.column
+                    )));
+                }
+                None => return Err(missing_value_error(condition)),
+            };
+            if values.is_empty() {
+                return Err(AppError::Database(format!(
+                    "The 'in list' filter on '{}' needs at least one value.",
+                    condition.column
+                )));
+            }
+            let mut placeholders = Vec::with_capacity(values.len());
+            for value in values {
+                params.push(json_to_sql_value(value)?);
+                placeholders.push("?");
+            }
+            Ok(format!("{col} IN ({})", placeholders.join(", ")))
+        }
+    }
+}
+
+/// The single scalar a comparison / LIKE operator requires. A missing value or
+/// a list where a scalar is expected is a §5 error.
+fn require_scalar(condition: &Condition) -> Result<&serde_json::Value, AppError> {
+    match &condition.value {
+        Some(FilterValue::Scalar(value)) => Ok(value),
+        Some(FilterValue::List(_)) => Err(AppError::Database(format!(
+            "The filter on '{}' expects a single value, not a list.",
+            condition.column
+        ))),
+        None => Err(missing_value_error(condition)),
+    }
+}
+
+/// §5 error for an operator that needs a value but received none.
+fn missing_value_error(condition: &Condition) -> AppError {
+    AppError::Database(format!(
+        "The filter on '{}' needs a value.",
+        condition.column
+    ))
+}
+
+/// Map a JSON scalar to a bound SQLite value. NULL is rejected with the §5
+/// "use IS NULL / IS NOT NULL" message (matching `engine.js`) — `col = NULL`
+/// never matches, so a NULL comparison is always a mistake. Nested
+/// arrays/objects are not valid scalars.
+fn json_to_sql_value(value: &serde_json::Value) -> Result<SqlValue, AppError> {
+    match value {
+        serde_json::Value::Null => Err(AppError::Database(
+            "Use IS NULL / IS NOT NULL to compare with NULL.".to_string(),
+        )),
+        serde_json::Value::Bool(b) => Ok(SqlValue::Integer(i64::from(*b))),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Ok(SqlValue::Integer(i))
+            } else if let Some(f) = n.as_f64() {
+                Ok(SqlValue::Real(f))
+            } else {
+                // u64 beyond i64::MAX — preserve as text rather than lose it.
+                Ok(SqlValue::Text(n.to_string()))
+            }
+        }
+        serde_json::Value::String(s) => Ok(SqlValue::Text(s.clone())),
+        serde_json::Value::Array(_) | serde_json::Value::Object(_) => Err(AppError::Database(
+            "A filter value must be a single text, number, or boolean.".to_string(),
+        )),
+    }
+}
+
+/// The text operand for a LIKE-family operator. Numbers/bools are stringified
+/// (a `contains` on a numeric column still makes sense); NULL is rejected like
+/// any other NULL comparison.
+fn like_operand(value: &serde_json::Value) -> Result<String, AppError> {
+    match value {
+        serde_json::Value::Null => Err(AppError::Database(
+            "Use IS NULL / IS NOT NULL to compare with NULL.".to_string(),
+        )),
+        serde_json::Value::String(s) => Ok(s.clone()),
+        serde_json::Value::Bool(b) => Ok(b.to_string()),
+        serde_json::Value::Number(n) => Ok(n.to_string()),
+        serde_json::Value::Array(_) | serde_json::Value::Object(_) => Err(AppError::Database(
+            "A filter value must be a single text, number, or boolean.".to_string(),
+        )),
+    }
+}
+
+/// Escape the LIKE metacharacters (`%`, `_`) and the escape character itself
+/// in a user-supplied operand, so they match literally under `ESCAPE '\'`.
+/// The escape char is doubled first so it cannot accidentally escape a real
+/// metacharacter the user typed.
+fn escape_like(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for ch in input.chars() {
+        if ch == LIKE_ESCAPE || ch == '%' || ch == '_' {
+            out.push(LIKE_ESCAPE);
+        }
+        out.push(ch);
+    }
+    out
 }
 
 /// Build the validated, quoted ORDER BY body for a single-column sort:
@@ -1233,7 +1516,10 @@ mod tests {
 
     // -- fetch_rows (M4 data grid) ------------------------------------------
 
-    use crate::shared::engine::{FetchRowsRequest, SortDirection, SortSpec};
+    use crate::shared::engine::{
+        Combinator, Condition, FetchRowsRequest, FilterOp, FilterSpec, FilterValue, SortDirection,
+        SortSpec,
+    };
 
     /// Convenience: pull the single-column integer/text value of a cell.
     fn req(schema: &str, table: &str, offset: u64, limit: u32) -> FetchRowsRequest {
@@ -1241,6 +1527,7 @@ mod tests {
             schema: schema.into(),
             table: table.into(),
             sort: None,
+            filter: None,
             offset,
             limit,
         }
@@ -1512,5 +1799,511 @@ mod tests {
                 serde_json::json!(3)
             ]
         );
+    }
+
+    // -- fetch_rows filtering (M5) ------------------------------------------
+
+    /// A fixture exercising every filter operator: numerics for the
+    /// comparisons, text for the LIKE family (including a value with a literal
+    /// `%` to prove wildcard escaping), a nullable column, and an `IN` target.
+    ///
+    /// products(id, name, qty, price, note):
+    ///   1, "Apple Pie",   10, 3.50, "fresh"
+    ///   2, "Banana Bread", 5, 2.25, NULL
+    ///   3, "50% Off Mug",  0, 9.99, "sale"
+    ///   4, "Cherry Tart",  5, 4.00, "fresh"
+    async fn open_products_fixture(dir: &tempfile::TempDir) -> Box<dyn EngineConnection> {
+        let path = dir.path().join("products.db");
+        {
+            let conn = Connection::open(&path).expect("create db");
+            conn.execute_batch(
+                "CREATE TABLE products (
+                     id INTEGER PRIMARY KEY,
+                     name TEXT NOT NULL,
+                     qty INTEGER NOT NULL,
+                     price REAL NOT NULL,
+                     note TEXT
+                 );
+                 INSERT INTO products (id, name, qty, price, note) VALUES
+                     (1, 'Apple Pie',    10, 3.50, 'fresh'),
+                     (2, 'Banana Bread',  5, 2.25, NULL),
+                     (3, '50% Off Mug',   0, 9.99, 'sale'),
+                     (4, 'Cherry Tart',   5, 4.00, 'fresh');",
+            )
+            .expect("seed db");
+        }
+        SqliteConnector
+            .open(&params_for(&path))
+            .await
+            .expect("open products fixture")
+    }
+
+    /// Build a `Some(filter)` request over `products`, sorted by id ascending
+    /// for deterministic row order.
+    fn filtered(items: Vec<Condition>, combinator: Combinator) -> FetchRowsRequest {
+        FetchRowsRequest {
+            sort: Some(SortSpec {
+                column: "id".into(),
+                direction: SortDirection::Asc,
+            }),
+            filter: Some(FilterSpec::Conditions { items, combinator }),
+            ..req("main", "products", 0, 100)
+        }
+    }
+
+    fn cond(column: &str, op: FilterOp, value: Option<FilterValue>) -> Condition {
+        Condition {
+            column: column.into(),
+            op,
+            value,
+        }
+    }
+
+    fn scalar(value: serde_json::Value) -> Option<FilterValue> {
+        Some(FilterValue::Scalar(value))
+    }
+
+    /// Collect the `id` column (first column) of a page.
+    fn ids(page: &RowsPage) -> Vec<i64> {
+        page.rows
+            .iter()
+            .map(|r| r[0].as_i64().expect("id is an integer"))
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn filter_eq_and_ne_on_numeric() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_products_fixture(&dir).await;
+
+        let eq = conn
+            .fetch_rows(filtered(
+                vec![cond("qty", FilterOp::Eq, scalar(serde_json::json!(5)))],
+                Combinator::And,
+            ))
+            .await
+            .expect("eq");
+        assert_eq!(ids(&eq), vec![2, 4]);
+        assert_eq!(eq.total_rows, Some(2));
+
+        let ne = conn
+            .fetch_rows(filtered(
+                vec![cond("qty", FilterOp::Ne, scalar(serde_json::json!(5)))],
+                Combinator::And,
+            ))
+            .await
+            .expect("ne");
+        assert_eq!(ids(&ne), vec![1, 3]);
+    }
+
+    #[tokio::test]
+    async fn filter_ordered_comparisons_on_numeric() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_products_fixture(&dir).await;
+
+        let gt = conn
+            .fetch_rows(filtered(
+                vec![cond("price", FilterOp::Gt, scalar(serde_json::json!(3.50)))],
+                Combinator::And,
+            ))
+            .await
+            .expect("gt");
+        assert_eq!(ids(&gt), vec![3, 4]);
+
+        let gte = conn
+            .fetch_rows(filtered(
+                vec![cond(
+                    "price",
+                    FilterOp::Gte,
+                    scalar(serde_json::json!(3.50)),
+                )],
+                Combinator::And,
+            ))
+            .await
+            .expect("gte");
+        assert_eq!(ids(&gte), vec![1, 3, 4]);
+
+        let lt = conn
+            .fetch_rows(filtered(
+                vec![cond("qty", FilterOp::Lt, scalar(serde_json::json!(5)))],
+                Combinator::And,
+            ))
+            .await
+            .expect("lt");
+        assert_eq!(ids(&lt), vec![3]);
+
+        let lte = conn
+            .fetch_rows(filtered(
+                vec![cond("qty", FilterOp::Lte, scalar(serde_json::json!(5)))],
+                Combinator::And,
+            ))
+            .await
+            .expect("lte");
+        assert_eq!(ids(&lte), vec![2, 3, 4]);
+    }
+
+    #[tokio::test]
+    async fn filter_like_family_on_text() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_products_fixture(&dir).await;
+
+        let contains = conn
+            .fetch_rows(filtered(
+                vec![cond(
+                    "name",
+                    FilterOp::Contains,
+                    scalar(serde_json::json!("an")),
+                )],
+                Combinator::And,
+            ))
+            .await
+            .expect("contains");
+        // "Banana Bread" contains "an"; nothing else does.
+        assert_eq!(ids(&contains), vec![2]);
+
+        let not_contains = conn
+            .fetch_rows(filtered(
+                vec![cond(
+                    "name",
+                    FilterOp::NotContains,
+                    scalar(serde_json::json!("an")),
+                )],
+                Combinator::And,
+            ))
+            .await
+            .expect("notContains");
+        assert_eq!(ids(&not_contains), vec![1, 3, 4]);
+
+        let begins = conn
+            .fetch_rows(filtered(
+                vec![cond(
+                    "name",
+                    FilterOp::BeginsWith,
+                    scalar(serde_json::json!("C")),
+                )],
+                Combinator::And,
+            ))
+            .await
+            .expect("beginsWith");
+        assert_eq!(ids(&begins), vec![4]);
+
+        let ends = conn
+            .fetch_rows(filtered(
+                vec![cond(
+                    "name",
+                    FilterOp::EndsWith,
+                    scalar(serde_json::json!("Mug")),
+                )],
+                Combinator::And,
+            ))
+            .await
+            .expect("endsWith");
+        assert_eq!(ids(&ends), vec![3]);
+    }
+
+    /// A `contains` value containing a literal `%` must match the `%`
+    /// literally, not as a wildcard — proving LIKE-wildcard escaping.
+    #[tokio::test]
+    async fn filter_contains_escapes_literal_wildcard() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_products_fixture(&dir).await;
+
+        // "%" as a wildcard would match every row; escaped it matches only
+        // the row whose name literally contains "%": "50% Off Mug".
+        let literal = conn
+            .fetch_rows(filtered(
+                vec![cond(
+                    "name",
+                    FilterOp::Contains,
+                    scalar(serde_json::json!("%")),
+                )],
+                Combinator::And,
+            ))
+            .await
+            .expect("contains literal %");
+        assert_eq!(ids(&literal), vec![3]);
+        assert_eq!(literal.total_rows, Some(1));
+
+        // And the underscore is likewise literal: no row contains "_", so the
+        // result is empty rather than "any single character".
+        let underscore = conn
+            .fetch_rows(filtered(
+                vec![cond(
+                    "name",
+                    FilterOp::Contains,
+                    scalar(serde_json::json!("_")),
+                )],
+                Combinator::And,
+            ))
+            .await
+            .expect("contains literal _");
+        assert!(underscore.rows.is_empty());
+    }
+
+    #[tokio::test]
+    async fn filter_in_list() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_products_fixture(&dir).await;
+
+        let page = conn
+            .fetch_rows(filtered(
+                vec![cond(
+                    "id",
+                    FilterOp::InList,
+                    Some(FilterValue::List(vec![
+                        serde_json::json!(1),
+                        serde_json::json!(3),
+                    ])),
+                )],
+                Combinator::And,
+            ))
+            .await
+            .expect("inList");
+        assert_eq!(ids(&page), vec![1, 3]);
+        assert_eq!(page.total_rows, Some(2));
+    }
+
+    #[tokio::test]
+    async fn filter_is_null_and_is_not_null() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_products_fixture(&dir).await;
+
+        let is_null = conn
+            .fetch_rows(filtered(
+                vec![cond("note", FilterOp::IsNull, None)],
+                Combinator::And,
+            ))
+            .await
+            .expect("isNull");
+        assert_eq!(ids(&is_null), vec![2]);
+
+        let not_null = conn
+            .fetch_rows(filtered(
+                vec![cond("note", FilterOp::IsNotNull, None)],
+                Combinator::And,
+            ))
+            .await
+            .expect("isNotNull");
+        assert_eq!(ids(&not_null), vec![1, 3, 4]);
+    }
+
+    #[tokio::test]
+    async fn filter_and_combined_multi_condition() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_products_fixture(&dir).await;
+
+        // qty = 5 AND note = 'fresh' → only Cherry Tart (id 4); Banana Bread
+        // (id 2) has qty 5 but a NULL note.
+        let page = conn
+            .fetch_rows(filtered(
+                vec![
+                    cond("qty", FilterOp::Eq, scalar(serde_json::json!(5))),
+                    cond("note", FilterOp::Eq, scalar(serde_json::json!("fresh"))),
+                ],
+                Combinator::And,
+            ))
+            .await
+            .expect("and-combined");
+        assert_eq!(ids(&page), vec![4]);
+        assert_eq!(page.total_rows, Some(1));
+    }
+
+    #[tokio::test]
+    async fn filter_or_combined_multi_condition() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_products_fixture(&dir).await;
+
+        // qty = 0 OR price >= 4.00 → ids 3 (qty 0) and 4 (price 4.00); 3 also
+        // satisfies the price clause. Deduped by row, sorted by id.
+        let page = conn
+            .fetch_rows(filtered(
+                vec![
+                    cond("qty", FilterOp::Eq, scalar(serde_json::json!(0))),
+                    cond("price", FilterOp::Gte, scalar(serde_json::json!(4.00))),
+                ],
+                Combinator::Or,
+            ))
+            .await
+            .expect("or-combined");
+        assert_eq!(ids(&page), vec![3, 4]);
+    }
+
+    #[tokio::test]
+    async fn filter_total_rows_reflects_the_filter() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_products_fixture(&dir).await;
+        // Page size of 1 over a 2-row filtered set: total_rows is the FILTERED
+        // count (2), not the table's 4 — this drives "n of N rows".
+        let page = conn
+            .fetch_rows(FetchRowsRequest {
+                sort: Some(SortSpec {
+                    column: "id".into(),
+                    direction: SortDirection::Asc,
+                }),
+                filter: Some(FilterSpec::Conditions {
+                    items: vec![cond("qty", FilterOp::Eq, scalar(serde_json::json!(5)))],
+                    combinator: Combinator::And,
+                }),
+                ..req("main", "products", 0, 1)
+            })
+            .await
+            .expect("filtered page");
+        assert_eq!(page.rows.len(), 1, "page is limited to 1 row");
+        assert_eq!(page.total_rows, Some(2), "total is the filtered count");
+    }
+
+    #[tokio::test]
+    async fn filter_unknown_column_is_a_human_error_listing_columns() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_products_fixture(&dir).await;
+        let err = conn
+            .fetch_rows(filtered(
+                vec![cond("nope", FilterOp::Eq, scalar(serde_json::json!(1)))],
+                Combinator::And,
+            ))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Database(_)));
+        assert_eq!(
+            err.to_string(),
+            "Column 'nope' does not exist on 'products' (columns: id, name, qty, price, note)."
+        );
+    }
+
+    #[tokio::test]
+    async fn filter_eq_with_null_value_tells_user_to_use_is_null() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_products_fixture(&dir).await;
+        let err = conn
+            .fetch_rows(filtered(
+                vec![cond("note", FilterOp::Eq, scalar(serde_json::Value::Null))],
+                Combinator::And,
+            ))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Database(_)));
+        assert_eq!(
+            err.to_string(),
+            "Use IS NULL / IS NOT NULL to compare with NULL."
+        );
+    }
+
+    #[tokio::test]
+    async fn filter_comparison_without_value_is_a_human_error() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_products_fixture(&dir).await;
+        let err = conn
+            .fetch_rows(filtered(
+                vec![cond("qty", FilterOp::Eq, None)],
+                Combinator::And,
+            ))
+            .await
+            .unwrap_err();
+        assert_eq!(err.to_string(), "The filter on 'qty' needs a value.");
+    }
+
+    /// SECURITY: a structured condition value is *bound*, never interpolated.
+    /// A classic injection payload binds as a literal string that matches
+    /// nothing — the table survives and the result is empty.
+    #[tokio::test]
+    async fn filter_value_with_injection_payload_is_bound_as_a_literal() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_products_fixture(&dir).await;
+
+        let page = conn
+            .fetch_rows(filtered(
+                vec![cond(
+                    "name",
+                    FilterOp::Eq,
+                    scalar(serde_json::json!("'; DROP TABLE products; --")),
+                )],
+                Combinator::And,
+            ))
+            .await
+            .expect("injection payload binds as a literal, no error");
+        assert!(page.rows.is_empty(), "literal matches no row");
+        assert_eq!(page.total_rows, Some(0));
+
+        // The table is unharmed: a plain fetch still sees all 4 rows.
+        let intact = conn
+            .fetch_rows(req("main", "products", 0, 100))
+            .await
+            .expect("table still intact");
+        assert_eq!(intact.total_rows, Some(4));
+    }
+
+    #[tokio::test]
+    async fn filter_raw_mode_applies_a_valid_where_body() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_products_fixture(&dir).await;
+        let page = conn
+            .fetch_rows(FetchRowsRequest {
+                sort: Some(SortSpec {
+                    column: "id".into(),
+                    direction: SortDirection::Asc,
+                }),
+                filter: Some(FilterSpec::Raw {
+                    sql: "qty = 5 OR price > 9".into(),
+                }),
+                ..req("main", "products", 0, 100)
+            })
+            .await
+            .expect("raw where");
+        // qty = 5 → ids 2, 4; price > 9 → id 3. Combined and id-sorted.
+        assert_eq!(ids(&page), vec![2, 3, 4]);
+        assert_eq!(page.total_rows, Some(3));
+    }
+
+    #[tokio::test]
+    async fn filter_raw_mode_invalid_where_is_a_human_error() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_products_fixture(&dir).await;
+        let err = conn
+            .fetch_rows(FetchRowsRequest {
+                filter: Some(FilterSpec::Raw {
+                    sql: "nope = 1".into(),
+                }),
+                ..req("main", "products", 0, 100)
+            })
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Database(_)));
+        // A bad raw clause surfaces as a cleaned §5 driver message, not a Rust
+        // error chain.
+        let message = err.to_string();
+        assert!(
+            message.contains("nope"),
+            "expected the offending column in the message, got {message:?}"
+        );
+        assert!(
+            !message.contains("rusqlite") && !message.contains("Error {"),
+            "driver chains must not leak: {message:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn filter_empty_conditions_returns_the_whole_table() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_products_fixture(&dir).await;
+        let page = conn
+            .fetch_rows(FetchRowsRequest {
+                filter: Some(FilterSpec::Conditions {
+                    items: vec![],
+                    combinator: Combinator::And,
+                }),
+                ..req("main", "products", 0, 100)
+            })
+            .await
+            .expect("empty conditions");
+        assert_eq!(page.total_rows, Some(4));
+    }
+
+    #[test]
+    fn escape_like_escapes_metacharacters_and_the_escape_char() {
+        assert_eq!(escape_like("plain"), "plain");
+        assert_eq!(escape_like("100%"), "100\\%");
+        assert_eq!(escape_like("a_b"), "a\\_b");
+        // The escape char itself is doubled so it cannot escape a real meta.
+        assert_eq!(escape_like("a\\b"), "a\\\\b");
     }
 }

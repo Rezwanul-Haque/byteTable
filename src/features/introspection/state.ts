@@ -49,7 +49,7 @@ export function columnsKey(handleId: string, schema: string, table: string): str
  * `tablesKey(handle, schema)` prefixes, so `invalidate` drops it like the rest.
  */
 export function tableMetaKey(handleId: string, schema: string, table: string): string {
-  return handleId + SEP + schema + SEP + table + SEP + "meta";
+  return handleId + SEP + schema + SEP + table + SEP + "\u0001meta";
 }
 
 export interface TablesEntry {

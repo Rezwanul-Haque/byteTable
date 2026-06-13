@@ -57,6 +57,35 @@
   caret-color: var(--accent);
 }
 
+/* redis-cli transcript line colors (M14) — byte-exact from ByteTable.html
+   (.cli-* + .cli-info). Shared with the Redis terminal session body. */
+.cli-prompt {
+  color: var(--text-dim);
+  margin-top: 7px;
+}
+.cli-status {
+  color: var(--accent);
+}
+.cli-error {
+  color: #e06c75;
+}
+.cli-int {
+  color: #7fb8e8;
+}
+.cli-nil {
+  color: var(--text-faint);
+}
+.cli-bulk {
+  color: #e5c07b;
+}
+.cli-idx {
+  color: var(--text-faint);
+}
+.cli-info {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
 /* terminal transcript line colors */
 .term-info {
   color: var(--text-faint);

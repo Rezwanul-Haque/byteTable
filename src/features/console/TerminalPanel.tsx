@@ -20,6 +20,7 @@ import { useRef } from "react";
 import { Icon } from "../../shared/ui/Icon";
 import { IconBtn } from "../../shared/ui/IconBtn";
 import type { Workspace } from "../workspaces/types";
+import { RedisTerminalSession } from "./RedisTerminalSession";
 import { SqlTerminalTab } from "./SqlTerminalTab";
 import {
   TERM_DEFAULT_HEIGHT,
@@ -73,19 +74,12 @@ export function TerminalPanel({ workspace }: { workspace: Workspace }) {
     handle.addEventListener("pointerup", onUp);
   };
 
-  // Engine-branch render point: SQL sessions get the SqlTerminalTab REPL. The
-  // next task replaces the Redis placeholder below with the real redis-cli body
-  // (RedisCli wired to kv_command) — this `engine === "redis"` branch is the
-  // seam it consumes.
+  // Engine-branch render point: SQL sessions get the SqlTerminalTab REPL;
+  // Redis sessions get the RedisTerminalSession redis-cli body (wired to
+  // kvCommand + the redis_browse store). This `engine` branch is the seam.
   const renderSession = (s: TermSession) => {
     if (workspace.saved.engine === "redis") {
-      return (
-        <div className="rcli term">
-          <div className="rcli-body term-body">
-            <div className="rcli-line term-info">redis-cli — coming in the next task.</div>
-          </div>
-        </div>
-      );
+      return <RedisTerminalSession workspace={workspace} session={s} embedded />;
     }
     return (
       <SqlTerminalTab

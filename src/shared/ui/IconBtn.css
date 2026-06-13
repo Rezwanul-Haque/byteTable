@@ -32,7 +32,14 @@
   color: var(--accent);
 }
 
+/* Danger icon button reads red at rest: red outline + red glyph. */
+.icon-btn.danger {
+  color: var(--error);
+  border: 1px solid color-mix(in srgb, var(--error) 45%, transparent);
+}
+
 .icon-btn.danger:hover:not(:disabled) {
   background: color-mix(in srgb, var(--error) 13.3%, transparent);
   color: var(--error);
+  border-color: var(--error);
 }

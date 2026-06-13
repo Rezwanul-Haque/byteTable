@@ -65,13 +65,20 @@ use rusqlite::{Connection, OpenFlags};
 
 use crate::shared::engine::{
     ColumnInfo, ColumnMeta, ConnectionParams, Connector, Engine, EngineConnection, EngineInfo,
-    FkRef, QueryOptions, QueryResult, SchemaInfo, TableInfo, TableMeta,
+    FetchRowsRequest, FkRef, QueryOptions, QueryResult, RowsPage, SchemaInfo, SortSpec, TableInfo,
+    TableMeta,
 };
 use crate::shared::error::AppError;
 
 /// Stop running per-table `count(*)` after this many tables; the rest get
 /// `approx_row_count: None`. Keeps introspection bounded on huge schemas.
 const MAX_COUNTED_TABLES: usize = 200;
+
+/// Page-size ceiling for `fetch_rows` (the M4 data grid). Mirrors the
+/// connections slice's `MAX_ROW_LIMIT` (10 000): a single grid page never
+/// usefully shows more, and the clamp keeps a renderer bug or a hand-crafted
+/// invoke from marshalling an unbounded page across IPC.
+const MAX_PAGE_ROWS: u32 = 10_000;
 
 /// JavaScript's `Number.MAX_SAFE_INTEGER` (2^53 − 1). SQLite integers whose
 /// magnitude exceeds this serialize as JSON *strings* — a JSON number would
@@ -130,6 +137,11 @@ impl EngineConnection for SqliteEngineConnection {
     async fn run_query(&self, sql: &str, options: QueryOptions) -> Result<QueryResult, AppError> {
         let sql = sql.to_string();
         self.with_conn(move |conn| run_query_blocking(conn, &sql, &options))
+            .await
+    }
+
+    async fn fetch_rows(&self, req: FetchRowsRequest) -> Result<RowsPage, AppError> {
+        self.with_conn(move |conn| fetch_rows_blocking(conn, &req))
             .await
     }
 
@@ -505,6 +517,106 @@ fn run_query_blocking(
         truncated,
         elapsed_ms: started.elapsed().as_millis() as u64,
     })
+}
+
+/// Fetch one page of rows from a table for the M4 data grid: paged
+/// (`LIMIT`/`OFFSET`), optionally sorted by a single validated column, with
+/// an exact unfiltered `COUNT(*)` for the row-count status.
+///
+/// SQL safety: schema and table existence are checked first (yielding the §5
+/// messages), the sort column is validated against the table's real columns
+/// before being quoted, and the ORDER BY direction is the enum's literal
+/// `ASC`/`DESC` keyword — never a caller string. `limit` and `offset` are
+/// bound as parameters, not interpolated. The only interpolated identifiers
+/// are quoted via [`quote_ident`].
+fn fetch_rows_blocking(conn: &Connection, req: &FetchRowsRequest) -> Result<RowsPage, AppError> {
+    let started = Instant::now();
+
+    // Existence first: unknown schema/table get the §5 human messages
+    // (`table_meta_blocking` performs both checks and gives us the real
+    // column list we need to validate the sort column against).
+    let meta = table_meta_blocking(conn, &req.schema, &req.table)?;
+
+    let order_by = match &req.sort {
+        Some(sort) => Some(order_by_clause(&meta, &req.table, sort)?),
+        None => None,
+    };
+
+    let limit = req.limit.min(MAX_PAGE_ROWS);
+    let qualified = format!("{}.{}", quote_ident(&req.schema), quote_ident(&req.table));
+
+    // Exact unfiltered count for the "N rows" status (filters are M5).
+    let total_rows = conn
+        .query_row(&format!("SELECT count(*) FROM {qualified}"), [], |row| {
+            row.get::<_, u64>(0)
+        })
+        .map_err(|err| map_query_error(conn, err))?;
+
+    let sql = match &order_by {
+        Some(clause) => format!("SELECT * FROM {qualified} ORDER BY {clause} LIMIT ?1 OFFSET ?2"),
+        None => format!("SELECT * FROM {qualified} LIMIT ?1 OFFSET ?2"),
+    };
+
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|err| map_query_error(conn, err))?;
+
+    let columns: Vec<ColumnMeta> = stmt
+        .columns()
+        .iter()
+        .map(|col| ColumnMeta {
+            name: col.name().to_string(),
+            type_hint: col.decl_type().unwrap_or("").to_string(),
+        })
+        .collect();
+    let column_count = columns.len();
+
+    let mut out_rows: Vec<Vec<serde_json::Value>> = Vec::new();
+    // offset/limit bound as parameters (i64 — SQLite's integer affinity);
+    // limit is already clamped to MAX_PAGE_ROWS, offset is a plain u64.
+    let mut rows = stmt
+        .query(rusqlite::params![limit as i64, req.offset as i64])
+        .map_err(|err| map_query_error(conn, err))?;
+    while let Some(row) = rows.next().map_err(|err| map_query_error(conn, err))? {
+        let mut values = Vec::with_capacity(column_count);
+        for index in 0..column_count {
+            let value = row
+                .get_ref(index)
+                .map_err(|err| map_query_error(conn, err))?;
+            values.push(value_to_json(value));
+        }
+        out_rows.push(values);
+    }
+
+    Ok(RowsPage {
+        columns,
+        rows: out_rows,
+        offset: req.offset,
+        limit,
+        total_rows: Some(total_rows),
+        elapsed_ms: started.elapsed().as_millis() as u64,
+    })
+}
+
+/// Build the validated, quoted ORDER BY body for a single-column sort:
+/// `"column" ASC|DESC`. The column MUST exist in `meta` (else a §5 error
+/// listing the available columns); the direction is the enum's fixed keyword.
+fn order_by_clause(meta: &TableMeta, table: &str, sort: &SortSpec) -> Result<String, AppError> {
+    let known = meta.columns.iter().any(|c| c.name == sort.column);
+    if !known {
+        let listing: Vec<&str> = meta.columns.iter().map(|c| c.name.as_str()).collect();
+        return Err(AppError::Database(format!(
+            "Column '{}' does not exist on '{}' (columns: {}).",
+            sort.column,
+            table,
+            listing.join(", ")
+        )));
+    }
+    Ok(format!(
+        "{} {}",
+        quote_ident(&sort.column),
+        sort.direction.sql_keyword()
+    ))
 }
 
 /// SQLite value → JSON. Blobs become a `"[blob N bytes]"` placeholder (see
@@ -1117,5 +1229,288 @@ mod tests {
             "Near \"x\": syntax error."
         );
         assert_eq!(humanize("Already done."), "Already done.");
+    }
+
+    // -- fetch_rows (M4 data grid) ------------------------------------------
+
+    use crate::shared::engine::{FetchRowsRequest, SortDirection, SortSpec};
+
+    /// Convenience: pull the single-column integer/text value of a cell.
+    fn req(schema: &str, table: &str, offset: u64, limit: u32) -> FetchRowsRequest {
+        FetchRowsRequest {
+            schema: schema.into(),
+            table: table.into(),
+            sort: None,
+            offset,
+            limit,
+        }
+    }
+
+    #[tokio::test]
+    async fn fetch_rows_first_page_returns_rows_columns_and_exact_total() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_fixture(&dir).await;
+        let page = conn
+            .fetch_rows(FetchRowsRequest {
+                sort: Some(SortSpec {
+                    column: "id".into(),
+                    direction: SortDirection::Asc,
+                }),
+                ..req("main", "users", 0, 10)
+            })
+            .await
+            .expect("fetch rows");
+
+        let column_names: Vec<&str> = page.columns.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(column_names, vec!["id", "name", "score", "avatar"]);
+        assert_eq!(page.rows.len(), 3);
+        assert_eq!(page.offset, 0);
+        assert_eq!(page.limit, 10);
+        assert_eq!(page.total_rows, Some(3));
+        assert!(page.elapsed_ms < 60_000);
+        // Values map exactly like run_query (blob placeholder, null).
+        assert_eq!(page.rows[0][0], serde_json::json!(1));
+        assert_eq!(page.rows[0][1], serde_json::json!("ada"));
+        assert_eq!(page.rows[0][3], serde_json::json!("[blob 3 bytes]"));
+        assert_eq!(page.rows[1][2], serde_json::Value::Null);
+    }
+
+    #[tokio::test]
+    async fn fetch_rows_paging_returns_distinct_pages_with_stable_total() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_fixture(&dir).await;
+        let sort = SortSpec {
+            column: "id".into(),
+            direction: SortDirection::Asc,
+        };
+
+        let page1 = conn
+            .fetch_rows(FetchRowsRequest {
+                sort: Some(sort.clone()),
+                ..req("main", "users", 0, 2)
+            })
+            .await
+            .expect("page 1");
+        let page2 = conn
+            .fetch_rows(FetchRowsRequest {
+                sort: Some(sort),
+                ..req("main", "users", 2, 2)
+            })
+            .await
+            .expect("page 2");
+
+        let ids = |p: &crate::shared::engine::RowsPage| -> Vec<serde_json::Value> {
+            p.rows.iter().map(|r| r[0].clone()).collect()
+        };
+        assert_eq!(
+            ids(&page1),
+            vec![serde_json::json!(1), serde_json::json!(2)]
+        );
+        assert_eq!(ids(&page2), vec![serde_json::json!(3)]);
+        assert_eq!(page1.total_rows, Some(3));
+        assert_eq!(page2.total_rows, Some(3));
+    }
+
+    #[tokio::test]
+    async fn fetch_rows_sort_asc_and_desc_use_real_order() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_fixture(&dir).await;
+
+        // Text column ascending: ada, grace, linus.
+        let asc = conn
+            .fetch_rows(FetchRowsRequest {
+                sort: Some(SortSpec {
+                    column: "name".into(),
+                    direction: SortDirection::Asc,
+                }),
+                ..req("main", "users", 0, 10)
+            })
+            .await
+            .expect("asc");
+        let names: Vec<serde_json::Value> = asc.rows.iter().map(|r| r[1].clone()).collect();
+        assert_eq!(
+            names,
+            vec![
+                serde_json::json!("ada"),
+                serde_json::json!("grace"),
+                serde_json::json!("linus")
+            ]
+        );
+
+        // Numeric column descending: 3, 2, 1.
+        let desc = conn
+            .fetch_rows(FetchRowsRequest {
+                sort: Some(SortSpec {
+                    column: "id".into(),
+                    direction: SortDirection::Desc,
+                }),
+                ..req("main", "users", 0, 10)
+            })
+            .await
+            .expect("desc");
+        let ids: Vec<serde_json::Value> = desc.rows.iter().map(|r| r[0].clone()).collect();
+        assert_eq!(
+            ids,
+            vec![
+                serde_json::json!(3),
+                serde_json::json!(2),
+                serde_json::json!(1)
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_rows_sort_by_unknown_column_is_a_human_error_listing_columns() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_fixture(&dir).await;
+        let err = conn
+            .fetch_rows(FetchRowsRequest {
+                sort: Some(SortSpec {
+                    column: "nope".into(),
+                    direction: SortDirection::Asc,
+                }),
+                ..req("main", "users", 0, 10)
+            })
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Database(_)));
+        assert_eq!(
+            err.to_string(),
+            "Column 'nope' does not exist on 'users' (columns: id, name, score, avatar)."
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_rows_clamps_limit_to_the_page_ceiling() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_fixture(&dir).await;
+        let page = conn
+            .fetch_rows(req("main", "users", 0, u32::MAX))
+            .await
+            .expect("fetch rows");
+        assert_eq!(page.limit, MAX_PAGE_ROWS, "limit is clamped to the ceiling");
+        // The fixture has fewer rows than the ceiling, so all come back.
+        assert_eq!(page.rows.len(), 3);
+        assert_eq!(page.total_rows, Some(3));
+    }
+
+    #[tokio::test]
+    async fn fetch_rows_empty_table_has_no_rows_and_zero_total() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_fixture(&dir).await;
+        let page = conn
+            .fetch_rows(req("main", "orders", 0, 100))
+            .await
+            .expect("fetch rows");
+        assert!(page.rows.is_empty());
+        assert_eq!(page.total_rows, Some(0));
+        // Columns still come back from the empty result.
+        let names: Vec<&str> = page.columns.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, vec!["id", "total"]);
+    }
+
+    #[tokio::test]
+    async fn fetch_rows_unknown_table_lists_available_tables() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_fixture(&dir).await;
+        let err = conn
+            .fetch_rows(req("main", "customers", 0, 100))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Database(_)));
+        assert_eq!(
+            err.to_string(),
+            "Table 'customers' does not exist. Available tables: orders, users."
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_rows_unknown_schema_is_a_human_error() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_fixture(&dir).await;
+        let err = conn
+            .fetch_rows(req("warehouse", "users", 0, 100))
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Schema 'warehouse' does not exist. Available schemas: main."
+        );
+    }
+
+    /// The sort direction can only ever be the enum's `ASC`/`DESC` keyword —
+    /// there is no path for a caller string to reach the ORDER BY direction.
+    /// This guards the no-injection guarantee documented on `SortDirection`.
+    #[tokio::test]
+    async fn fetch_rows_direction_is_enum_driven_not_injectable() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_fixture(&dir).await;
+        // A column name carrying a SQL-injection payload is rejected as an
+        // unknown column (it is validated against the real column list)
+        // rather than interpolated — the clause builder never trusts it.
+        let err = conn
+            .fetch_rows(FetchRowsRequest {
+                sort: Some(SortSpec {
+                    column: "id ASC; DROP TABLE users;--".into(),
+                    direction: SortDirection::Asc,
+                }),
+                ..req("main", "users", 0, 10)
+            })
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Database(_)));
+        assert!(
+            err.to_string().contains("does not exist on 'users'"),
+            "injection payload must be rejected as an unknown column: {err}"
+        );
+        // And the table is unharmed.
+        let page = conn
+            .fetch_rows(req("main", "users", 0, 10))
+            .await
+            .expect("table still intact");
+        assert_eq!(page.total_rows, Some(3));
+
+        // The keyword mapping is fixed and total over the enum.
+        assert_eq!(SortDirection::Asc.sql_keyword(), "ASC");
+        assert_eq!(SortDirection::Desc.sql_keyword(), "DESC");
+    }
+
+    /// A column whose name needs quoting (embedded double quote) is handled
+    /// by `quote_ident`, proving identifier quoting covers the sort column.
+    #[tokio::test]
+    async fn fetch_rows_sort_column_needing_quoting_is_quoted_not_broken() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("weird.db");
+        {
+            let conn = Connection::open(&path).expect("create db");
+            conn.execute_batch(
+                "CREATE TABLE t (\"a\"\"b\" INTEGER);
+                 INSERT INTO t (\"a\"\"b\") VALUES (3), (1), (2);",
+            )
+            .expect("seed db");
+        }
+        let conn = SqliteConnector
+            .open(&params_for(&path))
+            .await
+            .expect("open db");
+        let page = conn
+            .fetch_rows(FetchRowsRequest {
+                sort: Some(SortSpec {
+                    column: "a\"b".into(),
+                    direction: SortDirection::Asc,
+                }),
+                ..req("main", "t", 0, 10)
+            })
+            .await
+            .expect("fetch rows with quoted sort column");
+        let vals: Vec<serde_json::Value> = page.rows.iter().map(|r| r[0].clone()).collect();
+        assert_eq!(
+            vals,
+            vec![
+                serde_json::json!(1),
+                serde_json::json!(2),
+                serde_json::json!(3)
+            ]
+        );
     }
 }

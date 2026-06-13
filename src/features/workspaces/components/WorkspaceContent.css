@@ -1,0 +1,62 @@
+/* Workspace content area — .tab-content ported byte-identical from
+   ByteTable.html. .empty-state matches the prototype's "No open tabs" block;
+   .tab-placeholder (SQL/map until M6/M9) is free-form, token-driven, faint
+   (not in the prototype). */
+
+.tab-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg0);
+}
+
+/* Prototype workspace.jsx empty-state (no open tabs). */
+.tab-content .empty-state,
+.main-col > .empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-dim);
+}
+
+.main-col > .empty-state p,
+.tab-content .empty-state p {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.main-col > .empty-state span,
+.tab-content .empty-state span {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.tab-placeholder {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: var(--bg0);
+  color: var(--text-faint);
+}
+
+.tab-placeholder > svg {
+  opacity: 0.4;
+}
+
+.tab-placeholder p {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.tab-placeholder span {
+  font-family: var(--mono);
+  font-size: 11px;
+}

@@ -1,20 +1,22 @@
-//! Use-cases for the introspection slice. Depend on the shared engine
-//! abstraction plus the connections feature's application layer (the
-//! `ConnectionManager` that owns open handles — see the cross-feature note
-//! in the slice docs). No Tauri, no drivers.
+//! Use-cases for the browse slice. Depend on the shared engine abstraction
+//! plus the connections feature's application layer (the `ConnectionManager`
+//! that owns open handles — see the cross-feature note in the slice docs).
+//! No Tauri, no drivers.
 
 use crate::features::connections::application::{ConnectionHandleId, ConnectionManager};
-use crate::shared::engine::TableMeta;
+use crate::shared::engine::{FetchRowsRequest, RowsPage};
 use crate::shared::error::AppError;
 
-/// Column-level metadata for one table on an open connection (M3 sidebar).
-pub async fn get_table_meta(
+/// Fetch one page of rows from a table on an open connection (M4 data grid).
+/// Paging and the optional single-column sort are applied by the adapter,
+/// which also validates the sort column and produces §5 errors for unknown
+/// schema/table/column.
+pub async fn fetch_rows(
     manager: &ConnectionManager,
     handle: &ConnectionHandleId,
-    schema: &str,
-    table: &str,
-) -> Result<TableMeta, AppError> {
-    manager.get(handle).await?.table_meta(schema, table).await
+    req: FetchRowsRequest,
+) -> Result<RowsPage, AppError> {
+    manager.get(handle).await?.fetch_rows(req).await
 }
 
 #[cfg(test)]
@@ -23,11 +25,12 @@ mod tests {
 
     use super::*;
     use crate::shared::engine::{
-        ColumnInfo, EngineConnection, EngineInfo, FetchRowsRequest, QueryOptions, QueryResult,
-        RowsPage, SchemaInfo, TableInfo,
+        ColumnMeta, EngineConnection, EngineInfo, QueryOptions, QueryResult, SchemaInfo, TableInfo,
+        TableMeta,
     };
 
-    /// Minimal fake: only `table_meta` matters here.
+    /// Minimal fake: only `fetch_rows` matters here. It echoes the request
+    /// window back so the use-case wiring is observable.
     struct FakeConnection;
 
     #[async_trait]
@@ -47,16 +50,8 @@ mod tests {
             Ok(vec![])
         }
 
-        async fn table_meta(&self, schema: &str, table: &str) -> Result<TableMeta, AppError> {
-            Ok(TableMeta {
-                columns: vec![ColumnInfo {
-                    name: format!("{schema}.{table}.col"),
-                    data_type: "TEXT".into(),
-                    nullable: true,
-                    pk: false,
-                    fk: None,
-                }],
-            })
+        async fn table_meta(&self, _schema: &str, _table: &str) -> Result<TableMeta, AppError> {
+            Ok(TableMeta { columns: vec![] })
         }
 
         async fn run_query(
@@ -73,12 +68,15 @@ mod tests {
             })
         }
 
-        async fn fetch_rows(&self, _req: FetchRowsRequest) -> Result<RowsPage, AppError> {
+        async fn fetch_rows(&self, req: FetchRowsRequest) -> Result<RowsPage, AppError> {
             Ok(RowsPage {
-                columns: vec![],
+                columns: vec![ColumnMeta {
+                    name: format!("{}.{}", req.schema, req.table),
+                    type_hint: String::new(),
+                }],
                 rows: vec![],
-                offset: 0,
-                limit: 0,
+                offset: req.offset,
+                limit: req.limit,
                 total_rows: Some(0),
                 elapsed_ms: 0,
             })
@@ -89,21 +87,33 @@ mod tests {
         }
     }
 
+    fn sample_request() -> FetchRowsRequest {
+        FetchRowsRequest {
+            schema: "main".into(),
+            table: "users".into(),
+            sort: None,
+            offset: 20,
+            limit: 10,
+        }
+    }
+
     #[tokio::test]
     async fn delegates_to_the_connection_behind_the_handle() {
         let manager = ConnectionManager::new();
         let handle = manager.insert(Box::new(FakeConnection)).await;
-        let meta = get_table_meta(&manager, &handle, "main", "users")
+        let page = fetch_rows(&manager, &handle, sample_request())
             .await
-            .expect("table meta");
-        assert_eq!(meta.columns[0].name, "main.users.col");
+            .expect("fetch rows");
+        assert_eq!(page.columns[0].name, "main.users");
+        assert_eq!(page.offset, 20);
+        assert_eq!(page.limit, 10);
     }
 
     #[tokio::test]
     async fn closed_handle_is_a_not_found_with_a_human_message() {
         let manager = ConnectionManager::new();
         let handle = ConnectionHandleId("ghost".into());
-        let err = get_table_meta(&manager, &handle, "main", "users")
+        let err = fetch_rows(&manager, &handle, sample_request())
             .await
             .unwrap_err();
         assert!(matches!(err, AppError::NotFound(_)));

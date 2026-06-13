@@ -1,0 +1,119 @@
+/* Table tab shell — toolbar rules ported byte-identical from ByteTable.html
+   (.table-tab / .table-toolbar / .seg / .seg-btn / .filter-toggle /
+   .applied-where / .table-rowcount). The grid itself lives in
+   features/browse/components/DataGrid (Task 3); the filter panel is M5. */
+
+.table-tab {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.table-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+
+.table-rowcount {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+/* Segmented control (ByteTable.html "v2: segmented control"). */
+.seg {
+  display: flex;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+  flex: none;
+}
+
+.seg-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 11px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+  transition:
+    background 0.1s,
+    color 0.1s;
+}
+
+.seg-btn:hover {
+  color: var(--text);
+}
+
+.seg-btn.active {
+  background: color-mix(in oklab, var(--accent) 16%, var(--bg3));
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* Filter toggle (ByteTable.html "v2: stackable filter builder"). */
+.filter-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  background: var(--bg1);
+  transition:
+    color 0.1s,
+    border-color 0.12s;
+  flex: none;
+}
+
+.filter-toggle:hover {
+  color: var(--text);
+}
+
+.filter-toggle.open {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 50%, var(--border));
+}
+
+.filter-toggle.has-applied {
+  color: var(--accent);
+}
+
+/* M4: the filter button is disabled until M5 — dim it so it reads as
+   not-yet-available rather than broken (not a prototype state; the
+   prototype's button is always live). */
+.filter-toggle:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.filter-toggle:disabled:hover {
+  color: var(--text-dim);
+}
+
+.applied-where {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40%;
+}
+
+.applied-where.empty {
+  color: var(--text-faint);
+  font-style: italic;
+}

@@ -214,6 +214,85 @@ pub struct QueryResult {
     pub elapsed_ms: u64,
 }
 
+/// Sort direction for a single column. Lowercase on the wire ("asc" /
+/// "desc"), matching the renderer's `SortDirection` in
+/// `src/shared/api/engine.ts`.
+///
+/// Security: this enum is the *only* thing that drives the ORDER BY
+/// direction in [`EngineConnection::fetch_rows`] — adapters emit the literal
+/// `ASC`/`DESC` keyword per variant and never interpolate any caller string
+/// into the direction, so the sort clause carries no SQL-injection surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SortDirection {
+    Asc,
+    Desc,
+}
+
+impl SortDirection {
+    /// The SQL keyword for this direction — a fixed string literal, never
+    /// caller-derived (see the type docs on the injection guarantee).
+    pub fn sql_keyword(self) -> &'static str {
+        match self {
+            Self::Asc => "ASC",
+            Self::Desc => "DESC",
+        }
+    }
+}
+
+/// A single-column sort applied to a browsed table. `column` is a real
+/// column name the adapter MUST validate against the table's columns before
+/// quoting it into the SQL (an unknown column is a §5 error); `direction`
+/// is enum-driven and never interpolated as text.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SortSpec {
+    pub column: String,
+    pub direction: SortDirection,
+}
+
+/// A request for one page of rows from a table, powering the M4 data grid.
+///
+/// M4 scope: paging (`offset`/`limit`) plus an optional single-column sort.
+/// Row filtering is M5 — there is deliberately no predicate field yet.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FetchRowsRequest {
+    pub schema: String,
+    pub table: String,
+    /// Optional single-column sort; `None` leaves row order to the engine.
+    pub sort: Option<SortSpec>,
+    /// Zero-based row offset of the page (bound as a parameter, never
+    /// interpolated).
+    pub offset: u64,
+    /// Maximum rows in the page. Adapters clamp this to their page ceiling.
+    pub limit: u32,
+}
+
+/// One page of rows from a table: column metadata, JSON-mapped values, the
+/// page window, and timing — the data-grid counterpart of [`QueryResult`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RowsPage {
+    pub columns: Vec<ColumnMeta>,
+    /// Row-major values, mapped to JSON exactly as [`QueryResult::rows`]
+    /// (NULL → null, big integers → strings, blobs → placeholder, …).
+    pub rows: Vec<Vec<serde_json::Value>>,
+    /// The offset this page was fetched at (echoes the request after any
+    /// clamping).
+    pub offset: u64,
+    /// The effective page size after clamping (echoes the request).
+    pub limit: u32,
+    /// Exact `COUNT(*)` of the table (unfiltered in M4 — filters are M5).
+    ///
+    /// Computed per fetch in M4 for correctness and simplicity; a later
+    /// milestone may cache it or fall back to an engine estimate for very
+    /// large tables, at which point this becomes `None` when unknown. `None`
+    /// today means the count could not be obtained.
+    pub total_rows: Option<u64>,
+    pub elapsed_ms: u64,
+}
+
 /// Opens and tests connections for one engine. One implementation per
 /// engine, registered by `Engine` in the composition root; the renderer
 /// only ever sees opaque handle ids, never driver handles.
@@ -250,6 +329,16 @@ pub trait EngineConnection: Send + Sync {
     /// enforcement is a higher-level concern (M6); the adapter runs what it
     /// is given but always enforces `row_limit`.
     async fn run_query(&self, sql: &str, options: QueryOptions) -> Result<QueryResult, AppError>;
+
+    /// Fetch one page of rows from a table for the data grid (M4): paged
+    /// (`offset`/`limit`) and optionally sorted by a single column, with an
+    /// exact unfiltered `COUNT(*)` for the "N rows" status. The adapter
+    /// validates `sort.column` against the table's columns, quotes every
+    /// identifier, binds offset/limit as parameters, and emits the ORDER BY
+    /// direction only as the enum-driven `ASC`/`DESC` keyword — see
+    /// [`SortDirection`] for the no-injection guarantee. Unknown
+    /// schema/table/sort-column are §5 human errors.
+    async fn fetch_rows(&self, req: FetchRowsRequest) -> Result<RowsPage, AppError>;
 
     /// Release the underlying driver resources. For drop-managed drivers
     /// (rusqlite) this may be a no-op; server engines use it for an orderly
@@ -362,5 +451,79 @@ mod tests {
         assert_eq!(opts.schema, None);
         let opts: QueryOptions = serde_json::from_str(r#"{"rowLimit": 10}"#).unwrap();
         assert_eq!(opts.row_limit, 10);
+    }
+
+    #[test]
+    fn sort_direction_serializes_lowercase_and_maps_to_sql_keywords() {
+        assert_eq!(serde_json::to_value(SortDirection::Asc).unwrap(), "asc");
+        assert_eq!(serde_json::to_value(SortDirection::Desc).unwrap(), "desc");
+        assert_eq!(SortDirection::Asc.sql_keyword(), "ASC");
+        assert_eq!(SortDirection::Desc.sql_keyword(), "DESC");
+    }
+
+    #[test]
+    fn fetch_rows_request_wire_shape_is_camel_case_and_round_trips() {
+        let req = FetchRowsRequest {
+            schema: "main".into(),
+            table: "users".into(),
+            sort: Some(SortSpec {
+                column: "name".into(),
+                direction: SortDirection::Desc,
+            }),
+            offset: 100,
+            limit: 50,
+        };
+        let json = serde_json::to_value(&req).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "schema": "main",
+                "table": "users",
+                "sort": { "column": "name", "direction": "desc" },
+                "offset": 100,
+                "limit": 50
+            })
+        );
+        let back: FetchRowsRequest = serde_json::from_value(json).unwrap();
+        assert_eq!(back, req);
+
+        // A sortless request keeps `sort: null` on the wire and round-trips.
+        let unsorted = FetchRowsRequest {
+            sort: None,
+            ..req.clone()
+        };
+        let json = serde_json::to_value(&unsorted).unwrap();
+        assert_eq!(json["sort"], serde_json::Value::Null);
+        let back: FetchRowsRequest = serde_json::from_value(json).unwrap();
+        assert_eq!(back, unsorted);
+    }
+
+    #[test]
+    fn rows_page_wire_shape_is_camel_case_and_round_trips() {
+        let page = RowsPage {
+            columns: vec![ColumnMeta {
+                name: "id".into(),
+                type_hint: "INTEGER".into(),
+            }],
+            rows: vec![vec![serde_json::json!(1)], vec![serde_json::json!(2)]],
+            offset: 0,
+            limit: 100,
+            total_rows: Some(42),
+            elapsed_ms: 3,
+        };
+        let json = serde_json::to_value(&page).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "columns": [{ "name": "id", "typeHint": "INTEGER" }],
+                "rows": [[1], [2]],
+                "offset": 0,
+                "limit": 100,
+                "totalRows": 42,
+                "elapsedMs": 3
+            })
+        );
+        let back: RowsPage = serde_json::from_value(json).unwrap();
+        assert_eq!(back, page);
     }
 }

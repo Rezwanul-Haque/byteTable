@@ -626,8 +626,11 @@ export function DataGrid({
     }
     const prior = row[ci] ?? null;
     const value = coerceForColumn(draft, colMeta.get(colName));
-    // No-op: the coerced value is unchanged — don't fire an update.
-    if (value === prior) {
+    // No-op: the coerced value is unchanged — don't fire an update. Compare by
+    // string form too: big integers (>2^53) arrive as strings but coerce to a
+    // number for INT columns, so `value === prior` would miss an unchanged edit
+    // and fire a precision-losing write. String-equal means "no real change".
+    if (value === prior || (value !== null && prior !== null && String(value) === String(prior))) {
       cancelEdit();
       return;
     }
@@ -904,7 +907,7 @@ export function DataGrid({
       {pendingConfirm ? (
         <Modal onClose={confirmCancel} label="Confirm update" width={460}>
           <ModalTitle>
-            <Icon name="warning" size={18} style={{ color: "#e2b340" }} /> Update a row on a
+            <Icon name="warning" size={18} style={{ color: "#e06c75" }} /> Update a row on a
             production connection?
           </ModalTitle>
           <p className="dg-confirm-body">

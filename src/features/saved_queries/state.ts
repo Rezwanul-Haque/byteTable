@@ -42,12 +42,15 @@ interface SavedQueriesFeatureState {
   remove: (id: string) => Promise<void>;
 }
 
-export const useSavedQueriesStore = create<SavedQueriesFeatureState>((set) => ({
+export const useSavedQueriesStore = create<SavedQueriesFeatureState>((set, get) => ({
   savedQueries: [],
   loaded: false,
   loadError: null,
 
   load: async () => {
+    // Idempotent: a settled load short-circuits, so callers (every SQL-tab
+    // mount, every palette open) can call this freely without redundant IPC.
+    if (get().loaded) return;
     try {
       const savedQueries = await savedQueryList();
       set({ savedQueries, loaded: true, loadError: null });

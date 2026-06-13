@@ -14,6 +14,8 @@ use features::connections::commands::ConnectionsState;
 use features::connections::infrastructure::JsonFileConnectionRepository;
 use features::preferences::commands::PreferencesState;
 use features::preferences::infrastructure::JsonFilePreferencesStore;
+use features::saved_queries::commands::SavedQueriesState;
+use features::saved_queries::infrastructure::JsonFileSavedQueryRepository;
 use shared::engine::Engine;
 
 /// Bring the main window back to the foreground (from hidden/minimized tray state).
@@ -70,6 +72,12 @@ pub fn run() {
                 ConnectionManager::new(),
             ));
 
+            // Saved-queries slice: a single global JSON store shared across
+            // every workspace (save in workspace A, load from workspace B).
+            let saved_queries =
+                JsonFileSavedQueryRepository::new(config_dir.join("saved_queries.json"));
+            app.manage(SavedQueriesState::new(Box::new(saved_queries)));
+
             // System tray: persistent ByteTable icon. Left-click toggles the
             // window; right-click opens the menu (Show / Quit). The app keeps
             // running in the tray when the window is closed (see CloseRequested
@@ -125,6 +133,9 @@ pub fn run() {
             features::connections::commands::query_run,
             features::introspection::commands::table_meta,
             features::browse::commands::rows_fetch,
+            features::saved_queries::commands::saved_query_list,
+            features::saved_queries::commands::saved_query_save,
+            features::saved_queries::commands::saved_query_delete,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

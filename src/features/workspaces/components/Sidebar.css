@@ -1,0 +1,383 @@
+/*
+ * Sidebar — .sidebar*, .schema-*, .table-*, .ctx-* rules ported exactly from
+ * the ByteTable.html prototype (§3.3), plus the shared .env-dot /
+ * .ws-color-bar rules (first consumer) and a few React-port additions
+ * marked below.
+ *
+ * The prototype's `.sidebar { grid-area: sidebar; … }` keys into the
+ * .workspace grid in App.css.
+ */
+
+.sidebar {
+  grid-area: sidebar;
+  background: var(--bg1);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.sidebar-conn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 12px 10px;
+}
+
+.sidebar-conn-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.sidebar-conn-name {
+  font-weight: 600;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.sidebar-conn-detail {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 1px;
+}
+
+/* Shared chip rules from the prototype's base styles — the sidebar header
+   is their first consumer in the port. */
+.env-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  flex: none;
+}
+
+.ws-color-bar {
+  width: 3px;
+  align-self: stretch;
+  border-radius: 2px;
+  flex: none;
+}
+
+/* ---------- schema row ---------- */
+
+.schema-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 10px 8px;
+}
+
+.schema-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 9px;
+  font-size: 12px;
+  color: var(--text);
+  min-width: 0;
+  transition: border-color 0.12s;
+}
+
+.schema-btn:hover {
+  border-color: color-mix(in oklab, var(--accent) 50%, var(--border));
+}
+
+.schema-btn-name {
+  flex: 1;
+  text-align: left;
+  font-family: var(--mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.schema-pop {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 40;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  padding: 5px;
+}
+
+.schema-pop-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+  /* React-port addition: items are <button>s (prototype: divs) — fill the
+     popover like block divs did. */
+  width: 100%;
+}
+
+.schema-pop-item:hover {
+  background: var(--bg3);
+  color: var(--text);
+}
+
+.schema-pop-item.active {
+  color: var(--accent);
+}
+
+.schema-pop-item span:nth-child(2) {
+  flex: 1;
+  /* React-port addition: buttons center text by default; divs didn't. */
+  text-align: left;
+}
+
+.schema-pop-count {
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+/* React-port addition: the refresh IconBtn while re-introspecting — the
+   prototype applies this inline (animation 'spin .7s linear infinite');
+   @keyframes spin lives in ConnectScreen.css (same bundle). */
+.sidebar-sync-spinning {
+  animation: spin 0.7s linear infinite;
+  color: var(--accent);
+}
+
+/* ---------- search ---------- */
+
+.sidebar-search {
+  margin: 0 10px 8px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 6px 0 9px;
+  transition: border-color 0.12s;
+}
+
+.sidebar-search:focus-within {
+  border-color: var(--accent);
+}
+
+.sidebar-search input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  font-size: 12px;
+  padding: 7px 0;
+  min-width: 0;
+}
+
+/* ---------- table list ---------- */
+
+.sidebar-section-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 14px 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-faint);
+}
+
+.sidebar-count {
+  font-family: var(--mono);
+}
+
+.sidebar-tables {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 6px 8px;
+}
+
+.table-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.1s;
+  user-select: none;
+}
+
+.table-item:hover {
+  background: var(--bg2);
+}
+
+/* No table is ever active in M3 (tabs arrive in M4) — rules kept so M4 only
+   has to set the class. */
+.table-item.active {
+  background: color-mix(in oklab, var(--accent) 12%, var(--bg2));
+}
+
+.table-item.active .table-item-name {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.table-item-name {
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table-item-count {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.table-expand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  color: var(--text-faint);
+  transition: transform 0.12s;
+  flex: none;
+  margin-left: -2px;
+}
+
+.table-expand.open {
+  transform: rotate(90deg);
+}
+
+.table-expand:hover {
+  color: var(--text);
+  background: var(--bg3);
+}
+
+/* ---------- inline column list ---------- */
+
+.table-cols {
+  padding: 1px 8px 5px 30px;
+}
+
+.table-col {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2.5px 6px;
+  border-radius: 5px;
+}
+
+.table-col:hover {
+  background: var(--bg2);
+}
+
+.table-col-icon {
+  width: 13px;
+  display: inline-flex;
+  flex: none;
+}
+
+.table-col-name {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table-col-type {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+
+/* React-port addition: minimal loading/error line while a table's columns
+   are introspected. */
+.table-col-note {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+  padding: 2.5px 6px;
+}
+
+.sidebar-nomatch {
+  padding: 12px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+/* React-port additions: list-level loading / §5-style error states (the
+   prototype's data was synchronous). */
+.sidebar-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.sidebar-error {
+  padding: 12px;
+  font-size: 12px;
+  color: var(--error);
+}
+
+.sidebar-footer {
+  padding: 10px;
+  border-top: 1px solid var(--border);
+}
+
+/* ---------- context menu ---------- */
+
+.ctx-menu {
+  position: fixed;
+  z-index: 60;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 5px;
+  min-width: 190px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  cursor: pointer;
+  color: var(--text-dim);
+  /* React-port addition: items are <button>s (prototype: divs) — fill the
+     menu like block divs did. */
+  width: 100%;
+}
+
+.ctx-item:hover {
+  background: var(--bg3);
+  color: var(--text);
+}

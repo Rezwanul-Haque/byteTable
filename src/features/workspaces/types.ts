@@ -29,20 +29,27 @@ export interface WorkspaceConnection {
  *
  * Pattern: every piece of per-workspace UI state lives on the workspace
  * object under `ui`, keyed by workspace — so switching workspaces preserves
- * it for free and closing a workspace drops it with the object. Later
- * milestones extend this type (M3: sidebar — selected schema, table filter,
- * expanded tables; M4: open tabs + active tab) and add a
- * `patchWorkspaceUi(id, patch)` action alongside rename/recolor.
- * Empty for now — M2 still renders only a minimal table list.
+ * it for free and closing a workspace drops it with the object. Written via
+ * the store's `patchWorkspaceUi(id, patch)` action. Later milestones keep
+ * extending this type (M4: open tabs + active tab).
  *
  * Churn rule: only low-frequency state belongs here. High-frequency state
  * (scroll offsets, drag-in-progress) lives in refs/local component state and
  * is committed to `ui` only on tab/workspace switch or unmount — never on
- * every frame. M3/M4 components must select narrow slices from the store
- * (e.g. one `ui` field), not whole workspace objects, to avoid re-rendering
- * on unrelated `ui` writes.
+ * every frame. The sidebar's search text is deliberately NOT here: it is
+ * transient per-keystroke state, local to the component (prototype
+ * behavior).
  */
-export type WorkspaceUiState = Record<string, never>;
+export interface WorkspaceUiState {
+  /**
+   * Schema selected in the sidebar's switcher. Unset until the user
+   * switches — readers fall back to the first schema the connection listed
+   * (SQLite: always `main`).
+   */
+  schemaName?: string;
+  /** Sidebar tables whose inline column list is expanded. */
+  expandedTables?: string[];
+}
 
 /** An open workspace — one per live connection the user has opened. */
 export interface Workspace extends WorkspaceConnection {

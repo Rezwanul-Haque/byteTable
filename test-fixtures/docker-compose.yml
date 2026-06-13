@@ -1,0 +1,49 @@
+# ByteTable test databases — Postgres, MySQL, Redis.
+# Ports are non-standard (offset) so they don't clash with any local installs.
+#
+#   cd test-fixtures
+#   docker compose up -d          # start all three
+#   ./seed/seed-redis.sh          # seed Redis (Postgres/MySQL auto-seed on first init)
+#   docker compose down -v        # stop + wipe (so a later `up` re-seeds)
+#
+# Credentials are in README.md. SQL seed files auto-run only on FIRST init of an
+# empty data volume; `down -v` clears the volume so the next `up` re-seeds.
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: bt-pg
+    environment:
+      POSTGRES_PASSWORD: bytetable
+      POSTGRES_DB: byteshop
+    ports:
+      - "55432:5432"
+    volumes:
+      - ./seed/postgres.sql:/docker-entrypoint-initdb.d/seed.sql:ro
+      - bt-pg-data:/var/lib/postgresql/data
+
+  mysql:
+    image: mysql:8
+    container_name: bt-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: bytetable
+      MYSQL_DATABASE: byteshop
+    ports:
+      - "33306:3306"
+    volumes:
+      - ./seed/mysql.sql:/docker-entrypoint-initdb.d/seed.sql:ro
+      - bt-mysql-data:/var/lib/mysql
+
+  redis:
+    image: redis:7
+    container_name: bt-redis
+    command: ["redis-server", "--requirepass", "bytetable"]
+    ports:
+      - "63790:6379"
+    volumes:
+      - bt-redis-data:/data
+
+volumes:
+  bt-pg-data:
+  bt-mysql-data:
+  bt-redis-data:

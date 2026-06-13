@@ -1,0 +1,223 @@
+/* Stackable filter builder panel — rules ported byte-identical from
+   ByteTable.html ("v2: stackable filter builder"). The toolbar's filter
+   toggle + applied-WHERE readout live in TableTab.css; this file owns the
+   panel itself, its condition rows, the raw-mode row, and the footer. */
+
+.filter-panel {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg1);
+  padding: 9px 12px 8px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.filter-panel.hidden {
+  display: none;
+}
+
+.filter-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filter-row.disabled .filter-select,
+.filter-row.disabled .filter-value,
+.filter-row.disabled .filter-and {
+  opacity: 0.45;
+}
+
+.filter-and {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+  width: 44px;
+  text-align: right;
+  flex: none;
+  letter-spacing: 0.04em;
+}
+
+.filter-check {
+  display: inline-flex;
+  cursor: pointer;
+  flex: none;
+}
+
+.filter-check input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.filter-checkbox {
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  border: 1.5px solid var(--text-faint);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--on-accent);
+  transition:
+    background 0.12s,
+    border-color 0.12s;
+}
+
+.filter-checkbox.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.filter-select {
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  padding: 5px 7px;
+  outline: none;
+  color: var(--text);
+  max-width: 170px;
+}
+
+.filter-select:focus {
+  border-color: var(--accent);
+}
+
+.filter-op {
+  max-width: 130px;
+}
+
+.filter-value {
+  flex: 1;
+  min-width: 60px;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  padding: 5px 9px;
+  outline: none;
+  color: var(--text);
+  transition: border-color 0.12s;
+}
+
+.filter-value:focus {
+  border-color: var(--accent);
+}
+
+.filter-novalue {
+  flex: 1;
+}
+
+.filter-raw-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* WHERE prefix + input for raw mode (ByteTable.html .where-label/.where-input). */
+.where-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.where-input {
+  flex: 1;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  padding: 6px 10px;
+  outline: none;
+  transition: border-color 0.12s;
+  min-width: 0;
+  color: var(--text);
+}
+
+.where-input:focus {
+  border-color: var(--accent);
+}
+
+.where-input.applied {
+  border-color: color-mix(in oklab, var(--accent) 60%, transparent);
+}
+
+.where-input.error {
+  border-color: #e06c75;
+}
+
+.filter-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.filter-add,
+.filter-rawtoggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.filter-add:hover {
+  color: var(--accent);
+  background: var(--bg2);
+}
+
+.filter-rawtoggle:hover {
+  color: var(--text);
+  background: var(--bg2);
+}
+
+.filter-count-note {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+}
+
+.filter-err-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #e06c75;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 50%;
+}
+
+/* Remove-condition × button (ByteTable.html .saved-del). */
+.saved-del {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  color: var(--text-faint);
+  flex: none;
+}
+
+.saved-del:hover {
+  color: #e06c75;
+  background: #e06c7518;
+}

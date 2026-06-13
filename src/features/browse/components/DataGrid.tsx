@@ -25,7 +25,7 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-import type { CellValue, ColumnMeta, FkRef, SortSpec } from "../../../shared/api/engine";
+import type { CellValue, ColumnMeta, FilterSpec, FkRef, SortSpec } from "../../../shared/api/engine";
 import { rowsFetch } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
 import { Icon } from "../../../shared/ui/Icon";
@@ -100,9 +100,32 @@ interface DataGridProps {
   tabId: string;
   schema: string;
   table: string;
+  /**
+   * The applied row filter (M5), or `null` for the whole table. Threads into
+   * every `rowsFetch` and the reset machinery: changing it re-windows to
+   * offset 0, re-fetches, and re-counts — exactly like a sort change. When a
+   * raw-mode filter fails, `onFilterError` is called with the backend message
+   * (the panel surfaces it) and the grid keeps its prior rows.
+   */
+  filter: FilterSpec | null;
+  /** A stable identity for `filter`, so the reset effect can depend on it. */
+  filterKey: string;
+  /** Called with the §5 message when the first page of a filtered fetch fails. */
+  onFilterError?: (message: string) => void;
+  /** Called when a filtered fetch's first page succeeds (clears panel error). */
+  onFilterOk?: () => void;
 }
 
-export function DataGrid({ handleId, tabId, schema, table }: DataGridProps) {
+export function DataGrid({
+  handleId,
+  tabId,
+  schema,
+  table,
+  filter,
+  filterKey,
+  onFilterError,
+  onFilterOk,
+}: DataGridProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // --- column header meta (pk/fk/type) ---------------------------------
@@ -136,6 +159,16 @@ export function DataGrid({ handleId, tabId, schema, table }: DataGridProps) {
   // Refresh nonce + restored scroll, from the tabMeta seam.
   const refetchNonce = useTabMetaStore((s) => s.refetchNonce[tabId] ?? 0);
 
+  // Filter-result callbacks kept in a ref so fetchPage stays stable (it must
+  // not re-create — and reset the window — when the parent re-renders with a
+  // new callback identity; the only reset trigger is filterKey below).
+  const filterCbRef = useRef({ onFilterError, onFilterOk });
+  filterCbRef.current = { onFilterError, onFilterOk };
+  // The live filter, read inside fetchPage without making it a dep (filterKey
+  // is its stable identity and drives the reset effect).
+  const filterRef = useRef(filter);
+  filterRef.current = filter;
+
   // Reset everything for a fresh load (mount, sort change, refresh).
   const resetAndLoadFirstPage = useCallback(() => {
     generationRef.current += 1;
@@ -159,7 +192,14 @@ export function DataGrid({ handleId, tabId, schema, table }: DataGridProps) {
       if (rowCacheRef.current.has(offset)) return;
       const generation = generationRef.current;
       pendingPagesRef.current.add(pageIndex);
-      void rowsFetch(handleId, { schema, table, sort, offset, limit: PAGE_SIZE })
+      void rowsFetch(handleId, {
+        schema,
+        table,
+        sort,
+        filter: filterRef.current,
+        offset,
+        limit: PAGE_SIZE,
+      })
         .then((page) => {
           if (generation !== generationRef.current) return; // stale
           // Each page echoes the column list; keep the latest (stable across
@@ -177,6 +217,9 @@ export function DataGrid({ handleId, tabId, schema, table }: DataGridProps) {
           pendingPagesRef.current.delete(pageIndex);
           setCacheVersion((v) => v + 1);
           setLoadingInitial(false);
+          // The first page of a (re)load succeeded — clear any stale filter
+          // error the panel was showing (e.g. a fixed raw-mode clause).
+          if (pageIndex === 0) filterCbRef.current.onFilterOk?.();
 
           // Report to the tabMeta seam: total count, timing, and how many rows
           // are loaded so far (shown-of-total while a big table pages in).
@@ -192,10 +235,17 @@ export function DataGrid({ handleId, tabId, schema, table }: DataGridProps) {
         .catch((err: unknown) => {
           if (generation !== generationRef.current) return;
           pendingPagesRef.current.delete(pageIndex);
-          // Surface the first-page failure as the inline error state; later
-          // pages failing just leave shimmer (a transient scroll fetch).
-          if (pageIndex === 0) {
-            setInitialError(appErrorMessage(err, "Could not load rows."));
+          if (pageIndex !== 0) return; // later pages failing just leave shimmer
+          const message = appErrorMessage(err, "Could not load rows.");
+          // A filtered fetch that fails is almost always a bad raw WHERE — keep
+          // the prior rows visible and route the §5 message to the filter panel
+          // (it stays open so the user can fix the clause). Without a filter,
+          // it is a genuine load failure → the full-screen error state.
+          if (filterRef.current !== null && filterCbRef.current.onFilterError) {
+            filterCbRef.current.onFilterError(message);
+            setLoadingInitial(false);
+          } else {
+            setInitialError(message);
             setLoadingInitial(false);
           }
         });
@@ -212,9 +262,12 @@ export function DataGrid({ handleId, tabId, schema, table }: DataGridProps) {
   useEffect(() => {
     resetAndLoadFirstPage();
     fetchPage(0);
-    // fetchPage closes over sort/identity; resetAndLoadFirstPage is stable.
+    // fetchPage closes over sort/identity + reads the live filter via a ref;
+    // filterKey is the filter's stable identity, so an applied-filter change
+    // re-windows + re-counts here exactly like a sort change.
+    // resetAndLoadFirstPage is stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [handleId, schema, table, sort, refetchNonce]);
+  }, [handleId, schema, table, sort, filterKey, refetchNonce]);
 
   // Load the column header meta (pk/fk) once per identity. Independent of the
   // row pages — the prototype shows the icons from table metadata, not the
@@ -359,7 +412,11 @@ export function DataGrid({ handleId, tabId, schema, table }: DataGridProps) {
       <>
         <div className="dg-state">
           <Icon name="table_rows" size={28} style={{ opacity: 0.5 }} />
-          <span>Empty table — no rows in {schema + "." + table}</span>
+          <span>
+            {filter
+              ? "No rows match the filter in " + schema + "." + table
+              : "Empty table — no rows in " + schema + "." + table}
+          </span>
         </div>
         <GridHint />
       </>

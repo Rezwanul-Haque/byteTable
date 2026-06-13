@@ -24,7 +24,13 @@ import { EngineBadge } from "../../../shared/ui/EngineBadge";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { useToast } from "../../../shared/ui/toastContext";
-import { connectionDetail, connectionSchemas, type SchemaInfo } from "../../connections/api";
+import {
+  connectionDetail,
+  connectionIsTunneled,
+  connectionSchemas,
+  tunnelTitle,
+  type SchemaInfo,
+} from "../../connections/api";
 import { tablesKey, columnsKey, useIntrospectionStore } from "../../introspection/state";
 import { useWorkspacesStore } from "../state";
 import type { Workspace } from "../types";
@@ -302,10 +308,16 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
               title={workspace.saved.env}
             />
           </div>
-          {/* Tunnel lock icon goes here when SSH tunnels land (M12) —
-              ConnectionParams has no tunnel fields yet, and SQLite never
-              tunnels. */}
-          <div className="sidebar-conn-detail">{connectionDetail(workspace.saved.params)}</div>
+          {/* Tunnel lock (M12 Task 3): shown when the connection is reached
+              through an SSH bastion. SQLite never tunnels. */}
+          <div className="sidebar-conn-detail">
+            {connectionIsTunneled(workspace.saved.params) ? (
+              <span className="tunnel-lock" title={tunnelTitle(workspace.saved.params)}>
+                <Icon name="vpn_lock" size={13} style={{ color: "var(--accent)" }} />
+              </span>
+            ) : null}
+            {connectionDetail(workspace.saved.params)}
+          </div>
         </div>
         <IconBtn
           icon="power_settings_new"

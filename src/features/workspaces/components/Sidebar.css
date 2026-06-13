@@ -47,6 +47,14 @@
   margin-top: 1px;
 }
 
+/* Tunnel-lock indicator (M12 Task 3): inline before the host:port detail when
+   the connection routes through an SSH bastion. */
+.tunnel-lock {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-right: 3px;
+}
+
 /* Shared chip rules from the prototype's base styles — the sidebar header
    is their first consumer in the port. */
 .env-dot {

@@ -8,10 +8,13 @@ use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, WindowEvent};
 
+use engines::mysql::MysqlConnector;
+use engines::postgres::PostgresConnector;
 use engines::sqlite::SqliteConnector;
 use features::connections::application::{ConnectionManager, ConnectorRegistry};
 use features::connections::commands::ConnectionsState;
 use features::connections::infrastructure::JsonFileConnectionRepository;
+use features::connections::secrets::KeyringSecretStore;
 use features::preferences::commands::PreferencesState;
 use features::preferences::infrastructure::JsonFilePreferencesStore;
 use features::saved_queries::commands::SavedQueriesState;
@@ -64,15 +67,23 @@ pub fn run() {
             app.manage(PreferencesState::new(Box::new(store)));
 
             // Connections slice: JSON registry + per-engine connectors.
-            // Engines without a registered connector (MySQL/Postgres until
-            // M12) get a human "arrives in a later milestone" error.
+            // Every engine now has a registered connector: SQLite (rusqlite),
+            // Postgres (M12 Task 1, sqlx) and MySQL (M12 Task 2, sqlx). An
+            // unregistered engine would get a human "arrives in a later
+            // milestone" error, but none remain.
             let repository = JsonFileConnectionRepository::new(config_dir.join("connections.json"));
             let mut registry = ConnectorRegistry::new();
             registry.register(Engine::Sqlite, Arc::new(SqliteConnector));
+            registry.register(Engine::Postgres, Arc::new(PostgresConnector));
+            registry.register(Engine::Mysql, Arc::new(MysqlConnector));
             app.manage(ConnectionsState::new(
                 Box::new(repository),
                 registry,
                 ConnectionManager::new(),
+                // Server-connection secrets (db password, SSH passphrase/
+                // password) live in the OS keychain, never in the JSON
+                // registry (M12 Task 3).
+                Box::new(KeyringSecretStore::new()),
             ));
 
             // Saved-queries slice: a single global JSON store shared across

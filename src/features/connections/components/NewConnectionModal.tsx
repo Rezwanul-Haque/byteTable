@@ -4,20 +4,26 @@
 // Test connection / Save footer, all on the shared Modal primitive
 // (scrim/Esc/focus handling).
 //
-// What is real in M2: SQLite end-to-end — Browse opens the native dialog,
-// Test connection runs the backend's `connection_test`, Save writes the
-// registry. The MySQL/PostgreSQL forms are design-complete and Save works
-// (the registry stores them), but Test — and later open — answer with the
-// backend's honest Unsupported sentence ("MySQL connections arrive in a
-// later milestone."), rendered inline like any other test failure. The SSH
-// tunnel section is likewise present per design but inert: ConnectionParams
-// has no tunnel fields until M12, so nothing from it is persisted.
+// M12 Task 3 made the server forms fully real: the typed password (and SSH
+// key passphrase / bastion password) are sent transiently to test/open and
+// persisted to the OS keychain on Save (never to the registry file); the TLS
+// dropdown carries its granular mode (`disable`/`prefer`/`require`/
+// `verify-full`) through to the params; and the SSH tunnel section wires real
+// `ssh` config (host/port/user + key/password/agent auth) so a connection can
+// be reached through a bastion.
+//
+// State: a single `useReducer` (the M2 backlog refactor). Every params-relevant
+// field edit resets the test verdict to idle in ONE place (the reducer's
+// default case), with an explicit opt-out list of actions that must NOT reset
+// it (switching the section tab, the verdict transitions themselves, the
+// saving flag). Secrets live in the reducer too but are NEVER part of the saved
+// params — they travel separately to the backend.
 //
 // This component is part of the slice's public surface alongside api.ts /
 // state.ts — the workspaces connect screen mounts it directly (the modal is
 // a connections concern; the screen that hosts it is not).
 
-import { useId, useRef, useState, type KeyboardEvent } from "react";
+import { useId, useReducer, useRef, type KeyboardEvent } from "react";
 
 import { isAppErrorPayload } from "../../../shared/api/error";
 import type { Engine } from "../../../shared/types";
@@ -27,7 +33,13 @@ import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Modal, ModalActions, ModalTitle } from "../../../shared/ui/Modal";
 import { useToast } from "../../../shared/ui/toastContext";
-import { connectionTest, type ConnectionParams } from "../api";
+import {
+  connectionTest,
+  type ConnectionParams,
+  type SshAuth,
+  type SshConfig,
+  type TlsMode,
+} from "../api";
 import { pickPrivateKeyFile, pickSqliteFile } from "../dialog";
 import { useConnectionsStore } from "../state";
 import "./NewConnectionModal.css";
@@ -41,6 +53,9 @@ const ENGINES: { engine: Engine; label: string }[] = [
 
 const DEFAULT_PORTS: Partial<Record<Engine, string>> = { postgres: "5432", mysql: "3306" };
 
+const TLS_MODES: TlsMode[] = ["disable", "prefer", "require", "verify-full"];
+type SshAuthMethod = SshAuth["method"];
+
 /**
  * Footer status: idle → testing (spinner) → "Connection OK · <version>" or
  * an inline §5-style error sentence (backend message or local validation).
@@ -53,38 +68,128 @@ type TestState =
 
 const IDLE: TestState = { phase: "idle" };
 
+// -- Reducer ----------------------------------------------------------------
+
+interface FormState {
+  engine: Engine;
+  section: "general" | "tunnel";
+  name: string;
+  host: string;
+  port: string;
+  // True once the user edited the port — switching engines then keeps it.
+  portTouched: boolean;
+  db: string;
+  user: string;
+  file: string;
+  tls: TlsMode;
+  // Transient secrets — sent to the backend, never part of saved params.
+  password: string;
+  // SSH tunnel.
+  useSsh: boolean;
+  sshHost: string;
+  sshPort: string;
+  sshUser: string;
+  sshAuth: SshAuthMethod;
+  sshKey: string;
+  sshPassword: string;
+  // Footer.
+  test: TestState;
+  saving: boolean;
+}
+
+const INITIAL: FormState = {
+  engine: "postgres",
+  section: "general",
+  name: "",
+  host: "localhost",
+  port: "5432",
+  portTouched: false,
+  db: "",
+  user: "",
+  file: "",
+  tls: "prefer",
+  password: "",
+  useSsh: false,
+  sshHost: "",
+  sshPort: "22",
+  sshUser: "",
+  sshAuth: "key",
+  sshKey: "~/.ssh/id_ed25519",
+  sshPassword: "",
+  test: IDLE,
+  saving: false,
+};
+
+type Action =
+  // A single generic field edit. Listed in the reducer's default branch, so it
+  // ALWAYS resets the test verdict (a green "OK" must describe current values).
+  | { type: "field"; patch: Partial<FormState> }
+  // Edits that must NOT reset the verdict (the explicit opt-out list).
+  | { type: "section"; section: FormState["section"] }
+  | { type: "saving"; saving: boolean }
+  | { type: "test"; test: TestState }
+  // Engine switch: resets section + auto-fills the default port when untouched.
+  | { type: "engine"; engine: Engine };
+
+function reducer(state: FormState, action: Action): FormState {
+  switch (action.type) {
+    // -- opt-out list: these do NOT reset the test verdict ------------------
+    case "section":
+      return { ...state, section: action.section };
+    case "saving":
+      return { ...state, saving: action.saving };
+    case "test":
+      return { ...state, test: action.test };
+    case "engine": {
+      const defaultPort = DEFAULT_PORTS[action.engine];
+      return {
+        ...state,
+        engine: action.engine,
+        section: "general",
+        port: defaultPort !== undefined && !state.portTouched ? defaultPort : state.port,
+        test: IDLE,
+      };
+    }
+    // -- everything else is a params-relevant edit → reset the verdict ------
+    case "field":
+      return { ...state, ...action.patch, test: IDLE };
+  }
+}
+
 interface NewConnectionModalProps {
   onClose: () => void;
 }
 
 export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
-  // Prototype defaults: postgres pre-selected, General section, port 5432.
-  const [engine, setEngine] = useState<Engine>("postgres");
-  const [section, setSection] = useState<"general" | "tunnel">("general");
-  const [name, setName] = useState("");
-  const [host, setHost] = useState("localhost");
-  const [port, setPort] = useState("5432");
-  // True once the user edited the port — switching engines then keeps it
-  // instead of auto-filling the new engine's default.
-  const [portTouched, setPortTouched] = useState(false);
-  const [db, setDb] = useState("");
-  const [user, setUser] = useState("");
-  const [file, setFile] = useState("");
-  const [tls, setTls] = useState("prefer");
-  // SSH tunnel — design-complete but inert until M12 (see module note):
-  // these values are never part of the saved params.
-  const [useSsh, setUseSsh] = useState(false);
-  const [sshHost, setSshHost] = useState("");
-  const [sshPort, setSshPort] = useState("22");
-  const [sshUser, setSshUser] = useState("");
-  const [sshAuth, setSshAuth] = useState<"key" | "password" | "agent">("key");
-  const [sshKey, setSshKey] = useState("~/.ssh/id_ed25519");
-  const [testState, setTestState] = useState<TestState>(IDLE);
-  const [saving, setSaving] = useState(false);
+  const [state, dispatch] = useReducer(reducer, INITIAL);
+  const {
+    engine,
+    section,
+    name,
+    host,
+    port,
+    db,
+    user,
+    file,
+    tls,
+    password,
+    useSsh,
+    sshHost,
+    sshPort,
+    sshUser,
+    sshAuth,
+    sshKey,
+    sshPassword,
+    test: testState,
+    saving,
+  } = state;
 
-  const saveConnection = useConnectionsStore((state) => state.save);
+  const saveConnection = useConnectionsStore((s) => s.save);
   const toast = useToast();
   const sshToggleId = useId();
+
+  // Convenience: a params-relevant field edit (resets the verdict).
+  const field = (patch: Partial<FormState>) => dispatch({ type: "field", patch });
 
   // ARIA tabs wiring (tab ↔ tabpanel) plus refs for arrow-key focus moves.
   const tabsBaseId = useId();
@@ -101,32 +206,43 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     event.preventDefault();
     const next = section === "general" ? "tunnel" : "general";
-    setSection(next);
+    dispatch({ type: "section", section: next });
     (next === "general" ? generalTabRef : tunnelTabRef).current?.focus();
   };
 
   const isFileBased = engine === "sqlite";
 
-  // Any form edit invalidates a previous test verdict (and clears a stale
-  // validation error) — a green "Connection OK" must describe the current
-  // values, not the ones that were tested.
-  const edit = (apply: () => void) => {
-    apply();
-    setTestState(IDLE);
-  };
+  const pickEngine = (next: Engine) => dispatch({ type: "engine", engine: next });
 
-  const pickEngine = (next: Engine) => {
-    setEngine(next);
-    setTestState(IDLE);
-    setSection("general");
-    const defaultPort = DEFAULT_PORTS[next];
-    if (defaultPort !== undefined && !portTouched) setPort(defaultPort);
+  /**
+   * Build the SSH config for the params (no secrets — those travel separately),
+   * or a §5-style sentence naming the first missing SSH field. Only called for
+   * server engines with the tunnel enabled.
+   */
+  const buildSsh = (): { ssh: SshConfig } | { error: string } => {
+    if (!sshHost.trim()) return { error: "SSH host is required" };
+    const sshPortNumber = Number(sshPort.trim());
+    if (!Number.isInteger(sshPortNumber) || sshPortNumber < 1 || sshPortNumber > 65535) {
+      return { error: "SSH port must be a number between 1 and 65535" };
+    }
+    if (!sshUser.trim()) return { error: "SSH user is required" };
+    let auth: SshAuth;
+    if (sshAuth === "key") {
+      if (!sshKey.trim()) return { error: "SSH private key path is required" };
+      auth = { method: "key", keyPath: sshKey.trim() };
+    } else if (sshAuth === "password") {
+      auth = { method: "password" };
+    } else {
+      auth = { method: "agent" };
+    }
+    return {
+      ssh: { host: sshHost.trim(), port: sshPortNumber, user: sshUser.trim(), auth },
+    };
   };
 
   /**
-   * Validate the current form into wire params, or a §5-style sentence
-   * naming the first missing field (the prototype had no validation; the
-   * required-field set comes from the M2 task spec).
+   * Validate the current form into wire params, or a §5-style sentence naming
+   * the first missing field.
    */
   const buildParams = (): { params: ConnectionParams } | { error: string } => {
     if (engine === "sqlite") {
@@ -140,6 +256,13 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
     }
     if (!db.trim()) return { error: "Database is required" };
     if (!user.trim()) return { error: "User is required" };
+
+    let ssh: SshConfig | undefined;
+    if (useSsh) {
+      const built = buildSsh();
+      if ("error" in built) return { error: built.error };
+      ssh = built.ssh;
+    }
     return {
       params: {
         engine,
@@ -147,31 +270,36 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
         port: portNumber,
         database: db.trim(),
         user: user.trim(),
-        // The wire type carries a boolean until M12 brings real server
-        // connections with full TLS-mode support; only "disable" means off.
-        tls: tls !== "disable",
+        tlsMode: tls,
+        ...(ssh ? { ssh } : {}),
       },
     };
   };
 
+  /** The transient secrets to send with test/save (empty strings → omitted). */
+  const secrets = (): { password?: string; sshSecret?: string } => ({
+    password: password || undefined,
+    // The SSH secret only applies when tunnelling with password/key auth.
+    sshSecret: useSsh && sshAuth === "password" ? sshPassword || undefined : undefined,
+  });
+
   const test = async () => {
     const built = buildParams();
     if ("error" in built) {
-      setTestState({ phase: "err", message: built.error });
+      dispatch({ type: "test", test: { phase: "err", message: built.error } });
       return;
     }
-    setTestState({ phase: "testing" });
+    dispatch({ type: "test", test: { phase: "testing" } });
     try {
-      const info = await connectionTest(built.params);
-      setTestState({ phase: "ok", serverVersion: info.serverVersion });
+      const info = await connectionTest(built.params, secrets());
+      dispatch({ type: "test", test: { phase: "ok", serverVersion: info.serverVersion } });
     } catch (error) {
       if (isAppErrorPayload(error)) {
-        // Real backend verdict — exact message, inline per spec §5. For
-        // mysql/postgres this is the honest Unsupported sentence.
-        setTestState({ phase: "err", message: error.message });
+        // Real backend verdict — exact message, inline per spec §5.
+        dispatch({ type: "test", test: { phase: "err", message: error.message } });
       } else {
         // Plain browser dev: no Tauri IPC at all.
-        setTestState(IDLE);
+        dispatch({ type: "test", test: IDLE });
         toast("Test connection requires the desktop app", "info");
       }
     }
@@ -179,29 +307,33 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
 
   const save = async () => {
     if (!name.trim()) {
-      setTestState({ phase: "err", message: "Name is required" });
+      dispatch({ type: "test", test: { phase: "err", message: "Name is required" } });
       return;
     }
     const built = buildParams();
     if ("error" in built) {
-      setTestState({ phase: "err", message: built.error });
+      dispatch({ type: "test", test: { phase: "err", message: built.error } });
       return;
     }
-    setSaving(true);
+    dispatch({ type: "saving", saving: true });
     try {
       // The prototype modal has no environment field, so new connections
-      // default to env "local" (the EnvTag on the card reflects it).
-      await saveConnection({
-        id: "",
-        name: name.trim(),
-        engine,
-        params: built.params,
-        env: "local",
-      });
+      // default to env "local" (the EnvTag on the card reflects it). Secrets
+      // travel to the OS keychain via the store, never to the registry file.
+      await saveConnection(
+        {
+          id: "",
+          name: name.trim(),
+          engine,
+          params: built.params,
+          env: "local",
+        },
+        secrets(),
+      );
     } catch (error) {
       if (isAppErrorPayload(error)) toast(error.message, "err");
       else toast("Saving connections requires the desktop app", "info");
-      setSaving(false);
+      dispatch({ type: "saving", saving: false });
       return;
     }
     toast("Connection “" + name.trim() + "” saved", "ok");
@@ -211,7 +343,7 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
   const browseDatabaseFile = async () => {
     try {
       const path = await pickSqliteFile();
-      if (path !== null) edit(() => setFile(path));
+      if (path !== null) field({ file: path });
     } catch (error) {
       if (isAppErrorPayload(error)) toast(error.message, "err");
       else toast("Native file dialog requires the desktop app", "info");
@@ -221,7 +353,8 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
   const browseKeyFile = async () => {
     try {
       const path = await pickPrivateKeyFile();
-      if (path !== null) setSshKey(path);
+      // The key path is a params field (it is stored), so reset the verdict.
+      if (path !== null) field({ sshKey: path });
     } catch (error) {
       if (isAppErrorPayload(error)) toast(error.message, "err");
       else toast("Native file dialog requires the desktop app", "info");
@@ -267,7 +400,7 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
             aria-controls={generalPanelId}
             tabIndex={section === "general" ? 0 : -1}
             className={"modal-tab" + (section === "general" ? " active" : "")}
-            onClick={() => setSection("general")}
+            onClick={() => dispatch({ type: "section", section: "general" })}
           >
             General
           </button>
@@ -280,7 +413,7 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
             aria-controls={tunnelPanelId}
             tabIndex={section === "tunnel" ? 0 : -1}
             className={"modal-tab" + (section === "tunnel" ? " active" : "")}
-            onClick={() => setSection("tunnel")}
+            onClick={() => dispatch({ type: "section", section: "tunnel" })}
           >
             SSH tunnel {useSsh ? <span className="modal-tab-dot" /> : null}
           </button>
@@ -293,7 +426,7 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
             Name
             <input
               value={name}
-              onChange={(e) => edit(() => setName(e.target.value))}
+              onChange={(e) => field({ name: e.target.value })}
               placeholder="my_database"
               spellCheck={false}
             />
@@ -303,7 +436,7 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
             <div className="file-row">
               <input
                 value={file}
-                onChange={(e) => edit(() => setFile(e.target.value))}
+                onChange={(e) => field({ file: e.target.value })}
                 placeholder="~/path/to/database.db"
                 spellCheck={false}
               />
@@ -319,9 +452,8 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
         </div>
       ) : (
         // Both server panels stay mounted; the inactive one is hidden via the
-        // `hidden` attribute so the uncontrolled password inputs keep their
-        // values across General ↔ SSH switches (the Modal focus trap already
-        // skips hidden elements via getClientRects()).
+        // `hidden` attribute so the controlled inputs keep focus/values across
+        // General ↔ SSH switches (the Modal focus trap skips hidden elements).
         <>
           <div
             className="form-grid"
@@ -334,7 +466,7 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
               Name
               <input
                 value={name}
-                onChange={(e) => edit(() => setName(e.target.value))}
+                onChange={(e) => field({ name: e.target.value })}
                 placeholder="my_database"
                 spellCheck={false}
               />
@@ -343,20 +475,21 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
               TLS mode
               <select
                 value={tls}
-                onChange={(e) => edit(() => setTls(e.target.value))}
+                onChange={(e) => field({ tls: e.target.value as TlsMode })}
                 className="form-select"
               >
-                <option value="disable">disable</option>
-                <option value="prefer">prefer</option>
-                <option value="require">require</option>
-                <option value="verify-full">verify-full</option>
+                {TLS_MODES.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {mode}
+                  </option>
+                ))}
               </select>
             </label>
             <label>
               Host
               <input
                 value={host}
-                onChange={(e) => edit(() => setHost(e.target.value))}
+                onChange={(e) => field({ host: e.target.value })}
                 spellCheck={false}
               />
             </label>
@@ -364,12 +497,7 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
               Port
               <input
                 value={port}
-                onChange={(e) =>
-                  edit(() => {
-                    setPort(e.target.value);
-                    setPortTouched(true);
-                  })
-                }
+                onChange={(e) => field({ port: e.target.value, portTouched: true })}
                 spellCheck={false}
               />
             </label>
@@ -377,7 +505,7 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
               Database
               <input
                 value={db}
-                onChange={(e) => edit(() => setDb(e.target.value))}
+                onChange={(e) => field({ db: e.target.value })}
                 placeholder={engine === "postgres" ? "postgres" : "mysql"}
                 spellCheck={false}
               />
@@ -386,17 +514,22 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
               User
               <input
                 value={user}
-                onChange={(e) => edit(() => setUser(e.target.value))}
+                onChange={(e) => field({ user: e.target.value })}
                 placeholder={engine === "postgres" ? "postgres" : "root"}
                 spellCheck={false}
               />
             </label>
-            {/* Present per design but intentionally uncontrolled and never
-              persisted — ConnectionParams has no password field by design;
-              secrets go to the OS keychain in M12. */}
+            {/* The password is sent transiently to test/open and stored in the
+              OS keychain on Save (M12 Task 3); it is NEVER part of the saved
+              params or the registry file. */}
             <label className="span-2">
               Password
-              <input type="password" placeholder="••••••••" />
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => field({ password: e.target.value })}
+                placeholder="••••••••"
+              />
             </label>
           </div>
           <div
@@ -412,7 +545,7 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
                   id={sshToggleId}
                   type="checkbox"
                   checked={useSsh}
-                  onChange={(e) => setUseSsh(e.target.checked)}
+                  onChange={(e) => field({ useSsh: e.target.checked })}
                   className="switch-input"
                 />
                 <span className={"switch" + (useSsh ? " on" : "")}>
@@ -427,7 +560,7 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
                   SSH host
                   <input
                     value={sshHost}
-                    onChange={(e) => setSshHost(e.target.value)}
+                    onChange={(e) => field({ sshHost: e.target.value })}
                     placeholder="bastion.example.com"
                     spellCheck={false}
                   />
@@ -436,7 +569,7 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
                   SSH port
                   <input
                     value={sshPort}
-                    onChange={(e) => setSshPort(e.target.value)}
+                    onChange={(e) => field({ sshPort: e.target.value })}
                     spellCheck={false}
                   />
                 </label>
@@ -444,7 +577,7 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
                   SSH user
                   <input
                     value={sshUser}
-                    onChange={(e) => setSshUser(e.target.value)}
+                    onChange={(e) => field({ sshUser: e.target.value })}
                     placeholder="deploy"
                     spellCheck={false}
                   />
@@ -453,7 +586,7 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
                   Auth method
                   <select
                     value={sshAuth}
-                    onChange={(e) => setSshAuth(e.target.value as typeof sshAuth)}
+                    onChange={(e) => field({ sshAuth: e.target.value as SshAuthMethod })}
                     className="form-select"
                   >
                     <option value="key">Private key</option>
@@ -467,7 +600,7 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
                     <div className="file-row">
                       <input
                         value={sshKey}
-                        onChange={(e) => setSshKey(e.target.value)}
+                        onChange={(e) => field({ sshKey: e.target.value })}
                         spellCheck={false}
                       />
                       <Btn variant="tonal" small onClick={() => void browseKeyFile()}>
@@ -476,11 +609,16 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
                     </div>
                   </label>
                 ) : sshAuth === "password" ? (
-                  // Uncontrolled + never persisted, same as the database
-                  // password above (keychain in M12).
+                  // Sent transiently + stored in the keychain on Save, same as
+                  // the database password above.
                   <label className="span-2">
                     SSH password
-                    <input type="password" placeholder="••••••••" />
+                    <input
+                      type="password"
+                      value={sshPassword}
+                      onChange={(e) => field({ sshPassword: e.target.value })}
+                      placeholder="••••••••"
+                    />
                   </label>
                 ) : (
                   <div className="span-2 form-note">

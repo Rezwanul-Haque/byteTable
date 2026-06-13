@@ -16,9 +16,11 @@ use crate::shared::error::AppError;
 
 use super::application::{
     self, ConnectionHandleId, ConnectionManager, ConnectorRegistry, OpenTarget, OpenedConnection,
+    TransientSecrets,
 };
 use super::domain::SavedConnection;
 use super::ports::ConnectionRepository;
+use super::secrets::SecretStore;
 
 /// Hard ceiling for `QueryOptions::row_limit`, enforced at the command
 /// boundary regardless of what the renderer asks for. 10 000 rows is already
@@ -42,6 +44,10 @@ pub struct ConnectionsState {
     repository: Box<dyn ConnectionRepository>,
     registry: ConnectorRegistry,
     manager: ConnectionManager,
+    /// OS-keychain-backed store for server-connection secrets (M12 Task 3):
+    /// the db password and the SSH key passphrase / bastion password. SQLite
+    /// connections never touch it.
+    secret_store: Box<dyn SecretStore>,
 }
 
 impl ConnectionsState {
@@ -49,11 +55,13 @@ impl ConnectionsState {
         repository: Box<dyn ConnectionRepository>,
         registry: ConnectorRegistry,
         manager: ConnectionManager,
+        secret_store: Box<dyn SecretStore>,
     ) -> Self {
         Self {
             repository,
             registry,
             manager,
+            secret_store,
         }
     }
 
@@ -71,12 +79,24 @@ pub async fn connection_list(
     application::list_connections(state.repository.as_ref())
 }
 
+/// Save a connection. `password` / `sshSecret` are the optional transient
+/// secrets the modal typed; when present they are stored in the OS keychain
+/// keyed by the (assigned) connection id — the JSON registry stores only
+/// non-secret params. Empty/absent secrets leave any stored secret untouched.
 #[tauri::command]
 pub async fn connection_save(
     state: State<'_, ConnectionsState>,
     connection: SavedConnection,
+    password: Option<String>,
+    ssh_secret: Option<String>,
 ) -> Result<SavedConnection, AppError> {
-    application::save_connection(state.repository.as_ref(), connection)
+    let secrets = TransientSecrets::new(password, ssh_secret);
+    application::save_connection(
+        state.repository.as_ref(),
+        state.secret_store.as_ref(),
+        connection,
+        &secrets,
+    )
 }
 
 #[tauri::command]
@@ -84,24 +104,37 @@ pub async fn connection_delete(
     state: State<'_, ConnectionsState>,
     id: String,
 ) -> Result<(), AppError> {
-    application::delete_connection(state.repository.as_ref(), &id)
+    application::delete_connection(state.repository.as_ref(), state.secret_store.as_ref(), &id)
 }
 
+/// `password` is the transient connection secret for server engines (Postgres
+/// in M12 Task 1), carried only for this call and never persisted. SQLite
+/// ignores it. M12 Task 3 will source it from the OS keychain instead of the
+/// renderer.
+/// Test a connection using ONLY the transiently-typed secrets (`password` /
+/// `sshSecret`) — testing happens before save, so the keychain is not touched.
 #[tauri::command]
 pub async fn connection_test(
     state: State<'_, ConnectionsState>,
     params: ConnectionParams,
+    password: Option<String>,
+    ssh_secret: Option<String>,
 ) -> Result<EngineInfo, AppError> {
-    application::test_connection(&state.registry, &params).await
+    let secrets = TransientSecrets::new(password, ssh_secret);
+    application::test_connection(&state.registry, &params, &secrets).await
 }
 
 /// Open by saved id *or* ad-hoc params ("Open SQLite file…"); exactly one
-/// must be provided.
+/// must be provided. For a saved id the secrets are sourced from the keychain
+/// (a transiently-typed `password` / `sshSecret` overrides, for first connect
+/// before save).
 #[tauri::command]
 pub async fn connection_open(
     state: State<'_, ConnectionsState>,
     id: Option<String>,
     params: Option<ConnectionParams>,
+    password: Option<String>,
+    ssh_secret: Option<String>,
 ) -> Result<OpenedConnection, AppError> {
     let target = match (id, params) {
         (Some(id), None) => OpenTarget::SavedId(id),
@@ -117,11 +150,14 @@ pub async fn connection_open(
             ))
         }
     };
+    let secrets = TransientSecrets::new(password, ssh_secret);
     application::open_connection(
         state.repository.as_ref(),
         &state.registry,
+        state.secret_store.as_ref(),
         &state.manager,
         target,
+        &secrets,
     )
     .await
 }

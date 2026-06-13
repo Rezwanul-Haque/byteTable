@@ -156,8 +156,13 @@ export interface QueryOptions {
  * One result cell. Engine values map to JSON: NULL → null, integers/reals →
  * numbers, text → strings; integers beyond ±2^53 arrive as strings to
  * preserve precision (see the SQLite adapter docs).
+ *
+ * `boolean` is reachable since M12: Postgres has a native `boolean` type and
+ * the Postgres adapter maps it to a JSON bool (SQLite has no boolean type and
+ * never emits one — it stores 0/1 integers). This widening is what activates
+ * GridCell's green/red boolean rendering.
  */
-export type CellValue = string | number | null;
+export type CellValue = string | number | boolean | null;
 
 /** The outcome of a query: column metadata, row-major values, timing. */
 export interface QueryResult {

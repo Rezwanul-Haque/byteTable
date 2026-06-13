@@ -130,6 +130,9 @@ function coerceForColumn(draft: string, meta: ColCellMeta | undefined): CellValu
 function sqlLiteral(value: CellValue): string {
   if (value === null) return "NULL";
   if (typeof value === "number") return String(value);
+  // Booleans (M12 Postgres) render unquoted, matching the backend's cosmetic
+  // `sql_literal`.
+  if (typeof value === "boolean") return value ? "true" : "false";
   return "'" + value.replace(/'/g, "''") + "'";
 }
 

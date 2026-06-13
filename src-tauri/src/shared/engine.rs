@@ -55,39 +55,145 @@ impl Engine {
     }
 }
 
+/// The granular TLS mode for a server connection (M12 Task 3). Mirrors the
+/// renderer's connect-modal dropdown (`disable` / `prefer` / `require` /
+/// `verify-ca` / `verify-full`) and is threaded all the way to the sqlx
+/// adapters' `ssl_mode_from_token`, replacing the M12-Task-1/2 `tls: bool`.
+///
+/// Lowercase-with-dashes on the wire (matching the modal's option values and
+/// libpq's `sslmode` vocabulary). [`Default`] is `Prefer` — opportunistic TLS,
+/// libpq's own default, and the safe choice when migrating an old saved
+/// connection whose `tls: true` boolean carried no finer intent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TlsMode {
+    /// No TLS — plaintext only.
+    Disable,
+    /// Use TLS if the server offers it, else plaintext (libpq default).
+    #[default]
+    Prefer,
+    /// Require TLS, but do not verify the server certificate.
+    Require,
+    /// Require TLS and verify the certificate chain (not the hostname).
+    VerifyCa,
+    /// Require TLS and verify both the chain and the hostname.
+    VerifyFull,
+}
+
+impl TlsMode {
+    /// The wire/CLI token for this mode — the exact string the adapters'
+    /// `ssl_mode_from_token` accepts and the renderer's `<select>` emits.
+    pub fn as_token(self) -> &'static str {
+        match self {
+            Self::Disable => "disable",
+            Self::Prefer => "prefer",
+            Self::Require => "require",
+            Self::VerifyCa => "verify-ca",
+            Self::VerifyFull => "verify-full",
+        }
+    }
+}
+
+/// How to authenticate to an SSH bastion when tunnelling (M12 Task 3).
+///
+/// Security: the variants carry NO secret material. The private-key
+/// *passphrase* and the SSH *password* are secrets and live in the OS keychain
+/// (account `{connection_id}:ssh`), never on the wire or on disk — exactly like
+/// the database password. The key *path* and the choice of method are not
+/// secret, so they live here.
+///
+/// Tagged with `method` (lowercase) on the wire:
+/// `{ "method": "key", "keyPath": "~/.ssh/id_ed25519" }`,
+/// `{ "method": "password" }`, `{ "method": "agent" }`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "method",
+    rename_all = "lowercase",
+    rename_all_fields = "camelCase"
+)]
+pub enum SshAuth {
+    /// A private key on disk. The optional passphrase is a keychain secret.
+    Key { key_path: String },
+    /// Password auth — the password is a keychain secret.
+    Password,
+    /// Delegate to the local ssh-agent (no secret stored by ByteTable).
+    Agent,
+}
+
+impl SshAuth {
+    /// Which auth method this is, for friendly messages.
+    pub fn method_name(&self) -> &'static str {
+        match self {
+            Self::Key { .. } => "private key",
+            Self::Password => "password",
+            Self::Agent => "ssh-agent",
+        }
+    }
+}
+
+/// An SSH tunnel ("jump host" / bastion) a server connection is reached
+/// through (M12 Task 3). When present on a server [`ConnectionParams`], the
+/// connector opens a local-forward tunnel to the bastion FIRST and points the
+/// driver at the local tunnel endpoint instead of the real `host`/`port`.
+///
+/// Security: no secrets here — see [`SshAuth`]. The bastion host/port/user and
+/// the auth *method* are non-secret connection metadata stored in the JSON
+/// registry; the SSH password / key passphrase go to the keychain.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshConfig {
+    pub host: String,
+    pub port: u16,
+    pub user: String,
+    pub auth: SshAuth,
+}
+
 /// Everything needed to reach a database, per engine.
 ///
 /// Internally tagged with `engine` (lowercase) so the wire shape is
 /// `{ "engine": "sqlite", "path": "…" }` — the tag doubles as the engine
 /// discriminant the renderer already uses.
 ///
-/// Security: server variants intentionally have NO password field. Secrets
-/// go to the OS keychain in M12; until then server engines are unsupported
-/// and these variants exist only to fix the shape.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Security: server variants intentionally have NO password field, and the
+/// [`SshConfig`] they may carry holds no SSH secret either. Both the database
+/// password and the SSH password/passphrase live in the OS keychain (M12 Task
+/// 3), keyed by the saved-connection id; only non-secret metadata is stored
+/// here and in the JSON registry.
+///
+/// # TLS wire shape + old-bool migration (M12 Task 3)
+///
+/// Server variants carry a granular [`TlsMode`] (`tlsMode` on the wire). The
+/// custom [`Deserialize`] also accepts the M12-Task-1/2 `tls: bool` shape for
+/// connections saved before this task: `true` → [`TlsMode::Prefer`], `false`
+/// → [`TlsMode::Disable`]. New saves always emit `tlsMode`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(
     tag = "engine",
     rename_all = "lowercase",
     rename_all_fields = "camelCase"
 )]
 pub enum ConnectionParams {
-    /// A SQLite database file on disk. No secrets involved.
+    /// A SQLite database file on disk. No secrets, no TLS, no tunnel.
     Sqlite { path: String },
-    /// A MySQL server (M12). Password lives in the keychain, never here.
+    /// A MySQL server (M12). Password + SSH secrets live in the keychain.
     Mysql {
         host: String,
         port: u16,
         database: String,
         user: String,
-        tls: bool,
+        tls_mode: TlsMode,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ssh: Option<SshConfig>,
     },
-    /// A PostgreSQL server (M12). Password lives in the keychain, never here.
+    /// A PostgreSQL server (M12). Password + SSH secrets live in the keychain.
     Postgres {
         host: String,
         port: u16,
         database: String,
         user: String,
-        tls: bool,
+        tls_mode: TlsMode,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ssh: Option<SshConfig>,
     },
 }
 
@@ -98,6 +204,99 @@ impl ConnectionParams {
             Self::Sqlite { .. } => Engine::Sqlite,
             Self::Mysql { .. } => Engine::Mysql,
             Self::Postgres { .. } => Engine::Postgres,
+        }
+    }
+
+    /// The SSH tunnel config, when this is a server connection reached through
+    /// a bastion. `None` for SQLite and for direct server connections.
+    pub fn ssh(&self) -> Option<&SshConfig> {
+        match self {
+            Self::Sqlite { .. } => None,
+            Self::Mysql { ssh, .. } | Self::Postgres { ssh, .. } => ssh.as_ref(),
+        }
+    }
+}
+
+/// Custom deserialize for [`ConnectionParams`] that accepts BOTH the current
+/// `tlsMode` shape and the legacy `tls: bool` shape (old saved connections),
+/// mapping `true` → [`TlsMode::Prefer`], `false` → [`TlsMode::Disable`]. SSH
+/// is always optional. Implemented by hand (rather than `#[derive]`) so the
+/// migration lives in one place and the rest of the file keeps deriving
+/// `Serialize` for the canonical `tlsMode` output.
+impl<'de> Deserialize<'de> for ConnectionParams {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::Error as _;
+
+        // Intermediate shape: deserialize the tagged enum into a JSON value,
+        // then read fields tolerantly so both `tlsMode` and legacy `tls` work.
+        let value = serde_json::Value::deserialize(deserializer)?;
+        let engine = value
+            .get("engine")
+            .and_then(|e| e.as_str())
+            .ok_or_else(|| D::Error::custom("connection params missing 'engine' tag"))?;
+
+        match engine {
+            "sqlite" => {
+                let path = value
+                    .get("path")
+                    .and_then(|p| p.as_str())
+                    .ok_or_else(|| D::Error::custom("sqlite params missing 'path'"))?
+                    .to_string();
+                Ok(ConnectionParams::Sqlite { path })
+            }
+            "mysql" | "postgres" => {
+                let str_field = |k: &str| -> Result<String, D::Error> {
+                    value
+                        .get(k)
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string)
+                        .ok_or_else(|| D::Error::custom(format!("server params missing '{k}'")))
+                };
+                let host = str_field("host")?;
+                let database = str_field("database")?;
+                let user = str_field("user")?;
+                let port = value
+                    .get("port")
+                    .and_then(serde_json::Value::as_u64)
+                    .and_then(|p| u16::try_from(p).ok())
+                    .ok_or_else(|| D::Error::custom("server params missing/invalid 'port'"))?;
+                // Granular mode first; fall back to the legacy bool.
+                let tls_mode = match value.get("tlsMode") {
+                    Some(m) => TlsMode::deserialize(m.clone()).map_err(D::Error::custom)?,
+                    None => match value.get("tls").and_then(serde_json::Value::as_bool) {
+                        Some(true) => TlsMode::Prefer,
+                        Some(false) => TlsMode::Disable,
+                        None => TlsMode::default(),
+                    },
+                };
+                let ssh = match value.get("ssh") {
+                    Some(serde_json::Value::Null) | None => None,
+                    Some(s) => Some(SshConfig::deserialize(s.clone()).map_err(D::Error::custom)?),
+                };
+                if engine == "mysql" {
+                    Ok(ConnectionParams::Mysql {
+                        host,
+                        port,
+                        database,
+                        user,
+                        tls_mode,
+                        ssh,
+                    })
+                } else {
+                    Ok(ConnectionParams::Postgres {
+                        host,
+                        port,
+                        database,
+                        user,
+                        tls_mode,
+                        ssh,
+                    })
+                }
+            }
+            other => Err(D::Error::custom(format!("unknown engine tag '{other}'"))),
         }
     }
 }
@@ -727,17 +926,109 @@ pub struct AlterResult {
     pub applied: bool,
 }
 
+/// Transient connection secrets that the command layer carries to
+/// `test`/`open` *without persisting them*. [`ConnectionParams`] is
+/// deliberately secret-free for storage; server engines need secrets only at
+/// connect time, so they travel separately as this short-lived value.
+///
+/// Two distinct secrets, both optional:
+/// - `password` — the database password (Postgres/MySQL `connect_options`).
+/// - `ssh` — the SSH secret for a tunnelled connection: the private-key
+///   *passphrase* (key auth) or the bastion *password* (password auth). `None`
+///   for agent auth or a direct (non-tunnelled) connection.
+///
+/// # M12 secret-threading seam (Task 1 → Task 3)
+///
+/// In Task 1/2 only `password` existed, originating as an optional `password`
+/// argument on the commands and threaded through the use-cases into
+/// [`Connector::open_with_secret`] / [`Connector::test_with_secret`]. Task 3
+/// adds the `ssh` arm and replaces the *source* of both with the OS keychain
+/// (looked up by saved-connection id: account `{id}` for the db password,
+/// `{id}:ssh` for the SSH secret). The connector seam is unchanged in shape;
+/// only where the values come from changed. Secrets are never written to disk
+/// and never put on [`ConnectionParams`].
+#[derive(Clone, Default)]
+pub struct ConnectSecret {
+    password: Option<String>,
+    ssh: Option<String>,
+}
+
+impl std::fmt::Debug for ConnectSecret {
+    /// Never leak the secrets in logs / panic messages.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ConnectSecret")
+            .field("password", &self.password.as_ref().map(|_| "***"))
+            .field("ssh", &self.ssh.as_ref().map(|_| "***"))
+            .finish()
+    }
+}
+
+impl ConnectSecret {
+    /// A secret carrying only a database password (the common server case,
+    /// and the Task 1/2 shape — `ConnectSecret::new(p)` mirrors the old
+    /// tuple-struct constructor).
+    pub fn new(password: impl Into<String>) -> Self {
+        Self {
+            password: Some(password.into()),
+            ssh: None,
+        }
+    }
+
+    /// A secret carrying a database password and/or an SSH secret. Either may
+    /// be `None` (e.g. SSH-agent auth needs no SSH secret).
+    pub fn with_ssh(password: Option<String>, ssh: Option<String>) -> Self {
+        Self { password, ssh }
+    }
+
+    /// The database password, if any. Only the connector at connect time
+    /// should read this.
+    pub fn password(&self) -> Option<&str> {
+        self.password.as_deref()
+    }
+
+    /// The SSH secret (key passphrase or bastion password), if any.
+    pub fn ssh(&self) -> Option<&str> {
+        self.ssh.as_deref()
+    }
+}
+
 /// Opens and tests connections for one engine. One implementation per
 /// engine, registered by `Engine` in the composition root; the renderer
 /// only ever sees opaque handle ids, never driver handles.
 #[async_trait]
 pub trait Connector: Send + Sync {
     /// Verify the target is reachable and really is this engine, without
-    /// keeping a connection open.
+    /// keeping a connection open. The secretless form — used by engines with
+    /// no password (SQLite) and by callers that have no secret. Server engines
+    /// override [`Self::test_with_secret`] and route this through it with no
+    /// secret.
     async fn test(&self, params: &ConnectionParams) -> Result<EngineInfo, AppError>;
 
-    /// Open a live connection.
+    /// Open a live connection (secretless form — see [`Self::test`]).
     async fn open(&self, params: &ConnectionParams) -> Result<Box<dyn EngineConnection>, AppError>;
+
+    /// Verify the target, carrying an optional transient [`ConnectSecret`]
+    /// (a password for server engines). Default impl ignores the secret and
+    /// delegates to [`Self::test`], so SQLite and every existing test fake are
+    /// unaffected; the Postgres connector overrides it to use the password.
+    /// See [`ConnectSecret`] for the M12 password-threading seam.
+    async fn test_with_secret(
+        &self,
+        params: &ConnectionParams,
+        _secret: Option<&ConnectSecret>,
+    ) -> Result<EngineInfo, AppError> {
+        self.test(params).await
+    }
+
+    /// Open a live connection, carrying an optional transient [`ConnectSecret`].
+    /// Default impl ignores the secret and delegates to [`Self::open`].
+    async fn open_with_secret(
+        &self,
+        params: &ConnectionParams,
+        _secret: Option<&ConnectSecret>,
+    ) -> Result<Box<dyn EngineConnection>, AppError> {
+        self.open(params).await
+    }
 }
 
 /// A live connection to one database: introspection + query execution.
@@ -924,12 +1215,131 @@ mod tests {
             port: 3306,
             database: "shop".into(),
             user: "app".into(),
-            tls: true,
+            tls_mode: TlsMode::Require,
+            ssh: None,
         };
         assert_eq!(params.engine(), Engine::Mysql);
-        let json = serde_json::to_string(&params).unwrap();
-        let back: ConnectionParams = serde_json::from_str(&json).unwrap();
+        assert!(params.ssh().is_none());
+        let json = serde_json::to_value(&params).unwrap();
+        // `tlsMode` is the canonical wire field; `ssh` is omitted when None.
+        assert_eq!(json["tlsMode"], serde_json::json!("require"));
+        assert!(json.get("ssh").is_none());
+        let back: ConnectionParams = serde_json::from_value(json).unwrap();
         assert_eq!(back, params);
+    }
+
+    #[test]
+    fn tls_mode_tokens_round_trip_and_default_is_prefer() {
+        for (mode, token) in [
+            (TlsMode::Disable, "disable"),
+            (TlsMode::Prefer, "prefer"),
+            (TlsMode::Require, "require"),
+            (TlsMode::VerifyCa, "verify-ca"),
+            (TlsMode::VerifyFull, "verify-full"),
+        ] {
+            assert_eq!(serde_json::to_value(mode).unwrap(), token);
+            assert_eq!(mode.as_token(), token);
+            let back: TlsMode = serde_json::from_value(serde_json::json!(token)).unwrap();
+            assert_eq!(back, mode);
+        }
+        assert_eq!(TlsMode::default(), TlsMode::Prefer);
+    }
+
+    #[test]
+    fn legacy_tls_bool_migrates_to_tls_mode() {
+        // Old saved connection: `tls: true` → Prefer.
+        let old_true: ConnectionParams = serde_json::from_value(serde_json::json!({
+            "engine": "postgres",
+            "host": "db", "port": 5432, "database": "app", "user": "u",
+            "tls": true
+        }))
+        .unwrap();
+        assert!(matches!(
+            old_true,
+            ConnectionParams::Postgres {
+                tls_mode: TlsMode::Prefer,
+                ..
+            }
+        ));
+        // `tls: false` → Disable.
+        let old_false: ConnectionParams = serde_json::from_value(serde_json::json!({
+            "engine": "mysql",
+            "host": "db", "port": 3306, "database": "app", "user": "u",
+            "tls": false
+        }))
+        .unwrap();
+        assert!(matches!(
+            old_false,
+            ConnectionParams::Mysql {
+                tls_mode: TlsMode::Disable,
+                ..
+            }
+        ));
+        // Neither field present → default (Prefer).
+        let neither: ConnectionParams = serde_json::from_value(serde_json::json!({
+            "engine": "postgres",
+            "host": "db", "port": 5432, "database": "app", "user": "u"
+        }))
+        .unwrap();
+        assert!(matches!(
+            neither,
+            ConnectionParams::Postgres {
+                tls_mode: TlsMode::Prefer,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn server_params_with_ssh_round_trip() {
+        let params = ConnectionParams::Postgres {
+            host: "bt-pg".into(),
+            port: 5432,
+            database: "bytetable".into(),
+            user: "postgres".into(),
+            tls_mode: TlsMode::Disable,
+            ssh: Some(SshConfig {
+                host: "bastion".into(),
+                port: 22,
+                user: "tunnel".into(),
+                auth: SshAuth::Key {
+                    key_path: "~/.ssh/id_ed25519".into(),
+                },
+            }),
+        };
+        let json = serde_json::to_value(&params).unwrap();
+        assert_eq!(
+            json["ssh"],
+            serde_json::json!({
+                "host": "bastion",
+                "port": 22,
+                "user": "tunnel",
+                "auth": { "method": "key", "keyPath": "~/.ssh/id_ed25519" }
+            })
+        );
+        let back: ConnectionParams = serde_json::from_value(json).unwrap();
+        assert_eq!(back, params);
+        assert_eq!(back.ssh().map(|s| s.host.as_str()), Some("bastion"));
+
+        // Password + agent auth shapes round-trip.
+        for auth in [SshAuth::Password, SshAuth::Agent] {
+            let p = ConnectionParams::Mysql {
+                host: "h".into(),
+                port: 3306,
+                database: "d".into(),
+                user: "u".into(),
+                tls_mode: TlsMode::Prefer,
+                ssh: Some(SshConfig {
+                    host: "b".into(),
+                    port: 2222,
+                    user: "t".into(),
+                    auth: auth.clone(),
+                }),
+            };
+            let back: ConnectionParams =
+                serde_json::from_value(serde_json::to_value(&p).unwrap()).unwrap();
+            assert_eq!(back, p);
+        }
     }
 
     #[test]

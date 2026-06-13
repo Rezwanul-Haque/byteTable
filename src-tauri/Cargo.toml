@@ -26,15 +26,59 @@ tauri-plugin-opener = "2.5.4"
 tauri-plugin-dialog = "2.7.1"
 async-trait = "0.1.89"
 uuid = { version = "1.20.0", features = ["v4", "serde"] }
-tokio = { version = "1.52.3", features = ["sync", "rt"] }
+# `net` + `io-util` + `time` are added in M12 Task 3 for the SSH tunnel
+# (`TcpListener`/`TcpStream`, `copy_bidirectional`, connect timeouts); russh
+# also drives I/O on this runtime.
+tokio = { version = "1.52.3", features = ["sync", "rt", "net", "io-util", "time", "macros"] }
 rusqlite = { version = "0.37", features = ["bundled", "column_decltype"] }
+# Async-native driver for the server engines (M12). `runtime-tokio` matches
+# Tauri's tokio runtime, so the async EngineConnection methods await the pool
+# directly — no spawn_blocking, unlike the rusqlite adapter. `tls-rustls` is a
+# pure-Rust TLS stack (no OpenSSL system dependency). Pinned to the 0.8 line:
+# stable, MSRV well below rustc 1.89, and compatible with the tokio 1.52 already
+# in the tree. M12 Task 1 added `postgres`; Task 2 adds `mysql` (the MySQL
+# adapter `engines::mysql`, mirroring the Postgres one).
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio",
+    "tls-rustls",
+    "postgres",
+    "mysql",
+    # NUMERIC/DECIMAL arrive over the wire in a binary format sqlx cannot decode
+    # to a primitive; `bigdecimal` lets us decode to an arbitrary-precision
+    # `BigDecimal` and stringify it without precision loss (the CellValue
+    # precision contract — see the adapter's `decode_value`).
+    "bigdecimal",
+] }
 # Used by the schema_map slice to decode base64 PNG export bytes received over
 # IPC (base64 is ~1.33× the raw size vs. ~10× for a JSON number array).
 base64 = "0.22"
+# OS keychain for server-connection secrets (M12 Task 3): the database password
+# and the SSH password/key-passphrase are stored here keyed by the saved
+# connection id, never in the JSON registry. `apple-native` uses the macOS
+# Keychain Services; `windows-native` / `sync-secret-service` cover the other
+# desktop targets ByteTable ships to. Behind the `SecretStore` port so the
+# orchestration is unit-testable with an in-memory fake (mirrors the repository
+# pattern).
+keyring = { version = "3", features = [
+    "apple-native",
+    "windows-native",
+    "sync-secret-service",
+] }
+# Pure-Rust async SSH client for the M12 Task 3 tunnel (local listener → SSH
+# `direct-tcpip` channel → bastion → db host:port). Chosen over `ssh2`/libssh2
+# deliberately: russh needs no system OpenSSL/libssh2 (matching the `tls-rustls`
+# choice for sqlx), is async-native on the tokio runtime already in the tree,
+# and cross-compiles cleanly for the release profile. Key handling (load a
+# private key from disk, decrypt a passphrase-protected key, talk to the
+# ssh-agent) lives in the re-exported `russh::keys` module.
+russh = "0.61"
 
 [dev-dependencies]
 tempfile = "3"
-tokio = { version = "1.52.3", features = ["sync", "rt", "macros"] }
+# `rt-multi-thread` is needed by the Postgres integration tests: sqlx's
+# `#[tokio::test]` pool work and the connector both expect a real runtime. The
+# library code itself runs on Tauri's runtime and needs only `sync`/`rt`.
+tokio = { version = "1.52.3", features = ["sync", "rt", "rt-multi-thread", "macros"] }
 
 [profile.release]
 codegen-units = 1

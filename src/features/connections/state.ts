@@ -22,11 +22,16 @@ interface ConnectionsFeatureState {
   load: () => Promise<void>;
   /**
    * Insert or update a saved connection (send id "" for new entries) and
-   * return the stored value with its assigned id. Used by the file-open
-   * auto-save now and the new-connection modal in Task 3. Rejections bubble
-   * to the caller for inline display.
+   * return the stored value with its assigned id. `secrets` are the transient
+   * db password / SSH secret the new-connection modal typed (M12 Task 3) —
+   * stored in the OS keychain by the backend, never in the registry file;
+   * omitted (e.g. the SQLite file-open auto-save) when there are none.
+   * Rejections bubble to the caller for inline display.
    */
-  save: (connection: SavedConnection) => Promise<SavedConnection>;
+  save: (
+    connection: SavedConnection,
+    secrets?: { password?: string; sshSecret?: string },
+  ) => Promise<SavedConnection>;
   /** Delete a saved connection. Rejections bubble to the caller. */
   remove: (id: string) => Promise<void>;
 }
@@ -55,8 +60,8 @@ export const useConnectionsStore = create<ConnectionsFeatureState>((set) => ({
     }
   },
 
-  save: async (connection) => {
-    const stored = await connectionSave(connection);
+  save: async (connection, secrets) => {
+    const stored = await connectionSave(connection, secrets);
     set((state) => ({
       savedConnections: state.savedConnections.some((c) => c.id === stored.id)
         ? state.savedConnections.map((c) => (c.id === stored.id ? stored : c))

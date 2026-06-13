@@ -635,6 +635,75 @@ pub struct ColumnStats {
     pub top: Vec<FreqEntry>,
 }
 
+/// One primary-key predicate in an [`UpdateCellRequest`]: a pk column and the
+/// value identifying the target row. A composite primary key needs one
+/// [`PkPredicate`] per pk column; the adapter ANDs them all so the WHERE clause
+/// matches exactly one row.
+///
+/// Security: `column` is a real column name the adapter MUST validate — both
+/// that it exists AND that it is part of the table's real primary key (a §5
+/// error otherwise). `value` is *bound* as a parameter, never interpolated, so
+/// an injection payload binds as an inert literal that simply matches nothing.
+/// A `null` pk value is a no-match (`= NULL` is never true in SQL) — pks are
+/// non-null in normal use (see the SQLite adapter).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PkPredicate {
+    pub column: String,
+    /// The pk value identifying the row, as a JSON scalar. Bound as a parameter.
+    pub value: serde_json::Value,
+}
+
+/// A request to update a single cell (M11 inline edit, DESIGN_SPEC §3.5): set
+/// `column` to `value` on the one row identified by the primary key.
+///
+/// **This MUTATES user data.** The safety contract (enforced by the adapter):
+///
+/// - `pk` must cover the table's FULL primary key — every pk column, no more,
+///   no fewer. A table with no pk, a partial pk, or a `pk` predicate naming a
+///   non-pk column is a §5 error. This guarantees the WHERE clause targets at
+///   most one row (mass-update prevention).
+/// - `value` is the new cell value and is *bound* as a parameter (`SET col =
+///   ?`), so it can be `null` (→ `SET col = NULL`, which a bound NULL handles
+///   correctly) and any string — including SQL syntax — is stored as a literal,
+///   never executed.
+/// - Every pk value is likewise *bound*. Nothing the caller supplies is
+///   interpolated; only validated, quoted identifiers are.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateCellRequest {
+    pub schema: String,
+    pub table: String,
+    /// The column whose cell is updated (validated against the table).
+    pub column: String,
+    /// The new value. Bound as a parameter; `null` sets the cell to NULL.
+    pub value: serde_json::Value,
+    /// The full primary key of the target row, one predicate per pk column.
+    pub pk: Vec<PkPredicate>,
+}
+
+/// The outcome of an [`EngineConnection::update_cell`] call (M11 inline edit):
+/// the number of rows changed and a cosmetic statement string for the §3.5
+/// "toast with the executed statement".
+///
+/// `statement` is a **display** rendering of the UPDATE with its values shown
+/// inline (e.g. `UPDATE "main"."users" SET "name" = 'Ada' WHERE "id" = 42`) so
+/// the toast reads naturally. It is NOT the verbatim string sent to the engine:
+/// the real query is fully parameterized (`SET "name" = ? WHERE "id" = ?`) with
+/// every value bound. The two are equivalent in effect, never in form — the
+/// executed query never interpolates a value (see [`UpdateCellRequest`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateResult {
+    /// Rows changed by the UPDATE. The adapter guarantees this is exactly `1`
+    /// on success (0 → "no row matched" §5 error; >1 → rolled back §5 error).
+    pub affected: u64,
+    /// A human-readable, values-inlined rendering of the statement for the
+    /// toast. Cosmetic only — the executed query binds every value (see the
+    /// type docs).
+    pub statement: String,
+}
+
 /// The outcome of an `alter_table` call (M8 structure editor). Carries the
 /// SQL statements the batch implies (for the "Review SQL" panel) and whether
 /// they were actually executed.
@@ -771,6 +840,41 @@ pub trait EngineConnection: Send + Sync {
     ) -> Result<AlterResult, AppError> {
         Err(AppError::Unsupported(
             "Structure editing is not supported for this engine yet.".into(),
+        ))
+    }
+
+    /// Update a single cell on one row (M11 inline edit, DESIGN_SPEC §3.5):
+    /// `SET req.column = req.value` on the row identified by `req.pk`.
+    ///
+    /// **Mutates user data.** Safety contract (the adapter MUST enforce it):
+    ///
+    /// - Validate `column` against the table (a §5 error for an unknown column,
+    ///   identical to the browse/insights column checks).
+    /// - Require the FULL primary key: the `pk` predicate columns must be
+    ///   exactly the table's primary-key columns — no missing pk column, and
+    ///   every named column must actually be part of the pk. A table with no pk
+    ///   is rejected. This is what guarantees the WHERE clause targets at most
+    ///   one row (mass-update prevention), so the update is safe.
+    /// - **Bind everything:** the new value AND every pk value are bound
+    ///   parameters (`SET "c" = ? WHERE "pk" = ?`), never interpolated. An
+    ///   injection payload stores/compares as an inert literal. A `null` `value`
+    ///   is a valid `SET "c" = NULL` (the bound NULL works; only `WHERE c = NULL`
+    ///   is the SQL trap, and pk values are non-null in normal use → a null pk
+    ///   value matches nothing).
+    /// - Execute transactionally and assert the affected count: `0` → the row
+    ///   was not found (stale/deleted pk) → §5 error, nothing changed; `>1` →
+    ///   roll back and §5 error (defense in depth — should be impossible once
+    ///   the pk is validated, but a bug must never silently mass-update); `1` →
+    ///   commit and return [`UpdateResult`] with the cosmetic statement string.
+    ///
+    /// Engine constraint failures (e.g. a NOT NULL violation when setting NULL)
+    /// surface as §5 errors and roll back, leaving the row untouched.
+    ///
+    /// Default impl: `Unsupported` — only engines that implement it override it
+    /// (SQLite in M11; server engines later).
+    async fn update_cell(&self, _req: UpdateCellRequest) -> Result<UpdateResult, AppError> {
+        Err(AppError::Unsupported(
+            "Editing cells is not supported for this engine yet.".into(),
         ))
     }
 
@@ -1339,5 +1443,85 @@ mod tests {
         );
         let back: RowsPage = serde_json::from_value(json).unwrap();
         assert_eq!(back, page);
+    }
+
+    #[test]
+    fn update_cell_request_wire_shape_is_camel_case_and_round_trips() {
+        let req = UpdateCellRequest {
+            schema: "main".into(),
+            table: "users".into(),
+            column: "name".into(),
+            value: serde_json::json!("Ada"),
+            pk: vec![PkPredicate {
+                column: "id".into(),
+                value: serde_json::json!(42),
+            }],
+        };
+        let json = serde_json::to_value(&req).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "schema": "main",
+                "table": "users",
+                "column": "name",
+                "value": "Ada",
+                "pk": [{ "column": "id", "value": 42 }]
+            })
+        );
+        let back: UpdateCellRequest = serde_json::from_value(json).unwrap();
+        assert_eq!(back, req);
+
+        // A null new value round-trips (the "set to NULL" case).
+        let null_value = UpdateCellRequest {
+            value: serde_json::Value::Null,
+            ..req.clone()
+        };
+        let json = serde_json::to_value(&null_value).unwrap();
+        assert_eq!(json["value"], serde_json::Value::Null);
+        let back: UpdateCellRequest = serde_json::from_value(json).unwrap();
+        assert_eq!(back, null_value);
+
+        // A composite-pk request carries one predicate per pk column.
+        let composite = UpdateCellRequest {
+            pk: vec![
+                PkPredicate {
+                    column: "a".into(),
+                    value: serde_json::json!(1),
+                },
+                PkPredicate {
+                    column: "b".into(),
+                    value: serde_json::json!("x"),
+                },
+            ],
+            ..req
+        };
+        let json = serde_json::to_value(&composite).unwrap();
+        assert_eq!(
+            json["pk"],
+            serde_json::json!([
+                { "column": "a", "value": 1 },
+                { "column": "b", "value": "x" }
+            ])
+        );
+        let back: UpdateCellRequest = serde_json::from_value(json).unwrap();
+        assert_eq!(back, composite);
+    }
+
+    #[test]
+    fn update_result_wire_shape_is_camel_case_and_round_trips() {
+        let result = UpdateResult {
+            affected: 1,
+            statement: r#"UPDATE "main"."users" SET "name" = 'Ada' WHERE "id" = 42"#.into(),
+        };
+        let json = serde_json::to_value(&result).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "affected": 1,
+                "statement": r#"UPDATE "main"."users" SET "name" = 'Ada' WHERE "id" = 42"#
+            })
+        );
+        let back: UpdateResult = serde_json::from_value(json).unwrap();
+        assert_eq!(back, result);
     }
 }

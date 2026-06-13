@@ -302,6 +302,56 @@ export interface RowLookup {
   matchCount: number;
 }
 
+/**
+ * One primary-key predicate in an {@link UpdateCellRequest}: a pk column and
+ * the value identifying the target row. A composite primary key needs one
+ * `PkPredicate` per pk column; the backend ANDs them so the WHERE clause
+ * matches exactly one row. `value` is *bound* (no injection surface).
+ */
+export interface PkPredicate {
+  column: string;
+  /** The pk value identifying the row. Bound as a parameter. */
+  value: CellValue;
+}
+
+/**
+ * A request to update a single cell (M11 inline edit, §3.5): set `column` to
+ * `value` on the one row identified by the full primary key.
+ *
+ * **Mutates user data.** The backend enforces the safety contract: `pk` must
+ * cover the table's FULL primary key (a table with no pk, a partial pk, or a
+ * non-pk predicate column is an error — mass-update prevention); `value` is
+ * *bound* (`SET col = ?`, so `null` sets the cell to NULL and any string is
+ * stored literally, never executed); every pk value is likewise bound.
+ */
+export interface UpdateCellRequest {
+  schema: string;
+  table: string;
+  /** The column whose cell is updated. */
+  column: string;
+  /** The new value. Bound as a parameter; `null` sets the cell to NULL. */
+  value: CellValue;
+  /** The full primary key of the target row, one predicate per pk column. */
+  pk: PkPredicate[];
+}
+
+/**
+ * The outcome of a {@link rowUpdate} call (M11 inline edit): the number of rows
+ * changed (always `1` on success) and a cosmetic statement string for the §3.5
+ * "toast with the executed statement".
+ *
+ * `statement` is a **display** rendering with values inlined (e.g.
+ * `UPDATE "main"."users" SET "name" = 'Ada' WHERE "id" = 42`) so the toast
+ * reads naturally — it is NOT the verbatim query sent to the engine, which is
+ * fully parameterized (`SET "name" = ? WHERE "id" = ?`) with every value bound.
+ */
+export interface UpdateResult {
+  /** Rows changed — exactly `1` on success. */
+  affected: number;
+  /** A human-readable, values-inlined rendering of the statement (cosmetic). */
+  statement: string;
+}
+
 /** One value/frequency pair in a column's top-values list ({@link ColumnStats}). */
 export interface FreqEntry {
   value: CellValue;
@@ -388,6 +438,19 @@ export function queryRun(
   options?: QueryOptions,
 ): Promise<QueryResult> {
   return invoke<QueryResult>("query_run", { handleId, sql, options });
+}
+
+/**
+ * Update a single cell for M11 inline editing (the `row_update` command): set
+ * one column to a new value on the row identified by its full primary key.
+ * **Mutates user data.** Returns the affected count (always 1 on success) plus
+ * a cosmetic statement string for the §3.5 toast. Unknown schema/table/column,
+ * a missing/partial primary key, a stale pk, and engine constraint failures
+ * surface as `{ kind, message }` errors. The new value and every pk value are
+ * bound server-side — there is no SQL-injection surface.
+ */
+export function rowUpdate(handleId: string, req: UpdateCellRequest): Promise<UpdateResult> {
+  return invoke<UpdateResult>("row_update", { handleId, req });
 }
 
 // ---------------------------------------------------------------------------

@@ -8,8 +8,10 @@
 
 import { create } from "zustand";
 
+import type { SchemaInfo } from "../connections/api";
 import { connectionClose } from "../connections/api";
-import type { Workspace, WorkspaceConnection } from "./types";
+import { useIntrospectionStore } from "../introspection/state";
+import type { Workspace, WorkspaceConnection, WorkspaceUiState } from "./types";
 
 /**
  * The 8-color workspace palette — prototype data.js `workspaceColors`,
@@ -62,12 +64,23 @@ interface WorkspacesFeatureState {
   startAdding: () => void;
   renameWorkspace: (id: string, name: string) => void;
   recolorWorkspace: (id: string, color: string) => void;
+  /**
+   * Merge a patch into a workspace's per-workspace UI state (`ui`) — the
+   * action the WorkspaceUiState doc promises (M3: sidebar schema +
+   * expanded tables).
+   */
+  patchWorkspaceUi: (id: string, patch: Partial<WorkspaceUiState>) => void;
+  /**
+   * Replace a workspace's schema list — the sidebar's refresh re-runs
+   * `connection_schemas` so out-of-band attach/detach shows up.
+   */
+  setWorkspaceSchemas: (id: string, schemas: SchemaInfo[]) => void;
 }
 
 function patchWorkspace(
   workspaces: Workspace[],
   id: string,
-  patch: Partial<Pick<Workspace, "name" | "color">>,
+  patch: Partial<Pick<Workspace, "name" | "color" | "schemas">>,
 ): Workspace[] {
   return workspaces.map((ws) => (ws.id === id ? { ...ws, ...patch } : ws));
 }
@@ -117,6 +130,10 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
       connectionClose(closing.handleId).catch((err: unknown) => {
         console.warn("connection_close failed", err);
       });
+      // Handles are never reused, so the introspection cache for this one
+      // is dead weight — drop it (sanctioned cross-slice call: state.ts is
+      // the introspection slice's public contract).
+      useIntrospectionStore.getState().invalidate(closing.handleId);
     }
     set((state) => {
       const idx = state.workspaces.findIndex((ws) => ws.id === id);
@@ -152,4 +169,14 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
 
   recolorWorkspace: (id, color) =>
     set((state) => ({ workspaces: patchWorkspace(state.workspaces, id, { color }) })),
+
+  patchWorkspaceUi: (id, patch) =>
+    set((state) => ({
+      workspaces: state.workspaces.map((ws) =>
+        ws.id === id ? { ...ws, ui: { ...ws.ui, ...patch } } : ws,
+      ),
+    })),
+
+  setWorkspaceSchemas: (id, schemas) =>
+    set((state) => ({ workspaces: patchWorkspace(state.workspaces, id, { schemas }) })),
 }));

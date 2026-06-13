@@ -2,4 +2,5 @@
 //! its domain, application, ports, infrastructure, and command layers.
 
 pub mod connections;
+pub mod introspection;
 pub mod preferences;

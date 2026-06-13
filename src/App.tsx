@@ -7,8 +7,9 @@ import { ToastProvider } from "./shared/ui/ToastProvider";
 import { usePreferencesStore } from "./features/preferences/state";
 import { ConnectScreen } from "./features/workspaces/components/ConnectScreen";
 import { DonateModal } from "./features/workspaces/components/DonateModal";
+import { EmptyState } from "./features/workspaces/components/EmptyState";
 import { Rail } from "./features/workspaces/components/Rail";
-import { WorkspacePane } from "./features/workspaces/components/WorkspacePane";
+import { Sidebar } from "./features/workspaces/components/Sidebar";
 import { selectShowConnect, useWorkspacesStore } from "./features/workspaces/state";
 import "./App.css";
 
@@ -57,7 +58,16 @@ export function App() {
         <Rail onDonate={() => setDonateOpen(true)} />
         <div className="app-body">
           {!showConnect && activeWorkspace ? (
-            <WorkspacePane workspace={activeWorkspace} />
+            // §2 workspace layout: sidebar (248px) | content. Keying the
+            // sidebar by workspace id resets its transient local state
+            // (search text, open popovers) per workspace; the structural
+            // sidebar state lives on workspace.ui and survives switches.
+            <div className="workspace">
+              <Sidebar key={activeWorkspace.id} workspace={activeWorkspace} />
+              <main className="main-col">
+                <EmptyState />
+              </main>
+            </div>
           ) : (
             <ConnectScreen />
           )}

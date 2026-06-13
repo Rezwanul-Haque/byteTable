@@ -25,12 +25,19 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-import type { CellValue, ColumnMeta, FilterSpec, FkRef, SortSpec } from "../../../shared/api/engine";
+import type {
+  CellValue,
+  ColumnMeta,
+  FilterSpec,
+  FkRef,
+  SortSpec,
+} from "../../../shared/api/engine";
 import { rowsFetch } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
 import { Icon } from "../../../shared/ui/Icon";
 import { useIntrospectionStore } from "../../introspection/state";
 import { useTabMetaStore } from "../../workspaces/tabMeta";
+import { CellContent } from "./GridCell";
 import "./DataGrid.css";
 
 /** Rows fetched per page. Small enough that a single page is cheap, large
@@ -42,49 +49,6 @@ const PAGE_OVERSCAN = 1;
 const ROW_OVERSCAN = 12;
 /** Fallback row height before the CSS var is measured (compact default). */
 const FALLBACK_ROW_H = 26;
-
-/** Enum→color map for status/method-like string pills (prototype ui.jsx). */
-const STATUS_COLORS: Record<string, string> = {
-  delivered: "#34d39e",
-  paid: "#34d39e",
-  succeeded: "#34d39e",
-  shipped: "#61afef",
-  pending: "#e2b340",
-  cancelled: "#e06c75",
-  failed: "#e06c75",
-  refunded: "#c678dd",
-};
-
-/** Columns whose string values render as tinted enum pills (prototype). */
-const PILL_COLUMNS = new Set(["status", "method"]);
-
-/** One cell's rendered value, typed per spec §1.3 / §3.5. */
-function CellContent({ value, column }: { value: CellValue; column: string }) {
-  if (value === null) {
-    // NULL → italic faint small-caps "null".
-    return <span className="cell-null">null</span>;
-  }
-  if (typeof value === "boolean") {
-    return <span className={value ? "cell-true" : "cell-false"}>{String(value)}</span>;
-  }
-  if (typeof value === "number") {
-    return <span className="cell-num">{Number.isInteger(value) ? value : value.toFixed(2)}</span>;
-  }
-  const s = value;
-  if (PILL_COLUMNS.has(column) && STATUS_COLORS[s]) {
-    return (
-      <span
-        className="cell-pill"
-        style={{ color: STATUS_COLORS[s], background: STATUS_COLORS[s] + "1a" }}
-      >
-        {s}
-      </span>
-    );
-  }
-  // M10 seam: FK columns become accent links here (the peek popover hops the
-  // reference). This milestone renders FK values as plain text.
-  return <span className="cell-text">{s}</span>;
-}
 
 /** Sort state cycles asc → desc → none (null) on repeated header clicks. */
 function cycleSort(current: SortSpec | null, column: string): SortSpec | null {

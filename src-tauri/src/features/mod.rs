@@ -5,3 +5,4 @@ pub mod browse;
 pub mod connections;
 pub mod introspection;
 pub mod preferences;
+pub mod saved_queries;

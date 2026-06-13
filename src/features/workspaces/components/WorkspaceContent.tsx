@@ -13,20 +13,10 @@ import { BTLogo } from "../../../shared/ui/BTLogo";
 import { Kbd } from "../../../shared/ui/Kbd";
 import { useWorkspacesStore } from "../state";
 import type { Tab, Workspace } from "../types";
+import { SqlEditorTab } from "./SqlEditorTab";
 import { TabBar } from "./TabBar";
 import { TableTab } from "./TableTab";
 import "./WorkspaceContent.css";
-
-/** SQL editor placeholder — the real editor is M6 (spec §3.7). */
-function SqlPlaceholder({ tab }: { tab: Extract<Tab, { kind: "sql" }> }) {
-  return (
-    <div className="tab-placeholder">
-      <BTLogo size={40} accent="currentColor" fg="currentColor" />
-      <p>SQL editor arrives in M6</p>
-      <span>{tab.title}</span>
-    </div>
-  );
-}
 
 /** Schema-map placeholder — the real ER diagram is M9 (spec §3.8). */
 function MapPlaceholder({ tab }: { tab: Extract<Tab, { kind: "map" }> }) {
@@ -53,12 +43,12 @@ function NoTabs() {
   );
 }
 
-function TabBody({ tab, handleId }: { tab: Tab; handleId: string }) {
+function TabBody({ tab, workspace }: { tab: Tab; workspace: Workspace }) {
   switch (tab.kind) {
     case "table":
-      return <TableTab tab={tab} handleId={handleId} />;
+      return <TableTab tab={tab} handleId={workspace.handleId} />;
     case "sql":
-      return <SqlPlaceholder tab={tab} />;
+      return <SqlEditorTab workspace={workspace} tab={tab} />;
     case "map":
       return <MapPlaceholder tab={tab} />;
   }
@@ -90,7 +80,7 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
         onNewSql={openSqlTab}
       />
       <div className="tab-content">
-        {activeTab ? <TabBody tab={activeTab} handleId={workspace.handleId} /> : null}
+        {activeTab ? <TabBody tab={activeTab} workspace={workspace} /> : null}
       </div>
     </>
   );

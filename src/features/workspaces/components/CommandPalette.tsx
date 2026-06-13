@@ -19,6 +19,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../../../shared/ui/Icon";
 import { Kbd } from "../../../shared/ui/Kbd";
 import { tablesKey, useIntrospectionStore } from "../../introspection/state";
+import { selectQueriesForConnection, useSavedQueriesStore } from "../../saved_queries/state";
 import { useWorkspacesStore } from "../state";
 import type { Workspace } from "../types";
 import "./CommandPalette.css";
@@ -39,8 +40,17 @@ interface CommandPaletteProps {
 export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
   const openTableTab = useWorkspacesStore((state) => state.openTableTab);
   const openSqlTab = useWorkspacesStore((state) => state.openSqlTab);
+  const openSqlTabWith = useWorkspacesStore((state) => state.openSqlTabWith);
   const patchWorkspaceUi = useWorkspacesStore((state) => state.patchWorkspaceUi);
   const tablesMap = useIntrospectionStore((state) => state.tables);
+  const savedQueries = useSavedQueriesStore((state) => state.savedQueries);
+  const loadSaved = useSavedQueriesStore((state) => state.load);
+
+  // Warm the global saved-query store so palette items appear even if the user
+  // has not opened a SQL tab yet (guarded inside the store; cheap to re-call).
+  useEffect(() => {
+    void loadSaved();
+  }, [loadSaved]);
 
   const [query, setQuery] = useState("");
   const [idx, setIdx] = useState(0);
@@ -82,8 +92,31 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
       hint: "⌘T",
       run: openSqlTab,
     };
-    return [...tableCmds, ...schemaCmds, newSql];
-  }, [tablesMap, handleId, schemaName, workspace.schemas, workspace.id, openTableTab, openSqlTab, patchWorkspaceUi]);
+    // Saved queries visible from this workspace (global + this-workspace-
+    // attached). Selecting one opens a fresh SQL tab seeded with its SQL.
+    const savedCmds: Command[] = selectQueriesForConnection(savedQueries, workspace.saved.id).map(
+      (q) => ({
+        id: "saved-" + q.id,
+        icon: "bookmark",
+        label: q.name,
+        hint: "saved query",
+        run: () => openSqlTabWith(q.sql),
+      }),
+    );
+    return [...tableCmds, ...schemaCmds, newSql, ...savedCmds];
+  }, [
+    tablesMap,
+    handleId,
+    schemaName,
+    workspace.schemas,
+    workspace.id,
+    workspace.saved.id,
+    savedQueries,
+    openTableTab,
+    openSqlTab,
+    openSqlTabWith,
+    patchWorkspaceUi,
+  ]);
 
   const trimmed = query.trim().toLowerCase();
   const filtered = useMemo(

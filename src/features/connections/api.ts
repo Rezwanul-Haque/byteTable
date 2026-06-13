@@ -84,6 +84,19 @@ export type ConnectionParams =
       user: string;
       tlsMode: TlsMode;
       ssh?: SshConfig;
+    }
+  | {
+      // Redis (M13). No relational `database`; instead a numbered logical db
+      // (`dbIndex`, 0–15, default 0). `user` is the optional ACL username
+      // (absent → the Redis `default` user). Password + SSH secrets live in the
+      // keychain like the SQL server engines.
+      engine: "redis";
+      host: string;
+      port: number;
+      dbIndex: number;
+      user?: string;
+      tlsMode: TlsMode;
+      ssh?: SshConfig;
     };
 
 /**
@@ -102,14 +115,59 @@ export interface SavedConnection {
 }
 
 /**
- * What `connection_open` returns — mirrors Rust's `OpenedConnection`:
- * the opaque handle id every follow-up command takes, plus what opening
- * learned (engine info + initial schema list).
+ * The engine *family* of an open connection (M13) — the discriminator the
+ * renderer routes on: `"sql"` → the relational workspace, `"kv"` → the Redis
+ * workspace. Lowercase on the wire, mirroring Rust's `ConnectionKind`.
+ */
+export type ConnectionKind = "sql" | "kv";
+
+/**
+ * Server identity for the Redis dashboard header — mirrors Rust's
+ * `KvServerInfo`. (Re-exported from `redis_browse/api.ts` for the Redis slice.)
+ */
+export interface KvServerInfo {
+  serverVersion: string;
+  mode: string;
+  role: string;
+  respVersion: number;
+}
+
+/** Per-database key count from `INFO keyspace` — mirrors Rust's `KvDbInfo`. */
+export interface KvDbInfo {
+  index: number;
+  keyCount: number;
+}
+
+/**
+ * The initial Redis payload returned alongside the open handle (M13) — mirrors
+ * Rust's `KeyspaceOverview`: the dashboard header identity + per-db key counts,
+ * so the Redis workspace renders immediately.
+ */
+export interface KeyspaceOverview {
+  serverInfo: KvServerInfo;
+  databases: KvDbInfo[];
+}
+
+/**
+ * What `connection_open` returns — mirrors Rust's `OpenedConnection`: the
+ * opaque handle id every follow-up command takes, plus what opening learned.
+ *
+ * M13 added `kind` (the engine family — drives workspace routing) and the two
+ * mutually-exclusive initial payloads:
+ * - `kind: "sql"` → `schemas` holds the initial schema list, `keyspace` absent.
+ * - `kind: "kv"` → `schemas` is empty, `keyspace` carries the Redis overview
+ *   (server identity + per-db key counts). Per-key reads/scans are fetched on
+ *   demand via the `kv*` wrappers in `redis_browse/api.ts`.
+ *
+ * The SQL open-result is unchanged except for the additive `kind`/`keyspace`
+ * fields, which a relational renderer can ignore.
  */
 export interface OpenResult {
   handleId: string;
   engineInfo: EngineInfo;
+  kind: ConnectionKind;
   schemas: SchemaInfo[];
+  keyspace?: KeyspaceOverview;
 }
 
 /**
@@ -201,6 +259,11 @@ export function connectionTables(handleId: string, schema: string): Promise<Tabl
  */
 export function connectionDetail(params: ConnectionParams): string {
   if (params.engine === "sqlite") return params.path;
+  // Redis has numbered logical dbs (db{N}) rather than a relational database
+  // name (REDIS_SPEC §1: "cache.byteshop.io:6379 · db0").
+  if (params.engine === "redis") {
+    return params.host + ":" + params.port + " · db" + params.dbIndex;
+  }
   return params.host + ":" + params.port + " · " + params.database;
 }
 

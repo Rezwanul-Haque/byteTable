@@ -66,7 +66,8 @@ pub async fn open_tunnel_if_needed(
     };
     let (target_host, target_port) = match params {
         ConnectionParams::Mysql { host, port, .. }
-        | ConnectionParams::Postgres { host, port, .. } => (host.as_str(), *port),
+        | ConnectionParams::Postgres { host, port, .. }
+        | ConnectionParams::Redis { host, port, .. } => (host.as_str(), *port),
         ConnectionParams::Sqlite { .. } => return Ok(None),
     };
     let ssh_secret = secret.and_then(ConnectSecret::ssh);

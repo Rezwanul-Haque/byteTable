@@ -18,7 +18,7 @@ pub async fn preview_alter(
     ops: &[AlterOp],
 ) -> Result<AlterResult, AppError> {
     manager
-        .get(handle)
+        .get_sql(handle)
         .await?
         .alter_table(schema, table, ops, false)
         .await
@@ -35,7 +35,7 @@ pub async fn apply_alter(
     ops: &[AlterOp],
 ) -> Result<AlterResult, AppError> {
     manager
-        .get(handle)
+        .get_sql(handle)
         .await?
         .alter_table(schema, table, ops, true)
         .await
@@ -122,7 +122,9 @@ mod tests {
     #[tokio::test]
     async fn preview_delegates_without_applying() {
         let manager = ConnectionManager::new();
-        let handle = manager.insert(Box::new(FakeConnection)).await;
+        let handle = manager
+            .insert(crate::shared::engine::OpenConnection::sql(FakeConnection))
+            .await;
         let res = preview_alter(&manager, &handle, "main", "users", &sample_ops())
             .await
             .expect("preview");
@@ -133,7 +135,9 @@ mod tests {
     #[tokio::test]
     async fn apply_delegates_and_marks_applied() {
         let manager = ConnectionManager::new();
-        let handle = manager.insert(Box::new(FakeConnection)).await;
+        let handle = manager
+            .insert(crate::shared::engine::OpenConnection::sql(FakeConnection))
+            .await;
         let res = apply_alter(&manager, &handle, "main", "users", &sample_ops())
             .await
             .expect("apply");

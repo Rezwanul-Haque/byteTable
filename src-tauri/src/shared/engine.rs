@@ -28,11 +28,14 @@
 //! `features::preferences`). Do not copy its sync commands into DB-touching
 //! slices.
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 use crate::features::structure::domain::AlterOp;
 use crate::shared::error::AppError;
+use crate::shared::keyvalue::KeyValueConnection;
 
 /// Database engines ByteTable supports. Lowercase on the wire, matching the
 /// renderer's `Engine` type in `src/shared/types.ts`.
@@ -42,6 +45,11 @@ pub enum Engine {
     Sqlite,
     Mysql,
     Postgres,
+    /// Redis (M13) — a key-value store, NOT relational. It does not implement
+    /// the SQL [`EngineConnection`] surface; instead it implements the separate
+    /// key-value port family in [`crate::shared::keyvalue`]. See the
+    /// [`OpenConnection`] kind seam for how the manager keeps the two apart.
+    Redis,
 }
 
 impl Engine {
@@ -51,6 +59,7 @@ impl Engine {
             Self::Sqlite => "SQLite",
             Self::Mysql => "MySQL",
             Self::Postgres => "PostgreSQL",
+            Self::Redis => "Redis",
         }
     }
 }
@@ -195,6 +204,27 @@ pub enum ConnectionParams {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         ssh: Option<SshConfig>,
     },
+    /// A Redis server (M13). Like the SQL server engines, the password and any
+    /// SSH secret live in the OS keychain — never here. Redis has no relational
+    /// "database" name; instead it has 16 numbered logical databases (db0–db15),
+    /// so this variant carries a `db_index` (the default/initial db) rather than
+    /// a `database`. The ACL `user` is optional — `None` means the Redis
+    /// `default` user (the common single-password setup). `db_index` defaults to
+    /// 0 and `port` to 6379 on the wire (see the custom [`Deserialize`]).
+    Redis {
+        host: String,
+        port: u16,
+        /// The initial logical database (0–15). Default 0. The renderer can
+        /// switch dbs per-operation via the key-value commands.
+        db_index: u8,
+        /// The ACL username, when the server uses a named user. `None` → the
+        /// Redis `default` user.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        user: Option<String>,
+        tls_mode: TlsMode,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ssh: Option<SshConfig>,
+    },
 }
 
 impl ConnectionParams {
@@ -204,6 +234,7 @@ impl ConnectionParams {
             Self::Sqlite { .. } => Engine::Sqlite,
             Self::Mysql { .. } => Engine::Mysql,
             Self::Postgres { .. } => Engine::Postgres,
+            Self::Redis { .. } => Engine::Redis,
         }
     }
 
@@ -212,7 +243,9 @@ impl ConnectionParams {
     pub fn ssh(&self) -> Option<&SshConfig> {
         match self {
             Self::Sqlite { .. } => None,
-            Self::Mysql { ssh, .. } | Self::Postgres { ssh, .. } => ssh.as_ref(),
+            Self::Mysql { ssh, .. } | Self::Postgres { ssh, .. } | Self::Redis { ssh, .. } => {
+                ssh.as_ref()
+            }
         }
     }
 }
@@ -295,6 +328,54 @@ impl<'de> Deserialize<'de> for ConnectionParams {
                         ssh,
                     })
                 }
+            }
+            "redis" => {
+                // Redis differs from the SQL server engines: no `database` name
+                // (it has numbered logical dbs via `dbIndex`), `user` is
+                // optional (ACL user; absent → the `default` user), `port`
+                // defaults to 6379 and `dbIndex` to 0. TLS + SSH are read
+                // exactly like the SQL engines (granular `tlsMode`, with the
+                // legacy `tls` bool tolerated).
+                let host = value
+                    .get("host")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string)
+                    .ok_or_else(|| D::Error::custom("redis params missing 'host'"))?;
+                let port = value
+                    .get("port")
+                    .and_then(serde_json::Value::as_u64)
+                    .and_then(|p| u16::try_from(p).ok())
+                    .unwrap_or(6379);
+                let db_index = value
+                    .get("dbIndex")
+                    .and_then(serde_json::Value::as_u64)
+                    .and_then(|d| u8::try_from(d).ok())
+                    .unwrap_or(0);
+                let user = value
+                    .get("user")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string);
+                let tls_mode = match value.get("tlsMode") {
+                    Some(m) => TlsMode::deserialize(m.clone()).map_err(D::Error::custom)?,
+                    None => match value.get("tls").and_then(serde_json::Value::as_bool) {
+                        Some(true) => TlsMode::Prefer,
+                        Some(false) => TlsMode::Disable,
+                        None => TlsMode::default(),
+                    },
+                };
+                let ssh = match value.get("ssh") {
+                    Some(serde_json::Value::Null) | None => None,
+                    Some(s) => Some(SshConfig::deserialize(s.clone()).map_err(D::Error::custom)?),
+                };
+                Ok(ConnectionParams::Redis {
+                    host,
+                    port,
+                    db_index,
+                    user,
+                    tls_mode,
+                    ssh,
+                })
             }
             other => Err(D::Error::custom(format!("unknown engine tag '{other}'"))),
         }
@@ -992,9 +1073,100 @@ impl ConnectSecret {
     }
 }
 
+/// What a [`Connector::open`] yields: a live connection of one of the two
+/// engine *kinds* ByteTable supports (M13 connection-kind seam).
+///
+/// ByteTable has two fundamentally different engine families that do NOT share
+/// an operation surface:
+/// - **SQL** (`Sqlite`/`Mysql`/`Postgres`) — relational; implements
+///   [`EngineConnection`] (schemas, tables, queries, rows, ALTERs, …).
+/// - **Key-value** (`Redis`, M13) — a keyspace; implements
+///   [`KeyValueConnection`] (scan, typed reads/writes, raw commands).
+///
+/// Forcing Redis into [`EngineConnection`] would litter it with `Unsupported`
+/// stubs and lie about its shape, so the two are distinct traits. This enum is
+/// the single seam that lets the [`crate::features::connections::application::ConnectionManager`]
+/// store either behind one [`crate::features::connections::application::ConnectionHandleId`].
+/// The manager's `get_sql` / `get_kv` accessors return a §5 "not available for
+/// this engine" error on a kind mismatch, so a SQL command can never reach a
+/// Redis connection or vice-versa.
+///
+/// Both arms hold an `Arc` so the manager hands out cheap clones and drops its
+/// lock before awaiting driver work (matching the M2 manager contract).
+pub enum OpenConnection {
+    /// A relational SQL connection (`Sqlite`/`Mysql`/`Postgres`).
+    Sql(Arc<dyn EngineConnection>),
+    /// A key-value connection (`Redis`, M13).
+    Kv(Arc<dyn KeyValueConnection>),
+}
+
+impl OpenConnection {
+    /// The engine family discriminator (`"sql"` or `"kv"`) — surfaced to the
+    /// renderer in the open-result so it can route to the right workspace.
+    pub fn kind(&self) -> ConnectionKind {
+        match self {
+            Self::Sql(_) => ConnectionKind::Sql,
+            Self::Kv(_) => ConnectionKind::Kv,
+        }
+    }
+
+    /// The engine + version of the open connection, whichever kind it is.
+    pub fn engine_info(&self) -> EngineInfo {
+        match self {
+            Self::Sql(c) => c.engine_info(),
+            Self::Kv(c) => c.engine_info(),
+        }
+    }
+
+    /// Wrap a SQL connection. Connectors and tests use this so the `Arc`
+    /// boxing of a concrete [`EngineConnection`] lives in one place.
+    pub fn sql(connection: impl EngineConnection + 'static) -> Self {
+        Self::Sql(Arc::new(connection))
+    }
+
+    /// Wrap a key-value connection (the `engines::redis` adapter).
+    pub fn kv(connection: impl KeyValueConnection + 'static) -> Self {
+        Self::Kv(Arc::new(connection))
+    }
+
+    /// The SQL connection, consuming the enum, or `None` for a key-value one.
+    /// Used by the SQL adapters' own tests, which open a connector and then
+    /// exercise the [`EngineConnection`] surface directly.
+    pub fn into_sql(self) -> Option<Arc<dyn EngineConnection>> {
+        match self {
+            Self::Sql(c) => Some(c),
+            Self::Kv(_) => None,
+        }
+    }
+
+    /// The key-value connection, consuming the enum, or `None` for SQL. Used
+    /// by the `engines::redis` integration tests.
+    pub fn into_kv(self) -> Option<Arc<dyn KeyValueConnection>> {
+        match self {
+            Self::Kv(c) => Some(c),
+            Self::Sql(_) => None,
+        }
+    }
+}
+
+/// The engine *family* of an open connection — the discriminator the renderer
+/// routes on (`redis` → the key-value workspace, the rest → the relational
+/// one). Lowercase on the wire (`"sql"` / `"kv"`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ConnectionKind {
+    Sql,
+    Kv,
+}
+
 /// Opens and tests connections for one engine. One implementation per
 /// engine, registered by `Engine` in the composition root; the renderer
 /// only ever sees opaque handle ids, never driver handles.
+///
+/// M13: `open` now yields an [`OpenConnection`] (the SQL/KV kind seam) rather
+/// than a bare `Box<dyn EngineConnection>`. SQL connectors wrap their
+/// connection in [`OpenConnection::Sql`]; the Redis connector returns
+/// [`OpenConnection::Kv`].
 #[async_trait]
 pub trait Connector: Send + Sync {
     /// Verify the target is reachable and really is this engine, without
@@ -1004,8 +1176,10 @@ pub trait Connector: Send + Sync {
     /// secret.
     async fn test(&self, params: &ConnectionParams) -> Result<EngineInfo, AppError>;
 
-    /// Open a live connection (secretless form — see [`Self::test`]).
-    async fn open(&self, params: &ConnectionParams) -> Result<Box<dyn EngineConnection>, AppError>;
+    /// Open a live connection (secretless form — see [`Self::test`]). Returns
+    /// the [`OpenConnection`] kind enum so a SQL or key-value connection can
+    /// flow through the same manager.
+    async fn open(&self, params: &ConnectionParams) -> Result<OpenConnection, AppError>;
 
     /// Verify the target, carrying an optional transient [`ConnectSecret`]
     /// (a password for server engines). Default impl ignores the secret and
@@ -1026,7 +1200,7 @@ pub trait Connector: Send + Sync {
         &self,
         params: &ConnectionParams,
         _secret: Option<&ConnectSecret>,
-    ) -> Result<Box<dyn EngineConnection>, AppError> {
+    ) -> Result<OpenConnection, AppError> {
         self.open(params).await
     }
 }
@@ -1340,6 +1514,80 @@ mod tests {
                 serde_json::from_value(serde_json::to_value(&p).unwrap()).unwrap();
             assert_eq!(back, p);
         }
+    }
+
+    #[test]
+    fn engine_redis_serializes_lowercase() {
+        assert_eq!(serde_json::to_value(Engine::Redis).unwrap(), "redis");
+        let back: Engine = serde_json::from_value(serde_json::json!("redis")).unwrap();
+        assert_eq!(back, Engine::Redis);
+        assert_eq!(Engine::Redis.display_name(), "Redis");
+    }
+
+    #[test]
+    fn redis_params_wire_shape_is_camel_case_and_round_trips() {
+        let params = ConnectionParams::Redis {
+            host: "cache.byteshop.io".into(),
+            port: 6379,
+            db_index: 0,
+            user: None,
+            tls_mode: TlsMode::Disable,
+            ssh: None,
+        };
+        assert_eq!(params.engine(), Engine::Redis);
+        assert!(params.ssh().is_none());
+        let json = serde_json::to_value(&params).unwrap();
+        assert_eq!(json["engine"], serde_json::json!("redis"));
+        assert_eq!(json["dbIndex"], serde_json::json!(0));
+        assert_eq!(json["tlsMode"], serde_json::json!("disable"));
+        // `user` and `ssh` are omitted when None.
+        assert!(json.get("user").is_none());
+        assert!(json.get("ssh").is_none());
+        // No relational `database` field exists on the Redis variant.
+        assert!(json.get("database").is_none());
+        let back: ConnectionParams = serde_json::from_value(json).unwrap();
+        assert_eq!(back, params);
+    }
+
+    #[test]
+    fn redis_params_defaults_port_db_index_and_user() {
+        // Minimal payload: only engine + host. port→6379, dbIndex→0, user→None.
+        let params: ConnectionParams =
+            serde_json::from_value(serde_json::json!({ "engine": "redis", "host": "h" })).unwrap();
+        assert_eq!(
+            params,
+            ConnectionParams::Redis {
+                host: "h".into(),
+                port: 6379,
+                db_index: 0,
+                user: None,
+                tls_mode: TlsMode::Prefer,
+                ssh: None,
+            }
+        );
+        // An ACL user + non-zero db index + legacy tls bool.
+        let params: ConnectionParams = serde_json::from_value(serde_json::json!({
+            "engine": "redis", "host": "h", "port": 63790,
+            "dbIndex": 3, "user": "app", "tls": true
+        }))
+        .unwrap();
+        assert!(matches!(
+            params,
+            ConnectionParams::Redis {
+                db_index: 3,
+                tls_mode: TlsMode::Prefer,
+                ..
+            }
+        ));
+        if let ConnectionParams::Redis { user, .. } = &params {
+            assert_eq!(user.as_deref(), Some("app"));
+        }
+    }
+
+    #[test]
+    fn connection_kind_serializes_lowercase() {
+        assert_eq!(serde_json::to_value(ConnectionKind::Sql).unwrap(), "sql");
+        assert_eq!(serde_json::to_value(ConnectionKind::Kv).unwrap(), "kv");
     }
 
     #[test]

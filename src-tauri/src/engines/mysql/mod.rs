@@ -78,9 +78,9 @@ use crate::features::structure::domain::AlterOp;
 use crate::shared::engine::{
     AlterResult, ColumnInfo, ColumnMeta, ColumnStats, ColumnStatsRequest, ConnectSecret,
     ConnectionParams, Connector, Engine, EngineConnection, EngineInfo, FetchRowsRequest, FkRef,
-    ForeignKeyInfo, FreqEntry, InboundFkInfo, IndexInfo, PkPredicate, QueryOptions, QueryResult,
-    RowLookup, RowLookupRequest, RowsPage, SchemaInfo, TableInfo, TableMeta, UpdateCellRequest,
-    UpdateResult,
+    ForeignKeyInfo, FreqEntry, InboundFkInfo, IndexInfo, OpenConnection, PkPredicate, QueryOptions,
+    QueryResult, RowLookup, RowLookupRequest, RowsPage, SchemaInfo, TableInfo, TableMeta,
+    UpdateCellRequest, UpdateResult,
 };
 use crate::shared::error::AppError;
 
@@ -112,7 +112,7 @@ impl Connector for MysqlConnector {
         self.test_with_secret(params, None).await
     }
 
-    async fn open(&self, params: &ConnectionParams) -> Result<Box<dyn EngineConnection>, AppError> {
+    async fn open(&self, params: &ConnectionParams) -> Result<OpenConnection, AppError> {
         self.open_with_secret(params, None).await
     }
 
@@ -137,7 +137,7 @@ impl Connector for MysqlConnector {
         &self,
         params: &ConnectionParams,
         secret: Option<&ConnectSecret>,
-    ) -> Result<Box<dyn EngineConnection>, AppError> {
+    ) -> Result<OpenConnection, AppError> {
         // Open the SSH tunnel (if any) before the pool, and keep its handle on
         // the connection so the tunnel lives exactly as long as the pool does.
         let tunnel = open_tunnel_if_needed(params, secret).await?;
@@ -153,7 +153,7 @@ impl Connector for MysqlConnector {
         let mut conn = pool.acquire().await.map_err(map_query_error)?;
         let info = read_engine_info(conn.as_mut()).await?;
         drop(conn);
-        Ok(Box::new(MysqlEngineConnection {
+        Ok(OpenConnection::sql(MysqlEngineConnection {
             pool,
             info,
             _tunnel: tunnel,
@@ -1961,11 +1961,13 @@ mod integration {
     async fn open_conn(
         params: &ConnectionParams,
         secret: &Option<ConnectSecret>,
-    ) -> Box<dyn EngineConnection> {
+    ) -> std::sync::Arc<dyn EngineConnection> {
         MysqlConnector
             .open_with_secret(params, secret.as_ref())
             .await
             .expect("open mysql connection")
+            .into_sql()
+            .expect("sql connection")
     }
 
     /// Create a throwaway database with a rich fixture: pk/fk/indexes,

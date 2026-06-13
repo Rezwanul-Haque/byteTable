@@ -14,6 +14,9 @@ const ENGINE_META: Record<Engine, { label: string; short: string; color: string 
   sqlite: { label: "SQLite", short: "SQ", color: "#56b6c2" },
   mysql: { label: "MySQL", short: "My", color: "#e2b340" },
   postgres: { label: "PostgreSQL", short: "Pg", color: "#61afef" },
+  // Redis (M13, REDIS_SPEC §1): vermilion, deliberately distinct from the
+  // pinkish production/error red.
+  redis: { label: "Redis", short: "Rd", color: "#e8533d" },
 };
 
 interface EngineBadgeProps {

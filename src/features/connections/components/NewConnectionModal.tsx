@@ -254,8 +254,6 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
     if (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535) {
       return { error: "Port must be a number between 1 and 65535" };
     }
-    if (!db.trim()) return { error: "Database is required" };
-    if (!user.trim()) return { error: "User is required" };
 
     let ssh: SshConfig | undefined;
     if (useSsh) {
@@ -263,6 +261,32 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
       if ("error" in built) return { error: built.error };
       ssh = built.ssh;
     }
+
+    // Redis (M13) is key-value, not relational: `db` is the numbered logical
+    // db index (0–15) rather than a database name, and the ACL user is
+    // optional. The dedicated Redis form fields land with the renderer slice
+    // (Tasks 2–4); this branch keeps the params shape type-correct meanwhile.
+    if (engine === "redis") {
+      const dbIndex = Number(db.trim() || "0");
+      if (!Number.isInteger(dbIndex) || dbIndex < 0 || dbIndex > 15) {
+        return { error: "DB index must be a number between 0 and 15" };
+      }
+      return {
+        params: {
+          engine: "redis",
+          host: host.trim(),
+          port: portNumber,
+          dbIndex,
+          ...(user.trim() ? { user: user.trim() } : {}),
+          tlsMode: tls,
+          ...(ssh ? { ssh } : {}),
+        },
+      };
+    }
+
+    if (!db.trim()) return { error: "Database is required" };
+    if (!user.trim()) return { error: "User is required" };
+
     return {
       params: {
         engine,

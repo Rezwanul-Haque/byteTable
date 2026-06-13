@@ -72,6 +72,23 @@ keyring = { version = "3", features = [
 # private key from disk, decrypt a passphrase-protected key, talk to the
 # ssh-agent) lives in the re-exported `russh::keys` module.
 russh = "0.61"
+# Redis driver for the M13 key-value engine. The `tokio-comp` feature drives
+# the async multiplexed connection on the tokio runtime already in the tree
+# (Tauri's runtime), so the async `KeyValueConnection` methods await the driver
+# directly — no spawn_blocking, mirroring the sqlx adapters. `tls-rustls` +
+# `tls-rustls-webpki-roots` give a pure-Rust TLS stack (no OpenSSL system
+# dependency), matching the `tls-rustls` choice for sqlx and `russh`'s rustls;
+# cargo unifies on the single rustls 0.23 already in the dependency tree.
+# Pinned to the 0.27 line: it is async-native on tokio 1.x, builds on rustc
+# 1.89 with an MSRV well below it, and is the last 0.x line before the 1.0
+# rename — a conservative, widely-deployed choice consistent with the rest of
+# the tree's "0.x, stable, rustls" driver picks.
+redis = { version = "0.27", default-features = false, features = [
+    "tokio-comp",
+    "tokio-rustls-comp",
+    "tls-rustls-webpki-roots",
+    "keep-alive",
+] }
 
 [dev-dependencies]
 tempfile = "3"

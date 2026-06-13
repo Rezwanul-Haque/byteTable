@@ -16,7 +16,7 @@ pub async fn column_stats(
     handle: &ConnectionHandleId,
     req: ColumnStatsRequest,
 ) -> Result<ColumnStats, AppError> {
-    manager.get(handle).await?.column_stats(req).await
+    manager.get_sql(handle).await?.column_stats(req).await
 }
 
 #[cfg(test)]
@@ -116,7 +116,9 @@ mod tests {
     #[tokio::test]
     async fn delegates_to_the_connection_behind_the_handle() {
         let manager = ConnectionManager::new();
-        let handle = manager.insert(Box::new(FakeConnection)).await;
+        let handle = manager
+            .insert(crate::shared::engine::OpenConnection::sql(FakeConnection))
+            .await;
         let stats = column_stats(&manager, &handle, sample_request())
             .await
             .expect("column stats");

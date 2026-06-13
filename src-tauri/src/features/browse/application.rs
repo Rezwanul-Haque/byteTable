@@ -16,7 +16,7 @@ pub async fn fetch_rows(
     handle: &ConnectionHandleId,
     req: FetchRowsRequest,
 ) -> Result<RowsPage, AppError> {
-    manager.get(handle).await?.fetch_rows(req).await
+    manager.get_sql(handle).await?.fetch_rows(req).await
 }
 
 /// Look up a single row by key on an open connection (M10 "FK peek"): click a
@@ -29,7 +29,7 @@ pub async fn fetch_row_by_key(
     handle: &ConnectionHandleId,
     req: RowLookupRequest,
 ) -> Result<RowLookup, AppError> {
-    manager.get(handle).await?.fetch_row_by_key(req).await
+    manager.get_sql(handle).await?.fetch_row_by_key(req).await
 }
 
 #[cfg(test)]
@@ -125,7 +125,9 @@ mod tests {
     #[tokio::test]
     async fn delegates_to_the_connection_behind_the_handle() {
         let manager = ConnectionManager::new();
-        let handle = manager.insert(Box::new(FakeConnection)).await;
+        let handle = manager
+            .insert(crate::shared::engine::OpenConnection::sql(FakeConnection))
+            .await;
         let page = fetch_rows(&manager, &handle, sample_request())
             .await
             .expect("fetch rows");
@@ -157,7 +159,9 @@ mod tests {
     #[tokio::test]
     async fn fetch_row_by_key_delegates_to_the_connection() {
         let manager = ConnectionManager::new();
-        let handle = manager.insert(Box::new(FakeConnection)).await;
+        let handle = manager
+            .insert(crate::shared::engine::OpenConnection::sql(FakeConnection))
+            .await;
         let lookup = fetch_row_by_key(&manager, &handle, sample_lookup())
             .await
             .expect("row lookup");

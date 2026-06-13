@@ -31,6 +31,7 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
+use crate::features::structure::domain::AlterOp;
 use crate::shared::error::AppError;
 
 /// Database engines ByteTable supports. Lowercase on the wire, matching the
@@ -236,6 +237,15 @@ pub struct ColumnInfo {
     /// True when the column is part of the primary key (composite pks mark
     /// every member column).
     pub pk: bool,
+    /// The column's DEFAULT expression, verbatim as the engine reports it
+    /// (SQLite's `PRAGMA table_info.dflt_value`), or `None` when the column
+    /// has no default. The value is the literal SQL text of the default
+    /// (e.g. `"0"`, `"'pending'"`, `"CURRENT_TIMESTAMP"`) — a display/round-trip
+    /// value, never re-quoted. M8's structure editor reads this for the
+    /// "Default" cell and rebuilds preserve it. Field is named `default_value`
+    /// because `default` is a Rust keyword; the wire name is `default`.
+    #[serde(rename = "default")]
+    pub default_value: Option<String>,
     /// The foreign-key target, when this column references another table.
     pub fk: Option<FkRef>,
 }
@@ -521,6 +531,29 @@ pub struct RowsPage {
     pub elapsed_ms: u64,
 }
 
+/// The outcome of an `alter_table` call (M8 structure editor). Carries the
+/// SQL statements the batch implies (for the "Review SQL" panel) and whether
+/// they were actually executed.
+///
+/// Preview (`apply == false`) and apply (`apply == true`) return the SAME
+/// `statements` list so the user reviews exactly what apply will do — with one
+/// documented caveat for SQLite (see [`EngineConnection::alter_table`]): the
+/// statements are the *logical* intent (e.g. `ALTER TABLE … ALTER COLUMN …
+/// TYPE …`), which SQLite cannot run natively for type/nullable/default
+/// changes; apply realizes those via a table rebuild. The preview SQL is the
+/// engine-agnostic display the prototype shows, not necessarily the verbatim
+/// SQL the engine runs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AlterResult {
+    /// The statement strings the batch implies, in order — the "Review SQL"
+    /// list. Always populated (preview and apply alike).
+    pub statements: Vec<String>,
+    /// True when the statements were executed (`apply == true` and the whole
+    /// batch committed); false for a preview.
+    pub applied: bool,
+}
+
 /// Opens and tests connections for one engine. One implementation per
 /// engine, registered by `Engine` in the composition root; the renderer
 /// only ever sees opaque handle ids, never driver handles.
@@ -570,6 +603,37 @@ pub trait EngineConnection: Send + Sync {
     /// is a documented "Edit as SQL" escape hatch (see [`FilterSpec`]).
     /// Unknown schema/table/sort-column/filter-column are §5 human errors.
     async fn fetch_rows(&self, req: FetchRowsRequest) -> Result<RowsPage, AppError>;
+
+    /// Preview or apply a batch of staged structure edits ([`AlterOp`]) against
+    /// one table (M8 structure editor, DESIGN_SPEC §3.6).
+    ///
+    /// - `apply == false` ⇒ **preview only**: generate the SQL statement strings
+    ///   the batch implies and return them in [`AlterResult::statements`] with
+    ///   `applied: false`. This MUST NOT mutate the database (it may read schema
+    ///   metadata to validate ops and compute the target column set).
+    /// - `apply == true` ⇒ **execute**: realize the batch transactionally and
+    ///   return the same statements with `applied: true`. On ANY failure the
+    ///   adapter rolls back fully so the table is untouched, and returns the
+    ///   engine error §5-style.
+    ///
+    /// Errors (both modes): unknown schema/table/column, dropping or retyping a
+    /// primary-key column, and — for SQLite apply — a table-rebuild that would
+    /// lose features it cannot reconstruct (CHECK, generated columns,
+    /// AUTOINCREMENT, WITHOUT ROWID, COLLATE, triggers) are all §5 human errors.
+    ///
+    /// Default impl: `Unsupported` — only engines that implement structure
+    /// editing override it (SQLite in M8; server engines later).
+    async fn alter_table(
+        &self,
+        _schema: &str,
+        _table: &str,
+        _ops: &[AlterOp],
+        _apply: bool,
+    ) -> Result<AlterResult, AppError> {
+        Err(AppError::Unsupported(
+            "Structure editing is not supported for this engine yet.".into(),
+        ))
+    }
 
     /// Release the underlying driver resources. For drop-managed drivers
     /// (rusqlite) this may be a no-op; server engines use it for an orderly
@@ -634,6 +698,7 @@ mod tests {
                     data_type: "INTEGER".into(),
                     nullable: false,
                     pk: false,
+                    default_value: None,
                     fk: Some(FkRef {
                         table: "authors".into(),
                         column: "id".into(),
@@ -644,6 +709,7 @@ mod tests {
                     data_type: String::new(),
                     nullable: true,
                     pk: true,
+                    default_value: Some("'n/a'".into()),
                     fk: None,
                 },
             ],
@@ -659,6 +725,7 @@ mod tests {
                         "dataType": "INTEGER",
                         "nullable": false,
                         "pk": false,
+                        "default": null,
                         "fk": { "table": "authors", "column": "id" }
                     },
                     {
@@ -666,6 +733,7 @@ mod tests {
                         "dataType": "",
                         "nullable": true,
                         "pk": true,
+                        "default": "'n/a'",
                         "fk": null
                     }
                 ],
@@ -690,6 +758,7 @@ mod tests {
                 data_type: "INTEGER".into(),
                 nullable: true,
                 pk: true,
+                default_value: None,
                 fk: None,
             }],
             comment: Some("the books table".into()),
@@ -730,7 +799,7 @@ mod tests {
             json,
             serde_json::json!({
                 "columns": [
-                    { "name": "id", "dataType": "INTEGER", "nullable": true, "pk": true, "fk": null }
+                    { "name": "id", "dataType": "INTEGER", "nullable": true, "pk": true, "default": null, "fk": null }
                 ],
                 "comment": "the books table",
                 "indexes": [

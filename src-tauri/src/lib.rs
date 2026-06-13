@@ -133,6 +133,8 @@ pub fn run() {
             features::connections::commands::query_run,
             features::introspection::commands::table_meta,
             features::browse::commands::rows_fetch,
+            features::structure::commands::alter_preview,
+            features::structure::commands::alter_apply,
             features::saved_queries::commands::saved_query_list,
             features::saved_queries::commands::saved_query_save,
             features::saved_queries::commands::saved_query_delete,

@@ -90,6 +90,8 @@
 //! - `comment` is always `None` — SQLite has no table comments (the field is
 //!   modelled for §3.6 and server engines; see [`TableMeta::comment`]).
 
+mod structure;
+
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -101,11 +103,12 @@ use rusqlite::{Connection, OpenFlags};
 
 use rusqlite::types::Value as SqlValue;
 
+use crate::features::structure::domain::AlterOp;
 use crate::shared::engine::{
-    ColumnInfo, ColumnMeta, Condition, ConnectionParams, Connector, Engine, EngineConnection,
-    EngineInfo, FetchRowsRequest, FilterOp, FilterSpec, FilterValue, FkRef, ForeignKeyInfo,
-    InboundFkInfo, IndexInfo, QueryOptions, QueryResult, RowsPage, SchemaInfo, SortSpec, TableInfo,
-    TableMeta,
+    AlterResult, ColumnInfo, ColumnMeta, Condition, ConnectionParams, Connector, Engine,
+    EngineConnection, EngineInfo, FetchRowsRequest, FilterOp, FilterSpec, FilterValue, FkRef,
+    ForeignKeyInfo, InboundFkInfo, IndexInfo, QueryOptions, QueryResult, RowsPage, SchemaInfo,
+    SortSpec, TableInfo, TableMeta,
 };
 use crate::shared::error::AppError;
 
@@ -182,6 +185,22 @@ impl EngineConnection for SqliteEngineConnection {
     async fn fetch_rows(&self, req: FetchRowsRequest) -> Result<RowsPage, AppError> {
         self.with_conn(move |conn| fetch_rows_blocking(conn, &req))
             .await
+    }
+
+    async fn alter_table(
+        &self,
+        schema: &str,
+        table: &str,
+        ops: &[AlterOp],
+        apply: bool,
+    ) -> Result<AlterResult, AppError> {
+        let schema = schema.to_string();
+        let table = table.to_string();
+        let ops = ops.to_vec();
+        self.with_conn(move |conn| {
+            structure::alter_table_blocking(conn, &schema, &table, &ops, apply)
+        })
+        .await
     }
 
     async fn close(&self) -> Result<(), AppError> {
@@ -408,8 +427,10 @@ fn table_meta_blocking(
     let mut fk_by_column = foreign_keys_by_column(conn, schema, &fk_rows);
     let foreign_keys = group_foreign_keys(&fk_rows);
 
-    // table_info columns: cid(0), name(1), type(2), notnull(3), dflt(4), pk(5).
-    // `pk` is the 1-based position within the primary key (0 = not part).
+    // table_info columns: cid(0), name(1), type(2), notnull(3),
+    // dflt_value(4), pk(5). `pk` is the 1-based position within the primary
+    // key (0 = not part); `dflt_value` is the DEFAULT expression as stored SQL
+    // text (NULL = no default), surfaced as `ColumnInfo.default_value`.
     let mut stmt = conn
         .prepare(&format!(
             "PRAGMA {}.table_info({})",
@@ -423,6 +444,9 @@ fn table_meta_blocking(
                 row.get::<_, String>(1)?,
                 row.get::<_, String>(2)?,
                 row.get::<_, i64>(3)?,
+                // dflt_value(4): the column's DEFAULT expression as stored SQL
+                // text, NULL when the column has no default.
+                row.get::<_, Option<String>>(4)?,
                 row.get::<_, i64>(5)?,
             ))
         })
@@ -431,12 +455,13 @@ fn table_meta_blocking(
 
     let columns: Vec<ColumnInfo> = rows
         .into_iter()
-        .map(|(name, data_type, notnull, pk)| ColumnInfo {
+        .map(|(name, data_type, notnull, dflt_value, pk)| ColumnInfo {
             fk: fk_by_column.remove(&name),
             name,
             data_type,
             nullable: notnull == 0,
             pk: pk > 0,
+            default_value: dflt_value,
         })
         .collect();
     drop(stmt);
@@ -1452,7 +1477,7 @@ mod tests {
                      author_id INTEGER NOT NULL REFERENCES authors(id),
                      series_code TEXT REFERENCES series,
                      ghost_id INTEGER REFERENCES phantoms,
-                     notes
+                     notes DEFAULT 'none'
                  );
                  CREATE TABLE order_items (
                      order_id INTEGER,
@@ -1483,6 +1508,7 @@ mod tests {
                 // `nullable` reports the declared constraint (module docs).
                 nullable: true,
                 pk: true,
+                default_value: None,
                 fk: None,
             },
             ColumnInfo {
@@ -1490,6 +1516,7 @@ mod tests {
                 data_type: "TEXT".into(),
                 nullable: false,
                 pk: false,
+                default_value: None,
                 fk: None,
             },
             ColumnInfo {
@@ -1497,6 +1524,7 @@ mod tests {
                 data_type: "INTEGER".into(),
                 nullable: false,
                 pk: false,
+                default_value: None,
                 // Explicit target: REFERENCES authors(id).
                 fk: Some(FkRef {
                     table: "authors".into(),
@@ -1508,6 +1536,7 @@ mod tests {
                 data_type: "TEXT".into(),
                 nullable: true,
                 pk: false,
+                default_value: None,
                 // Implicit target (`REFERENCES series`): resolved to the
                 // referenced table's pk, which is deliberately not "id".
                 fk: Some(FkRef {
@@ -1520,6 +1549,7 @@ mod tests {
                 data_type: "INTEGER".into(),
                 nullable: true,
                 pk: false,
+                default_value: None,
                 // Implicit target on a table that does not exist: the table
                 // name survives, the column falls back to "" (module docs).
                 fk: Some(FkRef {
@@ -1533,6 +1563,8 @@ mod tests {
                 data_type: String::new(),
                 nullable: true,
                 pk: false,
+                // DEFAULT expression surfaced verbatim from dflt_value.
+                default_value: Some("'none'".into()),
                 fk: None,
             },
         ];

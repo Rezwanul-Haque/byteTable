@@ -52,6 +52,13 @@ export interface ColumnInfo {
   nullable: boolean;
   /** True when part of the primary key (every member of a composite pk). */
   pk: boolean;
+  /**
+   * The column's DEFAULT expression, verbatim as the engine reports it (SQLite
+   * `dflt_value`), or `null`/absent when the column has no default. Literal SQL
+   * text (e.g. `"0"`, `"'pending'"`, `"CURRENT_TIMESTAMP"`) — display/round-trip
+   * only, never re-quoted. Powers the M8 structure editor's "Default" cell.
+   */
+  default?: string | null;
   /** The foreign-key target, when this column references another table. */
   fk: FkRef | null;
 }
@@ -285,4 +292,73 @@ export function queryRun(
   options?: QueryOptions,
 ): Promise<QueryResult> {
   return invoke<QueryResult>("query_run", { handleId, sql, options });
+}
+
+// ---------------------------------------------------------------------------
+// Structure editing (M8, DESIGN_SPEC §3.6) — staged ALTER pipeline.
+//
+// One inline edit = one staged `AlterOp`. The structure view accumulates a
+// batch and sends it to `alterPreview` (get the "Review SQL" statements,
+// pure — no DB writes) and `alterApply` (execute transactionally). Mirrors the
+// Rust `AlterOp` enum in `src-tauri/src/features/structure/domain` — internally
+// tagged on `op`, camelCase tokens/fields. The `default` fields carry the
+// verbatim default expression (`null` = no default / DROP DEFAULT).
+// ---------------------------------------------------------------------------
+
+/**
+ * One staged structure edit. Six kinds matching §3.6's editing operations.
+ *
+ * - `setNullable.nullable`: `true` ⇒ DROP NOT NULL, `false` ⇒ SET NOT NULL.
+ * - `setDefault.default` / `addColumn.default`: `null` ⇒ no default (DROP
+ *   DEFAULT), otherwise the verbatim default SQL expression.
+ *
+ * Preview shows the logical intent (e.g. `ALTER TABLE … ALTER COLUMN … TYPE …`);
+ * on SQLite, type/nullable/default changes are executed via a table rebuild
+ * (see the adapter). Dropping or retyping a primary-key column is rejected.
+ */
+export type AlterOp =
+  | { op: "addColumn"; name: string; dataType: string; nullable: boolean; default: string | null }
+  | { op: "renameColumn"; from: string; to: string }
+  | { op: "changeType"; column: string; newType: string }
+  | { op: "setNullable"; column: string; nullable: boolean }
+  | { op: "setDefault"; column: string; default: string | null }
+  | { op: "dropColumn"; name: string };
+
+/**
+ * The outcome of an `alterPreview` / `alterApply` call: the SQL statement
+ * strings the batch implies (the "Review SQL" list — same for preview and
+ * apply) and whether they were executed (`false` for a preview).
+ */
+export interface AlterResult {
+  statements: string[];
+  applied: boolean;
+}
+
+/**
+ * Preview the SQL a batch of staged edits implies (the `alter_preview`
+ * command). Pure: never mutates the database. Unknown schema/table/column and
+ * pk-protected ops surface as `{ kind, message }` errors.
+ */
+export function alterPreview(
+  handleId: string,
+  schema: string,
+  table: string,
+  ops: AlterOp[],
+): Promise<AlterResult> {
+  return invoke<AlterResult>("alter_preview", { handleId, schema, table, ops });
+}
+
+/**
+ * Apply a batch of staged edits transactionally (the `alter_apply` command).
+ * Rolls back fully on any failure and returns the engine error §5-style. After
+ * a successful apply the caller should re-introspect (nothing is cached
+ * server-side).
+ */
+export function alterApply(
+  handleId: string,
+  schema: string,
+  table: string,
+  ops: AlterOp[],
+): Promise<AlterResult> {
+  return invoke<AlterResult>("alter_apply", { handleId, schema, table, ops });
 }

@@ -28,16 +28,18 @@ async-trait = "0.1.89"
 uuid = { version = "1.20.0", features = ["v4", "serde"] }
 tokio = { version = "1.52.3", features = ["sync", "rt"] }
 rusqlite = { version = "0.37", features = ["bundled", "column_decltype"] }
-# Async-native driver for the server engines (M12). Postgres only in this task;
-# the MySQL feature is added in Task 2. `runtime-tokio` matches Tauri's tokio
-# runtime, so the async EngineConnection methods await the pool directly — no
-# spawn_blocking, unlike the rusqlite adapter. `tls-rustls` is a pure-Rust TLS
-# stack (no OpenSSL system dependency). Pinned to the 0.8 line: stable, MSRV
-# well below rustc 1.89, and compatible with the tokio 1.52 already in the tree.
+# Async-native driver for the server engines (M12). `runtime-tokio` matches
+# Tauri's tokio runtime, so the async EngineConnection methods await the pool
+# directly — no spawn_blocking, unlike the rusqlite adapter. `tls-rustls` is a
+# pure-Rust TLS stack (no OpenSSL system dependency). Pinned to the 0.8 line:
+# stable, MSRV well below rustc 1.89, and compatible with the tokio 1.52 already
+# in the tree. M12 Task 1 added `postgres`; Task 2 adds `mysql` (the MySQL
+# adapter `engines::mysql`, mirroring the Postgres one).
 sqlx = { version = "0.8", default-features = false, features = [
     "runtime-tokio",
     "tls-rustls",
     "postgres",
+    "mysql",
     # NUMERIC/DECIMAL arrive over the wire in a binary format sqlx cannot decode
     # to a primitive; `bigdecimal` lets us decode to an arbitrary-precision
     # `BigDecimal` and stringify it without precision loss (the CellValue

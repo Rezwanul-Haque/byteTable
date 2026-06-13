@@ -9,7 +9,9 @@
 //!
 //! ALL engine-specific SQL (introspection queries, identifier quoting,
 //! error-message vocabularies) lives exclusively in these modules.
-//! `engines::mysql` and `engines::postgres` arrive in M12.
+//! `engines::postgres` (M12 Task 1) and `engines::mysql` (M12 Task 2) join the
+//! original `engines::sqlite`.
 
+pub mod mysql;
 pub mod postgres;
 pub mod sqlite;

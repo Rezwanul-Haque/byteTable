@@ -178,7 +178,7 @@ export function Rail({ onDonate }: RailProps) {
         onClick={onDonate}
         title="Support ByteTable — buy us a coffee"
       >
-        <Icon name="favorite" size={18} fill={1} />
+        <Icon name="coffee" size={18} fill={1} />
       </button>
 
       {editPop && editingWs ? (

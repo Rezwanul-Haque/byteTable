@@ -7,14 +7,31 @@
 import { BTLogo } from "../../../shared/ui/BTLogo";
 import { Icon } from "../../../shared/ui/Icon";
 import type { RedisTab } from "../state";
-import { RedisTypeBadge } from "./RedisTypeBadge";
+import { KeyTab } from "./KeyTab";
 import "./RedisTabContent.css";
 
 interface RedisTabContentProps {
   tab: RedisTab;
+  /** The connection handle the active workspace's commands run against. */
+  handleId: string;
+  /** Invalidation nonce — bumped after writes / manual refresh (REDIS_SPEC §7). */
+  version: number;
+  /** True when the connection's env is `production` (gate destructive ops). */
+  isProduction: boolean;
+  /** Bump the workspace version after a write (sidebar + tabs re-fetch). */
+  onMutated: () => void;
+  /** Close a tab by id (key tab DEL closes itself). */
+  onCloseTab: (tabId: string) => void;
 }
 
-export function RedisTabContent({ tab }: RedisTabContentProps) {
+export function RedisTabContent({
+  tab,
+  handleId,
+  version,
+  isProduction,
+  onMutated,
+  onCloseTab,
+}: RedisTabContentProps) {
   switch (tab.kind) {
     case "dashboard":
       return (
@@ -26,11 +43,19 @@ export function RedisTabContent({ tab }: RedisTabContentProps) {
       );
     case "key":
       return (
-        <div className="redis-placeholder" data-screen-label={"Redis key: " + tab.key}>
-          <RedisTypeBadge type={tab.keyType} size={26} />
-          <p className="redis-placeholder-key">{tab.key}</p>
-          <span>Key viewer arrives in M13 Task 3.</span>
-        </div>
+        <KeyTab
+          // Re-mount on key/db identity change so per-key local edit state
+          // (string draft, inline-edit cell) never leaks across keys.
+          key={tab.id}
+          handleId={handleId}
+          db={tab.db}
+          keyName={tab.key}
+          keyType={tab.keyType}
+          version={version}
+          isProduction={isProduction}
+          onMutated={onMutated}
+          onClose={() => onCloseTab(tab.id)}
+        />
       );
     case "cli":
       return (

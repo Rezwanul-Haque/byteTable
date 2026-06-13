@@ -115,7 +115,16 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
           onNewCli={() => openCliTab(wsId, initialDb)}
         />
         <div className="redis-tab-content">
-          {activeTab ? <RedisTabContent tab={activeTab} /> : null}
+          {activeTab ? (
+            <RedisTabContent
+              tab={activeTab}
+              handleId={workspace.handleId}
+              version={rs.version}
+              isProduction={env === "production"}
+              onMutated={() => bumpVersion(wsId, initialDb)}
+              onCloseTab={(id) => closeTab(wsId, initialDb, id)}
+            />
+          ) : null}
         </div>
       </main>
       <RedisStatusBar

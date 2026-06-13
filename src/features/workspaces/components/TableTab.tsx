@@ -36,6 +36,16 @@ import "./TableTab.css";
 /** Narrow the union — the router only renders this for table tabs. */
 type TableTabModel = Extract<Tab, { kind: "table" }>;
 
+// --- Bug 2: pager page sizes (prototype `TableDataTab`) -------------------
+/** Default rows per page (matches the prototype's `useState(300)`). */
+const DEFAULT_PAGE_SIZE = 300;
+/** Selectable page sizes; "All" maps to the backend ceiling below. */
+const PAGE_SIZE_OPTIONS = [50, 100, 300, 1000] as const;
+/** The backend's per-page ceiling (`MAX_PAGE_ROWS` in every engine adapter).
+ *  "All" fetches this many rows; rows beyond it aren't shown (the backend
+ *  clamps any larger limit to this anyway). */
+const ALL_PAGE_SIZE = 10000;
+
 export function TableTab({
   tab,
   handleId,
@@ -87,6 +97,14 @@ export function TableTab({
   const [colOpen, setColOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [truncateOpen, setTruncateOpen] = useState(false);
+
+  // --- Bug 2: explicit paging (the prototype's `.table-footer` pager) -------
+  // The tab owns pageSize + offset; the grid fetches exactly the current page
+  // (`rowsFetch(..., { offset, limit: pageSize })`). Default page 300, matching
+  // the prototype. "All" maps to the backend's MAX_PAGE_ROWS ceiling — rows
+  // beyond the cap aren't shown (documented; the backend clamps anyway).
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [offset, setOffset] = useState(0);
   const colRef = useRef<HTMLDivElement | null>(null);
   const actionsRef = useRef<HTMLDivElement | null>(null);
 
@@ -140,6 +158,35 @@ export function TableTab({
   const filterKey = useMemo(() => (filterSpec ? JSON.stringify(filterSpec) : ""), [filterSpec]);
   const appliedWhere = useMemo(() => appliedDisplaySql(applied, columns), [applied, columns]);
   const hasApplied = filterSpec !== null;
+
+  // Bug 2: reset paging to page 1 whenever the result set changes — table or
+  // schema (a new tab identity) or the applied filter. Done during render (the
+  // React-recommended "adjust state on prop change" pattern) rather than in an
+  // effect, so the new page is fetched on the same pass without a flash of the
+  // old offset. Sort resets separately via the grid's onSortChange callback
+  // (sort state lives in the grid).
+  const pageResetKey = tab.table + " " + tab.schema + " " + filterKey;
+  const [lastResetKey, setLastResetKey] = useState(pageResetKey);
+  if (lastResetKey !== pageResetKey) {
+    setLastResetKey(pageResetKey);
+    setOffset(0);
+  }
+
+  // The (filtered) total driving the pager range + next-enabled. `null` when
+  // the count is unknown (pre-fetch `undefined`, or the backend returned null):
+  // the readout shows "—" and next is disabled.
+  const pagerTotal: number | null = meta?.totalRows ?? null;
+  // The "{from}–{to} of {total}" readout (prototype `.pager-range`).
+  const pagerRange =
+    pagerTotal === null
+      ? "— of —"
+      : pagerTotal === 0
+        ? "0 of 0"
+        : (offset + 1).toLocaleString() +
+          "–" +
+          Math.min(offset + pageSize, pagerTotal).toLocaleString() +
+          " of " +
+          pagerTotal.toLocaleString();
 
   // Ensure a draft exists (lazily) when the panel opens.
   const ensuredState: TabFilterState = filterState ?? {
@@ -380,7 +427,8 @@ export function TableTab({
           />
 
           {/* The virtualized data grid. Receives the applied filter + a stable
-              key; reports totalRows/shownRows/elapsedMs back through tabMeta. */}
+              key + the current page window; reports totalRows/elapsedMs back
+              through tabMeta (which feeds the footer's range readout). */}
           <DataGrid
             handleId={handleId}
             tabId={tab.id}
@@ -389,12 +437,66 @@ export function TableTab({
             filter={filterSpec}
             filterKey={filterKey}
             hiddenColumns={hiddenCols}
+            offset={offset}
+            pageSize={pageSize}
+            onSortChange={() => setOffset(0)}
             onFilterError={(message) => {
               setFilterError(message);
               setPanelOpen(true); // keep the panel open so the user can fix it
             }}
             onFilterOk={() => setFilterError(null)}
           />
+
+          {/* Bug 2: bottom pager (ported from the prototype's `.table-footer`).
+              The hint + a rows-per-page select + a page-range readout + prev/
+              next. totalRows is the fetch's COUNT (filtered when a filter is
+              applied), read from tabMeta. */}
+          <div className="table-footer">
+            <span className="table-hint">
+              Double-click a cell to edit · click a header to sort · stack conditions under Filters ·
+              click a linked value to hop the FK · <Icon name="monitoring" size={11} /> for column
+              insights
+            </span>
+            <div className="pager">
+              <span className="pager-label" id={"pager-label-" + tab.id}>
+                Rows per page
+              </span>
+              <select
+                className="pager-size"
+                aria-labelledby={"pager-label-" + tab.id}
+                value={pageSize === ALL_PAGE_SIZE ? "all" : String(pageSize)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setPageSize(v === "all" ? ALL_PAGE_SIZE : Number(v));
+                  setOffset(0);
+                }}
+              >
+                {PAGE_SIZE_OPTIONS.map((n) => (
+                  <option key={n} value={String(n)}>
+                    {n}
+                  </option>
+                ))}
+                <option value="all">All</option>
+              </select>
+              <span className="pager-range">{pagerRange}</span>
+              <IconBtn
+                icon="chevron_left"
+                title="Previous page"
+                disabled={offset === 0}
+                onClick={() => setOffset((o) => Math.max(0, o - pageSize))}
+              />
+              <IconBtn
+                icon="chevron_right"
+                title="Next page"
+                disabled={pagerTotal === null || offset + pageSize >= pagerTotal}
+                onClick={() =>
+                  setOffset((o) =>
+                    pagerTotal !== null && o + pageSize < pagerTotal ? o + pageSize : o,
+                  )
+                }
+              />
+            </div>
+          </div>
         </>
       )}
 

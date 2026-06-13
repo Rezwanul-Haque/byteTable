@@ -214,6 +214,64 @@
   font-size: 9.5px;
 }
 
+/* ---------- bottom pager (Bug 2) ---------- */
+/* Ported byte-exact from ByteTable.html .table-hint / .table-footer / .pager*.
+   The .table-hint base rule carries the footer's hint text; inside the footer
+   its border/padding are dropped and it flexes to fill (so the pager sits at
+   the right). */
+.table-hint {
+  padding: 5px 14px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  border-top: 1px solid var(--border);
+  flex: none;
+  user-select: none;
+}
+.table-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 14px;
+  border-top: 1px solid var(--border);
+  flex: none;
+}
+.table-footer .table-hint {
+  border-top: none;
+  padding: 0;
+  flex: 1;
+}
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+}
+.pager-label {
+  font-size: 10px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.pager-size {
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  padding: 3px 6px;
+  outline: none;
+  color: var(--text);
+}
+.pager-size:focus {
+  border-color: var(--accent);
+}
+.pager-range {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
 /* ---------- table-actions menu (M15 Task 2) ---------- */
 /* The prototype used the base .ctx-menu (position: fixed without offsets) inside
    the relatively-positioned .table-actions wrapper; the React port anchors it

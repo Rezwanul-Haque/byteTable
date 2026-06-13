@@ -5,13 +5,16 @@
    absolutely-positioned, windowed body sized to the full table height so the
    scrollbar reflects totalRows.
 
-   Column widths: the prototype lets the table auto-size columns (width:
-   max-content). Virtualized rows can't share a <table>'s column sizing, so we
-   pin a CSS grid template (--grid-cols) measured once from the loaded columns
-   — every row uses the same template, keeping cells aligned while horizontal
-   scroll still works (the track is wider than the viewport). Column
-   virtualization is M7 (64-col stress table); this milestone renders all
-   columns, which is fine for typical tables and does not break h-scroll. */
+   Column widths (Bug 1): the prototype lets the table auto-size columns
+   (width: max-content). Virtualized body rows are absolutely positioned, so
+   each `.dg-row` is its OWN CSS grid — with `max-content` tracks every row
+   resolved its own widths from its own content and the header/body drifted
+   out of alignment. DataGrid now measures one EXPLICIT pixel width per visible
+   column (max of the header's intrinsic width and the widest loaded cell,
+   clamped 90–400px) and builds --grid-cols from those fixed px tracks, so
+   every row (header + body) uses identical tracks and columns line up exactly.
+   Horizontal scroll still works because the canvas/rows are `width: max-content`
+   (the sum of the fixed tracks, wider than the viewport). */
 
 .datagrid-wrap {
   flex: 1;
@@ -59,6 +62,9 @@
   border-right: 1px solid var(--border);
   white-space: nowrap;
   user-select: none;
+  /* Fixed track (Bug 1): clip an over-long header label rather than stretch. */
+  min-width: 0;
+  overflow: hidden;
 }
 
 .dg-th.sortable {
@@ -124,7 +130,10 @@
   white-space: nowrap;
   border-bottom: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
   border-right: 1px solid color-mix(in oklab, var(--border) 40%, transparent);
-  max-width: 360px;
+  /* Track width is fixed by --grid-cols (Bug 1); min-width:0 + overflow:hidden
+     let a long value ellipsize/scroll within its track instead of stretching
+     it. */
+  min-width: 0;
   overflow: hidden;
 }
 
@@ -303,21 +312,5 @@
   background: color-mix(in oklab, var(--accent) 12%, transparent);
 }
 
-/* ---------- hint footer (spec §3.5, 10.5 faint) ---------- */
-.grid-hint {
-  flex: none;
-  padding: 6px 12px;
-  border-top: 1px solid var(--border);
-  font-size: 10.5px;
-  color: var(--text-faint);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.grid-hint .msym {
-  vertical-align: middle;
-}
+/* The grid's hint footer moved into the table tab's `.table-footer` (Bug 2),
+   alongside the pager — the grid no longer renders a standalone hint. */

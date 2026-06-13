@@ -93,13 +93,27 @@ export function connectionDelete(id: string): Promise<void> {
   return invoke("connection_delete", { id });
 }
 
-/** Probe the target without keeping a connection open ("Test connection"). */
-export function connectionTest(params: ConnectionParams): Promise<EngineInfo> {
-  return invoke<EngineInfo>("connection_test", { params });
+/**
+ * Probe the target without keeping a connection open ("Test connection").
+ *
+ * `password` is the transient connection secret for server engines (Postgres,
+ * M12): it is sent only for this call and never persisted (ConnectionParams has
+ * no password field by design). SQLite ignores it. M12 Task 3 sources it from
+ * the OS keychain instead; until then the connect modal may pass it here.
+ */
+export function connectionTest(
+  params: ConnectionParams,
+  password?: string,
+): Promise<EngineInfo> {
+  return invoke<EngineInfo>("connection_test", { params, password });
 }
 
-export function connectionOpen(target: OpenTarget): Promise<OpenResult> {
-  return invoke<OpenResult>("connection_open", { id: target.id, params: target.params });
+export function connectionOpen(target: OpenTarget, password?: string): Promise<OpenResult> {
+  return invoke<OpenResult>("connection_open", {
+    id: target.id,
+    params: target.params,
+    password,
+  });
 }
 
 export function connectionClose(handleId: string): Promise<void> {

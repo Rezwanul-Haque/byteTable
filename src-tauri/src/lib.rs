@@ -8,6 +8,7 @@ use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, WindowEvent};
 
+use engines::postgres::PostgresConnector;
 use engines::sqlite::SqliteConnector;
 use features::connections::application::{ConnectionManager, ConnectorRegistry};
 use features::connections::commands::ConnectionsState;
@@ -65,10 +66,12 @@ pub fn run() {
 
             // Connections slice: JSON registry + per-engine connectors.
             // Engines without a registered connector (MySQL/Postgres until
-            // M12) get a human "arrives in a later milestone" error.
+            // M12) get a human "arrives in a later milestone" error. M12 Task 1
+            // adds the Postgres connector (sqlx); MySQL follows in Task 2.
             let repository = JsonFileConnectionRepository::new(config_dir.join("connections.json"));
             let mut registry = ConnectorRegistry::new();
             registry.register(Engine::Sqlite, Arc::new(SqliteConnector));
+            registry.register(Engine::Postgres, Arc::new(PostgresConnector));
             app.manage(ConnectionsState::new(
                 Box::new(repository),
                 registry,

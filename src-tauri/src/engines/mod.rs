@@ -11,4 +11,5 @@
 //! error-message vocabularies) lives exclusively in these modules.
 //! `engines::mysql` and `engines::postgres` arrive in M12.
 
+pub mod postgres;
 pub mod sqlite;

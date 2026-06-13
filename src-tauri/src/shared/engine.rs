@@ -727,17 +727,74 @@ pub struct AlterResult {
     pub applied: bool,
 }
 
+/// A transient connection secret (a password today) that the command layer
+/// carries to `test`/`open` *without persisting it*. [`ConnectionParams`] is
+/// deliberately password-free for storage; server engines need the secret only
+/// at connect time, so it travels separately as this short-lived value.
+///
+/// # M12 password-threading seam (Task 1 → Task 3)
+///
+/// For Task 1 (the Postgres adapter) the secret originates as an optional
+/// `password` argument on the `connection_test` / `connection_open` commands
+/// and is threaded straight through the use-cases into [`Connector::open_with_secret`]
+/// / [`Connector::test_with_secret`]. It is never written to disk and never put
+/// on [`ConnectionParams`]. Task 3 replaces the *source* of this value with the
+/// OS keychain (look it up by saved-connection id) — the connector seam stays
+/// exactly as it is here; only where the secret comes from changes.
+#[derive(Clone)]
+pub struct ConnectSecret(pub String);
+
+impl std::fmt::Debug for ConnectSecret {
+    /// Never leak the secret in logs / panic messages.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ConnectSecret(***)")
+    }
+}
+
+impl ConnectSecret {
+    /// The secret value. Only the connector at connect time should read this.
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
 /// Opens and tests connections for one engine. One implementation per
 /// engine, registered by `Engine` in the composition root; the renderer
 /// only ever sees opaque handle ids, never driver handles.
 #[async_trait]
 pub trait Connector: Send + Sync {
     /// Verify the target is reachable and really is this engine, without
-    /// keeping a connection open.
+    /// keeping a connection open. The secretless form — used by engines with
+    /// no password (SQLite) and by callers that have no secret. Server engines
+    /// override [`Self::test_with_secret`] and route this through it with no
+    /// secret.
     async fn test(&self, params: &ConnectionParams) -> Result<EngineInfo, AppError>;
 
-    /// Open a live connection.
+    /// Open a live connection (secretless form — see [`Self::test`]).
     async fn open(&self, params: &ConnectionParams) -> Result<Box<dyn EngineConnection>, AppError>;
+
+    /// Verify the target, carrying an optional transient [`ConnectSecret`]
+    /// (a password for server engines). Default impl ignores the secret and
+    /// delegates to [`Self::test`], so SQLite and every existing test fake are
+    /// unaffected; the Postgres connector overrides it to use the password.
+    /// See [`ConnectSecret`] for the M12 password-threading seam.
+    async fn test_with_secret(
+        &self,
+        params: &ConnectionParams,
+        _secret: Option<&ConnectSecret>,
+    ) -> Result<EngineInfo, AppError> {
+        self.test(params).await
+    }
+
+    /// Open a live connection, carrying an optional transient [`ConnectSecret`].
+    /// Default impl ignores the secret and delegates to [`Self::open`].
+    async fn open_with_secret(
+        &self,
+        params: &ConnectionParams,
+        _secret: Option<&ConnectSecret>,
+    ) -> Result<Box<dyn EngineConnection>, AppError> {
+        self.open(params).await
+    }
 }
 
 /// A live connection to one database: introspection + query execution.

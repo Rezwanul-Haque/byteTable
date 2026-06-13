@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 use crate::shared::engine::{
-    ConnectionParams, Connector, Engine, EngineConnection, EngineInfo, QueryOptions, QueryResult,
-    SchemaInfo, TableInfo,
+    ConnectSecret, ConnectionParams, Connector, Engine, EngineConnection, EngineInfo, QueryOptions,
+    QueryResult, SchemaInfo, TableInfo,
 };
 use crate::shared::error::AppError;
 
@@ -181,11 +181,19 @@ fn now_epoch_ms() -> u64 {
 // ---------------------------------------------------------------------------
 
 /// Probe the target without keeping a connection open ("Test connection").
+///
+/// `secret` is the transient connection password (server engines), carried
+/// from the command layer and never persisted — see [`ConnectSecret`]. SQLite
+/// ignores it (default `Connector` impl).
 pub async fn test_connection(
     registry: &ConnectorRegistry,
     params: &ConnectionParams,
+    secret: Option<&ConnectSecret>,
 ) -> Result<EngineInfo, AppError> {
-    registry.get(params.engine())?.test(params).await
+    registry
+        .get(params.engine())?
+        .test_with_secret(params, secret)
+        .await
 }
 
 /// What `open_connection` opens: either a saved entry or ad-hoc parameters
@@ -211,6 +219,7 @@ pub async fn open_connection<R: ConnectionRepository + ?Sized>(
     registry: &ConnectorRegistry,
     manager: &ConnectionManager,
     target: OpenTarget,
+    secret: Option<&ConnectSecret>,
 ) -> Result<OpenedConnection, AppError> {
     let params = match target {
         OpenTarget::Params(params) => params,
@@ -221,7 +230,10 @@ pub async fn open_connection<R: ConnectionRepository + ?Sized>(
                 .params
         }
     };
-    let connection = registry.get(params.engine())?.open(&params).await?;
+    let connection = registry
+        .get(params.engine())?
+        .open_with_secret(&params, secret)
+        .await?;
     let engine_info = connection.engine_info();
     let schemas = connection.list_schemas().await?;
     let handle_id = manager.insert(connection).await;
@@ -522,7 +534,7 @@ mod tests {
             user: "u".into(),
             tls: false,
         };
-        let err = test_connection(&registry, &params).await.unwrap_err();
+        let err = test_connection(&registry, &params, None).await.unwrap_err();
         assert!(matches!(err, AppError::Unsupported(_)));
         assert_eq!(
             err.to_string(),
@@ -544,6 +556,7 @@ mod tests {
             &registry,
             &manager,
             OpenTarget::Params(sqlite_params()),
+            None,
         )
         .await
         .expect("open");
@@ -619,6 +632,7 @@ mod tests {
             &registry,
             &manager,
             OpenTarget::SavedId(saved.id.clone()),
+            None,
         )
         .await
         .expect("open");
@@ -630,6 +644,7 @@ mod tests {
             &registry,
             &manager,
             OpenTarget::SavedId("ghost".into()),
+            None,
         )
         .await
         .unwrap_err();

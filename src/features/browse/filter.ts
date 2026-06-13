@@ -78,15 +78,15 @@ const BOOL_RE = /BOOL/;
  * the text parses, else the trimmed string. The value rides as a JSON param —
  * typing only chooses which JSON type, never builds SQL.
  *
- * WIRE GAP: `CellValue`/`FilterValue` (engine.ts) is `string | number | null`
- * with no boolean arm, so a boolean column's value cannot be sent as a JSON
- * `bool`. We send it as a string (the backend/SQLite coerces `'true'`/`'1'`
- * against the column's affinity); the cosmetic SQL still renders it unquoted
- * like the prototype. See the report — this is a backend/wire decision, not
- * something to hack around in the UI.
+ * Since M12 `CellValue`/`FilterValue` carries a `boolean` arm (Postgres has a
+ * native `boolean` type), so a boolean column's value is sent as a JSON `bool`
+ * — Postgres binds it against the `bool` column directly. `true`/`t`/`1`/`yes`
+ * (case-insensitive) read as `true`; anything else is `false`. SQLite has no
+ * boolean type and stores 0/1, so its filters never hit this branch.
  */
 function typedValue(raw: string, type: string): CellValue {
   const t = raw.trim();
+  if (BOOL_RE.test(type)) return /^(true|t|1|yes|y)$/i.test(t);
   if (NUMERIC_RE.test(type) && t !== "" && !Number.isNaN(Number(t))) return Number(t);
   return t;
 }

@@ -10,9 +10,21 @@
 
 use tauri::State;
 
-use crate::shared::engine::{ConnectionParams, EngineInfo, QueryOptions, QueryResult};
+use crate::shared::engine::{
+    ConnectSecret, ConnectionParams, EngineInfo, QueryOptions, QueryResult,
+};
 use crate::shared::engine::{SchemaInfo, TableInfo};
 use crate::shared::error::AppError;
+
+/// Wrap an optional transient password from the renderer into a [`ConnectSecret`].
+///
+/// The password reaches the command as a plain `Option<String>` argument and is
+/// turned into a short-lived [`ConnectSecret`] here; it is never persisted (it
+/// is not part of [`ConnectionParams`]). M12 Task 3 replaces this argument with
+/// an OS-keychain lookup keyed by the saved-connection id — see [`ConnectSecret`].
+fn into_secret(password: Option<String>) -> Option<ConnectSecret> {
+    password.filter(|p| !p.is_empty()).map(ConnectSecret)
+}
 
 use super::application::{
     self, ConnectionHandleId, ConnectionManager, ConnectorRegistry, OpenTarget, OpenedConnection,
@@ -87,12 +99,17 @@ pub async fn connection_delete(
     application::delete_connection(state.repository.as_ref(), &id)
 }
 
+/// `password` is the transient connection secret for server engines (Postgres
+/// in M12 Task 1), carried only for this call and never persisted. SQLite
+/// ignores it. M12 Task 3 will source it from the OS keychain instead of the
+/// renderer.
 #[tauri::command]
 pub async fn connection_test(
     state: State<'_, ConnectionsState>,
     params: ConnectionParams,
+    password: Option<String>,
 ) -> Result<EngineInfo, AppError> {
-    application::test_connection(&state.registry, &params).await
+    application::test_connection(&state.registry, &params, into_secret(password).as_ref()).await
 }
 
 /// Open by saved id *or* ad-hoc params ("Open SQLite file…"); exactly one
@@ -102,6 +119,7 @@ pub async fn connection_open(
     state: State<'_, ConnectionsState>,
     id: Option<String>,
     params: Option<ConnectionParams>,
+    password: Option<String>,
 ) -> Result<OpenedConnection, AppError> {
     let target = match (id, params) {
         (Some(id), None) => OpenTarget::SavedId(id),
@@ -122,6 +140,7 @@ pub async fn connection_open(
         &state.registry,
         &state.manager,
         target,
+        into_secret(password).as_ref(),
     )
     .await
 }

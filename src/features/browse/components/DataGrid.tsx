@@ -36,7 +36,10 @@ import { rowsFetch } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
 import { Icon } from "../../../shared/ui/Icon";
 import { useIntrospectionStore } from "../../introspection/state";
+import { useWorkspacesStore } from "../../workspaces/state";
 import { useTabMetaStore } from "../../workspaces/tabMeta";
+import { ColumnInsights, type InsightsAnchor } from "./ColumnInsights";
+import { FkPeek, type FkPeekAnchor } from "./FkPeek";
 import { CellContent } from "./GridCell";
 import "./DataGrid.css";
 
@@ -105,6 +108,14 @@ export function DataGrid({
   const [selected, setSelected] = useState<{ row: number; col: number } | null>(null);
   const [initialError, setInitialError] = useState<string | null>(null);
   const [loadingInitial, setLoadingInitial] = useState(true);
+
+  // --- M10 popovers (FK peek + column insights) ------------------------
+  // Each holds the anchor (clicked cell / header rect + target) for an open
+  // popover, or null when closed. Only one of each is open at a time.
+  const [fkPeek, setFkPeek] = useState<FkPeekAnchor | null>(null);
+  const [insights, setInsights] = useState<InsightsAnchor | null>(null);
+  const closeFkPeek = useCallback(() => setFkPeek(null), []);
+  const closeInsights = useCallback(() => setInsights(null), []);
 
   // Sparse row cache keyed by absolute row index. A page write fills
   // [offset, offset+rows). Rows absent here render a shimmer.
@@ -335,6 +346,43 @@ export function DataGrid({
     setSort((prev) => cycleSort(prev, column));
   }, []);
 
+  // FK hop (M10 §3.5): clicking an FK cell link opens the peek popover for the
+  // column's referenced table, anchored at the clicked cell. The referenced
+  // schema is the same as the source for SQLite (one db, one schema). Closing
+  // any prior insights popover keeps a single popover open at a time.
+  const onFkClick = useCallback(
+    (fk: FkRef, value: CellValue, event: React.MouseEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      const rect = event.currentTarget.getBoundingClientRect();
+      setInsights(null);
+      setFkPeek({ rect, refSchema: schema, refTable: fk.table, refColumn: fk.column, value });
+    },
+    [schema],
+  );
+
+  // "Open in {refTable}": open/focus that table's data tab seeded with the
+  // referenced `refColumn = value` filter (so the grid shows the row(s)), then
+  // close the peek.
+  const onOpenInTable = useCallback((anchor: FkPeekAnchor) => {
+    useWorkspacesStore
+      .getState()
+      .openTableTabWithFilter(anchor.refSchema, anchor.refTable, anchor.refColumn, anchor.value);
+    setFkPeek(null);
+  }, []);
+
+  // Column insights (M10 §3.5): the header's chart icon opens the insights
+  // popover for that column, anchored at the icon. stopPropagation keeps the
+  // header's sort handler from firing on the same click.
+  const onInsightClick = useCallback(
+    (column: string, event: React.MouseEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      const rect = event.currentTarget.getBoundingClientRect();
+      setFkPeek(null);
+      setInsights({ rect, column });
+    },
+    [],
+  );
+
   // Grid column template: row-number gutter + one min/max track per column.
   const gridCols = useMemo(
     () => "38px " + columns.map(() => "minmax(90px, max-content)").join(" "),
@@ -428,7 +476,17 @@ export function DataGrid({
                         style={{ color: "var(--accent)" }}
                       />
                     ) : null}
-                    {/* M10 seam: column-insights chart icon, shown on th hover. */}
+                    {/* M10: column-insights chart icon, shown on th hover
+                        (.dg-th:hover .insight-btn). stopPropagation keeps the
+                        header's sort click from firing. */}
+                    <button
+                      type="button"
+                      className="insight-btn"
+                      title={"Insights: " + c.name}
+                      onClick={(e) => onInsightClick(c.name, e)}
+                    >
+                      <Icon name="monitoring" size={13} />
+                    </button>
                   </span>
                 </div>
               );
@@ -462,6 +520,11 @@ export function DataGrid({
                       );
                     }
                     const isSel = isSelectedRow && selected?.col === ci;
+                    // Only hop when the fk target column resolved (engine may
+                    // report an empty `column` for an unresolvable implicit fk);
+                    // otherwise the cell renders as plain text (no link).
+                    const fkMeta = colMeta.get(c.name)?.fk ?? null;
+                    const fk = fkMeta && fkMeta.column ? fkMeta : null;
                     return (
                       <div
                         key={c.name}
@@ -469,7 +532,12 @@ export function DataGrid({
                         onClick={() => setSelected({ row: rowIndex, col: ci })}
                         // M11 seam: onDoubleClick → start inline edit.
                       >
-                        <CellContent value={row[ci] ?? null} column={c.name} />
+                        <CellContent
+                          value={row[ci] ?? null}
+                          column={c.name}
+                          fk={fk}
+                          onFkClick={fk ? (value, e) => onFkClick(fk, value, e) : undefined}
+                        />
                       </div>
                     );
                   })}
@@ -480,6 +548,24 @@ export function DataGrid({
         </div>
       </div>
       <GridHint />
+      {fkPeek ? (
+        <FkPeek
+          handleId={handleId}
+          anchor={fkPeek}
+          onClose={closeFkPeek}
+          onOpenInTable={onOpenInTable}
+        />
+      ) : null}
+      {insights ? (
+        <ColumnInsights
+          handleId={handleId}
+          schema={schema}
+          table={table}
+          filter={filter}
+          anchor={insights}
+          onClose={closeInsights}
+        />
+      ) : null}
     </>
   );
 }

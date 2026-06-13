@@ -14,7 +14,7 @@ use tauri::State;
 
 use crate::features::connections::application::ConnectionHandleId;
 use crate::features::connections::commands::ConnectionsState;
-use crate::shared::engine::{FetchRowsRequest, RowsPage};
+use crate::shared::engine::{FetchRowsRequest, RowLookup, RowLookupRequest, RowsPage};
 use crate::shared::error::AppError;
 
 use super::application;
@@ -28,4 +28,15 @@ pub async fn rows_fetch(
     req: FetchRowsRequest,
 ) -> Result<RowsPage, AppError> {
     application::fetch_rows(state.manager(), &handle_id, req).await
+}
+
+/// Single-row lookup by key for M10 "FK peek": click a foreign-key value to
+/// fetch the referenced row. Returns the first match plus a total match count.
+#[tauri::command]
+pub async fn row_lookup(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+    req: RowLookupRequest,
+) -> Result<RowLookup, AppError> {
+    application::fetch_row_by_key(state.manager(), &handle_id, req).await
 }

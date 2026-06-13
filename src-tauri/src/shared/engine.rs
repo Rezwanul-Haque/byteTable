@@ -531,6 +531,110 @@ pub struct RowsPage {
     pub elapsed_ms: u64,
 }
 
+/// A single-row lookup by key (M10 "FK peek", DESIGN_SPEC §3.5): find the
+/// row(s) in `table` where `column = value`. The driving use-case is clicking
+/// a foreign-key cell to peek at the referenced row — `column` is the
+/// *referenced* column (usually the parent's primary key or a unique key), so
+/// the match is normally 0 or 1 row.
+///
+/// Security: `column` is a real column name the adapter MUST validate against
+/// the table's columns before quoting it (an unknown column is a §5 error,
+/// identical to the sort/filter column check). `value` is *bound as a
+/// parameter*, never interpolated — an injection payload binds as a literal
+/// that simply matches nothing.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RowLookupRequest {
+    pub schema: String,
+    pub table: String,
+    /// The column to match on (the referenced column for an FK peek).
+    pub column: String,
+    /// The key value to look up, as a JSON scalar. Bound as a parameter.
+    /// A `null` value never matches a `=` comparison in SQL, so the adapter
+    /// treats a null key as "no match" (`matchCount: 0`) rather than emitting
+    /// `IS NULL` — FK keys are non-null in normal use (see the adapter).
+    pub value: serde_json::Value,
+}
+
+/// The result of a [`RowLookupRequest`] (M10 "FK peek"): the matching row (if
+/// any) plus the columns for field labels and the total match count.
+///
+/// `columns` is ALWAYS returned (even when `row` is `None`) so the UI can show
+/// labelled field placeholders for a missing reference. `row` is `None` when
+/// nothing matched; otherwise it is the first matching row, mapped to JSON
+/// exactly like [`RowsPage::rows`]. `match_count` is the total number of
+/// matching rows so the UI can say "1 of N" when the key is not unique.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RowLookup {
+    pub columns: Vec<ColumnMeta>,
+    /// The first matching row, or `None` when nothing matched.
+    pub row: Option<Vec<serde_json::Value>>,
+    /// Total rows matching `column = value` (so the UI can flag a non-unique
+    /// key as "1 of N"). `0` when nothing matched (including a null key).
+    pub match_count: u64,
+}
+
+/// One value/frequency pair in a column's top-values list ([`ColumnStats`]).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FreqEntry {
+    /// The value, mapped to JSON exactly like [`RowsPage::rows`].
+    pub value: serde_json::Value,
+    /// How many rows (within the filtered set) hold this value.
+    pub count: u64,
+}
+
+/// A request for per-column statistics (M10 "column insights", DESIGN_SPEC
+/// §3.5), computed over the grid's CURRENT FILTERED SET so the insights match
+/// what the user sees.
+///
+/// Security: `column` is validated against the table's columns before quoting
+/// (a §5 error otherwise). `filter` reuses the same parameterized
+/// [`FilterSpec`] compilation as [`FetchRowsRequest`] — structured-condition
+/// values are bound, the raw mode is the documented escape hatch.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ColumnStatsRequest {
+    pub schema: String,
+    pub table: String,
+    pub column: String,
+    /// The grid's current filter; `None` (or absent) computes stats over the
+    /// whole table.
+    #[serde(default)]
+    pub filter: Option<FilterSpec>,
+}
+
+/// Per-column statistics over a (possibly filtered) row set (M10 "column
+/// insights"). All counts respect the request's filter, so they match the
+/// grid's visible set.
+///
+/// `min`/`max` are always returned (lexicographic for text — the UI decides
+/// how to display them); `avg` is only meaningful for numeric columns and is
+/// `None` otherwise. `numeric` tells the UI whether to render min/max/avg as
+/// numbers (see the adapter for the detection heuristic).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ColumnStats {
+    /// Total rows in the (filtered) set, including NULLs.
+    pub total: u64,
+    /// Distinct non-NULL values (`count(DISTINCT col)`).
+    pub distinct: u64,
+    /// Rows whose value is NULL.
+    pub nulls: u64,
+    /// The minimum value, or `None` when the set has no non-NULL values.
+    pub min: Option<serde_json::Value>,
+    /// The maximum value, or `None` when the set has no non-NULL values.
+    pub max: Option<serde_json::Value>,
+    /// The average, only when `numeric` (else `None`).
+    pub avg: Option<f64>,
+    /// Whether the column holds numeric data (drives numeric display of
+    /// min/max/avg). See the adapter for the heuristic.
+    pub numeric: bool,
+    /// The up-to-five most frequent non-NULL values, most frequent first.
+    pub top: Vec<FreqEntry>,
+}
+
 /// The outcome of an `alter_table` call (M8 structure editor). Carries the
 /// SQL statements the batch implies (for the "Review SQL" panel) and whether
 /// they were actually executed.
@@ -603,6 +707,41 @@ pub trait EngineConnection: Send + Sync {
     /// is a documented "Edit as SQL" escape hatch (see [`FilterSpec`]).
     /// Unknown schema/table/sort-column/filter-column are §5 human errors.
     async fn fetch_rows(&self, req: FetchRowsRequest) -> Result<RowsPage, AppError>;
+
+    /// Look up the row(s) where `column = value` (M10 "FK peek", §3.5): click
+    /// a foreign-key cell to peek at the referenced row. The adapter validates
+    /// `column` against the table's columns (a §5 error otherwise), quotes the
+    /// identifier, and *binds* `value` as a parameter — never interpolated, so
+    /// an injection payload simply matches nothing. Returns the first matching
+    /// row (the key is usually unique → 0 or 1) plus `match_count` so the UI
+    /// can flag a non-unique key. A null key matches nothing (FK keys are
+    /// non-null in normal use — see [`RowLookupRequest::value`]). Columns are
+    /// always returned, even when nothing matched. Unknown schema/table/column
+    /// are §5 human errors.
+    ///
+    /// Default impl: `Unsupported` — only engines that implement it override
+    /// it (SQLite in M10; server engines later).
+    async fn fetch_row_by_key(&self, _req: RowLookupRequest) -> Result<RowLookup, AppError> {
+        Err(AppError::Unsupported(
+            "Row lookup is not supported for this engine yet.".into(),
+        ))
+    }
+
+    /// Compute per-column statistics over the current filtered set (M10
+    /// "column insights", §3.5): total/distinct/null counts, min/max, avg (for
+    /// numeric columns), and the top-5 most frequent values. The adapter
+    /// validates `column` (a §5 error otherwise), quotes the identifier, and
+    /// reuses the same parameterized [`FilterSpec`] compilation as
+    /// [`fetch_rows`] so the stats reflect the grid's visible filtered set.
+    /// Unknown schema/table/column are §5 human errors.
+    ///
+    /// Default impl: `Unsupported` — only engines that implement it override
+    /// it (SQLite in M10; server engines later).
+    async fn column_stats(&self, _req: ColumnStatsRequest) -> Result<ColumnStats, AppError> {
+        Err(AppError::Unsupported(
+            "Column statistics are not supported for this engine yet.".into(),
+        ))
+    }
 
     /// Preview or apply a batch of staged structure edits ([`AlterOp`]) against
     /// one table (M8 structure editor, DESIGN_SPEC §3.6).
@@ -1016,6 +1155,161 @@ mod tests {
         );
         let back: FilterSpec = serde_json::from_value(json).unwrap();
         assert_eq!(back, spec);
+    }
+
+    #[test]
+    fn row_lookup_request_wire_shape_is_camel_case_and_round_trips() {
+        let req = RowLookupRequest {
+            schema: "main".into(),
+            table: "authors".into(),
+            column: "id".into(),
+            value: serde_json::json!(42),
+        };
+        let json = serde_json::to_value(&req).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "schema": "main",
+                "table": "authors",
+                "column": "id",
+                "value": 42
+            })
+        );
+        let back: RowLookupRequest = serde_json::from_value(json).unwrap();
+        assert_eq!(back, req);
+    }
+
+    #[test]
+    fn row_lookup_wire_shape_is_camel_case_and_round_trips() {
+        let found = RowLookup {
+            columns: vec![ColumnMeta {
+                name: "id".into(),
+                type_hint: "INTEGER".into(),
+            }],
+            row: Some(vec![serde_json::json!(42), serde_json::json!("Ada")]),
+            match_count: 1,
+        };
+        let json = serde_json::to_value(&found).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "columns": [{ "name": "id", "typeHint": "INTEGER" }],
+                "row": [42, "Ada"],
+                "matchCount": 1
+            })
+        );
+        let back: RowLookup = serde_json::from_value(json).unwrap();
+        assert_eq!(back, found);
+
+        // A miss keeps `row: null` on the wire.
+        let miss = RowLookup {
+            row: None,
+            match_count: 0,
+            ..found
+        };
+        let json = serde_json::to_value(&miss).unwrap();
+        assert_eq!(json["row"], serde_json::Value::Null);
+        assert_eq!(json["matchCount"], serde_json::json!(0));
+    }
+
+    #[test]
+    fn column_stats_request_wire_shape_is_camel_case_and_round_trips() {
+        let req = ColumnStatsRequest {
+            schema: "main".into(),
+            table: "products".into(),
+            column: "qty".into(),
+            filter: Some(FilterSpec::Conditions {
+                items: vec![Condition {
+                    column: "status".into(),
+                    op: FilterOp::Eq,
+                    value: Some(FilterValue::Scalar(serde_json::json!("paid"))),
+                }],
+                combinator: Combinator::And,
+            }),
+        };
+        let json = serde_json::to_value(&req).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "schema": "main",
+                "table": "products",
+                "column": "qty",
+                "filter": {
+                    "mode": "conditions",
+                    "items": [{ "column": "status", "op": "eq", "value": "paid" }],
+                    "combinator": "and"
+                }
+            })
+        );
+        let back: ColumnStatsRequest = serde_json::from_value(json).unwrap();
+        assert_eq!(back, req);
+
+        // `filter` is optional on the wire: an absent key deserializes to None.
+        let no_filter: ColumnStatsRequest = serde_json::from_value(serde_json::json!({
+            "schema": "main",
+            "table": "products",
+            "column": "qty"
+        }))
+        .unwrap();
+        assert_eq!(no_filter.filter, None);
+    }
+
+    #[test]
+    fn column_stats_wire_shape_is_camel_case_and_round_trips() {
+        let stats = ColumnStats {
+            total: 4,
+            distinct: 3,
+            nulls: 1,
+            min: Some(serde_json::json!(0)),
+            max: Some(serde_json::json!(10)),
+            avg: Some(5.0),
+            numeric: true,
+            top: vec![
+                FreqEntry {
+                    value: serde_json::json!(5),
+                    count: 2,
+                },
+                FreqEntry {
+                    value: serde_json::json!(0),
+                    count: 1,
+                },
+            ],
+        };
+        let json = serde_json::to_value(&stats).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "total": 4,
+                "distinct": 3,
+                "nulls": 1,
+                "min": 0,
+                "max": 10,
+                "avg": 5.0,
+                "numeric": true,
+                "top": [
+                    { "value": 5, "count": 2 },
+                    { "value": 0, "count": 1 }
+                ]
+            })
+        );
+        let back: ColumnStats = serde_json::from_value(json).unwrap();
+        assert_eq!(back, stats);
+
+        // A text column: avg None, min/max present, numeric false.
+        let text = ColumnStats {
+            total: 2,
+            distinct: 2,
+            nulls: 0,
+            min: Some(serde_json::json!("apple")),
+            max: Some(serde_json::json!("banana")),
+            avg: None,
+            numeric: false,
+            top: vec![],
+        };
+        let json = serde_json::to_value(&text).unwrap();
+        assert_eq!(json["avg"], serde_json::Value::Null);
+        assert_eq!(json["numeric"], serde_json::json!(false));
+        assert_eq!(json["top"], serde_json::json!([]));
     }
 
     #[test]

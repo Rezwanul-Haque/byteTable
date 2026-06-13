@@ -4,7 +4,7 @@
 //! No Tauri, no drivers.
 
 use crate::features::connections::application::{ConnectionHandleId, ConnectionManager};
-use crate::shared::engine::{FetchRowsRequest, RowsPage};
+use crate::shared::engine::{FetchRowsRequest, RowLookup, RowLookupRequest, RowsPage};
 use crate::shared::error::AppError;
 
 /// Fetch one page of rows from a table on an open connection (M4 data grid).
@@ -19,6 +19,19 @@ pub async fn fetch_rows(
     manager.get(handle).await?.fetch_rows(req).await
 }
 
+/// Look up a single row by key on an open connection (M10 "FK peek"): click a
+/// foreign-key cell to peek at the referenced row. The adapter validates the
+/// lookup column, binds the value, and returns the first match plus a total
+/// match count (so the UI can flag a non-unique key). This is row-fetching, so
+/// it lives in the browse slice alongside `fetch_rows`.
+pub async fn fetch_row_by_key(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    req: RowLookupRequest,
+) -> Result<RowLookup, AppError> {
+    manager.get(handle).await?.fetch_row_by_key(req).await
+}
+
 #[cfg(test)]
 mod tests {
     use async_trait::async_trait;
@@ -29,8 +42,8 @@ mod tests {
         TableMeta,
     };
 
-    /// Minimal fake: only `fetch_rows` matters here. It echoes the request
-    /// window back so the use-case wiring is observable.
+    /// Minimal fake: `fetch_rows` and `fetch_row_by_key` matter here. Each
+    /// echoes its request back so the use-case wiring is observable.
     struct FakeConnection;
 
     #[async_trait]
@@ -82,6 +95,17 @@ mod tests {
             })
         }
 
+        async fn fetch_row_by_key(&self, req: RowLookupRequest) -> Result<RowLookup, AppError> {
+            Ok(RowLookup {
+                columns: vec![ColumnMeta {
+                    name: format!("{}.{}.{}", req.schema, req.table, req.column),
+                    type_hint: String::new(),
+                }],
+                row: Some(vec![req.value.clone()]),
+                match_count: 1,
+            })
+        }
+
         async fn close(&self) -> Result<(), AppError> {
             Ok(())
         }
@@ -115,6 +139,38 @@ mod tests {
         let manager = ConnectionManager::new();
         let handle = ConnectionHandleId("ghost".into());
         let err = fetch_rows(&manager, &handle, sample_request())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::NotFound(_)));
+        assert!(err.to_string().contains("closed"));
+    }
+
+    fn sample_lookup() -> RowLookupRequest {
+        RowLookupRequest {
+            schema: "main".into(),
+            table: "authors".into(),
+            column: "id".into(),
+            value: serde_json::json!(42),
+        }
+    }
+
+    #[tokio::test]
+    async fn fetch_row_by_key_delegates_to_the_connection() {
+        let manager = ConnectionManager::new();
+        let handle = manager.insert(Box::new(FakeConnection)).await;
+        let lookup = fetch_row_by_key(&manager, &handle, sample_lookup())
+            .await
+            .expect("row lookup");
+        assert_eq!(lookup.columns[0].name, "main.authors.id");
+        assert_eq!(lookup.row, Some(vec![serde_json::json!(42)]));
+        assert_eq!(lookup.match_count, 1);
+    }
+
+    #[tokio::test]
+    async fn fetch_row_by_key_closed_handle_is_a_not_found() {
+        let manager = ConnectionManager::new();
+        let handle = ConnectionHandleId("ghost".into());
+        let err = fetch_row_by_key(&manager, &handle, sample_lookup())
             .await
             .unwrap_err();
         assert!(matches!(err, AppError::NotFound(_)));

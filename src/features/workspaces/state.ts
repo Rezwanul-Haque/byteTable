@@ -11,6 +11,8 @@ import { create } from "zustand";
 import type { SchemaInfo } from "../connections/api";
 import { connectionClose } from "../connections/api";
 import { useIntrospectionStore } from "../introspection/state";
+import { newCondition } from "../browse/filter";
+import type { CellValue } from "../../shared/api/engine";
 import type { AlterOp, QueryResult } from "../../shared/api/engine";
 import type {
   SqlHistoryEntry,
@@ -108,6 +110,21 @@ interface WorkspacesFeatureState {
    * an already-open tab to structure mode.
    */
   openTableTab: (schema: string, table: string, mode?: TableTabMode) => void;
+  /**
+   * Open (or focus) `schema.table` as a data tab and seed its filter with a
+   * single applied `column = value` equality condition — the M10 "FK hop /
+   * Open in {table}" action (§3.5). When the tab already exists it is focused,
+   * switched to data mode, and its filter is *replaced* with the seeded
+   * condition so the grid re-fetches showing the referenced row(s). The seed
+   * sets both `applied` (what the grid fetches) and `draft` (so the filter
+   * panel shows the same condition if opened).
+   */
+  openTableTabWithFilter: (
+    schema: string,
+    table: string,
+    column: string,
+    value: CellValue,
+  ) => void;
   /** Open a fresh SQL editor tab ("Query N") and focus it. */
   openSqlTab: () => void;
   /**
@@ -207,6 +224,11 @@ function patchActiveUi(
 /** A workspace-scoped unique tab id. */
 function newTabId(kind: Tab["kind"]): string {
   return "tab-" + kind + "-" + crypto.randomUUID();
+}
+
+/** Stringify an FK seed value for a UI filter condition (null → empty). */
+function stringifySeed(value: CellValue): string {
+  return value === null ? "" : String(value);
 }
 
 function patchWorkspace(
@@ -330,6 +352,45 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
         }
         const tab: Tab = { id: newTabId("table"), kind: "table", schema, table, mode };
         return { tabs: [...tabs, tab], activeTabId: tab.id };
+      }),
+    })),
+
+  openTableTabWithFilter: (schema, table, column, value) =>
+    set((state) => ({
+      workspaces: patchActiveUi(state, (ui) => {
+        const tabs = ui.tabs ?? [];
+        // Build the seeded filter: one applied `column = value` eq condition.
+        // The value rides as a string in the UI draft; compileToSpec retypes
+        // it per the column's declared type (numeric → number) at fetch time.
+        const cond = { ...newCondition(column), op: "eq" as const, value: stringifySeed(value) };
+        const draft = {
+          conditions: [cond],
+          combinator: "and" as const,
+          rawMode: false,
+          rawSql: "",
+        };
+        const seeded: TabFilterState = { draft, applied: draft };
+
+        const existing = tabs.find(
+          (t) => t.kind === "table" && t.schema === schema && t.table === table,
+        );
+        if (existing) {
+          // Focus it, force data mode, and replace its filter with the seed.
+          const nextTabs = tabs.map((t) =>
+            t.id === existing.id && t.kind === "table" ? { ...t, mode: "data" as const } : t,
+          );
+          return {
+            tabs: nextTabs,
+            activeTabId: existing.id,
+            filters: { ...(ui.filters ?? {}), [existing.id]: seeded },
+          };
+        }
+        const tab: Tab = { id: newTabId("table"), kind: "table", schema, table, mode: "data" };
+        return {
+          tabs: [...tabs, tab],
+          activeTabId: tab.id,
+          filters: { ...(ui.filters ?? {}), [tab.id]: seeded },
+        };
       }),
     })),
 

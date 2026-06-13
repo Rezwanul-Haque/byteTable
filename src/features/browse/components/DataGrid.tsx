@@ -56,7 +56,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 /** Columns whose string values render as tinted enum pills (prototype). */
-const PILL_COLUMNS = new Set(["status", "method", "pay_status"]);
+const PILL_COLUMNS = new Set(["status", "method"]);
 
 /** One cell's rendered value, typed per spec §1.3 / §3.5. */
 function CellContent({ value, column }: { value: CellValue; column: string }) {

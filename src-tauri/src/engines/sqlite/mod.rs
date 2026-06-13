@@ -105,10 +105,11 @@ use rusqlite::types::Value as SqlValue;
 
 use crate::features::structure::domain::AlterOp;
 use crate::shared::engine::{
-    AlterResult, ColumnInfo, ColumnMeta, Condition, ConnectionParams, Connector, Engine,
-    EngineConnection, EngineInfo, FetchRowsRequest, FilterOp, FilterSpec, FilterValue, FkRef,
-    ForeignKeyInfo, InboundFkInfo, IndexInfo, QueryOptions, QueryResult, RowsPage, SchemaInfo,
-    SortSpec, TableInfo, TableMeta,
+    AlterResult, ColumnInfo, ColumnMeta, ColumnStats, ColumnStatsRequest, Condition,
+    ConnectionParams, Connector, Engine, EngineConnection, EngineInfo, FetchRowsRequest, FilterOp,
+    FilterSpec, FilterValue, FkRef, ForeignKeyInfo, FreqEntry, InboundFkInfo, IndexInfo,
+    QueryOptions, QueryResult, RowLookup, RowLookupRequest, RowsPage, SchemaInfo, SortSpec,
+    TableInfo, TableMeta,
 };
 use crate::shared::error::AppError;
 
@@ -184,6 +185,16 @@ impl EngineConnection for SqliteEngineConnection {
 
     async fn fetch_rows(&self, req: FetchRowsRequest) -> Result<RowsPage, AppError> {
         self.with_conn(move |conn| fetch_rows_blocking(conn, &req))
+            .await
+    }
+
+    async fn fetch_row_by_key(&self, req: RowLookupRequest) -> Result<RowLookup, AppError> {
+        self.with_conn(move |conn| fetch_row_by_key_blocking(conn, &req))
+            .await
+    }
+
+    async fn column_stats(&self, req: ColumnStatsRequest) -> Result<ColumnStats, AppError> {
+        self.with_conn(move |conn| column_stats_blocking(conn, &req))
             .await
     }
 
@@ -924,6 +935,268 @@ fn fetch_rows_blocking(conn: &Connection, req: &FetchRowsRequest) -> Result<Rows
     })
 }
 
+/// Look up the row(s) where `column = value` (M10 "FK peek"): the focused
+/// single-row counterpart of [`fetch_rows_blocking`].
+///
+/// SQL safety: schema/table existence is checked first (the §5 messages), the
+/// lookup column is validated against the table's real columns before being
+/// quoted, and the value is **bound** as a parameter (`?`) — never
+/// interpolated, so an injection payload binds as an inert literal. The only
+/// interpolated identifiers are quoted via [`quote_ident`].
+///
+/// Null key semantics: SQL `col = NULL` never matches (it is `UNKNOWN`), so a
+/// `null` lookup value short-circuits to a miss (`row: None`, `match_count:
+/// 0`) without touching the database. FK keys are non-null in normal use, so
+/// this is the honest "no referenced row" answer rather than a surprising
+/// `IS NULL` scan (see [`RowLookupRequest::value`]).
+fn fetch_row_by_key_blocking(
+    conn: &Connection,
+    req: &RowLookupRequest,
+) -> Result<RowLookup, AppError> {
+    // Existence first: unknown schema/table get the §5 human messages, and
+    // this gives us the real column list to validate `column` against.
+    let meta = table_meta_blocking(conn, &req.schema, &req.table)?;
+    validate_column(&meta, &req.table, &req.column)?;
+
+    let qualified = format!("{}.{}", quote_ident(&req.schema), quote_ident(&req.table));
+    let col = quote_ident(&req.column);
+
+    // The columns are always returned (for field labels), even on a miss — read
+    // them straight from the validated meta so a miss still has labels.
+    let columns: Vec<ColumnMeta> = meta
+        .columns
+        .iter()
+        .map(|c| ColumnMeta {
+            name: c.name.clone(),
+            type_hint: c.data_type.clone(),
+        })
+        .collect();
+
+    // A null key never matches `=` in SQL — short-circuit to a clean miss.
+    if req.value.is_null() {
+        return Ok(RowLookup {
+            columns,
+            row: None,
+            match_count: 0,
+        });
+    }
+    let bound = json_to_sql_value(&req.value)?;
+
+    // First matching row (the key is usually unique → 0 or 1 row).
+    let row_sql = format!("SELECT * FROM {qualified} WHERE {col} = ? LIMIT 1");
+    let mut stmt = conn
+        .prepare(&row_sql)
+        .map_err(|err| map_query_error(conn, err))?;
+    let column_count = stmt.columns().len();
+    let mut rows = stmt
+        .query([&bound])
+        .map_err(|err| map_query_error(conn, err))?;
+    let row = match rows.next().map_err(|err| map_query_error(conn, err))? {
+        Some(row) => {
+            let mut values = Vec::with_capacity(column_count);
+            for index in 0..column_count {
+                let value = row
+                    .get_ref(index)
+                    .map_err(|err| map_query_error(conn, err))?;
+                values.push(value_to_json(value));
+            }
+            Some(values)
+        }
+        None => None,
+    };
+    drop(rows);
+    drop(stmt);
+
+    // Total matches so the UI can flag a non-unique key ("1 of N"). A miss
+    // already implies count 0, but counting is cheap and keeps the two answers
+    // consistent.
+    let match_count = if row.is_none() {
+        0
+    } else {
+        conn.query_row(
+            &format!("SELECT count(*) FROM {qualified} WHERE {col} = ?"),
+            [&bound],
+            |row| row.get::<_, u64>(0),
+        )
+        .map_err(|err| map_query_error(conn, err))?
+    };
+
+    Ok(RowLookup {
+        columns,
+        row,
+        match_count,
+    })
+}
+
+/// Per-column statistics over the current filtered set (M10 "column
+/// insights"): total/distinct/null counts, min/max, avg (numeric only), and
+/// the top-5 most frequent values.
+///
+/// SQL safety: schema/table existence is checked first, the column is
+/// validated against the table's real columns before being quoted, and the
+/// optional filter reuses [`where_clause`] — the SAME parameterized compilation
+/// `fetch_rows` uses, so structured-condition values are bound (the WHERE
+/// params bind first, ahead of any per-query params) and insights reflect the
+/// grid's visible filtered set.
+///
+/// Numeric detection: a column is numeric when its non-NULL values are *all*
+/// integers/reals — `count(*) == sum(typeof(col) IN ('integer','real'))` over
+/// the non-NULL rows. This is value-driven, not declared-type-driven, which
+/// matches SQLite's dynamic typing (a column declared `TEXT` that happens to
+/// hold only numbers reads as numeric, and vice versa). An all-NULL set is not
+/// numeric (no numbers to average); `avg` is surfaced only when numeric.
+///
+/// Performance: the stats run as a handful of sequential aggregate queries in
+/// one `spawn_blocking` hop. Each is a single indexed-or-full scan of the
+/// (filtered) set — comfortably <1s on the ~100k-row tables the prototype
+/// targets. They are not combined into one statement because the per-stat SQL
+/// stays readable and SQLite caches the table pages across the back-to-back
+/// scans anyway.
+fn column_stats_blocking(
+    conn: &Connection,
+    req: &ColumnStatsRequest,
+) -> Result<ColumnStats, AppError> {
+    let meta = table_meta_blocking(conn, &req.schema, &req.table)?;
+    validate_column(&meta, &req.table, &req.column)?;
+
+    let qualified = format!("{}.{}", quote_ident(&req.schema), quote_ident(&req.table));
+    let col = quote_ident(&req.column);
+
+    // Reuse the parameterized filter compilation so stats match the grid's
+    // visible set. The WHERE params bind first in every stat query below.
+    let where_clause = match &req.filter {
+        Some(filter) => where_clause(&meta, &req.table, filter)?,
+        None => WhereClause::default(),
+    };
+    let where_sql = match &where_clause.sql {
+        Some(body) => format!(" WHERE {body}"),
+        None => String::new(),
+    };
+    let params = || rusqlite::params_from_iter(where_clause.params.iter());
+
+    // total / nulls / distinct in one aggregate scan.
+    let agg_sql = format!(
+        "SELECT count(*), count(*) - count({col}), count(DISTINCT {col}) \
+         FROM {qualified}{where_sql}"
+    );
+    let (total, nulls, distinct) = conn
+        .query_row(&agg_sql, params(), |row| {
+            Ok((
+                row.get::<_, u64>(0)?,
+                row.get::<_, u64>(1)?,
+                row.get::<_, u64>(2)?,
+            ))
+        })
+        .map_err(|err| map_query_error(conn, err))?;
+
+    // min / max (lexicographic for text; the UI decides display). Returned as
+    // ValueRef so blobs/big-ints map exactly like everywhere else.
+    let minmax_sql = format!("SELECT min({col}), max({col}) FROM {qualified}{where_sql}");
+    let (min, max) = conn
+        .query_row(&minmax_sql, params(), |row| {
+            Ok((
+                value_to_json(row.get_ref(0)?),
+                value_to_json(row.get_ref(1)?),
+            ))
+        })
+        .map_err(|err| map_query_error(conn, err))?;
+    // SQLite min/max over an all-NULL (or empty) set return NULL → map to None.
+    let min = non_null(min);
+    let max = non_null(max);
+
+    // Numeric detection: all non-NULL values have a numeric typeof. Over an
+    // all-NULL set both counts are 0, so `0 == 0` would read as numeric —
+    // guard that by requiring at least one non-NULL value.
+    let non_null_count = total - nulls;
+    let numeric = if non_null_count == 0 {
+        false
+    } else {
+        let numeric_sql = format!(
+            "SELECT count(*) FROM {qualified}{where_sql}{and} \
+             typeof({col}) IN ('integer', 'real')",
+            and = if where_sql.is_empty() {
+                " WHERE"
+            } else {
+                " AND"
+            }
+        );
+        let numeric_count = conn
+            .query_row(&numeric_sql, params(), |row| row.get::<_, u64>(0))
+            .map_err(|err| map_query_error(conn, err))?;
+        numeric_count == non_null_count
+    };
+
+    // avg only when numeric (SQLite avg ignores NULLs and returns a real).
+    let avg = if numeric {
+        conn.query_row(
+            &format!("SELECT avg({col}) FROM {qualified}{where_sql}"),
+            params(),
+            |row| row.get::<_, Option<f64>>(0),
+        )
+        .map_err(|err| map_query_error(conn, err))?
+    } else {
+        None
+    };
+
+    // Top-5 most frequent non-NULL values (ties broken by value for stable
+    // output). The filter WHERE binds first, then the extra NOT NULL guard.
+    let top_sql = format!(
+        "SELECT {col}, count(*) AS freq FROM {qualified}{where_sql}{and} {col} IS NOT NULL \
+         GROUP BY {col} ORDER BY freq DESC, {col} ASC LIMIT 5",
+        and = if where_sql.is_empty() {
+            " WHERE"
+        } else {
+            " AND"
+        }
+    );
+    let mut stmt = conn
+        .prepare(&top_sql)
+        .map_err(|err| map_query_error(conn, err))?;
+    let top = stmt
+        .query_map(params(), |row| {
+            Ok(FreqEntry {
+                value: value_to_json(row.get_ref(0)?),
+                count: row.get::<_, u64>(1)?,
+            })
+        })
+        .and_then(Iterator::collect::<Result<Vec<_>, _>>)
+        .map_err(|err| map_query_error(conn, err))?;
+
+    Ok(ColumnStats {
+        total,
+        distinct,
+        nulls,
+        min,
+        max,
+        avg,
+        numeric,
+        top,
+    })
+}
+
+/// Map a JSON `null` (SQLite NULL aggregate result) to `None`, anything else
+/// to `Some`. Used for min/max which return SQL NULL over an empty/all-NULL set.
+fn non_null(value: serde_json::Value) -> Option<serde_json::Value> {
+    match value {
+        serde_json::Value::Null => None,
+        other => Some(other),
+    }
+}
+
+/// Validate that `column` is a real column of the table (§5 error otherwise,
+/// listing the available columns) — the shared check used by the FK peek and
+/// column-stats lookups, identical to the sort/filter column validation.
+fn validate_column(meta: &TableMeta, table: &str, column: &str) -> Result<(), AppError> {
+    if meta.columns.iter().any(|c| c.name == column) {
+        return Ok(());
+    }
+    let listing: Vec<&str> = meta.columns.iter().map(|c| c.name.as_str()).collect();
+    Err(AppError::Database(format!(
+        "Column '{column}' does not exist on '{table}' (columns: {}).",
+        listing.join(", ")
+    )))
+}
+
 /// A compiled WHERE clause: the SQL body (without the `WHERE` keyword) and the
 /// values to bind, in placeholder order. `sql == None` means "no predicate"
 /// (an empty structured filter), which the caller renders as no WHERE clause
@@ -993,16 +1266,7 @@ fn condition_sql(
     condition: &Condition,
     params: &mut Vec<SqlValue>,
 ) -> Result<String, AppError> {
-    let known = meta.columns.iter().any(|c| c.name == condition.column);
-    if !known {
-        let listing: Vec<&str> = meta.columns.iter().map(|c| c.name.as_str()).collect();
-        return Err(AppError::Database(format!(
-            "Column '{}' does not exist on '{}' (columns: {}).",
-            condition.column,
-            table,
-            listing.join(", ")
-        )));
-    }
+    validate_column(meta, table, &condition.column)?;
     let col = quote_ident(&condition.column);
 
     match condition.op {
@@ -1156,16 +1420,7 @@ fn escape_like(input: &str) -> String {
 /// `"column" ASC|DESC`. The column MUST exist in `meta` (else a §5 error
 /// listing the available columns); the direction is the enum's fixed keyword.
 fn order_by_clause(meta: &TableMeta, table: &str, sort: &SortSpec) -> Result<String, AppError> {
-    let known = meta.columns.iter().any(|c| c.name == sort.column);
-    if !known {
-        let listing: Vec<&str> = meta.columns.iter().map(|c| c.name.as_str()).collect();
-        return Err(AppError::Database(format!(
-            "Column '{}' does not exist on '{}' (columns: {}).",
-            sort.column,
-            table,
-            listing.join(", ")
-        )));
-    }
+    validate_column(meta, table, &sort.column)?;
     Ok(format!(
         "{} {}",
         quote_ident(&sort.column),
@@ -2854,5 +3109,398 @@ mod tests {
         assert_eq!(escape_like("a_b"), "a\\_b");
         // The escape char itself is doubled so it cannot escape a real meta.
         assert_eq!(escape_like("a\\b"), "a\\\\b");
+    }
+
+    // -- fetch_row_by_key (M10 FK peek) -------------------------------------
+
+    use crate::shared::engine::{ColumnStatsRequest, RowLookupRequest};
+
+    /// A fixture for FK peek + stats: an `authors` parent (unique pk + a
+    /// non-unique `country`) and a `books` child referencing it.
+    ///
+    /// authors(id, name, country):
+    ///   1, "Ada",   "UK"
+    ///   2, "Linus", "FI"
+    ///   3, "Grace", "US"
+    async fn open_fk_fixture(dir: &tempfile::TempDir) -> Box<dyn EngineConnection> {
+        let path = dir.path().join("fk.db");
+        {
+            let conn = Connection::open(&path).expect("create db");
+            conn.execute_batch(
+                "CREATE TABLE authors (
+                     id INTEGER PRIMARY KEY,
+                     name TEXT NOT NULL,
+                     country TEXT
+                 );
+                 INSERT INTO authors (id, name, country) VALUES
+                     (1, 'Ada', 'UK'),
+                     (2, 'Linus', 'FI'),
+                     (3, 'Grace', 'US');
+                 CREATE TABLE books (
+                     id INTEGER PRIMARY KEY,
+                     author_id INTEGER REFERENCES authors(id),
+                     title TEXT
+                 );",
+            )
+            .expect("seed db");
+        }
+        SqliteConnector
+            .open(&params_for(&path))
+            .await
+            .expect("open fk fixture")
+    }
+
+    fn lookup(table: &str, column: &str, value: serde_json::Value) -> RowLookupRequest {
+        RowLookupRequest {
+            schema: "main".into(),
+            table: table.into(),
+            column: column.into(),
+            value,
+        }
+    }
+
+    #[tokio::test]
+    async fn row_lookup_unique_key_returns_one_row_and_match_count_one() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_fk_fixture(&dir).await;
+        let found = conn
+            .fetch_row_by_key(lookup("authors", "id", serde_json::json!(2)))
+            .await
+            .expect("lookup");
+        // Columns always returned for field labels.
+        let names: Vec<&str> = found.columns.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, vec!["id", "name", "country"]);
+        let row = found.row.expect("a matching row");
+        assert_eq!(row[0], serde_json::json!(2));
+        assert_eq!(row[1], serde_json::json!("Linus"));
+        assert_eq!(found.match_count, 1);
+    }
+
+    #[tokio::test]
+    async fn row_lookup_no_match_returns_none_and_zero_with_columns() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_fk_fixture(&dir).await;
+        let miss = conn
+            .fetch_row_by_key(lookup("authors", "id", serde_json::json!(999)))
+            .await
+            .expect("lookup");
+        assert_eq!(miss.row, None);
+        assert_eq!(miss.match_count, 0);
+        // Columns are still returned so the UI can label empty fields.
+        assert_eq!(miss.columns.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn row_lookup_non_unique_value_returns_first_row_and_total_count() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("dupes.db");
+        {
+            let conn = Connection::open(&path).expect("create db");
+            conn.execute_batch(
+                "CREATE TABLE tags (id INTEGER PRIMARY KEY, label TEXT);
+                 INSERT INTO tags (id, label) VALUES (1, 'x'), (2, 'x'), (3, 'y');",
+            )
+            .expect("seed db");
+        }
+        let conn = SqliteConnector
+            .open(&params_for(&path))
+            .await
+            .expect("open db");
+        let found = conn
+            .fetch_row_by_key(lookup("tags", "label", serde_json::json!("x")))
+            .await
+            .expect("lookup");
+        let row = found.row.expect("a matching row");
+        // LIMIT 1 returns the first match; count reports the full total.
+        assert_eq!(row[1], serde_json::json!("x"));
+        assert_eq!(found.match_count, 2, "non-unique key reports the total");
+    }
+
+    #[tokio::test]
+    async fn row_lookup_text_key_works() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_fk_fixture(&dir).await;
+        let found = conn
+            .fetch_row_by_key(lookup("authors", "name", serde_json::json!("Grace")))
+            .await
+            .expect("lookup");
+        let row = found.row.expect("a matching row");
+        assert_eq!(row[0], serde_json::json!(3));
+        assert_eq!(found.match_count, 1);
+    }
+
+    #[tokio::test]
+    async fn row_lookup_null_value_is_a_clean_miss() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_fk_fixture(&dir).await;
+        // A null key never matches `=` in SQL — short-circuits to a miss
+        // (columns still returned) without an error.
+        let miss = conn
+            .fetch_row_by_key(lookup("authors", "country", serde_json::Value::Null))
+            .await
+            .expect("null lookup is a clean miss, not an error");
+        assert_eq!(miss.row, None);
+        assert_eq!(miss.match_count, 0);
+        assert_eq!(miss.columns.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn row_lookup_unknown_column_is_a_human_error_listing_columns() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_fk_fixture(&dir).await;
+        let err = conn
+            .fetch_row_by_key(lookup("authors", "nope", serde_json::json!(1)))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Database(_)));
+        assert_eq!(
+            err.to_string(),
+            "Column 'nope' does not exist on 'authors' (columns: id, name, country)."
+        );
+    }
+
+    #[tokio::test]
+    async fn row_lookup_unknown_table_lists_available_tables() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_fk_fixture(&dir).await;
+        let err = conn
+            .fetch_row_by_key(lookup("customers", "id", serde_json::json!(1)))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Database(_)));
+        assert!(err.to_string().contains("does not exist"));
+    }
+
+    /// SECURITY: the lookup value is *bound*, never interpolated. An injection
+    /// payload binds as a literal that matches nothing — the table survives.
+    #[tokio::test]
+    async fn row_lookup_value_with_injection_payload_is_bound_as_a_literal() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_fk_fixture(&dir).await;
+        let miss = conn
+            .fetch_row_by_key(lookup(
+                "authors",
+                "name",
+                serde_json::json!("'; DROP TABLE authors; --"),
+            ))
+            .await
+            .expect("injection payload binds as a literal, no error");
+        assert_eq!(miss.row, None);
+        assert_eq!(miss.match_count, 0);
+        // The table is unharmed: a known key still resolves.
+        let intact = conn
+            .fetch_row_by_key(lookup("authors", "id", serde_json::json!(1)))
+            .await
+            .expect("table still intact");
+        assert_eq!(intact.match_count, 1);
+    }
+
+    // -- column_stats (M10 column insights) ---------------------------------
+
+    fn stats_req(table: &str, column: &str, filter: Option<FilterSpec>) -> ColumnStatsRequest {
+        ColumnStatsRequest {
+            schema: "main".into(),
+            table: table.into(),
+            column: column.into(),
+            filter,
+        }
+    }
+
+    #[tokio::test]
+    async fn column_stats_numeric_column_reports_aggregates_and_top() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_products_fixture(&dir).await;
+        // products.qty: 10, 5, 0, 5 — distinct 3, no nulls, min 0, max 10,
+        // avg 5.0, most frequent 5 (twice).
+        let stats = conn
+            .column_stats(stats_req("products", "qty", None))
+            .await
+            .expect("stats");
+        assert_eq!(stats.total, 4);
+        assert_eq!(stats.distinct, 3);
+        assert_eq!(stats.nulls, 0);
+        assert_eq!(stats.min, Some(serde_json::json!(0)));
+        assert_eq!(stats.max, Some(serde_json::json!(10)));
+        assert_eq!(stats.avg, Some(5.0));
+        assert!(stats.numeric, "an all-integer column is numeric");
+        // Top-5 most frequent: 5 (×2) leads, then 0/10 (×1 each, value-ordered).
+        assert_eq!(stats.top[0].value, serde_json::json!(5));
+        assert_eq!(stats.top[0].count, 2);
+        assert_eq!(stats.top.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn column_stats_text_column_is_not_numeric_with_lexicographic_minmax() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_products_fixture(&dir).await;
+        // products.name: 4 distinct strings, no nulls.
+        let stats = conn
+            .column_stats(stats_req("products", "name", None))
+            .await
+            .expect("stats");
+        assert_eq!(stats.total, 4);
+        assert_eq!(stats.distinct, 4);
+        assert_eq!(stats.nulls, 0);
+        assert!(!stats.numeric, "a text column is not numeric");
+        assert_eq!(stats.avg, None, "avg is None for non-numeric");
+        // Lexicographic min/max ('5' < 'A' < 'B' < 'C' by ASCII).
+        assert_eq!(stats.min, Some(serde_json::json!("50% Off Mug")));
+        assert_eq!(stats.max, Some(serde_json::json!("Cherry Tart")));
+        // Each name appears once → top-5 has up to 4 entries.
+        assert_eq!(stats.top.len(), 4);
+        assert!(stats.top.iter().all(|e| e.count == 1));
+    }
+
+    #[tokio::test]
+    async fn column_stats_nullable_column_counts_nulls() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_products_fixture(&dir).await;
+        // products.note: 'fresh','fresh','sale', NULL → total 4, nulls 1,
+        // distinct 2 (NULLs excluded), top 'fresh' (×2).
+        let stats = conn
+            .column_stats(stats_req("products", "note", None))
+            .await
+            .expect("stats");
+        assert_eq!(stats.total, 4);
+        assert_eq!(stats.nulls, 1);
+        assert_eq!(stats.distinct, 2);
+        assert_eq!(stats.top[0].value, serde_json::json!("fresh"));
+        assert_eq!(stats.top[0].count, 2);
+    }
+
+    #[tokio::test]
+    async fn column_stats_all_null_column_has_no_min_max_or_distinct() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("allnull.db");
+        {
+            let conn = Connection::open(&path).expect("create db");
+            conn.execute_batch(
+                "CREATE TABLE t (id INTEGER PRIMARY KEY, note TEXT);
+                 INSERT INTO t (id, note) VALUES (1, NULL), (2, NULL), (3, NULL);",
+            )
+            .expect("seed db");
+        }
+        let conn = SqliteConnector
+            .open(&params_for(&path))
+            .await
+            .expect("open db");
+        let stats = conn
+            .column_stats(stats_req("t", "note", None))
+            .await
+            .expect("stats");
+        assert_eq!(stats.total, 3);
+        assert_eq!(stats.nulls, 3);
+        assert_eq!(stats.distinct, 0);
+        assert_eq!(stats.min, None);
+        assert_eq!(stats.max, None);
+        assert_eq!(stats.avg, None);
+        assert!(!stats.numeric, "an all-null column is not numeric");
+        assert!(stats.top.is_empty());
+    }
+
+    #[tokio::test]
+    async fn column_stats_respects_the_filter() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_products_fixture(&dir).await;
+        // Filter to note = 'fresh' (ids 1 and 4): qty over that subset is
+        // 10 and 5 → total 2, distinct 2, avg 7.5, min 5, max 10.
+        let filter = FilterSpec::Conditions {
+            items: vec![Condition {
+                column: "note".into(),
+                op: FilterOp::Eq,
+                value: Some(FilterValue::Scalar(serde_json::json!("fresh"))),
+            }],
+            combinator: Combinator::And,
+        };
+        let stats = conn
+            .column_stats(stats_req("products", "qty", Some(filter)))
+            .await
+            .expect("filtered stats");
+        assert_eq!(stats.total, 2, "stats reflect only the filtered rows");
+        assert_eq!(stats.distinct, 2);
+        assert_eq!(stats.nulls, 0);
+        assert_eq!(stats.min, Some(serde_json::json!(5)));
+        assert_eq!(stats.max, Some(serde_json::json!(10)));
+        assert_eq!(stats.avg, Some(7.5));
+        assert!(stats.numeric);
+    }
+
+    /// SECURITY: a filter value is bound, never interpolated — even when the
+    /// stats reuse the same `where_clause` compilation. An injection payload
+    /// matches nothing, so the filtered set is empty and the table survives.
+    #[tokio::test]
+    async fn column_stats_filter_injection_payload_is_inert() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_products_fixture(&dir).await;
+        let filter = FilterSpec::Conditions {
+            items: vec![Condition {
+                column: "name".into(),
+                op: FilterOp::Eq,
+                value: Some(FilterValue::Scalar(serde_json::json!(
+                    "'; DROP TABLE products; --"
+                ))),
+            }],
+            combinator: Combinator::And,
+        };
+        let stats = conn
+            .column_stats(stats_req("products", "qty", Some(filter)))
+            .await
+            .expect("injection payload binds as a literal, no error");
+        assert_eq!(stats.total, 0, "no row matches the literal payload");
+        // The table is unharmed: an unfiltered scan still sees all 4 rows.
+        let intact = conn
+            .column_stats(stats_req("products", "qty", None))
+            .await
+            .expect("table still intact");
+        assert_eq!(intact.total, 4);
+    }
+
+    #[tokio::test]
+    async fn column_stats_unknown_column_is_a_human_error_listing_columns() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_products_fixture(&dir).await;
+        let err = conn
+            .column_stats(stats_req("products", "nope", None))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Database(_)));
+        assert_eq!(
+            err.to_string(),
+            "Column 'nope' does not exist on 'products' (columns: id, name, qty, price, note)."
+        );
+    }
+
+    #[tokio::test]
+    async fn column_stats_empty_table_reports_zero_total() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_fixture(&dir).await;
+        // `orders` is empty.
+        let stats = conn
+            .column_stats(stats_req("orders", "total", None))
+            .await
+            .expect("stats");
+        assert_eq!(stats.total, 0);
+        assert_eq!(stats.distinct, 0);
+        assert_eq!(stats.nulls, 0);
+        assert_eq!(stats.min, None);
+        assert_eq!(stats.max, None);
+        assert_eq!(stats.avg, None);
+        assert!(!stats.numeric, "an empty set has no numeric values");
+        assert!(stats.top.is_empty());
+    }
+
+    #[tokio::test]
+    async fn column_stats_real_column_is_numeric() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_products_fixture(&dir).await;
+        // products.price holds reals → numeric, avg meaningful.
+        let stats = conn
+            .column_stats(stats_req("products", "price", None))
+            .await
+            .expect("stats");
+        assert!(stats.numeric, "a REAL column is numeric");
+        assert_eq!(stats.min, Some(serde_json::json!(2.25)));
+        assert_eq!(stats.max, Some(serde_json::json!(9.99)));
+        assert!(stats.avg.is_some());
     }
 }

@@ -273,9 +273,105 @@ export interface RowsPage {
   elapsedMs: number;
 }
 
+/**
+ * A single-row lookup by key (M10 "FK peek", §3.5): find the row(s) where
+ * `column = value`. Driven by clicking a foreign-key cell to peek at the
+ * referenced row — `column` is the referenced column (usually a pk/unique
+ * key), so the match is normally 0 or 1 row. The backend validates `column`
+ * and *binds* `value` (no injection surface); a `null` value never matches.
+ */
+export interface RowLookupRequest {
+  schema: string;
+  table: string;
+  /** The column to match on (the referenced column for an FK peek). */
+  column: string;
+  /** The key value to look up. Bound as a parameter; `null` matches nothing. */
+  value: CellValue;
+}
+
+/**
+ * The result of a {@link RowLookupRequest} (M10 "FK peek"): the matching row
+ * (if any) plus column metadata for field labels and the total match count.
+ */
+export interface RowLookup {
+  /** Always returned (even on a miss) so the UI can label empty fields. */
+  columns: ColumnMeta[];
+  /** The first matching row, or `null` when nothing matched. */
+  row: CellValue[] | null;
+  /** Total rows matching `column = value` (so the UI can flag "1 of N"). */
+  matchCount: number;
+}
+
+/** One value/frequency pair in a column's top-values list ({@link ColumnStats}). */
+export interface FreqEntry {
+  value: CellValue;
+  /** How many rows (within the filtered set) hold this value. */
+  count: number;
+}
+
+/**
+ * A request for per-column statistics (M10 "column insights", §3.5), computed
+ * over the grid's current filtered set so insights match what the user sees.
+ * The backend validates `column` and reuses the same parameterized filter
+ * compilation as `rowsFetch`.
+ */
+export interface ColumnStatsRequest {
+  schema: string;
+  table: string;
+  column: string;
+  /** The grid's current filter; omit or `null` for the whole table. */
+  filter?: FilterSpec | null;
+}
+
+/**
+ * Per-column statistics over a (possibly filtered) row set (M10 "column
+ * insights"). All counts respect the request's filter. `min`/`max` are always
+ * returned (lexicographic for text — the UI decides display); `avg` is only
+ * meaningful (and non-null) for numeric columns. `numeric` tells the UI
+ * whether to render min/max/avg as numbers.
+ */
+export interface ColumnStats {
+  /** Total rows in the (filtered) set, including NULLs. */
+  total: number;
+  /** Distinct non-NULL values. */
+  distinct: number;
+  /** Rows whose value is NULL. */
+  nulls: number;
+  /** The minimum value, or `null` when the set has no non-NULL values. */
+  min: CellValue;
+  /** The maximum value, or `null` when the set has no non-NULL values. */
+  max: CellValue;
+  /** The average, only when `numeric` (else `null`). */
+  avg: number | null;
+  /** Whether the column holds numeric data (drives numeric display). */
+  numeric: boolean;
+  /** The up-to-five most frequent non-NULL values, most frequent first. */
+  top: FreqEntry[];
+}
+
 /** Column-level metadata for one table (the `table_meta` command). */
 export function tableMeta(handleId: string, schema: string, table: string): Promise<TableMeta> {
   return invoke<TableMeta>("table_meta", { handleId, schema, table });
+}
+
+/**
+ * Single-row lookup by key for M10 "FK peek" (the `row_lookup` command): click
+ * a foreign-key value to fetch the referenced row. Returns the first match
+ * plus a total match count; unknown schema/table/column surface as
+ * `{ kind, message }` errors.
+ */
+export function rowLookup(handleId: string, req: RowLookupRequest): Promise<RowLookup> {
+  return invoke<RowLookup>("row_lookup", { handleId, req });
+}
+
+/**
+ * Per-column statistics over the current filtered set for M10 "column
+ * insights" (the `column_stats` command): distinct/null counts, min/max, avg
+ * for numerics, and the top-5 most frequent values. Unknown
+ * schema/table/column surface as `{ kind, message }` errors.
+ */
+export function columnStats(handleId: string, req: ColumnStatsRequest): Promise<ColumnStats> {
+  return invoke<ColumnStats>("column_stats", { handleId, req });
 }
 
 /**

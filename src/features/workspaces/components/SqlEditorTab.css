@@ -1,0 +1,288 @@
+/* SQL editor tab (spec §3.7) — .sql-* / .editor-pop / snippet / save-pop /
+   history-pop rules ported byte-identical from ByteTable.html. The editor
+   itself is CodeMirror (see SqlCodeEditor): the prototype's transparent
+   textarea-over-<pre> .sql-input/.sql-highlight rules are replaced by .sql-cm
+   below, which sizes the CM view to fill the wrap (CM is themed in TS to match
+   the same mono 13px/1.65, --bg0, accent caret). Everything else is verbatim.
+
+   Two additions over the prototype, for this milestone's workspace-attachment
+   feature: .save-pop-attach (the attach checkbox row) and .saved-scope (the
+   per-row global/this-workspace indicator). */
+
+.sql-tab {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sql-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+
+.sql-hint {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.sql-snippets {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.sql-snippets::-webkit-scrollbar {
+  display: none;
+}
+
+.snippet-chip {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 3px 10px;
+  white-space: nowrap;
+  transition:
+    color 0.1s,
+    border-color 0.1s;
+}
+
+.snippet-chip:hover {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 50%, transparent);
+}
+
+.sql-editor-wrap {
+  position: relative;
+  height: 38%;
+  min-height: 110px;
+  flex: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg0);
+}
+
+/* CodeMirror host — fills the editor wrap. The CM view is themed in TS to the
+   prototype's look (mono 13px/1.65, --bg0, accent caret, 12/16 padding). */
+.sql-cm {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.sql-cm .cm-editor {
+  height: 100%;
+}
+
+.sql-results {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sql-result-bar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 14px;
+  font-family: var(--mono);
+  font-size: 11px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dim);
+  flex: none;
+}
+
+.sql-result-bar .dim {
+  color: var(--text-faint);
+}
+
+.sql-error {
+  display: flex;
+  gap: 11px;
+  margin: 14px;
+  padding: 13px 15px;
+  border-radius: 10px;
+  background: #e06c7512;
+  border: 1px solid #e06c7540;
+  color: #e06c75;
+  align-items: flex-start;
+}
+
+.sql-error-title {
+  font-weight: 600;
+  font-size: 12.5px;
+}
+
+.sql-error-msg {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  margin-top: 3px;
+  color: color-mix(in oklab, #e06c75 80%, var(--text));
+}
+
+.sql-placeholder {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-faint);
+  font-size: 12.5px;
+}
+
+/* ---------- popovers (save / saved / history) ---------- */
+.editor-pop {
+  position: absolute;
+  right: 0;
+  top: 32px;
+  z-index: 40;
+}
+
+.history-pop {
+  width: 340px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.45);
+  padding: 6px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.history-pop-title {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-faint);
+  padding: 5px 8px;
+}
+
+.history-empty {
+  padding: 10px 8px;
+  font-size: 12px;
+  color: var(--text-faint);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.history-item:hover {
+  background: var(--bg3);
+}
+
+.history-sql {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+}
+
+.history-meta {
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.save-pop {
+  width: 250px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.45);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.save-pop-input {
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 7px 9px;
+  font-size: 12px;
+  outline: none;
+  width: 100%;
+}
+
+.save-pop-input:focus {
+  border-color: var(--accent);
+}
+
+/* Workspace-attachment toggle (this milestone's addition). */
+.save-pop-attach {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+}
+
+.save-pop-attach input {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.save-pop-note {
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.saved-name {
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Per-row global / this-workspace indicator (this milestone's addition). */
+.saved-scope {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  white-space: nowrap;
+  flex: none;
+}
+
+.saved-del {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  color: var(--text-faint);
+  flex: none;
+}
+
+.saved-del:hover {
+  color: #e06c75;
+  background: #e06c7518;
+}

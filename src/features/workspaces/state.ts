@@ -11,7 +11,9 @@ import { create } from "zustand";
 import type { SchemaInfo } from "../connections/api";
 import { connectionClose } from "../connections/api";
 import { useIntrospectionStore } from "../introspection/state";
+import type { QueryResult } from "../../shared/api/engine";
 import type {
+  SqlHistoryEntry,
   Tab,
   TableTabMode,
   TabFilterState,
@@ -19,6 +21,14 @@ import type {
   WorkspaceConnection,
   WorkspaceUiState,
 } from "./types";
+
+/** Per-tab SQL run-history cap (spec §3.7: "20 dedup"). */
+export const SQL_HISTORY_MAX = 20;
+
+/** Starter SQL a fresh SQL tab opens with — SQLite-appropriate (prototype
+ *  seeds an orders rollup; we keep a portable SELECT that runs against any DB
+ *  with a `sqlite_master`-style catalog without assuming user tables). */
+const SQL_STARTER = "SELECT name, type\nFROM sqlite_master\nWHERE type = 'table'\nORDER BY name;";
 
 /**
  * The 8-color workspace palette — prototype data.js `workspaceColors`,
@@ -99,6 +109,12 @@ interface WorkspacesFeatureState {
   /** Open a fresh SQL editor tab ("Query N") and focus it. */
   openSqlTab: () => void;
   /**
+   * Open a fresh SQL editor tab pre-loaded with `sql` and focus it (command
+   * palette: load a saved query). Like `openSqlTab` but seeds the buffer
+   * instead of the starter SQL.
+   */
+  openSqlTabWith: (sql: string) => void;
+  /**
    * Open the schema-map tab for `schema` (one per schema) and focus it; if
    * already open, focus the existing one.
    */
@@ -126,6 +142,23 @@ interface WorkspacesFeatureState {
    * workspace switches. No-op when there is no active workspace.
    */
   setTabFilter: (tabId: string, filter: TabFilterState) => void;
+
+  // --- SQL editor (M6) ---------------------------------------------------
+  // All operate on the active workspace's `ui` tabs and are no-ops when the
+  // target is not a SQL tab. Editor state lives on the tab so it survives
+  // workspace switches (the WorkspaceUiState rule).
+  /** Set a SQL tab's editor buffer (committed on change — see SqlEditorTab). */
+  setSqlText: (tabId: string, text: string) => void;
+  /** Record a successful run: store the result, clear any prior error. */
+  setSqlResult: (tabId: string, result: QueryResult) => void;
+  /** Record a failed run: store the §5 message, clear any prior result. */
+  setSqlError: (tabId: string, error: string) => void;
+  /**
+   * Push a run onto the tab's history (newest-first, deduped by sql, capped
+   * at SQL_HISTORY_MAX). Re-running an identical statement moves it to the
+   * top rather than duplicating.
+   */
+  pushSqlHistory: (tabId: string, entry: SqlHistoryEntry) => void;
 }
 
 /**
@@ -287,7 +320,36 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
       const title = nextSqlTitle(id);
       return {
         workspaces: patchActiveUi(state, (ui) => {
-          const tab: Tab = { id: newTabId("sql"), kind: "sql", title };
+          const tab: Tab = {
+            id: newTabId("sql"),
+            kind: "sql",
+            title,
+            text: SQL_STARTER,
+            result: null,
+            error: null,
+            history: [],
+          };
+          return { tabs: [...(ui.tabs ?? []), tab], activeTabId: tab.id };
+        }),
+      };
+    }),
+
+  openSqlTabWith: (sql) =>
+    set((state) => {
+      const id = state.activeWorkspaceId;
+      if (id === null) return state;
+      const title = nextSqlTitle(id);
+      return {
+        workspaces: patchActiveUi(state, (ui) => {
+          const tab: Tab = {
+            id: newTabId("sql"),
+            kind: "sql",
+            title,
+            text: sql,
+            result: null,
+            error: null,
+            history: [],
+          };
           return { tabs: [...(ui.tabs ?? []), tab], activeTabId: tab.id };
         }),
       };
@@ -315,9 +377,7 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
         // neighbour, else right (now at the same index), else null (last
         // tab closed → EmptyState).
         const activeTabId =
-          ui.activeTabId === tabId
-            ? (next[Math.max(0, idx - 1)]?.id ?? null)
-            : ui.activeTabId;
+          ui.activeTabId === tabId ? (next[Math.max(0, idx - 1)]?.id ?? null) : ui.activeTabId;
         // Drop the closed tab's filter state (if any) so it does not linger.
         let filters = ui.filters;
         if (filters && tabId in filters) {
@@ -350,7 +410,43 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
         filters: { ...(ui.filters ?? {}), [tabId]: filter },
       })),
     })),
+
+  setSqlText: (tabId, text) =>
+    set((state) => ({ workspaces: patchSqlTab(state, tabId, () => ({ text })) })),
+
+  setSqlResult: (tabId, result) =>
+    set((state) => ({ workspaces: patchSqlTab(state, tabId, () => ({ result, error: null })) })),
+
+  setSqlError: (tabId, error) =>
+    set((state) => ({ workspaces: patchSqlTab(state, tabId, () => ({ error, result: null })) })),
+
+  pushSqlHistory: (tabId, entry) =>
+    set((state) => ({
+      workspaces: patchSqlTab(state, tabId, (tab) => ({
+        history: [entry, ...tab.history.filter((h) => h.sql !== entry.sql)].slice(
+          0,
+          SQL_HISTORY_MAX,
+        ),
+      })),
+    })),
 }));
+
+/**
+ * Apply a partial-state update to one SQL tab on the active workspace's `ui`,
+ * returning the new workspaces array. No-op when the target tab is absent or
+ * is not a SQL tab — keeps the SQL actions from touching table/map tabs.
+ */
+function patchSqlTab(
+  state: WorkspacesFeatureState,
+  tabId: string,
+  update: (tab: Extract<Tab, { kind: "sql" }>) => Partial<Extract<Tab, { kind: "sql" }>>,
+): Workspace[] {
+  return patchActiveUi(state, (ui) => ({
+    tabs: (ui.tabs ?? []).map((t) =>
+      t.id === tabId && t.kind === "sql" ? { ...t, ...update(t) } : t,
+    ),
+  }));
+}
 
 // Closing a workspace should drop its SQL numbering so a reopened
 // connection starts fresh. closeWorkspace lives above as a method; rather

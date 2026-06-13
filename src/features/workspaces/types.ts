@@ -6,7 +6,7 @@
 // sanctioned direction (workspaces → connections public contract in api.ts);
 // nothing in connections imports workspaces back.
 
-import type { Combinator, FilterOp } from "../../shared/api/engine";
+import type { Combinator, FilterOp, QueryResult } from "../../shared/api/engine";
 import type { EngineInfo, SavedConnection, SchemaInfo } from "../connections/api";
 
 /**
@@ -83,21 +83,61 @@ export interface WorkspaceConnection {
 export type TableTabMode = "data" | "structure";
 
 /**
+ * One entry in a SQL tab's per-tab run history (M6, spec §3.7): the executed
+ * SQL, whether it succeeded, and outcome details. Newest-first, deduplicated
+ * by `sql`, capped at 20 (`SQL_HISTORY_MAX`). Clicking an entry reloads its
+ * SQL into the editor.
+ */
+export interface SqlHistoryEntry {
+  /** The executed SQL (trimmed), the dedup key. */
+  sql: string;
+  /** True when the run succeeded. */
+  ok: boolean;
+  /** Row count on success (absent for write statements / failures). */
+  rowCount?: number;
+  /** The §5 driver message on failure. */
+  error?: string;
+  /** Epoch ms the run finished. */
+  ranAt: number;
+}
+
+/**
+ * The editor state carried by one SQL tab (M6, spec §3.7). Lives on the tab
+ * object (in the workspace's `ui`) so it survives workspace switches per the
+ * WorkspaceUiState rule. `text` is the editor buffer (committed on change —
+ * controlled at editor scale; see SqlEditorTab). `result`/`error` are the
+ * last run's outcome (mutually exclusive — a fresh run clears the other).
+ * `running` is transient and NOT persisted here — it is local to the
+ * component, since an in-flight query cannot survive a switch anyway.
+ */
+export interface SqlTabState {
+  /** Editor buffer. */
+  text: string;
+  /** Last successful result, or null (error / not yet run). */
+  result: QueryResult | null;
+  /** Last failure's §5 message, or null. */
+  error: string | null;
+  /** Per-tab run history, newest-first, deduped, capped at 20. */
+  history: SqlHistoryEntry[];
+}
+
+/**
  * One open editor tab. Discriminated by `kind`; the union is closed so the
  * content router (WorkspaceContent) exhaustively switches on it.
  *
  * - **table** — a browsable table. `mode` defaults to `'data'`. Re-opening
  *   the same `schema`+`table` focuses the existing tab rather than
  *   duplicating (spec §3.4).
- * - **sql** — a SQL editor (M6). This milestone renders a placeholder; the
- *   tab mechanics (open/focus/close, ⌘T, "+") are real so M6 only fills the
- *   body. `title` is the assigned "Query N" label.
+ * - **sql** — a SQL editor (M6, spec §3.7). Carries its editor state inline
+ *   (`text`/`result`/`error`/`history`) so each tab's query, results, and
+ *   history are independent and survive workspace switches. `title` is the
+ *   assigned "Query N" label.
  * - **map** — a schema-map ER diagram (M9), one per schema. Placeholder this
  *   milestone.
  */
 export type Tab =
   | { id: string; kind: "table"; schema: string; table: string; mode: TableTabMode }
-  | { id: string; kind: "sql"; title: string }
+  | ({ id: string; kind: "sql"; title: string } & SqlTabState)
   | { id: string; kind: "map"; schema: string };
 
 /**

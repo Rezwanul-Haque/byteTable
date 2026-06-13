@@ -433,6 +433,10 @@ impl EngineConnection for MysqlEngineConnection {
         truncate_table(&self.pool, schema, table).await
     }
 
+    async fn drop_schema(&self, schema: &str) -> Result<(), AppError> {
+        drop_schema(&self.pool, schema).await
+    }
+
     async fn execute_script(&self, schema: &str, sql: &str) -> Result<ImportResult, AppError> {
         execute_script(&self.pool, schema, sql).await
     }
@@ -1332,6 +1336,47 @@ async fn truncate_table(pool: &MySqlPool, schema: &str, table: &str) -> Result<u
         .map_err(map_query_error)?;
 
     Ok(prior.max(0) as u64)
+}
+
+/// Drop every table in `schema` and leave the schema empty (M15 drop-schema).
+///
+/// In MySQL a schema IS a database, so this runs `DROP DATABASE \`x\`;
+/// CREATE DATABASE \`x\`;`. **NOT atomic:** MySQL implicitly commits each DDL
+/// statement, so the drop commits before the recreate runs — there is no
+/// rolling it back. We recreate immediately so a successful call always leaves
+/// an empty database; if the recreate itself fails the §5 error says the drop
+/// already committed (the database is gone). The schema must exist first
+/// (a §5 "does not exist" error otherwise).
+///
+/// We do NOT re-`USE` afterward: every other adapter operation fully qualifies
+/// names (`` `db`.`table` ``) and does not depend on the connection's default
+/// database, and the pool may hand out a different session anyway. The pool's
+/// configured default database (if it was this one) is simply recreated empty.
+async fn drop_schema(pool: &MySqlPool, schema: &str) -> Result<(), AppError> {
+    ensure_schema_exists(pool, schema).await?;
+    let quoted = quote_ident(schema);
+
+    use sqlx::Executor as _;
+    // One acquired connection so the drop + recreate run on the same session,
+    // back to back, minimizing the window where the database does not exist.
+    let mut conn = pool.acquire().await.map_err(map_query_error)?;
+
+    conn.execute(format!("DROP DATABASE {quoted}").as_str())
+        .await
+        .map_err(map_query_error)?;
+
+    if let Err(err) = conn
+        .execute(format!("CREATE DATABASE {quoted}").as_str())
+        .await
+    {
+        let engine_msg = map_query_error(err);
+        return Err(AppError::Database(format!(
+            "Schema '{schema}' was dropped, but recreating the empty database \
+             failed: {engine_msg} MySQL commits each DDL statement, so the drop \
+             was NOT rolled back — the schema is gone. Recreate it manually."
+        )));
+    }
+    Ok(())
 }
 
 /// Run a whole multi-statement SQL script (a dump) into `schema` (M15 import).
@@ -2723,6 +2768,67 @@ mod integration {
         assert_eq!(again, 0);
 
         let err = conn.truncate_table(schema, "ghost").await.unwrap_err();
+        assert!(matches!(err, AppError::Database(_)));
+        assert!(err.to_string().contains("does not exist"));
+
+        conn.close().await.expect("close");
+        drop_fixture(&pool, schema, other).await;
+    }
+
+    /// drop_schema drops + recreates a THROWAWAY database empty (never
+    /// `byteshop`): the database still exists afterward but holds 0 tables. A
+    /// nonexistent schema is a §5 error.
+    #[tokio::test]
+    async fn drop_schema_recreates_throwaway_database_empty() {
+        let Some((params, secret)) = gate("drop_schema_recreates_throwaway_database_empty") else {
+            return;
+        };
+        let pool = raw_pool(&params, &secret).await;
+        let (schema, other) = ("bt_it_dropschema", "bt_it_dropschema_other");
+        setup_fixture(&pool, schema, other).await;
+        let conn = open_conn(&params, &secret).await;
+
+        let before: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema = ?",
+        )
+        .bind(schema)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(before >= 2, "fixture should seed tables, got {before}");
+
+        conn.drop_schema(schema).await.expect("drop schema");
+
+        // The database still exists…
+        let db_exists: Option<i32> =
+            sqlx::query_scalar("SELECT 1 FROM information_schema.schemata WHERE schema_name = ?")
+                .bind(schema)
+                .fetch_optional(&pool)
+                .await
+                .unwrap();
+        assert!(db_exists.is_some(), "database must be recreated empty");
+
+        // …but it is empty.
+        let after: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema = ?",
+        )
+        .bind(schema)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(after, 0, "dropped database must hold 0 tables");
+
+        // The OTHER throwaway database is untouched.
+        let other_tables: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema = ?",
+        )
+        .bind(other)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(other_tables, 1, "drop must not touch other databases");
+
+        let err = conn.drop_schema("bt_it_nope_xyz").await.unwrap_err();
         assert!(matches!(err, AppError::Database(_)));
         assert!(err.to_string().contains("does not exist"));
 

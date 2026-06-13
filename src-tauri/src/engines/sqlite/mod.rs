@@ -231,6 +231,12 @@ impl EngineConnection for SqliteEngineConnection {
             .await
     }
 
+    async fn drop_schema(&self, schema: &str) -> Result<(), AppError> {
+        let schema = schema.to_string();
+        self.with_conn(move |conn| drop_schema_blocking(conn, &schema))
+            .await
+    }
+
     async fn execute_script(&self, schema: &str, sql: &str) -> Result<ImportResult, AppError> {
         let schema = schema.to_string();
         let sql = sql.to_string();
@@ -1329,6 +1335,64 @@ fn truncate_table_blocking(conn: &Connection, schema: &str, table: &str) -> Resu
     conn.execute_batch("COMMIT")
         .map_err(|err| map_query_error(conn, err))?;
     Ok(affected)
+}
+
+/// Drop every user table in `schema`, leaving an empty schema (M15 drop-schema).
+///
+/// SQLite has no droppable schema or database — `main` IS the file, and we must
+/// never delete the file. So "drop schema" is defined as dropping every
+/// non-`sqlite_%` table in the schema, inside one `BEGIN`/`COMMIT` transaction
+/// (all-or-nothing: any failure rolls back, leaving the schema untouched). The
+/// schema must be one of the connection's databases (main/attached) — a §5
+/// "does not exist" error otherwise.
+///
+/// `PRAGMA defer_foreign_keys = ON` for the transaction so the drop order does
+/// not matter: foreign-key checks are deferred to COMMIT, and since every table
+/// is gone by then there is nothing left to violate. The pragma resets at the
+/// transaction's end.
+fn drop_schema_blocking(conn: &Connection, schema: &str) -> Result<(), AppError> {
+    ensure_schema_exists(conn, schema)?;
+
+    let quoted_schema = quote_ident(schema);
+    let names: Vec<String> = {
+        let mut stmt = conn
+            .prepare(&format!(
+                "SELECT name FROM {quoted_schema}.sqlite_schema \
+                 WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+            ))
+            .map_err(|err| map_query_error(conn, err))?;
+        stmt.query_map([], |row| row.get::<_, String>(0))
+            .and_then(Iterator::collect::<Result<Vec<String>, _>>)
+            .map_err(|err| map_query_error(conn, err))?
+    };
+
+    let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
+    conn.execute_batch("BEGIN")
+        .map_err(|err| map_query_error(conn, err))?;
+
+    let run = || -> Result<(), AppError> {
+        // Defer FK checks so drop order is irrelevant; everything is gone by COMMIT.
+        conn.execute_batch("PRAGMA defer_foreign_keys = ON")
+            .map_err(|err| map_query_error(conn, err))?;
+        for name in &names {
+            let drop_sql = format!("DROP TABLE {quoted_schema}.{}", quote_ident(name));
+            conn.execute(&drop_sql, [])
+                .map_err(|err| map_query_error(conn, err))?;
+        }
+        Ok(())
+    };
+
+    match run() {
+        Ok(()) => {
+            conn.execute_batch("COMMIT")
+                .map_err(|err| map_query_error(conn, err))?;
+            Ok(())
+        }
+        Err(err) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(err)
+        }
+    }
 }
 
 /// Run a whole multi-statement SQL script (a dump) into the connection (M15
@@ -4399,6 +4463,107 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let conn = open_fixture(&dir).await;
         let err = conn.truncate_table("main", "ghost").await.unwrap_err();
+        assert!(matches!(err, AppError::Database(_)));
+        assert!(err.to_string().contains("does not exist"));
+    }
+
+    // ---- M15 drop-schema (drop every user table; the file IS the schema) ----
+
+    #[tokio::test]
+    async fn drop_schema_drops_every_user_table_and_keeps_the_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("fixture.db");
+        create_fixture_db(&path); // users (3 rows) + orders
+        let conn = SqliteConnector
+            .open(&params_for(&path))
+            .await
+            .expect("open fixture db")
+            .into_sql()
+            .expect("sql connection");
+
+        // Two user tables before.
+        let before = conn.list_tables("main").await.expect("list before");
+        assert_eq!(before.len(), 2);
+
+        conn.drop_schema("main").await.expect("drop schema");
+
+        // Zero user tables after — but the schema (and file) still exist.
+        let after = conn.list_tables("main").await.expect("list after");
+        assert!(after.is_empty(), "schema must be emptied, got {after:?}");
+        assert!(path.exists(), "the database file must NOT be deleted");
+
+        // The empty schema is reusable: a fresh CREATE works.
+        conn.run_query(
+            "CREATE TABLE again (id INTEGER PRIMARY KEY)",
+            QueryOptions::default(),
+        )
+        .await
+        .expect("recreate a table in the emptied schema");
+        let reborn = conn.list_tables("main").await.expect("list reborn");
+        assert_eq!(reborn.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn drop_schema_handles_foreign_keys_regardless_of_order() {
+        // FK parent/child: deferring FK checks lets us drop in any order without
+        // a constraint violation, leaving an empty schema.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("fk.db");
+        {
+            let raw = Connection::open(&path).expect("create db");
+            raw.execute_batch(
+                "CREATE TABLE authors (id INTEGER PRIMARY KEY, name TEXT NOT NULL);
+                 CREATE TABLE books (
+                     id INTEGER PRIMARY KEY,
+                     author_id INTEGER NOT NULL REFERENCES authors(id)
+                 );
+                 INSERT INTO authors (id, name) VALUES (1, 'ada');
+                 INSERT INTO books (id, author_id) VALUES (10, 1);",
+            )
+            .expect("seed fk db");
+        }
+        let conn = SqliteConnector
+            .open(&params_for(&path))
+            .await
+            .expect("open fk db")
+            .into_sql()
+            .expect("sql connection");
+
+        conn.drop_schema("main")
+            .await
+            .expect("drop schema with FKs");
+        let after = conn.list_tables("main").await.expect("list after");
+        assert!(after.is_empty(), "all tables dropped, got {after:?}");
+    }
+
+    #[tokio::test]
+    async fn drop_schema_on_an_empty_schema_is_a_no_op() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("empty.db");
+        {
+            let raw = Connection::open(&path).expect("create db");
+            raw.execute_batch("CREATE TABLE t (id INTEGER PRIMARY KEY);")
+                .expect("seed");
+        }
+        let conn = SqliteConnector
+            .open(&params_for(&path))
+            .await
+            .expect("open db")
+            .into_sql()
+            .expect("sql connection");
+        conn.drop_schema("main").await.expect("first drop");
+        // Dropping an already-empty schema succeeds (nothing to drop).
+        conn.drop_schema("main")
+            .await
+            .expect("second drop is a no-op");
+        assert!(conn.list_tables("main").await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn drop_schema_unknown_schema_is_a_human_error() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_fixture(&dir).await;
+        let err = conn.drop_schema("ghost").await.unwrap_err();
         assert!(matches!(err, AppError::Database(_)));
         assert!(err.to_string().contains("does not exist"));
     }

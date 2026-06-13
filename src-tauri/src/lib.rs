@@ -162,6 +162,7 @@ pub fn run() {
             features::insights::commands::column_stats,
             features::mutate::commands::row_update,
             features::mutate::commands::truncate_table,
+            features::mutate::commands::drop_schema,
             features::export::commands::export_table,
             features::export::commands::export_schema,
             features::export::commands::export_save,

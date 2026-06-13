@@ -49,3 +49,18 @@ pub async fn truncate_table(
 ) -> Result<TruncateResult, AppError> {
     application::truncate_table(state.manager(), &handle_id, &schema, &table).await
 }
+
+/// Drop every table in a schema, leaving it empty (M15 `drop_schema` command).
+/// **Mutates user data — destructive.** Engine-aware in the adapter (Postgres
+/// `DROP SCHEMA … CASCADE; CREATE SCHEMA …` atomic; MySQL `DROP/CREATE DATABASE`
+/// non-atomic; SQLite drops every user table in a transaction). Returns `()`;
+/// the schema is empty afterward. Unknown schema surfaces as a `{ kind, message }`
+/// §5 error. The production-confirm dialog is renderer-side.
+#[tauri::command]
+pub async fn drop_schema(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+    schema: String,
+) -> Result<(), AppError> {
+    application::drop_schema(state.manager(), &handle_id, &schema).await
+}

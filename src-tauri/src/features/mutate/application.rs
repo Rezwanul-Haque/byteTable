@@ -51,6 +51,22 @@ pub struct TruncateResult {
     pub affected: u64,
 }
 
+/// Drop every table in a schema and leave the schema empty (M15 drop-schema).
+/// **Mutates user data — destructive.** Engine-aware in the adapter: Postgres
+/// `DROP SCHEMA … CASCADE; CREATE SCHEMA …` (atomic, transactional DDL); MySQL
+/// `DROP DATABASE; CREATE DATABASE` (NOT atomic — DDL auto-commits); SQLite
+/// drops every user table in a transaction (no droppable schema/file). The
+/// adapter validates the schema exists and quotes the identifier per engine
+/// (see `EngineConnection::drop_schema`). The production-confirm dialog is
+/// renderer-side; this use-case only routes the request.
+pub async fn drop_schema(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    schema: &str,
+) -> Result<(), AppError> {
+    manager.get_sql(handle).await?.drop_schema(schema).await
+}
+
 #[cfg(test)]
 mod tests {
     use async_trait::async_trait;
@@ -124,6 +140,18 @@ mod tests {
             Ok((schema.len() + table.len()) as u64)
         }
 
+        async fn drop_schema(&self, schema: &str) -> Result<(), AppError> {
+            // Observe the wiring: a known schema succeeds, anything else is a §5
+            // error (so the not-found-on-closed-handle test can be distinguished).
+            if schema == "main" {
+                Ok(())
+            } else {
+                Err(AppError::Database(format!(
+                    "Schema '{schema}' does not exist."
+                )))
+            }
+        }
+
         async fn close(&self) -> Result<(), AppError> {
             Ok(())
         }
@@ -166,6 +194,29 @@ mod tests {
             .expect("truncate");
         // "main" (4) + "users" (5) = 9 from the fake.
         assert_eq!(result.affected, 9);
+    }
+
+    #[tokio::test]
+    async fn drop_schema_delegates_to_the_connection_behind_the_handle() {
+        let manager = ConnectionManager::new();
+        let handle = manager
+            .insert(crate::shared::engine::OpenConnection::sql(FakeConnection))
+            .await;
+        drop_schema(&manager, &handle, "main")
+            .await
+            .expect("drop schema");
+        // A nonexistent schema surfaces the adapter's §5 error unchanged.
+        let err = drop_schema(&manager, &handle, "ghost").await.unwrap_err();
+        assert!(matches!(err, AppError::Database(_)));
+        assert!(err.to_string().contains("does not exist"));
+    }
+
+    #[tokio::test]
+    async fn drop_schema_on_a_closed_handle_is_a_not_found() {
+        let manager = ConnectionManager::new();
+        let handle = ConnectionHandleId("ghost".into());
+        let err = drop_schema(&manager, &handle, "main").await.unwrap_err();
+        assert!(matches!(err, AppError::NotFound(_)));
     }
 
     #[tokio::test]

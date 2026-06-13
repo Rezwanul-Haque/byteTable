@@ -582,6 +582,20 @@ export function truncateTable(
   return invoke<TruncateResult>("truncate_table", { handleId, schema, table });
 }
 
+/**
+ * Drop every table in a schema, leaving it empty (`drop_schema` command).
+ * **Mutates user data — destructive.** Engine-aware server-side: Postgres
+ * `DROP SCHEMA … CASCADE; CREATE SCHEMA …` (atomic); MySQL `DROP DATABASE;
+ * CREATE DATABASE` (NOT atomic — DDL auto-commits); SQLite drops every user
+ * table in a transaction (the file IS the schema). Resolves on success; the
+ * schema is empty afterward. Unknown schema surfaces as a `{ kind, message }`
+ * §5 error. The production-confirm dialog (DropSchemaModal) is the caller's
+ * responsibility.
+ */
+export function dropSchema(handleId: string, schema: string): Promise<void> {
+  return invoke<void>("drop_schema", { handleId, schema });
+}
+
 // ---------------------------------------------------------------------------
 // Structure editing (M8, DESIGN_SPEC §3.6) — staged ALTER pipeline.
 //

@@ -33,6 +33,7 @@ import {
   tunnelTitle,
   type SchemaInfo,
 } from "../../connections/api";
+import { DropSchemaModal } from "../../export/components/DropSchemaModal";
 import { TruncateModal } from "../../export/components/TruncateModal";
 import { runExport, type ExportKind } from "../../export/exportFlow";
 import { ImportModal } from "../../import/components/ImportModal";
@@ -138,6 +139,8 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   const [schemaMenu, setSchemaMenu] = useState(false);
   const [importTarget, setImportTarget] = useState<string | null>(null);
   const [schemaImportOpen, setSchemaImportOpen] = useState(false);
+  // M15 SQL enhancements: the destructive drop-schema confirm (null when closed).
+  const [dropSchemaOpen, setDropSchemaOpen] = useState(false);
   const secActionsRef = useRef<HTMLDivElement | null>(null);
   const secActionsBtnRef = useRef<HTMLButtonElement | null>(null);
 
@@ -464,7 +467,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                   setSchemaImportOpen(true);
                 }}
               >
-                <Icon name="upload" size={15} /> Import .sql into schema…
+                <Icon name="upload" size={15} /> Import SQL dump…
               </button>
               <button
                 type="button"
@@ -475,7 +478,19 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                   doExport("schemaSql");
                 }}
               >
-                <Icon name="download" size={15} /> Export schema as .sql
+                <Icon name="download" size={15} /> Export schema (.sql)
+              </button>
+              <div className="ctx-sep" />
+              <button
+                type="button"
+                className="ctx-item danger"
+                role="menuitem"
+                onClick={() => {
+                  setSchemaMenu(false);
+                  setDropSchemaOpen(true);
+                }}
+              >
+                <Icon name="delete_forever" size={15} /> Drop schema…
               </button>
             </div>
           ) : null}
@@ -730,6 +745,18 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
           handleId={handleId}
           schemaName={schemaName}
           onClose={() => setSchemaImportOpen(false)}
+        />
+      ) : null}
+
+      {/* Drop schema (M15): destructive, env-aware. Drops every table and
+          leaves the schema empty. Refreshes the (now-empty) sidebar itself. */}
+      {dropSchemaOpen ? (
+        <DropSchemaModal
+          handleId={handleId}
+          schemaName={schemaName}
+          tables={tables ?? []}
+          env={workspace.saved.env}
+          onClose={() => setDropSchemaOpen(false)}
         />
       ) : null}
     </aside>

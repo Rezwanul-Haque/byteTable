@@ -429,6 +429,10 @@ impl EngineConnection for PostgresEngineConnection {
         truncate_table(&self.pool, schema, table).await
     }
 
+    async fn drop_schema(&self, schema: &str) -> Result<(), AppError> {
+        drop_schema(&self.pool, schema).await
+    }
+
     async fn execute_script(&self, schema: &str, sql: &str) -> Result<ImportResult, AppError> {
         execute_script(&self.pool, schema, sql).await
     }
@@ -1299,6 +1303,38 @@ async fn truncate_table(pool: &PgPool, schema: &str, table: &str) -> Result<u64,
         .map_err(map_query_error)?;
 
     Ok(prior.max(0) as u64)
+}
+
+/// Drop every table in `schema` and leave the schema empty (M15 drop-schema).
+///
+/// Runs `DROP SCHEMA "x" CASCADE; CREATE SCHEMA "x";` inside ONE explicit
+/// transaction. Postgres has transactional DDL, so this is atomic: either both
+/// statements land (leaving an empty schema, exactly as the prototype's SQL
+/// preview promises) or the whole thing rolls back and the schema is untouched.
+/// CASCADE drops the tables and everything that depends on them (indexes, views,
+/// sequences). The schema must exist (a §5 "does not exist" error otherwise,
+/// matching the prototype's plain `DROP SCHEMA` — no `IF EXISTS`).
+async fn drop_schema(pool: &PgPool, schema: &str) -> Result<(), AppError> {
+    ensure_schema_exists(pool, schema).await?;
+    let quoted = quote_ident(schema);
+
+    let mut tx = pool.begin().await.map_err(map_query_error)?;
+    if let Err(err) = sqlx::query(&format!("DROP SCHEMA {quoted} CASCADE"))
+        .execute(&mut *tx)
+        .await
+    {
+        let _ = tx.rollback().await;
+        return Err(map_query_error(err));
+    }
+    if let Err(err) = sqlx::query(&format!("CREATE SCHEMA {quoted}"))
+        .execute(&mut *tx)
+        .await
+    {
+        let _ = tx.rollback().await;
+        return Err(map_query_error(err));
+    }
+    tx.commit().await.map_err(map_query_error)?;
+    Ok(())
 }
 
 /// Run a whole multi-statement SQL script (a dump) into `schema` (M15 import).
@@ -2633,6 +2669,69 @@ mod integration {
 
         // Unknown table is a §5 error.
         let err = conn.truncate_table(schema, "ghost").await.unwrap_err();
+        assert!(matches!(err, AppError::Database(_)));
+        assert!(err.to_string().contains("does not exist"));
+
+        drop_fixture(&pool, schema, other).await;
+    }
+
+    /// drop_schema empties a THROWAWAY schema (never `public`/`byteshop`):
+    /// the schema still exists afterward but holds 0 tables, and the seeded
+    /// rows are gone. A nonexistent schema is a §5 error.
+    #[tokio::test]
+    async fn drop_schema_empties_throwaway_schema_and_leaves_it() {
+        let Some((params, secret)) = gate("drop_schema_empties_throwaway_schema_and_leaves_it")
+        else {
+            return;
+        };
+        let pool = raw_pool(&params, &secret).await;
+        let (schema, other) = ("bt_it_dropschema", "bt_it_dropschema_other");
+        setup_fixture(&pool, schema, other).await;
+        let conn = open_conn(&params, &secret).await;
+
+        // Sanity: the fixture seeded tables in the throwaway schema.
+        let before: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema = $1",
+        )
+        .bind(schema)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(before >= 2, "fixture should seed tables, got {before}");
+
+        conn.drop_schema(schema).await.expect("drop schema");
+
+        // The schema still exists…
+        let schema_exists: Option<i32> =
+            sqlx::query_scalar("SELECT 1 FROM pg_namespace WHERE nspname = $1")
+                .bind(schema)
+                .fetch_optional(&pool)
+                .await
+                .unwrap();
+        assert!(schema_exists.is_some(), "schema must be recreated empty");
+
+        // …but it is empty.
+        let after: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema = $1",
+        )
+        .bind(schema)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(after, 0, "dropped schema must hold 0 tables");
+
+        // The OTHER throwaway schema is untouched.
+        let other_tables: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema = $1",
+        )
+        .bind(other)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(other_tables, 1, "drop must not touch other schemas");
+
+        // A nonexistent schema is a §5 error (plain DROP, no IF EXISTS).
+        let err = conn.drop_schema("bt_it_nope_xyz").await.unwrap_err();
         assert!(matches!(err, AppError::Database(_)));
         assert!(err.to_string().contains("does not exist"));
 

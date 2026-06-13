@@ -1378,6 +1378,37 @@ pub trait EngineConnection: Send + Sync {
         ))
     }
 
+    /// Drop every table in a schema and leave that schema empty, ready to
+    /// recreate / re-import (M15 SQL enhancements — "drop schema").
+    ///
+    /// **Mutates user data — destructive.** The semantics are "drop + recreate
+    /// an empty schema", engine-aware:
+    ///
+    /// - **Postgres** runs `DROP SCHEMA "x" CASCADE; CREATE SCHEMA "x";` inside
+    ///   one transaction — Postgres has transactional DDL, so this is atomic and
+    ///   leaves an empty schema even if interrupted.
+    /// - **MySQL** treats schema == database: `DROP DATABASE \`x\`;
+    ///   CREATE DATABASE \`x\`;`. **MySQL DDL auto-commits**, so this is NOT
+    ///   atomic — the drop commits before the recreate runs; the adapter
+    ///   recreates immediately so a successful call always leaves an empty
+    ///   database.
+    /// - **SQLite** has no droppable schema/database (`main` is the file
+    ///   itself), so "drop schema" is defined as **drop every user table** in
+    ///   that schema (`DROP TABLE` each non-`sqlite_%` table) inside a
+    ///   transaction, leaving an empty schema. The database file is never
+    ///   deleted.
+    ///
+    /// The adapter validates the schema exists where applicable (a §5 error
+    /// otherwise) and quotes the identifier per engine. Returns `()` — the table
+    /// list afterwards is empty by construction.
+    ///
+    /// Default impl: `Unsupported` — only engines that implement it override it.
+    async fn drop_schema(&self, _schema: &str) -> Result<(), AppError> {
+        Err(AppError::Unsupported(
+            "Dropping a schema is not supported for this engine yet.".into(),
+        ))
+    }
+
     /// Run a whole multi-statement SQL script (a dump: `CREATE TABLE` + `INSERT`
     /// + …) into the given schema (M15 import — the I/O counterpart of export).
     ///

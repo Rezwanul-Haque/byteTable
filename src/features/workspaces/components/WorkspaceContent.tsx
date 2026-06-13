@@ -53,10 +53,10 @@ function NoTabs() {
   );
 }
 
-function TabBody({ tab }: { tab: Tab }) {
+function TabBody({ tab, handleId }: { tab: Tab; handleId: string }) {
   switch (tab.kind) {
     case "table":
-      return <TableTab tab={tab} />;
+      return <TableTab tab={tab} handleId={handleId} />;
     case "sql":
       return <SqlPlaceholder tab={tab} />;
     case "map":
@@ -89,7 +89,9 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
         onClose={closeTab}
         onNewSql={openSqlTab}
       />
-      <div className="tab-content">{activeTab ? <TabBody tab={activeTab} /> : null}</div>
+      <div className="tab-content">
+        {activeTab ? <TabBody tab={activeTab} handleId={workspace.handleId} /> : null}
+      </div>
     </>
   );
 }

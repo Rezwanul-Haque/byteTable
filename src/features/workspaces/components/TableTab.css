@@ -1,8 +1,7 @@
 /* Table tab shell — toolbar rules ported byte-identical from ByteTable.html
    (.table-tab / .table-toolbar / .seg / .seg-btn / .filter-toggle /
-   .applied-where / .table-rowcount). The grid + filter panel are Task 3 /
-   M5; .grid-placeholder is the marked content seam (not in the prototype —
-   free-form, token-driven, faint). */
+   .applied-where / .table-rowcount). The grid itself lives in
+   features/browse/components/DataGrid (Task 3); the filter panel is M5. */
 
 .table-tab {
   flex: 1;
@@ -117,27 +116,4 @@
 .applied-where.empty {
   color: var(--text-faint);
   font-style: italic;
-}
-
-/* M4-Task3 content seam — replaced by the real grid in Task 3. */
-.grid-placeholder {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  background: var(--bg0);
-  color: var(--text-faint);
-}
-
-.grid-placeholder p {
-  font-size: 12.5px;
-  font-weight: 600;
-}
-
-.grid-placeholder span {
-  font-family: var(--mono);
-  font-size: 11px;
 }

@@ -17,6 +17,7 @@
   "dependencies": {
     "@fontsource/ibm-plex-sans": "^5.2.8",
     "@fontsource/jetbrains-mono": "^5.2.8",
+    "@tanstack/react-virtual": "3.13.12",
     "@tauri-apps/api": "^2.9.0",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-opener": "^2.5.4",

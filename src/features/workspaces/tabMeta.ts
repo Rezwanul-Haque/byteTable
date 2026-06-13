@@ -28,7 +28,8 @@ export interface TabResultMeta {
   totalRows?: number | null;
   /**
    * Filtered/visible row count, once filters land (M5). Until then the grid
-   * leaves it unset and readers show the plain "N rows".
+   * reports how many rows it has loaded into its sparse window so the toolbar
+   * can show "n of N rows" while a large table is still being paged in.
    */
   shownRows?: number;
   /** Last fetch's elapsed time in ms (status bar context info). */
@@ -38,22 +39,58 @@ export interface TabResultMeta {
 interface TabMetaState {
   /** Result meta by tab id. Sparse — only tabs the grid has fetched. */
   meta: Record<string, TabResultMeta>;
+  /**
+   * Grid vertical scroll offset by tab id (px). High-frequency state, kept
+   * out of the persisted workspace `ui` per the WorkspaceUiState churn rule:
+   * the grid commits here only on unmount (tab/workspace switch), and reads it
+   * back to restore scroll on remount. Survives workspace switches because
+   * this store is global, not per-workspace. Sparse — only tabs the grid has
+   * scrolled.
+   */
+  scrollTop: Record<string, number>;
+  /**
+   * Refresh trigger by tab id: a monotonic nonce the toolbar's refresh button
+   * bumps. The mounted grid watches its own tab's nonce and, on change, clears
+   * its row cache + re-fetches the current window + re-counts. A nonce (rather
+   * than a registered callback) keeps the seam declarative — the toolbar need
+   * not know whether a grid is mounted, and there is nothing to unregister.
+   */
+  refetchNonce: Record<string, number>;
   /** Grid → seam: merge a tab's latest fetch result. */
   setTabMeta: (tabId: string, meta: TabResultMeta) => void;
+  /** Grid → seam: remember a tab's scroll offset (on unmount). */
+  setTabScrollTop: (tabId: string, scrollTop: number) => void;
+  /** Toolbar → grid: bump a tab's refresh nonce. */
+  requestRefetch: (tabId: string) => void;
   /** Drop a tab's entry (tab closed). */
   clearTabMeta: (tabId: string) => void;
 }
 
 export const useTabMetaStore = create<TabMetaState>((set) => ({
   meta: {},
+  scrollTop: {},
+  refetchNonce: {},
   setTabMeta: (tabId, meta) =>
     set((state) => ({ meta: { ...state.meta, [tabId]: { ...state.meta[tabId], ...meta } } })),
+  setTabScrollTop: (tabId, scrollTop) =>
+    set((state) => ({ scrollTop: { ...state.scrollTop, [tabId]: scrollTop } })),
+  requestRefetch: (tabId) =>
+    set((state) => ({
+      refetchNonce: { ...state.refetchNonce, [tabId]: (state.refetchNonce[tabId] ?? 0) + 1 },
+    })),
   clearTabMeta: (tabId) =>
     set((state) => {
-      if (!(tabId in state.meta)) return state;
-      const next = { ...state.meta };
-      delete next[tabId];
-      return { meta: next };
+      const hadMeta = tabId in state.meta;
+      const hadScroll = tabId in state.scrollTop;
+      const hadNonce = tabId in state.refetchNonce;
+      if (!hadMeta && !hadScroll && !hadNonce) return state;
+      const meta = { ...state.meta };
+      const scrollTop = { ...state.scrollTop };
+      const refetchNonce = { ...state.refetchNonce };
+      delete meta[tabId];
+      delete scrollTop[tabId];
+      delete refetchNonce[tabId];
+      return { meta, scrollTop, refetchNonce };
     }),
 }));
 

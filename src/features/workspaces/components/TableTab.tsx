@@ -10,6 +10,7 @@
 // Row count comes from the Task-3 seam (tabMeta store): the grid reports
 // totalRows/elapsedMs per fetch; until it does, the label reads "— rows".
 
+import { DataGrid } from "../../browse/components/DataGrid";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Icon } from "../../../shared/ui/Icon";
 import { useToast } from "../../../shared/ui/toastContext";
@@ -21,12 +22,13 @@ import "./TableTab.css";
 /** Narrow the union — the router only renders this for table tabs. */
 type TableTabModel = Extract<Tab, { kind: "table" }>;
 
-export function TableTab({ tab }: { tab: TableTabModel }) {
+export function TableTab({ tab, handleId }: { tab: TableTabModel; handleId: string }) {
   const toast = useToast();
   const setTableTabMode = useWorkspacesStore((state) => state.setTableTabMode);
   // Narrow selector: only this tab's meta, so other tabs' fetches don't
   // re-render the toolbar.
   const meta = useTabMetaStore((state) => state.meta[tab.id]);
+  const requestRefetch = useTabMetaStore((state) => state.requestRefetch);
 
   return (
     <div className="table-tab">
@@ -59,12 +61,7 @@ export function TableTab({ tab }: { tab: TableTabModel }) {
 
         {/* Filters are M5 — the button renders for layout fidelity but is
             disabled with an explanatory title (no empty panel to open yet). */}
-        <button
-          type="button"
-          className="filter-toggle"
-          disabled
-          title="Filters arrive in M5"
-        >
+        <button type="button" className="filter-toggle" disabled title="Filters arrive in M5">
           <Icon name="filter_list" size={15} /> Filters
           <Icon name="expand_more" size={14} style={{ color: "var(--text-faint)" }} />
         </button>
@@ -74,40 +71,17 @@ export function TableTab({ tab }: { tab: TableTabModel }) {
 
         <div style={{ flex: 1 }} />
 
-        {/* Refresh: until the grid (Task 3) owns a refetch handle, this nudges
-            the seam — a no-op visual today, real once the grid subscribes to
-            a refresh signal. Kept enabled so the control is not dead. */}
-        <IconBtn
-          icon="refresh"
-          title="Refresh"
-          onClick={() => toast("Refreshed " + tab.table, "ok")}
-        />
+        {/* Refresh: bumps the tab's refetch nonce on the tabMeta seam; the
+            mounted grid watches it and clears its cache + re-fetches +
+            re-counts. Declarative — the toolbar need not know a grid exists. */}
+        <IconBtn icon="refresh" title="Refresh" onClick={() => requestRefetch(tab.id)} />
         <span className="table-rowcount">{rowCountLabel(meta)}</span>
       </div>
 
-      {/*
-        M4-Task3: <DataGrid> mounts here.
-
-        Task 3 replaces this placeholder div with the real virtualized grid.
-        The grid receives the tab's identity (handleId from the active
-        workspace, tab.schema, tab.table, tab.id) and on each rows_fetch
-        reports back via the tabMeta seam:
-
-            useTabMetaStore.getState().setTabMeta(tab.id, {
-              totalRows: page.totalRows,
-              elapsedMs: page.elapsedMs,
-            });
-
-        which this toolbar's "N rows" label and the status bar's context info
-        read live. Scroll offset stays in a grid-local ref (high-frequency —
-        see the WorkspaceUiState churn rule), committed to `ui` only on
-        tab/workspace switch if persistence is wanted later.
-      */}
-      <div className="grid-placeholder">
-        <Icon name="table" size={32} style={{ opacity: 0.4 }} />
-        <p>Data grid arrives in M4 · Task 3</p>
-        <span>{tab.schema + "." + tab.table}</span>
-      </div>
+      {/* The virtualized data grid (Task 3). Receives the tab identity +
+          backend handle; reports totalRows/elapsedMs/shownRows back through
+          the tabMeta seam, which the toolbar label and status bar read. */}
+      <DataGrid handleId={handleId} tabId={tab.id} schema={tab.schema} table={tab.table} />
     </div>
   );
 }

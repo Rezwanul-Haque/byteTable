@@ -101,11 +101,13 @@ interface WorkspacesFeatureState {
   // opening a tab never touches the backend (the grid fetches lazily once
   // mounted, Task 3).
   /**
-   * Open `schema.table` as a data tab and focus it. If a table tab for the
+   * Open `schema.table` as a table tab and focus it. If a table tab for the
    * same schema+table is already open, focus it instead of duplicating
-   * (spec §3.4) — without changing its mode.
+   * (spec §3.4). `mode` is the view mode to open/switch to (default `'data'`);
+   * the sidebar's "View structure" passes `'structure'`, which also switches
+   * an already-open tab to structure mode.
    */
-  openTableTab: (schema: string, table: string) => void;
+  openTableTab: (schema: string, table: string, mode?: TableTabMode) => void;
   /** Open a fresh SQL editor tab ("Query N") and focus it. */
   openSqlTab: () => void;
   /**
@@ -300,15 +302,23 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
   setWorkspaceSchemas: (id, schemas) =>
     set((state) => ({ workspaces: patchWorkspace(state.workspaces, id, { schemas }) })),
 
-  openTableTab: (schema, table) =>
+  openTableTab: (schema, table, mode = "data") =>
     set((state) => ({
       workspaces: patchActiveUi(state, (ui) => {
         const tabs = ui.tabs ?? [];
         const existing = tabs.find(
           (t) => t.kind === "table" && t.schema === schema && t.table === table,
         );
-        if (existing) return { activeTabId: existing.id };
-        const tab: Tab = { id: newTabId("table"), kind: "table", schema, table, mode: "data" };
+        if (existing) {
+          // Focus the existing tab; switch its mode if the caller asked for a
+          // specific one (e.g. "View structure" on an already-open data tab).
+          const nextTabs =
+            existing.kind === "table" && existing.mode !== mode
+              ? tabs.map((t) => (t.id === existing.id ? { ...t, mode } : t))
+              : tabs;
+          return { tabs: nextTabs, activeTabId: existing.id };
+        }
+        const tab: Tab = { id: newTabId("table"), kind: "table", schema, table, mode };
         return { tabs: [...tabs, tab], activeTabId: tab.id };
       }),
     })),

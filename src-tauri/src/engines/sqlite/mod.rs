@@ -53,6 +53,42 @@
 //! - `PRAGMA table_info` returns zero rows (not an error) for an unknown
 //!   table, so existence is checked against `sqlite_schema` first to produce
 //!   the §5 "Table 'x' does not exist. Available tables: …" message.
+//!
+//! # Documented choices (M7, structure view §3.6)
+//!
+//! `table_meta` also populates the structure-view fields of [`TableMeta`]:
+//!
+//! - `indexes` from `PRAGMA index_list` (name/unique/origin) + `PRAGMA
+//!   index_info` (member columns, ordered by `seqno`). `primary` is
+//!   `origin == "pk"`; `origin` is SQLite's `"c"`/`"u"`/`"pk"` passed through.
+//!   Note an `INTEGER PRIMARY KEY` is an alias for the rowid and has NO entry
+//!   in `index_list` (it is the rowid, not a separate index); only a
+//!   *non-rowid* pk (composite, or a non-INTEGER pk) produces an implicit
+//!   `origin == "pk"` index. Expression members report a NULL name from
+//!   `index_info` and are skipped, so an expression index simply has fewer
+//!   named columns.
+//! - `foreign_keys` reuses `PRAGMA foreign_key_list`, now grouped by the `id`
+//!   column into one [`ForeignKeyInfo`] per constraint with columns ordered by
+//!   `seq` (so a composite fk is a single entry). `on_delete`/`on_update` come
+//!   from the pragma's `on_delete`/`on_update` columns. SQLite has no fk
+//!   constraint names, so `name` is always `None`. Implicit `REFERENCES t`
+//!   (NULL `to`) resolves the referenced column to the parent's pk, same as
+//!   `ColumnInfo.fk` (empty string when unresolvable — module docs above).
+//! - `referenced_by` scans every *other* user table in the SAME schema and
+//!   keeps the foreign keys whose target table is THIS table, grouped per
+//!   constraint. Cost: one `foreign_key_list` pragma per other table — O(N)
+//!   for N tables, each a cheap schema-only read (no table scan). This is fine
+//!   for the local schemas ByteTable targets; the scan is deliberately
+//!   unbounded (unlike the row-count cap) because a pragma over the schema is
+//!   far cheaper than `count(*)` and §3.6 needs the complete inbound list to
+//!   be truthful. SQLite fks never cross databases, so only the table's own
+//!   schema is scanned.
+//! - `ddl` is `SELECT sql FROM "schema".sqlite_schema WHERE type='table' AND
+//!   name = ?`, returned verbatim (the modal syntax-highlights it; verbatim is
+//!   truthful). `None` if the row has no stored SQL (existence is already
+//!   proven before this point, so a missing table never reaches here).
+//! - `comment` is always `None` — SQLite has no table comments (the field is
+//!   modelled for §3.6 and server engines; see [`TableMeta::comment`]).
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -67,8 +103,9 @@ use rusqlite::types::Value as SqlValue;
 
 use crate::shared::engine::{
     ColumnInfo, ColumnMeta, Condition, ConnectionParams, Connector, Engine, EngineConnection,
-    EngineInfo, FetchRowsRequest, FilterOp, FilterSpec, FilterValue, FkRef, QueryOptions,
-    QueryResult, RowsPage, SchemaInfo, SortSpec, TableInfo, TableMeta,
+    EngineInfo, FetchRowsRequest, FilterOp, FilterSpec, FilterValue, FkRef, ForeignKeyInfo,
+    InboundFkInfo, IndexInfo, QueryOptions, QueryResult, RowsPage, SchemaInfo, SortSpec, TableInfo,
+    TableMeta,
 };
 use crate::shared::error::AppError;
 
@@ -364,7 +401,12 @@ fn table_meta_blocking(
         return Err(missing_table_error(conn, table));
     }
 
-    let mut fk_by_column = foreign_keys_by_column(conn, schema, table)?;
+    // Read the foreign_key_list once and derive both views from it: the
+    // per-column map for `ColumnInfo.fk` (M3 sidebar) and the grouped
+    // table-level list for §3.6.
+    let fk_rows = foreign_key_rows(conn, schema, table)?;
+    let mut fk_by_column = foreign_keys_by_column(conn, schema, &fk_rows);
+    let foreign_keys = group_foreign_keys(&fk_rows);
 
     // table_info columns: cid(0), name(1), type(2), notnull(3), dflt(4), pk(5).
     // `pk` is the 1-based position within the primary key (0 = not part).
@@ -387,7 +429,7 @@ fn table_meta_blocking(
         .and_then(Iterator::collect::<Result<Vec<_>, _>>)
         .map_err(|err| map_query_error(conn, err))?;
 
-    let columns = rows
+    let columns: Vec<ColumnInfo> = rows
         .into_iter()
         .map(|(name, data_type, notnull, pk)| ColumnInfo {
             fk: fk_by_column.remove(&name),
@@ -397,17 +439,43 @@ fn table_meta_blocking(
             pk: pk > 0,
         })
         .collect();
-    Ok(TableMeta { columns })
+    drop(stmt);
+
+    let indexes = table_indexes(conn, schema, table)?;
+    let referenced_by = inbound_foreign_keys(conn, schema, table)?;
+    let ddl = table_ddl(conn, schema, table)?;
+
+    Ok(TableMeta {
+        columns,
+        // SQLite has no table comments (module docs).
+        comment: None,
+        indexes,
+        foreign_keys,
+        referenced_by,
+        ddl,
+    })
 }
 
-/// Foreign keys of `table`, keyed by the local (from) column. A column in
-/// several fks keeps the first one reported (see module docs).
-fn foreign_keys_by_column(
-    conn: &Connection,
-    schema: &str,
-    table: &str,
-) -> Result<HashMap<String, FkRef>, AppError> {
-    // foreign_key_list columns: id(0), seq(1), table(2), from(3), to(4), ….
+/// One raw row of `PRAGMA foreign_key_list`, the shared shape both the
+/// per-column map and the grouped table-level list derive from.
+struct FkRow {
+    /// `id` groups rows of the same (possibly composite) constraint.
+    id: i64,
+    /// `seq` orders columns within one constraint.
+    seq: i64,
+    ref_table: String,
+    /// Local (child) column.
+    from: String,
+    /// Referenced (parent) column; `None` for implicit `REFERENCES t`.
+    to: Option<String>,
+    on_delete: Option<String>,
+    on_update: Option<String>,
+}
+
+/// Read every `PRAGMA foreign_key_list` row for `table`. Columns:
+/// id(0), seq(1), table(2), from(3), to(4), on_update(5), on_delete(6),
+/// match(7).
+fn foreign_key_rows(conn: &Connection, schema: &str, table: &str) -> Result<Vec<FkRow>, AppError> {
     let mut stmt = conn
         .prepare(&format!(
             "PRAGMA {}.foreign_key_list({})",
@@ -417,30 +485,208 @@ fn foreign_keys_by_column(
         .map_err(|err| map_query_error(conn, err))?;
     let rows = stmt
         .query_map([], |row| {
+            Ok(FkRow {
+                id: row.get::<_, i64>(0)?,
+                seq: row.get::<_, i64>(1)?,
+                ref_table: row.get::<_, String>(2)?,
+                from: row.get::<_, String>(3)?,
+                to: row.get::<_, Option<String>>(4)?,
+                on_update: blank_to_none(row.get::<_, Option<String>>(5)?),
+                on_delete: blank_to_none(row.get::<_, Option<String>>(6)?),
+            })
+        })
+        .and_then(Iterator::collect::<Result<Vec<_>, _>>)
+        .map_err(|err| map_query_error(conn, err))?;
+    Ok(rows)
+}
+
+/// Treat an empty string the same as absent — SQLite reports `"NO ACTION"`
+/// for the default, never an empty string, but be defensive about it.
+fn blank_to_none(value: Option<String>) -> Option<String> {
+    value.filter(|s| !s.is_empty())
+}
+
+/// Foreign keys of `table`, keyed by the local (from) column, for
+/// `ColumnInfo.fk`. A column in several fks keeps the first one reported (see
+/// module docs).
+fn foreign_keys_by_column(
+    conn: &Connection,
+    schema: &str,
+    rows: &[FkRow],
+) -> HashMap<String, FkRef> {
+    let mut by_column = HashMap::new();
+    for row in rows {
+        let column = match &row.to {
+            Some(column) => column.clone(),
+            // Implicit `REFERENCES t`: resolve to the referenced table's pk
+            // (same schema — SQLite fks never cross databases).
+            None => referenced_pk_column(conn, schema, &row.ref_table, row.seq.max(0) as usize),
+        };
+        by_column.entry(row.from.clone()).or_insert(FkRef {
+            table: row.ref_table.clone(),
+            column,
+        });
+    }
+    by_column
+}
+
+/// Group `foreign_key_list` rows into one [`ForeignKeyInfo`] per constraint
+/// (by `id`), columns ordered by `seq`. The implicit-target `to` is left as
+/// the empty string here (the grouped list is the structure view; the
+/// per-column map already resolves implicit targets to the parent pk).
+fn group_foreign_keys(rows: &[FkRow]) -> Vec<ForeignKeyInfo> {
+    // Preserve first-seen id order so the output is stable across runs.
+    let mut order: Vec<i64> = Vec::new();
+    let mut grouped: HashMap<i64, Vec<&FkRow>> = HashMap::new();
+    for row in rows {
+        grouped.entry(row.id).or_insert_with(|| {
+            order.push(row.id);
+            Vec::new()
+        });
+        grouped.get_mut(&row.id).expect("just inserted").push(row);
+    }
+
+    order
+        .into_iter()
+        .map(|id| {
+            let mut members = grouped.remove(&id).expect("id from order");
+            members.sort_by_key(|r| r.seq);
+            let first = members[0];
+            ForeignKeyInfo {
+                // SQLite's foreign_key_list carries no constraint name.
+                name: None,
+                columns: members.iter().map(|r| r.from.clone()).collect(),
+                ref_table: first.ref_table.clone(),
+                ref_columns: members
+                    .iter()
+                    .map(|r| r.to.clone().unwrap_or_default())
+                    .collect(),
+                on_delete: first.on_delete.clone(),
+                on_update: first.on_update.clone(),
+            }
+        })
+        .collect()
+}
+
+/// Indexes on `table` (§3.6): `PRAGMA index_list` for name/unique/origin, then
+/// `PRAGMA index_info` per index for the ordered member columns.
+fn table_indexes(conn: &Connection, schema: &str, table: &str) -> Result<Vec<IndexInfo>, AppError> {
+    // index_list columns: seq(0), name(1), unique(2), origin(3), partial(4).
+    let mut stmt = conn
+        .prepare(&format!(
+            "PRAGMA {}.index_list({})",
+            quote_ident(schema),
+            quote_ident(table)
+        ))
+        .map_err(|err| map_query_error(conn, err))?;
+    let listed = stmt
+        .query_map([], |row| {
             Ok((
-                row.get::<_, i64>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, Option<String>>(4)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, Option<String>>(3)?,
             ))
         })
         .and_then(Iterator::collect::<Result<Vec<_>, _>>)
         .map_err(|err| map_query_error(conn, err))?;
+    drop(stmt);
 
-    let mut by_column = HashMap::new();
-    for (seq, ref_table, from, to) in rows {
-        let column = match to {
-            Some(column) => column,
-            // Implicit `REFERENCES t`: resolve to the referenced table's pk
-            // (same schema — SQLite fks never cross databases).
-            None => referenced_pk_column(conn, schema, &ref_table, seq.max(0) as usize),
-        };
-        by_column.entry(from).or_insert(FkRef {
-            table: ref_table,
-            column,
+    let mut indexes = Vec::with_capacity(listed.len());
+    for (name, unique, origin) in listed {
+        let columns = index_columns(conn, schema, &name)?;
+        let primary = origin.as_deref() == Some("pk");
+        indexes.push(IndexInfo {
+            name,
+            columns,
+            unique: unique != 0,
+            primary,
+            origin,
         });
     }
-    Ok(by_column)
+    Ok(indexes)
+}
+
+/// The member columns of one index, ordered by `seqno`. Expression members
+/// report a NULL column name and are skipped (module docs).
+fn index_columns(conn: &Connection, schema: &str, index: &str) -> Result<Vec<String>, AppError> {
+    // index_info columns: seqno(0), cid(1), name(2). name is NULL for an
+    // expression / rowid member.
+    let mut stmt = conn
+        .prepare(&format!(
+            "PRAGMA {}.index_info({})",
+            quote_ident(schema),
+            quote_ident(index)
+        ))
+        .map_err(|err| map_query_error(conn, err))?;
+    let mut rows = stmt
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, Option<String>>(2)?))
+        })
+        .and_then(Iterator::collect::<Result<Vec<_>, _>>)
+        .map_err(|err| map_query_error(conn, err))?;
+    rows.sort_by_key(|(seqno, _)| *seqno);
+    Ok(rows.into_iter().filter_map(|(_, name)| name).collect())
+}
+
+/// Inbound foreign keys (§3.6 "referenced by"): scan every *other* user table
+/// in the same schema and keep the constraints whose target is `table`,
+/// grouped per constraint. Cost is one `foreign_key_list` pragma per other
+/// table — cheap and deliberately unbounded (module docs).
+fn inbound_foreign_keys(
+    conn: &Connection,
+    schema: &str,
+    table: &str,
+) -> Result<Vec<InboundFkInfo>, AppError> {
+    let others = user_table_names(conn, schema)?;
+    let mut inbound = Vec::new();
+    for child in others {
+        if child == table {
+            continue;
+        }
+        let rows = foreign_key_rows(conn, schema, &child)?;
+        for fk in group_foreign_keys(&rows) {
+            if fk.ref_table == table {
+                inbound.push(InboundFkInfo {
+                    table: child.clone(),
+                    columns: fk.columns,
+                    ref_columns: fk.ref_columns,
+                    on_delete: fk.on_delete,
+                });
+            }
+        }
+    }
+    Ok(inbound)
+}
+
+/// User table names in one schema (excludes `sqlite_%`), ordered by name.
+/// Reused by the referenced-by scan.
+fn user_table_names(conn: &Connection, schema: &str) -> Result<Vec<String>, AppError> {
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT name FROM {}.sqlite_schema \
+             WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+            quote_ident(schema)
+        ))
+        .map_err(|err| map_query_error(conn, err))?;
+    let names = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .and_then(Iterator::collect::<Result<Vec<String>, _>>)
+        .map_err(|err| map_query_error(conn, err))?;
+    Ok(names)
+}
+
+/// The verbatim `CREATE TABLE` statement from `sqlite_schema`. `None` when the
+/// stored SQL is NULL (existence is proven before this is called).
+fn table_ddl(conn: &Connection, schema: &str, table: &str) -> Result<Option<String>, AppError> {
+    conn.query_row(
+        &format!(
+            "SELECT sql FROM {}.sqlite_schema WHERE type = 'table' AND name = ?1",
+            quote_ident(schema)
+        ),
+        [table],
+        |row| row.get::<_, Option<String>>(0),
+    )
+    .map_err(|err| map_query_error(conn, err))
 }
 
 /// The referenced table's primary-key column at position `seq`, for
@@ -1337,6 +1583,277 @@ mod tests {
             err.to_string(),
             "Schema 'warehouse' does not exist. Available schemas: main."
         );
+    }
+
+    // -- table_meta structure view (M7 §3.6) --------------------------------
+
+    /// A fixture exercising the structure-view facets: a parent table
+    /// referenced by two children (one composite fk with `ON DELETE`), single
+    /// and composite secondary indexes (unique and non-unique), and the
+    /// implicit primary-key index.
+    async fn open_structure_fixture(dir: &tempfile::TempDir) -> Box<dyn EngineConnection> {
+        let path = dir.path().join("structure.db");
+        {
+            let conn = Connection::open(&path).expect("create db");
+            conn.execute_batch(
+                "CREATE TABLE authors (
+                     id INTEGER PRIMARY KEY,
+                     country TEXT,
+                     name TEXT NOT NULL
+                 );
+                 CREATE UNIQUE INDEX idx_authors_name ON authors(name);
+                 CREATE INDEX idx_authors_country_name ON authors(country, name);
+
+                 CREATE TABLE books (
+                     id INTEGER PRIMARY KEY,
+                     author_id INTEGER REFERENCES authors(id) ON DELETE CASCADE,
+                     title TEXT
+                 );
+
+                 -- A second child of authors, with a composite fk back to it.
+                 CREATE TABLE coauthored (
+                     book_id INTEGER,
+                     primary_author INTEGER,
+                     secondary_author INTEGER,
+                     PRIMARY KEY (book_id, primary_author),
+                     FOREIGN KEY (primary_author, secondary_author)
+                         REFERENCES author_pairs(lead, support) ON DELETE SET NULL
+                 );
+
+                 -- A table with a composite fk so we can assert grouping/order.
+                 CREATE TABLE author_pairs (
+                     lead INTEGER,
+                     support INTEGER,
+                     PRIMARY KEY (lead, support)
+                 );",
+            )
+            .expect("seed db");
+        }
+        SqliteConnector
+            .open(&params_for(&path))
+            .await
+            .expect("open structure fixture")
+    }
+
+    #[tokio::test]
+    async fn table_meta_reports_indexes_with_ordered_columns_and_flags() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_structure_fixture(&dir).await;
+        let meta = conn
+            .table_meta("main", "authors")
+            .await
+            .expect("table meta");
+
+        // `authors.id` is `INTEGER PRIMARY KEY` — an alias for the rowid, so
+        // SQLite stores NO separate pk index for it (it lists nothing with
+        // origin "pk"). The implicit pk index only materialises for a
+        // *non-rowid* pk (composite / non-INTEGER) — asserted on author_pairs
+        // below.
+        assert!(
+            !meta.indexes.iter().any(|i| i.primary),
+            "an INTEGER PRIMARY KEY (rowid alias) has no separate pk index"
+        );
+
+        let pairs = conn
+            .table_meta("main", "author_pairs")
+            .await
+            .expect("author_pairs meta");
+        let pk = pairs
+            .indexes
+            .iter()
+            .find(|i| i.primary)
+            .expect("a composite pk has an implicit pk index");
+        assert!(pk.unique, "the pk index is unique");
+        assert_eq!(pk.origin.as_deref(), Some("pk"));
+        assert_eq!(pk.columns, vec!["lead", "support"]);
+
+        // The UNIQUE single-column index.
+        let unique = meta
+            .indexes
+            .iter()
+            .find(|i| i.name == "idx_authors_name")
+            .expect("the unique index");
+        assert!(unique.unique);
+        assert!(!unique.primary);
+        assert_eq!(unique.origin.as_deref(), Some("c"));
+        assert_eq!(unique.columns, vec!["name"]);
+
+        // The non-unique composite index keeps column order.
+        let composite = meta
+            .indexes
+            .iter()
+            .find(|i| i.name == "idx_authors_country_name")
+            .expect("the composite index");
+        assert!(!composite.unique);
+        assert!(!composite.primary);
+        assert_eq!(composite.columns, vec!["country", "name"]);
+    }
+
+    #[tokio::test]
+    async fn table_meta_reports_table_level_foreign_keys_grouped_and_ordered() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_structure_fixture(&dir).await;
+
+        // Single-column fk with ON DELETE captured.
+        let books = conn.table_meta("main", "books").await.expect("books meta");
+        assert_eq!(books.foreign_keys.len(), 1);
+        let fk = &books.foreign_keys[0];
+        assert_eq!(fk.name, None, "SQLite fks have no name");
+        assert_eq!(fk.columns, vec!["author_id"]);
+        assert_eq!(fk.ref_table, "authors");
+        assert_eq!(fk.ref_columns, vec!["id"]);
+        assert_eq!(fk.on_delete.as_deref(), Some("CASCADE"));
+
+        // Composite fk: a single grouped entry with parallel, ordered columns.
+        let coauthored = conn
+            .table_meta("main", "coauthored")
+            .await
+            .expect("coauthored meta");
+        assert_eq!(
+            coauthored.foreign_keys.len(),
+            1,
+            "the composite fk is one grouped entry"
+        );
+        let composite = &coauthored.foreign_keys[0];
+        assert_eq!(
+            composite.columns,
+            vec!["primary_author", "secondary_author"]
+        );
+        assert_eq!(composite.ref_table, "author_pairs");
+        assert_eq!(composite.ref_columns, vec!["lead", "support"]);
+        assert_eq!(composite.on_delete.as_deref(), Some("SET NULL"));
+    }
+
+    #[tokio::test]
+    async fn table_meta_reports_inbound_foreign_keys_from_every_child() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_structure_fixture(&dir).await;
+
+        // authors is referenced by `books` (author_id → id).
+        let authors = conn
+            .table_meta("main", "authors")
+            .await
+            .expect("authors meta");
+        let inbound: Vec<&str> = authors
+            .referenced_by
+            .iter()
+            .map(|f| f.table.as_str())
+            .collect();
+        assert_eq!(inbound, vec!["books"]);
+        let from_books = &authors.referenced_by[0];
+        assert_eq!(from_books.columns, vec!["author_id"]);
+        assert_eq!(from_books.ref_columns, vec!["id"]);
+        assert_eq!(from_books.on_delete.as_deref(), Some("CASCADE"));
+
+        // author_pairs is referenced by `coauthored`'s composite fk.
+        let pairs = conn
+            .table_meta("main", "author_pairs")
+            .await
+            .expect("author_pairs meta");
+        assert_eq!(pairs.referenced_by.len(), 1);
+        let inbound = &pairs.referenced_by[0];
+        assert_eq!(inbound.table, "coauthored");
+        assert_eq!(inbound.columns, vec!["primary_author", "secondary_author"]);
+        assert_eq!(inbound.ref_columns, vec!["lead", "support"]);
+    }
+
+    #[tokio::test]
+    async fn table_meta_referenced_by_can_list_multiple_children() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("multi.db");
+        {
+            let conn = Connection::open(&path).expect("create db");
+            conn.execute_batch(
+                "CREATE TABLE parent (id INTEGER PRIMARY KEY);
+                 CREATE TABLE child_a (id INTEGER PRIMARY KEY, pid INTEGER REFERENCES parent(id));
+                 CREATE TABLE child_b (id INTEGER PRIMARY KEY, pid INTEGER REFERENCES parent(id) ON DELETE CASCADE);",
+            )
+            .expect("seed db");
+        }
+        let conn = SqliteConnector
+            .open(&params_for(&path))
+            .await
+            .expect("open db");
+        let parent = conn
+            .table_meta("main", "parent")
+            .await
+            .expect("parent meta");
+        let mut children: Vec<&str> = parent
+            .referenced_by
+            .iter()
+            .map(|f| f.table.as_str())
+            .collect();
+        children.sort_unstable();
+        assert_eq!(children, vec!["child_a", "child_b"]);
+        for inbound in &parent.referenced_by {
+            assert_eq!(inbound.columns, vec!["pid"]);
+            assert_eq!(inbound.ref_columns, vec!["id"]);
+        }
+        // The cascade child carries its ON DELETE.
+        let cascade = parent
+            .referenced_by
+            .iter()
+            .find(|f| f.table == "child_b")
+            .expect("child_b");
+        assert_eq!(cascade.on_delete.as_deref(), Some("CASCADE"));
+    }
+
+    #[tokio::test]
+    async fn table_meta_ddl_is_returned_verbatim() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_structure_fixture(&dir).await;
+        let meta = conn.table_meta("main", "books").await.expect("books meta");
+        let ddl = meta.ddl.expect("ddl is present");
+        assert!(
+            ddl.contains("CREATE TABLE"),
+            "ddl should be the CREATE TABLE statement: {ddl:?}"
+        );
+        assert!(ddl.contains("author_id"), "ddl is verbatim: {ddl:?}");
+    }
+
+    #[tokio::test]
+    async fn table_meta_comment_is_none_for_sqlite() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_structure_fixture(&dir).await;
+        let meta = conn.table_meta("main", "books").await.expect("books meta");
+        assert_eq!(meta.comment, None);
+    }
+
+    #[tokio::test]
+    async fn table_meta_for_unknown_table_still_errors_with_structure_fields() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_structure_fixture(&dir).await;
+        let err = conn.table_meta("main", "ghosts").await.unwrap_err();
+        assert!(matches!(err, AppError::Database(_)));
+        assert!(
+            err.to_string().contains("does not exist"),
+            "unknown table is still a §5 error: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn table_meta_handles_a_wide_64_column_table() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("wide.db");
+        let column_defs: Vec<String> = (0..64).map(|i| format!("c{i} INTEGER")).collect();
+        {
+            let conn = Connection::open(&path).expect("create db");
+            conn.execute_batch(&format!("CREATE TABLE wide ({});", column_defs.join(", ")))
+                .expect("seed db");
+        }
+        let conn = SqliteConnector
+            .open(&params_for(&path))
+            .await
+            .expect("open db");
+        let meta = conn.table_meta("main", "wide").await.expect("wide meta");
+        assert_eq!(meta.columns.len(), 64, "all 64 columns are returned");
+        let names: Vec<&str> = meta.columns.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names[0], "c0");
+        assert_eq!(names[63], "c63");
+        // A wide table with no constraints has no fks/indexes but valid ddl.
+        assert!(meta.foreign_keys.is_empty());
+        assert!(meta.referenced_by.is_empty());
+        assert!(meta.ddl.expect("ddl").contains("CREATE TABLE"));
     }
 
     #[tokio::test]

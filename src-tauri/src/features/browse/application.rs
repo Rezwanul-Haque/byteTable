@@ -51,7 +51,7 @@ mod tests {
         }
 
         async fn table_meta(&self, _schema: &str, _table: &str) -> Result<TableMeta, AppError> {
-            Ok(TableMeta { columns: vec![] })
+            Ok(TableMeta::default())
         }
 
         async fn run_query(

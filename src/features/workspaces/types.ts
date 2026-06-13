@@ -76,9 +76,9 @@ export interface WorkspaceConnection {
 
 /**
  * A table's view mode in its tab. `'data'` is the grid; `'structure'` is the
- * M7 schema editor — the segmented control renders both this milestone, but
- * selecting Structure toasts "arrives in M7" and the tab stays on `'data'`
- * (TableTab), so a persisted `'structure'` is not produced yet.
+ * read-only M7 structure view (§3.6: columns + indexes/FKs/referenced-by/DDL).
+ * The segmented control toggles between them and the mode persists per tab
+ * across workspace switches. (Structure-mode editing is M8.)
  */
 export type TableTabMode = "data" | "structure";
 

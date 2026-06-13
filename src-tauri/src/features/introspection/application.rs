@@ -56,6 +56,7 @@ mod tests {
                     pk: false,
                     fk: None,
                 }],
+                ..Default::default()
             })
         }
 

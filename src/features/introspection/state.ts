@@ -16,7 +16,12 @@
 
 import { create } from "zustand";
 
-import { tableMeta, type ColumnInfo, type TableInfo } from "../../shared/api/engine";
+import {
+  tableMeta,
+  type ColumnInfo,
+  type TableInfo,
+  type TableMeta,
+} from "../../shared/api/engine";
 import { appErrorMessage } from "../../shared/api/error";
 import { connectionTables } from "../connections/api";
 
@@ -36,6 +41,17 @@ export function columnsKey(handleId: string, schema: string, table: string): str
   return handleId + SEP + schema + SEP + table;
 }
 
+/**
+ * Cache key for a table's full {@link TableMeta} (M7 structure view §3.6).
+ * Distinct from {@link columnsKey} — they share the `loading`/`errors` maps,
+ * and the structure fetch's loading/error state is independent of the
+ * column-list fetch the sidebar/grid drive. Still starts with the handle and
+ * `tablesKey(handle, schema)` prefixes, so `invalidate` drops it like the rest.
+ */
+export function tableMetaKey(handleId: string, schema: string, table: string): string {
+  return handleId + SEP + schema + SEP + table + SEP + "meta";
+}
+
 export interface TablesEntry {
   tables: TableInfo[];
   /** Epoch ms of the fetch — bumped by force refetches (refresh). */
@@ -47,11 +63,18 @@ export interface ColumnsEntry {
   fetchedAt: number;
 }
 
+export interface TableMetaEntry {
+  meta: TableMeta;
+  fetchedAt: number;
+}
+
 interface IntrospectionFeatureState {
   /** Table lists by `tablesKey`. */
   tables: Record<string, TablesEntry>;
   /** Column lists by `columnsKey`. */
   columns: Record<string, ColumnsEntry>;
+  /** Full table metadata by `tableMetaKey` (M7 structure view §3.6). */
+  tableMetas: Record<string, TableMetaEntry>;
   /** True while a fetch for the key (either kind) is in flight. */
   loading: Record<string, boolean>;
   /** Human error message for the key's last failed fetch (§5 style). */
@@ -70,6 +93,15 @@ interface IntrospectionFeatureState {
   ) => Promise<TableInfo[] | null>;
   /** Fetch one table's columns (cache-first). Same error contract. */
   loadColumns: (handleId: string, schema: string, table: string) => Promise<ColumnInfo[] | null>;
+  /**
+   * Fetch one table's full {@link TableMeta} (cache-first) for the M7
+   * structure view (§3.6). Same error contract as `loadColumns`: resolves
+   * with the meta or null on failure (error text under `tableMetaKey`),
+   * never rejects. As a side effect it also warms the `columns` cache from
+   * the same payload (one round-trip serves both the structure rows and any
+   * column-list reader for the same table).
+   */
+  loadTableMeta: (handleId: string, schema: string, table: string) => Promise<TableMeta | null>;
   /**
    * Drop everything cached for a handle (workspace closed), or for one of
    * its schemas when `schema` is given.
@@ -95,10 +127,12 @@ function omitPrefixed<V>(record: Record<string, V>, prefix: string): Record<stri
 // renderable state, so they stay out of the store.
 const inflightTables = new Map<string, Promise<TableInfo[] | null>>();
 const inflightColumns = new Map<string, Promise<ColumnInfo[] | null>>();
+const inflightTableMetas = new Map<string, Promise<TableMeta | null>>();
 
 export const useIntrospectionStore = create<IntrospectionFeatureState>((set, get) => ({
   tables: {},
   columns: {},
+  tableMetas: {},
   loading: {},
   errors: {},
 
@@ -120,6 +154,7 @@ export const useIntrospectionStore = create<IntrospectionFeatureState>((set, get
           // refresh exists to pick up out-of-band DDL, which affects
           // columns as much as tables. Expanded rows refetch lazily.
           columns: opts?.force ? omitPrefixed(state.columns, key + SEP) : state.columns,
+          tableMetas: opts?.force ? omitPrefixed(state.tableMetas, key + SEP) : state.tableMetas,
           loading: omit(state.loading, key),
           errors: omit(state.errors, key),
         }));
@@ -170,6 +205,45 @@ export const useIntrospectionStore = create<IntrospectionFeatureState>((set, get
     return promise;
   },
 
+  loadTableMeta: (handleId, schema, table) => {
+    const key = tableMetaKey(handleId, schema, table);
+    const cached = get().tableMetas[key];
+    if (cached) return Promise.resolve(cached.meta);
+    const pending = inflightTableMetas.get(key);
+    if (pending) return pending;
+    const promise = (async (): Promise<TableMeta | null> => {
+      set((state) => ({ loading: { ...state.loading, [key]: true } }));
+      try {
+        const meta = await tableMeta(handleId, schema, table);
+        const colKey = columnsKey(handleId, schema, table);
+        const now = Date.now();
+        set((state) => ({
+          tableMetas: { ...state.tableMetas, [key]: { meta, fetchedAt: now } },
+          // One round-trip serves both: warm the column-list cache too, so a
+          // later sidebar/grid/filter read does not re-fetch.
+          columns: { ...state.columns, [colKey]: { columns: meta.columns, fetchedAt: now } },
+          loading: omit(state.loading, key),
+          errors: omit(state.errors, key),
+        }));
+        return meta;
+      } catch (err) {
+        set((state) => ({
+          loading: omit(state.loading, key),
+          errors: {
+            ...state.errors,
+            [key]: appErrorMessage(err, "Could not load table structure."),
+          },
+        }));
+        return null;
+      }
+    })();
+    inflightTableMetas.set(key, promise);
+    void promise.finally(() => {
+      if (inflightTableMetas.get(key) === promise) inflightTableMetas.delete(key);
+    });
+    return promise;
+  },
+
   invalidate: (handleId, schema) =>
     set((state) => {
       // tablesKey(handle, schema) is itself a prefix of that schema's
@@ -184,6 +258,7 @@ export const useIntrospectionStore = create<IntrospectionFeatureState>((set, get
       return {
         tables: drop(state.tables),
         columns: drop(state.columns),
+        tableMetas: drop(state.tableMetas),
         errors: drop(state.errors),
       };
     }),

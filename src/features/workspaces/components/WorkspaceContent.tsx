@@ -43,10 +43,18 @@ function NoTabs() {
   );
 }
 
-function TabBody({ tab, workspace }: { tab: Tab; workspace: Workspace }) {
+function TabBody({
+  tab,
+  workspace,
+  defaultSchema,
+}: {
+  tab: Tab;
+  workspace: Workspace;
+  defaultSchema: string;
+}) {
   switch (tab.kind) {
     case "table":
-      return <TableTab tab={tab} handleId={workspace.handleId} />;
+      return <TableTab tab={tab} handleId={workspace.handleId} defaultSchema={defaultSchema} />;
     case "sql":
       return <SqlEditorTab workspace={workspace} tab={tab} />;
     case "map":
@@ -80,7 +88,9 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
         onNewSql={openSqlTab}
       />
       <div className="tab-content">
-        {activeTab ? <TabBody tab={activeTab} workspace={workspace} /> : null}
+        {activeTab ? (
+          <TabBody tab={activeTab} workspace={workspace} defaultSchema={defaultSchema} />
+        ) : null}
       </div>
     </>
   );

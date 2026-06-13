@@ -119,6 +119,7 @@ mod tests {
             name: name.into(),
             sql: format!("SELECT '{id}'"),
             saved_at: 1_700_000_000_000,
+            connection_id: None,
         }
     }
 
@@ -137,6 +138,34 @@ mod tests {
         repo.save(&a).expect("save a");
         repo.save(&b).expect("save b");
         assert_eq!(repo.list().expect("list"), vec![a, b]);
+    }
+
+    #[test]
+    fn connection_id_round_trips_for_scoped_and_global_queries() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = repo_in(&dir);
+        let scoped = SavedQuery {
+            connection_id: Some("conn-1".into()),
+            ..query("a", "Alpha")
+        };
+        let global = query("b", "Beta"); // connection_id None
+        repo.save(&scoped).expect("save scoped");
+        repo.save(&global).expect("save global");
+
+        let all = repo.list().expect("list");
+        assert_eq!(all, vec![scoped, global]);
+        assert_eq!(all[0].connection_id.as_deref(), Some("conn-1"));
+        assert_eq!(all[1].connection_id, None);
+
+        // Upsert preserves / updates the scoped attachment in place.
+        let reattached = SavedQuery {
+            connection_id: Some("conn-2".into()),
+            ..query("a", "Alpha")
+        };
+        repo.save(&reattached).expect("upsert scoped");
+        let all = repo.list().expect("list after upsert");
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[0].connection_id.as_deref(), Some("conn-2"));
     }
 
     #[test]

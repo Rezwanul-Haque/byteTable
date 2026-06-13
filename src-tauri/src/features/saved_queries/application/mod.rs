@@ -95,6 +95,7 @@ mod tests {
             name: name.into(),
             sql: sql.into(),
             saved_at: 0,
+            connection_id: None,
         }
     }
 
@@ -123,6 +124,35 @@ mod tests {
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].name, "Active users");
         assert_eq!(all[0].sql, "SELECT 2");
+    }
+
+    #[test]
+    fn save_preserves_connection_id_for_new_and_existing_entries() {
+        let repo = FakeRepository::default();
+        // New (id-empty) entry: the incoming connection_id survives the
+        // id/saved_at assignment.
+        let scoped = SavedQuery {
+            connection_id: Some("conn-1".into()),
+            ..new_query("Users", "SELECT 1")
+        };
+        let saved = save_saved_query(&repo, scoped).expect("save scoped");
+        assert_eq!(saved.connection_id.as_deref(), Some("conn-1"));
+
+        // Existing entry: an edit keeps whatever connection_id is passed in.
+        let edited = SavedQuery {
+            name: "Active users".into(),
+            connection_id: Some("conn-2".into()),
+            ..saved.clone()
+        };
+        let stored = save_saved_query(&repo, edited).expect("update scoped");
+        assert_eq!(stored.connection_id.as_deref(), Some("conn-2"));
+
+        // A global (None) save round-trips as None.
+        let global = save_saved_query(&repo, new_query("Logs", "SELECT 2")).expect("save global");
+        assert_eq!(global.connection_id, None);
+
+        let all = list_saved_queries(&repo).unwrap();
+        assert_eq!(all.len(), 2);
     }
 
     #[test]

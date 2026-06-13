@@ -17,19 +17,33 @@ import { invoke } from "@tauri-apps/api/core";
  * A named SQL snippet the user has saved. Mirrors Rust's `SavedQuery`:
  * `id` is assigned on first save (send "" for new entries), `savedAt` is
  * epoch milliseconds and is assigned/refreshed by the backend on save.
+ *
+ * `connectionId` is the OPTIONAL workspace attachment. It mirrors Rust's
+ * `Option<String>`, which is omitted from the wire when `None`, so it arrives
+ * as `undefined` for global queries — typed `?: string | null` to tolerate
+ * both absent and an explicit null. null/absent = global (visible in every
+ * workspace); set = attached to that saved connection's workspace (the value
+ * is the persisted `SavedConnection.id`, i.e. `workspace.saved.id`).
  */
 export interface SavedQuery {
   id: string;
   name: string;
   sql: string;
   savedAt: number;
+  connectionId?: string | null;
 }
 
-/** What the renderer supplies to save: id is optional ("" or omitted = new). */
+/**
+ * What the renderer supplies to save: id is optional ("" or omitted = new).
+ * `connectionId` is the optional workspace attachment — omit / null for a
+ * global query, or set to a `SavedConnection.id` to scope it to that
+ * connection's workspace.
+ */
 export interface SavedQueryInput {
   id?: string;
   name: string;
   sql: string;
+  connectionId?: string | null;
 }
 
 export function savedQueryList(): Promise<SavedQuery[]> {
@@ -46,6 +60,9 @@ export function savedQuerySave(query: SavedQueryInput): Promise<SavedQuery> {
     name: query.name,
     sql: query.sql,
     savedAt: 0,
+    // Pass the attachment through. Rust's Option deserializes from absent or
+    // null, so a global query (null/undefined) is fine either way.
+    connectionId: query.connectionId ?? null,
   };
   return invoke<SavedQuery>("saved_query_save", { query: payload });
 }

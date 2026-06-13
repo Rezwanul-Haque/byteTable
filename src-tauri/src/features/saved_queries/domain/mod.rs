@@ -7,13 +7,20 @@
 
 use serde::{Deserialize, Serialize};
 
-/// A named SQL snippet the user has saved. The store is global — the same
-/// entry is visible from every workspace.
+/// A named SQL snippet the user has saved. The store is global, but a query
+/// may optionally be attached to a single workspace.
 ///
 /// - `id` is a UUID assigned by the save use-case when empty (new entry).
 /// - `saved_at` is Unix epoch milliseconds, assigned on first save (kept as a
 ///   plain integer to avoid pulling a date-time crate for one field, mirroring
 ///   connections' `created_at`).
+/// - `connection_id` is the OPTIONAL workspace attachment. Workspaces are
+///   ephemeral (session-only `ws-<uuid>` ids), but their underlying
+///   `SavedConnection` id is persisted, so the durable "attachment" is that
+///   connection id. `None`/absent = global (visible in every workspace);
+///   `Some(id)` = scoped to that saved connection's workspace. Opaque and
+///   unvalidated. Serialized like connections' `created_at`: omitted from the
+///   wire when `None`, so global queries keep their original shape.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SavedQuery {
@@ -21,6 +28,8 @@ pub struct SavedQuery {
     pub name: String,
     pub sql: String,
     pub saved_at: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connection_id: Option<String>,
 }
 
 impl SavedQuery {
@@ -49,11 +58,12 @@ mod tests {
             name: "Recent users".into(),
             sql: "SELECT * FROM users".into(),
             saved_at: 1_700_000_000_000,
+            connection_id: None,
         }
     }
 
     #[test]
-    fn wire_format_is_camel_case() {
+    fn wire_format_is_camel_case_and_omits_connection_id_when_global() {
         let json = serde_json::to_value(sample()).expect("serialize");
         assert_eq!(
             json,
@@ -64,6 +74,39 @@ mod tests {
                 "savedAt": 1_700_000_000_000u64,
             })
         );
+        // A global query must NOT carry the key at all.
+        assert!(json.get("connectionId").is_none());
+    }
+
+    #[test]
+    fn wire_format_includes_connection_id_when_scoped() {
+        let scoped = SavedQuery {
+            connection_id: Some("conn-1".into()),
+            ..sample()
+        };
+        let json = serde_json::to_value(scoped).expect("serialize");
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "id": "abc-123",
+                "name": "Recent users",
+                "sql": "SELECT * FROM users",
+                "savedAt": 1_700_000_000_000u64,
+                "connectionId": "conn-1",
+            })
+        );
+    }
+
+    #[test]
+    fn connection_id_is_optional_on_the_wire() {
+        let json = serde_json::json!({
+            "id": "x",
+            "name": "n",
+            "sql": "SELECT 1",
+            "savedAt": 0u64,
+        });
+        let query: SavedQuery = serde_json::from_value(json).expect("deserialize");
+        assert_eq!(query.connection_id, None);
     }
 
     #[test]

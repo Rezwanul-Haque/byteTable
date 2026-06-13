@@ -2,8 +2,12 @@
 // backend-first, then patch the in-memory list from the backend's reply — the
 // JSON store is the source of truth, never optimistic state.
 //
-// GLOBAL store, not per-workspace: there is one instance for the whole app, so
-// a query saved in workspace A is visible from workspace B.
+// GLOBAL store, not per-workspace: there is one instance for the whole app,
+// holding ALL queries regardless of attachment. A query may carry an OPTIONAL
+// `connectionId` (the persisted SavedConnection id) attaching it to one
+// workspace; `connectionId` null/absent means global. This store does no
+// attachment filtering — the renderer (Task 2) decides visibility per
+// workspace via the `selectQueriesForConnection` helper below.
 
 import { create } from "zustand";
 
@@ -82,3 +86,19 @@ export const useSavedQueriesStore = create<SavedQueriesFeatureState>((set) => ({
     }));
   },
 }));
+
+/**
+ * Queries visible from a given workspace: every GLOBAL query (null/absent
+ * `connectionId`) plus those attached to that workspace's saved connection.
+ *
+ * Pass `workspace.saved.id` (the persisted SavedConnection id) as
+ * `connectionId`. A query is included when it is global OR its `connectionId`
+ * matches. This is a pure selector over the full list — Task 2's renderer
+ * calls it; the store itself keeps holding ALL queries.
+ */
+export function selectQueriesForConnection(
+  queries: SavedQuery[],
+  connectionId: string,
+): SavedQuery[] {
+  return queries.filter((q) => q.connectionId == null || q.connectionId === connectionId);
+}

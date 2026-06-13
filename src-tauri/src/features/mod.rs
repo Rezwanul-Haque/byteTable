@@ -6,3 +6,4 @@ pub mod connections;
 pub mod introspection;
 pub mod preferences;
 pub mod saved_queries;
+pub mod structure;

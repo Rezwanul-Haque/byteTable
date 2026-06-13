@@ -54,6 +54,7 @@ mod tests {
                     data_type: "TEXT".into(),
                     nullable: true,
                     pk: false,
+                    default_value: None,
                     fk: None,
                 }],
                 ..Default::default()

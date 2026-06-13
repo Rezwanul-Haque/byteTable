@@ -6,7 +6,8 @@
 // Tasks 3 (key viewers) and 4 (CLI + dashboard + status) also consume
 // `humanBytes` / `humanNum` here.
 
-import type { KeyType } from "./api";
+import type { KeyType, RespReply } from "./api";
+import type { CliLine } from "./state";
 
 /**
  * The six Redis value types' display metadata — fixed accent colors + short
@@ -118,4 +119,160 @@ export function countLeaves(node: NamespaceNode): number {
 export function lastSegment(key: string): string {
   const parts = key.split(KEY_SEPARATOR);
   return parts[parts.length - 1] ?? key;
+}
+
+// ---------------------------------------------------------------------------
+// CLI console helpers (REDIS_SPEC §7) — ported from the prototype's
+// `redis-engine.js` tokenizer + `redis-tabs.jsx` formatReply. The tokenizer
+// splits a command line into args (honoring "double" / 'single' quotes); the
+// formatter renders a typed `RespReply` into colored log lines exactly like
+// redis-cli. The renderer drives off the *typed* reply (never re-parsing).
+// ---------------------------------------------------------------------------
+
+/**
+ * Split a command line into argument tokens, honoring `"double"` and `'single'`
+ * quotes (ported verbatim from the prototype `redis-engine.js` tokenizer).
+ * Backslash escapes are honored only inside double quotes. Empty quoted args
+ * (`""`) are preserved as empty-string tokens.
+ */
+export function tokenizeCommand(line: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  let inq: '"' | "'" | null = null;
+  let has = false;
+  let i = 0;
+  while (i < line.length) {
+    const c = line[i] ?? "";
+    if (inq) {
+      if (c === inq) {
+        inq = null;
+        i++;
+        continue;
+      }
+      if (c === "\\" && inq === '"' && i + 1 < line.length) {
+        cur += line[i + 1];
+        i += 2;
+        continue;
+      }
+      cur += c;
+      i++;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      inq = c;
+      has = true;
+      i++;
+      continue;
+    }
+    if (/\s/.test(c)) {
+      if (has || cur) {
+        out.push(cur);
+        cur = "";
+        has = false;
+      }
+      i++;
+      continue;
+    }
+    cur += c;
+    has = true;
+    i++;
+  }
+  if (has || cur) out.push(cur);
+  return out;
+}
+
+/**
+ * Redis write commands the CLI should treat as mutating (REDIS_SPEC §7): after
+ * one returns, the workspace version is bumped so the sidebar + open key tabs
+ * re-fetch. A reasonable superset of the coverage in §7; a non-mutating command
+ * not in this set never forces a refresh.
+ */
+const MUTATING_COMMANDS = new Set<string>([
+  "SET", "SETEX", "SETNX", "GETSET", "APPEND", "INCR", "DECR", "INCRBY", "DECRBY",
+  "DEL", "UNLINK", "EXPIRE", "PEXPIRE", "EXPIREAT", "PERSIST", "RENAME", "RENAMENX",
+  "FLUSHDB", "FLUSHALL", "MOVE", "COPY",
+  "HSET", "HMSET", "HSETNX", "HDEL", "HINCRBY",
+  "LPUSH", "RPUSH", "LPOP", "RPOP", "LSET", "LREM", "LTRIM", "LINSERT",
+  "SADD", "SREM", "SPOP", "SMOVE",
+  "ZADD", "ZREM", "ZINCRBY", "ZPOPMIN", "ZPOPMAX",
+  "XADD", "XDEL", "XTRIM",
+]);
+
+/** Whether `command` (any case) mutates the keyspace → caller bumps version. */
+export function isMutatingCommand(command: string): boolean {
+  return MUTATING_COMMANDS.has(command.toUpperCase());
+}
+
+/** Destructive commands gated behind a confirm on a production connection. */
+const DESTRUCTIVE_COMMANDS = new Set<string>(["FLUSHDB", "FLUSHALL"]);
+
+/**
+ * Whether a tokenized command is destructive enough to confirm on a production
+ * connection (REDIS_SPEC §7 / M13 safety): a `FLUSHDB`/`FLUSHALL`, or a
+ * **multi-key** `DEL`/`UNLINK` (`DEL k1 k2 …`). A single-key `DEL` is not
+ * gated — that mirrors the key tab's own per-key delete confirm.
+ */
+export function isDestructiveCommand(tokens: string[]): boolean {
+  const cmd = (tokens[0] ?? "").toUpperCase();
+  if (DESTRUCTIVE_COMMANDS.has(cmd)) return true;
+  if ((cmd === "DEL" || cmd === "UNLINK") && tokens.length > 2) return true;
+  return false;
+}
+
+/**
+ * Format a typed `RespReply` into colored log lines, mirroring redis-cli output
+ * exactly (REDIS_SPEC §7 — ported from the prototype `formatReply`):
+ * - status → plain accent (`cli-status`)
+ * - error  → red `(error) …` (`cli-error`)
+ * - int    → `(integer) N` (`cli-int`)
+ * - bulk   → quoted `"…"` (`cli-bulk`); a multi-line bulk (e.g. INFO) prints
+ *            line-per-line; a null bulk is `(nil)` (`cli-nil`)
+ * - array  → numbered `1) … 2) …`; nested arrays indented one level; an empty
+ *            array is `(empty array)` (`cli-nil`)
+ */
+export function formatReply(rep: RespReply, indent = 0, out: CliLine[] = []): CliLine[] {
+  const pad = "  ".repeat(indent);
+  if (rep.kind === "status") {
+    out.push({ cls: "cli-status", text: pad + rep.value });
+  } else if (rep.kind === "error") {
+    out.push({ cls: "cli-error", text: pad + "(error) " + rep.value });
+  } else if (rep.kind === "int") {
+    out.push({ cls: "cli-int", text: pad + "(integer) " + rep.value });
+  } else if (rep.kind === "bulk") {
+    if (rep.value === null) {
+      out.push({ cls: "cli-nil", text: pad + "(nil)" });
+    } else {
+      const lines = rep.value.split("\n");
+      if (lines.length > 1) {
+        for (const l of lines) out.push({ cls: "cli-bulk", text: pad + l });
+      } else {
+        out.push({ cls: "cli-bulk", text: pad + '"' + rep.value + '"' });
+      }
+    }
+  } else {
+    // array
+    if (rep.items.length === 0) {
+      out.push({ cls: "cli-nil", text: pad + "(empty array)" });
+      return out;
+    }
+    rep.items.forEach((item, i) => {
+      const prefix = pad + (i + 1) + ") ";
+      if (item.kind === "array") {
+        out.push({ cls: "cli-idx", text: prefix.trimEnd() });
+        formatReply(item, indent + 1, out);
+      } else {
+        const sub: CliLine[] = [];
+        formatReply(item, 0, sub);
+        const first = sub[0];
+        if (first) {
+          out.push({ cls: first.cls, text: prefix + first.text.trimStart() });
+          for (let j = 1; j < sub.length; j++) {
+            const s = sub[j];
+            if (s) out.push(s);
+          }
+        }
+      }
+    });
+  }
+  return out;
 }

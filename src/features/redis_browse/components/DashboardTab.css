@@ -1,0 +1,201 @@
+/* Keyspace dashboard — ported verbatim from ByteTable.html (.rdash* blocks)
+   and REDIS_SPEC §8, plus a few renderer-only affordances (header refresh
+   spacer, error/caption/empty captions, the per-db cell as a button). */
+
+.rdash {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+}
+
+.rdash-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.rdash-head h2 {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.rdash-sub {
+  font-size: 11px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+}
+
+.rdash-head-spacer {
+  flex: 1;
+}
+
+.rdash-error {
+  margin-bottom: 16px;
+  padding: 9px 12px;
+  border-radius: 9px;
+  border: 1px solid color-mix(in oklab, #e06c75 45%, transparent);
+  background: color-mix(in oklab, #e06c75 12%, transparent);
+  color: #e06c75;
+  font-size: 12px;
+  font-family: var(--mono);
+}
+
+.rdash-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.rdash-stat {
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  padding: 13px 15px;
+}
+
+.rdash-stat-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-faint);
+}
+
+.rdash-stat-value {
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text);
+  margin-top: 4px;
+}
+
+.rdash-stat-sub {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+
+.rdash-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  max-width: 1000px;
+}
+
+.rdash-panel {
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 15px 17px;
+}
+
+.rdash-panel h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-dim);
+  margin-bottom: 13px;
+}
+
+.rdash-panel-empty {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  padding: 8px 0;
+}
+
+.rdash-panel-caption {
+  font-size: 10px;
+  color: var(--text-faint);
+  margin-top: 8px;
+}
+
+.rdash-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 8px;
+}
+
+.rdash-bar-label {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text-dim);
+  width: 56px;
+  flex: none;
+}
+
+.rdash-bar-track {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--bg3);
+  overflow: hidden;
+}
+
+.rdash-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  opacity: 0.85;
+}
+
+.rdash-bar-n {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+  width: 28px;
+  text-align: right;
+}
+
+.rdash-dbgrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.rdash-db {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  border-radius: 8px;
+  background: var(--bg2);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition:
+    border-color 0.1s,
+    background 0.1s;
+}
+
+.rdash-db:hover {
+  border-color: color-mix(in oklab, var(--accent) 40%, transparent);
+}
+
+.rdash-db.empty {
+  opacity: 0.4;
+}
+
+.rdash-db.active {
+  border-color: var(--accent);
+}
+
+.rdash-db-name {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+
+.rdash-db-count {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}

@@ -6,7 +6,7 @@
 // in the redis_browse store (keyed by workspace id, survives switches); the
 // shared workspaces store carries no Redis state.
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import {
   connectionDetail,
@@ -16,6 +16,7 @@ import {
 } from "../../connections/api";
 import { useWorkspacesStore } from "../../workspaces/state";
 import type { Workspace } from "../../workspaces/types";
+import type { KeyType } from "../api";
 import { useRedisBrowseStore } from "../state";
 import { ENV_COLOR } from "../../../shared/ui/envColors";
 import { RedisCommandPalette } from "./RedisCommandPalette";
@@ -49,6 +50,7 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
   const openDashboardTab = useRedisBrowseStore((state) => state.openDashboardTab);
   const setActiveTab = useRedisBrowseStore((state) => state.setActiveTab);
   const closeTab = useRedisBrowseStore((state) => state.closeTab);
+  const setCliState = useRedisBrowseStore((state) => state.setCliState);
   // Subscribe to this workspace's slice so tab/db/version changes re-render.
   const slice = useRedisBrowseStore((state) => state.byWorkspace[wsId]);
   const rs = slice ?? ensure(wsId, initialDb);
@@ -76,6 +78,36 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
   const activeTab = rs.tabs.find((t) => t.id === rs.activeTabId) ?? rs.tabs[0];
   const activeKey =
     activeTab?.kind === "key" && activeTab.db === rs.dbIndex ? activeTab.key : null;
+
+  // Active-key meta for the status bar's right side (§9: `type · memory`). The
+  // active KeyTab reports its loaded type + memory here; cleared when no key
+  // tab is active. Keyed by tab id so a stale report from a just-closed tab is
+  // ignored on the next render.
+  const [keyMeta, setKeyMeta] = useState<{
+    tabId: string;
+    keyType: KeyType;
+    memory: number | null;
+  } | null>(null);
+  const activeKeyMeta =
+    activeTab?.kind === "key" && keyMeta?.tabId === activeTab.id ? keyMeta : null;
+
+  // Stable callbacks for the tab content (so the CLI persist effect + dashboard
+  // fetch effect don't see a fresh identity every render).
+  const onMutated = useCallback(() => bumpVersion(wsId, initialDb), [bumpVersion, wsId, initialDb]);
+  const onSelectDb = useCallback(
+    (db: number) => setDbIndex(wsId, initialDb, db),
+    [setDbIndex, wsId, initialDb],
+  );
+  const onPersistCli = useCallback(
+    (tabId: string, state: Parameters<typeof setCliState>[3]) =>
+      setCliState(wsId, initialDb, tabId, state),
+    [setCliState, wsId, initialDb],
+  );
+  const onKeyMeta = useCallback(
+    (tabId: string, meta: { keyType: KeyType; memory: number | null }) =>
+      setKeyMeta({ tabId, ...meta }),
+    [],
+  );
 
   const env = workspace.saved.env;
   const envColor = ENV_COLOR[env];
@@ -119,9 +151,20 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
             <RedisTabContent
               tab={activeTab}
               handleId={workspace.handleId}
+              connName={workspace.name}
+              serverInfo={serverInfo}
+              serverVersion={
+                serverInfo ? "Redis " + serverInfo.serverVersion : workspace.info.serverVersion
+              }
+              dbIndex={rs.dbIndex}
+              databases={databases}
               version={rs.version}
               isProduction={env === "production"}
-              onMutated={() => bumpVersion(wsId, initialDb)}
+              cli={rs.cli}
+              onPersistCli={onPersistCli}
+              onKeyMeta={onKeyMeta}
+              onMutated={onMutated}
+              onSelectDb={onSelectDb}
               onCloseTab={(id) => closeTab(wsId, initialDb, id)}
             />
           ) : null}
@@ -137,6 +180,8 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
         tunnelHint={tunnelHint}
         dbIndex={rs.dbIndex}
         keyCount={keyCount}
+        activeKeyType={activeKeyMeta?.keyType ?? null}
+        activeKeyMemory={activeKeyMeta?.memory ?? null}
       />
       {paletteOpen ? (
         <RedisCommandPalette
@@ -145,6 +190,8 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
           initialDb={initialDb}
           dbIndex={rs.dbIndex}
           databases={databases}
+          handleId={workspace.handleId}
+          onOpenKey={(db, key, keyType) => openKeyTab(wsId, initialDb, db, key, keyType)}
           onCloseWorkspace={() => closeWorkspace(wsId)}
           onClose={() => setPaletteOpen(false)}
         />

@@ -1,18 +1,22 @@
-// Redis command palette (REDIS_SPEC §5) — ⌘K. Lists the cheap, always-known
-// commands: New CLI console, Keyspace dashboard, switch-to-db entries (the
-// non-empty other dbs), and close workspace. Key entries (icon `vpn_key`, hint
-// = type) are SCAN-backed and live in the sidebar; surfacing them here would
-// need a scan the palette does not own, so they are deferred (the sidebar's
-// MATCH is the key-jump surface this milestone). Same listbox a11y as the SQL
-// palette.
+// Redis command palette (REDIS_SPEC §5) — ⌘K. Lists key-jump entries (icon
+// `vpn_key`, hint = type) plus the always-known commands: New CLI console,
+// Keyspace dashboard, switch-to-db entries (the non-empty other dbs), and close
+// workspace. The key entries are a bounded SCAN sample of the current db (the
+// `keyType` rides on every scan entry) — a quick-jump surface that complements
+// the sidebar's full MATCH browse; selecting one opens its key tab. Same
+// listbox a11y as the SQL palette.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Icon } from "../../../shared/ui/Icon";
 import { Kbd } from "../../../shared/ui/Kbd";
 import type { KvDbInfo } from "../../connections/api";
+import { kvScan, type KeyEntry, type KeyType } from "../api";
 import { useRedisBrowseStore } from "../state";
 import "./RedisCommandPalette.css";
+
+/** How many keys to sample from the current db for the key-jump list. */
+const KEY_SAMPLE_MAX = 200;
 
 interface PaletteCommand {
   id: string;
@@ -28,23 +32,63 @@ interface RedisCommandPaletteProps {
   initialDb: number;
   dbIndex: number;
   databases: KvDbInfo[];
+  /** Connection handle — for the key-jump SCAN sample. */
+  handleId: string;
+  /** Open (or focus) a key tab — used by the key-jump entries. */
+  onOpenKey: (db: number, key: string, keyType: KeyType) => void;
   onCloseWorkspace: () => void;
   onClose: () => void;
 }
 
 export function RedisCommandPalette(props: RedisCommandPaletteProps) {
-  const { workspaceId, workspaceName, initialDb, dbIndex, databases, onCloseWorkspace, onClose } =
-    props;
+  const {
+    workspaceId,
+    workspaceName,
+    initialDb,
+    dbIndex,
+    databases,
+    handleId,
+    onOpenKey,
+    onCloseWorkspace,
+    onClose,
+  } = props;
   const openCliTab = useRedisBrowseStore((state) => state.openCliTab);
   const openDashboardTab = useRedisBrowseStore((state) => state.openDashboardTab);
   const setDbIndex = useRedisBrowseStore((state) => state.setDbIndex);
 
   const [query, setQuery] = useState("");
   const [idx, setIdx] = useState(0);
+  const [sampleKeys, setSampleKeys] = useState<KeyEntry[]>([]);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
 
+  // Sample a bounded page of the current db for the key-jump entries. Cheap
+  // (one SCAN page) and scoped to the open palette; refreshed when the db
+  // changes. Errors are swallowed — the palette still lists its commands.
+  useEffect(() => {
+    let live = true;
+    void kvScan(handleId, dbIndex, { pattern: "*", cursor: "0", count: KEY_SAMPLE_MAX })
+      .then((page) => {
+        if (live) setSampleKeys(page.keys.slice(0, KEY_SAMPLE_MAX));
+      })
+      .catch(() => {
+        if (live) setSampleKeys([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [handleId, dbIndex]);
+
   const commands = useMemo<PaletteCommand[]>(() => {
+    // Key-jump entries (REDIS_SPEC §5: vpn_key icon + type hint) from the
+    // current-db sample. Listed first so a typed query matches key names early.
+    const keyCmds: PaletteCommand[] = sampleKeys.map((k) => ({
+      id: "key-" + k.name,
+      icon: "vpn_key",
+      label: k.name,
+      hint: k.keyType,
+      run: () => onOpenKey(dbIndex, k.name, k.keyType),
+    }));
     const cli: PaletteCommand = {
       id: "new-cli",
       icon: "terminal",
@@ -74,13 +118,15 @@ export function RedisCommandPalette(props: RedisCommandPaletteProps) {
       hint: workspaceName,
       run: onCloseWorkspace,
     };
-    return [cli, dash, ...dbCmds, close];
+    return [...keyCmds, cli, dash, ...dbCmds, close];
   }, [
+    sampleKeys,
     databases,
     dbIndex,
     workspaceId,
     workspaceName,
     initialDb,
+    onOpenKey,
     openCliTab,
     openDashboardTab,
     setDbIndex,

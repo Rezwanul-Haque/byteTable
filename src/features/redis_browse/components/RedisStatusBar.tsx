@@ -1,11 +1,14 @@
 // Redis status bar (REDIS_SPEC §9) — workspace color chip · name · env tag ·
-// "Redis {version}" · tunnel lock (when tunneled) · "db{N} · {count} keys".
-// The right side (active-key type · memory, RESP3) is enriched in Task 4 once
-// the key tabs report their type/memory; for now it shows the protocol marker.
+// "Redis {version}" · tunnel lock (when tunneled) · "db{N} · {count} keys" ·
+// spacer · active-key `type · memory` (when a key tab is active — humanBytes) ·
+// "RESP{N}". The active-key info is reported up by the active KeyTab and passed
+// in here. (The prototype's "mock engine" tag is dropped in production.)
 
 import { EnvTag } from "../../../shared/ui/EnvTag";
 import { Icon } from "../../../shared/ui/Icon";
 import type { Env } from "../../../shared/types";
+import type { KeyType } from "../api";
+import { humanBytes, REDIS_TYPES } from "../helpers";
 import "./RedisStatusBar.css";
 
 interface RedisStatusBarProps {
@@ -18,6 +21,10 @@ interface RedisStatusBarProps {
   tunnelHint: string;
   dbIndex: number;
   keyCount: number;
+  /** The active key tab's type (null when no key tab is active). */
+  activeKeyType: KeyType | null;
+  /** The active key's `MEMORY USAGE` bytes (null when unknown / no key tab). */
+  activeKeyMemory: number | null;
 }
 
 export function RedisStatusBar(props: RedisStatusBarProps) {
@@ -31,7 +38,14 @@ export function RedisStatusBar(props: RedisStatusBarProps) {
     tunnelHint,
     dbIndex,
     keyCount,
+    activeKeyType,
+    activeKeyMemory,
   } = props;
+
+  const keyMeta = activeKeyType
+    ? activeKeyType +
+      (activeKeyMemory !== null ? " · " + humanBytes(activeKeyMemory) : "")
+    : null;
 
   return (
     <div className="redis-statusbar" role="status">
@@ -48,6 +62,14 @@ export function RedisStatusBar(props: RedisStatusBarProps) {
         db{dbIndex} · {keyCount} keys
       </span>
       <div style={{ flex: 1 }} />
+      {keyMeta ? (
+        <span
+          className="status-dim"
+          style={{ color: activeKeyType ? REDIS_TYPES[activeKeyType].color : undefined }}
+        >
+          {keyMeta}
+        </span>
+      ) : null}
       <span className="status-dim">RESP{respVersion}</span>
     </div>
   );

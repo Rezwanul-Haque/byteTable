@@ -55,6 +55,11 @@ interface KeyTabProps {
   onMutated: () => void;
   /** Close this tab (after a successful DEL). */
   onClose: () => void;
+  /**
+   * Report the loaded key's type + memory to the status bar (REDIS_SPEC §9).
+   * Optional so the standalone key tab still works without a host.
+   */
+  onMeta?: (meta: { keyType: KeyType; memory: number | null }) => void;
 }
 
 /** Number of elements a value holds (string → byte length; else item count). */
@@ -85,8 +90,13 @@ export function KeyTab({
   isProduction,
   onMutated,
   onClose,
+  onMeta,
 }: KeyTabProps) {
   const toast = useToast();
+  // Keep the latest onMeta in a ref so reporting it never re-creates `load`
+  // (which would re-fetch the key on every parent render).
+  const onMetaRef = useRef(onMeta);
+  onMetaRef.current = onMeta;
   const [mode, setMode] = useState<"value" | "info">("value");
   const [view, setView] = useState<KeyView | null>(null);
   const [loading, setLoading] = useState(true);
@@ -103,6 +113,8 @@ export function KeyTab({
         if (!signal.live) return;
         setView(v);
         setError(null);
+        // Report type + memory to the status bar (REDIS_SPEC §9).
+        if (v.value.type !== "missing") onMetaRef.current?.({ keyType: v.keyType, memory: v.memory });
       } catch (err) {
         if (!signal.live) return;
         setError(appErrorMessage(err, "Could not load this key."));

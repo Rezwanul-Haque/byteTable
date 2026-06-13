@@ -16,6 +16,27 @@ import { useWorkspacesStore } from "../workspaces/state";
 import type { KeyType } from "./api";
 
 /**
+ * One rendered line of a CLI console's scroll log. `cls` is the CSS class that
+ * colors the line exactly like redis-cli (`cli-status`/`cli-error`/`cli-int`/
+ * `cli-bulk`/`cli-nil`/`cli-idx`/`cli-prompt`/`cli-info`); `text` is already
+ * formatted (prompt echo or one line of a formatted reply).
+ */
+export interface CliLine {
+  cls: string;
+  text: string;
+}
+
+/**
+ * Per-CLI-tab persisted state (REDIS_SPEC §7): the scroll log + the command
+ * history. Kept in the store (keyed by cli tab id) so it survives tab and
+ * workspace switches — the SQL editor's per-tab state pattern.
+ */
+export interface CliTabState {
+  lines: CliLine[];
+  history: string[];
+}
+
+/**
  * One open Redis tab. Discriminated by `kind`; closed union so the content
  * router exhaustively switches.
  *
@@ -46,6 +67,11 @@ export interface RedisWorkspaceState {
    * pattern), so any component can request a reload declaratively.
    */
   version: number;
+  /**
+   * Per-CLI-tab log + history (REDIS_SPEC §7), keyed by cli tab id. Survives
+   * tab/workspace switches. Pruned when a cli tab closes.
+   */
+  cli: Record<string, CliTabState>;
 }
 
 interface RedisBrowseState {
@@ -70,6 +96,11 @@ interface RedisBrowseState {
   openKeyTab: (workspaceId: string, initialDb: number, db: number, key: string, keyType: KeyType) => void;
   /** Open a fresh CLI console ("CLI N") and focus it. */
   openCliTab: (workspaceId: string, initialDb: number) => void;
+  /**
+   * Replace a CLI tab's persisted log + history (REDIS_SPEC §7). Called by the
+   * CliTab after each command / clear so the state survives tab switches.
+   */
+  setCliState: (workspaceId: string, initialDb: number, tabId: string, state: CliTabState) => void;
   /** Focus the (single) dashboard tab — it always exists. */
   openDashboardTab: (workspaceId: string, initialDb: number) => void;
   /** Set the active tab (no-op if the id is unknown). */
@@ -92,6 +123,7 @@ function seed(initialDb: number): RedisWorkspaceState {
     activeTabId: DASHBOARD_ID,
     dbIndex: initialDb,
     version: 0,
+    cli: {},
   };
 }
 
@@ -153,6 +185,11 @@ export const useRedisBrowseStore = create<RedisBrowseState>((set, get) => {
       put(workspaceId, { ...ws, tabs: [...ws.tabs, tab], activeTabId: tab.id });
     },
 
+    setCliState: (workspaceId, initialDb, tabId, state) => {
+      const ws = current(workspaceId, initialDb);
+      put(workspaceId, { ...ws, cli: { ...ws.cli, [tabId]: state } });
+    },
+
     openDashboardTab: (workspaceId, initialDb) => {
       const ws = current(workspaceId, initialDb);
       const dash = ws.tabs.find((t) => t.kind === "dashboard");
@@ -176,7 +213,10 @@ export const useRedisBrowseStore = create<RedisBrowseState>((set, get) => {
         ws.activeTabId === tabId
           ? (tabs[Math.max(0, idx - 1)]?.id ?? DASHBOARD_ID)
           : ws.activeTabId;
-      put(workspaceId, { ...ws, tabs, activeTabId });
+      // Drop the closed cli tab's persisted log + history (no-op for others).
+      const cli = tabId in ws.cli ? { ...ws.cli } : ws.cli;
+      if (tabId in cli) delete cli[tabId];
+      put(workspaceId, { ...ws, tabs, activeTabId, cli });
     },
 
     clear: (workspaceId) => {

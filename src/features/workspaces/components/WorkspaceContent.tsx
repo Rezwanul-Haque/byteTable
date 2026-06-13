@@ -9,6 +9,7 @@
 // mount just the active one — simpler, and grid scroll persistence is the
 // grid's concern via the documented seam, Task 3).
 
+import { SchemaMap } from "../../schema_map/components/SchemaMap";
 import { BTLogo } from "../../../shared/ui/BTLogo";
 import { Kbd } from "../../../shared/ui/Kbd";
 import { useWorkspacesStore } from "../state";
@@ -17,17 +18,6 @@ import { SqlEditorTab } from "./SqlEditorTab";
 import { TabBar } from "./TabBar";
 import { TableTab } from "./TableTab";
 import "./WorkspaceContent.css";
-
-/** Schema-map placeholder — the real ER diagram is M9 (spec §3.8). */
-function MapPlaceholder({ tab }: { tab: Extract<Tab, { kind: "map" }> }) {
-  return (
-    <div className="tab-placeholder">
-      <BTLogo size={40} accent="currentColor" fg="currentColor" />
-      <p>Schema map arrives in M9</p>
-      <span>{tab.schema + " · map"}</span>
-    </div>
-  );
-}
 
 /** No-tabs state (prototype workspace.jsx empty-state copy). */
 function NoTabs() {
@@ -58,7 +48,7 @@ function TabBody({
     case "sql":
       return <SqlEditorTab workspace={workspace} tab={tab} />;
     case "map":
-      return <MapPlaceholder tab={tab} />;
+      return <SchemaMap workspace={workspace} schema={tab.schema} />;
   }
 }
 

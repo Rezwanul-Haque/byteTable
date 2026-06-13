@@ -1,0 +1,316 @@
+/* SchemaMap (M9 §3.8) — SVG-native ER diagram. Visual baseline is the
+ * prototype's .map* CSS (ByteTable.html / schemamap.jsx), re-expressed for SVG
+ * primitives: cards are <g>+<rect>+<text>, edges are <path>. Geometry/colours/
+ * fonts match the prototype; only the substrate is SVG (so Task 3 can export
+ * to PNG/SVG without foreignObject tainting the canvas).
+ *
+ * Reuses the shared .dg-state / .dg-error / .dg-retry loading+error styles. */
+
+.schema-map {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- toolbar (§3.8) ---------- */
+.map-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+
+.map-title {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.map-sub,
+.map-hint {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.map-zoom {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  width: 38px;
+  text-align: center;
+}
+
+/* ---------- canvas ---------- */
+.map-canvas-wrap {
+  position: relative;
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+  /* Dot grid (22px) — CSS background behind the SVG. background-size +
+   * background-position are set inline by the component from zoom + pan, so the
+   * grid pans AND zooms WITH the content (Task 2 left this as a fixed grid).
+   * The export paints its own matching grid as an SVG <pattern>. */
+  background-image: radial-gradient(
+    color-mix(in oklab, var(--border) 70%, transparent) 1px,
+    transparent 1px
+  );
+  background-size: 22px 22px;
+}
+
+.map-svg {
+  position: absolute;
+  inset: 0;
+  display: block;
+  /* Empty-canvas drag = pan; cards stop propagation so they drag instead. */
+  cursor: grab;
+  touch-action: none;
+}
+
+.map-svg:active {
+  cursor: grabbing;
+}
+
+/* Invisible spacer that reserves scroll room for large/spread layouts. */
+.map-extent {
+  pointer-events: none;
+  visibility: hidden;
+}
+
+/* ---------- pan/zoom easing ---------- */
+/* Ease the transform group on zoom/reset (NOT during a drag — the component
+ * drops .map-eased while dragging so card/edge moves stay 1:1 with the pointer,
+ * §1.6 motion 100–150ms). */
+.map-eased {
+  transition: transform 130ms ease;
+}
+
+/* ---------- edges ---------- */
+.map-edges-layer {
+  /* The layer no longer blocks pointers globally; each edge opts back in via
+   * its hit-area + handle so curves are clickable/draggable. */
+  pointer-events: none;
+}
+
+.map-edge {
+  pointer-events: none;
+}
+
+/* Wide invisible stroke makes the thin curve easy to click/touch (§1.5). */
+.map-edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.map-edge-path {
+  fill: none;
+  stroke: color-mix(in oklab, var(--accent) 55%, var(--border));
+  stroke-width: 1.5;
+  transition:
+    stroke 120ms ease,
+    stroke-width 120ms ease;
+}
+
+/* Hover brighten even when not selected (hover lives on the hit-area sibling). */
+.map-edge-hit:hover ~ .map-edge-path {
+  stroke: color-mix(in oklab, var(--accent) 80%, var(--border));
+  stroke-width: 2;
+}
+
+.map-edge.is-selected .map-edge-path {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}
+
+.map-edge-dot {
+  fill: var(--accent);
+}
+
+.map-edge-ring {
+  fill: color-mix(in oklab, var(--accent) 25%, var(--bg0));
+  stroke: var(--accent);
+  stroke-width: 1;
+}
+
+/* Draggable bend handle (shown when selected or already bent). */
+.map-edge-handle {
+  fill: var(--bg1);
+  stroke: var(--accent);
+  stroke-width: 2;
+  pointer-events: all;
+  cursor: grab;
+  transition:
+    fill 120ms ease,
+    r 120ms ease;
+}
+
+.map-edge-handle:hover {
+  fill: color-mix(in oklab, var(--accent) 30%, var(--bg1));
+}
+
+.map-edge-handle:active {
+  cursor: grabbing;
+}
+
+.map-edge.is-selected .map-edge-handle {
+  fill: var(--accent);
+}
+
+/* ---------- cards ---------- */
+.map-card-box {
+  fill: var(--bg1);
+  stroke: var(--border);
+  stroke-width: 1;
+  /* Soft layered shadow via the SVG <filter id="mapCardShadow"> (set on the
+   * element) — serialises cleanly into the export. */
+  transition: stroke 130ms ease;
+}
+
+.map-card:hover .map-card-box {
+  stroke: color-mix(in oklab, var(--accent) 55%, var(--border));
+}
+
+.map-card-head {
+  cursor: grab;
+}
+
+.map-card-head:active {
+  cursor: grabbing;
+}
+
+.map-card-head-bg {
+  fill: var(--bg2);
+}
+
+.map-card-head-rule {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.map-card-icon {
+  fill: var(--accent);
+}
+
+.map-card-name {
+  fill: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.map-card-count {
+  fill: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.map-card-open {
+  cursor: pointer;
+}
+
+.map-card-open-hit {
+  fill: transparent;
+}
+
+.map-card-open:hover .map-card-open-hit {
+  fill: var(--bg3);
+}
+
+.map-card-open-icon {
+  fill: var(--text-faint);
+  transition: fill 120ms ease;
+}
+
+.map-card-open:hover .map-card-open-icon {
+  fill: var(--accent);
+}
+
+/* ---------- column rows ---------- */
+.map-col-pk {
+  fill: var(--accent);
+}
+
+.map-col-fk {
+  fill: var(--text-dim);
+}
+
+.map-col-name {
+  fill: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.map-col-name.is-fk {
+  fill: var(--text);
+}
+
+.map-col-type {
+  fill: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+.map-col-more {
+  fill: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-style: italic;
+}
+
+/* Diagram icons are now inline SVG <path> shapes (see icons.ts), styled by the
+ * fill on .map-card-icon / .map-col-pk / .map-col-fk / .map-card-open-icon
+ * above — no Material Symbols font in the diagram (so it exports cleanly).
+ * <text> elements (names/columns/types) keep using the bundled --mono/--ui
+ * webfonts, which the export embeds as base64 @font-face. */
+
+/* ---------- export popover ---------- */
+.map-export {
+  position: relative;
+  display: flex;
+}
+
+.map-export-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  min-width: 168px;
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+.map-export-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 9px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--ui);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 110ms ease;
+}
+
+.map-export-item:hover {
+  background: var(--bg3);
+}
+
+.map-export-item .msym {
+  color: var(--text-dim);
+}

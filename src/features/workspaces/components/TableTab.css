@@ -276,7 +276,9 @@
 /* The prototype used the base .ctx-menu (position: fixed without offsets) inside
    the relatively-positioned .table-actions wrapper; the React port anchors it
    explicitly under the more_vert button (right-aligned dropdown). */
-.table-actions-menu {
+/* Scoped to .table-actions so it beats the base `.ctx-menu { position: fixed }`
+   (the element carries both classes) regardless of stylesheet order. */
+.table-actions .table-actions-menu {
   position: absolute;
   right: 0;
   top: calc(100% + 6px);

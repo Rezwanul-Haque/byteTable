@@ -236,7 +236,10 @@
   background: var(--bg3);
 }
 
-.sec-actions-menu {
+/* Scoped to .sec-actions so this beats the later `.ctx-menu { position: fixed }`
+   (the element carries both classes); otherwise the menu renders fixed at the
+   corner and looks like it never opened. */
+.sec-actions .sec-actions-menu {
   position: absolute;
   right: 0;
   top: calc(100% + 4px);

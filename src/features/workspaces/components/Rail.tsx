@@ -178,7 +178,33 @@ export function Rail({ onDonate }: RailProps) {
         onClick={onDonate}
         title="Support ByteTable — buy us a coffee"
       >
-        <Icon name="coffee" size={18} fill={1} />
+        <svg
+          className="coffee-icon"
+          width="22"
+          height="22"
+          viewBox="0 0 24 24"
+          fill="none"
+          aria-hidden="true"
+        >
+          <g
+            className="coffee-smoke"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            fill="none"
+          >
+            <path className="smoke s1" d="M9 6 C9 4.5, 10.5 4.5, 10.5 3 C10.5 1.8, 9.5 1.6, 9.5 0.6" />
+            <path className="smoke s2" d="M13.5 6 C13.5 4.5, 15 4.5, 15 3 C15 1.8, 14 1.6, 14 0.6" />
+          </g>
+          <path d="M4 9 h13 v4 a4 4 0 0 1 -4 4 h-5 a4 4 0 0 1 -4 -4 z" fill="currentColor" />
+          <path
+            d="M17 10 h2.2 a2.3 2.3 0 0 1 0 4.6 H17"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            fill="none"
+          />
+          <rect x="4" y="19.2" width="13" height="1.8" rx="0.9" fill="currentColor" />
+        </svg>
       </button>
 
       {editPop && editingWs ? (

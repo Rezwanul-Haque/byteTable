@@ -222,12 +222,23 @@ export async function rasterizeToPngBase64(
   const url = URL.createObjectURL(blob);
   try {
     const img = new Image();
-    img.decoding = "sync";
-    await new Promise<void>((resolve, reject) => {
-      img.onload = () => resolve();
-      img.onerror = () => reject(new Error("Failed to render diagram image."));
-      img.src = url;
-    });
+    img.src = url;
+    // Prefer decode(): it resolves only once the image — including the SVG's
+    // embedded data-URI @font-face glyphs — is fully ready to draw, avoiding a
+    // race where text rasterizes blank because fonts hadn't parsed yet. Fall
+    // back to onload on engines where decode() rejects for SVG sources.
+    try {
+      await img.decode();
+    } catch {
+      await new Promise<void>((resolve, reject) => {
+        if (img.complete && img.naturalWidth > 0) {
+          resolve();
+          return;
+        }
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error("Failed to render diagram image."));
+      });
+    }
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(width * scale));
     canvas.height = Math.max(1, Math.round(height * scale));

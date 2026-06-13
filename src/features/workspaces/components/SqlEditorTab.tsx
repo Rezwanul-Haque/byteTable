@@ -27,9 +27,12 @@ import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { useToast } from "../../../shared/ui/toastContext";
+import { columnsKey, useIntrospectionStore } from "../../introspection/state";
 import { selectQueriesForConnection, useSavedQueriesStore } from "../../saved_queries/state";
 import { useWorkspacesStore } from "../state";
 import type { Tab, Workspace } from "../types";
+import { ExecutionMinimap, ExplainPanel } from "./explain";
+import { detectedTable } from "./explainClauses";
 import { SqlCodeEditor } from "./SqlCodeEditor";
 import { SqlResultGrid } from "./SqlResultGrid";
 import "./SqlEditorTab.css";
@@ -73,6 +76,10 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   const [pop, setPop] = useState<Popover>(null);
   const [saveName, setSaveName] = useState("");
   const [attach, setAttach] = useState(false);
+  // Transient view toggle: the results area shows either the query result
+  // ('result') or the execution-order teaching panel ('explain'). Local —
+  // it's a view flip, not buffer/result state, so it need not survive a switch.
+  const [view, setView] = useState<"result" | "explain">("result");
 
   // The active schema this tab runs against (sidebar switcher; falls back to
   // the connection's first schema — SQLite: "main").
@@ -108,6 +115,18 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   }, [pop]);
 
   const text = tab.text;
+
+  // Optional, client-side enrichment for the Explain panel: if the detected
+  // FROM table already has cached introspection columns (no fetch is issued),
+  // surface its column count on the FROM step. Falls back to null otherwise —
+  // the panel works from clause detection alone.
+  const columnsCache = useIntrospectionStore((s) => s.columns);
+  const explainTable = view === "explain" ? detectedTable(text) : null;
+  const columnCount =
+    explainTable != null
+      ? (columnsCache[columnsKey(workspace.handleId, schemaName, explainTable)]?.columns.length ??
+        null)
+      : null;
 
   // Run the current buffer. Latest `running` is read off state so double-fires
   // are ignored. Result/error/history all go to the store (survive switches).
@@ -168,6 +187,15 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
       <div className="sql-toolbar">
         <Btn icon="play_arrow" variant="filled" onClick={run} disabled={runDisabled} small>
           {running ? "Running…" : "Run"}
+        </Btn>
+        <Btn
+          icon="account_tree"
+          variant={view === "explain" ? "filled" : "tonal"}
+          small
+          onClick={() => setView(view === "explain" ? "result" : "explain")}
+          title="Explain & analyze the execution plan"
+        >
+          Explain
         </Btn>
         <span className="sql-hint">⌘↩ / Ctrl+Enter</span>
         <div className="sql-snippets">
@@ -324,11 +352,28 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
       </div>
 
       <div className="sql-editor-wrap">
-        <SqlCodeEditor value={text} onChange={(v) => setSqlText(tab.id, v)} onRun={run} />
+        <div className="sql-editor-main">
+          <SqlCodeEditor value={text} onChange={(v) => setSqlText(tab.id, v)} onRun={run} />
+        </div>
+        <ExecutionMinimap sql={text} />
       </div>
 
       <div className="sql-results">
-        {error ? (
+        {view === "explain" ? (
+          <>
+            <div className="sql-result-bar explain-bar">
+              <button type="button" className="result-tab" onClick={() => setView("result")}>
+                <Icon name="arrow_back" size={13} /> Results
+              </button>
+              <span className="result-tab active">
+                <Icon name="account_tree" size={13} /> Explain &amp; analyze
+              </span>
+              <div style={{ flex: 1 }} />
+              <span className="dim">{schemaName}</span>
+            </div>
+            <ExplainPanel sql={text} schemaName={schemaName} columnCount={columnCount} />
+          </>
+        ) : error ? (
           <div className="sql-error" role="alert">
             <Icon name="error" size={18} />
             <div>

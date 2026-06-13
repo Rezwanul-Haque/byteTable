@@ -4,7 +4,9 @@ pub mod shared;
 
 use std::sync::Arc;
 
-use tauri::Manager;
+use tauri::menu::{MenuBuilder, MenuItemBuilder};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Manager, WindowEvent};
 
 use engines::sqlite::SqliteConnector;
 use features::connections::application::{ConnectionManager, ConnectorRegistry};
@@ -13,6 +15,30 @@ use features::connections::infrastructure::JsonFileConnectionRepository;
 use features::preferences::commands::PreferencesState;
 use features::preferences::infrastructure::JsonFilePreferencesStore;
 use shared::engine::Engine;
+
+/// Bring the main window back to the foreground (from hidden/minimized tray state).
+fn show_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+/// Tray left-click toggles the window: hide it if it's up front, otherwise restore it.
+fn toggle_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let visible = window.is_visible().unwrap_or(false);
+        let minimized = window.is_minimized().unwrap_or(false);
+        if visible && !minimized {
+            let _ = window.hide();
+        } else {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -43,7 +69,47 @@ pub fn run() {
                 registry,
                 ConnectionManager::new(),
             ));
+
+            // System tray: persistent ByteTable icon. Left-click toggles the
+            // window; right-click opens the menu (Show / Quit). The app keeps
+            // running in the tray when the window is closed (see CloseRequested
+            // below), so the tray is the way back in — and "Quit" is the only
+            // path that actually exits (besides ⌘Q).
+            let show = MenuItemBuilder::with_id("show", "Show ByteTable").build(app)?;
+            let quit = MenuItemBuilder::with_id("quit", "Quit ByteTable").build(app)?;
+            let menu = MenuBuilder::new(app).items(&[&show, &quit]).build()?;
+            let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?;
+            TrayIconBuilder::with_id("main-tray")
+                .icon(tray_icon)
+                .tooltip("ByteTable")
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| match event.id().as_ref() {
+                    "show" => show_main_window(app),
+                    "quit" => app.exit(0),
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        toggle_main_window(tray.app_handle());
+                    }
+                })
+                .build(app)?;
             Ok(())
+        })
+        // Close-to-tray: the window close button hides the window instead of
+        // quitting, so ByteTable lives on in the tray. ⌘Q / tray "Quit" still
+        // exit the app (they go through RunEvent::ExitRequested, not this).
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             features::preferences::commands::prefs_get,

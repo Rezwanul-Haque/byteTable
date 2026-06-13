@@ -1,0 +1,19 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#262a33"/>
+      <stop offset="1" stop-color="#16181d"/>
+    </linearGradient>
+  </defs>
+  <!-- branded squircle tile (macOS-style padding + corner radius) -->
+  <rect x="96" y="96" width="832" height="832" rx="186" fill="url(#tile)"
+        stroke="#2dd4a7" stroke-opacity="0.18" stroke-width="3"/>
+  <!-- BTLogo mark (24-viewBox rects) scaled & centered: translate(192,192) scale(26.6667) -->
+  <g transform="translate(192,192) scale(26.6667)">
+    <rect x="3" y="4" width="8.5" height="4" rx="1.6" fill="#2dd4a7"/>
+    <rect x="13.5" y="4" width="7.5" height="4" rx="1.6" fill="#2dd4a7" opacity="0.45"/>
+    <rect x="3" y="10" width="18" height="4" rx="1.6" fill="#e3e6eb" opacity="0.55"/>
+    <rect x="3" y="16" width="11" height="4" rx="1.6" fill="#e3e6eb" opacity="0.35"/>
+    <rect x="16.5" y="16" width="4.5" height="4" rx="1.2" fill="#2dd4a7"/>
+  </g>
+</svg>

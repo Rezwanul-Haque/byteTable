@@ -138,8 +138,8 @@
   height: 38px;
   border-radius: 50%;
   flex: none;
-  color: #ef7fb1;
-  background: #ef7fb114;
+  color: #e2b340;
+  background: #e2b34014;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -149,7 +149,7 @@
 }
 
 .rail-donate:hover {
-  background: #ef7fb128;
+  background: #e2b34028;
   transform: scale(1.08);
 }
 

@@ -171,8 +171,14 @@ mod tests {
 
     /// The REAL OS keychain round-trip, gated behind `BYTETABLE_TEST_KEYCHAIN=1`
     /// (the macOS Keychain may prompt / be unavailable in CI, so it is opt-in).
-    /// Run locally with: `BYTETABLE_TEST_KEYCHAIN=1 cargo test --lib
-    /// features::connections::secrets`.
+    /// Run in its OWN filter:
+    /// `BYTETABLE_TEST_KEYCHAIN=1 cargo test --lib features::connections::secrets`.
+    ///
+    /// NOTE: run this in its own filter, not co-mingled with the whole gated
+    /// suite. Running it inside a process that has also spun up many tokio
+    /// runtimes / SSH-tunnel threads can make the macOS Security framework
+    /// briefly report "A default keychain could not be found" — a harness/OS
+    /// artifact (the GUI app always has a default keychain), not a code bug.
     #[test]
     fn real_keychain_round_trip() {
         if std::env::var("BYTETABLE_TEST_KEYCHAIN").as_deref() != Ok("1") {
@@ -180,9 +186,9 @@ mod tests {
             return;
         }
         let store = KeyringSecretStore::new();
+        // A fresh UUID account, so it is guaranteed absent — no clean-slate
+        // delete needed (and reading an absent entry returns None, not error).
         let account = format!("bytetable-test-{}", uuid::Uuid::new_v4());
-        // Clean slate.
-        store.delete(&account).unwrap();
         assert_eq!(store.get(&account).unwrap(), None);
         // Set / get.
         store.set(&account, "s3cr3t-value").unwrap();

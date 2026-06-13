@@ -13,7 +13,9 @@
 // (tabMeta store): the grid reports totalRows + elapsedMs per fetch; until
 // then it shows "— rows".
 
+import { connectionIsTunneled, tunnelTitle } from "../../connections/api";
 import { EnvTag } from "../../../shared/ui/EnvTag";
+import { Icon } from "../../../shared/ui/Icon";
 import { rowCountLabel, useTabMetaStore } from "../tabMeta";
 import type { Workspace } from "../types";
 import "./StatusBar.css";
@@ -50,8 +52,16 @@ export function StatusBar({ workspace }: { workspace: Workspace }) {
       <span className="status-strong">{workspace.name}</span>
       <EnvTag env={workspace.saved.env} />
       <span className="status-dim">{workspace.info.serverVersion}</span>
-      {/* Tunnel lock goes here once SSH tunnels land (M12) — SQLite never
-          tunnels and ConnectionParams has no tunnel fields yet. */}
+      {/* Tunnel lock (M12 Task 3): shown when the connection routes through an
+          SSH bastion. SQLite never tunnels. */}
+      {connectionIsTunneled(workspace.saved.params) ? (
+        <span
+          className="status-dim status-tunnel"
+          title={tunnelTitle(workspace.saved.params)}
+        >
+          <Icon name="vpn_lock" size={13} style={{ color: "var(--accent)" }} />
+        </span>
+      ) : null}
       <span className="status-dim">schema: {schemaName}</span>
       <div style={{ flex: 1 }} />
       {context ? <span className="status-dim">{context}</span> : null}

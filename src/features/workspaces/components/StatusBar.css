@@ -26,6 +26,13 @@
   font-size: 10.5px;
 }
 
+/* Tunnel-lock indicator (M12 Task 3): the status-bar counterpart of the
+   sidebar header's lock, shown when the connection routes through a bastion. */
+.status-tunnel {
+  display: inline-flex;
+  align-items: center;
+}
+
 .ws-chip {
   width: 9px;
   height: 9px;

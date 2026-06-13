@@ -8,6 +8,8 @@
 // opens the real donation page in the default browser AND toasts the
 // prototype's thanks message.
 
+import { useState } from "react";
+
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 import { BrandMark } from "../../../shared/ui/BrandMark";
@@ -17,11 +19,30 @@ import { Modal } from "../../../shared/ui/Modal";
 import { useToast } from "../../../shared/ui/toastContext";
 import "./DonateModal.css";
 
-// Donation targets — placeholder slugs until the real accounts exist. The
-// one-off amounts go to Buy Me a Coffee; the monthly sustainer tier goes to
-// GitHub Sponsors.
+// Donation targets — placeholder slugs until the real accounts exist.
 const GITHUB_SPONSORS_URL = "https://github.com/sponsors/bytetable";
 const BUY_ME_A_COFFEE_URL = "https://buymeacoffee.com/bytetable";
+
+// Selectable amounts. The user picks one, THEN clicks a provider button, which
+// opens that provider's page carrying the chosen amount (+ frequency).
+const AMOUNTS = [
+  { id: "coffee", amount: 3, label: "coffee", recurring: false, popular: false },
+  { id: "big", amount: 5, label: "big coffee", recurring: false, popular: false },
+  { id: "sustainer", amount: 10, label: "sustainer", recurring: true, popular: true },
+] as const;
+type AmountId = (typeof AMOUNTS)[number]["id"];
+
+/** GitHub Sponsors deep link: ?frequency=one-time|recurring&amount=<dollars>. */
+function sponsorsUrl(amount: number, recurring: boolean): string {
+  const frequency = recurring ? "recurring" : "one-time";
+  return `${GITHUB_SPONSORS_URL}?frequency=${frequency}&amount=${amount}`;
+}
+
+/** Buy Me a Coffee carries the amount as a coffee count (`?amount` is its
+ *  per-coffee multiplier on the support page). */
+function buyMeACoffeeUrl(amount: number): string {
+  return `${BUY_ME_A_COFFEE_URL}?amount=${amount}`;
+}
 
 /**
  * Open a URL in the OS default browser. Inside Tauri (detected via the
@@ -44,18 +65,27 @@ interface DonateModalProps {
 
 export function DonateModal({ onClose }: DonateModalProps) {
   const toast = useToast();
+  // The chosen amount (default $5 one-off "big coffee"); a provider button
+  // then opens that provider carrying this amount. Picking a card does NOT
+  // open a link.
+  const [selectedId, setSelectedId] = useState<AmountId>("big");
+  const selected = AMOUNTS.find((a) => a.id === selectedId) ?? AMOUNTS[1];
 
-  // Prototype thank(): toast + close — plus the real browser hand-off. The
-  // open is awaited so a failed hand-off surfaces an error toast instead of
-  // a false "Thank you!", and the modal stays open for a retry.
-  const thank = async (what: string, url: string) => {
+  // Open the chosen provider with the selected amount, then thank + close. The
+  // open is awaited so a failed hand-off surfaces an error toast instead of a
+  // false "Thank you!", and the modal stays open for a retry.
+  const donate = async (provider: "sponsors" | "bmc") => {
+    const url =
+      provider === "sponsors"
+        ? sponsorsUrl(selected.amount, selected.recurring)
+        : buyMeACoffeeUrl(selected.amount);
     try {
       await openExternal(url);
     } catch {
       toast("Couldn't open browser — visit " + url, "err");
       return;
     }
-    toast("Thank you! " + what, "ok");
+    toast(`Thank you! ($${selected.amount}${selected.recurring ? "/mo" : ""})`, "ok");
     onClose();
   };
 
@@ -72,48 +102,34 @@ export function DonateModal({ onClose }: DonateModalProps) {
         </div>
         <IconBtn icon="close" onClick={onClose} title="Close" />
       </div>
-      <div className="donate-amounts">
-        <button
-          type="button"
-          className="donate-amount"
-          onClick={() => void thank("One coffee ☕", BUY_ME_A_COFFEE_URL)}
-        >
-          <span className="donate-amount-n">$3</span>
-          <span>coffee</span>
-        </button>
-        <button
-          type="button"
-          className="donate-amount"
-          onClick={() => void thank("A generous coffee", BUY_ME_A_COFFEE_URL)}
-        >
-          <span className="donate-amount-n">$5</span>
-          <span>big coffee</span>
-        </button>
-        <button
-          type="button"
-          className="donate-amount popular"
-          onClick={() => void thank("Monthly support 💛", GITHUB_SPONSORS_URL)}
-        >
-          <span className="donate-amount-n">
-            $10<small>/mo</small>
-          </span>
-          <span>sustainer</span>
-          <span className="donate-pop-tag">popular</span>
-        </button>
+      <div className="donate-amounts" role="radiogroup" aria-label="Donation amount">
+        {AMOUNTS.map((a) => (
+          <button
+            key={a.id}
+            type="button"
+            role="radio"
+            aria-checked={selectedId === a.id}
+            className={
+              "donate-amount" +
+              (a.popular ? " popular" : "") +
+              (selectedId === a.id ? " selected" : "")
+            }
+            onClick={() => setSelectedId(a.id)}
+          >
+            <span className="donate-amount-n">
+              ${a.amount}
+              {a.recurring ? <small>/mo</small> : null}
+            </span>
+            <span>{a.label}</span>
+            {a.popular ? <span className="donate-pop-tag">popular</span> : null}
+          </button>
+        ))}
       </div>
       <div className="donate-links">
-        <Btn
-          icon="favorite"
-          variant="filled"
-          onClick={() => void thank("GitHub Sponsors", GITHUB_SPONSORS_URL)}
-        >
+        <Btn icon="favorite" variant="filled" onClick={() => void donate("sponsors")}>
           GitHub Sponsors
         </Btn>
-        <Btn
-          icon="local_cafe"
-          variant="tonal"
-          onClick={() => void thank("Buy Me a Coffee", BUY_ME_A_COFFEE_URL)}
-        >
+        <Btn icon="local_cafe" variant="tonal" onClick={() => void donate("bmc")}>
           Buy Me a Coffee
         </Btn>
         <Btn variant="text" onClick={onClose}>

@@ -89,14 +89,5 @@
   color: var(--text);
 }
 
-/* Pushes the console toggle to the right edge of the strip (M14). */
-.redis-main .tabbar-spacer {
-  flex: 1;
-}
-
-/* Console toggle button — right-aligned, vertically centred in the 37px strip
-   (mirrors the SQL TabBar's console toggle). */
-.redis-main .tabbar-console-btn {
-  align-self: center;
-  margin-right: 6px;
-}
+/* The Terminal toggle uses the global `.tabbar-tools` / `.tabbar-tool` rules
+   (TabBar.css), right-aligned via `margin-left: auto` — no Redis override. */

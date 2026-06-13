@@ -8,7 +8,6 @@
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 
 import { Icon } from "../../../shared/ui/Icon";
-import { IconBtn } from "../../../shared/ui/IconBtn";
 import type { RedisTab } from "../state";
 import { RedisTypeBadge } from "./RedisTypeBadge";
 import "./RedisTabBar.css";
@@ -105,16 +104,19 @@ export function RedisTabBar({
           );
         })}
       </div>
-      <div className="tabbar-spacer" />
-      <IconBtn
-        className="tabbar-console-btn"
-        icon="terminal"
-        size={16}
-        active={consoleOpen}
-        title="Toggle console (Ctrl+`)"
-        aria-label="Toggle console (Ctrl+`)"
-        onClick={onToggleConsole}
-      />
+      <div className="tabbar-tools">
+        <button
+          type="button"
+          className={"tabbar-tool" + (consoleOpen ? " active" : "")}
+          title="Toggle terminal (Ctrl+`)"
+          aria-label="Toggle terminal (Ctrl+`)"
+          aria-pressed={consoleOpen}
+          onClick={onToggleConsole}
+        >
+          <Icon name="terminal" size={15} />
+          <span>Terminal</span>
+        </button>
+      </div>
     </div>
   );
 }

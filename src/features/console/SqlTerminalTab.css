@@ -1,0 +1,130 @@
+/* SQL terminal REPL styles (M14) — ported byte-exact from ByteTable.html
+   (.rcli / .term-* result colors / .sql-snippets / .snippet-chip). The REPL
+   look: mono, accent prompt, psql-style ASCII tables. Panel chrome lives in
+   TerminalPanel.css. */
+
+.rcli {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.rcli-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.rcli-title {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+}
+.rcli-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  background: var(--bg0);
+  cursor: text;
+}
+.rcli-line {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.rcli-inputline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 7px;
+}
+.rcli-prompt {
+  color: var(--accent);
+  flex: none;
+}
+.rcli-input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--text);
+  caret-color: var(--accent);
+}
+
+/* terminal transcript line colors */
+.term-info {
+  color: var(--text-faint);
+  font-style: italic;
+}
+.term-err {
+  color: #e06c75;
+}
+.term-prompt {
+  color: var(--text-dim);
+}
+.term-prompt-str {
+  white-space: pre;
+}
+
+/* terminal result table colors (psql-style) */
+.term-thead {
+  color: var(--text);
+  font-weight: 500;
+}
+.term-rule {
+  color: var(--text-faint);
+}
+.term-row {
+  color: var(--text);
+}
+.term-meta {
+  color: var(--text-faint);
+  font-style: italic;
+}
+.term-help {
+  color: var(--text-dim);
+}
+.term-schema {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+.term-timing {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--accent);
+}
+
+/* snippet preset chips */
+.sql-snippets {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.sql-snippets::-webkit-scrollbar {
+  display: none;
+}
+.snippet-chip {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 3px 10px;
+  white-space: nowrap;
+  transition:
+    color 0.1s,
+    border-color 0.1s;
+}
+.snippet-chip:hover {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 50%, transparent);
+}

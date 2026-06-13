@@ -169,14 +169,10 @@ export const useRedisBrowseStore = create<RedisBrowseState>((set, get) => {
         ws.activeTabId === tabId
           ? (tabs[Math.max(0, idx - 1)]?.id ?? DASHBOARD_ID)
           : ws.activeTabId;
-      // Drop the closed cli tab's persisted log + history (no-op for others).
-      const cli = tabId in ws.cli ? { ...ws.cli } : ws.cli;
-      if (tabId in cli) delete cli[tabId];
-      put(workspaceId, { ...ws, tabs, activeTabId, cli });
+      put(workspaceId, { ...ws, tabs, activeTabId });
     },
 
     clear: (workspaceId) => {
-      cliCounters.delete(workspaceId);
       set((state) => {
         if (!(workspaceId in state.byWorkspace)) return state;
         const byWorkspace = { ...state.byWorkspace };
@@ -195,12 +191,9 @@ export const useRedisBrowseStore = create<RedisBrowseState>((set, get) => {
 useWorkspacesStore.subscribe((state) => {
   const store = useRedisBrowseStore.getState();
   const ids = Object.keys(store.byWorkspace);
-  if (ids.length === 0 && cliCounters.size === 0) return;
+  if (ids.length === 0) return;
   const live = new Set(state.workspaces.map((ws) => ws.id));
   for (const id of ids) {
     if (!live.has(id)) store.clear(id);
-  }
-  for (const id of cliCounters.keys()) {
-    if (!live.has(id)) cliCounters.delete(id);
   }
 });

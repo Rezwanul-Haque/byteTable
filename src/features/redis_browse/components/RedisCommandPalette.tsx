@@ -11,7 +11,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../../../shared/ui/Icon";
 import { Kbd } from "../../../shared/ui/Kbd";
 import type { KvDbInfo } from "../../connections/api";
-import { useConsoleStore } from "../../console/state";
+import { shellLabel, usePanelStore } from "../../console/state";
 import { kvScan, type KeyEntry, type KeyType } from "../api";
 import { useRedisBrowseStore } from "../state";
 import "./RedisCommandPalette.css";
@@ -57,7 +57,7 @@ export function RedisCommandPalette(props: RedisCommandPaletteProps) {
   const setDbIndex = useRedisBrowseStore((state) => state.setDbIndex);
   // M14: the docked console panel replaces the M13 cli tab; the "New CLI
   // console" entry opens it.
-  const openPanel = useConsoleStore((state) => state.openPanel);
+  const openPanel = usePanelStore((state) => state.openPanel);
 
   const [query, setQuery] = useState("");
   const [idx, setIdx] = useState(0);
@@ -97,7 +97,7 @@ export function RedisCommandPalette(props: RedisCommandPaletteProps) {
       icon: "terminal",
       label: "New CLI console",
       hint: "⌘T",
-      run: () => openPanel(workspaceId),
+      run: () => openPanel(workspaceId, shellLabel("redis")),
     };
     const dash: PaletteCommand = {
       id: "dashboard",

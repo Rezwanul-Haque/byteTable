@@ -13,14 +13,14 @@ import { Sidebar } from "./Sidebar";
 import { CommandPalette } from "./CommandPalette";
 import { StatusBar } from "./StatusBar";
 import { WorkspaceContent } from "./WorkspaceContent";
-import { ConsolePanel } from "../../console/ConsolePanel";
-import { useConsoleStore } from "../../console/state";
+import { TerminalPanel } from "../../console/TerminalPanel";
+import { shellLabel, usePanelStore } from "../../console/state";
 import { useWorkspacesStore } from "../state";
 import type { Workspace } from "../types";
 
 export function WorkspaceShell({ workspace }: { workspace: Workspace }) {
   const openSqlTab = useWorkspacesStore((state) => state.openSqlTab);
-  const togglePanel = useConsoleStore((state) => state.togglePanel);
+  const togglePanel = usePanelStore((state) => state.togglePanel);
   const [paletteOpen, setPaletteOpen] = useState(false);
 
   // §3.12: ⌘/Ctrl+K toggles the palette, ⌘/Ctrl+T opens a new SQL tab.
@@ -32,7 +32,7 @@ export function WorkspaceShell({ workspace }: { workspace: Workspace }) {
       // ⌃` is its own binding (Ctrl, not the ⌘/Ctrl `mod`) — handle it first.
       if (event.ctrlKey && event.key === "`") {
         event.preventDefault();
-        togglePanel(workspace.id);
+        togglePanel(workspace.id, shellLabel(workspace.saved.engine));
         return;
       }
       const mod = event.metaKey || event.ctrlKey;
@@ -48,7 +48,7 @@ export function WorkspaceShell({ workspace }: { workspace: Workspace }) {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [openSqlTab, togglePanel, workspace.id]);
+  }, [openSqlTab, togglePanel, workspace.id, workspace.saved.engine]);
 
   return (
     <div className="workspace">
@@ -57,7 +57,7 @@ export function WorkspaceShell({ workspace }: { workspace: Workspace }) {
         <WorkspaceContent workspace={workspace} />
         {/* Docks at the bottom of the content column, above the status bar.
             Only renders when this workspace's console is open. */}
-        <ConsolePanel workspace={workspace} />
+        <TerminalPanel workspace={workspace} />
       </main>
       <StatusBar workspace={workspace} />
       {paletteOpen ? (

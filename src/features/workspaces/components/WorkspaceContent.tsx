@@ -10,7 +10,7 @@
 // grid's concern via the documented seam, Task 3).
 
 import { SchemaMap } from "../../schema_map/components/SchemaMap";
-import { selectConsole, useConsoleStore } from "../../console/state";
+import { selectPanel, shellLabel, usePanelStore } from "../../console/state";
 import { BTLogo } from "../../../shared/ui/BTLogo";
 import { Kbd } from "../../../shared/ui/Kbd";
 import { useWorkspacesStore } from "../state";
@@ -57,8 +57,8 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
   const setActiveTab = useWorkspacesStore((state) => state.setActiveTab);
   const closeTab = useWorkspacesStore((state) => state.closeTab);
   const openSqlTab = useWorkspacesStore((state) => state.openSqlTab);
-  const consoleOpen = useConsoleStore((state) => selectConsole(state, workspace.id).open);
-  const togglePanel = useConsoleStore((state) => state.togglePanel);
+  const consoleOpen = usePanelStore((state) => selectPanel(state, workspace.id).open);
+  const togglePanel = usePanelStore((state) => state.togglePanel);
 
   const tabs = workspace.ui.tabs ?? [];
   const activeTabId = workspace.ui.activeTabId ?? null;
@@ -80,7 +80,7 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
         onClose={closeTab}
         onNewSql={openSqlTab}
         consoleOpen={consoleOpen}
-        onToggleConsole={() => togglePanel(workspace.id)}
+        onToggleConsole={() => togglePanel(workspace.id, shellLabel(workspace.saved.engine))}
       />
       <div className="tab-content">
         {activeTab ? (

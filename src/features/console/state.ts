@@ -1,170 +1,254 @@
-// Docked console panel store (M14) — per-workspace console state, keyed by
-// workspace id. Separate from the workspaces slice on purpose: the panel is a
-// shared composition point (ARCHITECTURE §11) used by BOTH the SQL workspace
-// (WorkspaceShell) and the Redis workspace (Task 2, RedisWorkspace), so its
-// state must not live inside either engine's slice. Keeping it here also keeps
-// the workspaces `ui` shape unchanged.
+// Docked terminal panel store (M14) — per-workspace, VS Code-style multi-session
+// terminal panel state, keyed by workspace id. Separate from the workspaces
+// slice on purpose: the panel is a shared composition point (ARCHITECTURE §11)
+// used by BOTH the SQL workspace (WorkspaceShell) and the Redis workspace
+// (RedisWorkspace), so its state must not live inside either engine's slice.
 //
 // PER-WORKSPACE BINDING. Every action takes a `workspaceId`; callers pass the
-// ACTIVE workspace's id. State is a `Record<workspaceId, ConsoleState>`, so
-// switching workspaces shows that workspace's own console (open/closed, height,
-// history, log) and switching back restores it for free — exactly the
-// WorkspaceUiState rule, but in a slice-neutral store. A workspace's entry is
-// created lazily on first toggle/open and pruned when the workspace closes
-// (a subscription on the workspaces store, mirroring state.ts's sqlCounters).
+// ACTIVE workspace's id. State is a `Record<workspaceId, PanelState>`, so
+// switching workspaces shows that workspace's own panel (open/closed, height,
+// maximized, sessions + which one is active) and switching back restores it for
+// free — the WorkspaceUiState rule, in a slice-neutral store. A workspace's
+// entry is created lazily on first toggle/open and pruned when the workspace
+// closes (a subscription on the workspaces store, mirroring sqlCounters).
+//
+// AUTHORITATIVE PROTOTYPE: ByteTable_latest/bytetable/terminal.jsx
+// `TerminalPanel` (the multi-session chrome) + `SqlTerminalTab` (the REPL). The
+// prototype keeps each session's REPL state (lines/history/buffer/timing) on a
+// `tab` object lifted into the parent; this store is that lift, per workspace.
 
 import { create } from "zustand";
 
-import type { QueryResult } from "../../shared/api/engine";
+import type { Engine } from "../../shared/types";
 import { useWorkspacesStore } from "../workspaces/state";
 
-/** Per-workspace command-history cap (spec §3 "capped"; matches the M13 cli). */
-export const CONSOLE_HISTORY_MAX = 50;
+/**
+ * Shell program name for a session title / banner, per engine. Matches the
+ * prototype's `termConfig(engine).shell` (`psql`/`mysql`/`sqlite3`). Redis
+ * (the next task) will add `redis-cli`. Kept here so the slice-neutral store
+ * and the engine-agnostic chrome (WorkspaceShell, palettes) can seed session
+ * titles without importing the SQL REPL component.
+ */
+export function shellLabel(engine: Engine): string {
+  switch (engine) {
+    case "mysql":
+      return "mysql";
+    case "sqlite":
+      return "sqlite3";
+    case "redis":
+      return "redis-cli";
+    case "postgres":
+    default:
+      return "psql";
+  }
+}
 
-/** Min panel height in px (spec §3 "min height ~120px"). */
-export const CONSOLE_MIN_HEIGHT = 120;
+/** Per-session command-history cap (prototype: `.slice(0, 80)`). */
+export const TERM_HISTORY_MAX = 80;
 
-/** Default panel height as a fraction of content height (spec §3 "~33%"). */
-export const CONSOLE_DEFAULT_FRACTION = 0.33;
+/** Min panel height in px (prototype clamp lower bound). */
+export const TERM_MIN_HEIGHT = 120;
 
-/** Max panel height as a fraction of content height (clamp). */
-export const CONSOLE_MAX_FRACTION = 0.7;
+/** Default panel height in px on first open (≈ a third of a tall window). */
+export const TERM_DEFAULT_HEIGHT = 280;
+
+/** Reserved chrome height the resize clamp keeps above the panel (prototype:
+ *  `window.innerHeight - 160`). */
+export const TERM_RESERVED_HEIGHT = 160;
 
 /**
- * One formatted reply line of a Redis console entry — `cls` is the CSS class
- * that colors it exactly like redis-cli (`cli-status`/`cli-error`/`cli-int`/
- * `cli-bulk`/`cli-nil`/`cli-idx`), `text` is the already-formatted line. This
- * mirrors redis_browse's `CliLine` shape, but is declared here so the
- * slice-neutral console store never imports the Redis slice (ARCHITECTURE §11);
- * RedisConsole (the host wire-point) maps `formatReply`'s output into this.
+ * One rendered line of a session's REPL transcript. `cls` is the CSS class that
+ * colors it like the engine shell (`term-info`/`term-err`/`term-prompt`/
+ * `term-thead`/`term-rule`/`term-row`/`term-meta`/`term-help`), `text` is the
+ * already-formatted line. Mirrors the prototype's `{ cls, text }` line objects.
  */
-export interface ConsoleReplyLine {
+export interface TermLine {
   cls: string;
   text: string;
 }
 
 /**
- * One echoed command + its outcome in the console log. The shape covers both
- * engines (the panel is a single per-workspace console):
- * - **SQL** — `result` carries a row-returning QueryResult for the inline grid;
- *   `error` carries a §5 message; both absent on a non-row "Query OK".
- * - **Redis** — `replyLines` carries the redis-cli-formatted reply (status/
- *   error/integer/bulk/nil/nested-array) rendered as colored text lines; the
- *   prompt echo is rebuilt at render time from `{conn}:db{N}>`.
+ * One terminal session inside a workspace's panel. The prototype's per-tab REPL
+ * state, lifted here so it survives workspace switches + panel hide:
+ * - `lines` — the scrolling transcript (banner + echoes + results).
+ * - `history` — submitted lines, newest-first, capped at TERM_HISTORY_MAX.
+ * - `buffer` — accumulated multi-line SQL until a `;` terminates it.
+ * - `timing` — local `\timing` toggle (append "Time: N ms" after results).
  */
-export interface ConsoleEntry {
-  /** Monotonic id for React keys (commands can repeat verbatim). */
+export interface TermSession {
   id: string;
-  /** The echoed command text (without the prompt prefix). */
-  command: string;
-  /** Outcome category — drives the status-line color/icon. */
-  status: "ok" | "error";
-  /**
-   * A row-returning QueryResult to render as a compact inline grid. Absent for
-   * non-SELECT / "Query OK" runs and for errors.
-   */
-  result?: QueryResult;
-  /** The §5 error message when `status === "error"`. */
-  error?: string;
-  /**
-   * The schema the command ran against (SQL), shown in the status line. Absent
-   * for engines/contexts without one.
-   */
-  schema?: string;
-  /**
-   * The redis-cli-formatted reply lines (Redis console). Absent for SQL
-   * entries; present for every Redis entry (an error reply is one
-   * `cli-error` line).
-   */
-  replyLines?: ConsoleReplyLine[];
-}
-
-/** One workspace's console state. */
-export interface ConsoleState {
-  open: boolean;
-  /** Panel height in px; 0 = "use the default fraction on next open". */
-  height: number;
-  /** Command history, newest-first, capped at CONSOLE_HISTORY_MAX. */
+  title: string;
+  lines: TermLine[];
   history: string[];
-  /** The scrolling output log, oldest-first. */
-  log: ConsoleEntry[];
+  buffer: string;
+  timing: boolean;
 }
 
-const EMPTY: ConsoleState = { open: false, height: 0, history: [], log: [] };
+/** One workspace's terminal-panel state. */
+export interface PanelState {
+  open: boolean;
+  /** Full content-area height when true (prototype `.maximized`). */
+  maximized: boolean;
+  /** Panel height in px; 0 = "use TERM_DEFAULT_HEIGHT on next open". */
+  height: number;
+  /** Terminal sessions, left-to-right (tab order). */
+  sessions: TermSession[];
+  /** The visible session's id, or null when there are no sessions. */
+  activeSessionId: string | null;
+}
 
-interface ConsoleFeatureState {
-  /** Per-workspace console state, keyed by workspace id. */
-  byWorkspace: Record<string, ConsoleState>;
-  /** Toggle the panel open/closed for a workspace. */
-  togglePanel: (workspaceId: string) => void;
-  /** Open the panel (idempotent) — used by the toggle button + ⌃`. */
-  openPanel: (workspaceId: string) => void;
-  /** Close the panel (the header × ). */
+const EMPTY: PanelState = {
+  open: false,
+  maximized: false,
+  height: 0,
+  sessions: [],
+  activeSessionId: null,
+};
+
+interface PanelFeatureState {
+  /** Per-workspace panel state, keyed by workspace id. */
+  byWorkspace: Record<string, PanelState>;
+  /**
+   * Toggle the panel for a workspace. Opening with no sessions seeds the first
+   * one (`{shellLabel} 1`) — matches the task's "toggle opens panel + creates
+   * the first session if none".
+   */
+  togglePanel: (workspaceId: string, shellLabel: string) => void;
+  /** Open the panel (idempotent), seeding a first session if none exist. */
+  openPanel: (workspaceId: string, shellLabel: string) => void;
+  /** Hide the panel (the header ⌄ / Ctrl+`). Sessions are kept. */
   closePanel: (workspaceId: string) => void;
-  /** Persist a dragged/clamped height for a workspace. */
+  /** Toggle the maximize (full content-area height) state. */
+  toggleMax: (workspaceId: string) => void;
+  /** Persist a dragged/clamped height (also clears `maximized`). */
   setHeight: (workspaceId: string, height: number) => void;
-  /** Push a command onto a workspace's history (deduped at head, capped). */
-  pushHistory: (workspaceId: string, command: string) => void;
-  /** Append an entry to a workspace's output log. */
-  pushEntry: (workspaceId: string, entry: ConsoleEntry) => void;
-  /** Clear a workspace's output log (the header clear button / Ctrl+L). */
-  clearLog: (workspaceId: string) => void;
+  /** Append a new session (`{shellLabel} N`) and make it active. */
+  newSession: (workspaceId: string, shellLabel: string) => void;
+  /**
+   * Kill a session. If it was the last one the panel hides (matches the
+   * prototype: the panel has no empty state — closing the final session leaves
+   * nothing to render, so we collapse it; re-opening seeds a fresh session).
+   */
+  closeSession: (workspaceId: string, sessionId: string) => void;
+  /** Make a session active. */
+  selectSession: (workspaceId: string, sessionId: string) => void;
+  /** Patch one session's REPL state (lines/history/buffer/timing). */
+  patchSession: (
+    workspaceId: string,
+    sessionId: string,
+    patch: Partial<Omit<TermSession, "id" | "title">>,
+  ) => void;
 }
 
-/** Read-or-default a workspace's console state (never mutates). */
-export function selectConsole(state: ConsoleFeatureState, workspaceId: string): ConsoleState {
+/** Read-or-default a workspace's panel state (never mutates). */
+export function selectPanel(state: PanelFeatureState, workspaceId: string): PanelState {
   return state.byWorkspace[workspaceId] ?? EMPTY;
 }
 
-/** Apply a patch to one workspace's console state, creating it lazily. */
+/** Apply a patch to one workspace's panel state, creating it lazily. */
 function patch(
-  state: ConsoleFeatureState,
+  state: PanelFeatureState,
   workspaceId: string,
-  update: (cur: ConsoleState) => Partial<ConsoleState>,
-): Pick<ConsoleFeatureState, "byWorkspace"> {
+  update: (cur: PanelState) => Partial<PanelState>,
+): Pick<PanelFeatureState, "byWorkspace"> {
   const cur = state.byWorkspace[workspaceId] ?? EMPTY;
   return {
     byWorkspace: { ...state.byWorkspace, [workspaceId]: { ...cur, ...update(cur) } },
   };
 }
 
-export const useConsoleStore = create<ConsoleFeatureState>((set) => ({
+/** Build a fresh session titled `{shellLabel} {n}` (1-based over existing). */
+function makeSession(sessions: TermSession[], shellLabel: string): TermSession {
+  return {
+    id: crypto.randomUUID(),
+    title: shellLabel + " " + (sessions.length + 1),
+    lines: [],
+    history: [],
+    buffer: "",
+    timing: false,
+  };
+}
+
+/** Open the panel for `cur`, seeding a first session when there are none. */
+function openWith(cur: PanelState, shellLabel: string): Partial<PanelState> {
+  if (cur.sessions.length > 0) return { open: true };
+  const first = makeSession([], shellLabel);
+  return { open: true, sessions: [first], activeSessionId: first.id };
+}
+
+export const usePanelStore = create<PanelFeatureState>((set) => ({
   byWorkspace: {},
 
-  togglePanel: (workspaceId) =>
-    set((state) => patch(state, workspaceId, (cur) => ({ open: !cur.open }))),
+  togglePanel: (workspaceId, shellLabel) =>
+    set((state) =>
+      patch(state, workspaceId, (cur) =>
+        cur.open ? { open: false } : openWith(cur, shellLabel),
+      ),
+    ),
 
-  openPanel: (workspaceId) => set((state) => patch(state, workspaceId, () => ({ open: true }))),
+  openPanel: (workspaceId, shellLabel) =>
+    set((state) => patch(state, workspaceId, (cur) => openWith(cur, shellLabel))),
 
   closePanel: (workspaceId) => set((state) => patch(state, workspaceId, () => ({ open: false }))),
 
-  setHeight: (workspaceId, height) => set((state) => patch(state, workspaceId, () => ({ height }))),
+  toggleMax: (workspaceId) =>
+    set((state) => patch(state, workspaceId, (cur) => ({ maximized: !cur.maximized }))),
 
-  pushHistory: (workspaceId, command) =>
+  // A drag implies "restore from maximized" (prototype cancels maximize on a
+  // resize gesture) and pins an explicit height.
+  setHeight: (workspaceId, height) =>
+    set((state) => patch(state, workspaceId, () => ({ height, maximized: false }))),
+
+  newSession: (workspaceId, shellLabel) =>
+    set((state) =>
+      patch(state, workspaceId, (cur) => {
+        const s = makeSession(cur.sessions, shellLabel);
+        return { sessions: [...cur.sessions, s], activeSessionId: s.id, open: true };
+      }),
+    ),
+
+  closeSession: (workspaceId, sessionId) =>
+    set((state) =>
+      patch(state, workspaceId, (cur) => {
+        const idx = cur.sessions.findIndex((s) => s.id === sessionId);
+        if (idx < 0) return {};
+        const sessions = cur.sessions.filter((s) => s.id !== sessionId);
+        if (sessions.length === 0) {
+          // Last session killed: collapse the panel (no empty state).
+          return { sessions, activeSessionId: null, open: false };
+        }
+        // Keep the active session if it survived; else focus the neighbor.
+        let activeSessionId = cur.activeSessionId;
+        if (activeSessionId === sessionId) {
+          const next = sessions[Math.min(idx, sessions.length - 1)] ?? sessions[0];
+          activeSessionId = next?.id ?? null;
+        }
+        return { sessions, activeSessionId };
+      }),
+    ),
+
+  selectSession: (workspaceId, sessionId) =>
+    set((state) => patch(state, workspaceId, () => ({ activeSessionId: sessionId }))),
+
+  patchSession: (workspaceId, sessionId, sessionPatch) =>
     set((state) =>
       patch(state, workspaceId, (cur) => ({
-        history: [command, ...cur.history.filter((h) => h !== command)].slice(
-          0,
-          CONSOLE_HISTORY_MAX,
+        sessions: cur.sessions.map((s) =>
+          s.id === sessionId ? { ...s, ...sessionPatch } : s,
         ),
       })),
     ),
-
-  pushEntry: (workspaceId, entry) =>
-    set((state) => patch(state, workspaceId, (cur) => ({ log: [...cur.log, entry] }))),
-
-  clearLog: (workspaceId) => set((state) => patch(state, workspaceId, () => ({ log: [] }))),
 }));
 
-// Prune console state for workspaces that no longer exist — mirrors the
+// Prune panel state for workspaces that no longer exist — mirrors the
 // sqlCounters subscription in the workspaces slice. Cheap (workspace count is
 // tiny) and keeps the actions pure.
 useWorkspacesStore.subscribe((ws) => {
   const live = new Set(ws.workspaces.map((w) => w.id));
-  const cur = useConsoleStore.getState().byWorkspace;
+  const cur = usePanelStore.getState().byWorkspace;
   const stale = Object.keys(cur).filter((id) => !live.has(id));
   if (stale.length === 0) return;
   const next = { ...cur };
   for (const id of stale) delete next[id];
-  useConsoleStore.setState({ byWorkspace: next });
+  usePanelStore.setState({ byWorkspace: next });
 });

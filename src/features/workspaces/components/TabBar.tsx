@@ -11,7 +11,6 @@
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 
 import { Icon } from "../../../shared/ui/Icon";
-import { IconBtn } from "../../../shared/ui/IconBtn";
 import type { Tab } from "../types";
 import "./TabBar.css";
 
@@ -125,16 +124,19 @@ export function TabBar({
       <button type="button" className="tab-new" onClick={onNewSql} title="New SQL query (⌘T)">
         <Icon name="add" size={16} />
       </button>
-      <div className="tabbar-spacer" />
-      <IconBtn
-        className="tabbar-console-btn"
-        icon="terminal"
-        size={16}
-        active={consoleOpen}
-        title="Toggle console (Ctrl+`)"
-        aria-label="Toggle console (Ctrl+`)"
-        onClick={onToggleConsole}
-      />
+      <div className="tabbar-tools">
+        <button
+          type="button"
+          className={"tabbar-tool" + (consoleOpen ? " active" : "")}
+          title="Toggle terminal (Ctrl+`)"
+          aria-label="Toggle terminal (Ctrl+`)"
+          aria-pressed={consoleOpen}
+          onClick={onToggleConsole}
+        >
+          <Icon name="terminal" size={15} />
+          <span>Terminal</span>
+        </button>
+      </div>
     </div>
   );
 }

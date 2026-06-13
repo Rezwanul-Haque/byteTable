@@ -105,11 +105,12 @@ use rusqlite::types::Value as SqlValue;
 
 use crate::features::structure::domain::AlterOp;
 use crate::shared::engine::{
-    AlterResult, ColumnInfo, ColumnMeta, ColumnStats, ColumnStatsRequest, Condition,
-    ConnectionParams, Connector, Engine, EngineConnection, EngineInfo, FetchRowsRequest, FilterOp,
-    FilterSpec, FilterValue, FkRef, ForeignKeyInfo, FreqEntry, InboundFkInfo, IndexInfo,
-    OpenConnection, PkPredicate, QueryOptions, QueryResult, RowLookup, RowLookupRequest, RowsPage,
-    SchemaInfo, SortSpec, TableInfo, TableMeta, UpdateCellRequest, UpdateResult,
+    count_statements, AlterResult, ColumnInfo, ColumnMeta, ColumnStats, ColumnStatsRequest,
+    Condition, ConnectionParams, Connector, Engine, EngineConnection, EngineInfo, FetchRowsRequest,
+    FilterOp, FilterSpec, FilterValue, FkRef, ForeignKeyInfo, FreqEntry, ImportResult,
+    InboundFkInfo, IndexInfo, OpenConnection, PkPredicate, QueryOptions, QueryResult, RowLookup,
+    RowLookupRequest, RowsPage, SchemaInfo, SortSpec, TableInfo, TableMeta, UpdateCellRequest,
+    UpdateResult,
 };
 use crate::shared::error::AppError;
 
@@ -227,6 +228,13 @@ impl EngineConnection for SqliteEngineConnection {
         let schema = schema.to_string();
         let table = table.to_string();
         self.with_conn(move |conn| truncate_table_blocking(conn, &schema, &table))
+            .await
+    }
+
+    async fn execute_script(&self, schema: &str, sql: &str) -> Result<ImportResult, AppError> {
+        let schema = schema.to_string();
+        let sql = sql.to_string();
+        self.with_conn(move |conn| execute_script_blocking(conn, &schema, &sql))
             .await
     }
 
@@ -1321,6 +1329,52 @@ fn truncate_table_blocking(conn: &Connection, schema: &str, table: &str) -> Resu
     conn.execute_batch("COMMIT")
         .map_err(|err| map_query_error(conn, err))?;
     Ok(affected)
+}
+
+/// Run a whole multi-statement SQL script (a dump) into the connection (M15
+/// import). The script is wrapped in `BEGIN`/`COMMIT` so the import is atomic:
+/// any error rolls back, leaving no half-created tables. `execute_batch` runs
+/// every `;`-separated statement in one call.
+///
+/// Schema note: SQLite has no "current schema" beyond `main` + attached
+/// databases, so the `schema` argument cannot redirect unqualified `CREATE`s —
+/// they land in `main`. Importing into a specific attached schema requires the
+/// script itself to qualify names (out of scope, M15). We surface a §5 error
+/// when the caller targets a schema that is not `main` and is not an attached
+/// database, so the limitation fails loudly rather than silently writing to
+/// `main`.
+fn execute_script_blocking(
+    conn: &Connection,
+    schema: &str,
+    sql: &str,
+) -> Result<ImportResult, AppError> {
+    // The schema must be one of the connection's databases (main/attached). We
+    // cannot make unqualified statements target it, but rejecting an unknown
+    // schema keeps the same vocabulary as the rest of the adapter.
+    ensure_schema_exists(conn, schema)?;
+    if schema != "main" {
+        return Err(AppError::Unsupported(format!(
+            "SQLite imports run into 'main'; importing into the attached schema \
+             '{schema}' requires the script to qualify table names (e.g. \
+             CREATE TABLE \"{schema}\".\"…\"). Re-run the import there, or qualify \
+             the names in the .sql."
+        )));
+    }
+
+    let statements = count_statements(sql);
+
+    let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
+    conn.execute_batch("BEGIN")
+        .map_err(|err| map_query_error(conn, err))?;
+    if let Err(err) = conn.execute_batch(sql) {
+        // Roll back so a partial dump leaves the database untouched.
+        let _ = conn.execute_batch("ROLLBACK");
+        return Err(map_query_error(conn, err));
+    }
+    conn.execute_batch("COMMIT")
+        .map_err(|err| map_query_error(conn, err))?;
+
+    Ok(ImportResult { statements })
 }
 
 /// The §5 "no row matched" error shared by the null-pk short-circuit and the

@@ -21,7 +21,7 @@
 //! batch size below bounds peak row buffering, not the final string.
 
 use crate::features::connections::application::{ConnectionHandleId, ConnectionManager};
-use crate::shared::engine::{EngineConnection, FetchRowsRequest};
+use crate::shared::engine::{EngineConnection, FetchRowsRequest, ImportResult};
 use crate::shared::error::AppError;
 
 use super::domain::{csv_value, sql_value, ExportFormat};
@@ -88,6 +88,28 @@ pub async fn export_schema_sql(
 pub fn export_save(path: &str, contents: &str) -> Result<(), AppError> {
     std::fs::write(path, contents)
         .map_err(|err| AppError::Io(format!("Could not write {path}: {err}")))
+}
+
+/// Import a `.sql` dump: read the file at `path` (the path comes from the
+/// renderer's native open dialog, so the user's choice is the consent — no
+/// scope check, mirroring `export_save`'s write side), then run the whole
+/// multi-statement script into `schema` via the engine's `execute_script`.
+///
+/// The read is the I/O counterpart of `export_save`'s write: a missing /
+/// unreadable file is a §5 IO error naming the path. The script itself runs
+/// engine-aware (atomic for SQLite/Postgres, non-atomic for MySQL — see
+/// `EngineConnection::execute_script`); any SQL failure surfaces its §5 message.
+/// Returns the number of statements executed.
+pub async fn import_sql(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    schema: &str,
+    path: &str,
+) -> Result<ImportResult, AppError> {
+    let contents = std::fs::read_to_string(path)
+        .map_err(|err| AppError::Io(format!("Could not read {path}: {err}")))?;
+    let connection = manager.get_sql(handle).await?;
+    connection.execute_script(schema, &contents).await
 }
 
 // ---------------------------------------------------------------------------
@@ -164,7 +186,17 @@ async fn export_table_sql(
     match &meta.ddl {
         Some(ddl) => {
             out.push_str(ddl);
-            if !ddl.ends_with('\n') {
+            // Terminate the CREATE statement so the dump is a valid, re-importable
+            // multi-statement script. Engines report the DDL verbatim WITHOUT a
+            // trailing `;` (SQLite's `sqlite_schema.sql`, MySQL's `SHOW CREATE
+            // TABLE`); Postgres's assembled DDL already ends `);`. Append `;`
+            // only when the DDL does not already end with one — so `import_sql`
+            // (and any external psql/sqlite3 restore) does not glue the first
+            // INSERT onto the CREATE.
+            if !ddl.trim_end().ends_with(';') {
+                out.push(';');
+            }
+            if !out.ends_with('\n') {
                 out.push('\n');
             }
         }
@@ -349,7 +381,8 @@ mod tests {
         let sql = export_table(&manager, &handle, "main", "t", ExportFormat::Sql)
             .await
             .unwrap();
-        assert!(sql.starts_with("CREATE TABLE t (id INTEGER, name TEXT)\n\n"));
+        // The DDL is terminated with `;` so the dump re-imports cleanly.
+        assert!(sql.starts_with("CREATE TABLE t (id INTEGER, name TEXT);\n\n"));
         assert!(
             sql.contains("INSERT INTO \"main\".\"t\" (\"id\", \"name\") VALUES (1, 'O''Brien');")
         );
@@ -623,5 +656,116 @@ mod sqlite_integration {
         let out = dir.path().join("users.csv");
         export_save(&out.to_string_lossy(), &csv).expect("save");
         assert_eq!(std::fs::read_to_string(&out).expect("read back"), csv);
+    }
+
+    /// Open a FRESH (empty) tempdir SQLite database for import targets.
+    async fn open_empty(dir: &tempfile::TempDir) -> (ConnectionManager, ConnectionHandleId) {
+        let path = dir.path().join("import_target.db");
+        // Create an empty but valid database (the adapter opens READ_WRITE, no
+        // CREATE, so the file must already exist and be a real db).
+        {
+            let conn = rusqlite::Connection::open(&path).expect("create db");
+            conn.execute_batch("CREATE TABLE _seed (x INTEGER); DROP TABLE _seed;")
+                .expect("init db");
+        }
+        let params = ConnectionParams::Sqlite {
+            path: path.to_string_lossy().into_owned(),
+        };
+        let open = SqliteConnector.open(&params).await.expect("open target");
+        let manager = ConnectionManager::new();
+        let handle = manager.insert(open).await;
+        (manager, handle)
+    }
+
+    #[tokio::test]
+    async fn import_round_trips_an_exported_table_against_real_sqlite() {
+        // Export a table from the seeded fixture, then import its dump into a
+        // fresh database and verify the table + every row landed.
+        let src_dir = tempfile::tempdir().expect("tempdir");
+        let (src_mgr, src_handle) = open_fixture(&src_dir).await;
+        let dump = export_table(&src_mgr, &src_handle, "main", "users", ExportFormat::Sql)
+            .await
+            .expect("export sql");
+        let path = src_dir.path().join("users.sql");
+        export_save(&path.to_string_lossy(), &dump).expect("save dump");
+
+        let dst_dir = tempfile::tempdir().expect("tempdir");
+        let (dst_mgr, dst_handle) = open_empty(&dst_dir).await;
+        let result = import_sql(&dst_mgr, &dst_handle, "main", &path.to_string_lossy())
+            .await
+            .expect("import");
+        // DDL + 3 INSERTs.
+        assert_eq!(result.statements, 4);
+
+        // The table exists with all three rows.
+        let conn = dst_mgr.get_sql(&dst_handle).await.unwrap();
+        let meta = conn.table_meta("main", "users").await.expect("meta");
+        assert!(meta.columns.iter().any(|c| c.name == "name"));
+        let page = export_table(&dst_mgr, &dst_handle, "main", "users", ExportFormat::Csv)
+            .await
+            .expect("read back");
+        assert!(page.contains("Ada"));
+        assert!(page.contains("O'Brien"));
+        assert_eq!(page.lines().count(), 5); // header + 3 rows (one spans lines)
+    }
+
+    #[tokio::test]
+    async fn import_hand_written_multi_statement_against_real_sqlite() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (mgr, handle) = open_empty(&dir).await;
+        let script = "CREATE TABLE widgets (id INTEGER PRIMARY KEY, label TEXT);\n\
+                      INSERT INTO widgets (id, label) VALUES (1, 'one');\n\
+                      INSERT INTO widgets (id, label) VALUES (2, 'two');\n";
+        let path = dir.path().join("widgets.sql");
+        export_save(&path.to_string_lossy(), script).expect("write script");
+
+        let result = import_sql(&mgr, &handle, "main", &path.to_string_lossy())
+            .await
+            .expect("import");
+        assert_eq!(result.statements, 3);
+
+        let conn = mgr.get_sql(&handle).await.unwrap();
+        let tables = conn.list_tables("main").await.unwrap();
+        assert!(tables.iter().any(|t| t.name == "widgets"));
+        let widgets = tables.iter().find(|t| t.name == "widgets").unwrap();
+        assert_eq!(widgets.approx_row_count, Some(2));
+    }
+
+    #[tokio::test]
+    async fn import_with_error_in_second_statement_rolls_back_against_real_sqlite() {
+        // SQLite import is atomic (BEGIN/COMMIT): a failure in statement 2 must
+        // leave the table from statement 1 NOT created.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (mgr, handle) = open_empty(&dir).await;
+        let script = "CREATE TABLE good (id INTEGER);\n\
+                      INSERT INTO nonexistent_table (id) VALUES (1);\n";
+        let path = dir.path().join("bad.sql");
+        export_save(&path.to_string_lossy(), script).expect("write script");
+
+        let err = import_sql(&mgr, &handle, "main", &path.to_string_lossy())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Database(_)));
+
+        // Rolled back: `good` was NOT created.
+        let conn = mgr.get_sql(&handle).await.unwrap();
+        let tables = conn.list_tables("main").await.unwrap();
+        assert!(
+            !tables.iter().any(|t| t.name == "good"),
+            "statement 1's table must have rolled back; tables: {:?}",
+            tables.iter().map(|t| &t.name).collect::<Vec<_>>()
+        );
+    }
+
+    #[tokio::test]
+    async fn import_a_bad_file_path_is_an_io_error_naming_the_path() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (mgr, handle) = open_empty(&dir).await;
+        let missing = dir.path().join("does_not_exist.sql");
+        let err = import_sql(&mgr, &handle, "main", &missing.to_string_lossy())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Io(_)));
+        assert!(err.to_string().contains("Could not read"));
     }
 }

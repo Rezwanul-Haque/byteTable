@@ -14,6 +14,8 @@ use crate::features::connections::application::ConnectionHandleId;
 use crate::features::connections::commands::ConnectionsState;
 use crate::shared::error::AppError;
 
+use crate::shared::engine::ImportResult;
+
 use super::application;
 use super::domain::ExportFormat;
 
@@ -45,4 +47,19 @@ pub async fn export_schema(
 #[tauri::command]
 pub async fn export_save(path: String, contents: String) -> Result<(), AppError> {
     application::export_save(&path, &contents)
+}
+
+/// Import a `.sql` dump (the I/O counterpart of `export_save`): read the file at
+/// `path` (obtained from the renderer's native open dialog — the user's choice
+/// is the consent) and run the whole multi-statement script into `schema`. A
+/// missing/unreadable file or a script failure surfaces a §5 error. Returns the
+/// number of statements executed (`{ statements }`).
+#[tauri::command]
+pub async fn import_sql(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+    schema: String,
+    path: String,
+) -> Result<ImportResult, AppError> {
+    application::import_sql(state.manager(), &handle_id, &schema, &path).await
 }

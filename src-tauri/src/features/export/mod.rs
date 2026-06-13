@@ -1,5 +1,8 @@
-//! Export slice (M15, DESIGN_SPEC §3.5/§3.6): generate CSV / SQL text for a
-//! table or a whole schema, and write it to a user-chosen path. Ports the
+//! Export / import slice (M15, DESIGN_SPEC §3.5/§3.6): generate CSV / SQL text
+//! for a table or a whole schema and write it to a user-chosen path, plus the
+//! I/O counterpart — read a `.sql` dump from a user-chosen path and run it into
+//! a schema (`import_sql` → the engine's multi-statement `execute_script`).
+//! Ports the
 //! formatting semantics of the export prototype
 //! (`ByteTable_latest/bytetable/export.jsx`: `csvVal` / `sqlVal`, the CSV
 //! header+rows shape, and the DDL+INSERT dump) — but where the prototype

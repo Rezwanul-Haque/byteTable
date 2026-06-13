@@ -71,11 +71,11 @@ use sqlx::{Column, Row, TypeInfo};
 
 use crate::features::structure::domain::AlterOp;
 use crate::shared::engine::{
-    AlterResult, ColumnInfo, ColumnMeta, ColumnStats, ColumnStatsRequest, ConnectSecret,
-    ConnectionParams, Connector, Engine, EngineConnection, EngineInfo, FetchRowsRequest, FkRef,
-    ForeignKeyInfo, FreqEntry, InboundFkInfo, IndexInfo, OpenConnection, PkPredicate, QueryOptions,
-    QueryResult, RowLookup, RowLookupRequest, RowsPage, SchemaInfo, TableInfo, TableMeta,
-    UpdateCellRequest, UpdateResult,
+    split_statements, AlterResult, ColumnInfo, ColumnMeta, ColumnStats, ColumnStatsRequest,
+    ConnectSecret, ConnectionParams, Connector, Engine, EngineConnection, EngineInfo,
+    FetchRowsRequest, FkRef, ForeignKeyInfo, FreqEntry, ImportResult, InboundFkInfo, IndexInfo,
+    OpenConnection, PkPredicate, QueryOptions, QueryResult, RowLookup, RowLookupRequest, RowsPage,
+    SchemaInfo, TableInfo, TableMeta, UpdateCellRequest, UpdateResult,
 };
 use crate::shared::error::AppError;
 
@@ -427,6 +427,10 @@ impl EngineConnection for PostgresEngineConnection {
 
     async fn truncate_table(&self, schema: &str, table: &str) -> Result<u64, AppError> {
         truncate_table(&self.pool, schema, table).await
+    }
+
+    async fn execute_script(&self, schema: &str, sql: &str) -> Result<ImportResult, AppError> {
+        execute_script(&self.pool, schema, sql).await
     }
 
     async fn alter_table(
@@ -1295,6 +1299,49 @@ async fn truncate_table(pool: &PgPool, schema: &str, table: &str) -> Result<u64,
         .map_err(map_query_error)?;
 
     Ok(prior.max(0) as u64)
+}
+
+/// Run a whole multi-statement SQL script (a dump) into `schema` (M15 import).
+///
+/// Atomicity: the whole dump runs inside one explicit sqlx transaction
+/// (`pool.begin()` → COMMIT on success, ROLLBACK on any error), so a mid-script
+/// failure rolls ALL statements back and a table is never left half-created
+/// (Postgres has transactional DDL). We `SET search_path` first within that
+/// transaction so unqualified `CREATE`s land in the target schema, then run the
+/// dump statement-by-statement (split with the quote/comment-aware
+/// [`split_statements`]) on the one transaction connection. Splitting
+/// client-side and using `sqlx::query` per statement mirrors the proven
+/// `alter_table` path and binds nothing — the statements come from a file the
+/// user chose, exactly like the SQL query editor.
+///
+/// The schema must exist (a §5 error otherwise — same message vocabulary as the
+/// rest of the adapter). Any engine error surfaces §5-style after the rollback.
+async fn execute_script(pool: &PgPool, schema: &str, sql: &str) -> Result<ImportResult, AppError> {
+    ensure_schema_exists(pool, schema).await?;
+    let statements = split_statements(sql);
+
+    let mut tx = pool.begin().await.map_err(map_query_error)?;
+    // search_path inside the transaction so the dump's unqualified names resolve
+    // to the target schema (and shares the one tx connection).
+    if let Err(err) = sqlx::query(&format!("SET search_path TO {}", quote_ident(schema)))
+        .execute(&mut *tx)
+        .await
+    {
+        let _ = tx.rollback().await;
+        return Err(map_query_error(err));
+    }
+    for statement in &statements {
+        if let Err(err) = sqlx::query(statement).execute(&mut *tx).await {
+            // Roll the whole import back — no table left half-created.
+            let _ = tx.rollback().await;
+            return Err(map_query_error(err));
+        }
+    }
+    tx.commit().await.map_err(map_query_error)?;
+
+    Ok(ImportResult {
+        statements: statements.len() as u64,
+    })
 }
 
 /// Enforce the full-primary-key policy (mass-update prevention). Identical
@@ -2643,6 +2690,111 @@ mod integration {
             .expect("export empty");
         assert!(empty_sql.contains("-- (no rows)"));
 
+        drop_fixture(&pool, schema, other).await;
+    }
+
+    #[tokio::test]
+    async fn import_round_trip_multi_statement_and_error_rollback_against_live_postgres() {
+        use crate::features::connections::application::ConnectionManager;
+        use crate::features::export::application::{export_table, import_sql};
+        use crate::features::export::domain::ExportFormat;
+
+        let Some((params, secret)) =
+            gate("import_round_trip_multi_statement_and_error_rollback_against_live_postgres")
+        else {
+            return;
+        };
+        let pool = raw_pool(&params, &secret).await;
+        let (schema, other) = ("bt_it_import", "bt_it_import_other");
+        setup_fixture(&pool, schema, other).await;
+        // A fresh, empty target schema for the round-trip + hand-written imports.
+        let fresh = "bt_it_import_fresh";
+        let _ = sqlx::query(&format!("DROP SCHEMA IF EXISTS {fresh} CASCADE"))
+            .execute(&pool)
+            .await;
+        sqlx::query(&format!("CREATE SCHEMA {fresh}"))
+            .execute(&pool)
+            .await
+            .expect("create fresh schema");
+
+        let open = PostgresConnector
+            .open_with_secret(&params, secret.as_ref())
+            .await
+            .expect("open");
+        let manager = ConnectionManager::new();
+        let handle = manager.insert(open).await;
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        // --- ROUND-TRIP: export authors (qualified dump) → rewrite it to target
+        // the FRESH schema → import → verify the table + 3 rows landed there.
+        let dump = export_table(&manager, &handle, schema, "authors", ExportFormat::Sql)
+            .await
+            .expect("export sql");
+        let retargeted = dump.replace(
+            &format!("\"{schema}\".\"authors\""),
+            &format!("\"{fresh}\".\"authors\""),
+        );
+        let rt_path = dir.path().join("authors.sql");
+        std::fs::write(&rt_path, &retargeted).expect("write dump");
+        let result = import_sql(&manager, &handle, fresh, &rt_path.to_string_lossy())
+            .await
+            .expect("import round-trip");
+        // DDL + 3 INSERTs.
+        assert_eq!(result.statements, 4);
+        let n: i64 = sqlx::query_scalar(&format!("SELECT count(*) FROM {fresh}.authors"))
+            .fetch_one(&pool)
+            .await
+            .expect("count");
+        assert_eq!(n, 3, "all rows round-tripped into the fresh schema");
+
+        // --- MULTI-STATEMENT: a hand-written CREATE + 2 INSERTs (unqualified, so
+        // search_path lands them in the target schema).
+        let script = "CREATE TABLE gadgets (id INT PRIMARY KEY, label TEXT);\n\
+                      INSERT INTO gadgets (id, label) VALUES (1, 'one');\n\
+                      INSERT INTO gadgets (id, label) VALUES (2, 'two');\n";
+        let ms_path = dir.path().join("gadgets.sql");
+        std::fs::write(&ms_path, script).expect("write script");
+        let result = import_sql(&manager, &handle, fresh, &ms_path.to_string_lossy())
+            .await
+            .expect("import multi-statement");
+        assert_eq!(result.statements, 3);
+        let n: i64 = sqlx::query_scalar(&format!("SELECT count(*) FROM {fresh}.gadgets"))
+            .fetch_one(&pool)
+            .await
+            .expect("count gadgets");
+        assert_eq!(n, 2);
+
+        // --- ERROR ROLLBACK: statement 1 creates a table, statement 2 fails →
+        // Postgres has transactional DDL, so the whole import rolls back and the
+        // table from statement 1 is NOT created.
+        let bad = "CREATE TABLE rollback_me (id INT);\n\
+                   INSERT INTO no_such_table (id) VALUES (1);\n";
+        let bad_path = dir.path().join("bad.sql");
+        std::fs::write(&bad_path, bad).expect("write bad");
+        let err = import_sql(&manager, &handle, fresh, &bad_path.to_string_lossy())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Database(_)), "got {err:?}");
+        let exists: Option<i32> = sqlx::query_scalar(
+            "SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace \
+             WHERE n.nspname = $1 AND c.relname = 'rollback_me'",
+        )
+        .bind(fresh)
+        .fetch_optional(&pool)
+        .await
+        .expect("existence");
+        assert!(exists.is_none(), "statement 1 must have rolled back");
+
+        // --- BAD PATH: a missing file is a §5 IO error naming the path.
+        let err = import_sql(&manager, &handle, fresh, "/tmp/bytetable-nonexistent.sql")
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Io(_)), "got {err:?}");
+        assert!(err.to_string().contains("Could not read"));
+
+        let _ = sqlx::query(&format!("DROP SCHEMA IF EXISTS {fresh} CASCADE"))
+            .execute(&pool)
+            .await;
         drop_fixture(&pool, schema, other).await;
     }
 

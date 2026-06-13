@@ -479,6 +479,11 @@ export interface TruncateResult {
   affected: number;
 }
 
+/** The outcome of {@link importSql}: the number of statements executed. */
+export interface ImportResult {
+  statements: number;
+}
+
 /**
  * Generate the export text for one table (`export_table` command). `format`
  * picks CSV (header + every row, prototype `csvVal` escaping) or SQL (the
@@ -513,6 +518,25 @@ export function exportSchema(handleId: string, schema: string): Promise<string> 
  */
 export function exportSave(path: string, contents: string): Promise<void> {
   return invoke<void>("export_save", { path, contents });
+}
+
+/**
+ * Import a `.sql` dump into a schema (`import_sql` command — the I/O
+ * counterpart of {@link exportSave}). The backend reads the file at `path`
+ * (obtained from the native open dialog — the `dialog:allow-open` capability;
+ * the user's choice is the consent) and runs the whole multi-statement script
+ * into `schema`. Engine-aware atomicity: SQLite/Postgres roll the import back on
+ * any error; MySQL DDL auto-commits, so a mid-script failure is NOT rolled back
+ * and the §5 error names how far it got. A missing/unreadable file or a script
+ * failure surfaces a `{ kind, message }` §5 error. Returns `{ statements }`, the
+ * number of statements executed.
+ */
+export function importSql(
+  handleId: string,
+  schema: string,
+  path: string,
+): Promise<ImportResult> {
+  return invoke<ImportResult>("import_sql", { handleId, schema, path });
 }
 
 /**

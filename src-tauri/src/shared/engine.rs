@@ -1378,6 +1378,39 @@ pub trait EngineConnection: Send + Sync {
         ))
     }
 
+    /// Run a whole multi-statement SQL script (a dump: `CREATE TABLE` + `INSERT`
+    /// + …) into the given schema (M15 import — the I/O counterpart of export).
+    ///
+    /// Unlike [`run_query`](Self::run_query), which runs a SINGLE statement, this
+    /// executes the entire `;`-separated script in one go and returns the number
+    /// of statements executed ([`ImportResult`]). It is engine-aware:
+    ///
+    /// - **SQLite** wraps the script in a `BEGIN`/`COMMIT` and runs it via
+    ///   `execute_batch`; any error rolls the whole import back so a table is
+    ///   never left half-created. SQLite has no "current schema" beyond
+    ///   `main` + attached databases, so unqualified `CREATE`s land in `main`;
+    ///   importing into a specific attached schema requires the script itself to
+    ///   qualify names (out of scope — the SQLite adapter documents this).
+    /// - **Postgres** prefixes `SET search_path` for the target schema and runs
+    ///   the script through sqlx's multi-statement path, whose simple-query
+    ///   protocol wraps the statements in an implicit transaction — a mid-script
+    ///   failure rolls all of them back (atomic).
+    /// - **MySQL** sets the database (`USE`) then runs the script. **MySQL DDL
+    ///   auto-commits**, so a multi-statement import is NOT atomic: on a
+    ///   mid-script failure the statements before it have already landed and
+    ///   cannot be rolled back — the §5 error says how far it got.
+    ///
+    /// On any error the engine error surfaces as a §5 human sentence; the adapter
+    /// rolls back where the engine allows. Unknown-schema and the engine's own
+    /// SQL errors are §5 messages.
+    ///
+    /// Default impl: `Unsupported` — only engines that implement it override it.
+    async fn execute_script(&self, _schema: &str, _sql: &str) -> Result<ImportResult, AppError> {
+        Err(AppError::Unsupported(
+            "Importing SQL is not supported for this engine yet.".into(),
+        ))
+    }
+
     /// Release the underlying driver resources. For drop-managed drivers
     /// (rusqlite) this may be a no-op; server engines use it for an orderly
     /// goodbye.
@@ -1390,6 +1423,177 @@ pub trait EngineConnection: Send + Sync {
     async fn close(&self) -> Result<(), AppError>;
 }
 
+/// The outcome of an [`EngineConnection::execute_script`] call (M15 import):
+/// the number of top-level SQL statements that were executed.
+///
+/// `statements` is a best-effort count derived by splitting the script on
+/// statement-terminating `;` outside string literals and comments (see
+/// [`count_statements`]) — it is the same count the success toast shows
+/// ("Imported {file} — {N} statements"). For an atomic engine (SQLite in a
+/// transaction, Postgres's implicit BEGIN/COMMIT) all `statements` ran or none
+/// did; for MySQL (DDL auto-commits) a mid-script failure leaves the statements
+/// before the failure already applied — the §5 error names how far it got.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportResult {
+    /// Top-level statements executed by the script (best-effort count).
+    pub statements: u64,
+}
+
+/// Count the top-level SQL statements in a dump for [`ImportResult::statements`]
+/// — a best-effort, engine-agnostic parse, NOT a full SQL tokenizer.
+///
+/// A statement boundary is a `;` that is NOT inside a string/identifier literal
+/// or a comment. We track: single-quoted (`'…'`) and double-quoted (`"…"`)
+/// literals with doubled-quote escaping (`''` / `""` stay inside the literal);
+/// backtick-quoted identifiers (MySQL); `--` line comments (to end of line);
+/// and `/* … */` block comments. A trailing fragment with no terminating `;`
+/// (e.g. a final statement the dump left unterminated) still counts as one
+/// statement when it contains non-whitespace, non-comment text.
+///
+/// This intentionally does not understand dollar-quoting (`$$…$$`) or other
+/// engine-specific quoting; for the CREATE TABLE + INSERT dumps ByteTable's own
+/// export produces (and ordinary hand-written scripts) it is accurate, and a
+/// miscount only affects the cosmetic toast number, never correctness.
+pub fn count_statements(script: &str) -> u64 {
+    let bytes = script.as_bytes();
+    let mut i = 0usize;
+    let len = bytes.len();
+    let mut count: u64 = 0;
+    // Whether the current statement has any meaningful (non-whitespace,
+    // non-comment) content yet — so empty segments between `;`s don't count.
+    let mut has_content = false;
+
+    while i < len {
+        let c = bytes[i];
+        match c {
+            b'\'' | b'"' | b'`' => {
+                // Consume a quoted literal/identifier, honouring doubled-quote
+                // escaping (`''` inside a '…' literal is an escaped quote).
+                let quote = c;
+                has_content = true;
+                i += 1;
+                while i < len {
+                    if bytes[i] == quote {
+                        if i + 1 < len && bytes[i + 1] == quote {
+                            i += 2; // doubled quote → stays inside
+                            continue;
+                        }
+                        i += 1; // closing quote
+                        break;
+                    }
+                    i += 1;
+                }
+            }
+            b'-' if i + 1 < len && bytes[i + 1] == b'-' => {
+                // Line comment to end of line.
+                i += 2;
+                while i < len && bytes[i] != b'\n' {
+                    i += 1;
+                }
+            }
+            b'/' if i + 1 < len && bytes[i + 1] == b'*' => {
+                // Block comment to the closing `*/`.
+                i += 2;
+                while i + 1 < len && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                    i += 1;
+                }
+                i += 2; // skip the closing `*/` (or run off the end harmlessly)
+            }
+            b';' => {
+                if has_content {
+                    count += 1;
+                }
+                has_content = false;
+                i += 1;
+            }
+            other => {
+                if !other.is_ascii_whitespace() {
+                    has_content = true;
+                }
+                i += 1;
+            }
+        }
+    }
+    // A trailing un-terminated statement with real content still counts.
+    if has_content {
+        count += 1;
+    }
+    count
+}
+
+/// Split a multi-statement SQL script into its individual statements, using the
+/// same quote/comment-aware scan as [`count_statements`]. Each returned string
+/// is one statement WITHOUT its trailing `;` (trimmed of surrounding
+/// whitespace); empty / comment-only segments are dropped, so
+/// `split_statements(s).len() == count_statements(s)`.
+///
+/// Used by the MySQL adapter, which executes a dump statement-by-statement (its
+/// DDL auto-commits, so it tracks exactly how far it got on a mid-script
+/// failure). The same best-effort caveats as [`count_statements`] apply.
+pub fn split_statements(script: &str) -> Vec<String> {
+    let bytes = script.as_bytes();
+    let mut i = 0usize;
+    let len = bytes.len();
+    let mut statements: Vec<String> = Vec::new();
+    let mut start = 0usize;
+
+    // Keep a segment only if it carries real (non-whitespace, non-comment)
+    // content — exactly the predicate `count_statements` uses — so that
+    // `split_statements(s).len() == count_statements(s)`.
+    let push = |statements: &mut Vec<String>, slice: &str| {
+        if count_statements(slice) > 0 {
+            statements.push(slice.trim().to_string());
+        }
+    };
+
+    while i < len {
+        let c = bytes[i];
+        match c {
+            b'\'' | b'"' | b'`' => {
+                let quote = c;
+                i += 1;
+                while i < len {
+                    if bytes[i] == quote {
+                        if i + 1 < len && bytes[i + 1] == quote {
+                            i += 2;
+                            continue;
+                        }
+                        i += 1;
+                        break;
+                    }
+                    i += 1;
+                }
+            }
+            b'-' if i + 1 < len && bytes[i + 1] == b'-' => {
+                i += 2;
+                while i < len && bytes[i] != b'\n' {
+                    i += 1;
+                }
+            }
+            b'/' if i + 1 < len && bytes[i + 1] == b'*' => {
+                i += 2;
+                while i + 1 < len && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                    i += 1;
+                }
+                i += 2;
+            }
+            b';' => {
+                // `start..i` is the statement body (the slice is valid UTF-8
+                // because we only ever split on ASCII bytes outside literals).
+                push(&mut statements, &script[start.min(len)..i.min(len)]);
+                i += 1;
+                start = i;
+            }
+            _ => i += 1,
+        }
+    }
+    if start < len {
+        push(&mut statements, &script[start..]);
+    }
+    statements
+}
+
 /// Generates engine-specific DDL: ALTER dialects, identifier quoting,
 /// type mappings. Still a deliberate stub — methods arrive with the
 /// structure editor milestones (M8/M14).
@@ -1398,6 +1602,84 @@ pub trait DdlDialect {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn count_statements_counts_terminated_and_trailing() {
+        // Two terminated statements.
+        assert_eq!(
+            count_statements("CREATE TABLE t (id INT); INSERT INTO t VALUES (1);"),
+            2
+        );
+        // A trailing statement with no final `;` still counts.
+        assert_eq!(count_statements("SELECT 1; SELECT 2"), 2);
+        // Empty / whitespace-only / pure-comment scripts count zero.
+        assert_eq!(count_statements(""), 0);
+        assert_eq!(count_statements("   \n\t  "), 0);
+        assert_eq!(count_statements(";;;"), 0);
+        assert_eq!(count_statements("-- just a comment\n"), 0);
+        assert_eq!(count_statements("/* block only */"), 0);
+    }
+
+    #[test]
+    fn count_statements_ignores_semicolons_in_strings_and_comments() {
+        // A `;` inside a single-quoted literal is not a boundary.
+        assert_eq!(
+            count_statements("INSERT INTO t VALUES ('a;b;c'); SELECT 1;"),
+            2
+        );
+        // Doubled quote inside a literal stays inside.
+        assert_eq!(
+            count_statements("INSERT INTO t VALUES ('O''Brien; Jr'); SELECT 1;"),
+            2
+        );
+        // `;` inside a line comment is ignored; the statement spans the comment.
+        assert_eq!(count_statements("SELECT 1 -- a; b; c\n; SELECT 2;"), 2);
+        // `;` inside a block comment is ignored.
+        assert_eq!(count_statements("SELECT 1 /* ; ; ; */; SELECT 2;"), 2);
+        // Backtick identifiers (MySQL) may legally contain `;`.
+        assert_eq!(count_statements("SELECT `we;ird`; SELECT 2;"), 2);
+        // Double-quoted identifier with a `;` inside.
+        assert_eq!(count_statements("SELECT \"a;b\"; SELECT 2;"), 2);
+    }
+
+    #[test]
+    fn split_statements_splits_and_trims_and_matches_count() {
+        let script =
+            "CREATE TABLE t (id INT);\nINSERT INTO t VALUES (1);\nINSERT INTO t VALUES (2);";
+        let parts = split_statements(script);
+        assert_eq!(parts.len(), 3);
+        assert_eq!(parts.len() as u64, count_statements(script));
+        assert_eq!(parts[0], "CREATE TABLE t (id INT)");
+        assert_eq!(parts[1], "INSERT INTO t VALUES (1)");
+        assert_eq!(parts[2], "INSERT INTO t VALUES (2)");
+    }
+
+    #[test]
+    fn split_statements_keeps_semicolons_inside_literals() {
+        let parts = split_statements("INSERT INTO t VALUES ('a;b'); SELECT 1");
+        assert_eq!(parts, vec!["INSERT INTO t VALUES ('a;b')", "SELECT 1"]);
+    }
+
+    #[test]
+    fn split_statements_drops_empty_and_comment_only_segments() {
+        // Leading comment, blank segments, trailing statement without `;`.
+        let parts = split_statements("-- header\n;; CREATE TABLE t (id INT) ;\n  ; SELECT 1");
+        assert_eq!(parts, vec!["CREATE TABLE t (id INT)", "SELECT 1"]);
+        assert_eq!(
+            parts.len() as u64,
+            count_statements("-- header\n;; CREATE TABLE t (id INT) ;\n  ; SELECT 1")
+        );
+        // Pure comment → no statements.
+        assert!(split_statements("/* nothing here */").is_empty());
+    }
+
+    #[test]
+    fn import_result_wire_shape_is_camel_case() {
+        assert_eq!(
+            serde_json::to_value(ImportResult { statements: 3 }).unwrap(),
+            serde_json::json!({ "statements": 3 })
+        );
+    }
 
     #[test]
     fn engine_serializes_lowercase_matching_renderer() {

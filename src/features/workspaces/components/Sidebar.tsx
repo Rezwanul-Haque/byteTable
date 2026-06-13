@@ -32,7 +32,7 @@ import {
   type SchemaInfo,
 } from "../../connections/api";
 import { TruncateModal } from "../../export/components/TruncateModal";
-import { runExport, type ExportKind } from "../../export/exportFlow";
+import { runExport, runImport, type ExportKind } from "../../export/exportFlow";
 import { tablesKey, columnsKey, useIntrospectionStore } from "../../introspection/state";
 import { useWorkspacesStore } from "../state";
 import { useTabMetaStore } from "../tabMeta";
@@ -283,6 +283,10 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   const doExport = (kind: ExportKind, table?: string) =>
     void runExport(kind, { handleId, schema: schemaName, table }, toast);
 
+  // M15: import a .sql dump into the CURRENTLY SELECTED schema (open dialog →
+  // read+run server-side → toast + refresh the sidebar/grids).
+  const doImport = () => void runImport({ handleId, schema: schemaName }, toast);
+
   const onRowKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>, table: string) => {
     // Keydowns on the nested expand chevron bubble up here — they belong to
     // the chevron (its native click), not the row.
@@ -385,6 +389,11 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
           icon="download"
           title={"Export schema “" + schemaName + "” as .sql"}
           onClick={() => doExport("schemaSql")}
+        />
+        <IconBtn
+          icon="upload"
+          title={"Import .sql into “" + schemaName + "”"}
+          onClick={doImport}
         />
         <IconBtn
           icon="sync"

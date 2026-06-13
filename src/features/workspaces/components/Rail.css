@@ -168,8 +168,41 @@
   animation: none;
 }
 
+/* The cup itself wiggles briefly each cycle (mostly at rest) — a playful
+   "buy us a coffee" nudge. Applied to the inner icon, not the button, so it
+   doesn't fight the hover scale above. */
+.rail-donate .msym {
+  transform-origin: center 70%;
+  animation: rail-donate-shake 3.2s ease-in-out infinite;
+}
+
+@keyframes rail-donate-shake {
+  0%,
+  80%,
+  100% {
+    transform: rotate(0);
+  }
+  84% {
+    transform: rotate(-9deg);
+  }
+  88% {
+    transform: rotate(8deg);
+  }
+  92% {
+    transform: rotate(-6deg);
+  }
+  96% {
+    transform: rotate(4deg);
+  }
+}
+
+.rail-donate:hover .msym {
+  animation: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .rail-donate {
+  .rail-donate,
+  .rail-donate .msym {
     animation: none;
   }
 }

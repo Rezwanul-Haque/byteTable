@@ -1,0 +1,218 @@
+/* Grid popovers — FK hop peek + column insights (M10, spec §3.5). The
+ * `.fk-*` / `.dg-popover` / `.dg-pop-*` / `.insight-*` rules below are ported
+ * byte-exact from the prototype (ByteTable.html "v2: grid popovers"). The
+ * `.fk-link` rule lives here too so the shared GridCell renders FK values
+ * identically in any grid that imports this.
+ *
+ * Added (not in the prototype): loading/spinner affordances (`.dg-pop-loading`
+ * / `.dg-pop-spinner`) and the ">1 match" badge (`.fk-matchcount`), since the
+ * real popovers fetch asynchronously where the prototype read in-memory rows.
+ * `@keyframes spin` is shared from ConnectScreen.css (same bundle); toast-in
+ * from Toast.css. */
+
+.fk-link {
+  font-family: var(--mono);
+  font-size: var(--grid-fs);
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--accent) 40%, transparent);
+  text-underline-offset: 3px;
+  padding: 0;
+  display: inline;
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+.fk-link:hover {
+  text-decoration-color: var(--accent);
+}
+
+.dg-popover {
+  position: fixed;
+  z-index: 60;
+  width: 300px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.5);
+  padding: 11px;
+  animation: toast-in 0.14s ease-out;
+}
+.insight-pop {
+  width: 280px;
+}
+.dg-pop-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 9px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.dg-pop-mono {
+  font-weight: 600;
+  color: var(--text);
+}
+.dg-pop-dim {
+  color: var(--text-faint);
+  font-size: 10.5px;
+}
+.dg-pop-empty {
+  color: var(--text-faint);
+  font-size: 12px;
+  padding: 6px 0;
+}
+.fk-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.fk-field {
+  display: flex;
+  gap: 10px;
+  padding: 3.5px 6px;
+  border-radius: 5px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.fk-field:nth-child(odd) {
+  background: color-mix(in oklab, var(--bg3) 50%, transparent);
+}
+.fk-field-name {
+  color: var(--text-faint);
+  width: 86px;
+  flex: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fk-field-val {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fk-open-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 9px;
+  width: 100%;
+  justify-content: center;
+  padding: 6px;
+  border-radius: 7px;
+  font-size: 12px;
+  background: color-mix(in oklab, var(--accent) 14%, var(--bg3));
+  color: var(--accent);
+  border: none;
+  cursor: pointer;
+}
+.fk-open-btn:hover {
+  background: color-mix(in oklab, var(--accent) 22%, var(--bg3));
+}
+
+.insight-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 4px;
+  color: var(--text-faint);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+.dg-th:hover .insight-btn {
+  display: inline-flex;
+}
+.insight-btn:hover {
+  color: var(--accent);
+  background: var(--bg3);
+}
+.insight-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 12px;
+  margin-bottom: 10px;
+}
+.insight-stat {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.insight-stat span {
+  color: var(--text-faint);
+}
+.insight-stat b {
+  color: var(--text);
+  font-weight: 500;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.insight-bars {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.insight-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.insight-bar-label {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  width: 90px;
+  flex: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.insight-bar-track {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg3);
+  overflow: hidden;
+}
+.insight-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  opacity: 0.75;
+}
+.insight-bar-n {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  width: 22px;
+  text-align: right;
+}
+
+/* --- async affordances (not in the prototype) --------------------------- */
+.dg-pop-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+}
+.dg-pop-spinner {
+  width: 13px;
+  height: 13px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+.fk-matchcount {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--accent);
+  font-family: var(--mono);
+}

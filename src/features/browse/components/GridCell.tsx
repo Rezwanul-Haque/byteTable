@@ -6,10 +6,14 @@
 // truth for cell visuals — keep this the only place the .cell-* classes are
 // produced.
 //
-// M10 seam: FK columns become accent links here (the peek popover hops the
-// reference). This milestone renders FK values as plain text in both grids.
+// M10: FK columns render as accent underlined links here when the cell is
+// given FK metadata + an onFkClick callback (DataGrid threads them from
+// tableMeta's columns[].fk; the peek popover then hops the reference). A cell
+// without `fk`/`onFkClick` (or a NULL value) renders exactly as before, so the
+// SQL-results grid — which has no per-column table origin (see SqlResultGrid)
+// — is unchanged until/unless an origin is supplied.
 
-import type { CellValue } from "../../../shared/api/engine";
+import type { CellValue, FkRef } from "../../../shared/api/engine";
 
 /** Enum→color map for status/method-like string pills (prototype ui.jsx). */
 const STATUS_COLORS: Record<string, string> = {
@@ -26,11 +30,41 @@ const STATUS_COLORS: Record<string, string> = {
 /** Columns whose string values render as tinted enum pills (prototype). */
 const PILL_COLUMNS = new Set(["status", "method"]);
 
+interface CellContentProps {
+  value: CellValue;
+  column: string;
+  /**
+   * The column's foreign-key target (M10 FK hop). When present *and* the value
+   * is non-NULL *and* `onFkClick` is supplied, the cell renders as an accent
+   * underlined link button; clicking it hops the reference (DataGrid opens the
+   * FK peek popover). NULL values and columns without `fk`/`onFkClick` render
+   * normally.
+   */
+  fk?: FkRef | null;
+  /** Called with the cell's value + the click event when an FK link is clicked. */
+  onFkClick?: (value: CellValue, event: React.MouseEvent<HTMLButtonElement>) => void;
+}
+
 /** One cell's rendered value, typed per spec §1.3 / §3.5. */
-export function CellContent({ value, column }: { value: CellValue; column: string }) {
+export function CellContent({ value, column, fk, onFkClick }: CellContentProps) {
   if (value === null) {
-    // NULL → italic faint small-caps "null".
+    // NULL → italic faint small-caps "null" (a NULL FK is not a link).
     return <span className="cell-null">null</span>;
+  }
+  // FK link (M10 §3.5): accent underlined, keyboard-operable button. Only when
+  // the column has an FK target and a hop handler — otherwise fall through to
+  // the normal type-aware rendering below.
+  if (fk && onFkClick) {
+    return (
+      <button
+        type="button"
+        className="fk-link"
+        onClick={(e) => onFkClick(value, e)}
+        title={"→ " + fk.table + (fk.column ? "." + fk.column : "")}
+      >
+        {typeof value === "number" && !Number.isInteger(value) ? value.toFixed(2) : String(value)}
+      </button>
+    );
   }
   if (typeof value === "boolean") {
     return <span className={value ? "cell-true" : "cell-false"}>{String(value)}</span>;

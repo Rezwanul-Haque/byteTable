@@ -4,6 +4,8 @@ A free, open-source, **local-first desktop database client** — a TablePlus / B
 tool with first-class Linux, MacOS, Windows support, no pro tier, and no subscription. One window, four engines:
 **SQLite · MySQL · PostgreSQL · Redis**. Many more engines to come.
 
+![ByteTable](docs/byteTable.png)
+
 Your credentials never leave your machine: all database I/O happens in the Rust core, secrets live
 in the OS keychain, and the renderer only ever sees opaque connection ids.
 

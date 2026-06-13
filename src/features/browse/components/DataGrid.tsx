@@ -1,17 +1,21 @@
 // Virtualized data grid (spec §3.5, MILESTONES M4) — ported behavior from the
 // prototype's grid.jsx, with the real backend's LIMIT/OFFSET paging behind it.
 //
-// VIRTUALIZATION + PAGING (see report for tradeoffs):
-//   - Row axis is virtualized with @tanstack/react-virtual: the scroll
-//     container is sized to `totalRows × rowHeight`, so the scrollbar reflects
-//     the true table size, but only the visible rows (+ overscan) are in the
-//     DOM. This is what makes a 1M-row table scroll at 60fps without holding a
-//     million <div>s.
-//   - Rows are loaded in PAGES of PAGE_SIZE into a SPARSE cache keyed by
-//     absolute row index. As the viewport moves, we fetch the page(s)
-//     overlapping the visible range (+ a small page overscan). Rows whose page
-//     has not yet arrived render a shimmer skeleton. We never load all rows.
-//   - Sort and refresh reset the cache and re-fetch from offset 0.
+// VIRTUALIZATION + EXPLICIT PAGING (Bug 2 — the prototype's `.table-footer`
+// pager):
+//   - The table tab owns `offset`/`pageSize` and drives them from the footer
+//     pager. The grid fetches EXACTLY the current page —
+//     `rowsFetch(..., { offset, limit: pageSize })` — and virtualizes WITHIN
+//     that page with @tanstack/react-virtual. The scroll container is sized to
+//     `pageRowCount × rowHeight` (the page's rows, not the whole table), so the
+//     scrollbar reflects the page; the footer's prev/next move the window.
+//   - The page's rows live in a cache keyed by ABSOLUTE row index
+//     (`offset + i`) so the inline-edit pk logic + row-number gutter stay
+//     correct across pages. A page in flight renders a shimmer skeleton.
+//   - `totalRows` (the fetch's COUNT, filtered when a filter is applied) is
+//     reported to the tabMeta seam; the footer reads it for the range readout
+//     and next-enabled, and the toolbar's "N rows" stays consistent with it.
+//   - Sort / filter / refresh / page change all reset the cache and re-fetch.
 //
 // EXTENSIBILITY SEAMS (commented inline, NOT built this milestone):
 //   - M5  filters → a `where`/filter param threads into FetchRowsRequest and
@@ -136,15 +140,49 @@ function sqlLiteral(value: CellValue): string {
   return "'" + value.replace(/'/g, "''") + "'";
 }
 
-/** Rows fetched per page. Small enough that a single page is cheap, large
- *  enough that a viewport rarely spans more than two. */
-const PAGE_SIZE = 200;
-/** Extra pages to prefetch on either side of the visible range. */
-const PAGE_OVERSCAN = 1;
 /** Row overscan handed to the virtualizer (DOM rows beyond the viewport). */
 const ROW_OVERSCAN = 12;
 /** Fallback row height before the CSS var is measured (compact default). */
 const FALLBACK_ROW_H = 26;
+
+// --- Bug 1: explicit per-column pixel widths (shared by header + all rows) ---
+// Each `.dg-row` is its own CSS grid (the body rows are absolutely positioned
+// by the virtualizer, so a single shared grid is impossible). With
+// `max-content` tracks, every row resolved its own track widths from its own
+// content → the header and body computed DIFFERENT widths and columns drifted.
+// Fix: measure one explicit pixel width per visible column ONCE (max of the
+// header's intrinsic width and the widest loaded cell, clamped), and build the
+// template from those fixed px tracks so every row uses identical tracks.
+
+/** Min/max column track width (px). MAX bounds one long value from blowing out
+ *  the layout — the cell ellipsizes/scrolls within it. */
+const COL_MIN_PX = 90;
+const COL_MAX_PX = 400;
+/** Row-number gutter width (px) — matches `.dg-rownum` min-width. */
+const ROWNUM_PX = 38;
+/** Horizontal cell/header padding (px) — `.dg-td`/`.dg-th` are `0 12px`. */
+const CELL_PAD_PX = 24;
+/** Cheap mono-font width estimates (JetBrains Mono ≈ 0.6em advance). The body
+ *  cell font is `--grid-fs` (~12px → ~7.3px/char); the header name is 11.5px
+ *  (~7px/char) and the type label is 9.5px (~5.7px/char). Estimates only —
+ *  clamp + ellipsis absorb the slack. */
+const CELL_CHAR_PX = 7.3;
+const HEAD_NAME_CHAR_PX = 7;
+const HEAD_TYPE_CHAR_PX = 5.7;
+/** Allowance for header icons (pk/fk badge, sort arrow) + the inter-item gap. */
+const HEAD_ICON_PX = 40;
+/** Rows sampled when measuring cell widths — enough to be representative
+ *  without scanning a 5000-row page on every recompute. */
+const WIDTH_SAMPLE_ROWS = 200;
+
+/** Render width of one cell value, mirroring GridCell's text output (numbers
+ *  print compact; everything else its string form). */
+function cellTextLength(value: CellValue): number {
+  if (value === null) return 4; // "null"
+  if (typeof value === "number")
+    return (Number.isInteger(value) ? String(value) : value.toFixed(2)).length;
+  return String(value).length;
+}
 
 /** Sort state cycles asc → desc → none (null) on repeated header clicks. */
 function cycleSort(current: SortSpec | null, column: string): SortSpec | null {
@@ -174,6 +212,29 @@ interface DataGridProps {
   onFilterError?: (message: string) => void;
   /** Called when a filtered fetch's first page succeeds (clears panel error). */
   onFilterOk?: () => void;
+  /**
+   * Columns hidden by the table tab's Columns popover (M15 Task 2). Display-
+   * only: the grid still FETCHES every column (the row cache stays aligned to
+   * the full `columns`), it just skips rendering the hidden ones in the header
+   * + body and drops their tracks from the grid template.
+   */
+  hiddenColumns?: ReadonlySet<string>;
+  /**
+   * Explicit paging (Bug 2 — the prototype's `.table-footer` pager). The table
+   * tab owns `offset`/`pageSize`; the grid fetches exactly that page
+   * (`rowsFetch(..., { offset, limit: pageSize })`) and virtualizes within it.
+   * This replaces the old scroll-driven sparse-window model for the table view.
+   * Changing either re-fetches the page. `pageSize` is already clamped by the
+   * caller to the backend ceiling (`MAX_PAGE_ROWS`) for the "All" option.
+   */
+  offset: number;
+  pageSize: number;
+  /**
+   * Called when the user changes the sort (header click). The table tab resets
+   * `offset` to 0 on sort change (matches the prototype's paging reset), since
+   * a re-sort invalidates the current page window.
+   */
+  onSortChange?: () => void;
 }
 
 export function DataGrid({
@@ -185,6 +246,10 @@ export function DataGrid({
   filterKey,
   onFilterError,
   onFilterOk,
+  hiddenColumns,
+  offset,
+  pageSize,
+  onSortChange,
 }: DataGridProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -229,14 +294,14 @@ export function DataGrid({
   const closeFkPeek = useCallback(() => setFkPeek(null), []);
   const closeInsights = useCallback(() => setInsights(null), []);
 
-  // Sparse row cache keyed by absolute row index. A page write fills
-  // [offset, offset+rows). Rows absent here render a shimmer.
+  // The current page's rows, keyed by ABSOLUTE row index (`offset + i`). Keyed
+  // absolutely (not 0-based) so the inline-edit pk logic + the row-number
+  // gutter stay correct across pages. Rows absent here (page in flight) render
+  // a shimmer.
   const rowCacheRef = useRef<Map<number, CellValue[]>>(new Map());
-  const pendingPagesRef = useRef<Set<number>>(new Set());
-  // For the count-unknown fallback (totalRows === null): the highest loaded
-  // row index + 1, and whether a short page proved we hit the end.
-  const maxLoadedRef = useRef(0);
-  const reachedEndRef = useRef(false);
+  // How many rows the current page actually returned (≤ pageSize; the last
+  // page is short). Drives the virtualizer's row count for THIS page.
+  const [pageRowCount, setPageRowCount] = useState(0);
   // Bumped whenever the cache changes so the virtual rows re-render.
   const [cacheVersion, setCacheVersion] = useState(0);
   // Incremented on every reset (sort/refresh/identity change) so late page
@@ -246,23 +311,23 @@ export function DataGrid({
   // Refresh nonce + restored scroll, from the tabMeta seam.
   const refetchNonce = useTabMetaStore((s) => s.refetchNonce[tabId] ?? 0);
 
-  // Filter-result callbacks kept in a ref so fetchPage stays stable (it must
-  // not re-create — and reset the window — when the parent re-renders with a
-  // new callback identity; the only reset trigger is filterKey below).
+  // Filter-result callbacks kept in a ref so fetchCurrentPage stays stable (it
+  // must not re-create — and re-fetch — when the parent re-renders with a new
+  // callback identity; the reset triggers are the identity/sort/filter/page
+  // deps below).
   const filterCbRef = useRef({ onFilterError, onFilterOk });
   filterCbRef.current = { onFilterError, onFilterOk };
-  // The live filter, read inside fetchPage without making it a dep (filterKey
-  // is its stable identity and drives the reset effect).
+  // The live filter, read inside fetchCurrentPage without making it a dep
+  // (filterKey is its stable identity and drives the reset effect).
   const filterRef = useRef(filter);
   filterRef.current = filter;
 
-  // Reset everything for a fresh load (mount, sort change, refresh).
-  const resetAndLoadFirstPage = useCallback(() => {
+  // Reset everything for a fresh page load (mount, sort/filter/page change,
+  // refresh).
+  const resetForLoad = useCallback(() => {
     generationRef.current += 1;
     rowCacheRef.current = new Map();
-    pendingPagesRef.current = new Set();
-    maxLoadedRef.current = 0;
-    reachedEndRef.current = false;
+    setPageRowCount(0);
     setCacheVersion((v) => v + 1);
     setLoadingInitial(true);
     setInitialError(null);
@@ -270,97 +335,78 @@ export function DataGrid({
   }, []);
 
   // --- page fetcher ----------------------------------------------------
-  const fetchPage = useCallback(
-    (pageIndex: number) => {
-      if (pageIndex < 0) return;
-      if (pendingPagesRef.current.has(pageIndex)) return;
-      const offset = pageIndex * PAGE_SIZE;
-      // Skip if the whole page is already cached.
-      if (rowCacheRef.current.has(offset)) return;
-      const generation = generationRef.current;
-      pendingPagesRef.current.add(pageIndex);
-      void rowsFetch(handleId, {
-        schema,
-        table,
-        sort,
-        filter: filterRef.current,
-        offset,
-        limit: PAGE_SIZE,
-      })
-        .then((page) => {
-          if (generation !== generationRef.current) return; // stale
-          // Each page echoes the column list; keep the latest (stable across
-          // pages within a generation). Clears the initial-loading state.
-          setColumns(page.columns);
-          setTotalRows(page.totalRows);
-          for (let i = 0; i < page.rows.length; i++) {
-            rowCacheRef.current.set(page.offset + i, page.rows[i]!);
-          }
-          // Track the loaded extent for the count-unknown fallback (when the
-          // backend returns totalRows: null). A full page implies there may be
-          // more; a short page is the end.
-          maxLoadedRef.current = Math.max(maxLoadedRef.current, page.offset + page.rows.length);
-          if (page.rows.length < PAGE_SIZE) reachedEndRef.current = true;
-          pendingPagesRef.current.delete(pageIndex);
-          setCacheVersion((v) => v + 1);
-          setLoadingInitial(false);
-          // The first page of a (re)load succeeded — clear any stale filter
-          // error the panel was showing (e.g. a fixed raw-mode clause).
-          if (pageIndex === 0) filterCbRef.current.onFilterOk?.();
+  // Fetch EXACTLY the current page [offset, offset+pageSize). One request per
+  // (sort/filter/identity/offset/pageSize/refresh) generation.
+  const fetchCurrentPage = useCallback(() => {
+    const generation = generationRef.current;
+    void rowsFetch(handleId, {
+      schema,
+      table,
+      sort,
+      filter: filterRef.current,
+      offset,
+      limit: pageSize,
+    })
+      .then((page) => {
+        if (generation !== generationRef.current) return; // stale
+        // The page echoes the column list; keep the latest.
+        setColumns(page.columns);
+        setTotalRows(page.totalRows);
+        rowCacheRef.current = new Map();
+        for (let i = 0; i < page.rows.length; i++) {
+          rowCacheRef.current.set(page.offset + i, page.rows[i]!);
+        }
+        setPageRowCount(page.rows.length);
+        setCacheVersion((v) => v + 1);
+        setLoadingInitial(false);
+        // A successful (re)load clears any stale filter error the panel showed
+        // (e.g. a fixed raw-mode clause).
+        filterCbRef.current.onFilterOk?.();
 
-          // Report to the tabMeta seam: total count, timing, and how many rows
-          // are loaded so far (shown-of-total while a big table pages in).
-          useTabMetaStore.getState().setTabMeta(tabId, {
-            totalRows: page.totalRows,
-            elapsedMs: page.elapsedMs,
-            shownRows:
-              page.totalRows === null
-                ? undefined
-                : Math.min(rowCacheRef.current.size, page.totalRows),
-          });
-        })
-        .catch((err: unknown) => {
-          if (generation !== generationRef.current) return;
-          pendingPagesRef.current.delete(pageIndex);
-          if (pageIndex !== 0) return; // later pages failing just leave shimmer
-          const message = appErrorMessage(err, "Could not load rows.");
-          // A filtered fetch that fails is almost always a bad raw WHERE — keep
-          // the prior rows visible and route the §5 message to the filter panel
-          // (it stays open so the user can fix the clause). Without a filter,
-          // it is a genuine load failure → the full-screen error state.
-          if (filterRef.current !== null && filterCbRef.current.onFilterError) {
-            filterCbRef.current.onFilterError(message);
-            setLoadingInitial(false);
-          } else {
-            setInitialError(message);
-            setLoadingInitial(false);
-          }
+        // Report to the tabMeta seam: total count + timing. The toolbar's
+        // "N rows" reads totalRows (the filtered total when a filter applies);
+        // no shownRows — the footer pager shows the page range instead.
+        useTabMetaStore.getState().setTabMeta(tabId, {
+          totalRows: page.totalRows,
+          elapsedMs: page.elapsedMs,
+          shownRows: undefined,
         });
-    },
-    [handleId, schema, table, sort, tabId],
-  );
+      })
+      .catch((err: unknown) => {
+        if (generation !== generationRef.current) return;
+        const message = appErrorMessage(err, "Could not load rows.");
+        // A filtered fetch that fails is almost always a bad raw WHERE — keep
+        // the prior rows visible and route the §5 message to the filter panel
+        // (it stays open so the user can fix the clause). Without a filter, it
+        // is a genuine load failure → the full-screen error state.
+        if (filterRef.current !== null && filterCbRef.current.onFilterError) {
+          filterCbRef.current.onFilterError(message);
+          setLoadingInitial(false);
+        } else {
+          setInitialError(message);
+          setLoadingInitial(false);
+        }
+      });
+  }, [handleId, schema, table, sort, tabId, offset, pageSize]);
 
-  // Initial load + reload on identity / sort / refresh changes. A reset flips
-  // loadingInitial true, which unmounts the scroll canvas, so a sort/refresh
-  // naturally returns to row 1 on the fresh mount — and `restoredRef` is
-  // already set, so we do not re-apply the old saved scroll. The first mount
-  // keeps loadingInitial true until the first page lands, then the scroll
-  // restore effect runs.
+  // Initial load + reload on identity / sort / filter / page / refresh changes.
+  // A reset flips loadingInitial true, which unmounts the scroll canvas, so a
+  // sort/filter/page change naturally returns to row 1 on the fresh mount.
   useEffect(() => {
-    resetAndLoadFirstPage();
+    resetForLoad();
     // A reset re-keys the row cache: any open edit / parked production confirm
     // points at a now-stale row index, so drop them (M11) — committing them
     // against a re-windowed cache would target the wrong row.
     committingRef.current = false;
     setEditing(null);
     setPendingConfirm(null);
-    fetchPage(0);
-    // fetchPage closes over sort/identity + reads the live filter via a ref;
-    // filterKey is the filter's stable identity, so an applied-filter change
-    // re-windows + re-counts here exactly like a sort change.
-    // resetAndLoadFirstPage is stable.
+    fetchCurrentPage();
+    // fetchCurrentPage closes over sort/identity/offset/pageSize + reads the
+    // live filter via a ref; filterKey is the filter's stable identity, so an
+    // applied-filter change re-fetches + re-counts here like a sort change.
+    // resetForLoad is stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [handleId, schema, table, sort, filterKey, refetchNonce]);
+  }, [handleId, schema, table, sort, filterKey, refetchNonce, offset, pageSize]);
 
   // Load the column header meta (pk/fk) once per identity. Independent of the
   // row pages — the prototype shows the icons from table metadata, not the
@@ -398,13 +444,12 @@ export function DataGrid({
     return () => obs.disconnect();
   }, []);
 
-  // Virtual row count: the exact total when known; otherwise (totalRows null)
-  // the loaded extent, extended by one page until a short page proves the end,
-  // so the user can keep scrolling and pulling pages. These refs are read on
-  // each re-render, which `cacheVersion` (used in the JSX below) guarantees
-  // happens whenever a page lands.
-  const rowCount =
-    totalRows ?? (reachedEndRef.current ? maxLoadedRef.current : maxLoadedRef.current + PAGE_SIZE);
+  // Virtual row count: the rows in the CURRENT PAGE (the grid only holds one
+  // page at a time now). The virtualizer indexes the page 0-based; the body map
+  // adds `offset` to recover the absolute row index (gutter shows index+1, and
+  // the cache is keyed absolutely). `cacheVersion` (read in the JSX below)
+  // re-renders when the page lands.
+  const rowCount = pageRowCount;
   const rowVirtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => scrollRef.current,
@@ -418,17 +463,6 @@ export function DataGrid({
   }, [rowHeight, rowVirtualizer]);
 
   const virtualRows = rowVirtualizer.getVirtualItems();
-
-  // Fetch pages overlapping the visible range (+ page overscan).
-  useEffect(() => {
-    if (virtualRows.length === 0) return;
-    const first = virtualRows[0]!.index;
-    const last = virtualRows[virtualRows.length - 1]!.index;
-    const firstPage = Math.max(0, Math.floor(first / PAGE_SIZE) - PAGE_OVERSCAN);
-    const lastPage = Math.floor(last / PAGE_SIZE) + PAGE_OVERSCAN;
-    for (let p = firstPage; p <= lastPage; p++) fetchPage(p);
-    // virtualRows identity changes each scroll; fetchPage is memoized.
-  }, [virtualRows, fetchPage]);
 
   // --- scroll persistence (per-tab, across workspace switches) ---------
   // The grid remounts on every workspace switch (WorkspaceContent mounts only
@@ -461,7 +495,14 @@ export function DataGrid({
   }, [tabId]);
 
   // --- render ----------------------------------------------------------
+  // Keep the sort-change callback in a ref so onHeaderClick stays stable.
+  const onSortChangeRef = useRef(onSortChange);
+  onSortChangeRef.current = onSortChange;
   const onHeaderClick = useCallback((column: string) => {
+    // A re-sort invalidates the current page window — reset paging to page 1
+    // (the table tab owns offset). Fired before the local sort flips so the
+    // parent's offset reset and our sort change land in the same render pass.
+    onSortChangeRef.current?.();
     setSort((prev) => cycleSort(prev, column));
   }, []);
 
@@ -686,11 +727,49 @@ export function DataGrid({
   }, []);
   useEffect(() => () => clearPendingHop(), [clearPendingHop]);
 
-  // Grid column template: row-number gutter + one min/max track per column.
-  const gridCols = useMemo(
-    () => "38px " + columns.map(() => "minmax(90px, max-content)").join(" "),
-    [columns],
+  // Visibility predicate for the Columns popover (M15 Task 2). Hiding is
+  // display-only — `columns` (and therefore the row cache's `ci` indexing)
+  // stays the full set; we only skip rendering + drop the track.
+  const isHidden = useCallback(
+    (name: string) => hiddenColumns?.has(name) ?? false,
+    [hiddenColumns],
   );
+
+  // Grid column template (Bug 1): row-number gutter + one EXPLICIT pixel track
+  // per VISIBLE column, shared by the header and every body row so columns line
+  // up exactly. Each track = clamp(max(header intrinsic, widest sampled cell),
+  // MIN, MAX). Recomputes only when the columns, hidden set, header meta, or
+  // the loaded page changes (cacheVersion/offset/pageRowCount) — NOT per
+  // scroll. Hidden columns drop their track so the layout closes up.
+  const gridCols = useMemo(() => {
+    const widths: string[] = [];
+    for (const c of columns) {
+      if (isHidden(c.name)) continue;
+      // Header intrinsic width: name + (smaller) type label + icons + padding.
+      const typeLen = c.typeHint ? c.typeHint.length : 0;
+      const headerPx =
+        c.name.length * HEAD_NAME_CHAR_PX +
+        typeLen * HEAD_TYPE_CHAR_PX +
+        HEAD_ICON_PX +
+        CELL_PAD_PX;
+      // Widest sampled cell value in the current page.
+      let maxCellLen = 0;
+      let sampled = 0;
+      const ci = columns.indexOf(c);
+      for (const row of rowCacheRef.current.values()) {
+        const len = cellTextLength(row[ci] ?? null);
+        if (len > maxCellLen) maxCellLen = len;
+        if (++sampled >= WIDTH_SAMPLE_ROWS) break;
+      }
+      const cellPx = maxCellLen * CELL_CHAR_PX + CELL_PAD_PX;
+      const w = Math.round(Math.min(COL_MAX_PX, Math.max(COL_MIN_PX, headerPx, cellPx)));
+      widths.push(w + "px");
+    }
+    return ROWNUM_PX + "px " + widths.join(" ");
+    // rowCacheRef is a ref; cacheVersion/pageRowCount/offset stand in for its
+    // contents changing (a page landed / the window moved).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [columns, isHidden, cacheVersion, pageRowCount, offset]);
 
   if (initialError) {
     return (
@@ -720,21 +799,19 @@ export function DataGrid({
     );
   }
 
-  // Empty when the count is a known 0, or the count was unknown and the first
-  // (terminal) page came back with no rows.
+  // Empty when the filtered count is a known 0, or the current page came back
+  // with no rows (e.g. an empty table). The footer pager (TableTab) still
+  // renders below this in either case.
   if (totalRows === 0 || rowCount === 0) {
     return (
-      <>
-        <div className="dg-state">
-          <Icon name="table_rows" size={28} style={{ opacity: 0.5 }} />
-          <span>
-            {filter
-              ? "No rows match the filter in " + schema + "." + table
-              : "Empty table — no rows in " + schema + "." + table}
-          </span>
-        </div>
-        <GridHint />
-      </>
+      <div className="dg-state">
+        <Icon name="table_rows" size={28} style={{ opacity: 0.5 }} />
+        <span>
+          {filter
+            ? "No rows match the filter in " + schema + "." + table
+            : "Empty table — no rows in " + schema + "." + table}
+        </span>
+      </div>
     );
   }
 
@@ -748,6 +825,7 @@ export function DataGrid({
           <div className="dg-header dg-row">
             <div className="dg-rownum-h">#</div>
             {columns.map((c) => {
+              if (isHidden(c.name)) return null;
               const meta = colMeta.get(c.name);
               const active = sort?.column === c.name;
               return (
@@ -803,7 +881,9 @@ export function DataGrid({
             data-cache-version={cacheVersion}
           >
             {virtualRows.map((vr) => {
-              const rowIndex = vr.index;
+              // vr.index is 0-based within the page; recover the absolute row
+              // index so the gutter, cache key, and pk/edit logic stay correct.
+              const rowIndex = offset + vr.index;
               const row = rowCacheRef.current.get(rowIndex);
               const isSelectedRow = selected?.row === rowIndex;
               return (
@@ -814,6 +894,7 @@ export function DataGrid({
                 >
                   <div className="dg-rownum">{rowIndex + 1}</div>
                   {columns.map((c, ci) => {
+                    if (isHidden(c.name)) return null;
                     if (!row) {
                       // Page not yet loaded — shimmer skeleton.
                       return (
@@ -885,7 +966,6 @@ export function DataGrid({
           </div>
         </div>
       </div>
-      <GridHint />
       {fkPeek ? (
         <FkPeek
           handleId={handleId}
@@ -928,15 +1008,5 @@ export function DataGrid({
         </Modal>
       ) : null}
     </>
-  );
-}
-
-/** Hint footer — exact copy from spec §3.5 (features land M5/M10/M11). */
-function GridHint() {
-  return (
-    <div className="grid-hint">
-      Double-click a cell to edit · click a header to sort · stack conditions under Filters · click
-      a linked value to hop the FK · <Icon name="change_history" size={11} /> for column insights
-    </div>
   );
 }

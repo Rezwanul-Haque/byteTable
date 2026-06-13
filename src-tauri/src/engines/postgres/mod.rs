@@ -71,11 +71,11 @@ use sqlx::{Column, Row, TypeInfo};
 
 use crate::features::structure::domain::AlterOp;
 use crate::shared::engine::{
-    AlterResult, ColumnInfo, ColumnMeta, ColumnStats, ColumnStatsRequest, ConnectSecret,
-    ConnectionParams, Connector, Engine, EngineConnection, EngineInfo, FetchRowsRequest, FkRef,
-    ForeignKeyInfo, FreqEntry, InboundFkInfo, IndexInfo, OpenConnection, PkPredicate, QueryOptions,
-    QueryResult, RowLookup, RowLookupRequest, RowsPage, SchemaInfo, TableInfo, TableMeta,
-    UpdateCellRequest, UpdateResult,
+    split_statements, AlterResult, ColumnInfo, ColumnMeta, ColumnStats, ColumnStatsRequest,
+    ConnectSecret, ConnectionParams, Connector, Engine, EngineConnection, EngineInfo,
+    FetchRowsRequest, FkRef, ForeignKeyInfo, FreqEntry, ImportResult, InboundFkInfo, IndexInfo,
+    OpenConnection, PkPredicate, QueryOptions, QueryResult, RowLookup, RowLookupRequest, RowsPage,
+    SchemaInfo, TableInfo, TableMeta, UpdateCellRequest, UpdateResult,
 };
 use crate::shared::error::AppError;
 
@@ -419,6 +419,22 @@ impl EngineConnection for PostgresEngineConnection {
 
     async fn update_cell(&self, req: UpdateCellRequest) -> Result<UpdateResult, AppError> {
         update_cell(&self.pool, &req).await
+    }
+
+    fn quote_identifier(&self, ident: &str) -> String {
+        quote_ident(ident)
+    }
+
+    async fn truncate_table(&self, schema: &str, table: &str) -> Result<u64, AppError> {
+        truncate_table(&self.pool, schema, table).await
+    }
+
+    async fn drop_schema(&self, schema: &str) -> Result<(), AppError> {
+        drop_schema(&self.pool, schema).await
+    }
+
+    async fn execute_script(&self, schema: &str, sql: &str) -> Result<ImportResult, AppError> {
+        execute_script(&self.pool, schema, sql).await
     }
 
     async fn alter_table(
@@ -1265,6 +1281,103 @@ fn no_row_matched_error() -> AppError {
     AppError::Database(
         "No row matched (it may have been deleted or changed since you loaded it).".to_string(),
     )
+}
+
+/// Empty a table, keeping its structure (M15 truncate). Postgres has a native
+/// `TRUNCATE TABLE`, which is faster than `DELETE` but reports no affected-row
+/// count, so we `COUNT(*)` first and return that as the number removed (0 for
+/// an already-empty table). The table must exist (reuse `table_meta` for the
+/// §5 "Table 'x' does not exist…" message).
+async fn truncate_table(pool: &PgPool, schema: &str, table: &str) -> Result<u64, AppError> {
+    table_meta(pool, schema, table).await?;
+    let qualified = qualified(schema, table);
+
+    let prior: i64 = sqlx::query_scalar(&format!("SELECT count(*) FROM {qualified}"))
+        .fetch_one(pool)
+        .await
+        .map_err(map_query_error)?;
+
+    sqlx::query(&format!("TRUNCATE TABLE {qualified}"))
+        .execute(pool)
+        .await
+        .map_err(map_query_error)?;
+
+    Ok(prior.max(0) as u64)
+}
+
+/// Drop every table in `schema` and leave the schema empty (M15 drop-schema).
+///
+/// Runs `DROP SCHEMA "x" CASCADE; CREATE SCHEMA "x";` inside ONE explicit
+/// transaction. Postgres has transactional DDL, so this is atomic: either both
+/// statements land (leaving an empty schema, exactly as the prototype's SQL
+/// preview promises) or the whole thing rolls back and the schema is untouched.
+/// CASCADE drops the tables and everything that depends on them (indexes, views,
+/// sequences). The schema must exist (a §5 "does not exist" error otherwise,
+/// matching the prototype's plain `DROP SCHEMA` — no `IF EXISTS`).
+async fn drop_schema(pool: &PgPool, schema: &str) -> Result<(), AppError> {
+    ensure_schema_exists(pool, schema).await?;
+    let quoted = quote_ident(schema);
+
+    let mut tx = pool.begin().await.map_err(map_query_error)?;
+    if let Err(err) = sqlx::query(&format!("DROP SCHEMA {quoted} CASCADE"))
+        .execute(&mut *tx)
+        .await
+    {
+        let _ = tx.rollback().await;
+        return Err(map_query_error(err));
+    }
+    if let Err(err) = sqlx::query(&format!("CREATE SCHEMA {quoted}"))
+        .execute(&mut *tx)
+        .await
+    {
+        let _ = tx.rollback().await;
+        return Err(map_query_error(err));
+    }
+    tx.commit().await.map_err(map_query_error)?;
+    Ok(())
+}
+
+/// Run a whole multi-statement SQL script (a dump) into `schema` (M15 import).
+///
+/// Atomicity: the whole dump runs inside one explicit sqlx transaction
+/// (`pool.begin()` → COMMIT on success, ROLLBACK on any error), so a mid-script
+/// failure rolls ALL statements back and a table is never left half-created
+/// (Postgres has transactional DDL). We `SET search_path` first within that
+/// transaction so unqualified `CREATE`s land in the target schema, then run the
+/// dump statement-by-statement (split with the quote/comment-aware
+/// [`split_statements`]) on the one transaction connection. Splitting
+/// client-side and using `sqlx::query` per statement mirrors the proven
+/// `alter_table` path and binds nothing — the statements come from a file the
+/// user chose, exactly like the SQL query editor.
+///
+/// The schema must exist (a §5 error otherwise — same message vocabulary as the
+/// rest of the adapter). Any engine error surfaces §5-style after the rollback.
+async fn execute_script(pool: &PgPool, schema: &str, sql: &str) -> Result<ImportResult, AppError> {
+    ensure_schema_exists(pool, schema).await?;
+    let statements = split_statements(sql);
+
+    let mut tx = pool.begin().await.map_err(map_query_error)?;
+    // search_path inside the transaction so the dump's unqualified names resolve
+    // to the target schema (and shares the one tx connection).
+    if let Err(err) = sqlx::query(&format!("SET search_path TO {}", quote_ident(schema)))
+        .execute(&mut *tx)
+        .await
+    {
+        let _ = tx.rollback().await;
+        return Err(map_query_error(err));
+    }
+    for statement in &statements {
+        if let Err(err) = sqlx::query(statement).execute(&mut *tx).await {
+            // Roll the whole import back — no table left half-created.
+            let _ = tx.rollback().await;
+            return Err(map_query_error(err));
+        }
+    }
+    tx.commit().await.map_err(map_query_error)?;
+
+    Ok(ImportResult {
+        statements: statements.len() as u64,
+    })
 }
 
 /// Enforce the full-primary-key policy (mass-update prevention). Identical
@@ -2521,6 +2634,300 @@ mod integration {
                 auth,
             }),
         }
+    }
+
+    // ---- M15: truncate + export against live Postgres ----
+
+    #[tokio::test]
+    async fn truncate_empties_table_and_reports_prior_count() {
+        let Some((params, secret)) = gate("truncate_empties_table_and_reports_prior_count") else {
+            return;
+        };
+        let pool = raw_pool(&params, &secret).await;
+        let (schema, other) = ("bt_it_truncate", "bt_it_truncate_other");
+        setup_fixture(&pool, schema, other).await;
+        let conn = open_conn(&params, &secret).await;
+
+        // books has 4 seeded rows.
+        let affected = conn
+            .truncate_table(schema, "books")
+            .await
+            .expect("truncate books");
+        assert_eq!(affected, 4);
+        let after: i64 = sqlx::query_scalar(&format!("SELECT count(*) FROM {schema}.books"))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(after, 0);
+
+        // Truncating an already-empty table reports 0.
+        let again = conn
+            .truncate_table(schema, "books")
+            .await
+            .expect("re-truncate");
+        assert_eq!(again, 0);
+
+        // Unknown table is a §5 error.
+        let err = conn.truncate_table(schema, "ghost").await.unwrap_err();
+        assert!(matches!(err, AppError::Database(_)));
+        assert!(err.to_string().contains("does not exist"));
+
+        drop_fixture(&pool, schema, other).await;
+    }
+
+    /// drop_schema empties a THROWAWAY schema (never `public`/`byteshop`):
+    /// the schema still exists afterward but holds 0 tables, and the seeded
+    /// rows are gone. A nonexistent schema is a §5 error.
+    #[tokio::test]
+    async fn drop_schema_empties_throwaway_schema_and_leaves_it() {
+        let Some((params, secret)) = gate("drop_schema_empties_throwaway_schema_and_leaves_it")
+        else {
+            return;
+        };
+        let pool = raw_pool(&params, &secret).await;
+        let (schema, other) = ("bt_it_dropschema", "bt_it_dropschema_other");
+        setup_fixture(&pool, schema, other).await;
+        let conn = open_conn(&params, &secret).await;
+
+        // Sanity: the fixture seeded tables in the throwaway schema.
+        let before: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema = $1",
+        )
+        .bind(schema)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(before >= 2, "fixture should seed tables, got {before}");
+
+        conn.drop_schema(schema).await.expect("drop schema");
+
+        // The schema still exists…
+        let schema_exists: Option<i32> =
+            sqlx::query_scalar("SELECT 1 FROM pg_namespace WHERE nspname = $1")
+                .bind(schema)
+                .fetch_optional(&pool)
+                .await
+                .unwrap();
+        assert!(schema_exists.is_some(), "schema must be recreated empty");
+
+        // …but it is empty.
+        let after: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema = $1",
+        )
+        .bind(schema)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(after, 0, "dropped schema must hold 0 tables");
+
+        // The OTHER throwaway schema is untouched.
+        let other_tables: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema = $1",
+        )
+        .bind(other)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(other_tables, 1, "drop must not touch other schemas");
+
+        // A nonexistent schema is a §5 error (plain DROP, no IF EXISTS).
+        let err = conn.drop_schema("bt_it_nope_xyz").await.unwrap_err();
+        assert!(matches!(err, AppError::Database(_)));
+        assert!(err.to_string().contains("does not exist"));
+
+        drop_fixture(&pool, schema, other).await;
+    }
+
+    #[tokio::test]
+    async fn export_csv_and_sql_against_live_postgres() {
+        use crate::features::connections::application::ConnectionManager;
+        use crate::features::export::application::{export_schema_sql, export_table};
+        use crate::features::export::domain::ExportFormat;
+
+        let Some((params, secret)) = gate("export_csv_and_sql_against_live_postgres") else {
+            return;
+        };
+        let pool = raw_pool(&params, &secret).await;
+        let (schema, other) = ("bt_it_export", "bt_it_export_other");
+        setup_fixture(&pool, schema, other).await;
+
+        let open = PostgresConnector
+            .open_with_secret(&params, secret.as_ref())
+            .await
+            .expect("open");
+        let manager = ConnectionManager::new();
+        let handle = manager.insert(open).await;
+
+        // CSV: header + every authors row (3), NULL bio → empty field.
+        let csv = export_table(&manager, &handle, schema, "authors", ExportFormat::Csv)
+            .await
+            .expect("export csv");
+        assert_eq!(csv.lines().next().unwrap(), "id,name,bio");
+        assert_eq!(csv.lines().count(), 4);
+        assert!(csv.contains("2,Grace,")); // null bio → trailing empty field
+
+        // SQL: DDL + one INSERT per row, backtick-free double-quoted idents.
+        let sql = export_table(&manager, &handle, schema, "books", ExportFormat::Sql)
+            .await
+            .expect("export sql");
+        assert!(sql.contains(&format!("INSERT INTO \"{schema}\".\"books\"")));
+        assert_eq!(sql.matches("INSERT INTO").count(), 4);
+        assert!(sql.contains("NULL")); // the null note book
+
+        // Schema dump touches both base tables.
+        let dump = export_schema_sql(&manager, &handle, schema)
+            .await
+            .expect("export schema");
+        assert!(dump.contains("-- ByteTable schema dump"));
+        assert!(dump.contains("authors"));
+        assert!(dump.contains("books"));
+
+        // Empty table after a truncate exports the no-rows marker.
+        conn_truncate(&manager, &handle, schema, "books").await;
+        let empty_sql = export_table(&manager, &handle, schema, "books", ExportFormat::Sql)
+            .await
+            .expect("export empty");
+        assert!(empty_sql.contains("-- (no rows)"));
+
+        drop_fixture(&pool, schema, other).await;
+    }
+
+    #[tokio::test]
+    async fn import_round_trip_multi_statement_and_error_rollback_against_live_postgres() {
+        use crate::features::connections::application::ConnectionManager;
+        use crate::features::export::application::{export_table, import_sql};
+        use crate::features::export::domain::ExportFormat;
+
+        let Some((params, secret)) =
+            gate("import_round_trip_multi_statement_and_error_rollback_against_live_postgres")
+        else {
+            return;
+        };
+        let pool = raw_pool(&params, &secret).await;
+        let (schema, other) = ("bt_it_import", "bt_it_import_other");
+        setup_fixture(&pool, schema, other).await;
+        // A fresh, empty target schema for the round-trip + hand-written imports.
+        let fresh = "bt_it_import_fresh";
+        let _ = sqlx::query(&format!("DROP SCHEMA IF EXISTS {fresh} CASCADE"))
+            .execute(&pool)
+            .await;
+        sqlx::query(&format!("CREATE SCHEMA {fresh}"))
+            .execute(&pool)
+            .await
+            .expect("create fresh schema");
+
+        let open = PostgresConnector
+            .open_with_secret(&params, secret.as_ref())
+            .await
+            .expect("open");
+        let manager = ConnectionManager::new();
+        let handle = manager.insert(open).await;
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        // --- ROUND-TRIP: export authors (qualified dump) → rewrite it to target
+        // the FRESH schema → import → verify the table + 3 rows landed there.
+        let dump = export_table(&manager, &handle, schema, "authors", ExportFormat::Sql)
+            .await
+            .expect("export sql");
+        let retargeted = dump.replace(
+            &format!("\"{schema}\".\"authors\""),
+            &format!("\"{fresh}\".\"authors\""),
+        );
+        let rt_path = dir.path().join("authors.sql");
+        std::fs::write(&rt_path, &retargeted).expect("write dump");
+        let result = import_sql(&manager, &handle, fresh, &rt_path.to_string_lossy())
+            .await
+            .expect("import round-trip");
+        // DDL + 3 INSERTs.
+        assert_eq!(result.statements, 4);
+        let n: i64 = sqlx::query_scalar(&format!("SELECT count(*) FROM {fresh}.authors"))
+            .fetch_one(&pool)
+            .await
+            .expect("count");
+        assert_eq!(n, 3, "all rows round-tripped into the fresh schema");
+
+        // --- MULTI-STATEMENT: a hand-written CREATE + 2 INSERTs (unqualified, so
+        // search_path lands them in the target schema).
+        let script = "CREATE TABLE gadgets (id INT PRIMARY KEY, label TEXT);\n\
+                      INSERT INTO gadgets (id, label) VALUES (1, 'one');\n\
+                      INSERT INTO gadgets (id, label) VALUES (2, 'two');\n";
+        let ms_path = dir.path().join("gadgets.sql");
+        std::fs::write(&ms_path, script).expect("write script");
+        let result = import_sql(&manager, &handle, fresh, &ms_path.to_string_lossy())
+            .await
+            .expect("import multi-statement");
+        assert_eq!(result.statements, 3);
+        let n: i64 = sqlx::query_scalar(&format!("SELECT count(*) FROM {fresh}.gadgets"))
+            .fetch_one(&pool)
+            .await
+            .expect("count gadgets");
+        assert_eq!(n, 2);
+
+        // --- ERROR ROLLBACK: statement 1 creates a table, statement 2 fails →
+        // Postgres has transactional DDL, so the whole import rolls back and the
+        // table from statement 1 is NOT created.
+        let bad = "CREATE TABLE rollback_me (id INT);\n\
+                   INSERT INTO no_such_table (id) VALUES (1);\n";
+        let bad_path = dir.path().join("bad.sql");
+        std::fs::write(&bad_path, bad).expect("write bad");
+        let err = import_sql(&manager, &handle, fresh, &bad_path.to_string_lossy())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Database(_)), "got {err:?}");
+        let exists: Option<i32> = sqlx::query_scalar(
+            "SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace \
+             WHERE n.nspname = $1 AND c.relname = 'rollback_me'",
+        )
+        .bind(fresh)
+        .fetch_optional(&pool)
+        .await
+        .expect("existence");
+        assert!(exists.is_none(), "statement 1 must have rolled back");
+
+        // --- BAD PATH: a missing file is a §5 IO error naming the path.
+        let err = import_sql(&manager, &handle, fresh, "/tmp/bytetable-nonexistent.sql")
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Io(_)), "got {err:?}");
+        assert!(err.to_string().contains("Could not read"));
+
+        // --- EXECUTE_SCRIPT_TEXT: run generated SQL directly (no temp file),
+        // the way ImportModal applies CSV-derived INSERTs.
+        {
+            use crate::features::export::application::execute_script_text;
+            let text = "CREATE TABLE from_text (id INT PRIMARY KEY, label TEXT);\n\
+                        INSERT INTO from_text (id, label) VALUES (1, 'O''Brien');\n";
+            let result = execute_script_text(&manager, &handle, fresh, text)
+                .await
+                .expect("execute_script_text");
+            assert_eq!(result.statements, 2);
+            let n: i64 = sqlx::query_scalar(&format!("SELECT count(*) FROM {fresh}.from_text"))
+                .fetch_one(&pool)
+                .await
+                .expect("count from_text");
+            assert_eq!(n, 1);
+        }
+
+        let _ = sqlx::query(&format!("DROP SCHEMA IF EXISTS {fresh} CASCADE"))
+            .execute(&pool)
+            .await;
+        drop_fixture(&pool, schema, other).await;
+    }
+
+    /// Truncate via the open connection (helper to keep the export test tidy).
+    async fn conn_truncate(
+        manager: &crate::features::connections::application::ConnectionManager,
+        handle: &crate::features::connections::application::ConnectionHandleId,
+        schema: &str,
+        table: &str,
+    ) {
+        manager
+            .get_sql(handle)
+            .await
+            .expect("handle")
+            .truncate_table(schema, table)
+            .await
+            .expect("truncate");
     }
 
     #[tokio::test]

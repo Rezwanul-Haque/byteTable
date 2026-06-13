@@ -23,7 +23,9 @@ import { Btn } from "../../../shared/ui/Btn";
 import { EngineBadge } from "../../../shared/ui/EngineBadge";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
+import { ENV_COLOR } from "../../../shared/ui/envColors";
 import { useToast } from "../../../shared/ui/toastContext";
+import { normalizeEnv } from "../../../shared/types";
 import {
   connectionDetail,
   connectionIsTunneled,
@@ -31,8 +33,14 @@ import {
   tunnelTitle,
   type SchemaInfo,
 } from "../../connections/api";
+import { DropSchemaModal } from "../../export/components/DropSchemaModal";
+import { TruncateModal } from "../../export/components/TruncateModal";
+import { runExport, type ExportKind } from "../../export/exportFlow";
+import { ImportModal } from "../../import/components/ImportModal";
+import { SchemaImportModal } from "../../import/components/SchemaImportModal";
 import { tablesKey, columnsKey, useIntrospectionStore } from "../../introspection/state";
 import { useWorkspacesStore } from "../state";
+import { useTabMetaStore } from "../tabMeta";
 import type { Workspace } from "../types";
 import "./Sidebar.css";
 
@@ -51,10 +59,10 @@ interface CtxMenu {
   table: string;
 }
 
-// Approximate rendered size of the 4-item context menu, for clamping it
-// inside the viewport (min-width 190 + padding; 4 rows ≈ 130px).
+// Approximate rendered size of the context menu, for clamping it inside the
+// viewport (min-width 190 + padding). M15 grew it to 7 items + a separator.
 const CTX_MENU_W = 200;
-const CTX_MENU_H = 140;
+const CTX_MENU_H = 280;
 
 /**
  * Roving-focus keyboard nav shared by the schema popover and the context
@@ -124,6 +132,17 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
   const [schemaOpen, setSchemaOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  // M15 Task 2: which table the truncate modal targets (null when closed).
+  const [truncateTarget, setTruncateTarget] = useState<string | null>(null);
+  // M15 SQL enhancements: the schema-actions three-dot menu, the table-level
+  // import modal target, and the schema-level dump-import modal.
+  const [schemaMenu, setSchemaMenu] = useState(false);
+  const [importTarget, setImportTarget] = useState<string | null>(null);
+  const [schemaImportOpen, setSchemaImportOpen] = useState(false);
+  // M15 SQL enhancements: the destructive drop-schema confirm (null when closed).
+  const [dropSchemaOpen, setDropSchemaOpen] = useState(false);
+  const secActionsRef = useRef<HTMLDivElement | null>(null);
+  const secActionsBtnRef = useRef<HTMLButtonElement | null>(null);
 
   // Focus bookkeeping for the popover/menu (Rail pattern): focus moves into
   // the menu on open and back to its opener on close.
@@ -152,15 +171,16 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   // Outside mousedown / Escape / window blur close the popover and context
   // menu (prototype effect + the Rail's Escape handling).
   useEffect(() => {
-    if (!ctxMenu && !schemaOpen) return;
+    if (!ctxMenu && !schemaOpen && !schemaMenu) return;
     const close = () => {
       setCtxMenu(null);
       setSchemaOpen(false);
+      setSchemaMenu(false);
     };
     const onDown = (event: MouseEvent) => {
       if (
         event.target instanceof Element &&
-        event.target.closest(".schema-pop, .schema-btn, .ctx-menu")
+        event.target.closest(".schema-pop, .schema-btn, .ctx-menu, .sec-actions")
       )
         return;
       close();
@@ -170,6 +190,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
       close();
       // Return focus to the element that opened whatever was on top.
       if (ctxMenu) ctxOpenerRef.current?.focus();
+      else if (schemaMenu) secActionsBtnRef.current?.focus();
       else schemaBtnRef.current?.focus();
     };
     window.addEventListener("mousedown", onDown);
@@ -180,7 +201,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("blur", close);
     };
-  }, [ctxMenu, schemaOpen]);
+  }, [ctxMenu, schemaOpen, schemaMenu]);
 
   // Move focus into the menu/popover when it opens (a11y: keyboard users
   // land on the first item / the active schema).
@@ -196,6 +217,12 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
       pop?.querySelector<HTMLElement>("[role^='menuitem']")
     )?.focus();
   }, [schemaOpen]);
+  useEffect(() => {
+    if (!schemaMenu) return;
+    secActionsRef.current
+      ?.querySelector<HTMLElement>(".sec-actions-menu [role='menuitem']")
+      ?.focus();
+  }, [schemaMenu]);
 
   const tables = tablesEntry?.tables ?? null;
   const tablesError = errorsMap[tKey];
@@ -273,6 +300,12 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   const openStructure = (table: string) => openTableTab(schemaName, table, "structure");
   const openMap = () => openMapTab(schemaName);
 
+  // M15 Task 2: the shared export flow (text → save dialog → write → toast),
+  // reused by the table context menu + the schema-row download button.
+  const doExport = (kind: ExportKind, table?: string) =>
+    void runExport(kind, { handleId, schema: schemaName, table }, toast);
+
+
   const onRowKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>, table: string) => {
     // Keydowns on the nested expand chevron bubble up here — they belong to
     // the chevron (its native click), not the row.
@@ -304,8 +337,8 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
             {workspace.name}
             <span
               className="env-dot"
-              style={{ background: "var(--env-" + workspace.saved.env + ")" }}
-              title={workspace.saved.env}
+              style={{ background: ENV_COLOR[normalizeEnv(workspace.saved.env)] }}
+              title={normalizeEnv(workspace.saved.env)}
             />
           </div>
           {/* Tunnel lock (M12 Task 3): shown when the connection is reached
@@ -372,6 +405,11 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
         </div>
         <IconBtn icon="hub" title="Schema map (ER diagram)" onClick={openMap} />
         <IconBtn
+          icon="download"
+          title={"Export schema “" + schemaName + "” as .sql"}
+          onClick={() => doExport("schemaSql")}
+        />
+        <IconBtn
           icon="sync"
           title="Refresh schema"
           onClick={refresh}
@@ -395,7 +433,68 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
 
       <div className="sidebar-section-label">
         <span>Tables</span>
-        <span className="sidebar-count">{tables === null ? "" : tables.length}</span>
+        <div className="sec-actions" ref={secActionsRef}>
+          <span className="sidebar-count">{tables === null ? "" : tables.length}</span>
+          <button
+            ref={secActionsBtnRef}
+            type="button"
+            className="sec-actions-btn"
+            title="Schema actions"
+            aria-haspopup="menu"
+            aria-expanded={schemaMenu}
+            onClick={() => {
+              setSchemaOpen(false);
+              setCtxMenu(null);
+              setSchemaMenu((o) => !o);
+            }}
+          >
+            <Icon name="more_horiz" size={15} />
+          </button>
+          {schemaMenu ? (
+            <div
+              className="ctx-menu sec-actions-menu"
+              role="menu"
+              aria-label={"Schema actions for " + schemaName}
+              onKeyDown={onMenuKeyDown}
+            >
+              <div className="ctx-menu-label">Schema · {schemaName}</div>
+              <button
+                type="button"
+                className="ctx-item"
+                role="menuitem"
+                onClick={() => {
+                  setSchemaMenu(false);
+                  setSchemaImportOpen(true);
+                }}
+              >
+                <Icon name="upload" size={15} /> Import SQL dump…
+              </button>
+              <button
+                type="button"
+                className="ctx-item"
+                role="menuitem"
+                onClick={() => {
+                  setSchemaMenu(false);
+                  doExport("schemaSql");
+                }}
+              >
+                <Icon name="download" size={15} /> Export schema (.sql)
+              </button>
+              <div className="ctx-sep" />
+              <button
+                type="button"
+                className="ctx-item danger"
+                role="menuitem"
+                onClick={() => {
+                  setSchemaMenu(false);
+                  setDropSchemaOpen(true);
+                }}
+              >
+                <Icon name="delete_forever" size={15} /> Drop schema…
+              </button>
+            </div>
+          ) : null}
+        </div>
       </div>
 
       <div className="sidebar-tables">
@@ -557,7 +656,108 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
           >
             <Icon name="hub" size={15} /> Show in schema map
           </button>
+          <div className="ctx-sep" />
+          <button
+            type="button"
+            className="ctx-item"
+            role="menuitem"
+            onClick={() => {
+              doExport("tableCsv", ctxMenu.table);
+              closeCtxMenu(true);
+            }}
+          >
+            <Icon name="table_view" size={15} /> Export as CSV
+          </button>
+          <button
+            type="button"
+            className="ctx-item"
+            role="menuitem"
+            onClick={() => {
+              doExport("tableSql", ctxMenu.table);
+              closeCtxMenu(true);
+            }}
+          >
+            <Icon name="code" size={15} /> Export as SQL
+          </button>
+          <button
+            type="button"
+            className="ctx-item"
+            role="menuitem"
+            onClick={() => {
+              const t = ctxMenu.table;
+              closeCtxMenu(false);
+              setImportTarget(t);
+            }}
+          >
+            <Icon name="upload" size={15} /> Import data…
+          </button>
+          <div className="ctx-sep" />
+          <button
+            type="button"
+            className="ctx-item danger"
+            role="menuitem"
+            onClick={() => {
+              const t = ctxMenu.table;
+              closeCtxMenu(false);
+              setTruncateTarget(t);
+            }}
+          >
+            <Icon name="delete_sweep" size={15} /> Truncate table…
+          </button>
         </div>
+      ) : null}
+
+      {/* Truncate confirm (M15 Task 2): env-aware. Refreshes sidebar counts
+          itself; onDone re-fetches any open data grid for this table. */}
+      {truncateTarget ? (
+        <TruncateModal
+          handleId={handleId}
+          schemaName={schemaName}
+          table={truncateTarget}
+          env={workspace.saved.env}
+          onClose={() => setTruncateTarget(null)}
+          onDone={() => {
+            // If a data tab for this schema+table is open, bump its grid.
+            const target = truncateTarget;
+            for (const t of tabs) {
+              if (t.kind === "table" && t.schema === schemaName && t.table === target) {
+                useTabMetaStore.getState().requestRefetch(t.id);
+              }
+            }
+          }}
+        />
+      ) : null}
+
+      {/* Table-level import (M15 SQL enhancements): CSV / SQL-INSERT data into
+          one table. Refreshes the sidebar counts + the open grid itself. */}
+      {importTarget ? (
+        <ImportModal
+          handleId={handleId}
+          schemaName={schemaName}
+          table={importTarget}
+          onClose={() => setImportTarget(null)}
+        />
+      ) : null}
+
+      {/* Schema-level import: a multi-table .sql dump into this schema. */}
+      {schemaImportOpen ? (
+        <SchemaImportModal
+          handleId={handleId}
+          schemaName={schemaName}
+          onClose={() => setSchemaImportOpen(false)}
+        />
+      ) : null}
+
+      {/* Drop schema (M15): destructive, env-aware. Drops every table and
+          leaves the schema empty. Refreshes the (now-empty) sidebar itself. */}
+      {dropSchemaOpen ? (
+        <DropSchemaModal
+          handleId={handleId}
+          schemaName={schemaName}
+          tables={tables ?? []}
+          env={workspace.saved.env}
+          onClose={() => setDropSchemaOpen(false)}
+        />
       ) : null}
     </aside>
   );

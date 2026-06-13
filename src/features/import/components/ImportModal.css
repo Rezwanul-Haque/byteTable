@@ -1,0 +1,176 @@
+/* Import modal (table + schema) — ported byte-exact from ByteTable.html's
+   "import modal" + "schema-import" blocks. The `.seg` / `.seg-btn` segmented
+   control reuses the global rules from TableTab.css (same selectors). */
+
+.import-modal {
+  width: 620px;
+}
+
+.import-format {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.import-textarea {
+  width: 100%;
+  height: 130px;
+  resize: vertical;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  outline: none;
+  color: var(--text);
+}
+
+.import-textarea:focus {
+  border-color: var(--accent);
+}
+
+.import-err {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: #e06c75;
+  background: #e06c750f;
+  border: 1px solid #e06c7530;
+  border-radius: 8px;
+  padding: 9px 12px;
+}
+
+.import-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.import-preview-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  flex-wrap: wrap;
+}
+
+.import-ready {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+}
+
+.import-match {
+  color: var(--text-dim);
+}
+
+.import-unknown {
+  color: #e2b340;
+}
+
+.import-preview-grid {
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.import-note {
+  flex: 1;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  line-height: 1.45;
+}
+
+.import-note code {
+  font-family: var(--mono);
+  color: var(--text-dim);
+}
+
+/* Sample preview table (the TS port renders its own small table instead of the
+   prototype's DataGrid, which is fetch-driven here). Styled to match the grid:
+   monospace, dim, sticky header. */
+.import-sample {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.import-sample th {
+  position: sticky;
+  top: 0;
+  text-align: left;
+  padding: 6px 10px;
+  background: var(--bg1);
+  color: var(--text-dim);
+  font-weight: 500;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.import-sample td {
+  padding: 5px 10px;
+  color: var(--text);
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+  white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.import-sample tr:last-child td {
+  border-bottom: none;
+}
+
+.import-sample td.is-null {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+/* schema-import list (the per-table summary rows). */
+.schema-import-list {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.schema-import-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+}
+
+.schema-import-row:last-child {
+  border-bottom: none;
+}
+
+.schema-import-row.skipped {
+  opacity: 0.55;
+}
+
+.schema-import-name {
+  flex: 1;
+  color: var(--text);
+}
+
+.schema-import-rows {
+  color: var(--text-dim);
+}
+
+.schema-import-skip {
+  color: #e2b340;
+  font-size: 10px;
+}

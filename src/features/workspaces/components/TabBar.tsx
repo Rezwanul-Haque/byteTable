@@ -48,6 +48,10 @@ interface TabBarProps {
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
   onNewSql: () => void;
+  /** True when the docked console panel is open (M14) — lights the toggle. */
+  consoleOpen: boolean;
+  /** Toggle the docked console panel (M14). */
+  onToggleConsole: () => void;
 }
 
 export function TabBar({
@@ -57,6 +61,8 @@ export function TabBar({
   onSelect,
   onClose,
   onNewSql,
+  consoleOpen,
+  onToggleConsole,
 }: TabBarProps) {
   return (
     <div className="tabbar" role="tablist" aria-label="Open tabs">
@@ -118,6 +124,19 @@ export function TabBar({
       <button type="button" className="tab-new" onClick={onNewSql} title="New SQL query (⌘T)">
         <Icon name="add" size={16} />
       </button>
+      <div className="tabbar-tools">
+        <button
+          type="button"
+          className={"tabbar-tool" + (consoleOpen ? " active" : "")}
+          title="Toggle terminal (Ctrl+`)"
+          aria-label="Toggle terminal (Ctrl+`)"
+          aria-pressed={consoleOpen}
+          onClick={onToggleConsole}
+        >
+          <Icon name="terminal" size={15} />
+          <span>Terminal</span>
+        </button>
+      </div>
     </div>
   );
 }

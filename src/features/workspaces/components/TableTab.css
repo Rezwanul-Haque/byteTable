@@ -113,3 +113,174 @@
   color: var(--text-faint);
   font-style: italic;
 }
+
+/* ---------- column picker popover (M15 Task 2) ---------- */
+/* Ported byte-exact from ByteTable.html .col-* / .col-count. The .col-ctrl /
+   .col-btn anchors reuse the .filter-toggle look. */
+.col-count {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--accent);
+}
+.col-pop {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  z-index: 40;
+  width: 244px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.45);
+  padding: 6px;
+  max-height: 360px;
+  display: flex;
+  flex-direction: column;
+}
+.col-pop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+}
+.col-pop-head > span {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-faint);
+}
+.col-pop-actions {
+  display: flex;
+  gap: 4px;
+}
+.col-pop-actions button {
+  font-size: 10.5px;
+  color: var(--text-dim);
+  padding: 2px 8px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+}
+.col-pop-actions button:hover {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+}
+.col-pop-list {
+  overflow-y: auto;
+  min-height: 0;
+}
+.col-pop-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.col-pop-item:hover {
+  background: var(--bg3);
+}
+.col-pop-item input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.col-pop-check {
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  border: 1.5px solid var(--text-faint);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--on-accent);
+  flex: none;
+}
+.col-pop-item input:checked + .col-pop-check {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.col-pop-name {
+  flex: 1;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.col-pop-type {
+  color: var(--text-faint);
+  font-size: 9.5px;
+}
+
+/* ---------- bottom pager (Bug 2) ---------- */
+/* Ported byte-exact from ByteTable.html .table-hint / .table-footer / .pager*.
+   The .table-hint base rule carries the footer's hint text; inside the footer
+   its border/padding are dropped and it flexes to fill (so the pager sits at
+   the right). */
+.table-hint {
+  padding: 5px 14px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  border-top: 1px solid var(--border);
+  flex: none;
+  user-select: none;
+}
+.table-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 14px;
+  border-top: 1px solid var(--border);
+  flex: none;
+}
+.table-footer .table-hint {
+  border-top: none;
+  padding: 0;
+  flex: 1;
+}
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+}
+.pager-label {
+  font-size: 10px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.pager-size {
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  padding: 3px 6px;
+  outline: none;
+  color: var(--text);
+}
+.pager-size:focus {
+  border-color: var(--accent);
+}
+.pager-range {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+/* ---------- table-actions menu (M15 Task 2) ---------- */
+/* The prototype used the base .ctx-menu (position: fixed without offsets) inside
+   the relatively-positioned .table-actions wrapper; the React port anchors it
+   explicitly under the more_vert button (right-aligned dropdown). */
+/* Scoped to .table-actions so it beats the base `.ctx-menu { position: fixed }`
+   (the element carries both classes) regardless of stylesheet order. */
+.table-actions .table-actions-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  left: auto;
+}

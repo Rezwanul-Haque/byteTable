@@ -101,3 +101,36 @@
   color: var(--accent);
   background: var(--bg2);
 }
+
+/* Right-aligned tool cluster holding the Terminal toggle (M14) — ported from
+   ByteTable.html `.tabbar-tools` / `.tabbar-tool`. */
+.tabbar-tools {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  padding-right: 6px;
+}
+.tabbar-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-dim);
+  border: 1px solid transparent;
+  transition:
+    color 0.12s,
+    background 0.12s,
+    border-color 0.12s;
+}
+.tabbar-tool:hover {
+  color: var(--text);
+  background: var(--bg2);
+}
+.tabbar-tool.active {
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 12%, var(--bg2));
+  border-color: color-mix(in oklab, var(--accent) 40%, transparent);
+}

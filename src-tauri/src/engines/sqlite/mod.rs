@@ -105,11 +105,12 @@ use rusqlite::types::Value as SqlValue;
 
 use crate::features::structure::domain::AlterOp;
 use crate::shared::engine::{
-    AlterResult, ColumnInfo, ColumnMeta, ColumnStats, ColumnStatsRequest, Condition,
-    ConnectionParams, Connector, Engine, EngineConnection, EngineInfo, FetchRowsRequest, FilterOp,
-    FilterSpec, FilterValue, FkRef, ForeignKeyInfo, FreqEntry, InboundFkInfo, IndexInfo,
-    OpenConnection, PkPredicate, QueryOptions, QueryResult, RowLookup, RowLookupRequest, RowsPage,
-    SchemaInfo, SortSpec, TableInfo, TableMeta, UpdateCellRequest, UpdateResult,
+    count_statements, AlterResult, ColumnInfo, ColumnMeta, ColumnStats, ColumnStatsRequest,
+    Condition, ConnectionParams, Connector, Engine, EngineConnection, EngineInfo, FetchRowsRequest,
+    FilterOp, FilterSpec, FilterValue, FkRef, ForeignKeyInfo, FreqEntry, ImportResult,
+    InboundFkInfo, IndexInfo, OpenConnection, PkPredicate, QueryOptions, QueryResult, RowLookup,
+    RowLookupRequest, RowsPage, SchemaInfo, SortSpec, TableInfo, TableMeta, UpdateCellRequest,
+    UpdateResult,
 };
 use crate::shared::error::AppError;
 
@@ -216,6 +217,30 @@ impl EngineConnection for SqliteEngineConnection {
 
     async fn update_cell(&self, req: UpdateCellRequest) -> Result<UpdateResult, AppError> {
         self.with_conn(move |conn| update_cell_blocking(conn, &req))
+            .await
+    }
+
+    fn quote_identifier(&self, ident: &str) -> String {
+        quote_ident(ident)
+    }
+
+    async fn truncate_table(&self, schema: &str, table: &str) -> Result<u64, AppError> {
+        let schema = schema.to_string();
+        let table = table.to_string();
+        self.with_conn(move |conn| truncate_table_blocking(conn, &schema, &table))
+            .await
+    }
+
+    async fn drop_schema(&self, schema: &str) -> Result<(), AppError> {
+        let schema = schema.to_string();
+        self.with_conn(move |conn| drop_schema_blocking(conn, &schema))
+            .await
+    }
+
+    async fn execute_script(&self, schema: &str, sql: &str) -> Result<ImportResult, AppError> {
+        let schema = schema.to_string();
+        let sql = sql.to_string();
+        self.with_conn(move |conn| execute_script_blocking(conn, &schema, &sql))
             .await
     }
 
@@ -1282,6 +1307,138 @@ fn update_cell_blocking(
         affected,
         statement: display_update_statement(&qualified, &req.column, &req.value, &req.pk),
     })
+}
+
+/// Empty a table, keeping its structure (M15 truncate). SQLite has no
+/// `TRUNCATE`, so this runs `DELETE FROM "schema"."table"` inside a
+/// transaction; the affected count is the number of rows removed (0 for an
+/// already-empty table). The table must exist (a §5 error otherwise) — we
+/// reuse `table_meta_blocking` for the same "Table 'x' does not exist…"
+/// message the rest of the adapter produces.
+fn truncate_table_blocking(conn: &Connection, schema: &str, table: &str) -> Result<u64, AppError> {
+    // Existence + schema validation, identical message vocabulary to update.
+    table_meta_blocking(conn, schema, table)?;
+
+    let qualified = format!("{}.{}", quote_ident(schema), quote_ident(table));
+    let delete_sql = format!("DELETE FROM {qualified}");
+
+    let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
+    conn.execute_batch("BEGIN")
+        .map_err(|err| map_query_error(conn, err))?;
+    let affected = match conn.execute(&delete_sql, []) {
+        Ok(affected) => affected as u64,
+        Err(err) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            return Err(map_query_error(conn, err));
+        }
+    };
+    conn.execute_batch("COMMIT")
+        .map_err(|err| map_query_error(conn, err))?;
+    Ok(affected)
+}
+
+/// Drop every user table in `schema`, leaving an empty schema (M15 drop-schema).
+///
+/// SQLite has no droppable schema or database — `main` IS the file, and we must
+/// never delete the file. So "drop schema" is defined as dropping every
+/// non-`sqlite_%` table in the schema, inside one `BEGIN`/`COMMIT` transaction
+/// (all-or-nothing: any failure rolls back, leaving the schema untouched). The
+/// schema must be one of the connection's databases (main/attached) — a §5
+/// "does not exist" error otherwise.
+///
+/// `PRAGMA defer_foreign_keys = ON` for the transaction so the drop order does
+/// not matter: foreign-key checks are deferred to COMMIT, and since every table
+/// is gone by then there is nothing left to violate. The pragma resets at the
+/// transaction's end.
+fn drop_schema_blocking(conn: &Connection, schema: &str) -> Result<(), AppError> {
+    ensure_schema_exists(conn, schema)?;
+
+    let quoted_schema = quote_ident(schema);
+    let names: Vec<String> = {
+        let mut stmt = conn
+            .prepare(&format!(
+                "SELECT name FROM {quoted_schema}.sqlite_schema \
+                 WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+            ))
+            .map_err(|err| map_query_error(conn, err))?;
+        stmt.query_map([], |row| row.get::<_, String>(0))
+            .and_then(Iterator::collect::<Result<Vec<String>, _>>)
+            .map_err(|err| map_query_error(conn, err))?
+    };
+
+    let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
+    conn.execute_batch("BEGIN")
+        .map_err(|err| map_query_error(conn, err))?;
+
+    let run = || -> Result<(), AppError> {
+        // Defer FK checks so drop order is irrelevant; everything is gone by COMMIT.
+        conn.execute_batch("PRAGMA defer_foreign_keys = ON")
+            .map_err(|err| map_query_error(conn, err))?;
+        for name in &names {
+            let drop_sql = format!("DROP TABLE {quoted_schema}.{}", quote_ident(name));
+            conn.execute(&drop_sql, [])
+                .map_err(|err| map_query_error(conn, err))?;
+        }
+        Ok(())
+    };
+
+    match run() {
+        Ok(()) => {
+            conn.execute_batch("COMMIT")
+                .map_err(|err| map_query_error(conn, err))?;
+            Ok(())
+        }
+        Err(err) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(err)
+        }
+    }
+}
+
+/// Run a whole multi-statement SQL script (a dump) into the connection (M15
+/// import). The script is wrapped in `BEGIN`/`COMMIT` so the import is atomic:
+/// any error rolls back, leaving no half-created tables. `execute_batch` runs
+/// every `;`-separated statement in one call.
+///
+/// Schema note: SQLite has no "current schema" beyond `main` + attached
+/// databases, so the `schema` argument cannot redirect unqualified `CREATE`s —
+/// they land in `main`. Importing into a specific attached schema requires the
+/// script itself to qualify names (out of scope, M15). We surface a §5 error
+/// when the caller targets a schema that is not `main` and is not an attached
+/// database, so the limitation fails loudly rather than silently writing to
+/// `main`.
+fn execute_script_blocking(
+    conn: &Connection,
+    schema: &str,
+    sql: &str,
+) -> Result<ImportResult, AppError> {
+    // The schema must be one of the connection's databases (main/attached). We
+    // cannot make unqualified statements target it, but rejecting an unknown
+    // schema keeps the same vocabulary as the rest of the adapter.
+    ensure_schema_exists(conn, schema)?;
+    if schema != "main" {
+        return Err(AppError::Unsupported(format!(
+            "SQLite imports run into 'main'; importing into the attached schema \
+             '{schema}' requires the script to qualify table names (e.g. \
+             CREATE TABLE \"{schema}\".\"…\"). Re-run the import there, or qualify \
+             the names in the .sql."
+        )));
+    }
+
+    let statements = count_statements(sql);
+
+    let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
+    conn.execute_batch("BEGIN")
+        .map_err(|err| map_query_error(conn, err))?;
+    if let Err(err) = conn.execute_batch(sql) {
+        // Roll back so a partial dump leaves the database untouched.
+        let _ = conn.execute_batch("ROLLBACK");
+        return Err(map_query_error(conn, err));
+    }
+    conn.execute_batch("COMMIT")
+        .map_err(|err| map_query_error(conn, err))?;
+
+    Ok(ImportResult { statements })
 }
 
 /// The §5 "no row matched" error shared by the null-pk short-circuit and the
@@ -4250,5 +4407,164 @@ mod tests {
             cell(&conn, "SELECT note FROM t WHERE id = 1"),
             serde_json::json!("O'Brien")
         );
+    }
+
+    // ---- M15 truncate + identifier quoting ----
+
+    #[test]
+    fn quote_identifier_uses_double_quotes_and_doubles_embedded() {
+        let conn = SqliteEngineConnection {
+            conn: Arc::new(Mutex::new(Connection::open_in_memory().unwrap())),
+            info: sqlite_engine_info(),
+        };
+        assert_eq!(conn.quote_identifier("users"), "\"users\"");
+        assert_eq!(conn.quote_identifier("we\"ird"), "\"we\"\"ird\"");
+    }
+
+    #[tokio::test]
+    async fn truncate_empties_a_table_and_reports_prior_count() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_fixture(&dir).await;
+        // users has 3 rows.
+        let affected = conn
+            .truncate_table("main", "users")
+            .await
+            .expect("truncate");
+        assert_eq!(affected, 3);
+        let page = conn
+            .fetch_rows(FetchRowsRequest {
+                schema: "main".into(),
+                table: "users".into(),
+                sort: None,
+                filter: None,
+                offset: 0,
+                limit: 100,
+            })
+            .await
+            .expect("fetch after truncate");
+        assert_eq!(page.total_rows, Some(0));
+        assert!(page.rows.is_empty());
+    }
+
+    #[tokio::test]
+    async fn truncate_empty_table_is_zero() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_fixture(&dir).await;
+        // orders is created empty.
+        let affected = conn
+            .truncate_table("main", "orders")
+            .await
+            .expect("truncate");
+        assert_eq!(affected, 0);
+    }
+
+    #[tokio::test]
+    async fn truncate_unknown_table_is_a_human_error() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_fixture(&dir).await;
+        let err = conn.truncate_table("main", "ghost").await.unwrap_err();
+        assert!(matches!(err, AppError::Database(_)));
+        assert!(err.to_string().contains("does not exist"));
+    }
+
+    // ---- M15 drop-schema (drop every user table; the file IS the schema) ----
+
+    #[tokio::test]
+    async fn drop_schema_drops_every_user_table_and_keeps_the_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("fixture.db");
+        create_fixture_db(&path); // users (3 rows) + orders
+        let conn = SqliteConnector
+            .open(&params_for(&path))
+            .await
+            .expect("open fixture db")
+            .into_sql()
+            .expect("sql connection");
+
+        // Two user tables before.
+        let before = conn.list_tables("main").await.expect("list before");
+        assert_eq!(before.len(), 2);
+
+        conn.drop_schema("main").await.expect("drop schema");
+
+        // Zero user tables after — but the schema (and file) still exist.
+        let after = conn.list_tables("main").await.expect("list after");
+        assert!(after.is_empty(), "schema must be emptied, got {after:?}");
+        assert!(path.exists(), "the database file must NOT be deleted");
+
+        // The empty schema is reusable: a fresh CREATE works.
+        conn.run_query(
+            "CREATE TABLE again (id INTEGER PRIMARY KEY)",
+            QueryOptions::default(),
+        )
+        .await
+        .expect("recreate a table in the emptied schema");
+        let reborn = conn.list_tables("main").await.expect("list reborn");
+        assert_eq!(reborn.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn drop_schema_handles_foreign_keys_regardless_of_order() {
+        // FK parent/child: deferring FK checks lets us drop in any order without
+        // a constraint violation, leaving an empty schema.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("fk.db");
+        {
+            let raw = Connection::open(&path).expect("create db");
+            raw.execute_batch(
+                "CREATE TABLE authors (id INTEGER PRIMARY KEY, name TEXT NOT NULL);
+                 CREATE TABLE books (
+                     id INTEGER PRIMARY KEY,
+                     author_id INTEGER NOT NULL REFERENCES authors(id)
+                 );
+                 INSERT INTO authors (id, name) VALUES (1, 'ada');
+                 INSERT INTO books (id, author_id) VALUES (10, 1);",
+            )
+            .expect("seed fk db");
+        }
+        let conn = SqliteConnector
+            .open(&params_for(&path))
+            .await
+            .expect("open fk db")
+            .into_sql()
+            .expect("sql connection");
+
+        conn.drop_schema("main")
+            .await
+            .expect("drop schema with FKs");
+        let after = conn.list_tables("main").await.expect("list after");
+        assert!(after.is_empty(), "all tables dropped, got {after:?}");
+    }
+
+    #[tokio::test]
+    async fn drop_schema_on_an_empty_schema_is_a_no_op() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("empty.db");
+        {
+            let raw = Connection::open(&path).expect("create db");
+            raw.execute_batch("CREATE TABLE t (id INTEGER PRIMARY KEY);")
+                .expect("seed");
+        }
+        let conn = SqliteConnector
+            .open(&params_for(&path))
+            .await
+            .expect("open db")
+            .into_sql()
+            .expect("sql connection");
+        conn.drop_schema("main").await.expect("first drop");
+        // Dropping an already-empty schema succeeds (nothing to drop).
+        conn.drop_schema("main")
+            .await
+            .expect("second drop is a no-op");
+        assert!(conn.list_tables("main").await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn drop_schema_unknown_schema_is_a_human_error() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_fixture(&dir).await;
+        let err = conn.drop_schema("ghost").await.unwrap_err();
+        assert!(matches!(err, AppError::Database(_)));
+        assert!(err.to_string().contains("does not exist"));
     }
 }

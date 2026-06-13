@@ -76,7 +76,7 @@ export function useConnectAndOpen(): (saved: SavedConnection) => Promise<boolean
  * (falsy = handled, see module note).
  *
  * Product decision: a successfully opened file is auto-saved to the registry
- * (name = file stem, env "local") so it appears in the connect list next
+ * (name = file stem, env "dev") so it appears in the connect list next
  * launch — "open once, saved forever" beats a separate save step for local
  * files. If the registry already holds an entry for the same file path, that
  * entry is reused instead (repeated opens must not stack duplicate cards).
@@ -117,7 +117,7 @@ export function useOpenSqliteFile(): (path: string) => Promise<string | null> {
         name: fileStem(path),
         engine: "sqlite",
         params,
-        env: "local",
+        env: "dev",
       };
       try {
         saved = await saveConnection(saved);

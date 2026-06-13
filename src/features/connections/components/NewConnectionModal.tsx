@@ -26,11 +26,12 @@
 import { useId, useReducer, useRef, type KeyboardEvent } from "react";
 
 import { isAppErrorPayload } from "../../../shared/api/error";
-import type { Engine } from "../../../shared/types";
+import type { Engine, Env } from "../../../shared/types";
 import { Btn } from "../../../shared/ui/Btn";
 import { EngineBadge } from "../../../shared/ui/EngineBadge";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
+import { ENV_COLOR, ENV_SWATCHES } from "../../../shared/ui/envColors";
 import { Modal, ModalActions, ModalTitle } from "../../../shared/ui/Modal";
 import { useToast } from "../../../shared/ui/toastContext";
 import {
@@ -58,6 +59,18 @@ const DEFAULT_PORTS: Partial<Record<Engine, string>> = {
   mysql: "3306",
   redis: "6379",
 };
+
+/**
+ * The environment picker's segmented choices (prototype connect.jsx
+ * `CONN_ENVS`): the canonical {@link Env} ids plus their display label and the
+ * Material icon shown in the segment. `short` is the EnvTag text (identical to
+ * the id for all three).
+ */
+const CONN_ENVS: { id: Env; label: string; short: string; icon: string }[] = [
+  { id: "dev", label: "Development", short: "dev", icon: "code" },
+  { id: "staging", label: "Staging", short: "staging", icon: "science" },
+  { id: "production", label: "Production", short: "production", icon: "public" },
+];
 
 const TLS_MODES: TlsMode[] = ["disable", "prefer", "require", "verify-full"];
 type SshAuthMethod = SshAuth["method"];
@@ -98,6 +111,12 @@ interface FormState {
   sshAuth: SshAuthMethod;
   sshKey: string;
   sshPassword: string;
+  // Environment (m15 env picker). `env` is the chosen deployment env; `envColors`
+  // is the per-env swatch (seeded from ENV_COLOR, overridable). Neither affects
+  // whether the connection works, so editing them does NOT reset the test
+  // verdict — they live on their own actions in the opt-out list.
+  env: Env;
+  envColors: Record<Env, string>;
   // Footer.
   test: TestState;
   saving: boolean;
@@ -122,6 +141,8 @@ const INITIAL: FormState = {
   sshAuth: "key",
   sshKey: "~/.ssh/id_ed25519",
   sshPassword: "",
+  env: "dev",
+  envColors: { ...ENV_COLOR },
   test: IDLE,
   saving: false,
 };
@@ -134,6 +155,10 @@ type Action =
   | { type: "section"; section: FormState["section"] }
   | { type: "saving"; saving: boolean }
   | { type: "test"; test: TestState }
+  // Env picker: choosing an env / recoloring it does not change the params, so
+  // it never invalidates the test verdict.
+  | { type: "env"; env: Env }
+  | { type: "envColor"; color: string }
   // Engine switch: resets section + auto-fills the default port when untouched.
   | { type: "engine"; engine: Engine };
 
@@ -146,6 +171,11 @@ function reducer(state: FormState, action: Action): FormState {
       return { ...state, saving: action.saving };
     case "test":
       return { ...state, test: action.test };
+    case "env":
+      return { ...state, env: action.env };
+    case "envColor":
+      // Recolor only the currently-selected env (prototype `setEnvColors`).
+      return { ...state, envColors: { ...state.envColors, [state.env]: action.color } };
     case "engine": {
       const defaultPort = DEFAULT_PORTS[action.engine];
       return {
@@ -186,13 +216,20 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
     sshAuth,
     sshKey,
     sshPassword,
+    env,
+    envColors,
     test: testState,
     saving,
   } = state;
 
+  // The chosen env's color — drives the env tag, the swatch active ring, and
+  // the color persisted on the saved connection.
+  const envColor = envColors[env];
+
   const saveConnection = useConnectionsStore((s) => s.save);
   const toast = useToast();
   const sshToggleId = useId();
+  const envLabelId = useId();
 
   // Convenience: a params-relevant field edit (resets the verdict).
   const field = (patch: Partial<FormState>) => dispatch({ type: "field", patch });
@@ -350,16 +387,19 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
     }
     dispatch({ type: "saving", saving: true });
     try {
-      // The prototype modal has no environment field, so new connections
-      // default to env "local" (the EnvTag on the card reflects it). Secrets
-      // travel to the OS keychain via the store, never to the registry file.
+      // The env picker (m15) carries the chosen env + its color onto the saved
+      // connection: the EnvTag/dot read `env`, and the workspace tile reads
+      // `color` (falling back to the auto-cycle palette when absent — it never
+      // is here). Secrets travel to the OS keychain via the store, never to the
+      // registry file.
       await saveConnection(
         {
           id: "",
           name: name.trim(),
           engine,
           params: built.params,
-          env: "local",
+          env,
+          color: envColor,
         },
         secrets(),
       );
@@ -415,6 +455,65 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
             <span>{e.label}</span>
           </button>
         ))}
+      </div>
+
+      <div className="env-picker">
+        <div className="env-picker-head">
+          <span className="form-section-label" id={envLabelId}>
+            Environment
+          </span>
+          <span
+            className="env-tag"
+            style={{ color: envColor, borderColor: envColor + "66", background: envColor + "14" }}
+          >
+            {CONN_ENVS.find((e) => e.id === env)?.short}
+          </span>
+        </div>
+        <div className="env-seg" role="radiogroup" aria-labelledby={envLabelId}>
+          {CONN_ENVS.map((e) => {
+            const isActive = env === e.id;
+            return (
+              <button
+                key={e.id}
+                type="button"
+                role="radio"
+                aria-checked={isActive}
+                className={"env-seg-btn" + (isActive ? " active" : "")}
+                style={{
+                  borderColor: isActive ? envColors[e.id] : "var(--border)",
+                  background: isActive ? envColors[e.id] + "16" : "var(--bg1)",
+                  color: isActive ? "var(--text)" : "var(--text-dim)",
+                }}
+                onClick={() => dispatch({ type: "env", env: e.id })}
+              >
+                <span className="env-dot" style={{ background: envColors[e.id] }} />
+                <Icon name={e.icon} size={14} />
+                {e.label}
+              </button>
+            );
+          })}
+        </div>
+        <div className="env-colors">
+          <span className="env-colors-label">Color</span>
+          {ENV_SWATCHES.map((c) => (
+            <button
+              key={c}
+              type="button"
+              className={"env-swatch" + (envColor === c ? " active" : "")}
+              style={{ background: c }}
+              title={c}
+              aria-label={"Set color " + c}
+              aria-pressed={envColor === c}
+              onClick={() => dispatch({ type: "envColor", color: c })}
+            />
+          ))}
+        </div>
+        {env === "production" ? (
+          <div className="env-warn" role="alert">
+            <Icon name="gpp_maybe" size={15} /> Production — destructive actions (DROP, DELETE,
+            TRUNCATE, FLUSHDB) will require confirmation.
+          </div>
+        ) : null}
       </div>
 
       {!isFileBased ? (

@@ -18,6 +18,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Icon } from "../../../shared/ui/Icon";
 import { Kbd } from "../../../shared/ui/Kbd";
+import { shellLabel, usePanelStore } from "../../console/state";
 import { tablesKey, useIntrospectionStore } from "../../introspection/state";
 import { selectQueriesForConnection, useSavedQueriesStore } from "../../saved_queries/state";
 import { useWorkspacesStore } from "../state";
@@ -42,6 +43,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
   const openSqlTab = useWorkspacesStore((state) => state.openSqlTab);
   const openSqlTabWith = useWorkspacesStore((state) => state.openSqlTabWith);
   const patchWorkspaceUi = useWorkspacesStore((state) => state.patchWorkspaceUi);
+  const openPanel = usePanelStore((state) => state.openPanel);
   const tablesMap = useIntrospectionStore((state) => state.tables);
   const savedQueries = useSavedQueriesStore((state) => state.savedQueries);
   const loadSaved = useSavedQueriesStore((state) => state.load);
@@ -92,6 +94,14 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
       hint: "⌘T",
       run: openSqlTab,
     };
+    const shell = shellLabel(workspace.saved.engine);
+    const openTerminal: Command = {
+      id: "open-terminal",
+      icon: "terminal",
+      label: "Open " + shell + " terminal",
+      hint: "Ctrl+`",
+      run: () => openPanel(workspace.id, shell),
+    };
     // Saved queries visible from this workspace (global + this-workspace-
     // attached). Selecting one opens a fresh SQL tab seeded with its SQL.
     const savedCmds: Command[] = selectQueriesForConnection(savedQueries, workspace.saved.id).map(
@@ -103,7 +113,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
         run: () => openSqlTabWith(q.sql),
       }),
     );
-    return [...tableCmds, ...schemaCmds, newSql, ...savedCmds];
+    return [...tableCmds, ...schemaCmds, newSql, openTerminal, ...savedCmds];
   }, [
     tablesMap,
     handleId,
@@ -111,11 +121,13 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
     workspace.schemas,
     workspace.id,
     workspace.saved.id,
+    workspace.saved.engine,
     savedQueries,
     openTableTab,
     openSqlTab,
     openSqlTabWith,
     patchWorkspaceUi,
+    openPanel,
   ]);
 
   const trimmed = query.trim().toLowerCase();

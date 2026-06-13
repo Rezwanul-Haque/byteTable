@@ -257,20 +257,28 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
 
   openWorkspace: (connection) =>
     set((state) => {
+      // The connection's own color (m15 env picker) wins; otherwise cycle the
+      // 8-color palette. The cursor only advances when the palette is actually
+      // used, so a run of color-bearing connections doesn't skip palette slots
+      // for the un-colored ones interleaved with them.
+      const savedColor = connection.saved.color;
       const workspace: Workspace = {
         id: "ws-" + crypto.randomUUID(),
         ...connection,
         name: connection.saved.name,
         // The modulo is always in range; the ?? fallback only satisfies
         // noUncheckedIndexedAccess.
-        color: WORKSPACE_COLORS[state.colorCursor % WORKSPACE_COLORS.length] ?? WORKSPACE_COLORS[0],
+        color:
+          savedColor ??
+          WORKSPACE_COLORS[state.colorCursor % WORKSPACE_COLORS.length] ??
+          WORKSPACE_COLORS[0],
         ui: {},
       };
       return {
         workspaces: [...state.workspaces, workspace],
         activeWorkspaceId: workspace.id,
         adding: false,
-        colorCursor: state.colorCursor + 1,
+        colorCursor: savedColor ? state.colorCursor : state.colorCursor + 1,
       };
     }),
 

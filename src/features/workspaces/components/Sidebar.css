@@ -211,6 +211,48 @@
   font-family: var(--mono);
 }
 
+/* Schema actions group beside the Tables count (ByteTable.html "schema actions
+   menu"). The three-dot button opens `.sec-actions-menu` (a `.ctx-menu`
+   anchored under the count). */
+.sec-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+}
+
+.sec-actions-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  color: var(--text-faint);
+}
+
+.sec-actions-btn:hover {
+  color: var(--text);
+  background: var(--bg3);
+}
+
+/* Scoped to .sec-actions so this beats the later `.ctx-menu { position: fixed }`
+   (the element carries both classes); otherwise the menu renders fixed at the
+   corner and looks like it never opened. */
+.sec-actions .sec-actions-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  min-width: 200px;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
+}
+
+.sec-actions-menu .ctx-item {
+  font-weight: 400;
+}
+
 .sidebar-tables {
   flex: 1;
   overflow-y: auto;
@@ -383,9 +425,37 @@
   /* React-port addition: items are <button>s (prototype: divs) — fill the
      menu like block divs did. */
   width: 100%;
+  /* Keep menu items on one line (design keeps them single-line); the menu
+     sizes to fit its widest item rather than wrapping a long label like
+     "Export as SQL (schema + data)". */
+  white-space: nowrap;
 }
 
 .ctx-item:hover {
   background: var(--bg3);
   color: var(--text);
+}
+
+/* Destructive context-menu item + section label + separator (M15 Task 2),
+   ported byte-exact from ByteTable.html. Shared by the sidebar context menu
+   and the table-actions menu. */
+.ctx-item.danger {
+  color: #e06c75;
+}
+.ctx-item.danger:hover {
+  background: #e06c7518;
+  color: #e06c75;
+}
+.ctx-menu-label {
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-faint);
+  padding: 6px 10px 3px;
+}
+.ctx-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 6px;
 }

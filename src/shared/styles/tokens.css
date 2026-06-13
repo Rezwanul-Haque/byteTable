@@ -40,8 +40,8 @@
   --engine-mysql: #e2b340;
   --engine-postgres: #61afef;
 
-  /* Environment tags */
-  --env-local: #56b6c2;
+  /* Environment tags (m15: `dev` replaces `local`) */
+  --env-dev: #56b6c2;
   --env-staging: #e2b340;
   --env-production: #e06c75;
 

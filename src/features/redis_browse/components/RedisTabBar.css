@@ -89,19 +89,5 @@
   color: var(--text);
 }
 
-.redis-main .tab-new {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  color: var(--text-faint);
-  transition:
-    color 0.1s,
-    background 0.1s;
-  flex: none;
-}
-
-.redis-main .tab-new:hover {
-  color: var(--accent);
-  background: var(--bg2);
-}
+/* The Terminal toggle uses the global `.tabbar-tools` / `.tabbar-tool` rules
+   (TabBar.css), right-aligned via `margin-left: auto` — no Redis override. */

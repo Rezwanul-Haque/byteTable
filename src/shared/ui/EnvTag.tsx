@@ -3,7 +3,7 @@
 // ported from connect.jsx / workspace.jsx usage. Hexes mirror --env-* in
 // tokens.css; literals are kept for the prototype's alpha-suffix pattern.
 
-import type { Env } from "../types";
+import { type Env, normalizeEnv } from "../types";
 
 import { ENV_COLOR } from "./envColors";
 import "./EnvTag.css";
@@ -12,13 +12,15 @@ import "./EnvTag.css";
 export type { Env };
 
 export function EnvTag({ env }: { env: Env }) {
-  const color = ENV_COLOR[env];
+  // Tolerate a legacy `"local"` that slipped past the store's normalize.
+  const canonical = normalizeEnv(env);
+  const color = ENV_COLOR[canonical];
   return (
     <span
       className="env-tag"
       style={{ color, borderColor: color + "66", background: color + "14" }}
     >
-      {env}
+      {canonical}
     </span>
   );
 }

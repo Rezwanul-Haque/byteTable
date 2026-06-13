@@ -11,12 +11,16 @@ use serde::{Deserialize, Serialize};
 use crate::shared::engine::{ConnectionParams, Engine};
 
 /// Deployment environment a connection points at (drives the EnvTag tint).
-/// Mirrors `Env` in `src/shared/types.ts`.
+/// Mirrors `Env` in `src/shared/types.ts`. The canonical set is
+/// `dev | staging | production` (m15 env-picker redesign); connections
+/// persisted before m15 used `"local"` for what is now `"dev"`, so the `Dev`
+/// variant carries `alias = "local"` to keep those entries loading.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Env {
     #[default]
-    Local,
+    #[serde(alias = "local")]
+    Dev,
     Staging,
     Production,
 }
@@ -39,6 +43,11 @@ pub struct SavedConnection {
     pub engine: Engine,
     pub params: ConnectionParams,
     pub env: Env,
+    /// Tile/accent color (m15 env picker): the env's chosen swatch, used for
+    /// the workspace rail tile + sidebar bar. Optional — absent for entries
+    /// saved before m15 (the renderer falls back to its auto-cycle palette).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_at: Option<u64>,
 }
@@ -55,7 +64,8 @@ mod tests {
             params: ConnectionParams::Sqlite {
                 path: "/tmp/dev.db".into(),
             },
-            env: Env::Local,
+            env: Env::Dev,
+            color: Some("#56b6c2".into()),
             created_at: Some(1_700_000_000_000),
         }
     }
@@ -70,10 +80,39 @@ mod tests {
                 "name": "Local dev",
                 "engine": "sqlite",
                 "params": { "engine": "sqlite", "path": "/tmp/dev.db" },
-                "env": "local",
+                "env": "dev",
+                "color": "#56b6c2",
                 "createdAt": 1_700_000_000_000u64,
             })
         );
+    }
+
+    #[test]
+    fn legacy_local_env_deserializes_to_dev() {
+        // Connections persisted before m15 used `"local"`; the `Dev` variant's
+        // serde alias keeps them loading.
+        let json = serde_json::json!({
+            "id": "x",
+            "name": "n",
+            "engine": "sqlite",
+            "params": { "engine": "sqlite", "path": "/p" },
+            "env": "local",
+        });
+        let conn: SavedConnection = serde_json::from_value(json).expect("deserialize");
+        assert_eq!(conn.env, Env::Dev);
+    }
+
+    #[test]
+    fn color_is_optional_on_the_wire() {
+        let json = serde_json::json!({
+            "id": "x",
+            "name": "n",
+            "engine": "sqlite",
+            "params": { "engine": "sqlite", "path": "/p" },
+            "env": "dev",
+        });
+        let conn: SavedConnection = serde_json::from_value(json).expect("deserialize");
+        assert_eq!(conn.color, None);
     }
 
     #[test]

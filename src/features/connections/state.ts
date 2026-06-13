@@ -5,7 +5,18 @@
 import { create } from "zustand";
 
 import { isAppErrorPayload } from "../../shared/api/error";
+import { normalizeEnv } from "../../shared/types";
 import { connectionDelete, connectionList, connectionSave, type SavedConnection } from "./api";
+
+/**
+ * Read-boundary migration: map any persisted env onto the canonical set
+ * (`local` → `dev`, pre-m15). Applied to everything the backend returns
+ * (load + save reply) so the rest of the app only ever sees canonical envs.
+ */
+function migrate(connection: SavedConnection): SavedConnection {
+  const env = normalizeEnv(connection.env);
+  return env === connection.env ? connection : { ...connection, env };
+}
 
 interface ConnectionsFeatureState {
   savedConnections: SavedConnection[];
@@ -43,7 +54,7 @@ export const useConnectionsStore = create<ConnectionsFeatureState>((set) => ({
 
   load: async () => {
     try {
-      const savedConnections = await connectionList();
+      const savedConnections = (await connectionList()).map(migrate);
       set({ savedConnections, loaded: true, loadError: null });
     } catch (error) {
       if (isAppErrorPayload(error)) {
@@ -61,7 +72,7 @@ export const useConnectionsStore = create<ConnectionsFeatureState>((set) => ({
   },
 
   save: async (connection, secrets) => {
-    const stored = await connectionSave(connection, secrets);
+    const stored = migrate(await connectionSave(connection, secrets));
     set((state) => ({
       savedConnections: state.savedConnections.some((c) => c.id === stored.id)
         ? state.savedConnections.map((c) => (c.id === stored.id ? stored : c))

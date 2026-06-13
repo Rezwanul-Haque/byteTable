@@ -639,7 +639,8 @@ mod tests {
             name: name.into(),
             engine: Engine::Sqlite,
             params: sqlite_params(),
-            env: Env::Local,
+            env: Env::Dev,
+            color: None,
             created_at: None,
         }
     }
@@ -676,7 +677,8 @@ mod tests {
             name: name.into(),
             engine: Engine::Postgres,
             params,
-            env: Env::Local,
+            env: Env::Dev,
+            color: None,
             created_at: None,
         }
     }

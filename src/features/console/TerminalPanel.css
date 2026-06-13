@@ -1,0 +1,128 @@
+/* VS Code-style terminal panel chrome (M14) — ported byte-exact from
+   ByteTable.html (.term-panel / .term-resize / .term-panel-head / .term-tabs /
+   .term-tab / .term-newtab / .term-actions / .term-panel-body). The REPL body
+   styles live in SqlTerminalTab.css. */
+
+.term-panel {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg0);
+  border-top: 1px solid var(--border);
+  position: relative;
+}
+.term-panel.maximized {
+  flex: 1 1 auto;
+}
+.term-resize {
+  position: absolute;
+  top: -3px;
+  left: 0;
+  right: 0;
+  height: 6px;
+  cursor: ns-resize;
+  z-index: 5;
+}
+.term-resize:hover {
+  background: color-mix(in oklab, var(--accent) 40%, transparent);
+}
+.term-panel-head {
+  display: flex;
+  align-items: stretch;
+  height: 34px;
+  flex: none;
+  background: var(--bg1);
+  border-bottom: 1px solid var(--border);
+}
+.term-tabs {
+  display: flex;
+  align-items: stretch;
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex: 1;
+  min-width: 0;
+}
+.term-tabs::-webkit-scrollbar {
+  display: none;
+}
+.term-tab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px 0 12px;
+  cursor: pointer;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  border-right: 1px solid var(--border);
+  white-space: nowrap;
+  position: relative;
+  user-select: none;
+  transition: background 0.1s;
+}
+.term-tab:hover {
+  background: var(--bg2);
+}
+.term-tab.active {
+  background: var(--bg0);
+  color: var(--text);
+}
+.term-tab.active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--accent);
+}
+.term-tab-title {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.term-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  color: var(--text-faint);
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.term-tab:hover .term-tab-close,
+.term-tab.active .term-tab-close {
+  opacity: 1;
+}
+.term-tab-close:hover {
+  background: var(--bg3);
+  color: var(--text);
+}
+.term-newtab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  color: var(--text-faint);
+  transition:
+    color 0.1s,
+    background 0.1s;
+}
+.term-newtab:hover {
+  color: var(--accent);
+  background: var(--bg2);
+}
+.term-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px;
+  border-left: 1px solid var(--border);
+}
+.term-panel-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}

@@ -76,11 +76,11 @@ use sqlx::{Column, Row, TypeInfo};
 
 use crate::features::structure::domain::AlterOp;
 use crate::shared::engine::{
-    AlterResult, ColumnInfo, ColumnMeta, ColumnStats, ColumnStatsRequest, ConnectSecret,
-    ConnectionParams, Connector, Engine, EngineConnection, EngineInfo, FetchRowsRequest, FkRef,
-    ForeignKeyInfo, FreqEntry, InboundFkInfo, IndexInfo, OpenConnection, PkPredicate, QueryOptions,
-    QueryResult, RowLookup, RowLookupRequest, RowsPage, SchemaInfo, TableInfo, TableMeta,
-    UpdateCellRequest, UpdateResult,
+    split_statements, AlterResult, ColumnInfo, ColumnMeta, ColumnStats, ColumnStatsRequest,
+    ConnectSecret, ConnectionParams, Connector, Engine, EngineConnection, EngineInfo,
+    FetchRowsRequest, FkRef, ForeignKeyInfo, FreqEntry, ImportResult, InboundFkInfo, IndexInfo,
+    OpenConnection, PkPredicate, QueryOptions, QueryResult, RowLookup, RowLookupRequest, RowsPage,
+    SchemaInfo, TableInfo, TableMeta, UpdateCellRequest, UpdateResult,
 };
 use crate::shared::error::AppError;
 
@@ -423,6 +423,22 @@ impl EngineConnection for MysqlEngineConnection {
 
     async fn update_cell(&self, req: UpdateCellRequest) -> Result<UpdateResult, AppError> {
         update_cell(&self.pool, &req).await
+    }
+
+    fn quote_identifier(&self, ident: &str) -> String {
+        quote_ident(ident)
+    }
+
+    async fn truncate_table(&self, schema: &str, table: &str) -> Result<u64, AppError> {
+        truncate_table(&self.pool, schema, table).await
+    }
+
+    async fn drop_schema(&self, schema: &str) -> Result<(), AppError> {
+        drop_schema(&self.pool, schema).await
+    }
+
+    async fn execute_script(&self, schema: &str, sql: &str) -> Result<ImportResult, AppError> {
+        execute_script(&self.pool, schema, sql).await
     }
 
     async fn alter_table(
@@ -1298,6 +1314,129 @@ fn no_row_matched_error() -> AppError {
     AppError::Database(
         "No row matched (it may have been deleted or changed since you loaded it).".to_string(),
     )
+}
+
+/// Empty a table, keeping its structure (M15 truncate). MySQL has a native
+/// `TRUNCATE TABLE`, which reports no affected-row count, so we `COUNT(*)`
+/// first and return that as the number removed (0 for an already-empty table).
+/// The table must exist (reuse `table_meta` for the §5 "Table 'x' does not
+/// exist…" message).
+async fn truncate_table(pool: &MySqlPool, schema: &str, table: &str) -> Result<u64, AppError> {
+    table_meta(pool, schema, table).await?;
+    let qualified = qualified(schema, table);
+
+    let prior: i64 = sqlx::query_scalar(&format!("SELECT count(*) FROM {qualified}"))
+        .fetch_one(pool)
+        .await
+        .map_err(map_query_error)?;
+
+    sqlx::query(&format!("TRUNCATE TABLE {qualified}"))
+        .execute(pool)
+        .await
+        .map_err(map_query_error)?;
+
+    Ok(prior.max(0) as u64)
+}
+
+/// Drop every table in `schema` and leave the schema empty (M15 drop-schema).
+///
+/// In MySQL a schema IS a database, so this runs `DROP DATABASE \`x\`;
+/// CREATE DATABASE \`x\`;`. **NOT atomic:** MySQL implicitly commits each DDL
+/// statement, so the drop commits before the recreate runs — there is no
+/// rolling it back. We recreate immediately so a successful call always leaves
+/// an empty database; if the recreate itself fails the §5 error says the drop
+/// already committed (the database is gone). The schema must exist first
+/// (a §5 "does not exist" error otherwise).
+///
+/// We do NOT re-`USE` afterward: every other adapter operation fully qualifies
+/// names (`` `db`.`table` ``) and does not depend on the connection's default
+/// database, and the pool may hand out a different session anyway. The pool's
+/// configured default database (if it was this one) is simply recreated empty.
+async fn drop_schema(pool: &MySqlPool, schema: &str) -> Result<(), AppError> {
+    ensure_schema_exists(pool, schema).await?;
+    let quoted = quote_ident(schema);
+
+    use sqlx::Executor as _;
+    // One acquired connection so the drop + recreate run on the same session,
+    // back to back, minimizing the window where the database does not exist.
+    let mut conn = pool.acquire().await.map_err(map_query_error)?;
+
+    conn.execute(format!("DROP DATABASE {quoted}").as_str())
+        .await
+        .map_err(map_query_error)?;
+
+    if let Err(err) = conn
+        .execute(format!("CREATE DATABASE {quoted}").as_str())
+        .await
+    {
+        let engine_msg = map_query_error(err);
+        return Err(AppError::Database(format!(
+            "Schema '{schema}' was dropped, but recreating the empty database \
+             failed: {engine_msg} MySQL commits each DDL statement, so the drop \
+             was NOT rolled back — the schema is gone. Recreate it manually."
+        )));
+    }
+    Ok(())
+}
+
+/// Run a whole multi-statement SQL script (a dump) into `schema` (M15 import).
+///
+/// **NOT atomic.** MySQL implicitly commits each DDL statement, so a
+/// multi-statement import cannot be rolled back: if statement N fails,
+/// statements 1..N-1 have already landed. We surface that honestly — the §5
+/// error names how many statements ran before the failure so the user can
+/// recover. (Postgres/SQLite roll the whole import back; MySQL is the
+/// documented exception, the same caveat the `alter_table` batch carries.)
+///
+/// Mechanism: we set the target database with `USE` and run the dump
+/// statement-by-statement on the SAME acquired connection (so `USE` and every
+/// statement share one session — a `USE` on the pool surface could land on a
+/// different pooled connection). We split the script client-side with the
+/// quote/comment-aware [`split_statements`] and execute each in order, so a
+/// mid-script failure tells us exactly how many statements committed before the
+/// error.
+///
+/// The schema must exist (a §5 error otherwise).
+async fn execute_script(
+    pool: &MySqlPool,
+    schema: &str,
+    sql: &str,
+) -> Result<ImportResult, AppError> {
+    ensure_schema_exists(pool, schema).await?;
+    let statements = split_statements(sql);
+    let total = statements.len() as u64;
+
+    use sqlx::Executor as _;
+
+    // One acquired connection so `USE` and every statement share a session (a
+    // `USE` on the pool surface could land on a different pooled connection).
+    let mut conn = pool.acquire().await.map_err(map_query_error)?;
+
+    // We execute each statement as a bare `&str`, which carries NO bound
+    // arguments — so the MySQL driver runs it over the TEXT protocol, not the
+    // prepared-statement protocol. That matters: dump statements include DDL
+    // (e.g. `SHOW CREATE TABLE` output) that MySQL rejects over the prepared
+    // protocol ("This command is not supported in the prepared statement
+    // protocol yet."). `&str` also avoids the `raw_sql` executor's higher-ranked
+    // lifetime bound, which does not unify inside an async-trait method.
+    conn.execute(format!("USE {}", quote_ident(schema)).as_str())
+        .await
+        .map_err(map_query_error)?;
+
+    for (applied, statement) in statements.iter().enumerate() {
+        let applied = applied as u64;
+        if let Err(err) = conn.execute(statement.as_str()).await {
+            let engine_msg = map_query_error(err);
+            return Err(AppError::Database(format!(
+                "Import failed at statement {} of {total}: {engine_msg} \
+                 MySQL commits each statement as it runs, so the {applied} statement(s) \
+                 before the failure were applied and were NOT rolled back.",
+                applied + 1,
+            )));
+        }
+    }
+
+    Ok(ImportResult { statements: total })
 }
 
 /// Enforce the full-primary-key policy (mass-update prevention). Identical
@@ -2595,6 +2734,300 @@ mod integration {
         assert!(matches!(drop_pk, Err(AppError::Database(_))));
 
         conn.close().await.expect("close");
+        drop_fixture(&pool, schema, other).await;
+    }
+
+    // ---- M15: truncate + export against live MySQL ----
+
+    #[tokio::test]
+    async fn truncate_empties_table_and_reports_prior_count() {
+        let Some((params, secret)) = gate("truncate_empties_table_and_reports_prior_count") else {
+            return;
+        };
+        let pool = raw_pool(&params, &secret).await;
+        let (schema, other) = ("bt_it_truncate", "bt_it_truncate_other");
+        setup_fixture(&pool, schema, other).await;
+        let conn = open_conn(&params, &secret).await;
+
+        // books (the child of the FK) has 4 rows; truncating the child is safe.
+        let affected = conn
+            .truncate_table(schema, "books")
+            .await
+            .expect("truncate books");
+        assert_eq!(affected, 4);
+        let after: i64 = sqlx::query_scalar(&format!("SELECT count(*) FROM `{schema}`.`books`"))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(after, 0);
+
+        let again = conn
+            .truncate_table(schema, "books")
+            .await
+            .expect("re-truncate");
+        assert_eq!(again, 0);
+
+        let err = conn.truncate_table(schema, "ghost").await.unwrap_err();
+        assert!(matches!(err, AppError::Database(_)));
+        assert!(err.to_string().contains("does not exist"));
+
+        conn.close().await.expect("close");
+        drop_fixture(&pool, schema, other).await;
+    }
+
+    /// drop_schema drops + recreates a THROWAWAY database empty (never
+    /// `byteshop`): the database still exists afterward but holds 0 tables. A
+    /// nonexistent schema is a §5 error.
+    #[tokio::test]
+    async fn drop_schema_recreates_throwaway_database_empty() {
+        let Some((params, secret)) = gate("drop_schema_recreates_throwaway_database_empty") else {
+            return;
+        };
+        let pool = raw_pool(&params, &secret).await;
+        let (schema, other) = ("bt_it_dropschema", "bt_it_dropschema_other");
+        setup_fixture(&pool, schema, other).await;
+        let conn = open_conn(&params, &secret).await;
+
+        let before: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema = ?",
+        )
+        .bind(schema)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert!(before >= 2, "fixture should seed tables, got {before}");
+
+        conn.drop_schema(schema).await.expect("drop schema");
+
+        // The database still exists…
+        let db_exists: Option<i32> =
+            sqlx::query_scalar("SELECT 1 FROM information_schema.schemata WHERE schema_name = ?")
+                .bind(schema)
+                .fetch_optional(&pool)
+                .await
+                .unwrap();
+        assert!(db_exists.is_some(), "database must be recreated empty");
+
+        // …but it is empty.
+        let after: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema = ?",
+        )
+        .bind(schema)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(after, 0, "dropped database must hold 0 tables");
+
+        // The OTHER throwaway database is untouched.
+        let other_tables: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema = ?",
+        )
+        .bind(other)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(other_tables, 1, "drop must not touch other databases");
+
+        let err = conn.drop_schema("bt_it_nope_xyz").await.unwrap_err();
+        assert!(matches!(err, AppError::Database(_)));
+        assert!(err.to_string().contains("does not exist"));
+
+        conn.close().await.expect("close");
+        drop_fixture(&pool, schema, other).await;
+    }
+
+    #[tokio::test]
+    async fn export_csv_and_sql_against_live_mysql() {
+        use crate::features::connections::application::ConnectionManager;
+        use crate::features::export::application::{export_schema_sql, export_table};
+        use crate::features::export::domain::ExportFormat;
+
+        let Some((params, secret)) = gate("export_csv_and_sql_against_live_mysql") else {
+            return;
+        };
+        let pool = raw_pool(&params, &secret).await;
+        let (schema, other) = ("bt_it_export", "bt_it_export_other");
+        setup_fixture(&pool, schema, other).await;
+
+        let open = MysqlConnector
+            .open_with_secret(&params, secret.as_ref())
+            .await
+            .expect("open");
+        let manager = ConnectionManager::new();
+        let handle = manager.insert(open).await;
+
+        // CSV: header + every authors row (3); NULL bio → empty field.
+        let csv = export_table(&manager, &handle, schema, "authors", ExportFormat::Csv)
+            .await
+            .expect("export csv");
+        assert_eq!(csv.lines().next().unwrap(), "id,name,bio");
+        assert_eq!(csv.lines().count(), 4);
+        assert!(csv.contains("2,Grace,"));
+
+        // SQL: DDL + one INSERT per row, MySQL backtick identifiers.
+        let sql = export_table(&manager, &handle, schema, "books", ExportFormat::Sql)
+            .await
+            .expect("export sql");
+        assert!(sql.contains(&format!("INSERT INTO `{schema}`.`books`")));
+        assert_eq!(sql.matches("INSERT INTO").count(), 4);
+        assert!(sql.contains("NULL"));
+
+        let dump = export_schema_sql(&manager, &handle, schema)
+            .await
+            .expect("export schema");
+        assert!(dump.contains("-- ByteTable schema dump"));
+        assert!(dump.contains("authors"));
+        assert!(dump.contains("books"));
+
+        // Empty table after truncate exports the no-rows marker.
+        manager
+            .get_sql(&handle)
+            .await
+            .unwrap()
+            .truncate_table(schema, "books")
+            .await
+            .expect("truncate");
+        let empty_sql = export_table(&manager, &handle, schema, "books", ExportFormat::Sql)
+            .await
+            .expect("export empty");
+        assert!(empty_sql.contains("-- (no rows)"));
+
+        drop_fixture(&pool, schema, other).await;
+    }
+
+    #[tokio::test]
+    async fn import_round_trip_multi_statement_and_nonatomic_error_against_live_mysql() {
+        use crate::features::connections::application::ConnectionManager;
+        use crate::features::export::application::{export_table, import_sql};
+        use crate::features::export::domain::ExportFormat;
+
+        let Some((params, secret)) =
+            gate("import_round_trip_multi_statement_and_nonatomic_error_against_live_mysql")
+        else {
+            return;
+        };
+        let pool = raw_pool(&params, &secret).await;
+        let (schema, other) = ("bt_it_import", "bt_it_import_other");
+        setup_fixture(&pool, schema, other).await;
+        // A fresh, empty target database for the imports.
+        let fresh = "bt_it_import_fresh";
+        let _ = sqlx::query(&format!("DROP DATABASE IF EXISTS `{fresh}`"))
+            .execute(&pool)
+            .await;
+        sqlx::query(&format!("CREATE DATABASE `{fresh}`"))
+            .execute(&pool)
+            .await
+            .expect("create fresh db");
+
+        let open = MysqlConnector
+            .open_with_secret(&params, secret.as_ref())
+            .await
+            .expect("open");
+        let manager = ConnectionManager::new();
+        let handle = manager.insert(open).await;
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        // --- ROUND-TRIP: export authors → retarget the qualified names to the
+        // FRESH db → import → verify the table + 3 rows landed there.
+        let dump = export_table(&manager, &handle, schema, "authors", ExportFormat::Sql)
+            .await
+            .expect("export sql");
+        // The INSERTs are `schema`.`authors`; the SHOW CREATE TABLE DDL names the
+        // table unqualified, so it lands in the USEd (fresh) db. Retarget the
+        // qualified INSERT prefix to the fresh db.
+        let retargeted = dump.replace(
+            &format!("`{schema}`.`authors`"),
+            &format!("`{fresh}`.`authors`"),
+        );
+        let rt_path = dir.path().join("authors.sql");
+        std::fs::write(&rt_path, &retargeted).expect("write dump");
+        let result = import_sql(&manager, &handle, fresh, &rt_path.to_string_lossy())
+            .await
+            .expect("import round-trip");
+        assert_eq!(result.statements, 4); // DDL + 3 INSERTs
+        let n: i64 = sqlx::query_scalar(&format!("SELECT count(*) FROM `{fresh}`.`authors`"))
+            .fetch_one(&pool)
+            .await
+            .expect("count");
+        assert_eq!(n, 3);
+
+        // --- MULTI-STATEMENT: hand-written CREATE + 2 INSERTs (unqualified → USE).
+        let script = "CREATE TABLE gadgets (id INT PRIMARY KEY, label VARCHAR(20));\n\
+                      INSERT INTO gadgets (id, label) VALUES (1, 'one');\n\
+                      INSERT INTO gadgets (id, label) VALUES (2, 'two');\n";
+        let ms_path = dir.path().join("gadgets.sql");
+        std::fs::write(&ms_path, script).expect("write script");
+        let result = import_sql(&manager, &handle, fresh, &ms_path.to_string_lossy())
+            .await
+            .expect("import multi-statement");
+        assert_eq!(result.statements, 3);
+        let n: i64 = sqlx::query_scalar(&format!("SELECT count(*) FROM `{fresh}`.`gadgets`"))
+            .fetch_one(&pool)
+            .await
+            .expect("count gadgets");
+        assert_eq!(n, 2);
+
+        // --- NON-ATOMIC ERROR: statement 1 (CREATE) auto-commits, statement 2
+        // fails. MySQL cannot roll back the committed DDL, so the table from
+        // statement 1 SURVIVES and the §5 error names how far it got.
+        let bad = "CREATE TABLE survives_me (id INT);\n\
+                   INSERT INTO no_such_table (id) VALUES (1);\n";
+        let bad_path = dir.path().join("bad.sql");
+        std::fs::write(&bad_path, bad).expect("write bad");
+        let err = import_sql(&manager, &handle, fresh, &bad_path.to_string_lossy())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Database(_)), "got {err:?}");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("statement 2 of 2"),
+            "names the failing stmt: {msg}"
+        );
+        assert!(
+            msg.contains("were applied and were NOT rolled back"),
+            "surfaces the non-atomic caveat: {msg}"
+        );
+        // The auto-committed table 1 is still there.
+        let exists: Option<i64> = sqlx::query_scalar(
+            "SELECT 1 FROM information_schema.tables \
+             WHERE table_schema = ? AND table_name = 'survives_me'",
+        )
+        .bind(fresh)
+        .fetch_optional(&pool)
+        .await
+        .expect("existence");
+        assert!(
+            exists.is_some(),
+            "statement 1's table auto-committed (MySQL DDL)"
+        );
+
+        // --- BAD PATH: a missing file is a §5 IO error naming the path.
+        let err = import_sql(&manager, &handle, fresh, "/tmp/bytetable-nonexistent.sql")
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Io(_)), "got {err:?}");
+        assert!(err.to_string().contains("Could not read"));
+
+        // --- EXECUTE_SCRIPT_TEXT: run generated SQL directly (no temp file),
+        // the way ImportModal applies CSV-derived INSERTs.
+        {
+            use crate::features::export::application::execute_script_text;
+            let text = "CREATE TABLE from_text (id INT PRIMARY KEY, label TEXT);\n\
+                        INSERT INTO from_text (id, label) VALUES (1, 'O''Brien');\n";
+            let result = execute_script_text(&manager, &handle, fresh, text)
+                .await
+                .expect("execute_script_text");
+            assert_eq!(result.statements, 2);
+            let n: i64 = sqlx::query_scalar(&format!("SELECT count(*) FROM `{fresh}`.`from_text`"))
+                .fetch_one(&pool)
+                .await
+                .expect("count from_text");
+            assert_eq!(n, 1);
+        }
+
+        let _ = sqlx::query(&format!("DROP DATABASE IF EXISTS `{fresh}`"))
+            .execute(&pool)
+            .await;
         drop_fixture(&pool, schema, other).await;
     }
 }

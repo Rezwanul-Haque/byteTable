@@ -12,9 +12,8 @@
 //
 // M4: opening tables/SQL/map now drive the tab system (store actions). The
 // `.active` table styling is wired — a table row lights up when the active
-// tab is a table tab for this schema+table. Structure (M7) still toasts:
-// "View structure" opens the data tab then asks for structure mode, which
-// TableTab declines with an M7 toast (so it effectively opens data).
+// tab is a table tab for this schema+table. M7: "View structure" opens (or
+// focuses + switches) the table tab in structure mode (§3.6).
 
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
@@ -263,14 +262,9 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
 
   // M4 tab opens (store actions on the active workspace's ui).
   const openTable = (table: string) => openTableTab(schemaName, table);
-  // "View structure": the structure body is M7. Open the data tab and toast
-  // — the data tab is the only thing structure resolves to until M7, and
-  // persisting `'structure'` would render an empty tab (TableTab only knows
-  // data). The store's setTableTabMode is the seam M7 wires this to.
-  const openStructure = (table: string) => {
-    openTableTab(schemaName, table);
-    toast("Structure view arrives in M7", "info");
-  };
+  // "View structure" (M7): open-or-focus the table tab in structure mode
+  // (§3.6). On an already-open tab this switches it to structure mode.
+  const openStructure = (table: string) => openTableTab(schemaName, table, "structure");
   const openMap = () => openMapTab(schemaName);
 
   const onRowKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>, table: string) => {

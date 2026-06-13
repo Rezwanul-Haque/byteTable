@@ -1,0 +1,412 @@
+/* Structure view (spec §3.6) — ported byte-exact from ByteTable.html's
+   `.structure*` / `.struct-*` / columns-pane / rail / index-fk card / DDL
+   rules (the v3 two-pane block + the v2 DDL block). The v4 editing rules
+   (`.add-col-btn`, `.st-edit*`, `.st-null-toggle`, `.st-drop`, `.st-row-new`,
+   `.st-edit-hint`, `.pending-*`) are intentionally NOT ported — that is M8.
+
+   Reuses the shared `.tag`/`.tag-accent`, `.dg-state`/`.dg-error`/`.dg-retry`
+   (loading + §5 error states), and Modal chrome. The `.sql-*` highlight
+   palette + the few `.cell-*` / `.grid-empty-cell` helpers are duplicated
+   here so this view does not depend on DataGrid.css being loaded first. */
+
+.structure-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.structure-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px 12px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+
+.structure-head h2 {
+  font-family: var(--mono);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.structure-sub {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.structure-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.structure-chip {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 2.5px 9px;
+  white-space: nowrap;
+}
+
+.structure-chip b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.structure-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 348px;
+  gap: 0;
+}
+
+/* ---------- left: columns pane (own scroll) ---------- */
+.columns-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  border-right: 1px solid var(--border);
+}
+
+.columns-pane-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 18px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+
+.columns-pane-head h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-dim);
+}
+
+.columns-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  max-width: 320px;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 5px 0 9px;
+  transition: border-color 0.12s;
+}
+
+.columns-search:focus-within {
+  border-color: var(--accent);
+}
+
+.columns-search input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  font-size: 12px;
+  padding: 5.5px 0;
+  min-width: 0;
+  font-family: var(--mono);
+  color: var(--text);
+}
+
+.columns-count {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  margin-left: auto;
+}
+
+.columns-scroll {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 0 18px 16px;
+}
+
+.columns-scroll .structure-table {
+  width: 100%;
+  min-width: 0;
+}
+
+.columns-scroll .structure-table th {
+  position: sticky;
+  top: 0;
+  background: var(--bg0);
+  z-index: 2;
+}
+
+.structure-table {
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.structure-table th {
+  text-align: left;
+  font-weight: 500;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  padding: 8px 14px 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.structure-table td {
+  padding: 6px 14px;
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+}
+
+.structure-table tbody tr:hover td {
+  background: color-mix(in oklab, var(--bg2) 60%, transparent);
+}
+
+.st-icon {
+  width: 20px;
+  padding-right: 0 !important;
+}
+
+.st-name {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.st-fk-ref {
+  color: var(--text-faint);
+  margin-left: 8px;
+  font-size: 11px;
+}
+
+.st-type {
+  color: #c678dd;
+}
+
+/* ---------- right: rail (own scroll, tinted bg) ---------- */
+.structure-rail {
+  overflow-y: auto;
+  min-height: 0;
+  padding: 14px 16px 18px;
+  background: color-mix(in oklab, var(--bg1) 55%, var(--bg0));
+}
+
+.structure-section {
+  margin-bottom: 20px;
+}
+
+.structure-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-dim);
+  margin-bottom: 9px;
+}
+
+.rail-count {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  background: var(--bg2);
+  border-radius: 99px;
+  padding: 1px 7px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.structure-card {
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 9px 12px;
+  margin-bottom: 7px;
+}
+
+.structure-card-name {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  word-break: break-all;
+}
+
+.structure-card-detail {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  margin-top: 4px;
+  word-break: break-all;
+}
+
+.structure-none {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+/* Inline tags on index/FK cards (ByteTable.html .tag / .tag-accent). Defined
+   here rather than globally — this is the only app surface that uses them. */
+.tag {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg3);
+  color: var(--text-dim);
+}
+
+.tag-accent {
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+
+/* ---------- DDL preview + modal ---------- */
+.ddl-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-faint);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 8px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.ddl-copy:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.ddl-block {
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 13px 15px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.65;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.ddl-preview {
+  position: relative;
+  cursor: pointer;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.ddl-preview-block {
+  max-height: 218px;
+  overflow: hidden;
+  margin: 0;
+}
+
+.ddl-preview:hover .ddl-block {
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+}
+
+.ddl-fade {
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  bottom: 1px;
+  height: 74px;
+  border-radius: 0 0 10px 10px;
+  background: linear-gradient(transparent, var(--bg1) 78%);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 9px;
+}
+
+.ddl-fade-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 3px 10px;
+}
+
+.ddl-preview:hover .ddl-fade-hint {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+}
+
+.ddl-modal {
+  width: 660px;
+  max-height: 82vh;
+}
+
+.ddl-modal-block {
+  overflow: auto;
+  min-height: 0;
+  flex: 1;
+}
+
+/* ---------- SQL highlight palette (§3.7), for the DDL <pre> ---------- */
+.sql-kw {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.sql-string {
+  color: #e5c07b;
+}
+
+.sql-num {
+  color: #7fb8e8;
+}
+
+.sql-func {
+  color: #c678dd;
+}
+
+.sql-comment {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+/* ---------- shared cell helpers (duplicated from DataGrid.css) ---------- */
+.structure-view .cell-true {
+  color: var(--accent);
+}
+
+.structure-view .cell-dim {
+  color: var(--text-faint);
+}
+
+.structure-view .grid-empty-cell {
+  padding: 28px;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 12.5px;
+  font-family: var(--ui);
+}

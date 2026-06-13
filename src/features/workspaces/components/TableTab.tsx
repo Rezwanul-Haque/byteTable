@@ -2,8 +2,11 @@
 // toolbar (spec §3.5). Renders the real toolbar, the M5 stackable filter
 // builder panel (FilterPanel), and the data grid.
 //
-// Mode segmented control: Data is live, Structure is M7 — clicking Structure
-// toasts and stays on data.
+// Mode segmented control (M7): Data renders the grid + filter toolbar;
+// Structure renders the read-only StructureView (§3.6). The segmented control
+// stays in both modes; the Filters / WHERE readout / refresh / row-count are
+// data-mode only (the structure view has its own header), so they are not
+// rendered in structure mode.
 //
 // FILTERS (M5): the per-tab filter state lives in the workspace `ui.filters`
 // map (survives workspace switches per WorkspaceUiState). This shell owns the
@@ -16,11 +19,11 @@ import { useEffect, useMemo, useState } from "react";
 
 import { DataGrid } from "../../browse/components/DataGrid";
 import { FilterPanel } from "../../browse/components/FilterPanel";
+import { StructureView } from "../../browse/components/StructureView";
 import { appliedDisplaySql, compileToSpec, emptyDraft } from "../../browse/filter";
 import { useIntrospectionStore, columnsKey } from "../../introspection/state";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Icon } from "../../../shared/ui/Icon";
-import { useToast } from "../../../shared/ui/toastContext";
 import type { ColumnInfo } from "../../../shared/api/engine";
 import { useWorkspacesStore } from "../state";
 import { rowCountLabel, useTabMetaStore } from "../tabMeta";
@@ -30,8 +33,15 @@ import "./TableTab.css";
 /** Narrow the union — the router only renders this for table tabs. */
 type TableTabModel = Extract<Tab, { kind: "table" }>;
 
-export function TableTab({ tab, handleId }: { tab: TableTabModel; handleId: string }) {
-  const toast = useToast();
+export function TableTab({
+  tab,
+  handleId,
+  defaultSchema,
+}: {
+  tab: TableTabModel;
+  handleId: string;
+  defaultSchema: string;
+}) {
   const setTableTabMode = useWorkspacesStore((state) => state.setTableTabMode);
   // Narrow selector: only this tab's meta, so other tabs' fetches don't
   // re-render the toolbar.
@@ -68,14 +78,8 @@ export function TableTab({ tab, handleId }: { tab: TableTabModel; handleId: stri
     [applied, columns],
   );
   // Stable identity for the grid's reset machinery (recompute window on change).
-  const filterKey = useMemo(
-    () => (filterSpec ? JSON.stringify(filterSpec) : ""),
-    [filterSpec],
-  );
-  const appliedWhere = useMemo(
-    () => appliedDisplaySql(applied, columns),
-    [applied, columns],
-  );
+  const filterKey = useMemo(() => (filterSpec ? JSON.stringify(filterSpec) : ""), [filterSpec]);
+  const appliedWhere = useMemo(() => appliedDisplaySql(applied, columns), [applied, columns]);
   const hasApplied = filterSpec !== null;
 
   // Ensure a draft exists (lazily) when the panel opens.
@@ -121,74 +125,95 @@ export function TableTab({ tab, handleId }: { tab: TableTabModel; handleId: stri
           <button
             type="button"
             role="tab"
-            aria-selected={false}
-            className="seg-btn"
-            onClick={() => toast("Structure view arrives in M7", "info")}
+            aria-selected={tab.mode === "structure"}
+            className={"seg-btn" + (tab.mode === "structure" ? " active" : "")}
+            onClick={() => {
+              if (tab.mode !== "structure") setTableTabMode(tab.id, "structure");
+            }}
           >
             <Icon name="account_tree" size={14} /> Structure
           </button>
         </div>
 
-        {/* Filters toggle: opens the builder panel; accent dot when a filter
+        {/* Data-mode-only toolbar: the structure view has its own header. */}
+        {tab.mode === "data" ? (
+          <>
+            {/* Filters toggle: opens the builder panel; accent dot when a filter
             is applied (spec §3.5 "filter icon + accent dot when applied"). */}
-        <button
-          type="button"
-          className={
-            "filter-toggle" + (panelOpen ? " open" : "") + (hasApplied ? " has-applied" : "")
-          }
-          onClick={openPanel}
-          aria-expanded={panelOpen}
-        >
-          <Icon name="filter_list" size={15} /> Filters
-          {hasApplied ? <span className="filter-dot" /> : null}
-          <Icon name="expand_more" size={14} style={{ color: "var(--text-faint)" }} />
-        </button>
+            <button
+              type="button"
+              className={
+                "filter-toggle" + (panelOpen ? " open" : "") + (hasApplied ? " has-applied" : "")
+              }
+              onClick={openPanel}
+              aria-expanded={panelOpen}
+            >
+              <Icon name="filter_list" size={15} /> Filters
+              {hasApplied ? <span className="filter-dot" /> : null}
+              <Icon name="expand_more" size={14} style={{ color: "var(--text-faint)" }} />
+            </button>
 
-        {/* Effective-WHERE readout — the applied filter's cosmetic clause,
+            {/* Effective-WHERE readout — the applied filter's cosmetic clause,
             ellipsized; italic "no filters applied" when none. */}
-        {hasApplied && appliedWhere ? (
-          <span className="applied-where" title={appliedWhere}>
-            {appliedWhere}
-          </span>
+            {hasApplied && appliedWhere ? (
+              <span className="applied-where" title={appliedWhere}>
+                {appliedWhere}
+              </span>
+            ) : (
+              <span className="applied-where empty">no filters applied</span>
+            )}
+
+            {/* Clear-filters icon — appears only when a filter is applied. */}
+            {hasApplied ? (
+              <IconBtn icon="filter_alt_off" title="Clear filters" onClick={clearFilters} />
+            ) : null}
+
+            <div style={{ flex: 1 }} />
+
+            <IconBtn icon="refresh" title="Refresh" onClick={() => requestRefetch(tab.id)} />
+            <span className="table-rowcount">{rowCountLabel(meta)}</span>
+          </>
         ) : (
-          <span className="applied-where empty">no filters applied</span>
+          <div style={{ flex: 1 }} />
         )}
-
-        {/* Clear-filters icon — appears only when a filter is applied. */}
-        {hasApplied ? (
-          <IconBtn icon="filter_alt_off" title="Clear filters" onClick={clearFilters} />
-        ) : null}
-
-        <div style={{ flex: 1 }} />
-
-        <IconBtn icon="refresh" title="Refresh" onClick={() => requestRefetch(tab.id)} />
-        <span className="table-rowcount">{rowCountLabel(meta)}</span>
       </div>
 
-      {/* The filter builder panel (M5), under the toolbar. */}
-      <FilterPanel
-        open={panelOpen}
-        columns={columns}
-        state={ensuredState}
-        error={filterError}
-        onChange={onFilterChange}
-      />
+      {tab.mode === "structure" ? (
+        <StructureView
+          handleId={handleId}
+          tabId={tab.id}
+          schema={tab.schema}
+          table={tab.table}
+          defaultSchema={defaultSchema}
+        />
+      ) : (
+        <>
+          {/* The filter builder panel (M5), under the toolbar. */}
+          <FilterPanel
+            open={panelOpen}
+            columns={columns}
+            state={ensuredState}
+            error={filterError}
+            onChange={onFilterChange}
+          />
 
-      {/* The virtualized data grid. Receives the applied filter + a stable
-          key; reports totalRows/shownRows/elapsedMs back through tabMeta. */}
-      <DataGrid
-        handleId={handleId}
-        tabId={tab.id}
-        schema={tab.schema}
-        table={tab.table}
-        filter={filterSpec}
-        filterKey={filterKey}
-        onFilterError={(message) => {
-          setFilterError(message);
-          setPanelOpen(true); // keep the panel open so the user can fix it
-        }}
-        onFilterOk={() => setFilterError(null)}
-      />
+          {/* The virtualized data grid. Receives the applied filter + a stable
+              key; reports totalRows/shownRows/elapsedMs back through tabMeta. */}
+          <DataGrid
+            handleId={handleId}
+            tabId={tab.id}
+            schema={tab.schema}
+            table={tab.table}
+            filter={filterSpec}
+            filterKey={filterKey}
+            onFilterError={(message) => {
+              setFilterError(message);
+              setPanelOpen(true); // keep the panel open so the user can fix it
+            }}
+            onFilterOk={() => setFilterError(null)}
+          />
+        </>
+      )}
     </div>
   );
 }

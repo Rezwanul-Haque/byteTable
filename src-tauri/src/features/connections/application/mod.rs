@@ -16,6 +16,7 @@ use crate::shared::error::AppError;
 
 use super::domain::SavedConnection;
 use super::ports::ConnectionRepository;
+use super::secrets::{self as secrets_mod, SecretStore};
 
 // ---------------------------------------------------------------------------
 // Connector registry
@@ -134,12 +135,47 @@ pub fn list_connections<R: ConnectionRepository + ?Sized>(
     repository.list()
 }
 
-/// Insert or update a saved connection. New entries (empty `id`) get a UUID
-/// and a `created_at` timestamp; updates keep both. Returns the stored value
-/// so the renderer learns the assigned id.
-pub fn save_connection<R: ConnectionRepository + ?Sized>(
+/// The transient secrets the connect modal may supply on save/open/test: the
+/// database password and (for a tunnelled connection) the SSH secret (private-
+/// key passphrase or bastion password). Both optional and empty-strings are
+/// treated as absent (so re-saving without retyping keeps the stored secret).
+#[derive(Default, Clone)]
+pub struct TransientSecrets {
+    pub password: Option<String>,
+    pub ssh: Option<String>,
+}
+
+impl TransientSecrets {
+    /// Build from the raw optional command args, dropping empty strings.
+    pub fn new(password: Option<String>, ssh: Option<String>) -> Self {
+        let clean = |s: Option<String>| s.filter(|v| !v.is_empty());
+        Self {
+            password: clean(password),
+            ssh: clean(ssh),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.password.is_none() && self.ssh.is_none()
+    }
+}
+
+/// Insert or update a saved connection, persisting any supplied secrets to the
+/// keychain keyed by the (now-assigned) connection id. New entries (empty `id`)
+/// get a UUID and a `created_at` timestamp; updates keep both. The JSON repo
+/// stores only non-secret params; the db password → keychain account `{id}`,
+/// the SSH secret → `{id}:ssh`. Returns the stored value so the renderer learns
+/// the assigned id.
+///
+/// Secret policy: only secrets the modal actually supplied are written (empty
+/// = absent), so re-saving a connection without retyping the password keeps the
+/// previously stored secret. SQLite connections carry no secrets — `secrets` is
+/// empty and the keychain is untouched.
+pub fn save_connection<R: ConnectionRepository + ?Sized, S: SecretStore + ?Sized>(
     repository: &R,
+    secret_store: &S,
     mut connection: SavedConnection,
+    secrets: &TransientSecrets,
 ) -> Result<SavedConnection, AppError> {
     if connection.name.trim().is_empty() {
         return Err(AppError::Invalid(
@@ -158,15 +194,28 @@ pub fn save_connection<R: ConnectionRepository + ?Sized>(
         connection.created_at = Some(now_epoch_ms());
     }
     repository.save(&connection)?;
+
+    // Persist secrets only after the id is settled, and only the ones supplied.
+    if let Some(password) = &secrets.password {
+        secret_store.set(&secrets_mod::db_account(&connection.id), password)?;
+    }
+    if let Some(ssh) = &secrets.ssh {
+        secret_store.set(&secrets_mod::ssh_account(&connection.id), ssh)?;
+    }
     Ok(connection)
 }
 
-/// Remove a saved connection by id.
-pub fn delete_connection<R: ConnectionRepository + ?Sized>(
+/// Remove a saved connection by id, deleting its keychain secrets too (best
+/// effort: a missing keychain entry is not an error).
+pub fn delete_connection<R: ConnectionRepository + ?Sized, S: SecretStore + ?Sized>(
     repository: &R,
+    secret_store: &S,
     id: &str,
 ) -> Result<(), AppError> {
-    repository.delete(id)
+    repository.delete(id)?;
+    secret_store.delete(&secrets_mod::db_account(id))?;
+    secret_store.delete(&secrets_mod::ssh_account(id))?;
+    Ok(())
 }
 
 fn now_epoch_ms() -> u64 {
@@ -182,18 +231,32 @@ fn now_epoch_ms() -> u64 {
 
 /// Probe the target without keeping a connection open ("Test connection").
 ///
-/// `secret` is the transient connection password (server engines), carried
-/// from the command layer and never persisted — see [`ConnectSecret`]. SQLite
-/// ignores it (default `Connector` impl).
+/// Uses ONLY the transiently-typed secrets (the modal's password / SSH secret)
+/// — testing happens before save, so the keychain is never read or written
+/// here. SQLite ignores secrets (default `Connector` impl).
 pub async fn test_connection(
     registry: &ConnectorRegistry,
     params: &ConnectionParams,
-    secret: Option<&ConnectSecret>,
+    secrets: &TransientSecrets,
 ) -> Result<EngineInfo, AppError> {
+    let secret = connect_secret_from(secrets);
     registry
         .get(params.engine())?
-        .test_with_secret(params, secret)
+        .test_with_secret(params, secret.as_ref())
         .await
+}
+
+/// Build a [`ConnectSecret`] from transient secrets, or `None` when both are
+/// absent (so SQLite and direct passwordless connections pass `None`).
+fn connect_secret_from(secrets: &TransientSecrets) -> Option<ConnectSecret> {
+    if secrets.is_empty() {
+        None
+    } else {
+        Some(ConnectSecret::with_ssh(
+            secrets.password.clone(),
+            secrets.ssh.clone(),
+        ))
+    }
 }
 
 /// What `open_connection` opens: either a saved entry or ad-hoc parameters
@@ -214,25 +277,38 @@ pub struct OpenedConnection {
 
 /// Open a live connection, register it with the manager, and return the
 /// opaque handle plus the initial schema list.
-pub async fn open_connection<R: ConnectionRepository + ?Sized>(
+///
+/// Secret sourcing (M12 Task 3): for a saved connection, the db password is
+/// read from keychain account `{id}` and the SSH secret from `{id}:ssh`; a
+/// transiently-typed secret (first connect, before save) takes precedence so
+/// the modal's "Open" works before anything is stored. For an ad-hoc params
+/// target (no id — e.g. "Open SQLite file…") only the transient secrets apply.
+/// SQLite carries no secrets.
+pub async fn open_connection<R: ConnectionRepository + ?Sized, S: SecretStore + ?Sized>(
     repository: &R,
     registry: &ConnectorRegistry,
+    secret_store: &S,
     manager: &ConnectionManager,
     target: OpenTarget,
-    secret: Option<&ConnectSecret>,
+    transient: &TransientSecrets,
 ) -> Result<OpenedConnection, AppError> {
-    let params = match target {
-        OpenTarget::Params(params) => params,
+    let (params, saved_id) = match target {
+        OpenTarget::Params(params) => (params, None),
         OpenTarget::SavedId(id) => {
-            repository
+            let params = repository
                 .get(&id)?
                 .ok_or_else(|| AppError::NotFound(format!("saved connection '{id}'")))?
-                .params
+                .params;
+            (params, Some(id))
         }
     };
+
+    // Merge keychain-stored secrets with transient ones (transient wins).
+    let secret = resolve_open_secret(secret_store, saved_id.as_deref(), transient)?;
+
     let connection = registry
         .get(params.engine())?
-        .open_with_secret(&params, secret)
+        .open_with_secret(&params, secret.as_ref())
         .await?;
     let engine_info = connection.engine_info();
     let schemas = connection.list_schemas().await?;
@@ -242,6 +318,31 @@ pub async fn open_connection<R: ConnectionRepository + ?Sized>(
         engine_info,
         schemas,
     })
+}
+
+/// Resolve the effective [`ConnectSecret`] for an open: keychain values for a
+/// saved id, overridden by any transiently-typed secret. Returns `None` when
+/// nothing applies (SQLite, passwordless direct connections).
+fn resolve_open_secret<S: SecretStore + ?Sized>(
+    secret_store: &S,
+    saved_id: Option<&str>,
+    transient: &TransientSecrets,
+) -> Result<Option<ConnectSecret>, AppError> {
+    let mut password = transient.password.clone();
+    let mut ssh = transient.ssh.clone();
+    if let Some(id) = saved_id {
+        if password.is_none() {
+            password = secret_store.get(&secrets_mod::db_account(id))?;
+        }
+        if ssh.is_none() {
+            ssh = secret_store.get(&secrets_mod::ssh_account(id))?;
+        }
+    }
+    if password.is_none() && ssh.is_none() {
+        Ok(None)
+    } else {
+        Ok(Some(ConnectSecret::with_ssh(password, ssh)))
+    }
 }
 
 /// Close an open connection and forget its handle.
@@ -462,12 +563,39 @@ mod tests {
         registry
     }
 
+    use super::super::secrets::{db_account, ssh_account, InMemorySecretStore};
+
+    fn no_secrets() -> TransientSecrets {
+        TransientSecrets::default()
+    }
+
+    fn server_connection(name: &str) -> SavedConnection {
+        let params = ConnectionParams::Postgres {
+            host: "db".into(),
+            port: 5432,
+            database: "app".into(),
+            user: "u".into(),
+            tls_mode: crate::shared::engine::TlsMode::Disable,
+            ssh: None,
+        };
+        SavedConnection {
+            id: String::new(),
+            name: name.into(),
+            engine: Engine::Postgres,
+            params,
+            env: Env::Local,
+            created_at: None,
+        }
+    }
+
     // -- registry use-cases --------------------------------------------------
 
     #[test]
     fn save_assigns_uuid_and_created_at_to_new_connections() {
         let repo = FakeRepository::default();
-        let saved = save_connection(&repo, new_connection("Dev DB")).expect("save");
+        let store = InMemorySecretStore::default();
+        let saved =
+            save_connection(&repo, &store, new_connection("Dev DB"), &no_secrets()).expect("save");
         assert!(!saved.id.is_empty());
         assert!(saved.created_at.is_some());
         assert_eq!(list_connections(&repo).unwrap(), vec![saved]);
@@ -476,12 +604,14 @@ mod tests {
     #[test]
     fn save_keeps_existing_id_and_updates_in_place() {
         let repo = FakeRepository::default();
-        let saved = save_connection(&repo, new_connection("Dev DB")).expect("save");
+        let store = InMemorySecretStore::default();
+        let saved =
+            save_connection(&repo, &store, new_connection("Dev DB"), &no_secrets()).expect("save");
         let renamed = SavedConnection {
             name: "Renamed".into(),
             ..saved.clone()
         };
-        let stored = save_connection(&repo, renamed).expect("update");
+        let stored = save_connection(&repo, &store, renamed, &no_secrets()).expect("update");
         assert_eq!(stored.id, saved.id);
         assert_eq!(stored.created_at, saved.created_at);
         let all = list_connections(&repo).unwrap();
@@ -492,12 +622,13 @@ mod tests {
     #[test]
     fn save_rejects_blank_names_and_engine_params_mismatch() {
         let repo = FakeRepository::default();
+        let store = InMemorySecretStore::default();
         let blank = SavedConnection {
             name: "   ".into(),
             ..new_connection("x")
         };
         assert!(matches!(
-            save_connection(&repo, blank),
+            save_connection(&repo, &store, blank, &no_secrets()),
             Err(AppError::Invalid(_))
         ));
 
@@ -505,19 +636,60 @@ mod tests {
             engine: Engine::Mysql,
             ..new_connection("Dev DB")
         };
-        let err = save_connection(&repo, mismatched).unwrap_err();
+        let err = save_connection(&repo, &store, mismatched, &no_secrets()).unwrap_err();
         assert!(matches!(err, AppError::Invalid(_)));
         assert!(err.to_string().contains("MySQL"));
     }
 
     #[test]
-    fn delete_removes_and_unknown_id_is_not_found() {
+    fn save_stores_supplied_secrets_in_the_keychain_keyed_by_id() {
         let repo = FakeRepository::default();
-        let saved = save_connection(&repo, new_connection("Dev DB")).expect("save");
-        delete_connection(&repo, &saved.id).expect("delete");
+        let store = InMemorySecretStore::default();
+        let secrets = TransientSecrets::new(Some("pw".into()), Some("ssh-pass".into()));
+        let saved =
+            save_connection(&repo, &store, server_connection("Prod"), &secrets).expect("save");
+        assert_eq!(
+            store.get(&db_account(&saved.id)).unwrap().as_deref(),
+            Some("pw")
+        );
+        assert_eq!(
+            store.get(&ssh_account(&saved.id)).unwrap().as_deref(),
+            Some("ssh-pass")
+        );
+
+        // Re-saving WITHOUT secrets leaves the stored ones untouched (empty =
+        // absent → keep the keychain value, so the user need not retype).
+        let resaved = save_connection(
+            &repo,
+            &store,
+            SavedConnection {
+                name: "Prod 2".into(),
+                ..saved.clone()
+            },
+            &TransientSecrets::new(Some(String::new()), None),
+        )
+        .expect("re-save");
+        assert_eq!(
+            store.get(&db_account(&resaved.id)).unwrap().as_deref(),
+            Some("pw")
+        );
+    }
+
+    #[test]
+    fn delete_removes_and_clears_keychain_and_unknown_id_is_not_found() {
+        let repo = FakeRepository::default();
+        let store = InMemorySecretStore::default();
+        let secrets = TransientSecrets::new(Some("pw".into()), Some("ssh".into()));
+        let saved =
+            save_connection(&repo, &store, server_connection("Prod"), &secrets).expect("save");
+        delete_connection(&repo, &store, &saved.id).expect("delete");
         assert!(list_connections(&repo).unwrap().is_empty());
+        // Both keychain accounts are cleared.
+        assert_eq!(store.get(&db_account(&saved.id)).unwrap(), None);
+        assert_eq!(store.get(&ssh_account(&saved.id)).unwrap(), None);
+        // Unknown id → NotFound from the repo (delete runs repo first).
         assert!(matches!(
-            delete_connection(&repo, "nope"),
+            delete_connection(&repo, &store, "nope"),
             Err(AppError::NotFound(_))
         ));
     }
@@ -532,9 +704,12 @@ mod tests {
             port: 3306,
             database: "d".into(),
             user: "u".into(),
-            tls: false,
+            tls_mode: crate::shared::engine::TlsMode::Disable,
+            ssh: None,
         };
-        let err = test_connection(&registry, &params, None).await.unwrap_err();
+        let err = test_connection(&registry, &params, &no_secrets())
+            .await
+            .unwrap_err();
         assert!(matches!(err, AppError::Unsupported(_)));
         assert_eq!(
             err.to_string(),
@@ -551,12 +726,14 @@ mod tests {
         let manager = ConnectionManager::new();
         let repo = FakeRepository::default();
 
+        let store = InMemorySecretStore::default();
         let opened = open_connection(
             &repo,
             &registry,
+            &store,
             &manager,
             OpenTarget::Params(sqlite_params()),
-            None,
+            &no_secrets(),
         )
         .await
         .expect("open");
@@ -625,14 +802,17 @@ mod tests {
         let registry = registry_with_fake(closed);
         let manager = ConnectionManager::new();
         let repo = FakeRepository::default();
-        let saved = save_connection(&repo, new_connection("Dev DB")).expect("save");
+        let store = InMemorySecretStore::default();
+        let saved =
+            save_connection(&repo, &store, new_connection("Dev DB"), &no_secrets()).expect("save");
 
         let opened = open_connection(
             &repo,
             &registry,
+            &store,
             &manager,
             OpenTarget::SavedId(saved.id.clone()),
-            None,
+            &no_secrets(),
         )
         .await
         .expect("open");
@@ -642,12 +822,43 @@ mod tests {
         let missing = open_connection(
             &repo,
             &registry,
+            &store,
             &manager,
             OpenTarget::SavedId("ghost".into()),
-            None,
+            &no_secrets(),
         )
         .await
         .unwrap_err();
         assert!(matches!(missing, AppError::NotFound(_)));
+    }
+
+    // -- secret resolution on open -------------------------------------------
+
+    #[test]
+    fn resolve_open_secret_merges_keychain_and_transient() {
+        let store = InMemorySecretStore::default();
+        store.set(&db_account("id1"), "stored-pw").unwrap();
+        store.set(&ssh_account("id1"), "stored-ssh").unwrap();
+
+        // No transient → keychain values are used.
+        let secret = resolve_open_secret(&store, Some("id1"), &no_secrets())
+            .unwrap()
+            .expect("some secret");
+        assert_eq!(secret.password(), Some("stored-pw"));
+        assert_eq!(secret.ssh(), Some("stored-ssh"));
+
+        // A transient password overrides the stored one (first connect / retype).
+        let transient = TransientSecrets::new(Some("typed".into()), None);
+        let secret = resolve_open_secret(&store, Some("id1"), &transient)
+            .unwrap()
+            .expect("some secret");
+        assert_eq!(secret.password(), Some("typed"));
+        // ssh still falls back to the keychain.
+        assert_eq!(secret.ssh(), Some("stored-ssh"));
+
+        // No id and no transient → nothing applies (SQLite / passwordless).
+        assert!(resolve_open_secret(&store, None, &no_secrets())
+            .unwrap()
+            .is_none());
     }
 }

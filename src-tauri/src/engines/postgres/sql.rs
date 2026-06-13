@@ -361,11 +361,8 @@ pub fn validate_column(
 /// anything unknown falls back to `prefer` (opportunistic — Postgres' own
 /// libpq default).
 ///
-/// Exposed (but not yet called by `connect_options`) for M12 Task 3, which
-/// threads the granular mode token through instead of the current `tls: bool`
-/// — see [`ssl_mode_from_bool`]. The `allow(dead_code)` reflects that pending
-/// seam; the unit test below exercises every branch.
-#[allow(dead_code)]
+/// M12 Task 3 wired this in: [`connect_options`] calls it with
+/// `params.tls_mode.as_token()`, replacing the M12-Task-1 `tls: bool` seam.
 pub fn ssl_mode_from_token(token: &str) -> PgSslMode {
     match token.trim().to_ascii_lowercase().as_str() {
         "disable" => PgSslMode::Disable,
@@ -378,37 +375,31 @@ pub fn ssl_mode_from_token(token: &str) -> PgSslMode {
     }
 }
 
-/// Map the current `ConnectionParams::Postgres.tls` boolean to a [`PgSslMode`].
-///
-/// The stored params carry only a boolean today (the connect modal collapses
-/// its TLS dropdown to `tls != "disable"`), so the granular mode is not yet
-/// available at this layer. `true` → `Prefer` (opportunistic TLS: use it when
-/// the server offers it, but do not fail against a non-TLS server like the M12
-/// test container); `false` → `Disable`. M12 Task 3 threads the real mode token
-/// through and calls [`ssl_mode_from_token`] instead — documented in the module
-/// note and in the connector.
-pub fn ssl_mode_from_bool(tls: bool) -> PgSslMode {
-    if tls {
-        PgSslMode::Prefer
-    } else {
-        PgSslMode::Disable
-    }
-}
-
 /// Build [`PgConnectOptions`] from [`ConnectionParams::Postgres`] plus the
 /// transient password. Returns an `Invalid` error if the params are not
 /// Postgres (defensive — the registry routes by engine, so this should not
 /// happen).
+///
+/// `host_override` / `port_override` point the driver at a local SSH-tunnel
+/// endpoint (M12 Task 3) instead of the real `host`/`port` when the connection
+/// is tunnelled; pass `None` for a direct connection. TLS still applies to the
+/// tunnelled connection — for `disable`/`prefer` that is exactly right; for
+/// `verify-full` the certificate hostname would be checked against the real
+/// `host` (sqlx connects to 127.0.0.1 but the SNI/host is set from `host`), a
+/// documented caveat (see the module note / connector).
 pub fn connect_options(
     params: &ConnectionParams,
     password: Option<&str>,
+    host_override: Option<&str>,
+    port_override: Option<u16>,
 ) -> Result<PgConnectOptions, AppError> {
     let ConnectionParams::Postgres {
         host,
         port,
         database,
         user,
-        tls,
+        tls_mode,
+        ssh: _,
     } = params
     else {
         return Err(AppError::Invalid(format!(
@@ -418,11 +409,11 @@ pub fn connect_options(
     };
 
     let mut options = PgConnectOptions::new()
-        .host(host)
-        .port(*port)
+        .host(host_override.unwrap_or(host))
+        .port(port_override.unwrap_or(*port))
         .database(database)
         .username(user)
-        .ssl_mode(ssl_mode_from_bool(*tls))
+        .ssl_mode(ssl_mode_from_token(tls_mode.as_token()))
         // Identify ByteTable in pg_stat_activity for the DBA looking at who is
         // connected — a small courtesy, not behaviorally significant.
         .application_name("ByteTable");
@@ -531,26 +522,23 @@ mod tests {
     }
 
     #[test]
-    fn ssl_mode_bool_mapping() {
-        assert!(matches!(ssl_mode_from_bool(true), PgSslMode::Prefer));
-        assert!(matches!(ssl_mode_from_bool(false), PgSslMode::Disable));
-    }
-
-    #[test]
     fn connect_options_built_from_postgres_params() {
         let params = ConnectionParams::Postgres {
             host: "db.internal".into(),
             port: 5433,
             database: "shop".into(),
             user: "app".into(),
-            tls: false,
+            tls_mode: crate::shared::engine::TlsMode::Disable,
+            ssh: None,
         };
         // Just assert it builds (the fields are private on PgConnectOptions);
         // a non-Postgres params is rejected.
-        assert!(connect_options(&params, Some("secret")).is_ok());
+        assert!(connect_options(&params, Some("secret"), None, None).is_ok());
+        // The tunnel override path builds too.
+        assert!(connect_options(&params, Some("secret"), Some("127.0.0.1"), Some(60000)).is_ok());
         let wrong = ConnectionParams::Sqlite { path: "/x".into() };
         assert!(matches!(
-            connect_options(&wrong, None),
+            connect_options(&wrong, None, None, None),
             Err(AppError::Invalid(_))
         ));
     }

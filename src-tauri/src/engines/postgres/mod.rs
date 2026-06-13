@@ -25,10 +25,11 @@
 //!   It arrives as a transient [`crate::shared::engine::ConnectSecret`] (never
 //!   persisted, not part of `ConnectionParams`) threaded from the command layer
 //!   — see that type's docs for the Task 3 keychain seam. TLS mode is mapped
-//!   from the params' `tls: bool` via [`sql::ssl_mode_from_bool`] (`true` →
-//!   `Prefer`, `false` → `Disable`); a future task threads the granular
-//!   `disable`/`prefer`/`require`/`verify-ca`/`verify-full` token through
-//!   [`sql::ssl_mode_from_token`].
+//!   from the params' granular `tls_mode`
+//!   (`disable`/`prefer`/`require`/`verify-ca`/`verify-full`) via
+//!   [`sql::ssl_mode_from_token`] (M12 Task 3, replacing the Task-1 `tls: bool`).
+//!   A tunnelled connection (params `ssh`) opens an SSH local-forward first
+//!   (see [`crate::engines::ssh`]) and points the driver at the local endpoint.
 //! - **Row counts** (`list_tables`): `pg_class.reltuples`, the planner's
 //!   *estimate* (refreshed by ANALYZE/autovacuum), not an exact `COUNT(*)`.
 //!   This is the standard cheap Postgres answer — an exact count would scan
@@ -78,6 +79,8 @@ use crate::shared::engine::{
 };
 use crate::shared::error::AppError;
 
+use crate::engines::ssh::{db_password, open_tunnel_if_needed, tunnel_override};
+
 use sql::{
     is_numeric_type, order_by_clause, qualified, quote_ident, validate_column, where_clause,
     BoundValue, WhereClause, JS_MAX_SAFE_INTEGER,
@@ -110,8 +113,12 @@ impl Connector for PostgresConnector {
         params: &ConnectionParams,
         secret: Option<&ConnectSecret>,
     ) -> Result<EngineInfo, AppError> {
-        // A single short-lived connection: connect, read the version, drop it.
-        let options = sql::connect_options(params, secret.map(ConnectSecret::expose))?;
+        // When the connection is tunnelled, open the bastion forward first and
+        // point the driver at the local endpoint. The tunnel lives only for
+        // this scope — test never keeps a connection open.
+        let tunnel = open_tunnel_if_needed(params, secret).await?;
+        let (host_over, port_over) = tunnel_override(&tunnel);
+        let options = sql::connect_options(params, db_password(secret), host_over, port_over)?;
         let mut conn = <sqlx::PgConnection as sqlx::Connection>::connect_with(&options)
             .await
             .map_err(map_connect_error)?;
@@ -125,7 +132,11 @@ impl Connector for PostgresConnector {
         params: &ConnectionParams,
         secret: Option<&ConnectSecret>,
     ) -> Result<Box<dyn EngineConnection>, AppError> {
-        let options = sql::connect_options(params, secret.map(ConnectSecret::expose))?;
+        // Open the SSH tunnel (if any) before the pool, and keep its handle on
+        // the connection so the tunnel lives exactly as long as the pool does.
+        let tunnel = open_tunnel_if_needed(params, secret).await?;
+        let (host_over, port_over) = tunnel_override(&tunnel);
+        let options = sql::connect_options(params, db_password(secret), host_over, port_over)?;
         let pool = PgPoolOptions::new()
             .max_connections(POOL_MAX_CONNECTIONS)
             .connect_with(options)
@@ -136,14 +147,21 @@ impl Connector for PostgresConnector {
         let mut conn = pool.acquire().await.map_err(map_query_error)?;
         let info = read_engine_info(conn.as_mut()).await?;
         drop(conn);
-        Ok(Box::new(PostgresEngineConnection { pool, info }))
+        Ok(Box::new(PostgresEngineConnection {
+            pool,
+            info,
+            _tunnel: tunnel,
+        }))
     }
 }
 
-/// One open PostgreSQL connection (backed by a small pool).
+/// One open PostgreSQL connection (backed by a small pool). When the
+/// connection is reached through an SSH bastion, the live tunnel is held here
+/// so it lives exactly as long as the pool (dropped together on `close`).
 pub struct PostgresEngineConnection {
     pool: PgPool,
     info: EngineInfo,
+    _tunnel: Option<crate::engines::ssh::SshTunnel>,
 }
 
 #[async_trait]
@@ -1764,9 +1782,10 @@ mod integration {
             port,
             database: db.to_string(),
             user,
-            tls: false,
+            tls_mode: crate::shared::engine::TlsMode::Disable,
+            ssh: None,
         };
-        (params, password.map(ConnectSecret))
+        (params, password.map(ConnectSecret::new))
     }
 
     /// The gate: `Some((params, secret))` when the env var is set, else `None`
@@ -1785,7 +1804,7 @@ mod integration {
     /// from the adapter under test.
     async fn raw_pool(params: &ConnectionParams, secret: &Option<ConnectSecret>) -> PgPool {
         let options =
-            sql::connect_options(params, secret.as_ref().map(ConnectSecret::expose)).unwrap();
+            sql::connect_options(params, db_password(secret.as_ref()), None, None).unwrap();
         PgPoolOptions::new()
             .max_connections(2)
             .connect_with(options)
@@ -1881,7 +1900,7 @@ mod integration {
         );
         // A wrong password is a §5 database error, not a panic.
         let bad = PostgresConnector
-            .test_with_secret(&params, Some(&ConnectSecret("definitely-wrong".into())))
+            .test_with_secret(&params, Some(&ConnectSecret::new("definitely-wrong")))
             .await;
         assert!(matches!(bad, Err(AppError::Database(_))));
     }
@@ -2423,5 +2442,198 @@ mod integration {
 
         conn.close().await.expect("close");
         drop_fixture(&pool, schema, other).await;
+    }
+
+    // -- SSH tunnel (M12 Task 3) ---------------------------------------------
+    //
+    // Gated behind `BYTETABLE_TEST_SSH=1`. Connects the Postgres adapter to
+    // `bt-pg:5432` THROUGH the live bastion at localhost:2222 (user `tunnel`),
+    // using both private-key auth (`/tmp/bt_ssh_key`, overridable via
+    // `BYTETABLE_TEST_SSH_KEY`) and password auth ("bytetable"), then runs a
+    // real query. Also asserts a bad key path / password is a clean §5 error.
+    //
+    // Run: `BYTETABLE_TEST_SSH=1 cargo test --lib
+    //   engines::postgres::integration::ssh -- --test-threads=1`
+
+    /// `(bastion_host, bastion_port, user, target_host, target_port, db, db_user,
+    /// db_password, key_path, ssh_password)` for the SSH test, or `None` (skip).
+    #[allow(clippy::type_complexity)]
+    fn ssh_gate(
+        test: &str,
+    ) -> Option<(
+        String,
+        u16,
+        String,
+        String,
+        u16,
+        String,
+        String,
+        String,
+        String,
+        String,
+    )> {
+        if std::env::var("BYTETABLE_TEST_SSH").as_deref() != Ok("1") {
+            eprintln!("SKIP {test}: BYTETABLE_TEST_SSH=1 not set (live bastion required)");
+            return None;
+        }
+        let key_path =
+            std::env::var("BYTETABLE_TEST_SSH_KEY").unwrap_or_else(|_| "/tmp/bt_ssh_key".into());
+        Some((
+            std::env::var("BYTETABLE_TEST_SSH_HOST").unwrap_or_else(|_| "localhost".into()),
+            std::env::var("BYTETABLE_TEST_SSH_PORT")
+                .ok()
+                .and_then(|p| p.parse().ok())
+                .unwrap_or(2222),
+            std::env::var("BYTETABLE_TEST_SSH_USER").unwrap_or_else(|_| "tunnel".into()),
+            std::env::var("BYTETABLE_TEST_SSH_TARGET_HOST").unwrap_or_else(|_| "bt-pg".into()),
+            5432,
+            "bytetable".into(),
+            "postgres".into(),
+            "bytetable".into(),
+            key_path,
+            "bytetable".into(),
+        ))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn tunnelled_params(
+        bastion_host: &str,
+        bastion_port: u16,
+        user: &str,
+        target_host: &str,
+        target_port: u16,
+        db: &str,
+        db_user: &str,
+        auth: crate::shared::engine::SshAuth,
+    ) -> ConnectionParams {
+        ConnectionParams::Postgres {
+            host: target_host.to_string(),
+            port: target_port,
+            database: db.to_string(),
+            user: db_user.to_string(),
+            tls_mode: crate::shared::engine::TlsMode::Disable,
+            ssh: Some(crate::shared::engine::SshConfig {
+                host: bastion_host.to_string(),
+                port: bastion_port,
+                user: user.to_string(),
+                auth,
+            }),
+        }
+    }
+
+    #[tokio::test]
+    async fn ssh_tunnel_key_auth_connects_and_queries() {
+        let Some((bh, bp, user, th, tp, db, du, dpw, key, _sshpw)) =
+            ssh_gate("ssh_tunnel_key_auth_connects_and_queries")
+        else {
+            return;
+        };
+        let params = tunnelled_params(
+            &bh,
+            bp,
+            &user,
+            &th,
+            tp,
+            &db,
+            &du,
+            crate::shared::engine::SshAuth::Key { key_path: key },
+        );
+        // No SSH passphrase on the test key; db password is the only secret.
+        let secret = ConnectSecret::new(dpw);
+
+        // test_with_secret opens the tunnel, connects, reads the version, drops.
+        let info = PostgresConnector
+            .test_with_secret(&params, Some(&secret))
+            .await
+            .expect("tunnelled test connection (key auth)");
+        assert!(info.server_version.starts_with("PostgreSQL "));
+
+        // open_with_secret keeps the tunnel alive on the connection; query it.
+        let conn = PostgresConnector
+            .open_with_secret(&params, Some(&secret))
+            .await
+            .expect("tunnelled open (key auth)");
+        let result = conn
+            .run_query("SELECT 1 AS one", QueryOptions::default())
+            .await
+            .expect("query through tunnel");
+        assert_eq!(result.rows.len(), 1);
+        assert_eq!(result.rows[0][0], serde_json::json!(1));
+        // list_schemas works through the tunnel too.
+        let schemas = conn.list_schemas().await.expect("schemas through tunnel");
+        assert!(schemas.iter().any(|s| s.name == "public"));
+        conn.close().await.expect("close tunnelled conn");
+    }
+
+    #[tokio::test]
+    async fn ssh_tunnel_password_auth_connects() {
+        let Some((bh, bp, user, th, tp, db, du, dpw, _key, sshpw)) =
+            ssh_gate("ssh_tunnel_password_auth_connects")
+        else {
+            return;
+        };
+        let params = tunnelled_params(
+            &bh,
+            bp,
+            &user,
+            &th,
+            tp,
+            &db,
+            &du,
+            crate::shared::engine::SshAuth::Password,
+        );
+        // Both secrets: the bastion password (ssh) and the db password.
+        let secret = ConnectSecret::with_ssh(Some(dpw), Some(sshpw));
+        let info = PostgresConnector
+            .test_with_secret(&params, Some(&secret))
+            .await
+            .expect("tunnelled test connection (password auth)");
+        assert!(info.server_version.starts_with("PostgreSQL "));
+    }
+
+    #[tokio::test]
+    async fn ssh_tunnel_bad_auth_is_a_clean_error() {
+        let Some((bh, bp, user, th, tp, db, du, dpw, _key, _sshpw)) =
+            ssh_gate("ssh_tunnel_bad_auth_is_a_clean_error")
+        else {
+            return;
+        };
+        // Wrong SSH password → a §5 Database error from the tunnel, not a panic.
+        let params = tunnelled_params(
+            &bh,
+            bp,
+            &user,
+            &th,
+            tp,
+            &db,
+            &du,
+            crate::shared::engine::SshAuth::Password,
+        );
+        let secret = ConnectSecret::with_ssh(Some(dpw), Some("definitely-wrong".into()));
+        let err = PostgresConnector
+            .test_with_secret(&params, Some(&secret))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Database(_)), "got {err:?}");
+        assert!(err.to_string().contains("SSH authentication"), "got {err}");
+
+        // A bad key PATH is also a clean §5 error (key auth, missing file).
+        let bad_key = tunnelled_params(
+            &bh,
+            bp,
+            &user,
+            &th,
+            tp,
+            &db,
+            &du,
+            crate::shared::engine::SshAuth::Key {
+                key_path: "/tmp/bytetable-nonexistent-key".into(),
+            },
+        );
+        let err = PostgresConnector
+            .test_with_secret(&bad_key, Some(&ConnectSecret::new("bytetable")))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Database(_)), "got {err:?}");
     }
 }

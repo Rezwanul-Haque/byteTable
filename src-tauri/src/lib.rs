@@ -14,6 +14,7 @@ use engines::sqlite::SqliteConnector;
 use features::connections::application::{ConnectionManager, ConnectorRegistry};
 use features::connections::commands::ConnectionsState;
 use features::connections::infrastructure::JsonFileConnectionRepository;
+use features::connections::secrets::KeyringSecretStore;
 use features::preferences::commands::PreferencesState;
 use features::preferences::infrastructure::JsonFilePreferencesStore;
 use features::saved_queries::commands::SavedQueriesState;
@@ -79,6 +80,10 @@ pub fn run() {
                 Box::new(repository),
                 registry,
                 ConnectionManager::new(),
+                // Server-connection secrets (db password, SSH passphrase/
+                // password) live in the OS keychain, never in the JSON
+                // registry (M12 Task 3).
+                Box::new(KeyringSecretStore::new()),
             ));
 
             // Saved-queries slice: a single global JSON store shared across

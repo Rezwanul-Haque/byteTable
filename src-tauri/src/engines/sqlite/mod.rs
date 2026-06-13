@@ -1885,7 +1885,8 @@ mod tests {
                 port: 5432,
                 database: "d".into(),
                 user: "u".into(),
-                tls: false,
+                tls_mode: crate::shared::engine::TlsMode::Disable,
+                ssh: None,
             })
             .await
             .unwrap_err();

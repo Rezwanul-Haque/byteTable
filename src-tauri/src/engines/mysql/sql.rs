@@ -368,12 +368,9 @@ pub fn validate_column(
 /// anything unknown falls back to `prefer` (opportunistic — MySQL's own client
 /// default). MySQL has no `allow` mode (a Postgres-ism); it maps to `prefer`.
 ///
-/// Exposed (but not yet called by `connect_options`) for M12 Task 3, which
-/// threads the granular mode token through instead of the current `tls: bool`
-/// — see [`ssl_mode_from_bool`]. The `allow(dead_code)` reflects that pending
-/// seam; the unit test below exercises every branch. Mirrors the Postgres
-/// adapter's `ssl_mode_from_token`.
-#[allow(dead_code)]
+/// M12 Task 3 wired this in: [`connect_options`] calls it with
+/// `params.tls_mode.as_token()`, replacing the M12-Task-2 `tls: bool` seam.
+/// Mirrors the Postgres adapter's `ssl_mode_from_token`.
 pub fn ssl_mode_from_token(token: &str) -> MySqlSslMode {
     match token.trim().to_ascii_lowercase().as_str() {
         "disable" => MySqlSslMode::Disabled,
@@ -386,36 +383,27 @@ pub fn ssl_mode_from_token(token: &str) -> MySqlSslMode {
     }
 }
 
-/// Map the current `ConnectionParams::Mysql.tls` boolean to a [`MySqlSslMode`].
-///
-/// The stored params carry only a boolean today (the connect modal collapses
-/// its TLS dropdown to `tls != "disable"`), so the granular mode is not yet
-/// available at this layer. `true` → `Preferred` (opportunistic TLS: use it
-/// when the server offers it, but do not fail against a non-TLS server like the
-/// M12 test container); `false` → `Disabled`. M12 Task 3 threads the real mode
-/// token through and calls [`ssl_mode_from_token`] instead — documented in the
-/// module note and in the connector. Mirrors the Postgres `ssl_mode_from_bool`.
-pub fn ssl_mode_from_bool(tls: bool) -> MySqlSslMode {
-    if tls {
-        MySqlSslMode::Preferred
-    } else {
-        MySqlSslMode::Disabled
-    }
-}
-
 /// Build [`MySqlConnectOptions`] from [`ConnectionParams::Mysql`] plus the
 /// transient password. Returns an `Invalid` error if the params are not MySQL
 /// (defensive — the registry routes by engine, so this should not happen).
+///
+/// `host_override` / `port_override` point the driver at a local SSH-tunnel
+/// endpoint (M12 Task 3) instead of the real `host`/`port`; pass `None` for a
+/// direct connection. See the Postgres `connect_options` for the TLS-through-
+/// tunnel caveat.
 pub fn connect_options(
     params: &ConnectionParams,
     password: Option<&str>,
+    host_override: Option<&str>,
+    port_override: Option<u16>,
 ) -> Result<MySqlConnectOptions, AppError> {
     let ConnectionParams::Mysql {
         host,
         port,
         database,
         user,
-        tls,
+        tls_mode,
+        ssh: _,
     } = params
     else {
         return Err(AppError::Invalid(format!(
@@ -425,11 +413,11 @@ pub fn connect_options(
     };
 
     let mut options = MySqlConnectOptions::new()
-        .host(host)
-        .port(*port)
+        .host(host_override.unwrap_or(host))
+        .port(port_override.unwrap_or(*port))
         .database(database)
         .username(user)
-        .ssl_mode(ssl_mode_from_bool(*tls));
+        .ssl_mode(ssl_mode_from_token(tls_mode.as_token()));
     if let Some(password) = password {
         options = options.password(password);
     }
@@ -563,26 +551,22 @@ mod tests {
     }
 
     #[test]
-    fn ssl_mode_bool_mapping() {
-        assert!(matches!(ssl_mode_from_bool(true), MySqlSslMode::Preferred));
-        assert!(matches!(ssl_mode_from_bool(false), MySqlSslMode::Disabled));
-    }
-
-    #[test]
     fn connect_options_built_from_mysql_params() {
         let params = ConnectionParams::Mysql {
             host: "db.internal".into(),
             port: 3307,
             database: "shop".into(),
             user: "app".into(),
-            tls: false,
+            tls_mode: crate::shared::engine::TlsMode::Disable,
+            ssh: None,
         };
         // Just assert it builds (the fields are private on MySqlConnectOptions);
         // a non-MySQL params is rejected.
-        assert!(connect_options(&params, Some("secret")).is_ok());
+        assert!(connect_options(&params, Some("secret"), None, None).is_ok());
+        assert!(connect_options(&params, Some("secret"), Some("127.0.0.1"), Some(60000)).is_ok());
         let wrong = ConnectionParams::Sqlite { path: "/x".into() };
         assert!(matches!(
-            connect_options(&wrong, None),
+            connect_options(&wrong, None, None, None),
             Err(AppError::Invalid(_))
         ));
         // Postgres params are also rejected by the MySQL connector.
@@ -591,10 +575,11 @@ mod tests {
             port: 5432,
             database: "d".into(),
             user: "u".into(),
-            tls: false,
+            tls_mode: crate::shared::engine::TlsMode::Disable,
+            ssh: None,
         };
         assert!(matches!(
-            connect_options(&pg, None),
+            connect_options(&pg, None, None, None),
             Err(AppError::Invalid(_))
         ));
     }

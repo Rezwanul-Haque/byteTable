@@ -23,11 +23,12 @@
 //!
 //! # Documented choices (M12, Task 2)
 //!
-//! - **Password / TLS**: identical seam to the Postgres adapter — the password
-//!   arrives as a transient [`ConnectSecret`] (never persisted), and the TLS
-//!   bool maps via [`sql::ssl_mode_from_bool`] (`true` → `Preferred`, `false` →
-//!   `Disabled`). Task 3 threads the granular token through
-//!   [`sql::ssl_mode_from_token`]. engine_info version comes from
+//! - **Password / TLS / SSH**: identical seam to the Postgres adapter — the
+//!   password arrives as a transient [`ConnectSecret`] (never persisted), and
+//!   the granular `tls_mode` maps via [`sql::ssl_mode_from_token`] (M12 Task 3,
+//!   replacing the Task-2 `tls: bool`). A tunnelled connection (params `ssh`)
+//!   opens an SSH local-forward first (see [`crate::engines::ssh`]) and points
+//!   the driver at the local endpoint. engine_info version comes from
 //!   `SELECT VERSION()`.
 //! - **Row counts** (`list_tables`): `information_schema.tables.table_rows`,
 //!   which for InnoDB is an *estimate* (the storage engine's cached cardinality,
@@ -83,6 +84,8 @@ use crate::shared::engine::{
 };
 use crate::shared::error::AppError;
 
+use crate::engines::ssh::{db_password, open_tunnel_if_needed, tunnel_override};
+
 use sql::{
     is_numeric_type, order_by_clause, qualified, quote_ident, validate_column, where_clause,
     BoundValue, WhereClause, JS_MAX_SAFE_INTEGER,
@@ -118,8 +121,10 @@ impl Connector for MysqlConnector {
         params: &ConnectionParams,
         secret: Option<&ConnectSecret>,
     ) -> Result<EngineInfo, AppError> {
-        // A single short-lived connection: connect, read the version, drop it.
-        let options = sql::connect_options(params, secret.map(ConnectSecret::expose))?;
+        // Open the SSH tunnel (if any) first; it lives only for this scope.
+        let tunnel = open_tunnel_if_needed(params, secret).await?;
+        let (host_over, port_over) = tunnel_override(&tunnel);
+        let options = sql::connect_options(params, db_password(secret), host_over, port_over)?;
         let mut conn = <sqlx::MySqlConnection as sqlx::Connection>::connect_with(&options)
             .await
             .map_err(map_connect_error)?;
@@ -133,7 +138,11 @@ impl Connector for MysqlConnector {
         params: &ConnectionParams,
         secret: Option<&ConnectSecret>,
     ) -> Result<Box<dyn EngineConnection>, AppError> {
-        let options = sql::connect_options(params, secret.map(ConnectSecret::expose))?;
+        // Open the SSH tunnel (if any) before the pool, and keep its handle on
+        // the connection so the tunnel lives exactly as long as the pool does.
+        let tunnel = open_tunnel_if_needed(params, secret).await?;
+        let (host_over, port_over) = tunnel_override(&tunnel);
+        let options = sql::connect_options(params, db_password(secret), host_over, port_over)?;
         let pool = MySqlPoolOptions::new()
             .max_connections(POOL_MAX_CONNECTIONS)
             .connect_with(options)
@@ -144,14 +153,21 @@ impl Connector for MysqlConnector {
         let mut conn = pool.acquire().await.map_err(map_query_error)?;
         let info = read_engine_info(conn.as_mut()).await?;
         drop(conn);
-        Ok(Box::new(MysqlEngineConnection { pool, info }))
+        Ok(Box::new(MysqlEngineConnection {
+            pool,
+            info,
+            _tunnel: tunnel,
+        }))
     }
 }
 
-/// One open MySQL connection (backed by a small pool).
+/// One open MySQL connection (backed by a small pool). When the connection is
+/// reached through an SSH bastion, the live tunnel is held here so it lives
+/// exactly as long as the pool (dropped together on `close`).
 pub struct MysqlEngineConnection {
     pool: MySqlPool,
     info: EngineInfo,
+    _tunnel: Option<crate::engines::ssh::SshTunnel>,
 }
 
 #[async_trait]
@@ -1911,9 +1927,10 @@ mod integration {
             port,
             database: db.to_string(),
             user,
-            tls: false,
+            tls_mode: crate::shared::engine::TlsMode::Disable,
+            ssh: None,
         };
-        (params, password.map(ConnectSecret))
+        (params, password.map(ConnectSecret::new))
     }
 
     /// The gate: `Some((params, secret))` when the env var is set, else `None`
@@ -1933,7 +1950,7 @@ mod integration {
     /// and use their own databases via fully-qualified names.
     async fn raw_pool(params: &ConnectionParams, secret: &Option<ConnectSecret>) -> MySqlPool {
         let options =
-            sql::connect_options(params, secret.as_ref().map(ConnectSecret::expose)).unwrap();
+            sql::connect_options(params, db_password(secret.as_ref()), None, None).unwrap();
         MySqlPoolOptions::new()
             .max_connections(2)
             .connect_with(options)
@@ -2026,7 +2043,7 @@ mod integration {
         );
         // A wrong password is a §5 database error, not a panic.
         let bad = MysqlConnector
-            .test_with_secret(&params, Some(&ConnectSecret("definitely-wrong".into())))
+            .test_with_secret(&params, Some(&ConnectSecret::new("definitely-wrong")))
             .await;
         assert!(matches!(bad, Err(AppError::Database(_))));
     }

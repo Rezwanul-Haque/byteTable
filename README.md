@@ -1,8 +1,8 @@
 # ByteTable
 
-A free, open-source, **local-first desktop database client** — a TablePlus / Beekeeper-class
-tool with first-class Linux support, no pro tier, and no subscription. One window, four engines:
-**SQLite · MySQL · PostgreSQL · Redis**.
+A free, open-source, **local-first desktop database client** — a TablePlus / BeekeeperStudio
+tool with first-class Linux, MacOS, Windows support, no pro tier, and no subscription. One window, four engines:
+**SQLite · MySQL · PostgreSQL · Redis**. Many more engines to come.
 
 Your credentials never leave your machine: all database I/O happens in the Rust core, secrets live
 in the OS keychain, and the renderer only ever sees opaque connection ids.
@@ -47,7 +47,7 @@ each with its own tab set and sidebar state.
 ## Run it (dev mode)
 
 ```sh
-git clone <repo-url> && cd bytetable
+git clone git@github.com:Rezwanul-Haque/byteTable.git && cd byteTable
 pnpm install        # or: make install
 make dev            # or: pnpm tauri dev
 ```

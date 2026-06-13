@@ -29,6 +29,10 @@ function toWorkspaceConnection(saved: SavedConnection, opened: OpenResult): Work
     handleId: opened.handleId,
     info: opened.engineInfo,
     schemas: opened.schemas,
+    // M13: the engine family the App routes on, plus the Redis overview (only
+    // populated for kind === "kv"). Both ride straight off the open result.
+    kind: opened.kind,
+    keyspace: opened.keyspace,
   };
 }
 

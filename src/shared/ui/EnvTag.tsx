@@ -5,19 +5,14 @@
 
 import type { Env } from "../types";
 
+import { ENV_COLOR } from "./envColors";
 import "./EnvTag.css";
 
 // Re-exported for back-compat — Env now lives in src/shared/types.ts.
 export type { Env };
 
-const ENV_COLORS: Record<Env, string> = {
-  local: "#56b6c2",
-  staging: "#e2b340",
-  production: "#e06c75",
-};
-
 export function EnvTag({ env }: { env: Env }) {
-  const color = ENV_COLORS[env];
+  const color = ENV_COLOR[env];
   return (
     <span
       className="env-tag"

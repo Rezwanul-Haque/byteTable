@@ -7,7 +7,13 @@
 // nothing in connections imports workspaces back.
 
 import type { AlterOp, Combinator, FilterOp, QueryResult } from "../../shared/api/engine";
-import type { EngineInfo, SavedConnection, SchemaInfo } from "../connections/api";
+import type {
+  ConnectionKind,
+  EngineInfo,
+  KeyspaceOverview,
+  SavedConnection,
+  SchemaInfo,
+} from "../connections/api";
 
 /**
  * One editing row in the filter builder (M5). The UI-side mirror of a wire
@@ -72,6 +78,20 @@ export interface WorkspaceConnection {
   info: EngineInfo;
   /** Schemas visible on the connection (SQLite: `main` + attached). */
   schemas: SchemaInfo[];
+  /**
+   * The engine *family* (M13): `"sql"` → the relational workspace, `"kv"` →
+   * the Redis workspace. The App routes on this; it is the connections-slice
+   * discriminant carried straight off `OpenResult.kind` so the host never has
+   * to sniff the engine string. SQL connections set `"sql"`.
+   */
+  kind: ConnectionKind;
+  /**
+   * The initial Redis keyspace overview (server identity + per-db key counts),
+   * present only for `kind === "kv"` connections — the Redis workspace renders
+   * its db switcher + dashboard header off it immediately, without a round trip.
+   * Absent for SQL connections.
+   */
+  keyspace?: KeyspaceOverview;
 }
 
 /**

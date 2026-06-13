@@ -45,13 +45,19 @@ import { useConnectionsStore } from "../state";
 import "./NewConnectionModal.css";
 
 // Picker cards in the prototype's ENGINE_META order (labels match the badge).
+// Redis (M13, REDIS_SPEC §1) is the 4th choice — the picker grid is 4-up.
 const ENGINES: { engine: Engine; label: string }[] = [
   { engine: "sqlite", label: "SQLite" },
   { engine: "mysql", label: "MySQL" },
   { engine: "postgres", label: "PostgreSQL" },
+  { engine: "redis", label: "Redis" },
 ];
 
-const DEFAULT_PORTS: Partial<Record<Engine, string>> = { postgres: "5432", mysql: "3306" };
+const DEFAULT_PORTS: Partial<Record<Engine, string>> = {
+  postgres: "5432",
+  mysql: "3306",
+  redis: "6379",
+};
 
 const TLS_MODES: TlsMode[] = ["disable", "prefer", "require", "verify-full"];
 type SshAuthMethod = SshAuth["method"];
@@ -211,6 +217,9 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
   };
 
   const isFileBased = engine === "sqlite";
+  // Redis (REDIS_SPEC §1): a numbered logical db (0–15) in place of a relational
+  // database name, and an optional ACL user (the Redis `default` user otherwise).
+  const isRedis = engine === "redis";
 
   const pickEngine = (next: Engine) => dispatch({ type: "engine", engine: next });
 
@@ -526,20 +535,20 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
               />
             </label>
             <label>
-              Database
+              {isRedis ? "DB index" : "Database"}
               <input
                 value={db}
                 onChange={(e) => field({ db: e.target.value })}
-                placeholder={engine === "postgres" ? "postgres" : "mysql"}
+                placeholder={isRedis ? "0" : engine === "postgres" ? "postgres" : "mysql"}
                 spellCheck={false}
               />
             </label>
             <label>
-              User
+              {isRedis ? "ACL user" : "User"}
               <input
                 value={user}
                 onChange={(e) => field({ user: e.target.value })}
-                placeholder={engine === "postgres" ? "postgres" : "root"}
+                placeholder={isRedis ? "default" : engine === "postgres" ? "postgres" : "root"}
                 spellCheck={false}
               />
             </label>

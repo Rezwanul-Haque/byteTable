@@ -101,3 +101,14 @@
   color: var(--accent);
   background: var(--bg2);
 }
+
+/* Pushes the console toggle to the right edge of the strip (M14). */
+.tabbar-spacer {
+  flex: 1;
+}
+
+/* Console toggle button — right-aligned, vertically centred in the 37px strip. */
+.tabbar-console-btn {
+  align-self: center;
+  margin-right: 6px;
+}

@@ -1,0 +1,154 @@
+/* SQL console body (M14) — the editor/CLI look (mono, --bg0, accent prompt),
+   consistent with SqlEditorTab/CliTab. A scrolling output log over a sticky
+   prompt+input line. */
+
+.sqlc {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sqlc-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 14px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  background: var(--bg0);
+  cursor: text;
+}
+
+.sqlc-hint {
+  color: var(--text-faint);
+  font-style: italic;
+  margin-bottom: 6px;
+}
+
+.sqlc-hint-em {
+  color: var(--text-dim);
+  font-style: normal;
+}
+
+.sqlc-entry {
+  margin-bottom: 10px;
+}
+
+.sqlc-echo {
+  display: flex;
+  gap: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.sqlc-echo-prompt {
+  color: var(--accent);
+  flex: none;
+}
+
+.sqlc-echo-cmd {
+  color: var(--text);
+}
+
+.sqlc-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+  color: var(--accent);
+}
+
+.sqlc-status .dim {
+  color: var(--text-faint);
+}
+
+.sqlc-status-err {
+  color: var(--error);
+  align-items: flex-start;
+}
+
+.sqlc-status-err .msym {
+  margin-top: 1px;
+}
+
+/* "↗ open in tab" affordance on a successful row result. */
+.sqlc-send {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  background: var(--bg1);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  transition:
+    color 0.1s,
+    border-color 0.1s;
+}
+
+.sqlc-send:hover {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 50%, transparent);
+}
+
+.sqlc-norows {
+  margin-top: 4px;
+  color: var(--text-faint);
+}
+
+/* Compact inline result grid — capped height with its own scroll. .sqlc-grid
+   is a flex column so the inner .datagrid-wrap (flex: 1) fills it; max-height
+   caps a large result while small ones stay tight. */
+.sqlc-grid {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  max-height: 240px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.sqlc-inputline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.sqlc-prompt {
+  color: var(--accent);
+  flex: none;
+}
+
+.sqlc-input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--text);
+  caret-color: var(--accent);
+}
+
+.sqlc-input:disabled {
+  opacity: 0.6;
+}
+
+/* Running spinner (Material Symbols progress_activity), 700ms linear like the
+   connect spinner (§1.6). */
+.sqlc-spin {
+  color: var(--text-faint);
+  animation: sqlc-spin 700ms linear infinite;
+}
+
+@keyframes sqlc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

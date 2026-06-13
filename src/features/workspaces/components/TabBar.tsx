@@ -11,6 +11,7 @@
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 
 import { Icon } from "../../../shared/ui/Icon";
+import { IconBtn } from "../../../shared/ui/IconBtn";
 import type { Tab } from "../types";
 import "./TabBar.css";
 
@@ -48,6 +49,10 @@ interface TabBarProps {
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
   onNewSql: () => void;
+  /** True when the docked console panel is open (M14) — lights the toggle. */
+  consoleOpen: boolean;
+  /** Toggle the docked console panel (M14). */
+  onToggleConsole: () => void;
 }
 
 export function TabBar({
@@ -57,6 +62,8 @@ export function TabBar({
   onSelect,
   onClose,
   onNewSql,
+  consoleOpen,
+  onToggleConsole,
 }: TabBarProps) {
   return (
     <div className="tabbar" role="tablist" aria-label="Open tabs">
@@ -118,6 +125,16 @@ export function TabBar({
       <button type="button" className="tab-new" onClick={onNewSql} title="New SQL query (⌘T)">
         <Icon name="add" size={16} />
       </button>
+      <div className="tabbar-spacer" />
+      <IconBtn
+        className="tabbar-console-btn"
+        icon="terminal"
+        size={16}
+        active={consoleOpen}
+        title="Toggle console (Ctrl+`)"
+        aria-label="Toggle console (Ctrl+`)"
+        onClick={onToggleConsole}
+      />
     </div>
   );
 }

@@ -1,7 +1,7 @@
 # ByteTable
 
 A free, open-source, **local-first desktop database client** — a TablePlus / BeekeeperStudio
-tool with first-class Linux, MacOS, Windows support, no pro tier, and no subscription. One window, four engines:
+like tool with first-class Linux, MacOS, Windows support, no pro tier, and no subscription. One window, Multiple workspace, four engines:
 **SQLite · MySQL · PostgreSQL · Redis**. Many more engines to come.
 
 ![ByteTable](docs/byteTable.png)

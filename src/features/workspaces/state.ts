@@ -11,7 +11,7 @@ import { create } from "zustand";
 import type { SchemaInfo } from "../connections/api";
 import { connectionClose } from "../connections/api";
 import { useIntrospectionStore } from "../introspection/state";
-import type { QueryResult } from "../../shared/api/engine";
+import type { AlterOp, QueryResult } from "../../shared/api/engine";
 import type {
   SqlHistoryEntry,
   Tab,
@@ -144,6 +144,16 @@ interface WorkspacesFeatureState {
    * workspace switches. No-op when there is no active workspace.
    */
   setTabFilter: (tabId: string, filter: TabFilterState) => void;
+
+  // --- Structure editor (M8) ---------------------------------------------
+  /**
+   * Replace a table tab's pending structure-edit batch on the active
+   * workspace's `ui` (creating the `structureEdits` map lazily). An empty
+   * array clears the entry. Persists per tab so a draft survives the
+   * Data↔Structure mode switch and workspace switches. No-op when there is no
+   * active workspace.
+   */
+  setTabStructureOps: (tabId: string, ops: AlterOp[]) => void;
 
   // --- SQL editor (M6) ---------------------------------------------------
   // All operate on the active workspace's `ui` tabs and are no-ops when the
@@ -394,7 +404,13 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
           filters = { ...filters };
           delete filters[tabId];
         }
-        return { tabs: next, activeTabId, filters };
+        // Likewise its pending structure edits (M8).
+        let structureEdits = ui.structureEdits;
+        if (structureEdits && tabId in structureEdits) {
+          structureEdits = { ...structureEdits };
+          delete structureEdits[tabId];
+        }
+        return { tabs: next, activeTabId, filters, structureEdits };
       }),
     })),
 
@@ -419,6 +435,16 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
       workspaces: patchActiveUi(state, (ui) => ({
         filters: { ...(ui.filters ?? {}), [tabId]: filter },
       })),
+    })),
+
+  setTabStructureOps: (tabId, ops) =>
+    set((state) => ({
+      workspaces: patchActiveUi(state, (ui) => {
+        const next = { ...(ui.structureEdits ?? {}) };
+        if (ops.length === 0) delete next[tabId];
+        else next[tabId] = ops;
+        return { structureEdits: next };
+      }),
     })),
 
   setSqlText: (tabId, text) =>

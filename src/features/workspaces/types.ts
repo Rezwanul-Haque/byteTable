@@ -6,7 +6,7 @@
 // sanctioned direction (workspaces → connections public contract in api.ts);
 // nothing in connections imports workspaces back.
 
-import type { Combinator, FilterOp, QueryResult } from "../../shared/api/engine";
+import type { AlterOp, Combinator, FilterOp, QueryResult } from "../../shared/api/engine";
 import type { EngineInfo, SavedConnection, SchemaInfo } from "../connections/api";
 
 /**
@@ -184,6 +184,19 @@ export interface WorkspaceUiState {
    * harmless; `closeTab` prunes it.
    */
   filters?: Record<string, TabFilterState>;
+  /**
+   * Per-table-tab structure-editor draft (M8 §3.6 / §4), keyed by tab id: the
+   * accumulated {@link AlterOp} batch the pending-changes bar sends to
+   * `alterApply`. The "snapshot for discard" is the introspected
+   * {@link TableMeta} in the introspection cache (always re-derivable), so only
+   * the ops live here — discard just clears this entry. The working column set
+   * the structure view displays is derived on render from the introspected
+   * columns + this batch (see `applyOpsToColumns`). Lives here (not local
+   * component state) so a draft survives the Data↔Structure mode switch (which
+   * unmounts the view) and workspace switches. Sparse — only tabs with edits.
+   * `closeTab` prunes it.
+   */
+  structureEdits?: Record<string, AlterOp[]>;
 }
 
 /** An open workspace — one per live connection the user has opened. */

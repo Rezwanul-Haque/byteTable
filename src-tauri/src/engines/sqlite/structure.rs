@@ -486,8 +486,10 @@ fn apply_with_rebuild(
     // SQLite's documented procedure: foreign_keys must be OFF for the rebuild,
     // and it cannot be toggled inside a transaction. Read the current setting,
     // turn it off, do the rebuild in a transaction, then restore it and run
-    // foreign_key_check. `legacy_alter_table` keeps the RENAME from rewriting
-    // references in other objects' SQL.
+    // foreign_key_check. The RENAME can't rewrite references in other objects'
+    // SQL here: the temp table has a unique private name nothing else points
+    // at, and the original is dropped before the RENAME — so no reference
+    // rewriting is triggered and `legacy_alter_table` is unnecessary.
     let fk_on: bool = conn
         .query_row("PRAGMA foreign_keys", [], |row| row.get::<_, i64>(0))
         .map(|v| v != 0)

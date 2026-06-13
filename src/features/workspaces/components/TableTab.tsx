@@ -39,12 +39,8 @@ type TableTabModel = Extract<Tab, { kind: "table" }>;
 // --- Bug 2: pager page sizes (prototype `TableDataTab`) -------------------
 /** Default rows per page (matches the prototype's `useState(300)`). */
 const DEFAULT_PAGE_SIZE = 300;
-/** Selectable page sizes; "All" maps to the backend ceiling below. */
+/** Selectable page sizes (no "All" — explicit paging only). */
 const PAGE_SIZE_OPTIONS = [50, 100, 300, 1000] as const;
-/** The backend's per-page ceiling (`MAX_PAGE_ROWS` in every engine adapter).
- *  "All" fetches this many rows; rows beyond it aren't shown (the backend
- *  clamps any larger limit to this anyway). */
-const ALL_PAGE_SIZE = 10000;
 
 export function TableTab({
   tab,
@@ -464,10 +460,9 @@ export function TableTab({
               <select
                 className="pager-size"
                 aria-labelledby={"pager-label-" + tab.id}
-                value={pageSize === ALL_PAGE_SIZE ? "all" : String(pageSize)}
+                value={String(pageSize)}
                 onChange={(e) => {
-                  const v = e.target.value;
-                  setPageSize(v === "all" ? ALL_PAGE_SIZE : Number(v));
+                  setPageSize(Number(e.target.value));
                   setOffset(0);
                 }}
               >
@@ -476,7 +471,6 @@ export function TableTab({
                     {n}
                   </option>
                 ))}
-                <option value="all">All</option>
               </select>
               <span className="pager-range">{pagerRange}</span>
               <IconBtn

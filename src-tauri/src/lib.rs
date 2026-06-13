@@ -16,6 +16,8 @@ use features::preferences::commands::PreferencesState;
 use features::preferences::infrastructure::JsonFilePreferencesStore;
 use features::saved_queries::commands::SavedQueriesState;
 use features::saved_queries::infrastructure::JsonFileSavedQueryRepository;
+use features::schema_map::commands::SchemaMapState;
+use features::schema_map::infrastructure::JsonFileMapLayoutRepository;
 use shared::engine::Engine;
 
 /// Bring the main window back to the foreground (from hidden/minimized tray state).
@@ -49,9 +51,10 @@ pub fn run() {
         // in the OS default browser. Scoped to https URLs in
         // capabilities/default.json.
         .plugin(tauri_plugin_opener::init())
-        // Dialog plugin: native file pickers ("Open SQLite file…" on the
-        // connect screen). Only `dialog:allow-open` is granted in
-        // capabilities/default.json — no save/message dialogs yet.
+        // Dialog plugin: native file pickers — `dialog:allow-open` ("Open
+        // SQLite file…" on the connect screen) and `dialog:allow-save` (the
+        // M9 schema-map "Export diagram…" save dialog) are granted in
+        // capabilities/default.json.
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // Composition root: the only place concrete adapters are chosen.
@@ -77,6 +80,12 @@ pub fn run() {
             let saved_queries =
                 JsonFileSavedQueryRepository::new(config_dir.join("saved_queries.json"));
             app.manage(SavedQueriesState::new(Box::new(saved_queries)));
+
+            // Schema-map slice: per-(connectionId, schema) ER-diagram layouts
+            // in one local JSON store. The connectionId is the persisted
+            // SavedConnection id, so layouts survive restarts.
+            let map_layouts = JsonFileMapLayoutRepository::new(config_dir.join("map_layouts.json"));
+            app.manage(SchemaMapState::new(Box::new(map_layouts)));
 
             // System tray: persistent ByteTable icon. Left-click toggles the
             // window; right-click opens the menu (Show / Quit). The app keeps
@@ -138,6 +147,9 @@ pub fn run() {
             features::saved_queries::commands::saved_query_list,
             features::saved_queries::commands::saved_query_save,
             features::saved_queries::commands::saved_query_delete,
+            features::schema_map::commands::map_layout_get,
+            features::schema_map::commands::map_layout_save,
+            features::schema_map::commands::diagram_export,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

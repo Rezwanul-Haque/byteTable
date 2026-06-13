@@ -28,6 +28,9 @@ async-trait = "0.1.89"
 uuid = { version = "1.20.0", features = ["v4", "serde"] }
 tokio = { version = "1.52.3", features = ["sync", "rt"] }
 rusqlite = { version = "0.37", features = ["bundled", "column_decltype"] }
+# Used by the schema_map slice to decode base64 PNG export bytes received over
+# IPC (base64 is ~1.33× the raw size vs. ~10× for a JSON number array).
+base64 = "0.22"
 
 [dev-dependencies]
 tempfile = "3"

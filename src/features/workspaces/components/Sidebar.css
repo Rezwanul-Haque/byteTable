@@ -389,3 +389,27 @@
   background: var(--bg3);
   color: var(--text);
 }
+
+/* Destructive context-menu item + section label + separator (M15 Task 2),
+   ported byte-exact from ByteTable.html. Shared by the sidebar context menu
+   and the table-actions menu. */
+.ctx-item.danger {
+  color: #e06c75;
+}
+.ctx-item.danger:hover {
+  background: #e06c7518;
+  color: #e06c75;
+}
+.ctx-menu-label {
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-faint);
+  padding: 6px 10px 3px;
+}
+.ctx-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 6px;
+}

@@ -1,0 +1,101 @@
+/* Truncate confirm modal (M15 Task 2) — ported byte-exact from ByteTable.html
+   `.truncate-*` + `.btn-danger`. The `.btn-danger` rules live here because this
+   is the destructive button's only use site so far. */
+
+.btn-danger {
+  background: #e06c75;
+  color: #fff;
+}
+.btn-danger:hover {
+  filter: brightness(1.08);
+}
+.btn-danger.disabled,
+.btn-danger:disabled {
+  opacity: 0.45;
+  cursor: default;
+  filter: none;
+}
+
+/* truncate modal */
+.truncate-modal {
+  width: 460px;
+}
+.truncate-body {
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.55;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.truncate-body b {
+  color: var(--text);
+}
+.truncate-body code {
+  font-family: var(--mono);
+  color: var(--text);
+}
+.truncate-sql {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: #e06c75;
+  background: #e06c750f;
+  border: 1px solid #e06c7530;
+  border-radius: 8px;
+  padding: 9px 12px;
+  margin: 0;
+}
+.truncate-prod {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.truncate-prod-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-start;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+  border-radius: 99px;
+  border: 1px solid;
+}
+.truncate-prod label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.truncate-prod label b {
+  color: var(--text);
+  font-family: var(--mono);
+}
+.truncate-prod input {
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  outline: none;
+  color: var(--text);
+}
+.truncate-prod input:focus {
+  border-color: #e06c75;
+}
+
+/* React-port addition: an inline error row when the backend refuses the
+   truncate (e.g. FK-parent table) — the modal stays open. */
+.truncate-error {
+  font-size: 12px;
+  color: #e06c75;
+  background: #e06c750f;
+  border: 1px solid #e06c7530;
+  border-radius: 8px;
+  padding: 8px 12px;
+}

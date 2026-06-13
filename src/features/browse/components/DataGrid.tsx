@@ -174,6 +174,13 @@ interface DataGridProps {
   onFilterError?: (message: string) => void;
   /** Called when a filtered fetch's first page succeeds (clears panel error). */
   onFilterOk?: () => void;
+  /**
+   * Columns hidden by the table tab's Columns popover (M15 Task 2). Display-
+   * only: the grid still FETCHES every column (the row cache stays aligned to
+   * the full `columns`), it just skips rendering the hidden ones in the header
+   * + body and drops their tracks from the grid template.
+   */
+  hiddenColumns?: ReadonlySet<string>;
 }
 
 export function DataGrid({
@@ -185,6 +192,7 @@ export function DataGrid({
   filterKey,
   onFilterError,
   onFilterOk,
+  hiddenColumns,
 }: DataGridProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -686,10 +694,24 @@ export function DataGrid({
   }, []);
   useEffect(() => () => clearPendingHop(), [clearPendingHop]);
 
-  // Grid column template: row-number gutter + one min/max track per column.
+  // Visibility predicate for the Columns popover (M15 Task 2). Hiding is
+  // display-only — `columns` (and therefore the row cache's `ci` indexing)
+  // stays the full set; we only skip rendering + drop the track.
+  const isHidden = useCallback(
+    (name: string) => hiddenColumns?.has(name) ?? false,
+    [hiddenColumns],
+  );
+
+  // Grid column template: row-number gutter + one min/max track per VISIBLE
+  // column (hidden columns drop their track so the layout closes up).
   const gridCols = useMemo(
-    () => "38px " + columns.map(() => "minmax(90px, max-content)").join(" "),
-    [columns],
+    () =>
+      "38px " +
+      columns
+        .filter((c) => !isHidden(c.name))
+        .map(() => "minmax(90px, max-content)")
+        .join(" "),
+    [columns, isHidden],
   );
 
   if (initialError) {
@@ -748,6 +770,7 @@ export function DataGrid({
           <div className="dg-header dg-row">
             <div className="dg-rownum-h">#</div>
             {columns.map((c) => {
+              if (isHidden(c.name)) return null;
               const meta = colMeta.get(c.name);
               const active = sort?.column === c.name;
               return (
@@ -814,6 +837,7 @@ export function DataGrid({
                 >
                   <div className="dg-rownum">{rowIndex + 1}</div>
                   {columns.map((c, ci) => {
+                    if (isHidden(c.name)) return null;
                     if (!row) {
                       // Page not yet loaded — shimmer skeleton.
                       return (

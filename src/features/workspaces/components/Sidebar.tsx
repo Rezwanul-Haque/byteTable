@@ -31,8 +31,11 @@ import {
   tunnelTitle,
   type SchemaInfo,
 } from "../../connections/api";
+import { TruncateModal } from "../../export/components/TruncateModal";
+import { runExport, type ExportKind } from "../../export/exportFlow";
 import { tablesKey, columnsKey, useIntrospectionStore } from "../../introspection/state";
 import { useWorkspacesStore } from "../state";
+import { useTabMetaStore } from "../tabMeta";
 import type { Workspace } from "../types";
 import "./Sidebar.css";
 
@@ -51,10 +54,10 @@ interface CtxMenu {
   table: string;
 }
 
-// Approximate rendered size of the 4-item context menu, for clamping it
-// inside the viewport (min-width 190 + padding; 4 rows ≈ 130px).
+// Approximate rendered size of the context menu, for clamping it inside the
+// viewport (min-width 190 + padding). M15 grew it to 7 items + a separator.
 const CTX_MENU_W = 200;
-const CTX_MENU_H = 140;
+const CTX_MENU_H = 280;
 
 /**
  * Roving-focus keyboard nav shared by the schema popover and the context
@@ -124,6 +127,8 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
   const [schemaOpen, setSchemaOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  // M15 Task 2: which table the truncate modal targets (null when closed).
+  const [truncateTarget, setTruncateTarget] = useState<string | null>(null);
 
   // Focus bookkeeping for the popover/menu (Rail pattern): focus moves into
   // the menu on open and back to its opener on close.
@@ -273,6 +278,11 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   const openStructure = (table: string) => openTableTab(schemaName, table, "structure");
   const openMap = () => openMapTab(schemaName);
 
+  // M15 Task 2: the shared export flow (text → save dialog → write → toast),
+  // reused by the table context menu + the schema-row download button.
+  const doExport = (kind: ExportKind, table?: string) =>
+    void runExport(kind, { handleId, schema: schemaName, table }, toast);
+
   const onRowKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>, table: string) => {
     // Keydowns on the nested expand chevron bubble up here — they belong to
     // the chevron (its native click), not the row.
@@ -371,6 +381,11 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
           ) : null}
         </div>
         <IconBtn icon="hub" title="Schema map (ER diagram)" onClick={openMap} />
+        <IconBtn
+          icon="download"
+          title={"Export schema “" + schemaName + "” as .sql"}
+          onClick={() => doExport("schemaSql")}
+        />
         <IconBtn
           icon="sync"
           title="Refresh schema"
@@ -557,7 +572,64 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
           >
             <Icon name="hub" size={15} /> Show in schema map
           </button>
+          <div className="ctx-sep" />
+          <button
+            type="button"
+            className="ctx-item"
+            role="menuitem"
+            onClick={() => {
+              doExport("tableCsv", ctxMenu.table);
+              closeCtxMenu(true);
+            }}
+          >
+            <Icon name="table_view" size={15} /> Export as CSV
+          </button>
+          <button
+            type="button"
+            className="ctx-item"
+            role="menuitem"
+            onClick={() => {
+              doExport("tableSql", ctxMenu.table);
+              closeCtxMenu(true);
+            }}
+          >
+            <Icon name="code" size={15} /> Export as SQL
+          </button>
+          <div className="ctx-sep" />
+          <button
+            type="button"
+            className="ctx-item danger"
+            role="menuitem"
+            onClick={() => {
+              const t = ctxMenu.table;
+              closeCtxMenu(false);
+              setTruncateTarget(t);
+            }}
+          >
+            <Icon name="delete_sweep" size={15} /> Truncate table…
+          </button>
         </div>
+      ) : null}
+
+      {/* Truncate confirm (M15 Task 2): env-aware. Refreshes sidebar counts
+          itself; onDone re-fetches any open data grid for this table. */}
+      {truncateTarget ? (
+        <TruncateModal
+          handleId={handleId}
+          schemaName={schemaName}
+          table={truncateTarget}
+          env={workspace.saved.env}
+          onClose={() => setTruncateTarget(null)}
+          onDone={() => {
+            // If a data tab for this schema+table is open, bump its grid.
+            const target = truncateTarget;
+            for (const t of tabs) {
+              if (t.kind === "table" && t.schema === schemaName && t.table === target) {
+                useTabMetaStore.getState().requestRefetch(t.id);
+              }
+            }
+          }}
+        />
       ) : null}
     </aside>
   );

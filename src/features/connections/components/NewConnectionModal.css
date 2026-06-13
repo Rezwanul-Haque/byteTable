@@ -8,8 +8,9 @@
 
 .engine-picker {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
+  /* 4-up since M13 added Redis as the 4th engine (REDIS_SPEC §1). */
+  grid-template-columns: repeat(4, 1fr);
+  gap: 7px;
 }
 
 .engine-choice {

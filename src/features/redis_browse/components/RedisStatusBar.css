@@ -1,0 +1,42 @@
+/*
+ * Redis status bar — the `.statusbar` chrome ported byte-identical from
+ * ByteTable.html, scoped + re-declared in the Redis slice so the Redis bundle
+ * is self-contained (REDIS_SPEC §11). The prototype's "mock engine" tag is
+ * intentionally dropped (REDIS_SPEC §9).
+ */
+
+.redis-statusbar {
+  grid-area: status;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg1);
+  border-top: 1px solid var(--border);
+  padding: 0 12px;
+  font-size: 11px;
+  color: var(--text-dim);
+  user-select: none;
+}
+
+.redis-statusbar .status-strong {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.redis-statusbar .status-dim {
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+
+.redis-statusbar .status-tunnel {
+  display: inline-flex;
+  align-items: center;
+}
+
+.redis-statusbar .ws-chip {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  flex: none;
+}

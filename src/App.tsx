@@ -9,6 +9,7 @@ import { ConnectScreen } from "./features/workspaces/components/ConnectScreen";
 import { DonateModal } from "./features/workspaces/components/DonateModal";
 import { Rail } from "./features/workspaces/components/Rail";
 import { WorkspaceShell } from "./features/workspaces/components/WorkspaceShell";
+import { RedisWorkspace } from "./features/redis_browse/components/RedisWorkspace";
 import { selectShowConnect, useWorkspacesStore } from "./features/workspaces/state";
 import "./App.css";
 
@@ -63,7 +64,16 @@ export function App() {
             // open popovers) per workspace; the structural state (tabs,
             // active tab, schema, expanded rows) lives on workspace.ui and
             // survives switches.
-            <WorkspaceShell key={activeWorkspace.id} workspace={activeWorkspace} />
+            //
+            // M13 (REDIS_SPEC §11): route on the engine family. A key-value
+            // connection renders the Redis workspace (a sibling shell); every
+            // relational engine renders the SQL workspace. Neither imports the
+            // other — only the App, the shared host, knows both.
+            activeWorkspace.kind === "kv" ? (
+              <RedisWorkspace key={activeWorkspace.id} workspace={activeWorkspace} />
+            ) : (
+              <WorkspaceShell key={activeWorkspace.id} workspace={activeWorkspace} />
+            )
           ) : (
             <ConnectScreen />
           )}

@@ -10,6 +10,7 @@ use tauri::{AppHandle, Manager, WindowEvent};
 
 use engines::mysql::MysqlConnector;
 use engines::postgres::PostgresConnector;
+use engines::redis::RedisConnector;
 use engines::sqlite::SqliteConnector;
 use features::connections::application::{ConnectionManager, ConnectorRegistry};
 use features::connections::commands::ConnectionsState;
@@ -76,6 +77,10 @@ pub fn run() {
             registry.register(Engine::Sqlite, Arc::new(SqliteConnector));
             registry.register(Engine::Postgres, Arc::new(PostgresConnector));
             registry.register(Engine::Mysql, Arc::new(MysqlConnector));
+            // Redis (M13): a key-value engine. Its connector returns an
+            // `OpenConnection::Kv`, kept apart from the SQL connections by the
+            // manager's `get_sql` / `get_kv` kind seam.
+            registry.register(Engine::Redis, Arc::new(RedisConnector));
             app.manage(ConnectionsState::new(
                 Box::new(repository),
                 registry,
@@ -164,6 +169,25 @@ pub fn run() {
             features::schema_map::commands::map_layout_get,
             features::schema_map::commands::map_layout_save,
             features::schema_map::commands::diagram_export,
+            features::keyvalue::commands::kv_server_info,
+            features::keyvalue::commands::kv_server_stats,
+            features::keyvalue::commands::kv_keyspace,
+            features::keyvalue::commands::kv_scan,
+            features::keyvalue::commands::kv_get_key,
+            features::keyvalue::commands::kv_set_string,
+            features::keyvalue::commands::kv_hash_set,
+            features::keyvalue::commands::kv_hash_del,
+            features::keyvalue::commands::kv_list_set,
+            features::keyvalue::commands::kv_set_add,
+            features::keyvalue::commands::kv_set_remove,
+            features::keyvalue::commands::kv_zset_add,
+            features::keyvalue::commands::kv_zset_remove,
+            features::keyvalue::commands::kv_delete_key,
+            features::keyvalue::commands::kv_rename_key,
+            features::keyvalue::commands::kv_expire,
+            features::keyvalue::commands::kv_persist,
+            features::keyvalue::commands::kv_create_key,
+            features::keyvalue::commands::kv_command,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

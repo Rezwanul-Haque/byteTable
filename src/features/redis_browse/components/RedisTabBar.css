@@ -1,0 +1,107 @@
+/*
+ * Redis tab bar — the `.tabbar` / `.tab` chrome ported byte-identical from
+ * ByteTable.html. Re-declared in the Redis slice (rather than imported from
+ * the workspaces slice) so the Redis bundle is self-contained — the Redis
+ * workspace never mounts the SQL tab bar (REDIS_SPEC §11).
+ */
+
+.redis-main .tabbar {
+  display: flex;
+  align-items: stretch;
+  background: var(--bg1);
+  border-bottom: 1px solid var(--border);
+  height: 37px;
+  flex: none;
+}
+
+.redis-main .tabbar-tabs {
+  display: flex;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.redis-main .tabbar-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.redis-main .tab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 9px 0 12px;
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+  border-right: 1px solid var(--border);
+  position: relative;
+  white-space: nowrap;
+  transition: background 0.1s;
+  max-width: 200px;
+}
+
+.redis-main .tab:hover {
+  background: var(--bg2);
+}
+
+.redis-main .tab.active {
+  background: var(--bg0);
+  color: var(--text);
+}
+
+.redis-main .tab.active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 0 0 2px 2px;
+}
+
+.redis-main .tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.redis-main .tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 4px;
+  color: var(--text-faint);
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.redis-main .tab:hover .tab-close,
+.redis-main .tab.active .tab-close {
+  opacity: 1;
+}
+
+.redis-main .tab-close:hover {
+  background: var(--bg3);
+  color: var(--text);
+}
+
+.redis-main .tab-new {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  color: var(--text-faint);
+  transition:
+    color 0.1s,
+    background 0.1s;
+  flex: none;
+}
+
+.redis-main .tab-new:hover {
+  color: var(--accent);
+  background: var(--bg2);
+}

@@ -108,8 +108,8 @@ use crate::shared::engine::{
     AlterResult, ColumnInfo, ColumnMeta, ColumnStats, ColumnStatsRequest, Condition,
     ConnectionParams, Connector, Engine, EngineConnection, EngineInfo, FetchRowsRequest, FilterOp,
     FilterSpec, FilterValue, FkRef, ForeignKeyInfo, FreqEntry, InboundFkInfo, IndexInfo,
-    PkPredicate, QueryOptions, QueryResult, RowLookup, RowLookupRequest, RowsPage, SchemaInfo,
-    SortSpec, TableInfo, TableMeta, UpdateCellRequest, UpdateResult,
+    OpenConnection, PkPredicate, QueryOptions, QueryResult, RowLookup, RowLookupRequest, RowsPage,
+    SchemaInfo, SortSpec, TableInfo, TableMeta, UpdateCellRequest, UpdateResult,
 };
 use crate::shared::error::AppError;
 
@@ -138,10 +138,10 @@ impl Connector for SqliteConnector {
         run_blocking(move || open_validated(&path).map(|_| sqlite_engine_info())).await
     }
 
-    async fn open(&self, params: &ConnectionParams) -> Result<Box<dyn EngineConnection>, AppError> {
+    async fn open(&self, params: &ConnectionParams) -> Result<OpenConnection, AppError> {
         let path = sqlite_path(params)?;
         let connection = run_blocking(move || open_validated(&path)).await?;
-        Ok(Box::new(SqliteEngineConnection {
+        Ok(OpenConnection::sql(SqliteEngineConnection {
             conn: Arc::new(Mutex::new(connection)),
             info: sqlite_engine_info(),
         }))
@@ -1822,13 +1822,15 @@ mod tests {
         }
     }
 
-    async fn open_fixture(dir: &tempfile::TempDir) -> Box<dyn EngineConnection> {
+    async fn open_fixture(dir: &tempfile::TempDir) -> std::sync::Arc<dyn EngineConnection> {
         let path = dir.path().join("fixture.db");
         create_fixture_db(&path);
         SqliteConnector
             .open(&params_for(&path))
             .await
             .expect("open fixture db")
+            .into_sql()
+            .expect("sql connection")
     }
 
     #[tokio::test]
@@ -1957,7 +1959,7 @@ mod tests {
     /// Open a db exercising every `table_meta` facet: explicit + implicit
     /// fk targets, composite pk, NOT NULL, untyped columns, a non-"id" pk
     /// on the implicitly referenced table.
-    async fn open_meta_fixture(dir: &tempfile::TempDir) -> Box<dyn EngineConnection> {
+    async fn open_meta_fixture(dir: &tempfile::TempDir) -> std::sync::Arc<dyn EngineConnection> {
         let path = dir.path().join("meta.db");
         {
             let conn = Connection::open(&path).expect("create db");
@@ -1985,6 +1987,8 @@ mod tests {
             .open(&params_for(&path))
             .await
             .expect("open meta fixture")
+            .into_sql()
+            .expect("sql connection")
     }
 
     #[tokio::test]
@@ -2116,7 +2120,9 @@ mod tests {
     /// referenced by two children (one composite fk with `ON DELETE`), single
     /// and composite secondary indexes (unique and non-unique), and the
     /// implicit primary-key index.
-    async fn open_structure_fixture(dir: &tempfile::TempDir) -> Box<dyn EngineConnection> {
+    async fn open_structure_fixture(
+        dir: &tempfile::TempDir,
+    ) -> std::sync::Arc<dyn EngineConnection> {
         let path = dir.path().join("structure.db");
         {
             let conn = Connection::open(&path).expect("create db");
@@ -2158,6 +2164,8 @@ mod tests {
             .open(&params_for(&path))
             .await
             .expect("open structure fixture")
+            .into_sql()
+            .expect("sql connection")
     }
 
     #[tokio::test]
@@ -2298,7 +2306,9 @@ mod tests {
         let conn = SqliteConnector
             .open(&params_for(&path))
             .await
-            .expect("open db");
+            .expect("open db")
+            .into_sql()
+            .expect("sql connection");
         let parent = conn
             .table_meta("main", "parent")
             .await
@@ -2369,7 +2379,9 @@ mod tests {
         let conn = SqliteConnector
             .open(&params_for(&path))
             .await
-            .expect("open db");
+            .expect("open db")
+            .into_sql()
+            .expect("sql connection");
         let meta = conn.table_meta("main", "wide").await.expect("wide meta");
         assert_eq!(meta.columns.len(), 64, "all 64 columns are returned");
         let names: Vec<&str> = meta.columns.iter().map(|c| c.name.as_str()).collect();
@@ -2505,7 +2517,9 @@ mod tests {
         let conn = SqliteConnector
             .open(&params_for(&path))
             .await
-            .expect("open db");
+            .expect("open db")
+            .into_sql()
+            .expect("sql connection");
         let result = conn
             .run_query(
                 "SELECT val FROM nums ORDER BY rowid",
@@ -2821,7 +2835,9 @@ mod tests {
         let conn = SqliteConnector
             .open(&params_for(&path))
             .await
-            .expect("open db");
+            .expect("open db")
+            .into_sql()
+            .expect("sql connection");
         let page = conn
             .fetch_rows(FetchRowsRequest {
                 sort: Some(SortSpec {
@@ -2854,7 +2870,9 @@ mod tests {
     ///   2, "Banana Bread", 5, 2.25, NULL
     ///   3, "50% Off Mug",  0, 9.99, "sale"
     ///   4, "Cherry Tart",  5, 4.00, "fresh"
-    async fn open_products_fixture(dir: &tempfile::TempDir) -> Box<dyn EngineConnection> {
+    async fn open_products_fixture(
+        dir: &tempfile::TempDir,
+    ) -> std::sync::Arc<dyn EngineConnection> {
         let path = dir.path().join("products.db");
         {
             let conn = Connection::open(&path).expect("create db");
@@ -2878,6 +2896,8 @@ mod tests {
             .open(&params_for(&path))
             .await
             .expect("open products fixture")
+            .into_sql()
+            .expect("sql connection")
     }
 
     /// Build a `Some(filter)` request over `products`, sorted by id ascending
@@ -3360,7 +3380,7 @@ mod tests {
     ///   1, "Ada",   "UK"
     ///   2, "Linus", "FI"
     ///   3, "Grace", "US"
-    async fn open_fk_fixture(dir: &tempfile::TempDir) -> Box<dyn EngineConnection> {
+    async fn open_fk_fixture(dir: &tempfile::TempDir) -> std::sync::Arc<dyn EngineConnection> {
         let path = dir.path().join("fk.db");
         {
             let conn = Connection::open(&path).expect("create db");
@@ -3386,6 +3406,8 @@ mod tests {
             .open(&params_for(&path))
             .await
             .expect("open fk fixture")
+            .into_sql()
+            .expect("sql connection")
     }
 
     fn lookup(table: &str, column: &str, value: serde_json::Value) -> RowLookupRequest {
@@ -3443,7 +3465,9 @@ mod tests {
         let conn = SqliteConnector
             .open(&params_for(&path))
             .await
-            .expect("open db");
+            .expect("open db")
+            .into_sql()
+            .expect("sql connection");
         let found = conn
             .fetch_row_by_key(lookup("tags", "label", serde_json::json!("x")))
             .await
@@ -3621,7 +3645,9 @@ mod tests {
         let conn = SqliteConnector
             .open(&params_for(&path))
             .await
-            .expect("open db");
+            .expect("open db")
+            .into_sql()
+            .expect("sql connection");
         let stats = conn
             .column_stats(stats_req("t", "note", None))
             .await

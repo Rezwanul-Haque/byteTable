@@ -1,0 +1,408 @@
+/*
+ * Redis keyspace sidebar (REDIS_SPEC §4). The connection header, db switcher
+ * (schema-switcher styling), MATCH search, footer button, and section label
+ * reuse the SQL sidebar's recipe — but the Redis workspace never mounts the
+ * SQL sidebar, so the shared rules are re-declared here so the Redis bundle is
+ * self-contained (REDIS_SPEC §11: the slices do not import each other). The
+ * `.rtype-*` / `.rkey-*` / `.rns-*` / `.rdb-*` / `.match-label` rules are
+ * ported byte-for-byte from ByteTable.html (the Redis section).
+ */
+
+/* ---------- frame (shared recipe, re-declared) ---------- */
+.redis-sidebar {
+  grid-area: sidebar;
+  background: var(--bg1);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.redis-sidebar .sidebar-conn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 12px 10px;
+}
+
+.redis-sidebar .sidebar-conn-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.redis-sidebar .sidebar-conn-name {
+  font-weight: 600;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.redis-sidebar .sidebar-conn-detail {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 1px;
+}
+
+.redis-sidebar .tunnel-lock {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-right: 3px;
+}
+
+.redis-sidebar .env-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  flex: none;
+}
+
+.redis-sidebar .ws-color-bar {
+  width: 3px;
+  align-self: stretch;
+  border-radius: 2px;
+  flex: none;
+}
+
+/* ---------- db row (schema-switcher styling) ---------- */
+.redis-sidebar .schema-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 10px 8px;
+}
+
+.redis-sidebar .schema-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 9px;
+  font-size: 12px;
+  color: var(--text);
+  min-width: 0;
+  transition: border-color 0.12s;
+}
+
+.redis-sidebar .schema-btn:hover {
+  border-color: color-mix(in oklab, var(--accent) 50%, var(--border));
+}
+
+.redis-sidebar .schema-btn-name {
+  font-family: var(--mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rdb-keycount {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  margin-left: auto;
+  padding-right: 4px;
+}
+
+.redis-sidebar .schema-pop {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 40;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  padding: 5px;
+}
+
+.rdb-pop {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.redis-sidebar .schema-pop-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+  width: 100%;
+}
+
+.redis-sidebar .schema-pop-item:hover {
+  background: var(--bg3);
+  color: var(--text);
+}
+
+.redis-sidebar .schema-pop-item.active {
+  color: var(--accent);
+}
+
+.redis-sidebar .schema-pop-item span:nth-child(2) {
+  flex: 1;
+  text-align: left;
+}
+
+.redis-sidebar .schema-pop-count {
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+/* Empty databases are dimmed in the popover (REDIS_SPEC §4). */
+.schema-pop-item.empty {
+  opacity: 0.4;
+}
+
+/* Refresh IconBtn while re-scanning. */
+.redis-sidebar .sidebar-sync-spinning {
+  animation: spin 0.7s linear infinite;
+  color: var(--accent);
+}
+
+/* ---------- MATCH input ---------- */
+.redis-sidebar .sidebar-search {
+  margin: 0 10px 8px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 6px 0 9px;
+  transition: border-color 0.12s;
+}
+
+.redis-sidebar .sidebar-search:focus-within {
+  border-color: var(--accent);
+}
+
+.redis-sidebar .sidebar-search input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 7px 0;
+  min-width: 0;
+}
+
+.match-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  padding-left: 3px;
+}
+
+/* ---------- type filter chips ---------- */
+.rtype-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 0 10px 8px;
+}
+
+.rtype-chip {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 2px 9px;
+  cursor: pointer;
+  transition:
+    color 0.1s,
+    border-color 0.1s;
+}
+
+.rtype-chip:hover {
+  color: var(--text);
+}
+
+.rtype-chip.active {
+  background: color-mix(in oklab, var(--accent) 14%, var(--bg2));
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+}
+
+/* ---------- section label + tree/flat toggle ---------- */
+.redis-sidebar .sidebar-section-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 14px 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-faint);
+}
+
+.redis-sidebar .sidebar-count {
+  font-family: var(--mono);
+}
+
+.rview-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.rview-toggle:hover {
+  color: var(--accent);
+  background: var(--bg2);
+}
+
+/* ---------- key list ---------- */
+.rkey-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 6px 8px;
+}
+
+.rkey-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.1s;
+  user-select: none;
+}
+
+.rkey-item:hover {
+  background: var(--bg2);
+}
+
+.rkey-item.active {
+  background: color-mix(in oklab, var(--accent) 12%, var(--bg2));
+}
+
+.rkey-name {
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rkey-item.active .rkey-name {
+  color: var(--text);
+}
+
+.rkey-ttl {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  flex: none;
+}
+
+.rkey-ttl.live {
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+}
+
+/* ---------- namespace tree ---------- */
+.rns-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.rns-row:hover {
+  background: var(--bg2);
+}
+
+.rns-name {
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rns-count {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+
+.rtype-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-weight: 600;
+  flex: none;
+  letter-spacing: -0.02em;
+}
+
+/* ---------- states + footer ---------- */
+.redis-sidebar .sidebar-nomatch {
+  padding: 12px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.redis-sidebar .sidebar-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.redis-sidebar .sidebar-error {
+  padding: 12px;
+  font-size: 12px;
+  color: var(--error);
+}
+
+.rkey-loadmore {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 8px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.redis-sidebar .sidebar-footer {
+  padding: 10px;
+  border-top: 1px solid var(--border);
+}

@@ -9,10 +9,11 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 use crate::shared::engine::{
-    ConnectSecret, ConnectionParams, Connector, Engine, EngineConnection, EngineInfo, QueryOptions,
-    QueryResult, SchemaInfo, TableInfo,
+    ConnectSecret, ConnectionParams, Connector, Engine, EngineConnection, EngineInfo,
+    OpenConnection, QueryOptions, QueryResult, SchemaInfo, TableInfo,
 };
 use crate::shared::error::AppError;
+use crate::shared::keyvalue::KeyValueConnection;
 
 use super::domain::SavedConnection;
 use super::ports::ConnectionRepository;
@@ -60,14 +61,20 @@ impl ConnectorRegistry {
 #[serde(transparent)]
 pub struct ConnectionHandleId(pub String);
 
-/// Holds every open [`EngineConnection`], keyed by handle id.
+/// Holds every open connection, keyed by handle id.
 ///
-/// Connections are stored as `Arc` so operations clone the handle and drop
-/// the lock *before* awaiting driver work — one slow query never blocks
-/// opening or querying other connections.
+/// M13: a connection is now an [`OpenConnection`] — either a SQL
+/// [`EngineConnection`] or a key-value [`KeyValueConnection`]. The manager is
+/// kind-agnostic for storage and teardown; callers ask for the kind they need
+/// via [`Self::get_sql`] / [`Self::get_kv`], which return a §5 error on a kind
+/// mismatch so a SQL command can never reach a Redis connection or vice-versa.
+///
+/// Connections are stored as `Arc` (inside the [`OpenConnection`] arms) so
+/// operations clone the handle and drop the lock *before* awaiting driver work
+/// — one slow query never blocks opening or querying other connections.
 #[derive(Default)]
 pub struct ConnectionManager {
-    open: RwLock<HashMap<ConnectionHandleId, Arc<dyn EngineConnection>>>,
+    open: RwLock<HashMap<ConnectionHandleId, OpenConnection>>,
 }
 
 impl ConnectionManager {
@@ -75,33 +82,44 @@ impl ConnectionManager {
         Self::default()
     }
 
-    /// Store a freshly opened connection and mint its handle id.
-    pub async fn insert(&self, connection: Box<dyn EngineConnection>) -> ConnectionHandleId {
+    /// Store a freshly opened connection (of either kind) and mint its handle.
+    pub async fn insert(&self, connection: OpenConnection) -> ConnectionHandleId {
         let id = ConnectionHandleId(uuid::Uuid::new_v4().to_string());
-        self.open
-            .write()
-            .await
-            .insert(id.clone(), Arc::from(connection));
+        self.open.write().await.insert(id.clone(), connection);
         id
     }
 
-    /// The open connection behind a handle.
-    pub async fn get(
+    /// The SQL connection behind a handle. A handle that is open but holds a
+    /// key-value (Redis) connection is a §5 "not available for this engine"
+    /// error — SQL commands never reach a Redis connection.
+    pub async fn get_sql(
         &self,
         handle: &ConnectionHandleId,
     ) -> Result<Arc<dyn EngineConnection>, AppError> {
-        self.open.read().await.get(handle).cloned().ok_or_else(|| {
-            AppError::NotFound(format!(
-                "connection handle '{}' is not open (it may have been closed)",
-                handle.0
-            ))
-        })
+        match self.open.read().await.get(handle) {
+            Some(OpenConnection::Sql(conn)) => Ok(Arc::clone(conn)),
+            Some(OpenConnection::Kv(_)) => Err(kind_mismatch("SQL")),
+            None => Err(not_open(handle)),
+        }
+    }
+
+    /// The key-value connection behind a handle. A handle that is open but
+    /// holds a SQL connection is the symmetric §5 error.
+    pub async fn get_kv(
+        &self,
+        handle: &ConnectionHandleId,
+    ) -> Result<Arc<dyn KeyValueConnection>, AppError> {
+        match self.open.read().await.get(handle) {
+            Some(OpenConnection::Kv(conn)) => Ok(Arc::clone(conn)),
+            Some(OpenConnection::Sql(_)) => Err(kind_mismatch("key-value")),
+            None => Err(not_open(handle)),
+        }
     }
 
     /// Remove a handle, returning the connection for teardown — or `None`
     /// when the handle is unknown (already closed); see [`close_connection`]
     /// for why that is not an error.
-    pub async fn remove(&self, handle: &ConnectionHandleId) -> Option<Arc<dyn EngineConnection>> {
+    pub async fn remove(&self, handle: &ConnectionHandleId) -> Option<OpenConnection> {
         self.open.write().await.remove(handle)
     }
 
@@ -114,7 +132,14 @@ impl ConnectionManager {
     pub async fn close_all(&self) {
         let connections: Vec<_> = self.open.write().await.drain().collect();
         for (_, connection) in connections {
-            let _ = connection.close().await;
+            match connection {
+                OpenConnection::Sql(c) => {
+                    let _ = c.close().await;
+                }
+                OpenConnection::Kv(c) => {
+                    let _ = c.close().await;
+                }
+            }
         }
     }
 
@@ -122,6 +147,22 @@ impl ConnectionManager {
     pub async fn open_count(&self) -> usize {
         self.open.read().await.len()
     }
+}
+
+/// The §5 "handle not open" error (the connection was closed or never existed).
+fn not_open(handle: &ConnectionHandleId) -> AppError {
+    AppError::NotFound(format!(
+        "connection handle '{}' is not open (it may have been closed)",
+        handle.0
+    ))
+}
+
+/// The §5 kind-mismatch error: a `wanted`-kind command reached a connection of
+/// the other engine family (e.g. a SQL query against a Redis connection).
+fn kind_mismatch(wanted: &str) -> AppError {
+    AppError::Unsupported(format!(
+        "This operation is not available for this engine (it needs a {wanted} connection)."
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -267,12 +308,46 @@ pub enum OpenTarget {
 }
 
 /// Everything the renderer needs right after opening a connection.
+///
+/// M13: `kind` is the engine-family discriminator the renderer routes on
+/// (`"sql"` → the relational workspace, `"kv"` → the Redis workspace). The two
+/// kinds carry mutually-exclusive initial payloads:
+///
+/// - **SQL** (`kind: "sql"`) — `schemas` holds the initial schema list (as
+///   before M13); `keyspace` is `None`. The SQL open-result shape is unchanged
+///   except for the additive `kind`/`keyspace` fields, both of which a SQL
+///   renderer can ignore.
+/// - **key-value** (`kind: "kv"`) — `schemas` is empty (Redis has none) and
+///   `keyspace` carries the initial dashboard payload: server identity +
+///   per-db key counts, so the Redis workspace can render its header and DB
+///   popover without a second round-trip. Per-key reads and scans are fetched
+///   on demand via the `kv_*` commands.
+///
+/// Every field is always present on the wire; the kind that does not apply
+/// sends an empty list / `null`, so the type stays one flat shape.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenedConnection {
     pub handle_id: ConnectionHandleId,
     pub engine_info: EngineInfo,
+    /// The engine family — drives the renderer's workspace routing.
+    pub kind: crate::shared::engine::ConnectionKind,
+    /// Initial schema list for a SQL connection; empty for a key-value one.
     pub schemas: Vec<SchemaInfo>,
+    /// Initial keyspace payload for a key-value connection; `None` for SQL.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub keyspace: Option<KeyspaceOverview>,
+}
+
+/// The initial Redis payload returned alongside the open handle (M13): the
+/// dashboard header identity plus per-db key counts, so the Redis workspace
+/// renders immediately. Mirrors `KeyspaceOverview` in the renderer's
+/// `src/features/redis_browse/api.ts`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyspaceOverview {
+    pub server_info: crate::shared::keyvalue::KvServerInfo,
+    pub databases: Vec<crate::shared::keyvalue::KvDbInfo>,
 }
 
 /// Open a live connection, register it with the manager, and return the
@@ -311,12 +386,32 @@ pub async fn open_connection<R: ConnectionRepository + ?Sized, S: SecretStore + 
         .open_with_secret(&params, secret.as_ref())
         .await?;
     let engine_info = connection.engine_info();
-    let schemas = connection.list_schemas().await?;
+    let kind = connection.kind();
+
+    // Gather the kind-specific initial payload BEFORE handing the connection to
+    // the manager (we still own it here, no handle round-trip needed).
+    let (schemas, keyspace) = match &connection {
+        OpenConnection::Sql(conn) => (conn.list_schemas().await?, None),
+        OpenConnection::Kv(conn) => {
+            let server_info = conn.server_info().await?;
+            let databases = conn.keyspace().await?;
+            (
+                Vec::new(),
+                Some(KeyspaceOverview {
+                    server_info,
+                    databases,
+                }),
+            )
+        }
+    };
+
     let handle_id = manager.insert(connection).await;
     Ok(OpenedConnection {
         handle_id,
         engine_info,
+        kind,
         schemas,
+        keyspace,
     })
 }
 
@@ -356,26 +451,27 @@ pub async fn close_connection(
     handle: &ConnectionHandleId,
 ) -> Result<(), AppError> {
     match manager.remove(handle).await {
-        Some(connection) => connection.close().await,
+        Some(OpenConnection::Sql(connection)) => connection.close().await,
+        Some(OpenConnection::Kv(connection)) => connection.close().await,
         None => Ok(()),
     }
 }
 
-/// Schemas visible on an open connection.
+/// Schemas visible on an open connection (SQL only).
 pub async fn connection_schemas(
     manager: &ConnectionManager,
     handle: &ConnectionHandleId,
 ) -> Result<Vec<SchemaInfo>, AppError> {
-    manager.get(handle).await?.list_schemas().await
+    manager.get_sql(handle).await?.list_schemas().await
 }
 
-/// Tables in one schema of an open connection.
+/// Tables in one schema of an open connection (SQL only).
 pub async fn connection_tables(
     manager: &ConnectionManager,
     handle: &ConnectionHandleId,
     schema: &str,
 ) -> Result<Vec<TableInfo>, AppError> {
-    manager.get(handle).await?.list_tables(schema).await
+    manager.get_sql(handle).await?.list_tables(schema).await
 }
 
 /// Run SQL on an open connection. Lives here temporarily — M6 (SQL editor)
@@ -387,7 +483,7 @@ pub async fn run_query(
     sql: &str,
     options: QueryOptions,
 ) -> Result<QueryResult, AppError> {
-    manager.get(handle).await?.run_query(sql, options).await
+    manager.get_sql(handle).await?.run_query(sql, options).await
 }
 
 #[cfg(test)]
@@ -523,12 +619,9 @@ mod tests {
             })
         }
 
-        async fn open(
-            &self,
-            _params: &ConnectionParams,
-        ) -> Result<Box<dyn EngineConnection>, AppError> {
+        async fn open(&self, _params: &ConnectionParams) -> Result<OpenConnection, AppError> {
             self.opens.fetch_add(1, Ordering::SeqCst);
-            Ok(Box::new(FakeConnection {
+            Ok(OpenConnection::sql(FakeConnection {
                 closed: Arc::clone(&self.closed_flag),
             }))
         }
@@ -774,7 +867,7 @@ mod tests {
             (0..3).map(|_| Arc::new(AtomicBool::new(false))).collect();
         for flag in &flags {
             manager
-                .insert(Box::new(FakeConnection {
+                .insert(OpenConnection::sql(FakeConnection {
                     closed: Arc::clone(flag),
                 }))
                 .await;

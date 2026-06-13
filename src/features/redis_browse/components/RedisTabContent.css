@@ -1,0 +1,11 @@
+/* Redis tab content host. The `.tab-content` flex column is re-declared here
+   (the Redis workspace does not mount the SQL content area) so the dashboard /
+   key / CLI tab bodies fill the main column. */
+
+.redis-tab-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg0);
+}

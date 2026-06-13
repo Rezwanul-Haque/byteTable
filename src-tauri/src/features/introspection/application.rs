@@ -14,7 +14,11 @@ pub async fn get_table_meta(
     schema: &str,
     table: &str,
 ) -> Result<TableMeta, AppError> {
-    manager.get(handle).await?.table_meta(schema, table).await
+    manager
+        .get_sql(handle)
+        .await?
+        .table_meta(schema, table)
+        .await
 }
 
 #[cfg(test)]
@@ -94,7 +98,9 @@ mod tests {
     #[tokio::test]
     async fn delegates_to_the_connection_behind_the_handle() {
         let manager = ConnectionManager::new();
-        let handle = manager.insert(Box::new(FakeConnection)).await;
+        let handle = manager
+            .insert(crate::shared::engine::OpenConnection::sql(FakeConnection))
+            .await;
         let meta = get_table_meta(&manager, &handle, "main", "users")
             .await
             .expect("table meta");

@@ -20,6 +20,7 @@ const ENGINE_META = {
   sqlite: { label: "SQLite", short: "SQ" },
   mysql: { label: "MySQL", short: "My" },
   postgres: { label: "PostgreSQL", short: "Pg" },
+  redis: { label: "Redis", short: "Rd" },
 } as const;
 
 // Ported from rail.jsx wsInitials: two characters from the workspace name —

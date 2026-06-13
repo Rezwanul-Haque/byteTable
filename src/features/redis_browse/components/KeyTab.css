@@ -1,0 +1,265 @@
+/* Redis key tab — ported from ByteTable.html (.table-toolbar/.seg + the
+   .rstr* / .rinfo* / .rkey-* blocks) and REDIS_SPEC §6. The grids reuse the
+   shared DataGrid look (.datagrid-wrap / .dg-* from DataGrid.css) and the M11
+   inline-edit .cell-input / .cell-editing classes, so only the Redis-specific
+   chrome lives here. */
+
+.rkey-tab {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Toolbar — mirrors .table-toolbar (Value/Info seg, key chip, TTL, size). */
+.rkey-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+
+.rkey-toolbar-spacer {
+  flex: 1;
+}
+
+.rkey-tab-name {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 9px;
+}
+
+.rkey-ttl {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+}
+
+.rkey-ttl.live {
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+}
+
+.rkey-size {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+/* Loading / error / missing-key states. */
+.rkey-state {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 28px;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 12.5px;
+  font-family: var(--ui);
+}
+
+.rkey-state code {
+  font-family: var(--mono);
+  color: var(--text-dim);
+}
+
+.rkey-state-error {
+  color: #e06c75;
+  font-family: var(--mono);
+}
+
+/* ---------------- string viewer ---------------- */
+.rstr {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.rstr-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.rstr-bar-spacer {
+  flex: 1;
+}
+
+.rstr-meta {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.rstr-value {
+  flex: 1;
+  overflow: auto;
+  margin: 0;
+  padding: 14px 16px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+}
+
+.rstr-edit {
+  flex: 1;
+  margin: 0;
+  padding: 14px 16px;
+  background: var(--bg0);
+  border: none;
+  outline: none;
+  resize: none;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+/* ---------------- set add row + remove cell ---------------- */
+.rset {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.rset-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+
+.rset-add-input {
+  width: 200px;
+}
+
+.rset-remove-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+/* ---------------- info panel ---------------- */
+.rinfo {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+}
+
+.rinfo-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.rinfo-key {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.rinfo-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 360px));
+  gap: 0 28px;
+  max-width: 760px;
+}
+
+.rinfo-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 0;
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.rinfo-label {
+  color: var(--text-faint);
+}
+
+.rinfo-val {
+  color: var(--text);
+  text-align: right;
+}
+
+.rinfo-val code {
+  font-family: var(--mono);
+}
+
+.rinfo-actions {
+  margin-top: 22px;
+  max-width: 760px;
+}
+
+.rinfo-actions h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+}
+
+.rinfo-act-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.rinfo-act-spacer {
+  flex: 1;
+}
+
+.rinfo-ttl-input {
+  width: 110px;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-family: var(--mono);
+  font-size: 12px;
+  outline: none;
+  color: var(--text);
+}
+
+.rinfo-ttl-input:focus {
+  border-color: var(--accent);
+}
+
+/* Destructive Delete — vermilion/error tint (matches the DataGrid delete). */
+.rinfo-del-btn {
+  color: #e06c75;
+}

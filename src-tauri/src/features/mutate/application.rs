@@ -19,7 +19,7 @@ pub async fn update_cell(
     handle: &ConnectionHandleId,
     req: UpdateCellRequest,
 ) -> Result<UpdateResult, AppError> {
-    manager.get(handle).await?.update_cell(req).await
+    manager.get_sql(handle).await?.update_cell(req).await
 }
 
 #[cfg(test)]
@@ -110,7 +110,9 @@ mod tests {
     #[tokio::test]
     async fn delegates_to_the_connection_behind_the_handle() {
         let manager = ConnectionManager::new();
-        let handle = manager.insert(Box::new(FakeConnection)).await;
+        let handle = manager
+            .insert(crate::shared::engine::OpenConnection::sql(FakeConnection))
+            .await;
         let result = update_cell(&manager, &handle, sample_request())
             .await
             .expect("update cell");

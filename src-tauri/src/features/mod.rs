@@ -5,6 +5,7 @@ pub mod browse;
 pub mod connections;
 pub mod insights;
 pub mod introspection;
+pub mod keyvalue;
 pub mod mutate;
 pub mod preferences;
 pub mod saved_queries;

@@ -30,11 +30,15 @@ import type {
   ColumnMeta,
   FilterSpec,
   FkRef,
+  PkPredicate,
   SortSpec,
 } from "../../../shared/api/engine";
-import { rowsFetch } from "../../../shared/api/engine";
+import { rowsFetch, rowUpdate } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
+import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
+import { Modal, ModalActions, ModalTitle } from "../../../shared/ui/Modal";
+import { useToast } from "../../../shared/ui/toastContext";
 import { useIntrospectionStore } from "../../introspection/state";
 import { useWorkspacesStore } from "../../workspaces/state";
 import { useTabMetaStore } from "../../workspaces/tabMeta";
@@ -42,6 +46,92 @@ import { ColumnInsights, type InsightsAnchor } from "./ColumnInsights";
 import { FkPeek, type FkPeekAnchor } from "./FkPeek";
 import { CellContent } from "./GridCell";
 import "./DataGrid.css";
+
+/** Per-column metadata the grid keeps from tableMeta: pk/fk drive icons + FK
+ *  hop (M10); dataType/nullable drive M11 inline-edit type coercion + the
+ *  pk-predicate / editability gate. */
+interface ColCellMeta {
+  pk: boolean;
+  fk: FkRef | null;
+  /** Declared DDL type (may be empty); used for edit-commit type coercion. */
+  dataType: string;
+  /** True when the column has no NOT NULL constraint (empty input → NULL). */
+  nullable: boolean;
+}
+
+/** The in-flight inline edit: which cell, and the draft text in the input. */
+interface EditState {
+  /** Absolute row index in the sparse cache. */
+  row: number;
+  /** Column index into `columns`. */
+  col: number;
+  /** The text the borderless input currently holds. */
+  draft: string;
+}
+
+/** A commit awaiting the production-confirm modal: everything `commitEdit`
+ *  computed, parked so Confirm/Cancel can finish (or abort) it. */
+interface PendingConfirm {
+  row: number;
+  col: number;
+  column: string;
+  value: CellValue;
+  prior: CellValue;
+  pk: PkPredicate[];
+  /** Cosmetic SQL shown in the confirm dialog (built from the coerced value). */
+  display: string;
+}
+
+/** SQLite type-affinity buckets we coerce edit input into. Keyword-based, the
+ *  same heuristic the engine's affinity rules use — declared type is a free
+ *  string, so we match substrings (case-insensitive). */
+function affinityOf(dataType: string): "integer" | "real" | "boolean" | "text" {
+  const t = dataType.toUpperCase();
+  if (t.includes("BOOL")) return "boolean";
+  if (t.includes("INT")) return "integer";
+  if (t.includes("REAL") || t.includes("FLOA") || t.includes("DOUB") || t.includes("DEC") || t.includes("NUM"))
+    return "real";
+  return "text";
+}
+
+/**
+ * Coerce the input string to the JSON value the backend binds by type.
+ * - empty input → null when the column is nullable (else fall through to text,
+ *   so a NOT NULL column surfaces the engine's rejection on commit).
+ * - integer/real columns → a Number when the trimmed text parses; otherwise
+ *   the raw string (the engine validates / rejects).
+ * - boolean columns → 1/0 (SQLite stores booleans as integers; the grid shows
+ *   true/false) for "true"/"false"/"1"/"0"; otherwise the raw string. We send
+ *   the integer rather than a JS bool because the wire `CellValue` is
+ *   string|number|null (SQLite has no native bool) — the engine binds the
+ *   integer exactly as SQLite stores it.
+ * - everything else → the string verbatim.
+ */
+function coerceForColumn(draft: string, meta: ColCellMeta | undefined): CellValue {
+  const affinity = meta ? affinityOf(meta.dataType) : "text";
+  const trimmed = draft.trim();
+  if (trimmed === "" && (meta?.nullable ?? true)) return null;
+  if (affinity === "integer" || affinity === "real") {
+    if (trimmed !== "" && !Number.isNaN(Number(trimmed))) return Number(trimmed);
+    return draft;
+  }
+  if (affinity === "boolean") {
+    const low = trimmed.toLowerCase();
+    if (low === "true" || low === "1") return 1;
+    if (low === "false" || low === "0") return 0;
+    return draft;
+  }
+  return draft;
+}
+
+/** Single-quote-escape a value for the *cosmetic* confirm-dialog SQL. The real
+ *  query is parameterized server-side; this is display only (mirrors the
+ *  backend's UpdateResult.statement rendering). */
+function sqlLiteral(value: CellValue): string {
+  if (value === null) return "NULL";
+  if (typeof value === "number") return String(value);
+  return "'" + value.replace(/'/g, "''") + "'";
+}
 
 /** Rows fetched per page. Small enough that a single page is cheap, large
  *  enough that a viewport rarely spans more than two. */
@@ -99,7 +189,7 @@ export function DataGrid({
   // Reuse the introspection cache (sidebar already warms it); falls back to a
   // tableMeta fetch via loadColumns. Drives the pk key / fk link icons.
   const loadColumns = useIntrospectionStore((s) => s.loadColumns);
-  const [colMeta, setColMeta] = useState<Map<string, { pk: boolean; fk: FkRef | null }>>(new Map());
+  const [colMeta, setColMeta] = useState<Map<string, ColCellMeta>>(new Map());
 
   // --- result state ----------------------------------------------------
   const [columns, setColumns] = useState<ColumnMeta[]>([]);
@@ -108,6 +198,25 @@ export function DataGrid({
   const [selected, setSelected] = useState<{ row: number; col: number } | null>(null);
   const [initialError, setInitialError] = useState<string | null>(null);
   const [loadingInitial, setLoadingInitial] = useState(true);
+
+  // --- M11 inline edit -------------------------------------------------
+  const toast = useToast();
+  // The active in-cell edit (null when not editing). Auto-focus + select on
+  // mount is handled by an effect on this value.
+  const [editing, setEditing] = useState<EditState | null>(null);
+  const editInputRef = useRef<HTMLInputElement>(null);
+  // A commit parked on the production-confirm modal (null when no confirm is
+  // pending). Confirm fires the update; Cancel restores the cell.
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
+  // Production gate (§ M11 safety): this connection's deployment env. An edit
+  // on a `production` connection requires the confirm dialog before firing.
+  const isProduction = useWorkspacesStore(
+    (s) => s.workspaces.find((ws) => ws.handleId === handleId)?.saved.env === "production",
+  );
+  // A blur fires when an edit commits — but a commit that opens the confirm
+  // modal moves focus into the modal, which would re-fire blur and double-fire
+  // the commit. This flag makes commit/cancel idempotent for one edit session.
+  const committingRef = useRef(false);
 
   // --- M10 popovers (FK peek + column insights) ------------------------
   // Each holds the anchor (clicked cell / header rect + target) for an open
@@ -236,6 +345,12 @@ export function DataGrid({
   // restore effect runs.
   useEffect(() => {
     resetAndLoadFirstPage();
+    // A reset re-keys the row cache: any open edit / parked production confirm
+    // points at a now-stale row index, so drop them (M11) — committing them
+    // against a re-windowed cache would target the wrong row.
+    committingRef.current = false;
+    setEditing(null);
+    setPendingConfirm(null);
     fetchPage(0);
     // fetchPage closes over sort/identity + reads the live filter via a ref;
     // filterKey is the filter's stable identity, so an applied-filter change
@@ -251,8 +366,9 @@ export function DataGrid({
     let alive = true;
     void loadColumns(handleId, schema, table).then((cols) => {
       if (!alive || !cols) return;
-      const map = new Map<string, { pk: boolean; fk: FkRef | null }>();
-      for (const c of cols) map.set(c.name, { pk: c.pk, fk: c.fk });
+      const map = new Map<string, ColCellMeta>();
+      for (const c of cols)
+        map.set(c.name, { pk: c.pk, fk: c.fk, dataType: c.dataType, nullable: c.nullable });
       setColMeta(map);
     });
     return () => {
@@ -350,12 +466,20 @@ export function DataGrid({
   // column's referenced table, anchored at the clicked cell. The referenced
   // schema is the same as the source for SQLite (one db, one schema). Closing
   // any prior insights popover keeps a single popover open at a time.
+  // M11 coexistence: the hop is *deferred* on a short timer so a double-click
+  // on an FK cell enters edit (the td's onDoubleClick clears the timer first)
+  // rather than navigating. A lone single click runs the hop once the timer
+  // elapses. The browser's dblclick threshold (~250–500ms) bounds the wait.
   const onFkClick = useCallback(
     (fk: FkRef, value: CellValue, event: React.MouseEvent<HTMLButtonElement>) => {
       event.stopPropagation();
       const rect = event.currentTarget.getBoundingClientRect();
-      setInsights(null);
-      setFkPeek({ rect, refSchema: schema, refTable: fk.table, refColumn: fk.column, value });
+      if (fkHopTimer.current !== null) window.clearTimeout(fkHopTimer.current);
+      fkHopTimer.current = window.setTimeout(() => {
+        fkHopTimer.current = null;
+        setInsights(null);
+        setFkPeek({ rect, refSchema: schema, refTable: fk.table, refColumn: fk.column, value });
+      }, 250);
     },
     [schema],
   );
@@ -382,6 +506,179 @@ export function DataGrid({
     },
     [],
   );
+
+  // --- M11 inline edit: editability gating + commit flow ---------------
+  // The table's primary-key columns, in `columns` order (so the pk predicate
+  // is built deterministically). A table with no pk → empty → read-only cells.
+  const pkColumns = useMemo(
+    () => columns.filter((c) => colMeta.get(c.name)?.pk).map((c) => c.name),
+    [columns, colMeta],
+  );
+  const hasPk = pkColumns.length > 0;
+
+  // Build the full-pk predicate for a row from its loaded values. Returns null
+  // if any pk value is missing (a row not fully present can't be safely keyed).
+  const buildPk = useCallback(
+    (row: CellValue[]): PkPredicate[] | null => {
+      const preds: PkPredicate[] = [];
+      for (const pkName of pkColumns) {
+        const ci = columns.findIndex((c) => c.name === pkName);
+        if (ci < 0) return null;
+        preds.push({ column: pkName, value: row[ci] ?? null });
+      }
+      return preds.length > 0 ? preds : null;
+    },
+    [columns, pkColumns],
+  );
+
+  // A cell is editable when the table has a pk, the cell's own column is NOT a
+  // pk column (editing a pk changes row identity — read-only, recommended safe
+  // default), and the row's pk values are all present. Returns a reason string
+  // for the read-only tooltip, or null when editable.
+  const readOnlyReason = useCallback(
+    (rowIndex: number, ci: number): string | null => {
+      if (!hasPk) return "Read-only: table has no primary key";
+      const colName = columns[ci]?.name;
+      if (colName && colMeta.get(colName)?.pk) return "Read-only: primary key column";
+      const row = rowCacheRef.current.get(rowIndex);
+      if (!row || buildPk(row) === null) return "Read-only: row key unavailable";
+      return null;
+    },
+    [hasPk, columns, colMeta, buildPk],
+  );
+
+  // Begin editing a cell: prefill with the current value as text (NULL → empty
+  // input). No-op on a read-only cell (the td shows the reason as a tooltip).
+  const startEdit = useCallback(
+    (rowIndex: number, ci: number) => {
+      if (readOnlyReason(rowIndex, ci) !== null) return;
+      const row = rowCacheRef.current.get(rowIndex);
+      if (!row) return;
+      const cur = row[ci] ?? null;
+      committingRef.current = false;
+      setEditing({ row: rowIndex, col: ci, draft: cur === null ? "" : String(cur) });
+    },
+    [readOnlyReason],
+  );
+
+  // Discard the active edit without writing.
+  const cancelEdit = useCallback(() => {
+    committingRef.current = false;
+    setEditing(null);
+  }, []);
+
+  // Auto-focus + select the input when an edit starts.
+  useEffect(() => {
+    if (editing && editInputRef.current) {
+      editInputRef.current.focus();
+      editInputRef.current.select();
+    }
+  }, [editing]);
+
+  // Apply a coerced value to the page cache at (row, col) and re-render. Used
+  // for the optimistic write and for the rollback on error.
+  const writeCache = useCallback((rowIndex: number, ci: number, value: CellValue) => {
+    const row = rowCacheRef.current.get(rowIndex);
+    if (!row) return;
+    const next = row.slice();
+    next[ci] = value;
+    rowCacheRef.current.set(rowIndex, next);
+    setCacheVersion((v) => v + 1);
+  }, []);
+
+  // Fire the backend update with optimistic write + rollback-on-error. The
+  // cache is mutated to `value` immediately and edit mode exits; on success a
+  // toast shows the executed statement; on error the prior value is restored
+  // and the §5 message is shown. `prior` is the value to roll back to.
+  const runUpdate = useCallback(
+    (rowIndex: number, ci: number, column: string, value: CellValue, prior: CellValue, pk: PkPredicate[]) => {
+      // Optimistic: apply now, exit edit mode.
+      writeCache(rowIndex, ci, value);
+      const generation = generationRef.current;
+      void rowUpdate(handleId, { schema, table, column, value, pk })
+        .then((result) => {
+          // A reset (sort/filter/refresh) since we fired invalidated the cache;
+          // the toast is still truthful (the row was updated server-side).
+          toast(result.statement + " — " + result.affected + " row affected", "ok");
+        })
+        .catch((err: unknown) => {
+          // Roll back the optimistic write if the cache is still the same
+          // generation (otherwise the row is gone / re-fetched anyway).
+          if (generation === generationRef.current) writeCache(rowIndex, ci, prior);
+          toast(appErrorMessage(err, "Could not update the cell."), "err");
+        });
+    },
+    [writeCache, handleId, schema, table, toast],
+  );
+
+  // Commit the active edit: coerce by column type, no-op if unchanged, build
+  // the pk predicate, then either fire immediately or (on a production
+  // connection) park the commit on the confirm modal. Idempotent per session
+  // via committingRef (Enter then blur must not double-fire).
+  const commitEdit = useCallback(() => {
+    if (!editing || committingRef.current) return;
+    const { row: rowIndex, col: ci, draft } = editing;
+    const row = rowCacheRef.current.get(rowIndex);
+    const colName = columns[ci]?.name;
+    if (!row || !colName) {
+      cancelEdit();
+      return;
+    }
+    const prior = row[ci] ?? null;
+    const value = coerceForColumn(draft, colMeta.get(colName));
+    // No-op: the coerced value is unchanged — don't fire an update.
+    if (value === prior) {
+      cancelEdit();
+      return;
+    }
+    const pk = buildPk(row);
+    if (pk === null) {
+      // Should not happen (startEdit gated on this), but never fire without a
+      // full pk — restore and bail.
+      cancelEdit();
+      return;
+    }
+    committingRef.current = true;
+    setEditing(null);
+    if (isProduction) {
+      // Park on the confirm modal; the cache is NOT yet mutated (Cancel must
+      // leave the cell as it was).
+      const display =
+        'UPDATE "' + schema + '"."' + table + '" SET "' + colName + '" = ' + sqlLiteral(value) +
+        " WHERE " + pk.map((p) => '"' + p.column + '" = ' + sqlLiteral(p.value)).join(" AND ");
+      setPendingConfirm({ row: rowIndex, col: ci, column: colName, value, prior, pk, display });
+      return;
+    }
+    runUpdate(rowIndex, ci, colName, value, prior, pk);
+  }, [editing, columns, colMeta, buildPk, isProduction, schema, table, runUpdate, cancelEdit]);
+
+  // Confirm dialog (production): proceed with the parked commit, or cancel it
+  // (the cell was never mutated, so cancel just drops the pending state).
+  const confirmProceed = useCallback(() => {
+    const p = pendingConfirm;
+    if (!p) return;
+    setPendingConfirm(null);
+    committingRef.current = false;
+    runUpdate(p.row, p.col, p.column, p.value, p.prior, p.pk);
+  }, [pendingConfirm, runUpdate]);
+
+  const confirmCancel = useCallback(() => {
+    setPendingConfirm(null);
+    committingRef.current = false;
+  }, []);
+
+  // --- M11 FK coexistence: defer the single-click hop so a double-click on
+  // an FK cell enters edit instead of navigating. The FK link's onClick
+  // schedules the hop on a short timer; the td's onDoubleClick clears it
+  // before starting the edit, so the hop never fires on a double-click.
+  const fkHopTimer = useRef<number | null>(null);
+  const clearPendingHop = useCallback(() => {
+    if (fkHopTimer.current !== null) {
+      window.clearTimeout(fkHopTimer.current);
+      fkHopTimer.current = null;
+    }
+  }, []);
+  useEffect(() => () => clearPendingHop(), [clearPendingHop]);
 
   // Grid column template: row-number gutter + one min/max track per column.
   const gridCols = useMemo(
@@ -525,19 +822,54 @@ export function DataGrid({
                     // otherwise the cell renders as plain text (no link).
                     const fkMeta = colMeta.get(c.name)?.fk ?? null;
                     const fk = fkMeta && fkMeta.column ? fkMeta : null;
+                    // M11: edit state + editability for this cell.
+                    const isEditing = editing?.row === rowIndex && editing?.col === ci;
+                    const roReason = readOnlyReason(rowIndex, ci);
                     return (
                       <div
                         key={c.name}
-                        className={"dg-td" + (isSel ? " cell-selected" : "")}
+                        className={
+                          "dg-td" + (isSel ? " cell-selected" : "") + (isEditing ? " cell-editing" : "")
+                        }
+                        // Read-only cells explain why on hover (per M11); editable
+                        // cells fall back to the value-as-string title.
+                        title={roReason ?? undefined}
                         onClick={() => setSelected({ row: rowIndex, col: ci })}
-                        // M11 seam: onDoubleClick → start inline edit.
+                        onDoubleClick={() => {
+                          // A double-click on an FK cell must edit, not hop:
+                          // cancel any pending deferred hop first.
+                          clearPendingHop();
+                          startEdit(rowIndex, ci);
+                        }}
                       >
-                        <CellContent
-                          value={row[ci] ?? null}
-                          column={c.name}
-                          fk={fk}
-                          onFkClick={fk ? (value, e) => onFkClick(fk, value, e) : undefined}
-                        />
+                        {isEditing ? (
+                          <input
+                            ref={editInputRef}
+                            className="cell-input"
+                            aria-label={"Edit " + c.name}
+                            value={editing.draft}
+                            onChange={(e) =>
+                              setEditing((prev) => (prev ? { ...prev, draft: e.target.value } : prev))
+                            }
+                            onBlur={commitEdit}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                commitEdit();
+                              } else if (e.key === "Escape") {
+                                e.preventDefault();
+                                cancelEdit();
+                              }
+                            }}
+                          />
+                        ) : (
+                          <CellContent
+                            value={row[ci] ?? null}
+                            column={c.name}
+                            fk={fk}
+                            onFkClick={fk ? (value, e) => onFkClick(fk, value, e) : undefined}
+                          />
+                        )}
                       </div>
                     );
                   })}
@@ -565,6 +897,29 @@ export function DataGrid({
           anchor={insights}
           onClose={closeInsights}
         />
+      ) : null}
+      {/* Production-edit confirm (§ M11 safety): only reached when the
+          connection's env is `production`. Confirm fires the update (with the
+          optimistic write + rollback); Cancel leaves the cell untouched. */}
+      {pendingConfirm ? (
+        <Modal onClose={confirmCancel} label="Confirm update" width={460}>
+          <ModalTitle>
+            <Icon name="warning" size={18} style={{ color: "#e2b340" }} /> Update a row on a
+            production connection?
+          </ModalTitle>
+          <p className="dg-confirm-body">
+            This connection points at <b>production</b>. The following update will run:
+          </p>
+          <code className="dg-confirm-sql">{pendingConfirm.display}</code>
+          <ModalActions>
+            <Btn variant="text" onClick={confirmCancel}>
+              Cancel
+            </Btn>
+            <Btn variant="filled" onClick={confirmProceed}>
+              Confirm
+            </Btn>
+          </ModalActions>
+        </Modal>
       ) : null}
     </>
   );

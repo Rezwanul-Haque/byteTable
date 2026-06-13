@@ -185,8 +185,7 @@
   font-size: 0.92em;
 }
 
-/* M11 seam — inline edit (double-click). The CSS is ported now so M11 only
-   wires the input + commit logic; not active this milestone. */
+/* M11 — inline edit (double-click → borderless in-cell input). */
 .cell-input {
   width: 100%;
   background: var(--bg0);
@@ -202,6 +201,28 @@
   outline: 1.5px solid var(--accent);
   outline-offset: -1.5px;
   background: var(--bg0);
+}
+
+/* M11 — production-edit confirm dialog body (reuses the shared Modal shell). */
+.dg-confirm-body {
+  margin: 0 0 10px;
+  font-family: var(--ui);
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.dg-confirm-sql {
+  display: block;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text);
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 9px 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
 }
 
 /* ---------- windowed-paging shimmer (rows not yet loaded) ---------- */

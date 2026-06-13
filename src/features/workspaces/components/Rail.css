@@ -40,6 +40,9 @@
   align-items: center;
   overflow-y: auto;
   scrollbar-width: none;
+  /* 2px top padding so the first tile's hover lift (translateY(-1px)) and its
+     active glow aren't clipped by overflow-y at the list's top edge. */
+  padding: 2px 0;
 }
 
 .rail-list::-webkit-scrollbar {

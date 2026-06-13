@@ -58,6 +58,7 @@ pub fn run() {
             features::connections::commands::connection_tables,
             features::connections::commands::query_run,
             features::introspection::commands::table_meta,
+            features::browse::commands::rows_fetch,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

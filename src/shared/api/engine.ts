@@ -93,9 +93,59 @@ export interface QueryResult {
   elapsedMs: number;
 }
 
+/** Sort direction for a single column. Lowercase on the wire ("asc"/"desc"). */
+export type SortDirection = "asc" | "desc";
+
+/** A single-column sort applied to a browsed table. */
+export interface SortSpec {
+  column: string;
+  direction: SortDirection;
+}
+
+/**
+ * A request for one page of rows from a table (M4 data grid). M4 scope:
+ * paging plus an optional single-column sort — row filtering is M5, so there
+ * is no predicate field yet.
+ */
+export interface FetchRowsRequest {
+  schema: string;
+  table: string;
+  /** Optional single-column sort; `null` leaves order to the engine. */
+  sort: SortSpec | null;
+  /** Zero-based row offset of the page. */
+  offset: number;
+  /** Maximum rows in the page. The backend clamps this to its page ceiling. */
+  limit: number;
+}
+
+/** One page of rows from a table: column metadata, values, window, timing. */
+export interface RowsPage {
+  columns: ColumnMeta[];
+  rows: CellValue[][];
+  /** The offset this page was fetched at (echoes the request). */
+  offset: number;
+  /** The effective page size after clamping (echoes the request). */
+  limit: number;
+  /**
+   * Exact `COUNT(*)` of the table (unfiltered in M4 — filters are M5).
+   * Computed per fetch in M4; `null` when the count could not be obtained
+   * (a later milestone may also return `null` for an estimate fallback).
+   */
+  totalRows: number | null;
+  elapsedMs: number;
+}
+
 /** Column-level metadata for one table (the `table_meta` command). */
 export function tableMeta(handleId: string, schema: string, table: string): Promise<TableMeta> {
   return invoke<TableMeta>("table_meta", { handleId, schema, table });
+}
+
+/**
+ * One page of rows for the M4 data grid (the `rows_fetch` command): paged
+ * and optionally sorted, with an exact unfiltered row count.
+ */
+export function rowsFetch(handleId: string, req: FetchRowsRequest): Promise<RowsPage> {
+  return invoke<RowsPage>("rows_fetch", { handleId, req });
 }
 
 export function queryRun(

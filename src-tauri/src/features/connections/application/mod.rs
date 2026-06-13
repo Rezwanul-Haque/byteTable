@@ -376,6 +376,20 @@ mod tests {
             })
         }
 
+        async fn fetch_rows(
+            &self,
+            _req: crate::shared::engine::FetchRowsRequest,
+        ) -> Result<crate::shared::engine::RowsPage, AppError> {
+            Ok(crate::shared::engine::RowsPage {
+                columns: vec![],
+                rows: vec![],
+                offset: 0,
+                limit: 0,
+                total_rows: Some(0),
+                elapsed_ms: 0,
+            })
+        }
+
         async fn close(&self) -> Result<(), AppError> {
             self.closed.store(true, Ordering::SeqCst);
             Ok(())

@@ -55,6 +55,9 @@ export interface EdgeModel {
   /** Target ring (at the ref table header). */
   tx: number;
   ty: number;
+  /** Bend-handle position: natural midpoint + any applied waypoint offset. */
+  mx: number;
+  my: number;
 }
 
 /** Height of a card given its column count + truncation. */
@@ -196,22 +199,51 @@ export function autoLayout(
   return pos;
 }
 
+/** A movable edge's midpoint offset (relative to the live midpoint). */
+export interface Waypoint {
+  dx: number;
+  dy: number;
+}
+
+/** What {@link edgeGeometry} resolves: the path, endpoints, and live midpoint. */
+export interface EdgeGeometry {
+  path: string;
+  sx: number;
+  sy: number;
+  tx: number;
+  ty: number;
+  /**
+   * The handle position: the natural midpoint plus any waypoint offset. This is
+   * where the draggable bend handle sits and what the user grabs. Without a
+   * waypoint it is the natural curve midpoint; with one it is `mid + (dx,dy)`.
+   */
+  mx: number;
+  my: number;
+}
+
 /**
  * Compute a bezier `<path>` between a child card's FK column row and a ref
- * card's header, plus the source/target marker anchors. Picks the card sides
- * by relative position (mirrors the prototype) so the curve exits toward the
- * target. `colIndex` is the FK column's row index (clamped to the shown rows).
+ * card's header, plus the source/target marker anchors and the bend handle.
+ * Picks the card sides by relative position (mirrors the prototype) so the
+ * curve exits toward the target. `colIndex` is the FK column's row index
+ * (clamped to the shown rows).
  *
- * Task 3 SEAM: a movable edge applies its `EdgeWaypoint {dx,dy}` to the
- * midpoint here — i.e. route the path through `(midX+dx, midY+dy)` as a second
- * bezier segment. The endpoints + side-picking below stay; only the middle
- * gains a user-controlled control point. The dot/ring anchors are unchanged.
+ * MOVABLE EDGES (Task 3): an optional `waypoint {dx,dy}` bends the curve. The
+ * offset is applied to the *natural* midpoint — the point halfway along a
+ * straight chord between the side anchors — so the handle position (`mx,my`)
+ * and bend follow the cards as they move (the offset is relative, not
+ * absolute). With a waypoint the curve is routed as two cubic segments that
+ * both pass through `(mx,my)` with horizontal tangents at the endpoints and a
+ * smooth tangent at the waypoint, giving a clean S/elbow that reads well. With
+ * no waypoint (or a zero one) we emit the original single-cubic curve so
+ * un-bent edges are byte-identical to Task 2.
  */
 export function edgeGeometry(
   child: CardModel,
   ref: CardModel,
   colIndex: number,
-): { path: string; sx: number; sy: number; tx: number; ty: number } {
+  waypoint?: Waypoint | null,
+): EdgeGeometry {
   const clamped = Math.min(Math.max(0, colIndex), MAX_COLS - 1);
   const sy = child.y + HEAD_H + clamped * ROW_H + ROW_H / 2;
   const ty = ref.y + HEAD_H / 2;
@@ -229,18 +261,49 @@ export function edgeGeometry(
     sx = childRight;
     tx = ref.x + ref.w;
   }
+
+  // Natural midpoint of the straight chord — the anchor the waypoint offsets
+  // from, so a bend tracks the cards as they move.
+  const midX = (sx + tx) / 2;
+  const midY = (sy + ty) / 2;
+  const wx = waypoint?.dx ?? 0;
+  const wy = waypoint?.dy ?? 0;
+  const mx = midX + wx;
+  const my = midY + wy;
+
   const dx = Math.max(40, Math.abs(tx - sx) / 2);
   const c1 = sx + (tx >= sx ? dx : -dx);
   const c2 = tx + (tx >= sx ? -dx : dx);
-  const path = `M ${sx} ${sy} C ${c1} ${sy}, ${c2} ${ty}, ${tx} ${ty}`;
-  return { path, sx, sy, tx, ty };
+
+  // Unbent → original single cubic (preserves Task 2 visuals exactly).
+  if (wx === 0 && wy === 0) {
+    const path = `M ${sx} ${sy} C ${c1} ${sy}, ${c2} ${ty}, ${tx} ${ty}`;
+    return { path, sx, sy, tx, ty, mx, my };
+  }
+
+  // Bent → two cubic segments meeting at (mx,my). Endpoints keep their
+  // horizontal exit tangents (control points offset on x only); the join at the
+  // waypoint uses a tangent parallel to the chord for a smooth, non-kinked
+  // bend. Quarter-distance control handles keep the curve taut.
+  const hx = (tx - sx) / 4;
+  const hy = (ty - sy) / 4;
+  const path =
+    `M ${sx} ${sy} ` +
+    `C ${sx + (tx >= sx ? dx : -dx)} ${sy}, ${mx - hx} ${my - hy}, ${mx} ${my} ` +
+    `C ${mx + hx} ${my + hy}, ${tx + (tx >= sx ? -dx : dx)} ${ty}, ${tx} ${ty}`;
+  return { path, sx, sy, tx, ty, mx, my };
 }
 
-/** Resolved edges for the current card models (FK metadata → drawable). */
+/**
+ * Resolved edges for the current card models (FK metadata → drawable). Applies
+ * any saved/active waypoint offsets keyed by edge id so a bent edge re-routes
+ * through its handle as the cards move.
+ */
 export function buildEdges(
   tables: string[],
   metas: Record<string, TableMeta>,
   cards: Record<string, CardModel>,
+  waypoints?: Record<string, Waypoint>,
 ): EdgeModel[] {
   const inSchema = new Set(tables);
   const out: EdgeModel[] = [];
@@ -253,9 +316,10 @@ export function buildEdges(
       const ref = cards[fk.refTable];
       if (!ref) continue;
       const colIndex = meta.columns.findIndex((c) => c.name === fk.columns[0]);
-      const geo = edgeGeometry(child, ref, colIndex);
+      const id = edgeId(childTable, fk.columns, fk.refTable);
+      const geo = edgeGeometry(child, ref, colIndex, waypoints?.[id]);
       out.push({
-        id: edgeId(childTable, fk.columns, fk.refTable),
+        id,
         childTable,
         refTable: fk.refTable,
         path: geo.path,
@@ -263,6 +327,8 @@ export function buildEdges(
         sy: geo.sy,
         tx: geo.tx,
         ty: geo.ty,
+        mx: geo.mx,
+        my: geo.my,
       });
     }
   }
@@ -278,4 +344,33 @@ export function contentExtent(cards: CardModel[]): { width: number; height: numb
     maxY = Math.max(maxY, c.y + c.h);
   }
   return { width: maxX + 80, height: maxY + 80 };
+}
+
+/**
+ * The tight world-space bounding box of all cards (used to frame an export so
+ * the whole diagram is captured regardless of pan/zoom or how cards were
+ * dragged). `pad` insets the box on every side. Edges live between cards so the
+ * card box (plus padding) safely contains the visible curves too.
+ */
+export function contentBounds(
+  cards: CardModel[],
+  pad = 48,
+): { x: number; y: number; width: number; height: number } {
+  if (cards.length === 0) return { x: 0, y: 0, width: 2 * pad, height: 2 * pad };
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const c of cards) {
+    minX = Math.min(minX, c.x);
+    minY = Math.min(minY, c.y);
+    maxX = Math.max(maxX, c.x + c.w);
+    maxY = Math.max(maxY, c.y + c.h);
+  }
+  return {
+    x: minX - pad,
+    y: minY - pad,
+    width: maxX - minX + 2 * pad,
+    height: maxY - minY + 2 * pad,
+  };
 }

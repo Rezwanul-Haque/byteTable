@@ -152,8 +152,8 @@ export function ConnectScreen() {
       </div>
 
       <div className="connect-footnote">
-        SQLite · MySQL · PostgreSQL — more engines coming. Your credentials never leave this
-        machine.
+        SQLite · MySQL · PostgreSQL · Redis — more engines coming. Your credentials never leave
+        this machine.
       </div>
 
       {showNew ? <NewConnectionModal onClose={() => setShowNew(false)} /> : null}

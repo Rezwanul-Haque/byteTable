@@ -397,8 +397,24 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
     setPositions(auto);
     setZoom(1);
     setPan({ x: 0, y: 0 });
+    // Full reset to the initial state: re-run auto-layout AND straighten every
+    // edge (clear all bezier waypoints). waypointsRef is cleared first so the
+    // debounced persist below writes empty edges.
+    waypointsRef.current = {};
+    setWaypoints({});
     persist(auto, 1);
   };
+
+  // Reset only the bezier curves: straighten every edge back to its default
+  // route, leaving card positions + zoom untouched. Shown in the toolbar only
+  // when at least one edge has been bent.
+  const resetCurves = () => {
+    if (!positions) return;
+    waypointsRef.current = {};
+    setWaypoints({});
+    persist(positions, zoom);
+  };
+  const hasBentEdges = Object.keys(waypoints).length > 0;
 
   // --- export (PNG / SVG) ---------------------------------------------
   // Build a standalone export SVG from the current card/edge models (whole
@@ -508,10 +524,18 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
           onClick={() => applyZoom(zoom + ZOOM_STEP)}
           disabled={zoom >= ZOOM_MAX}
         />
+        {hasBentEdges ? (
+          <IconBtn
+            icon="ink_eraser"
+            title="Reset curves — straighten all edges to their default route"
+            aria-label="Reset curved edges to straight"
+            onClick={resetCurves}
+          />
+        ) : null}
         <IconBtn
           icon="fit_screen"
-          title="Reset view & re-run layout"
-          aria-label="Reset view and re-run auto-layout"
+          title="Reset view & re-run layout (also straightens edges)"
+          aria-label="Reset view, re-run auto-layout, and straighten edges"
           onClick={resetView}
         />
         {/* Export (PNG / SVG) — a small popover anchored to this button. */}

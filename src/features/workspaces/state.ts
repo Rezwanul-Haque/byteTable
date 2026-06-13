@@ -11,7 +11,7 @@ import { create } from "zustand";
 import type { SchemaInfo } from "../connections/api";
 import { connectionClose } from "../connections/api";
 import { useIntrospectionStore } from "../introspection/state";
-import type { Workspace, WorkspaceConnection, WorkspaceUiState } from "./types";
+import type { Tab, TableTabMode, Workspace, WorkspaceConnection, WorkspaceUiState } from "./types";
 
 /**
  * The 8-color workspace palette — prototype data.js `workspaceColors`,
@@ -75,6 +75,77 @@ interface WorkspacesFeatureState {
    * `connection_schemas` so out-of-band attach/detach shows up.
    */
   setWorkspaceSchemas: (id: string, schemas: SchemaInfo[]) => void;
+
+  // --- Tabs (M4) ---------------------------------------------------------
+  // All tab actions operate on the *active* workspace's `ui` (the only
+  // workspace with a visible tab strip) and go through patchWorkspaceUi, so
+  // each workspace's tabs + active tab are preserved across switches for
+  // free. They are no-ops when there is no active workspace. Synchronous —
+  // opening a tab never touches the backend (the grid fetches lazily once
+  // mounted, Task 3).
+  /**
+   * Open `schema.table` as a data tab and focus it. If a table tab for the
+   * same schema+table is already open, focus it instead of duplicating
+   * (spec §3.4) — without changing its mode.
+   */
+  openTableTab: (schema: string, table: string) => void;
+  /** Open a fresh SQL editor tab ("Query N") and focus it. */
+  openSqlTab: () => void;
+  /**
+   * Open the schema-map tab for `schema` (one per schema) and focus it; if
+   * already open, focus the existing one.
+   */
+  openMapTab: (schema: string) => void;
+  /**
+   * Close a tab. The neighbour (left, else right) becomes active when the
+   * closed tab was active; closing the last tab sets activeTabId to null,
+   * routing the content area back to EmptyState.
+   */
+  closeTab: (tabId: string) => void;
+  setActiveTab: (tabId: string) => void;
+  /**
+   * Set a table tab's view mode. NOTE (M4): the Structure view is M7, so
+   * TableTab does not call this with `'structure'` yet — it toasts instead
+   * and stays on data. The action persists whatever mode it is given so M7
+   * can wire it without a store change.
+   */
+  setTableTabMode: (tabId: string, mode: TableTabMode) => void;
+}
+
+/**
+ * SQL tab title counter. Per-workspace "Query N" numbering that only ever
+ * increments (prototype workspace.jsx `sqlCounter` — never rewound when a
+ * tab closes). Module-local, keyed by workspace id: it is naming state, not
+ * renderable UI, so it stays out of the store (and out of the persisted
+ * `ui`, which would otherwise reset numbering oddly on reload).
+ */
+const sqlCounters = new Map<string, number>();
+function nextSqlTitle(workspaceId: string): string {
+  const n = (sqlCounters.get(workspaceId) ?? 0) + 1;
+  sqlCounters.set(workspaceId, n);
+  return "Query " + n;
+}
+
+/**
+ * Apply a function to the active workspace's `ui`, returning the new
+ * workspaces array (or the same one when there is no active workspace).
+ * Shared by every tab action so the active-only + immutability rules live
+ * in one place.
+ */
+function patchActiveUi(
+  state: WorkspacesFeatureState,
+  update: (ui: WorkspaceUiState) => Partial<WorkspaceUiState>,
+): Workspace[] {
+  const id = state.activeWorkspaceId;
+  if (id === null) return state.workspaces;
+  return state.workspaces.map((ws) =>
+    ws.id === id ? { ...ws, ui: { ...ws.ui, ...update(ws.ui) } } : ws,
+  );
+}
+
+/** A workspace-scoped unique tab id. */
+function newTabId(kind: Tab["kind"]): string {
+  return "tab-" + kind + "-" + crypto.randomUUID();
 }
 
 function patchWorkspace(
@@ -179,4 +250,88 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
 
   setWorkspaceSchemas: (id, schemas) =>
     set((state) => ({ workspaces: patchWorkspace(state.workspaces, id, { schemas }) })),
+
+  openTableTab: (schema, table) =>
+    set((state) => ({
+      workspaces: patchActiveUi(state, (ui) => {
+        const tabs = ui.tabs ?? [];
+        const existing = tabs.find(
+          (t) => t.kind === "table" && t.schema === schema && t.table === table,
+        );
+        if (existing) return { activeTabId: existing.id };
+        const tab: Tab = { id: newTabId("table"), kind: "table", schema, table, mode: "data" };
+        return { tabs: [...tabs, tab], activeTabId: tab.id };
+      }),
+    })),
+
+  openSqlTab: () =>
+    set((state) => {
+      const id = state.activeWorkspaceId;
+      if (id === null) return state;
+      const title = nextSqlTitle(id);
+      return {
+        workspaces: patchActiveUi(state, (ui) => {
+          const tab: Tab = { id: newTabId("sql"), kind: "sql", title };
+          return { tabs: [...(ui.tabs ?? []), tab], activeTabId: tab.id };
+        }),
+      };
+    }),
+
+  openMapTab: (schema) =>
+    set((state) => ({
+      workspaces: patchActiveUi(state, (ui) => {
+        const tabs = ui.tabs ?? [];
+        const existing = tabs.find((t) => t.kind === "map" && t.schema === schema);
+        if (existing) return { activeTabId: existing.id };
+        const tab: Tab = { id: newTabId("map"), kind: "map", schema };
+        return { tabs: [...tabs, tab], activeTabId: tab.id };
+      }),
+    })),
+
+  closeTab: (tabId) =>
+    set((state) => ({
+      workspaces: patchActiveUi(state, (ui) => {
+        const tabs = ui.tabs ?? [];
+        const idx = tabs.findIndex((t) => t.id === tabId);
+        if (idx === -1) return {};
+        const next = tabs.filter((t) => t.id !== tabId);
+        // Only re-pick the active tab when the closed one was active. Left
+        // neighbour, else right (now at the same index), else null (last
+        // tab closed → EmptyState).
+        const activeTabId =
+          ui.activeTabId === tabId
+            ? (next[Math.max(0, idx - 1)]?.id ?? null)
+            : ui.activeTabId;
+        return { tabs: next, activeTabId };
+      }),
+    })),
+
+  setActiveTab: (tabId) =>
+    set((state) => ({
+      workspaces: patchActiveUi(state, (ui) =>
+        (ui.tabs ?? []).some((t) => t.id === tabId) ? { activeTabId: tabId } : {},
+      ),
+    })),
+
+  setTableTabMode: (tabId, mode) =>
+    set((state) => ({
+      workspaces: patchActiveUi(state, (ui) => ({
+        tabs: (ui.tabs ?? []).map((t) =>
+          t.id === tabId && t.kind === "table" ? { ...t, mode } : t,
+        ),
+      })),
+    })),
 }));
+
+// Closing a workspace should drop its SQL numbering so a reopened
+// connection starts fresh. closeWorkspace lives above as a method; rather
+// than thread this through, subscribe once to prune counters for ids that
+// no longer exist. Cheap (workspace count is tiny) and keeps the action
+// pure.
+useWorkspacesStore.subscribe((state) => {
+  if (sqlCounters.size === 0) return;
+  const live = new Set(state.workspaces.map((ws) => ws.id));
+  for (const id of sqlCounters.keys()) {
+    if (!live.has(id)) sqlCounters.delete(id);
+  }
+});

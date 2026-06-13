@@ -24,14 +24,43 @@ export interface WorkspaceConnection {
 }
 
 /**
+ * A table's view mode in its tab. `'data'` is the grid; `'structure'` is the
+ * M7 schema editor — the segmented control renders both this milestone, but
+ * selecting Structure toasts "arrives in M7" and the tab stays on `'data'`
+ * (TableTab), so a persisted `'structure'` is not produced yet.
+ */
+export type TableTabMode = "data" | "structure";
+
+/**
+ * One open editor tab. Discriminated by `kind`; the union is closed so the
+ * content router (WorkspaceContent) exhaustively switches on it.
+ *
+ * - **table** — a browsable table. `mode` defaults to `'data'`. Re-opening
+ *   the same `schema`+`table` focuses the existing tab rather than
+ *   duplicating (spec §3.4).
+ * - **sql** — a SQL editor (M6). This milestone renders a placeholder; the
+ *   tab mechanics (open/focus/close, ⌘T, "+") are real so M6 only fills the
+ *   body. `title` is the assigned "Query N" label.
+ * - **map** — a schema-map ER diagram (M9), one per schema. Placeholder this
+ *   milestone.
+ */
+export type Tab =
+  | { id: string; kind: "table"; schema: string; table: string; mode: TableTabMode }
+  | { id: string; kind: "sql"; title: string }
+  | { id: string; kind: "map"; schema: string };
+
+/**
  * Per-workspace UI state, preserved across workspace switches (spec §2:
  * "switching workspaces must not lose any of it").
  *
  * Pattern: every piece of per-workspace UI state lives on the workspace
  * object under `ui`, keyed by workspace — so switching workspaces preserves
  * it for free and closing a workspace drops it with the object. Written via
- * the store's `patchWorkspaceUi(id, patch)` action. Later milestones keep
- * extending this type (M4: open tabs + active tab).
+ * the store's `patchWorkspaceUi(id, patch)` action. Tabs + the active tab
+ * live here too (M4): switching workspaces preserves each workspace's open
+ * tabs and which one is active for free. (Grid scroll offset per tab is the
+ * grid's concern — Task 3 — and being high-frequency stays in refs, not
+ * here; see the churn rule.)
  *
  * Churn rule: only low-frequency state belongs here. High-frequency state
  * (scroll offsets, drag-in-progress) lives in refs/local component state and
@@ -49,6 +78,13 @@ export interface WorkspaceUiState {
   schemaName?: string;
   /** Sidebar tables whose inline column list is expanded. */
   expandedTables?: string[];
+  /** Open editor tabs, left-to-right. Empty → the content area is EmptyState. */
+  tabs?: Tab[];
+  /**
+   * The focused tab's id, or null when no tab is open. Always references a
+   * tab in `tabs` (or null) — the store maintains this invariant on close.
+   */
+  activeTabId?: string | null;
 }
 
 /** An open workspace — one per live connection the user has opened. */

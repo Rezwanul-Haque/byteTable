@@ -10,9 +10,11 @@
 // local state (prototype keeps them local too) and reset with the component
 // (App keys the sidebar by workspace id).
 //
-// M3 stubs: opening tables/structure/SQL/map all toast until their
-// milestones land (tabs M4, SQL M6, structure M7, map M9). The `.active`
-// table styling is ported but never applied — there is no active tab yet.
+// M4: opening tables/SQL/map now drive the tab system (store actions). The
+// `.active` table styling is wired — a table row lights up when the active
+// tab is a table tab for this schema+table. Structure (M7) still toasts:
+// "View structure" opens the data tab then asks for structure mode, which
+// TableTab declines with an M7 toast (so it effectively opens data).
 
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
@@ -74,6 +76,9 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   const closeWorkspace = useWorkspacesStore((state) => state.closeWorkspace);
   const patchWorkspaceUi = useWorkspacesStore((state) => state.patchWorkspaceUi);
   const setWorkspaceSchemas = useWorkspacesStore((state) => state.setWorkspaceSchemas);
+  const openTableTab = useWorkspacesStore((state) => state.openTableTab);
+  const openSqlTab = useWorkspacesStore((state) => state.openSqlTab);
+  const openMapTab = useWorkspacesStore((state) => state.openMapTab);
 
   const { handleId } = workspace;
   const engine = workspace.saved.engine;
@@ -88,6 +93,15 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
       ? uiSchema
       : workspace.schemas[0]?.name) ?? (engine === "sqlite" ? "main" : "");
   const expandedTables = workspace.ui.expandedTables ?? NO_EXPANDED;
+
+  // Active-table styling (§3.3/§3.4 restored): the sidebar row matching the
+  // active tab — when it is a table tab in the currently-selected schema —
+  // gets `.active` + an accent table icon. Read off the workspace's ui
+  // (the prop is the live store object, re-rendered on tab changes).
+  const tabs = workspace.ui.tabs ?? [];
+  const activeTab = tabs.find((t) => t.id === workspace.ui.activeTabId) ?? null;
+  const activeTable =
+    activeTab?.kind === "table" && activeTab.schema === schemaName ? activeTab.table : null;
 
   // Introspection cache. Whole-map selects are fine here: entries change
   // only on (rare) fetch completions, unlike the per-keystroke ui churn the
@@ -247,11 +261,17 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
     if (refocus) ctxOpenerRef.current?.focus();
   };
 
-  // M3 stubs — every "open something" action toasts until its milestone.
-  const stubOpenTable = () => toast("Tabs arrive in M4", "info");
-  const stubStructure = () => toast("Structure view arrives in M7", "info");
-  const stubSql = () => toast("SQL editor arrives in M6", "info");
-  const stubMap = () => toast("Schema map arrives in M9", "info");
+  // M4 tab opens (store actions on the active workspace's ui).
+  const openTable = (table: string) => openTableTab(schemaName, table);
+  // "View structure": the structure body is M7. Open the data tab and toast
+  // — the data tab is the only thing structure resolves to until M7, and
+  // persisting `'structure'` would render an empty tab (TableTab only knows
+  // data). The store's setTableTabMode is the seam M7 wires this to.
+  const openStructure = (table: string) => {
+    openTableTab(schemaName, table);
+    toast("Structure view arrives in M7", "info");
+  };
+  const openMap = () => openMapTab(schemaName);
 
   const onRowKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>, table: string) => {
     // Keydowns on the nested expand chevron bubble up here — they belong to
@@ -259,7 +279,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
     if (event.target !== event.currentTarget) return;
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      stubOpenTable();
+      openTable(table);
     } else if ((event.shiftKey && event.key === "F10") || event.key === "ContextMenu") {
       // Keyboard path to the context menu, anchored at the row (Rail
       // pattern).
@@ -344,7 +364,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
             </div>
           ) : null}
         </div>
-        <IconBtn icon="hub" title="Schema map (ER diagram)" onClick={stubMap} />
+        <IconBtn icon="hub" title="Schema map (ER diagram)" onClick={openMap} />
         <IconBtn
           icon="sync"
           title="Refresh schema"
@@ -387,16 +407,18 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
           <>
             {filtered.map((t) => {
               const isExpanded = expandedTables.includes(t.name);
+              const isActive = t.name === activeTable;
               const cKey = columnsKey(handleId, schemaName, t.name);
               const columnsEntry = columnsMap[cKey];
               const columnsError = errorsMap[cKey];
               return (
                 <div key={t.name}>
                   <div
-                    className="table-item"
+                    className={"table-item" + (isActive ? " active" : "")}
                     role="button"
                     tabIndex={0}
-                    onClick={stubOpenTable}
+                    aria-current={isActive ? "true" : undefined}
+                    onClick={() => openTable(t.name)}
                     onKeyDown={(event) => onRowKeyDown(event, t.name)}
                     onContextMenu={(event) => {
                       event.preventDefault();
@@ -416,7 +438,11 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                     >
                       <Icon name="chevron_right" size={14} />
                     </button>
-                    <Icon name="table" size={16} style={{ color: "var(--text-faint)" }} />
+                    <Icon
+                      name="table"
+                      size={16}
+                      style={{ color: isActive ? "var(--accent)" : "var(--text-faint)" }}
+                    />
                     <span className="table-item-name">{t.name}</span>
                     <span className="table-item-count">{rowCountLabel(t.approxRowCount)}</span>
                   </div>
@@ -465,7 +491,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
         <Btn
           icon="terminal"
           variant="tonal"
-          onClick={stubSql}
+          onClick={openSqlTab}
           style={{ width: "100%", justifyContent: "center" }}
         >
           New SQL query
@@ -486,7 +512,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
             className="ctx-item"
             role="menuitem"
             onClick={() => {
-              stubOpenTable();
+              openTable(ctxMenu.table);
               closeCtxMenu(true);
             }}
           >
@@ -497,7 +523,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
             className="ctx-item"
             role="menuitem"
             onClick={() => {
-              stubStructure();
+              openStructure(ctxMenu.table);
               closeCtxMenu(true);
             }}
           >
@@ -508,7 +534,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
             className="ctx-item"
             role="menuitem"
             onClick={() => {
-              stubSql();
+              openSqlTab();
               closeCtxMenu(true);
             }}
           >
@@ -519,7 +545,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
             className="ctx-item"
             role="menuitem"
             onClick={() => {
-              stubMap();
+              openMap();
               closeCtxMenu(true);
             }}
           >

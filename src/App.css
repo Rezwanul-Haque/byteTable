@@ -16,12 +16,9 @@
 }
 
 /*
- * Workspace layout — .workspace / .main-col ported from ByteTable.html
- * (§2: sidebar 248px | main). M4 adds the 28px status row, restoring the
- * prototype's full grid:
- *   grid-template-rows: 1fr 28px;
- *   grid-template-areas: "sidebar main" "status status";
- * Until then the status row is omitted so no dead strip renders.
+ * Workspace layout — .workspace / .main-col ported byte-identical from
+ * ByteTable.html (§2: sidebar 248px | main, with the 28px status bar
+ * spanning the bottom — restored in M4 now that the StatusBar lands).
  */
 .workspace {
   flex: 1;
@@ -29,8 +26,8 @@
   min-width: 0;
   display: grid;
   grid-template-columns: 248px 1fr;
-  grid-template-rows: 1fr;
-  grid-template-areas: "sidebar main";
+  grid-template-rows: 1fr 28px;
+  grid-template-areas: "sidebar main" "status status";
 }
 
 .main-col {

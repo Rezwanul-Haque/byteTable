@@ -40,11 +40,21 @@ each with its own tab set and sidebar state.
 
 ## Prerequisites
 
-- **Rust** ≥ 1.77 (stable toolchain via [rustup](https://rustup.rs)).
+- **Rust** ≥ 1.77 (stable toolchain via [rustup](https://rustup.rs)). _Optional:_ the `make`
+  targets auto-install it for you if `cargo` is missing (see the note below).
 - **Node** ≥ 18 and **pnpm** 10 (`corepack enable` or `npm i -g pnpm`).
 - **Tauri 2 system deps** — see the [Tauri prerequisites guide](https://tauri.app/start/prerequisites/).
   On Linux that means WebKitGTK 4.1 + build essentials; macOS needs Xcode command-line tools.
 - **Docker** (optional) — only to run the bundled test databases (see below).
+
+> **Auto-install:** `make build`/`dev`/`test`/`lint`/`fmt` run `pnpm install` first, and an
+> `ensure-cargo` step that installs the Rust toolchain via the official [rustup](https://rustup.rs)
+> script (`-y --no-modify-path`) **when `cargo` is not already on your PATH** — so a fresh machine
+> can build with one command. It is a no-op once Rust is installed. This runs a network install of a
+> toolchain on your machine; if you'd rather control that, install Rust yourself first (then the step
+> just skips), or run the underlying `pnpm`/`cargo` commands directly. Auto-install covers
+> Linux/macOS/BSD and Git-Bash/MSYS on Windows; native Windows `cmd`/PowerShell users install Rust
+> manually from [rustup.rs](https://rustup.rs). (`curl` is required for the auto-install.)
 
 ## Run it (dev mode)
 

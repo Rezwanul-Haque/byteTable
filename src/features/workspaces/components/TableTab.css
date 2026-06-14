@@ -252,20 +252,15 @@
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
-.pager-size {
-  /* background-color so the global select chevron survives (global.css) */
+/* Rows-per-page uses the shared <Select> (opens upward); compact trigger to
+   fit the footer. */
+.pager-size .sel-trigger {
   background-color: var(--bg1);
-  border: 1px solid var(--border);
   border-radius: 7px;
-  font-family: var(--mono);
-  font-size: 11.5px;
-  /* right padding leaves room for the global select chevron (global.css) */
-  padding: 3px 22px 3px 6px;
-  outline: none;
-  color: var(--text);
+  padding: 3px 6px 3px 8px;
 }
-.pager-size:focus {
-  border-color: var(--accent);
+.pager-size .sel-label {
+  font-size: 11.5px;
 }
 .pager-range {
   font-family: var(--mono);

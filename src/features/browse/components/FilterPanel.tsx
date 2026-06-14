@@ -10,6 +10,7 @@
 
 import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
+import { Select } from "../../../shared/ui/Select";
 import type { ColumnInfo, FilterOp } from "../../../shared/api/engine";
 import type { FilterDraft, TabFilterState, UiCondition } from "../../workspaces/types";
 import {
@@ -148,30 +149,20 @@ export function FilterPanel({ open, columns, state, error, onChange }: FilterPan
                     {c.enabled ? <Icon name="check" size={12} /> : null}
                   </span>
                 </label>
-                <select
+                <Select
                   className="filter-select"
-                  value={c.column}
-                  onChange={(e) => updateCond(c.id, { column: e.target.value }, false)}
                   aria-label="Column"
-                >
-                  {columns.map((col) => (
-                    <option key={col.name} value={col.name}>
-                      {col.name}
-                    </option>
-                  ))}
-                </select>
-                <select
+                  value={c.column}
+                  options={columns.map((col) => ({ value: col.name, label: col.name }))}
+                  onChange={(v) => updateCond(c.id, { column: v }, false)}
+                />
+                <Select
                   className="filter-select filter-op"
-                  value={c.op}
-                  onChange={(e) => updateCond(c.id, { op: e.target.value as FilterOp }, false)}
                   aria-label="Operator"
-                >
-                  {FILTER_OPS.map((o) => (
-                    <option key={o.op} value={o.op}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
+                  value={c.op}
+                  options={FILTER_OPS.map((o) => ({ value: o.op, label: o.label }))}
+                  onChange={(v) => updateCond(c.id, { op: v as FilterOp }, false)}
+                />
                 {opNeedsValue(c.op) ? (
                   <input
                     className="filter-value"

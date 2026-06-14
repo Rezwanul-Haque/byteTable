@@ -1,0 +1,109 @@
+/* Custom dropdown (Select.tsx) — replaces native <select>. Styled to match the
+   app's inputs + the sidebar schema switcher; fully themed on every platform
+   (no GTK/WebKitGTK native widget involved). */
+
+.sel-wrap {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+
+/* Full-width variant (form fields). */
+.sel-wrap.sel-block {
+  display: flex;
+  width: 100%;
+}
+
+.sel-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px 6px 10px;
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.12s;
+}
+
+.sel-trigger:hover:not(:disabled) {
+  border-color: color-mix(in oklab, var(--accent) 50%, var(--border));
+}
+
+.sel-trigger:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.sel-trigger:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.sel-label {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+}
+
+.sel-mono .sel-label {
+  font-family: var(--mono);
+}
+
+.sel-chevron {
+  flex: none;
+  color: var(--text-faint);
+}
+
+.sel-pop {
+  position: absolute;
+  left: 0;
+  min-width: 100%;
+  top: calc(100% + 4px);
+  z-index: 60;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  padding: 5px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+/* Opens above the trigger (near the window's bottom edge — e.g. the pager). */
+.sel-pop.up {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
+
+.sel-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.sel-opt:hover,
+.sel-opt:focus-visible {
+  background: var(--bg3);
+  color: var(--text);
+  outline: none;
+}
+
+.sel-opt.active {
+  color: var(--accent);
+}

@@ -244,24 +244,8 @@
   background: var(--accent);
 }
 
-.form-select {
-  /* background-color (not the `background` shorthand) so the global select
-     chevron background-image is preserved (global.css). */
-  background-color: var(--bg0);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  /* right padding leaves room for the global select chevron (global.css) */
-  padding: 8px 32px 8px 10px;
-  font-size: 12.5px;
-  font-family: var(--mono);
-  outline: none;
-  width: 100%;
-  color: var(--text);
-}
-
-.form-select:focus {
-  border-color: var(--accent);
-}
+/* TLS mode + SSH auth use the shared <Select> with the `sel-block` (full-width)
+   variant; their styling lives in Select.css. */
 
 .form-note {
   display: flex;

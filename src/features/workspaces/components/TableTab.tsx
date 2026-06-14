@@ -27,6 +27,7 @@ import { ImportModal } from "../../import/components/ImportModal";
 import { useIntrospectionStore, columnsKey } from "../../introspection/state";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Icon } from "../../../shared/ui/Icon";
+import { Select } from "../../../shared/ui/Select";
 import { useToast } from "../../../shared/ui/toastContext";
 import type { ColumnInfo } from "../../../shared/api/engine";
 import { useWorkspacesStore } from "../state";
@@ -475,21 +476,17 @@ export function TableTab({
               <span className="pager-label" id={"pager-label-" + tab.id}>
                 Rows per page
               </span>
-              <select
+              <Select
                 className="pager-size"
+                placement="up"
                 aria-labelledby={"pager-label-" + tab.id}
                 value={String(pageSize)}
-                onChange={(e) => {
-                  setPageSize(Number(e.target.value));
+                options={PAGE_SIZE_OPTIONS.map((n) => ({ value: String(n), label: String(n) }))}
+                onChange={(v) => {
+                  setPageSize(Number(v));
                   setOffset(0);
                 }}
-              >
-                {PAGE_SIZE_OPTIONS.map((n) => (
-                  <option key={n} value={String(n)}>
-                    {n}
-                  </option>
-                ))}
-              </select>
+              />
               <span className="pager-range">{pagerRange}</span>
               <IconBtn
                 icon="chevron_left"

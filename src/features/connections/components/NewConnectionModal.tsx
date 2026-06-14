@@ -33,6 +33,7 @@ import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { ENV_COLOR, ENV_SWATCHES } from "../../../shared/ui/envColors";
 import { Modal, ModalActions, ModalTitle } from "../../../shared/ui/Modal";
+import { Select } from "../../../shared/ui/Select";
 import { useToast } from "../../../shared/ui/toastContext";
 import {
   connectionTest,
@@ -132,7 +133,7 @@ const INITIAL: FormState = {
   db: "",
   user: "",
   file: "",
-  tls: "prefer",
+  tls: "disable",
   password: "",
   useSsh: false,
   sshHost: "",
@@ -605,17 +606,13 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
             </label>
             <label>
               TLS mode
-              <select
+              <Select
+                className="sel-block"
+                aria-label="TLS mode"
                 value={tls}
-                onChange={(e) => field({ tls: e.target.value as TlsMode })}
-                className="form-select"
-              >
-                {TLS_MODES.map((mode) => (
-                  <option key={mode} value={mode}>
-                    {mode}
-                  </option>
-                ))}
-              </select>
+                options={TLS_MODES.map((mode) => ({ value: mode, label: mode }))}
+                onChange={(v) => field({ tls: v })}
+              />
             </label>
             <label>
               Host
@@ -716,15 +713,17 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
                 </label>
                 <label>
                   Auth method
-                  <select
+                  <Select
+                    className="sel-block"
+                    aria-label="Auth method"
                     value={sshAuth}
-                    onChange={(e) => field({ sshAuth: e.target.value as SshAuthMethod })}
-                    className="form-select"
-                  >
-                    <option value="key">Private key</option>
-                    <option value="password">Password</option>
-                    <option value="agent">SSH agent</option>
-                  </select>
+                    options={[
+                      { value: "key", label: "Private key" },
+                      { value: "password", label: "Password" },
+                      { value: "agent", label: "SSH agent" },
+                    ]}
+                    onChange={(v) => field({ sshAuth: v as SshAuthMethod })}
+                  />
                 </label>
                 {sshAuth === "key" ? (
                   <label className="span-2">

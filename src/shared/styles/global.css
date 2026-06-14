@@ -50,30 +50,14 @@ body {
 
 input,
 textarea,
-button,
-select {
+button {
   font-family: inherit;
   color: inherit;
 }
 
-/* Native <select> base: draw our own control on every platform. The GTK
-   (WebKitGTK / Linux) native select ignores the dark theme — it renders
-   washed-out with faint text and a system-light popup. appearance:none + a
-   custom chevron + dark option colors make it match the app everywhere.
-   Each select class still sets its own padding; add right-padding there to
-   leave room for the chevron. */
-select {
-  appearance: none;
-  -webkit-appearance: none;
-  background-image: var(--select-chevron);
-  background-repeat: no-repeat;
-  background-position: right 8px center;
-}
-
-select option {
-  background-color: var(--bg1);
-  color: var(--text);
-}
+/* Dropdowns use the custom <Select> (shared/ui/Select.tsx), not native
+   <select> — the GTK/WebKitGTK native widget can't be themed (washed-out
+   field, dropped chevron, janky popup on Linux). No `select` base rule needed. */
 
 button {
   cursor: pointer;

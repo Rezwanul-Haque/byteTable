@@ -41,6 +41,7 @@ import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Modal, ModalTitle } from "../../../shared/ui/Modal";
+import { Select } from "../../../shared/ui/Select";
 import { useToast } from "../../../shared/ui/toastContext";
 import "./StructureView.css";
 
@@ -921,27 +922,18 @@ function TypeCell({ value, pk, editing, onEdit, onDone, onCommit }: TypeCellProp
   }
 
   if (editing) {
+    // Inline editor: open immediately; picking a type commits, and any close
+    // (Escape / outside-click) exits edit mode.
     return (
-      <select
+      <Select
         className="st-type-select"
-        autoFocus
-        value={value}
+        autoOpen
         aria-label="Column type"
-        onChange={(e) => {
-          onDone();
-          onCommit(e.target.value);
-        }}
-        onBlur={onDone}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") onDone();
-        }}
-      >
-        {options.map((t) => (
-          <option key={t} value={t}>
-            {t}
-          </option>
-        ))}
-      </select>
+        value={value}
+        options={options.map((t) => ({ value: t, label: t }))}
+        onChange={onCommit}
+        onClose={onDone}
+      />
     );
   }
   return (

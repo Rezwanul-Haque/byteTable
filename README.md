@@ -146,6 +146,25 @@ sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev
 portable single-file artifact. Build on the oldest distro you intend to support (glibc
 compatibility is forward, not backward).
 
+#### Installing the build on Linux
+
+- **`.AppImage`** — no install. Make it executable and run it:
+  ```sh
+  chmod +x ByteTable_*.AppImage
+  ./ByteTable_*.AppImage
+  ```
+- **`.deb`** (Debian/Ubuntu) — **install from a terminal:**
+  ```sh
+  sudo apt install ./bytetable_*_amd64.deb     # resolves dependencies
+  # or:
+  sudo dpkg -i ./bytetable_*_amd64.deb && sudo apt -f install
+  ```
+  Then launch from your app menu or run `bytetable`.
+  > ⚠️ **Don't double-click the `.deb`.** On Ubuntu 22.04+ that opens it in the snap-based
+  > "App Center", which **cannot install local `.deb` files** — it appears to do nothing. This is an
+  > Ubuntu limitation, not a problem with the package; use the `apt install ./…` command above.
+- **`.rpm`** (Fedora/RHEL/openSUSE) — `sudo dnf install ./bytetable-*.rpm` (or `sudo zypper install`).
+
 ### Windows
 
 ```powershell

@@ -17,6 +17,45 @@ const ROW_OVERSCAN = 12;
 /** Fallback row height before the CSS var is measured (compact default). */
 const FALLBACK_ROW_H = 26;
 
+// --- explicit per-column pixel widths (shared by header + every body row) ---
+// Each `.dg-row` is its own CSS grid (the body rows are absolutely positioned
+// by the virtualizer, so a single shared grid is impossible). With `max-content`
+// tracks, every row resolved its own track widths from its own content → the
+// header and body computed DIFFERENT widths and columns drifted. Fix (mirrors
+// the browse DataGrid): measure one explicit pixel width per column ONCE (max of
+// the header's intrinsic width and the widest sampled cell, clamped) and build
+// the template from those fixed px tracks so every row uses identical tracks.
+
+/** Min/max column track width (px). MAX bounds one long value from blowing out
+ *  the layout — the cell ellipsizes/scrolls within it. */
+const COL_MIN_PX = 90;
+const COL_MAX_PX = 400;
+/** Row-number gutter width (px) — matches `.dg-rownum` min-width. */
+const ROWNUM_PX = 38;
+/** Horizontal cell/header padding (px) — `.dg-td`/`.dg-th` are `0 12px`. */
+const CELL_PAD_PX = 24;
+/** Cheap mono-font width estimates (JetBrains Mono ≈ 0.6em advance). Body cell
+ *  ~12px (~7.3px/char); header name 11.5px (~7px/char); type label 9.5px
+ *  (~5.7px/char). Estimates only — clamp + ellipsis absorb the slack. */
+const CELL_CHAR_PX = 7.3;
+const HEAD_NAME_CHAR_PX = 7;
+const HEAD_TYPE_CHAR_PX = 5.7;
+/** Small slack for the header name↔type gap (this grid has no header icons). */
+const HEAD_GAP_PX = 10;
+/** Rows sampled when measuring cell widths — enough to be representative without
+ *  scanning a multi-thousand-row result on every recompute. */
+const WIDTH_SAMPLE_ROWS = 200;
+
+/** Render width of one cell value, mirroring CellContent's text output (numbers
+ *  print compact — integer as-is, else `toFixed(2)`; everything else its string
+ *  form; NULL → "null"). */
+function cellTextLength(value: unknown): number {
+  if (value === null || value === undefined) return 4; // "null"
+  if (typeof value === "number")
+    return (Number.isInteger(value) ? String(value) : value.toFixed(2)).length;
+  return String(value).length;
+}
+
 export function SqlResultGrid({ result }: { result: QueryResult }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const { columns, rows } = result;
@@ -43,10 +82,28 @@ export function SqlResultGrid({ result }: { result: QueryResult }) {
     overscan: ROW_OVERSCAN,
   });
 
-  const gridCols = useMemo(
-    () => "38px " + columns.map(() => "minmax(90px, max-content)").join(" "),
-    [columns],
-  );
+  // Grid column template: row-number gutter + one EXPLICIT pixel track per
+  // column, shared by the header and every body row so columns line up exactly.
+  // Each track = clamp(max(header intrinsic, widest sampled cell), MIN, MAX).
+  const gridCols = useMemo(() => {
+    const widths = columns.map((c, ci) => {
+      const typeLen = c.typeHint ? c.typeHint.length : 0;
+      const headerPx =
+        c.name.length * HEAD_NAME_CHAR_PX +
+        typeLen * HEAD_TYPE_CHAR_PX +
+        HEAD_GAP_PX +
+        CELL_PAD_PX;
+      let maxCellLen = 0;
+      const sampleN = Math.min(rows.length, WIDTH_SAMPLE_ROWS);
+      for (let r = 0; r < sampleN; r++) {
+        const len = cellTextLength(rows[r]![ci] ?? null);
+        if (len > maxCellLen) maxCellLen = len;
+      }
+      const cellPx = maxCellLen * CELL_CHAR_PX + CELL_PAD_PX;
+      return Math.round(Math.min(COL_MAX_PX, Math.max(COL_MIN_PX, headerPx, cellPx))) + "px";
+    });
+    return ROWNUM_PX + "px " + widths.join(" ");
+  }, [columns, rows]);
 
   const virtualRows = rowVirtualizer.getVirtualItems();
   const totalHeight = rowVirtualizer.getTotalSize();

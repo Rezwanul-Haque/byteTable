@@ -70,8 +70,10 @@ export function CellContent({
     return <span className="cell-null">null</span>;
   }
   // Binary (BINARY/VARBINARY/BLOB/BYTEA) → BIN badge + UUID/hex/blob chip; takes
-  // precedence over FK so a binary key shows its UUID. Clickable (editor) only
-  // when a handler is supplied (DataGrid); read-only grids render a plain span.
+  // precedence over the plain FK link so a binary key shows its UUID. When the
+  // column is ALSO an FK, the chip hops on click (single-click → peek, the
+  // DataGrid defers it so a double-click edits instead); a non-FK binary chip
+  // opens the editor on click. Read-only grids (no handlers) render a span.
   if (type && isBinaryType(type)) {
     const fb = formatBinary(value, type);
     if (fb) {
@@ -81,21 +83,24 @@ export function CellContent({
           <span className={"bin-val " + fb.kind}>{fb.text}</span>
         </>
       );
-      return onBinClick ? (
-        <button
-          type="button"
-          className="bin-cell"
-          onClick={(e) => {
-            e.stopPropagation();
-            onBinClick(e);
-          }}
-          title="BINARY · double-click to edit"
-        >
-          {inner}
-        </button>
-      ) : (
-        <span className="bin-cell">{inner}</span>
-      );
+      const hop = fk && onFkClick;
+      if (hop || onBinClick) {
+        return (
+          <button
+            type="button"
+            className="bin-cell"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (hop) onFkClick!(value, e);
+              else onBinClick!(e);
+            }}
+            title={hop ? "→ " + fk.table + " · double-click to edit" : "BINARY · double-click to edit"}
+          >
+            {inner}
+          </button>
+        );
+      }
+      return <span className="bin-cell">{inner}</span>;
     }
   }
   // JSON / JSONB → data_object icon + one-line preview.

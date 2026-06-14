@@ -224,6 +224,13 @@ export interface Condition {
   column: string;
   op: FilterOp;
   value: FilterValue | null;
+  /**
+   * Set when `column` is a binary type (BINARY/VARBINARY/BLOB/BYTEA) so the
+   * backend binds the value (a `0x`-hex or UUID string) as raw bytes — matching
+   * bytes-to-bytes instead of as text that would never match. Omit/false for
+   * normal columns.
+   */
+  binary?: boolean;
 }
 
 /**
@@ -292,6 +299,9 @@ export interface RowLookupRequest {
   column: string;
   /** The key value to look up. Bound as a parameter; `null` matches nothing. */
   value: CellValue;
+  /** Set when `column` is binary so the value binds as raw bytes (FK peek on a
+   *  binary key). Omit/false otherwise. */
+  binary?: boolean;
 }
 
 /**
@@ -317,6 +327,9 @@ export interface PkPredicate {
   column: string;
   /** The pk value identifying the row. Bound as a parameter. */
   value: CellValue;
+  /** Set when this pk column is binary so its value binds as raw bytes (so
+   *  `WHERE pk = ?` matches a binary key). Omit/false otherwise. */
+  binary?: boolean;
 }
 
 /**
@@ -336,6 +349,9 @@ export interface UpdateCellRequest {
   column: string;
   /** The new value. Bound as a parameter; `null` sets the cell to NULL. */
   value: CellValue;
+  /** Set when `column` is binary so `value` (a `0x`-hex / UUID string) binds as
+   *  raw bytes. Omit/false otherwise. */
+  binary?: boolean;
   /** The full primary key of the target row, one predicate per pk column. */
   pk: PkPredicate[];
 }

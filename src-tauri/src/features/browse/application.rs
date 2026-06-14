@@ -153,6 +153,7 @@ mod tests {
             table: "authors".into(),
             column: "id".into(),
             value: serde_json::json!(42),
+            binary: false,
         }
     }
 

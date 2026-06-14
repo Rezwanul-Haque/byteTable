@@ -23,6 +23,7 @@ import type {
   FilterSpec,
 } from "../../shared/api/engine";
 import type { FilterDraft, UiCondition } from "../workspaces/types";
+import { isBinaryType } from "./components/binaryCell";
 
 /** One operator's display label + whether it takes a value input. */
 export interface FilterOpDef {
@@ -111,15 +112,17 @@ function toWireCondition(c: UiCondition, columns: ColumnInfo[]): Condition {
     return { column: c.column, op: c.op, value: null };
   }
   const type = columnType(columns, c.column);
+  // A binary column binds its value (0x-hex / UUID) as raw bytes on the backend.
+  const binary = isBinaryType(type);
   if (c.op === "inList") {
     const items = c.value
       .split(",")
       .map((s) => s.trim())
       .filter((s) => s !== "")
       .map((s) => typedValue(s, type));
-    return { column: c.column, op: c.op, value: items };
+    return { column: c.column, op: c.op, value: items, binary };
   }
-  return { column: c.column, op: c.op, value: typedValue(c.value, type) };
+  return { column: c.column, op: c.op, value: typedValue(c.value, type), binary };
 }
 
 /**

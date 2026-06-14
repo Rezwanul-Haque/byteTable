@@ -713,6 +713,12 @@ pub struct Condition {
     pub op: FilterOp,
     /// `None` for `isNull` / `isNotNull`; required for every other operator.
     pub value: Option<FilterValue>,
+    /// True when `column` is a binary type (BINARY/VARBINARY/BLOB/BYTEA). The
+    /// renderer sets this from the column's type so the value (a `0x`-hex or
+    /// UUID string) is bound as raw bytes — comparing bytes-to-bytes — instead
+    /// of as a text literal that would never match. Defaults false.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub binary: bool,
 }
 
 /// How structured [`Condition`]s combine into one WHERE clause. Lowercase on
@@ -841,6 +847,11 @@ pub struct RowLookupRequest {
     /// treats a null key as "no match" (`matchCount: 0`) rather than emitting
     /// `IS NULL` — FK keys are non-null in normal use (see the adapter).
     pub value: serde_json::Value,
+    /// True when `column` is a binary type — the value (a `0x`-hex / UUID string)
+    /// is bound as raw bytes so the FK peek on a binary key matches. Defaults
+    /// false.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub binary: bool,
 }
 
 /// The result of a [`RowLookupRequest`] (M10 "FK peek"): the matching row (if
@@ -939,6 +950,11 @@ pub struct PkPredicate {
     pub column: String,
     /// The pk value identifying the row, as a JSON scalar. Bound as a parameter.
     pub value: serde_json::Value,
+    /// True when this pk column is a binary type — the value (a `0x`-hex or UUID
+    /// string) is then bound as raw bytes so the `WHERE pk = ?` matches a binary
+    /// key. Defaults false.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub binary: bool,
 }
 
 /// A request to update a single cell (M11 inline edit, DESIGN_SPEC §3.5): set
@@ -965,6 +981,11 @@ pub struct UpdateCellRequest {
     pub column: String,
     /// The new value. Bound as a parameter; `null` sets the cell to NULL.
     pub value: serde_json::Value,
+    /// True when `column` is a binary type — `value` (a `0x`-hex or UUID string)
+    /// is then bound as raw bytes so `SET col = ?` writes the right bytes.
+    /// Defaults false.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub binary: bool,
     /// The full primary key of the target row, one predicate per pk column.
     pub pk: Vec<PkPredicate>,
 }
@@ -1659,12 +1680,78 @@ pub const INLINE_BINARY_MAX_BYTES: usize = 32;
 /// a binary primary/foreign key). Larger blobs keep the `[N bytes]` placeholder:
 /// there is no blob viewer yet, and shipping megabytes of hex across IPC for one
 /// grid cell helps no one.
+/// serde `skip_serializing_if` helper: omit a `false` flag from the wire so the
+/// `binary` flags only appear when set, keeping the JSON clean and the
+/// wire-shape tests stable.
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
 /// True for binary column types (binary / varbinary / blob / bytea), matched
 /// case-insensitively on the declared type text. Used by the SQL export to emit
 /// hex literals for binary columns so they round-trip.
 pub fn is_binary_type(data_type: &str) -> bool {
     let t = data_type.to_ascii_lowercase();
     t.contains("binary") || t.contains("blob") || t.contains("bytea")
+}
+
+/// True if `s` is a canonical 8-4-4-4-12 hex UUID.
+fn is_uuid_str(s: &str) -> bool {
+    let b = s.as_bytes();
+    b.len() == 36
+        && b[8] == b'-'
+        && b[13] == b'-'
+        && b[18] == b'-'
+        && b[23] == b'-'
+        && s.chars()
+            .enumerate()
+            .all(|(i, c)| matches!(i, 8 | 13 | 18 | 23) || c.is_ascii_hexdigit())
+}
+
+/// Decode an even-length hex string to bytes; `None` on odd length or a non-hex
+/// digit.
+fn decode_hex(hex: &str) -> Option<Vec<u8>> {
+    if hex.len() % 2 != 0 {
+        return None;
+    }
+    let bytes = hex.as_bytes();
+    let mut out = Vec::with_capacity(hex.len() / 2);
+    let mut i = 0;
+    while i < bytes.len() {
+        let hi = (bytes[i] as char).to_digit(16)?;
+        let lo = (bytes[i + 1] as char).to_digit(16)?;
+        out.push((hi * 16 + lo) as u8);
+        i += 2;
+    }
+    Some(out)
+}
+
+/// Parse a binary cell value (as the renderer sends it for a binary column — a
+/// `0x`-hex string, a canonical UUID, or bare hex) into raw bytes for binding to
+/// a BINARY/BLOB/BYTEA column. `null` → `None` (binds NULL). A non-string value
+/// or malformed hex is a §5 `Invalid` error.
+pub fn parse_binary_value(value: &serde_json::Value) -> Result<Option<Vec<u8>>, AppError> {
+    match value {
+        serde_json::Value::Null => Ok(None),
+        serde_json::Value::String(s) => {
+            let t = s.trim();
+            let hex: String = if is_uuid_str(t) {
+                t.chars().filter(|c| *c != '-').collect()
+            } else {
+                t.strip_prefix("0x")
+                    .or_else(|| t.strip_prefix("0X"))
+                    .unwrap_or(t)
+                    .to_string()
+            };
+            decode_hex(&hex).map(Some).ok_or_else(|| {
+                AppError::Invalid(format!("'{s}' is not valid binary (hex or UUID)"))
+            })
+        }
+        other => Err(AppError::Invalid(format!(
+            "a binary value must be a hex/UUID string, got {other}"
+        ))),
+    }
 }
 
 pub fn binary_to_json(bytes: &[u8]) -> serde_json::Value {
@@ -2294,11 +2381,13 @@ mod tests {
                     column: "status".into(),
                     op: FilterOp::Eq,
                     value: Some(FilterValue::Scalar(serde_json::json!("paid"))),
+                    binary: false,
                 },
                 Condition {
                     column: "deleted_at".into(),
                     op: FilterOp::IsNull,
                     value: None,
+                    binary: false,
                 },
                 Condition {
                     column: "country".into(),
@@ -2307,6 +2396,7 @@ mod tests {
                         serde_json::json!("DE"),
                         serde_json::json!("FR"),
                     ])),
+                    binary: false,
                 },
             ],
             combinator: Combinator::And,
@@ -2352,6 +2442,7 @@ mod tests {
             table: "authors".into(),
             column: "id".into(),
             value: serde_json::json!(42),
+            binary: false,
         };
         let json = serde_json::to_value(&req).unwrap();
         assert_eq!(
@@ -2411,6 +2502,7 @@ mod tests {
                     column: "status".into(),
                     op: FilterOp::Eq,
                     value: Some(FilterValue::Scalar(serde_json::json!("paid"))),
+                    binary: false,
                 }],
                 combinator: Combinator::And,
             }),
@@ -2539,7 +2631,9 @@ mod tests {
             pk: vec![PkPredicate {
                 column: "id".into(),
                 value: serde_json::json!(42),
+                binary: false,
             }],
+            binary: false,
         };
         let json = serde_json::to_value(&req).unwrap();
         assert_eq!(
@@ -2571,10 +2665,12 @@ mod tests {
                 PkPredicate {
                     column: "a".into(),
                     value: serde_json::json!(1),
+                    binary: false,
                 },
                 PkPredicate {
                     column: "b".into(),
                     value: serde_json::json!("x"),
+                    binary: false,
                 },
             ],
             ..req

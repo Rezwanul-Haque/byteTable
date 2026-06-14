@@ -531,14 +531,15 @@ export function DataGrid({
   // rather than navigating. A lone single click runs the hop once the timer
   // elapses. The browser's dblclick threshold (~250–500ms) bounds the wait.
   const onFkClick = useCallback(
-    (fk: FkRef, value: CellValue, event: React.MouseEvent<HTMLButtonElement>) => {
+    (fk: FkRef, value: CellValue, binary: boolean, event: React.MouseEvent<HTMLButtonElement>) => {
       event.stopPropagation();
       const rect = event.currentTarget.getBoundingClientRect();
       if (fkHopTimer.current !== null) window.clearTimeout(fkHopTimer.current);
       fkHopTimer.current = window.setTimeout(() => {
         fkHopTimer.current = null;
         setInsights(null);
-        setFkPeek({ rect, refSchema: schema, refTable: fk.table, refColumn: fk.column, value });
+        // A binary FK key binds its value as bytes for the lookup + seeded filter.
+        setFkPeek({ rect, refSchema: schema, refTable: fk.table, refColumn: fk.column, value, binary });
       }, 250);
     },
     [schema],
@@ -548,6 +549,8 @@ export function DataGrid({
   // referenced `refColumn = value` filter (so the grid shows the row(s)), then
   // close the peek.
   const onOpenInTable = useCallback((anchor: FkPeekAnchor) => {
+    // The seeded filter's binary-ness is derived from the column type at compile
+    // time (compileToSpec), so no flag needs threading here.
     useWorkspacesStore
       .getState()
       .openTableTabWithFilter(anchor.refSchema, anchor.refTable, anchor.refColumn, anchor.value);
@@ -584,11 +587,17 @@ export function DataGrid({
       for (const pkName of pkColumns) {
         const ci = columns.findIndex((c) => c.name === pkName);
         if (ci < 0) return null;
-        preds.push({ column: pkName, value: row[ci] ?? null });
+        // A binary pk binds its value (0x-hex / UUID) as raw bytes so the
+        // WHERE pk = ? matches (binary edit + binary-keyed rows).
+        preds.push({
+          column: pkName,
+          value: row[ci] ?? null,
+          binary: isBinaryType(colMeta.get(pkName)?.dataType),
+        });
       }
       return preds.length > 0 ? preds : null;
     },
-    [columns, pkColumns],
+    [columns, pkColumns, colMeta],
   );
 
   // A cell is editable when the table has a pk, the cell's own column is NOT a
@@ -655,7 +664,9 @@ export function DataGrid({
       // Optimistic: apply now, exit edit mode.
       writeCache(rowIndex, ci, value);
       const generation = generationRef.current;
-      void rowUpdate(handleId, { schema, table, column, value, pk })
+      // A binary target column binds its value (0x-hex / UUID) as raw bytes.
+      const binary = isBinaryType(colMeta.get(column)?.dataType);
+      void rowUpdate(handleId, { schema, table, column, value, binary, pk })
         .then((result) => {
           // A reset (sort/filter/refresh) since we fired invalidated the cache;
           // the toast is still truthful (the row was updated server-side).
@@ -668,7 +679,7 @@ export function DataGrid({
           toast(appErrorMessage(err, "Could not update the cell."), "err");
         });
     },
-    [writeCache, handleId, schema, table, toast],
+    [writeCache, handleId, schema, table, toast, colMeta],
   );
 
   // Commit the active edit: coerce by column type, no-op if unchanged, build
@@ -1014,7 +1025,7 @@ export function DataGrid({
                             column={c.name}
                             type={c.typeHint}
                             fk={fk}
-                            onFkClick={fk ? (value, e) => onFkClick(fk, value, e) : undefined}
+                            onFkClick={fk ? (value, e) => onFkClick(fk, value, bin, e) : undefined}
                             onJsonClick={
                               editable && json ? () => openCellModal("json", rowIndex, ci, c) : undefined
                             }

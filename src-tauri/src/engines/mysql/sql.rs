@@ -81,6 +81,9 @@ pub enum BoundValue {
     /// Text — also the carrier for LIKE patterns and for values bound to
     /// char/varchar/text/decimal columns as their string form.
     Text(String),
+    /// Raw bytes bound to a BINARY/VARBINARY/BLOB column, decoded from the
+    /// renderer's `0x`-hex / UUID value (binary edit + FK filter).
+    Bytes(Vec<u8>),
 }
 
 impl BoundValue {
@@ -123,6 +126,27 @@ impl BoundValue {
                 Self::from_json_operand(other).unwrap_or_else(|_| Self::Text(other.to_string()))
             }
         }
+    }
+
+    /// Bind a binary-column operand (filter/pk): the renderer's `0x`-hex / UUID
+    /// value decoded to raw bytes. A NULL is rejected like any other operand NULL
+    /// (use IS NULL / IS NOT NULL).
+    pub fn from_binary_operand(value: &serde_json::Value) -> Result<Self, AppError> {
+        match crate::shared::engine::parse_binary_value(value)? {
+            Some(bytes) => Ok(Self::Bytes(bytes)),
+            None => Err(AppError::Database(
+                "Use IS NULL / IS NOT NULL to compare with NULL.".to_string(),
+            )),
+        }
+    }
+
+    /// Bind a binary-column `SET col = ?` value: decoded bytes, or NULL when the
+    /// renderer sends null (set the cell to NULL).
+    pub fn from_binary_set(value: &serde_json::Value) -> Result<Self, AppError> {
+        Ok(match crate::shared::engine::parse_binary_value(value)? {
+            Some(bytes) => Self::Bytes(bytes),
+            None => Self::Null,
+        })
     }
 }
 
@@ -206,7 +230,11 @@ fn condition_sql(
         | FilterOp::Lt
         | FilterOp::Lte => {
             let value = require_scalar(condition)?;
-            params.push(BoundValue::from_json_operand(value)?);
+            params.push(if condition.binary {
+                BoundValue::from_binary_operand(value)?
+            } else {
+                BoundValue::from_json_operand(value)?
+            });
             let operator = match condition.op {
                 FilterOp::Eq => "=",
                 FilterOp::Ne => "<>",
@@ -268,7 +296,11 @@ fn condition_sql(
             }
             let mut placeholders = Vec::with_capacity(values.len());
             for value in values {
-                params.push(BoundValue::from_json_operand(value)?);
+                params.push(if condition.binary {
+                    BoundValue::from_binary_operand(value)?
+                } else {
+                    BoundValue::from_json_operand(value)?
+                });
                 placeholders.push("?");
             }
             Ok(format!("{col} IN ({})", placeholders.join(", ")))
@@ -692,6 +724,7 @@ mod tests {
                 column: "qty".into(),
                 op: FilterOp::Gte,
                 value: Some(FilterValue::Scalar(serde_json::json!(10))),
+                binary: false,
             }],
             combinator: Combinator::And,
         };
@@ -762,6 +795,7 @@ mod tests {
                     column: "qty".into(),
                     op,
                     value: Some(value),
+                    binary: false,
                 }],
                 combinator: Combinator::And,
             };
@@ -780,6 +814,7 @@ mod tests {
                     column: "qty".into(),
                     op,
                     value: None,
+                    binary: false,
                 }],
                 combinator: Combinator::And,
             };
@@ -800,6 +835,7 @@ mod tests {
                     serde_json::json!(2),
                     serde_json::json!(3),
                 ])),
+                binary: false,
             }],
             combinator: Combinator::And,
         };
@@ -819,6 +855,7 @@ mod tests {
                     column: "name".into(),
                     op: FilterOp::Eq,
                     value: Some(FilterValue::Scalar(serde_json::json!("ada"))),
+                    binary: false,
                 },
                 Condition {
                     column: "id".into(),
@@ -827,11 +864,13 @@ mod tests {
                         serde_json::json!(1),
                         serde_json::json!(2),
                     ])),
+                    binary: false,
                 },
                 Condition {
                     column: "qty".into(),
                     op: FilterOp::Gt,
                     value: Some(FilterValue::Scalar(serde_json::json!(5))),
+                    binary: false,
                 },
             ],
             combinator: Combinator::And,
@@ -860,11 +899,13 @@ mod tests {
                     column: "id".into(),
                     op: FilterOp::Eq,
                     value: Some(FilterValue::Scalar(serde_json::json!(1))),
+                    binary: false,
                 },
                 Condition {
                     column: "id".into(),
                     op: FilterOp::Eq,
                     value: Some(FilterValue::Scalar(serde_json::json!(2))),
+                    binary: false,
                 },
             ],
             combinator: Combinator::Or,
@@ -880,6 +921,7 @@ mod tests {
                 column: "ghost".into(),
                 op: FilterOp::Eq,
                 value: Some(FilterValue::Scalar(serde_json::json!(1))),
+                binary: false,
             }],
             combinator: Combinator::And,
         };
@@ -912,6 +954,7 @@ mod tests {
                 value: Some(FilterValue::Scalar(serde_json::json!(
                     "'; DROP TABLE t; --"
                 ))),
+                binary: false,
             }],
             combinator: Combinator::And,
         };

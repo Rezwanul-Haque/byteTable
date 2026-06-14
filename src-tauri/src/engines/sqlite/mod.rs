@@ -1010,7 +1010,11 @@ fn fetch_row_by_key_blocking(
             match_count: 0,
         });
     }
-    let bound = json_to_sql_value(&req.value)?;
+    let bound = if req.binary {
+        json_to_blob_operand(&req.value)?
+    } else {
+        json_to_sql_value(&req.value)?
+    };
 
     // First matching row (the key is usually unique → 0 or 1 row).
     let row_sql = format!("SELECT * FROM {qualified} WHERE {col} = ? LIMIT 1");
@@ -1249,7 +1253,13 @@ fn update_cell_blocking(
     // The SET value is bound even when NULL — a bound NULL produces the correct
     // `SET col = NULL` (json_to_sql_value rejects NULL because it is written for
     // WHERE-equality; for the SET we want NULL, so map it directly here).
-    params.push(json_to_set_value(&req.value));
+    // Binary columns (req.binary / predicate.binary) bind their `0x`-hex / UUID
+    // value as a BLOB so the write and the WHERE match the bytes.
+    params.push(if req.binary {
+        json_to_blob_set(&req.value)?
+    } else {
+        json_to_set_value(&req.value)
+    });
 
     // Build `WHERE "pk1" = ? AND "pk2" = ? …` in predicate order. A null pk
     // value never matches — short-circuit to the "no row matched" miss without
@@ -1260,7 +1270,11 @@ fn update_cell_blocking(
         if predicate.value.is_null() {
             return Err(no_row_matched_error());
         }
-        params.push(json_to_sql_value(&predicate.value)?);
+        params.push(if predicate.binary {
+            json_to_blob_operand(&predicate.value)?
+        } else {
+            json_to_sql_value(&predicate.value)?
+        });
         where_fragments.push(format!("{} = ?", quote_ident(&predicate.column)));
     }
     let where_sql = where_fragments.join(" AND ");
@@ -1533,6 +1547,27 @@ fn json_to_set_value(value: &serde_json::Value) -> SqlValue {
     }
 }
 
+/// Bind a binary-column operand (filter/pk) as a SQLite BLOB: the renderer's
+/// `0x`-hex / UUID value decoded to raw bytes. NULL is rejected like any operand
+/// NULL (use IS NULL / IS NOT NULL).
+fn json_to_blob_operand(value: &serde_json::Value) -> Result<SqlValue, AppError> {
+    match crate::shared::engine::parse_binary_value(value)? {
+        Some(bytes) => Ok(SqlValue::Blob(bytes)),
+        None => Err(AppError::Database(
+            "Use IS NULL / IS NOT NULL to compare with NULL.".to_string(),
+        )),
+    }
+}
+
+/// Bind a binary-column `SET col = ?` value as a SQLite BLOB: decoded bytes, or
+/// NULL when the renderer sends null.
+fn json_to_blob_set(value: &serde_json::Value) -> Result<SqlValue, AppError> {
+    Ok(match crate::shared::engine::parse_binary_value(value)? {
+        Some(bytes) => SqlValue::Blob(bytes),
+        None => SqlValue::Null,
+    })
+}
+
 /// Render a human-readable, values-inlined UPDATE for the §3.5 toast. Cosmetic
 /// only — the executed query binds every value (see [`UpdateResult`]); this
 /// shows what the bound query does, with identifiers quoted and values rendered
@@ -1673,7 +1708,11 @@ fn condition_sql(
         | FilterOp::Lt
         | FilterOp::Lte => {
             let value = require_scalar(condition)?;
-            params.push(json_to_sql_value(value)?);
+            params.push(if condition.binary {
+                json_to_blob_operand(value)?
+            } else {
+                json_to_sql_value(value)?
+            });
             let operator = match condition.op {
                 FilterOp::Eq => "=",
                 FilterOp::Ne => "<>",
@@ -1722,7 +1761,11 @@ fn condition_sql(
             }
             let mut placeholders = Vec::with_capacity(values.len());
             for value in values {
-                params.push(json_to_sql_value(value)?);
+                params.push(if condition.binary {
+                    json_to_blob_operand(value)?
+                } else {
+                    json_to_sql_value(value)?
+                });
                 placeholders.push("?");
             }
             Ok(format!("{col} IN ({})", placeholders.join(", ")))
@@ -3077,6 +3120,7 @@ mod tests {
             column: column.into(),
             op,
             value,
+            binary: false,
         }
     }
 
@@ -3575,6 +3619,7 @@ mod tests {
             table: table.into(),
             column: column.into(),
             value,
+            binary: false,
         }
     }
 
@@ -3832,6 +3877,7 @@ mod tests {
                 column: "note".into(),
                 op: FilterOp::Eq,
                 value: Some(FilterValue::Scalar(serde_json::json!("fresh"))),
+                binary: false,
             }],
             combinator: Combinator::And,
         };
@@ -3862,6 +3908,7 @@ mod tests {
                 value: Some(FilterValue::Scalar(serde_json::json!(
                     "'; DROP TABLE products; --"
                 ))),
+                binary: false,
             }],
             combinator: Combinator::And,
         };
@@ -3944,6 +3991,7 @@ mod tests {
         PkPredicate {
             column: column.into(),
             value,
+            binary: false,
         }
     }
 
@@ -3959,6 +4007,7 @@ mod tests {
             column: column.into(),
             value,
             pk,
+            binary: false,
         }
     }
 

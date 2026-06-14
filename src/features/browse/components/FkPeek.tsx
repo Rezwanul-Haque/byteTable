@@ -32,6 +32,9 @@ export interface FkPeekAnchor {
   refColumn: string;
   /** The FK cell's value (the key looked up + seeded). */
   value: CellValue;
+  /** True when the key is a binary column — the value binds as raw bytes so the
+   *  lookup (and the seeded filter) match a binary key. */
+  binary?: boolean;
 }
 
 /** Clamp a popover of `width`×`height` near `rect` to the viewport. */
@@ -59,7 +62,7 @@ export function FkPeek({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const { refSchema, refTable, refColumn, value } = anchor;
+  const { refSchema, refTable, refColumn, value, binary } = anchor;
 
   // Look up the referenced row. A fresh anchor (new click) re-fetches; a stale
   // response is dropped via the alive flag.
@@ -75,6 +78,7 @@ export function FkPeek({
           table: refTable,
           column: refColumn,
           value,
+          binary,
         });
         if (!alive) return;
         setResult(r);
@@ -88,7 +92,7 @@ export function FkPeek({
     return () => {
       alive = false;
     };
-  }, [handleId, refSchema, refTable, refColumn, value]);
+  }, [handleId, refSchema, refTable, refColumn, value, binary]);
 
   // Outside-click / Esc close (Rail/Sidebar pattern). The anchoring cell lives
   // outside this popover, so any mousedown not inside the popover closes it.
@@ -147,7 +151,7 @@ export function FkPeek({
                 {c.name}
               </span>
               <span className="fk-field-val">
-                <CellContent value={row[i] ?? null} column={c.name} />
+                <CellContent value={row[i] ?? null} column={c.name} type={c.typeHint} />
               </span>
             </div>
           ))}

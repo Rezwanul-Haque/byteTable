@@ -163,9 +163,11 @@ mod tests {
             table: "users".into(),
             column: "name".into(),
             value: serde_json::json!("Ada"),
+            binary: false,
             pk: vec![crate::shared::engine::PkPredicate {
                 column: "id".into(),
                 value: serde_json::json!(42),
+                binary: false,
             }],
         }
     }

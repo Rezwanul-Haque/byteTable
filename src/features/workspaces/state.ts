@@ -368,8 +368,9 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
       workspaces: patchActiveUi(state, (ui) => {
         const tabs = ui.tabs ?? [];
         // Build the seeded filter: one applied `column = value` eq condition.
-        // The value rides as a string in the UI draft; compileToSpec retypes
-        // it per the column's declared type (numeric → number) at fetch time.
+        // The value rides as a string in the UI draft; compileToSpec retypes it
+        // per the column's declared type at fetch time and marks binary columns
+        // so the backend binds the key as bytes.
         const cond = { ...newCondition(column), op: "eq" as const, value: stringifySeed(value) };
         const draft = {
           conditions: [cond],

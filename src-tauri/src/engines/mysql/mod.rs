@@ -386,7 +386,11 @@ impl EngineConnection for MysqlEngineConnection {
                 match_count: 0,
             });
         }
-        let bound = BoundValue::from_json_operand(&req.value)?;
+        let bound = if req.binary {
+            BoundValue::from_binary_operand(&req.value)?
+        } else {
+            BoundValue::from_json_operand(&req.value)?
+        };
 
         let qualified = qualified(&req.schema, &req.table);
         let col = quote_ident(&req.column);
@@ -529,6 +533,7 @@ fn bind_value<'q>(
         BoundValue::Int(i) => query.bind(*i),
         BoundValue::Float(f) => query.bind(*f),
         BoundValue::Text(s) => query.bind(s.as_str()),
+        BoundValue::Bytes(b) => query.bind(b.as_slice()),
     }
 }
 
@@ -1312,16 +1317,26 @@ async fn update_cell(pool: &MySqlPool, req: &UpdateCellRequest) -> Result<Update
     let qualified = qualified(&req.schema, &req.table);
     let set_col = quote_ident(&req.column);
 
-    // ?1 = SET value; ?2.. = each pk value in predicate order.
+    // ?1 = SET value; ?2.. = each pk value in predicate order. Binary columns
+    // (req.binary / predicate.binary) bind their `0x`-hex / UUID value as raw
+    // bytes so `SET col = ?` writes — and `WHERE pk = ?` matches — the bytes.
     let mut params: Vec<BoundValue> = Vec::with_capacity(1 + req.pk.len());
-    params.push(BoundValue::from_json_set(&req.value));
+    params.push(if req.binary {
+        BoundValue::from_binary_set(&req.value)?
+    } else {
+        BoundValue::from_json_set(&req.value)
+    });
 
     let mut where_fragments: Vec<String> = Vec::with_capacity(req.pk.len());
     for predicate in &req.pk {
         if predicate.value.is_null() {
             return Err(no_row_matched_error());
         }
-        params.push(BoundValue::from_json_operand(&predicate.value)?);
+        params.push(if predicate.binary {
+            BoundValue::from_binary_operand(&predicate.value)?
+        } else {
+            BoundValue::from_json_operand(&predicate.value)?
+        });
         where_fragments.push(format!("{} = ?", quote_ident(&predicate.column)));
     }
     let where_sql = where_fragments.join(" AND ");
@@ -2062,11 +2077,13 @@ mod tests {
         let non_pk = vec![PkPredicate {
             column: "name".into(),
             value: serde_json::json!("x"),
+            binary: false,
         }];
         assert!(validate_pk_predicates(&["id"], &all, "t", &non_pk).is_err());
         let ok = vec![PkPredicate {
             column: "id".into(),
             value: serde_json::json!(1),
+            binary: false,
         }];
         assert!(validate_pk_predicates(&["id"], &all, "t", &ok).is_ok());
     }
@@ -2366,6 +2383,7 @@ mod integration {
                         column: "in_print".into(),
                         op: FilterOp::Eq,
                         value: Some(FilterValue::Scalar(serde_json::json!(1))),
+                        binary: false,
                     }],
                     combinator: Combinator::And,
                 }),
@@ -2399,6 +2417,7 @@ mod integration {
                             column: "id".into(),
                             op,
                             value: Some(value),
+                            binary: false,
                         }],
                         combinator: Combinator::And,
                     }),
@@ -2421,6 +2440,7 @@ mod integration {
                         column: "title".into(),
                         op: FilterOp::Contains,
                         value: Some(FilterValue::Scalar(serde_json::json!("ette"))),
+                        binary: false,
                     }],
                     combinator: Combinator::And,
                 }),
@@ -2444,6 +2464,7 @@ mod integration {
                         value: Some(FilterValue::Scalar(serde_json::json!(
                             "'; DROP TABLE books; --"
                         ))),
+                        binary: false,
                     }],
                     combinator: Combinator::And,
                 }),
@@ -2535,6 +2556,7 @@ mod integration {
                 table: "authors".into(),
                 column: "id".into(),
                 value: serde_json::json!(1),
+                binary: false,
             })
             .await
             .expect("lookup");
@@ -2547,6 +2569,7 @@ mod integration {
                 table: "authors".into(),
                 column: "id".into(),
                 value: serde_json::json!(999),
+                binary: false,
             })
             .await
             .expect("lookup miss");
@@ -2580,6 +2603,7 @@ mod integration {
                         column: "in_print".into(),
                         op: FilterOp::Eq,
                         value: Some(FilterValue::Scalar(serde_json::json!(1))),
+                        binary: false,
                     }],
                     combinator: Combinator::And,
                 }),
@@ -2612,7 +2636,9 @@ mod integration {
                 pk: vec![PkPredicate {
                     column: "id".into(),
                     value: serde_json::json!(10),
+                    binary: false,
                 }],
+                binary: false,
             })
             .await
             .expect("update");
@@ -2633,6 +2659,7 @@ mod integration {
                 column: "note".into(),
                 value: serde_json::json!("x"),
                 pk: vec![],
+                binary: false,
             })
             .await;
         assert!(matches!(no_pk, Err(AppError::Database(_))));
@@ -2647,7 +2674,9 @@ mod integration {
                 pk: vec![PkPredicate {
                     column: "id".into(),
                     value: serde_json::json!(99999),
+                    binary: false,
                 }],
+                binary: false,
             })
             .await;
         assert!(matches!(stale, Err(AppError::Database(_))));
@@ -2663,7 +2692,9 @@ mod integration {
                 pk: vec![PkPredicate {
                     column: "id".into(),
                     value: serde_json::json!(10),
+                    binary: false,
                 }],
+                binary: false,
             })
             .await;
         assert!(matches!(rollback, Err(AppError::Database(_))));

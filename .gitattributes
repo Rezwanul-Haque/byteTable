@@ -1,0 +1,10 @@
+# Normalize all text files to LF in the repo and the working tree on every
+# platform. Without this, Windows checks out CRLF, and `prettier --check` (which
+# expects LF) fails CI on Windows while passing on macOS/Linux.
+* text=auto eol=lf
+
+# Binary files — never normalize line endings (would corrupt them).
+*.png binary
+*.ico binary
+*.icns binary
+*.db binary

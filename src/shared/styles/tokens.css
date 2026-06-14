@@ -62,6 +62,10 @@
   /* Font stacks */
   --ui: "IBM Plex Sans", system-ui, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* Custom chevron for native <select> (drawn ourselves — the GTK/WebKitGTK
+     native control on Linux ignores the dark theme; see global.css). */
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b9099' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
 }
 
 /* data-darkness="charcoal" is the default :root values above. */

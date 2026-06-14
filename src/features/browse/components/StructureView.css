@@ -242,12 +242,14 @@
 }
 
 .st-type-select {
-  background: var(--bg0);
+  /* background-color so the global select chevron survives (global.css) */
+  background-color: var(--bg0);
   border: 1px solid var(--accent);
   border-radius: 5px;
   font-family: var(--mono);
   font-size: 11px;
-  padding: 2px 4px;
+  /* right padding leaves room for the global select chevron (global.css) */
+  padding: 2px 20px 2px 4px;
   outline: none;
   color: #c678dd;
   max-width: 140px;

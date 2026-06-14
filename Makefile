@@ -16,27 +16,27 @@ help: ## Show this help
 install: ## Install renderer dependencies (pnpm)
 	$(PNPM) install
 
-dev: ## Run the app in development (Tauri + Vite, hot reload)
+dev: install ## Run the app in development (Tauri + Vite, hot reload)
 	$(PNPM) tauri dev
 
-test: ## Run the test suite (Rust unit/integration tests + TS typecheck)
+test: install ## Run the test suite (Rust unit/integration tests + TS typecheck)
 	$(CARGO) test --manifest-path $(MANIFEST)
 	$(PNPM) typecheck
 
-lint: ## Lint everything (ESLint + clippy + rustfmt/prettier checks)
+lint: install ## Lint everything (ESLint + clippy + rustfmt/prettier checks)
 	$(PNPM) lint
 	$(PNPM) format:check
 	$(CARGO) fmt --manifest-path $(MANIFEST) -- --check
 	$(CARGO) clippy --manifest-path $(MANIFEST) --all-targets --all-features -- -D warnings
 
-fmt: ## Auto-format everything (prettier + rustfmt)
+fmt: install ## Auto-format everything (prettier + rustfmt)
 	$(PNPM) format
 	$(CARGO) fmt --manifest-path $(MANIFEST)
 
-build: ## Build a production desktop bundle (Tauri release)
+build: install ## Build a production desktop bundle (Tauri release)
 	$(PNPM) tauri build
 
-build-debug: ## Build the renderer + a debug binary (fast, no bundling)
+build-debug: install ## Build the renderer + a debug binary (fast, no bundling)
 	$(PNPM) build
 	$(CARGO) build --manifest-path $(MANIFEST)
 

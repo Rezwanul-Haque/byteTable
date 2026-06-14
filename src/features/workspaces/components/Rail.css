@@ -40,9 +40,16 @@
   align-items: center;
   overflow-y: auto;
   scrollbar-width: none;
-  /* 2px top padding so the first tile's hover lift (translateY(-1px)) and its
-     active glow aren't clipped by overflow-y at the list's top edge. */
-  padding: 2px 0;
+  /* Horizontal padding gives the active tile's left indicator bar (::before at
+     left:-7px) and its glow room INSIDE this scroll box. `overflow-y: auto`
+     forces overflow-x to compute to `auto` (CSS spec: a non-visible value on one
+     axis makes `visible` on the other compute to `auto`), which would otherwise
+     CLIP anything overflowing the tile horizontally — this is why the indicator
+     looked cut off on Linux/WebKitGTK. The 2px top also keeps the first tile's
+     hover lift (translateY(-1px)) from clipping at the top edge. The side
+     padding equals (rail 56 − tile 40)/2, so tiles stay centered and the rail
+     width is unchanged. */
+  padding: 2px 8px;
 }
 
 .rail-list::-webkit-scrollbar {
@@ -83,7 +90,9 @@
 .ws-tile.active::before {
   content: "";
   position: absolute;
-  left: -9px;
+  /* -7px keeps the bar just inside the rail's left edge (tile is centered 8px
+     from the edge), so it isn't clipped by the window border on Linux. */
+  left: -7px;
   top: 50%;
   transform: translateY(-50%);
   width: 3px;

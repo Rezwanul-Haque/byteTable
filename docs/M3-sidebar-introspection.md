@@ -2,11 +2,12 @@
 
 Status: shipped, merged on `main` (`feat: M3 — sidebar: introspection`).
 
-> **Provenance.** This spec documents the *shipped* M3 surface as it exists in the repo today (the sidebar later absorbed M7/M11/M15 additions — structure mode, truncate, import/export, drop-schema — which are flagged inline and are NOT part of M3 proper). Source of truth is the code, not the prototype. Every "must / required" sentence below is a build requirement; descriptive prose ("the prototype keeps…") is rationale. Design intent: handoff `MILESTONES.md` §M3 + `DESIGN_SPEC.md` §3.3. Rebuild target: a code generator could reproduce M3 from this file plus the cited paths.
+> **Provenance.** This spec documents the _shipped_ M3 surface as it exists in the repo today (the sidebar later absorbed M7/M11/M15 additions — structure mode, truncate, import/export, drop-schema — which are flagged inline and are NOT part of M3 proper). Source of truth is the code, not the prototype. Every "must / required" sentence below is a build requirement; descriptive prose ("the prototype keeps…") is rationale. Design intent: handoff `MILESTONES.md` §M3 + `DESIGN_SPEC.md` §3.3. Rebuild target: a code generator could reproduce M3 from this file plus the cited paths.
 >
 > **Slice-shape note (load-bearing).** M3 introspection is split across two backend features by deliberate design (see `src-tauri/src/features/introspection/mod.rs`):
+>
 > - The **new** introspection surface (`table_meta`, column lists for the expandable rows) lives in `features::introspection`.
-> - The **table list** (`connection_tables`) and **schema list** (`connection_schemas`) predate the introspection slice and still live in `features::connections`; the renderer already depends on those command names, so consolidating them is *deferred* (the `mod.rs` doc says so explicitly). Do not move them as part of M3.
+> - The **table list** (`connection_tables`) and **schema list** (`connection_schemas`) predate the introspection slice and still live in `features::connections`; the renderer already depends on those command names, so consolidating them is _deferred_ (the `mod.rs` doc says so explicitly). Do not move them as part of M3.
 > - On the renderer there is **no** `src/features/introspection/api.ts`. The introspection slice is renderer-state-only: `src/features/introspection/state.ts` (a zustand cache). Its typed invoke wrappers are borrowed — `tableMeta` from `src/shared/api/engine.ts`, `connectionTables`/`connectionSchemas` from `src/features/connections/api.ts`.
 > - The **Sidebar component** lives at `src/features/workspaces/components/Sidebar.tsx` (it composes workspace identity + the introspection cache), NOT under `src/features/introspection/`. Structural sidebar UI state (selected schema, expanded tables) is persisted on `workspace.ui`; search text + open popovers are transient local state.
 
@@ -34,7 +35,7 @@ All introspection DTOs are shared across every slice that talks to a connection,
 
 ### Ports — `EngineConnection` introspection methods
 
-There is **no** standalone `SchemaReader` trait. The M2 note in `engine.rs` records that the original `SchemaReader`/`QueryExecutor` stubs were folded into one port, [`EngineConnection`] in `src-tauri/src/shared/engine.rs`, because introspection and query execution are both operations *on an open connection*. The async-commands rule applies: the trait is `#[async_trait]` and every DB-touching command is `async fn`. M3 uses three methods:
+There is **no** standalone `SchemaReader` trait. The M2 note in `engine.rs` records that the original `SchemaReader`/`QueryExecutor` stubs were folded into one port, [`EngineConnection`] in `src-tauri/src/shared/engine.rs`, because introspection and query execution are both operations _on an open connection_. The async-commands rule applies: the trait is `#[async_trait]` and every DB-touching command is `async fn`. M3 uses three methods:
 
 ```rust
 #[async_trait]
@@ -54,6 +55,7 @@ pub trait EngineConnection: Send + Sync {
 Two slices, one composition rule (`domain ← application ← {infrastructure | commands}`):
 
 - **`features::introspection::application::get_table_meta`** (`src-tauri/src/features/introspection/application.rs`):
+
   ```rust
   pub async fn get_table_meta(
       manager: &ConnectionManager, handle: &ConnectionHandleId,
@@ -62,9 +64,11 @@ Two slices, one composition rule (`domain ← application ← {infrastructure | 
       manager.get_sql(handle).await?.table_meta(schema, table).await
   }
   ```
-  This is sanctioned cross-feature composition: the introspection slice consumes the connections feature's *public application API* (`ConnectionManager`) at its own application layer.
+
+  This is sanctioned cross-feature composition: the introspection slice consumes the connections feature's _public application API_ (`ConnectionManager`) at its own application layer.
 
 - **`features::connections::application::connection_schemas` / `connection_tables`** (`src-tauri/src/features/connections/application/mod.rs`):
+
   ```rust
   pub async fn connection_schemas(manager, handle) -> Result<Vec<SchemaInfo>, AppError> {
       manager.get_sql(handle).await?.list_schemas().await
@@ -74,24 +78,28 @@ Two slices, one composition rule (`domain ← application ← {infrastructure | 
   }
   ```
 
-- **Refresh** has no backend use-case: it is a *renderer* operation that force-refetches `connection_schemas` + `connection_tables` (see Frontend). There is no `refresh_schema` command.
+- **Refresh** has no backend use-case: it is a _renderer_ operation that force-refetches `connection_schemas` + `connection_tables` (see Frontend). There is no `refresh_schema` command.
 
 ### Infrastructure — engine-specific introspection (SQLite at M3)
 
 All engine SQL lives in `src-tauri/src/engines/sqlite/mod.rs` behind the port. The driver is `rusqlite` (sync, `!Sync`): the adapter wraps the `Connection` in `Arc<Mutex<…>>` and hops every operation through `spawn_blocking`.
 
 - **`list_schemas` → `list_schemas_blocking`**: `PRAGMA database_list` for the names (`main` + attached), then a best-effort `count_tables` per schema:
+
   ```sql
   SELECT count(*) FROM {schema}.sqlite_schema
   WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
   ```
+
   A count failure (e.g. a detach race) downgrades that schema's `table_count` to `None` rather than failing the whole listing.
 
 - **`list_tables` → `list_tables_blocking`**: `ensure_schema_exists` first (a §5 "Schema 'x' does not exist. Available schemas: …" on a miss), then:
+
   ```sql
   SELECT name FROM {schema}.sqlite_schema
   WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name
   ```
+
   Tables come back **sorted by name**. Per table, an exact row count `SELECT count(*) FROM {schema}.{table}` — but **only for the first `MAX_COUNTED_TABLES` (= 200) tables**; the rest get `approx_row_count: None`. This caps introspection cost on huge schemas. A failed individual count is `None`, not a failed listing. All identifiers are quoted via `quote_ident`.
 
 - **`table_meta` → `table_meta_blocking`**: `ensure_schema_exists`, then prove the table exists (`PRAGMA table_info` returns zero rows for an unknown table instead of erroring, so existence is checked against `sqlite_schema` first to emit the §5 message), then `PRAGMA table_info` for columns (+ `foreign_key_list`/`index_list`/DDL for the M7 fields).
@@ -102,13 +110,14 @@ All engine SQL lives in `src-tauri/src/engines/sqlite/mod.rs` behind the port. T
 
 Registered in `src-tauri/src/lib.rs` via `tauri::generate_handler![…]`. All `async fn`, all return `Result<T, AppError>` (AppError serializes to the §5 error envelope the renderer's `appErrorMessage` reads).
 
-| command | feature / file | args | returns | errors |
-|---|---|---|---|---|
-| `connection_schemas` | connections `commands.rs` | `handleId: ConnectionHandleId` | `Vec<SchemaInfo>` | `NotFound` (closed handle), `Unsupported` (KV engine), `Database` |
-| `connection_tables` | connections `commands.rs` | `handleId`, `schema: String` | `Vec<TableInfo>` | as above + `Database` "Schema 'x' does not exist…" |
-| `table_meta` | introspection `commands.rs` | `handleId`, `schema: String`, `table: String` | `TableMeta` | as above + `Database` "Table 'x' does not exist. Available tables: …" |
+| command              | feature / file              | args                                          | returns           | errors                                                                |
+| -------------------- | --------------------------- | --------------------------------------------- | ----------------- | --------------------------------------------------------------------- |
+| `connection_schemas` | connections `commands.rs`   | `handleId: ConnectionHandleId`                | `Vec<SchemaInfo>` | `NotFound` (closed handle), `Unsupported` (KV engine), `Database`     |
+| `connection_tables`  | connections `commands.rs`   | `handleId`, `schema: String`                  | `Vec<TableInfo>`  | as above + `Database` "Schema 'x' does not exist…"                    |
+| `table_meta`         | introspection `commands.rs` | `handleId`, `schema: String`, `table: String` | `TableMeta`       | as above + `Database` "Table 'x' does not exist. Available tables: …" |
 
 `table_meta` handler (the whole slice's presentation layer):
+
 ```rust
 #[tauri::command]
 pub async fn table_meta(
@@ -118,7 +127,8 @@ pub async fn table_meta(
     application::get_table_meta(state.manager(), &handle_id, &schema, &table).await
 }
 ```
-Note it reads the *connections* feature's managed `ConnectionsState` for the handle manager — sanctioned cross-feature composition at the command boundary (the introspection slice registers no state of its own).
+
+Note it reads the _connections_ feature's managed `ConnectionsState` for the handle manager — sanctioned cross-feature composition at the command boundary (the introspection slice registers no state of its own).
 
 ## Frontend (React)
 
@@ -133,7 +143,8 @@ A zustand store, `useIntrospectionStore`, that caches what the backend returned.
 Maps: `tables`, `columns`, `tableMetas`, `loading: Record<string, boolean>`, `errors: Record<string, string>`.
 
 Actions:
-- `loadTables(handleId, schema, { force? })` → `Promise<TableInfo[] | null>`. Cache-first; `force` refetches and overwrites, and on a *successful forced* refetch **drops that schema's cached column lists + table metas** (`omitPrefixed(columns, tablesKey + SEP)`) — refresh exists to pick up out-of-band DDL, which affects columns as much as tables; expanded rows refetch lazily. Never rejects: on failure resolves `null` and writes `errors[tablesKey]`. De-duped via a module-local `inflightTables` map (handles StrictMode's doubled effects).
+
+- `loadTables(handleId, schema, { force? })` → `Promise<TableInfo[] | null>`. Cache-first; `force` refetches and overwrites, and on a _successful forced_ refetch **drops that schema's cached column lists + table metas** (`omitPrefixed(columns, tablesKey + SEP)`) — refresh exists to pick up out-of-band DDL, which affects columns as much as tables; expanded rows refetch lazily. Never rejects: on failure resolves `null` and writes `errors[tablesKey]`. De-duped via a module-local `inflightTables` map (handles StrictMode's doubled effects).
 - `loadColumns(handleId, schema, table)` → `Promise<ColumnInfo[] | null>`. Cache-first; calls `tableMeta(...)` and stores `meta.columns`. Same null-on-failure contract; de-duped via `inflightColumns`.
 - `loadTableMeta(...)` (M7) — warms the `columns` cache from the same payload.
 - `invalidate(handleId, schema?)` — drops everything under the handle (workspace closed) or under one schema prefix. Used by `closeWorkspace`.
@@ -143,6 +154,7 @@ Actions:
 ### API — typed invoke wrappers
 
 No introspection-specific api.ts. The sidebar imports:
+
 - `tableMeta(handleId, schema, table): Promise<TableMeta>` — `src/shared/api/engine.ts` → `invoke("table_meta", { handleId, schema, table })`.
 - `connectionTables(handleId, schema): Promise<TableInfo[]>` — `src/features/connections/api.ts` → `invoke("connection_tables", { handleId, schema })`.
 - `connectionSchemas(handleId): Promise<SchemaInfo[]>` — `src/features/connections/api.ts` → `invoke("connection_schemas", { handleId })`.
@@ -169,6 +181,7 @@ One component renders the whole §3.3 sidebar. Structure (top → bottom):
 **Refresh behavior** (`refresh()` in `Sidebar.tsx`): guarded against re-entry (`if (refreshing) return`); sets `refreshing`, records `started = Date.now()`, then `Promise.all([connectionSchemas(handleId), loadTables(handleId, schemaName, { force: true })])`. On success: `setWorkspaceSchemas(id, schemas)` and `refreshed = fresh.length`. On failure: read `errors[tablesKey]` (or a fallback). **Then enforce a 750ms minimum spinner** (`await sleep(750 - elapsed)` if positive), clear `refreshing`, and toast — exact success copy `Schema "{schemaName}" refreshed — {N} tables` (`"ok"`), else the failure message (`"err"`). (Note the curly quotes `“”` around the schema name in the shipped string.)
 
 **Context menu** (`.ctx-menu`, `role="menu"`, clamped into the viewport via `CTX_MENU_W`/`CTX_MENU_H`). The four M3 items:
+
 - **Open data** (`table` icon) → `openTableTab(schema, table)` (M4).
 - **View structure** (`account_tree` icon) → `openTableTab(schema, table, "structure")` — **stubbed for M3 / wired in M7**; in M3 it opened a data tab.
 - **Query in SQL editor** (`terminal` icon) → `openSqlTab` — **stubbed for M3 / wired in M6**.
@@ -196,25 +209,25 @@ From `src/features/workspaces/components/Sidebar.css` (+ `Sidebar.css` is import
 
 Rust in `src-tauri/src/shared/engine.rs`; TS in `src/shared/api/engine.ts` (kept in lockstep; camelCase on the wire).
 
-| Rust | TS | wire fields (M3-relevant) |
-|---|---|---|
-| `SchemaInfo` | `SchemaInfo` | `name: string`, `tableCount: number \| null` |
-| `TableInfo` | `TableInfo` | `name: string`, `approxRowCount: number \| null` |
-| `ColumnInfo` | `ColumnInfo` | `name`, `dataType`, `nullable`, `pk`, `default?` (null/absent), `fk: FkRef \| null` |
-| `FkRef` | `FkRef` | `table: string`, `column: string` (`column` may be `""` for an unresolvable implicit fk) |
-| `TableMeta` | `TableMeta` | `columns: ColumnInfo[]` (+ M7 fields `comment?`, `indexes`, `foreignKeys`, `referencedBy`, `ddl?`) |
-| `Engine` | `Engine` | `"sqlite" \| "mysql" \| "postgres" \| "redis"` (lowercase) |
+| Rust         | TS           | wire fields (M3-relevant)                                                                          |
+| ------------ | ------------ | -------------------------------------------------------------------------------------------------- |
+| `SchemaInfo` | `SchemaInfo` | `name: string`, `tableCount: number \| null`                                                       |
+| `TableInfo`  | `TableInfo`  | `name: string`, `approxRowCount: number \| null`                                                   |
+| `ColumnInfo` | `ColumnInfo` | `name`, `dataType`, `nullable`, `pk`, `default?` (null/absent), `fk: FkRef \| null`                |
+| `FkRef`      | `FkRef`      | `table: string`, `column: string` (`column` may be `""` for an unresolvable implicit fk)           |
+| `TableMeta`  | `TableMeta`  | `columns: ColumnInfo[]` (+ M7 fields `comment?`, `indexes`, `foreignKeys`, `referencedBy`, `ddl?`) |
+| `Engine`     | `Engine`     | `"sqlite" \| "mysql" \| "postgres" \| "redis"` (lowercase)                                         |
 
 `AppError` serializes to the §5 envelope; the renderer turns it into a sentence via `appErrorMessage(err, fallback)` (`src/shared/api/error.ts`).
 
 ## Behavior & edge cases
 
-- **Out-of-band rename surfaced by refresh.** A table renamed in another tool is invisible until **Refresh**, which `force`-refetches `connection_tables` (overwriting the cache) *and* `connection_schemas`, then `setWorkspaceSchemas`. The forced refetch drops the schema's cached column lists + table metas, so an expanded row picks up the new columns on its lazy refetch. Acceptance test: rename a table out-of-band → Refresh → it appears.
+- **Out-of-band rename surfaced by refresh.** A table renamed in another tool is invisible until **Refresh**, which `force`-refetches `connection_tables` (overwriting the cache) _and_ `connection_schemas`, then `setWorkspaceSchemas`. The forced refetch drops the schema's cached column lists + table metas, so an expanded row picks up the new columns on its lazy refetch. Acceptance test: rename a table out-of-band → Refresh → it appears.
 - **100-table perf / no jank.** Filtering is plain case-insensitive `includes` over the in-memory list (no per-keystroke I/O). Tables arrive pre-sorted by name from SQLite. The list is a simple scroll container (`.sidebar-tables { overflow-y: auto }`); column lists fetch lazily only for expanded rows. Whole-map zustand selects are fine because entries change only on rare fetch completions. Acceptance test: search + expansion on a 100-table DB without jank.
 - **Row-count caching / the 200-table ceiling.** Counts are an exact `count(*)` per table, but only for the first **200** tables (`MAX_COUNTED_TABLES`); beyond that `approxRowCount` is `null` and the cell renders `—`. A failed individual count is `null`, not a failed listing. The TableInfo cache (`fetchedAt`) means counts are computed once per fetch and reused across workspace switches until a refresh forces a recompute.
 - **Stale handle / wrong engine.** `manager.get_sql` returns a `NotFound` "closed" error for a dropped handle and an `Unsupported` "not available for this engine" error for a Redis (KV) connection — both surface as §5 sentences.
 - **Dropped selected schema.** If a refresh removes the selected schema (out-of-band `DETACH`), `schemaName` falls back to `workspace.schemas[0]?.name` (or `"main"` for SQLite) rather than introspecting a ghost schema.
-- **Empty / failed list.** Empty schema → "No tables in this schema yet."; failed first load with no cache → `.sidebar-error` sentence; a failed *refresh* keeps the stale list rendered and surfaces the error only via the toast.
+- **Empty / failed list.** Empty schema → "No tables in this schema yet."; failed first load with no cache → `.sidebar-error` sentence; a failed _refresh_ keeps the stale list rendered and surfaces the error only via the toast.
 
 ## Acceptance criteria
 

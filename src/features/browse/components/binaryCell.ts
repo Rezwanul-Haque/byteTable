@@ -117,9 +117,22 @@ export function generateUuid(): string {
   const h = "0123456789abcdef";
   let s = "";
   for (let i = 0; i < 32; i++) {
-    s += i === 12 ? "4" : i === 16 ? h[8 + Math.floor(Math.random() * 4)] : h[Math.floor(Math.random() * 16)];
+    s +=
+      i === 12
+        ? "4"
+        : i === 16
+          ? h[8 + Math.floor(Math.random() * 4)]
+          : h[Math.floor(Math.random() * 16)];
   }
   return (
-    s.slice(0, 8) + "-" + s.slice(8, 12) + "-" + s.slice(12, 16) + "-" + s.slice(16, 20) + "-" + s.slice(20)
+    s.slice(0, 8) +
+    "-" +
+    s.slice(8, 12) +
+    "-" +
+    s.slice(12, 16) +
+    "-" +
+    s.slice(16, 20) +
+    "-" +
+    s.slice(20)
   );
 }

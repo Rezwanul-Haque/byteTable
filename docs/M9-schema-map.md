@@ -5,9 +5,9 @@ Status: shipped, merged on `main`.
 > **Provenance.** This document is reverse-engineered from the **shipped code** of the
 > `schema_map` slice (backend `src-tauri/src/features/schema_map/`, frontend
 > `src/features/schema_map/`) cross-checked against MILESTONES.md (M9) and
-> DESIGN_SPEC §3.8. Source of truth = the code. Every **imperative** sentence
+> DESIGN*SPEC §3.8. Source of truth = the code. Every **imperative** sentence
 > ("the canvas renders…", "the backend stores…") is a build requirement; prose
-> marked *note* is rationale. Paths are absolute-from-repo-root.
+> marked \_note* is rationale. Paths are absolute-from-repo-root.
 
 ## Goal
 
@@ -22,12 +22,12 @@ to PNG/SVG. User-dragged positions, edge bends, and zoom **persist per
 (connection, schema)** and survive restarts.
 
 The diagram is rendered **SVG-native** (cards are `<g>`+`<rect>`+`<text>`, edges
-are `<path>`, all inside one pan/zoom `<g transform>`), *not* HTML `<div>`s over
-an SVG layer as the prototype `schemamap.jsx` did. *Note: this is a deliberate
+are `<path>`, all inside one pan/zoom `<g transform>`), _not_ HTML `<div>`s over
+an SVG layer as the prototype `schemamap.jsx` did. _Note: this is a deliberate
 divergence so the export can serialise the live tree to a standalone `.svg` /
 rasterise to PNG without `<foreignObject>` canvas-taint — see
 `src/features/schema_map/components/SchemaMap.tsx` header comment and
-`export.ts`.*
+`export.ts`._
 
 ## Dependencies — M3 introspection, M4 tabs
 
@@ -50,10 +50,10 @@ rasterise to PNG without `<foreignObject>` canvas-taint — see
 
 ## Backend (Rust core)
 
-*Note: the backend is intentionally thin. The graph (nodes + FK edges) is built
+_Note: the backend is intentionally thin. The graph (nodes + FK edges) is built
 **in the renderer** from introspection it already has; the backend owns only
 **layout persistence** and the **export-write** of bytes the renderer produced.
-Layering, dependencies point left: `domain ← application ← (infrastructure | commands)`.*
+Layering, dependencies point left: `domain ← application ← (infrastructure | commands)`._
 
 ### Domain — graph model (nodes/tables, FK edges), saved layout
 
@@ -102,9 +102,9 @@ the wire shape matches the TS literals exactly.
     a **flat map** keyed `"connectionId\0schema"` (NUL join — `KEY_SEP`; a NUL
     appears in neither a UUID connection id nor a schema name) → `MapLayout`.
   - **Corrupt-file = error, not silent reset** (user-data policy, like
-    connections/saved_queries): missing file → empty map (`get` → `None`);
+    connections/saved*queries): missing file → empty map (`get` → `None`);
     unparseable file → `AppError::Serialization` naming the file, file left
-    untouched. *Note: this is the "no silent data loss" stance from MEMORY.*
+    untouched. \_Note: this is the "no silent data loss" stance from MEMORY.*
   - **Atomic saves**: write `*.json.tmp`, then `fs::rename` over the target;
     `create_dir_all` parents first. `write_lock` serialises read-modify-write so
     concurrent async commands can't interleave; lock poison maps to a graceful
@@ -114,11 +114,11 @@ the wire shape matches the TS literals exactly.
     then write bytes. Bad base64 → `AppError::Invalid` (no file written);
     IO failure → `AppError::Io` naming the path (DESIGN_SPEC §5).
 
-*Note: the in-tree tests are the executable spec — `domain` (wire shape,
+_Note: the in-tree tests are the executable spec — `domain` (wire shape,
 zoom-omitted, empty-round-trip, partial-deserialize), `application` (get-none,
 save/get round-trip, per-(conn,schema) independence), `infrastructure`
 (missing/corrupt file, atomic temp cleanup, SVG-verbatim, PNG base64 decode,
-bad-path/bad-base64 errors).*
+bad-path/bad-base64 errors)._
 
 ### Tauri commands
 
@@ -130,19 +130,19 @@ constructed in the composition root (`src-tauri/src/lib.rs`:
 `app.manage(SchemaMapState::new(Box::new(...)))`, all three commands in
 `invoke_handler`).
 
-| command | args | returns | errors |
-|---|---|---|---|
-| `map_layout_get` | `connection_id: String`, `schema: String` | `Option<MapLayout>` (`null` when never saved) | `AppError::Serialization` if the store file is corrupt; `AppError::Io` on read failure |
-| `map_layout_save` | `connection_id: String`, `schema: String`, `layout: MapLayout` | `()` | `AppError::Io` (write/rename, or lock poisoned); `AppError::Serialization` if existing store is corrupt |
-| `diagram_export` | `payload: ExportPayload` (`{ path, format, data }`) | `()` | `AppError::Invalid` (PNG base64 undecodable); `AppError::Io` (`"Could not write {path}: …"`) |
+| command           | args                                                           | returns                                       | errors                                                                                                  |
+| ----------------- | -------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `map_layout_get`  | `connection_id: String`, `schema: String`                      | `Option<MapLayout>` (`null` when never saved) | `AppError::Serialization` if the store file is corrupt; `AppError::Io` on read failure                  |
+| `map_layout_save` | `connection_id: String`, `schema: String`, `layout: MapLayout` | `()`                                          | `AppError::Io` (write/rename, or lock poisoned); `AppError::Serialization` if existing store is corrupt |
+| `diagram_export`  | `payload: ExportPayload` (`{ path, format, data }`)            | `()`                                          | `AppError::Invalid` (PNG base64 undecodable); `AppError::Io` (`"Could not write {path}: …"`)            |
 
 ## Frontend (React)
 
 ### State — schema-map store (positions cache) + per-component interaction state
 
-*Note: interaction state (positions, zoom, pan, waypoints, drag, selection)
+_Note: interaction state (positions, zoom, pan, waypoints, drag, selection)
 lives in the `SchemaMap` component via `useState`/`useRef`. The Zustand store is
-deliberately minimal — a backend-first cache of saved layouts only.*
+deliberately minimal — a backend-first cache of saved layouts only._
 
 - **`src/features/schema_map/state.ts`** — `useSchemaMapStore`
   (`create<SchemaMapState>`): `layouts: Record<string, MapLayout | null>` keyed
@@ -187,7 +187,7 @@ connection, not the ephemeral `ws-<uuid>`).
 - **`SchemaMap` (the MapTab)** — load flow on `[handleId, schema, …, reloadKey]`:
   `loadTables` → set `rowCounts` from `approxRowCount` → `Promise.all` of
   `loadTableMeta` per table. A table with no resolvable meta is **dropped** from
-  the map; only a *total* wipe-out (zero metas for a non-empty list) sets
+  the map; only a _total_ wipe-out (zero metas for a non-empty list) sets
   `loadError`. States: `loading` (hub icon + "Loading schema map for {schema}…"),
   `loadError` (error icon + `<code>` + Retry → bump `reloadKey`), else the
   toolbar + canvas. After metas resolve, a second effect calls
@@ -213,7 +213,7 @@ connection, not the ephemeral `ws-<uuid>`).
     **"+ {hiddenCount} more columns…"** italic row.
 - **`Edge` (FK edge renderer)** — an SVG `<g class="map-edge">` per FK:
   - wide transparent **hit-area** `<path>` (stroke-width 14, `pointer-events:
-    stroke`) so the thin curve is clickable → selects the edge;
+stroke`) so the thin curve is clickable → selects the edge;
   - the visible **bezier** `<path class="map-edge-path">` (1.5px,
     accent@55% mixed toward border);
   - **source dot** `<circle r=3.5>` at the child FK column row edge, **target
@@ -245,9 +245,9 @@ connection, not the ephemeral `ws-<uuid>`).
   (`appErrorMessage`). The `download` icon swaps to `hourglass_top` while
   `exporting`.
 
-*Geometry & layout helpers (no React/DOM) live in
+_Geometry & layout helpers (no React/DOM) live in
 `src/features/schema_map/diagram.ts`; the four inline icon `<path>`s in
-`icons.ts`; export/rasterise in `export.ts`; font embedding in `fonts.ts`.*
+`icons.ts`; export/rasterise in `export.ts`; font embedding in `fonts.ts`._
 
 ### Styling — §3.8 cards / edges / zoom
 
@@ -278,20 +278,20 @@ prototype's `.map*` look for SVG primitives, using the theme tokens.
   Column rows: `.map-col-pk` accent, `.map-col-fk` dim; `.map-col-name` dim mono
   11px (→`--text` when `.is-fk`); `.map-col-type` faint mono 9px; `.map-col-more`
   faint italic mono 11px. The soft card shadow is the SVG `<filter
-  id="mapCardShadow">` `feDropShadow dy=6 stdDeviation=9 opacity 0.4` (serialises
+id="mapCardShadow">` `feDropShadow dy=6 stdDeviation=9 opacity 0.4` (serialises
   into the export).
 - **Export popover**: `.map-export-menu` `--bg2` card, `--border`, radius 10,
   shadow; `.map-export-item` hover `--bg3`.
 
 ## Shared data contracts — TS + Rust types
 
-| concept | Rust (`domain/mod.rs`, camelCase wire) | TS (`api.ts`) |
-|---|---|---|
-| node position | `NodePosition { table: String, x: f64, y: f64 }` | `NodePosition { table: string; x: number; y: number }` |
-| edge waypoint | `EdgeWaypoint { id: String, dx: f64, dy: f64 }` | `EdgeWaypoint { id: string; dx: number; dy: number }` |
-| saved layout | `MapLayout { positions: Vec<NodePosition>, edges: Vec<EdgeWaypoint>, zoom: Option<f64> }` (zoom skip-if-none) | `MapLayout { positions: NodePosition[]; edges: EdgeWaypoint[]; zoom?: number \| null }` |
-| export format | `ExportFormat` (`png` \| `svg`, lowercase) | `ExportFormat = "png" \| "svg"` |
-| export payload | `ExportPayload { path: String, format: ExportFormat, data: String }` | `diagramExport(path, format, data)` → `{ payload: { path, format, data } }` |
+| concept        | Rust (`domain/mod.rs`, camelCase wire)                                                                        | TS (`api.ts`)                                                                           |
+| -------------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| node position  | `NodePosition { table: String, x: f64, y: f64 }`                                                              | `NodePosition { table: string; x: number; y: number }`                                  |
+| edge waypoint  | `EdgeWaypoint { id: String, dx: f64, dy: f64 }`                                                               | `EdgeWaypoint { id: string; dx: number; dy: number }`                                   |
+| saved layout   | `MapLayout { positions: Vec<NodePosition>, edges: Vec<EdgeWaypoint>, zoom: Option<f64> }` (zoom skip-if-none) | `MapLayout { positions: NodePosition[]; edges: EdgeWaypoint[]; zoom?: number \| null }` |
+| export format  | `ExportFormat` (`png` \| `svg`, lowercase)                                                                    | `ExportFormat = "png" \| "svg"`                                                         |
+| export payload | `ExportPayload { path: String, format: ExportFormat, data: String }`                                          | `diagramExport(path, format, data)` → `{ payload: { path, format, data } }`             |
 
 **Renderer-only graph models** (not on the wire — built from `TableMeta`,
 `src/features/schema_map/diagram.ts`):
@@ -318,8 +318,8 @@ prototype's `.map*` look for SVG primitives, using the theme tokens.
   depth column (`COL_GAP`=96), `y` by stacked index (`ROW_GAP`=40, `MARGIN`=40);
   an over-tall column wraps at `MAX_PER_COL`=8 into adjacent mini-columns;
   columns sorted alphabetically. **No in-schema FKs (maxDepth 0) → a tidy grid**
-  (`ceil(sqrt(n))` per row). *This reads well for an e-commerce shape
-  (users/products left, orders middle, order_items/payments right).*
+  (`ceil(sqrt(n))` per row). _This reads well for an e-commerce shape
+  (users/products left, orders middle, order_items/payments right)._
 - **Edge re-routing on drag.** `edges` are recomputed from `positions` +
   `waypoints` each render (`buildEdges` → `edgeGeometry`), so moving a card
   re-routes its edges live. `edgeGeometry` picks card sides by relative position;

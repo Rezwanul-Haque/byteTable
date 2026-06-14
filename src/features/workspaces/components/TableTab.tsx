@@ -62,8 +62,9 @@ export function TableTab({
 
   // Connection deployment env — drives the TruncateModal's production gate.
   const env =
-    useWorkspacesStore((state) => state.workspaces.find((ws) => ws.handleId === handleId)?.saved.env) ??
-    "";
+    useWorkspacesStore(
+      (state) => state.workspaces.find((ws) => ws.handleId === handleId)?.saved.env,
+    ) ?? "";
 
   // --- filter state (per-tab, persisted in workspace ui) ---------------
   const setTabFilter = useWorkspacesStore((state) => state.setTabFilter);
@@ -468,8 +469,8 @@ export function TableTab({
               applied), read from tabMeta. */}
           <div className="table-footer">
             <span className="table-hint">
-              Double-click a cell to edit · click a header to sort · stack conditions under Filters ·
-              click a linked value to hop the FK · <Icon name="monitoring" size={11} /> for column
+              Double-click a cell to edit · click a header to sort · stack conditions under Filters
+              · click a linked value to hop the FK · <Icon name="monitoring" size={11} /> for column
               insights
             </span>
             <div className="pager">

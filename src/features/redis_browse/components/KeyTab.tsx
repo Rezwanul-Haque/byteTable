@@ -114,7 +114,8 @@ export function KeyTab({
         setView(v);
         setError(null);
         // Report type + memory to the status bar (REDIS_SPEC §9).
-        if (v.value.type !== "missing") onMetaRef.current?.({ keyType: v.keyType, memory: v.memory });
+        if (v.value.type !== "missing")
+          onMetaRef.current?.({ keyType: v.keyType, memory: v.memory });
       } catch (err) {
         if (!signal.live) return;
         setError(appErrorMessage(err, "Could not load this key."));

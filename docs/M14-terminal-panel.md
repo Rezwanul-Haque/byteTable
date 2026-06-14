@@ -3,9 +3,10 @@
 Status: design approved (brainstorm 2026-06-13). Build on branch `m14-terminal-panel`; **do not merge until the user has tested and confirmed.**
 
 > **AUTHORITATIVE PROTOTYPE (supersedes the from-scratch sketch below where they differ):** the user provided the real design in `ByteTable_latest/bytetable/terminal.jsx` (`TerminalPanel` + `SqlTerminalTab`) and `redis-tabs.jsx` (`RedisCli`), with `.term-*`/`.rcli-*` CSS in `ByteTable_latest/ByteTable.html`. Port these faithfully. Two deltas from the sketch:
-> 1. **Multi-session panel**: `TerminalPanel` is VS Code–style with *multiple* terminal sessions (session tabs with add/close, a `+` new-session button), a **maximize** toggle (`open_in_full`/`close_fullscreen`), top-edge resize (clamp [120, innerHeight−160]), and a hide button (Ctrl+`). The tab-bar toggle is a `tabbar-tool` button ("Terminal", `terminal` icon, title "Toggle terminal (Ctrl+`)").
+>
+> 1. **Multi-session panel**: `TerminalPanel` is VS Code–style with _multiple_ terminal sessions (session tabs with add/close, a `+` new-session button), a **maximize** toggle (`open_in_full`/`close_fullscreen`), top-edge resize (clamp [120, innerHeight−160]), and a hide button (Ctrl+`). The tab-bar toggle is a `tabbar-tool`button ("Terminal",`terminal` icon, title "Toggle terminal (Ctrl+`)").
 > 2. **SQL output is a psql/mysql/sqlite3-style ASCII REPL, not a compact grid** (this supersedes the earlier grid choice). `SqlTerminalTab` is a real REPL: engine-specific prompt/banner/errPrefix (`termConfig`: `mysql>` / `sqlite>` / `{conn}=#`), meta-commands (`\dt \d NAME \dn \l \c \timing \! clear \q`; `SHOW TABLES/DATABASES`, `DESCRIBE`, `USE`; `.tables .schema .databases .timing .clear .quit`), multi-line statement buffering until `;`, `asciiTable` output (centered headers, `--+--` rule, right-aligned numerics), history (↑/↓, cap 80), Ctrl+L clear, Ctrl+C cancel-line. **Wire the prototype's mock calls to the real backend**: SQL → `query_run`; `\dt`/list-tables → `connection_tables`; `\d`/DESCRIBE → `table_meta` (format columns/indexes/FKs as ASCII); `.schema`/DDL → `table_meta.ddl`; `\dn`/`\l`/SHOW DATABASES → `connection_schemas`; `\c`/USE → set workspace `ui.schemaName`. Redis session body = `RedisCli` (real `kv_command`).
-> No backend changes (all commands already exist). Revise the Task-1 panel/console to match `terminal.jsx`.
+>    No backend changes (all commands already exist). Revise the Task-1 panel/console to match `terminal.jsx`.
 
 ## Goal
 
@@ -18,7 +19,7 @@ It is renderer-only: it reuses the existing `query_run` (SQL, M6) and `kv_comman
 
 ## Relationship to existing surfaces
 
-- **Complement for SQL**: the SQL editor *tab* (M6) stays for saved queries, multi-statement scripts, and full-grid work. The panel is the always-available **ephemeral scratch console** for quick one-offs.
+- **Complement for SQL**: the SQL editor _tab_ (M6) stays for saved queries, multi-statement scripts, and full-grid work. The panel is the always-available **ephemeral scratch console** for quick one-offs.
 - **Replace for Redis**: the M13 `cli` tab kind is deleted. The sidebar "New CLI console" footer button and ⌘T (which opened a cli tab) now **open/focus the bottom panel** instead. Redis tab kinds become `{dashboard, key}`.
 
 ## Chrome & behavior
@@ -32,7 +33,7 @@ It is renderer-only: it reuses the existing `query_run` (SQL, M6) and `kv_comman
 
 - **Prompt + input**: a sticky input line, prompt shows the connection/active schema (e.g. `byteshop>`). Enter (and ⌘↩) runs the input via `queryRun(handleId, sql, {schema})`.
 - **Output log** (scrolling): each entry = the echoed command (with prompt) + a status line (`✓ N rows · X ms · schema`, or `✓ Query OK` for non-SELECT, or a red `✗ {message}` §5 error) + for row-returning queries a **compact inline result grid** reusing `SqlResultGrid`/`GridCell` (mono cells, type colors, NULL/number/pill rendering; capped height with its own scroll; no FK-hop/insights/inline-edit in the panel — those stay in the full data/result tabs).
-- **Send to tab**: each successful result carries an "↗ open in tab" action that opens a SQL editor tab (M6) seeded with that query (and runs it there for the full grid + history/save). 
+- **Send to tab**: each successful result carries an "↗ open in tab" action that opens a SQL editor tab (M6) seeded with that query (and runs it there for the full grid + history/save).
 - **History**: ↑/↓ cycles previous commands (per-workspace, capped). Ctrl+L clears the log.
 - Multi-statement / write statements: run as given (same trust model as the M6 editor); show affected/OK.
 
@@ -57,4 +58,4 @@ It is renderer-only: it reuses the existing `query_run` (SQL, M6) and `kv_comman
 
 ## Out of scope (this milestone)
 
-System shell access (this is an *engine* console, not bash); panel tabs / multiple consoles; output export; FK-hop/insights/inline-edit inside the panel grid (those remain in full tabs).
+System shell access (this is an _engine_ console, not bash); panel tabs / multiple consoles; output export; FK-hop/insights/inline-edit inside the panel grid (those remain in full tabs).

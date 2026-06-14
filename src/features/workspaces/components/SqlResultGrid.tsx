@@ -89,10 +89,7 @@ export function SqlResultGrid({ result }: { result: QueryResult }) {
     const widths = columns.map((c, ci) => {
       const typeLen = c.typeHint ? c.typeHint.length : 0;
       const headerPx =
-        c.name.length * HEAD_NAME_CHAR_PX +
-        typeLen * HEAD_TYPE_CHAR_PX +
-        HEAD_GAP_PX +
-        CELL_PAD_PX;
+        c.name.length * HEAD_NAME_CHAR_PX + typeLen * HEAD_TYPE_CHAR_PX + HEAD_GAP_PX + CELL_PAD_PX;
       let maxCellLen = 0;
       const sampleN = Math.min(rows.length, WIDTH_SAMPLE_ROWS);
       for (let r = 0; r < sampleN; r++) {

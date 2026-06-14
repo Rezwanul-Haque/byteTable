@@ -8,6 +8,7 @@ Status: shipped, merged on `main` (`feat: M8 — structure editing (staged ALTER
 > Imperative statements ("MUST", "rejects", "rolls back") are requirements the
 > shipped code already enforces, not aspirations. Paths are repo-relative.
 > Primary sources:
+>
 > - Backend slice: `src-tauri/src/features/structure/` (`domain/mod.rs`,
 >   `application/mod.rs`, `commands.rs`, `mod.rs`).
 > - SQLite ALTER generation + rebuild: `src-tauri/src/engines/sqlite/structure.rs`.
@@ -23,7 +24,7 @@ Status: shipped, merged on `main` (`feat: M8 — structure editing (staged ALTER
 §3.6 editing: every inline structure edit (rename / type / nullable / default /
 add column / drop column) becomes exactly one staged `ALTER` operation. The
 structure view never mutates the introspected truth; it accumulates an ordered
-batch and shows a bottom **pending-changes bar** with *N pending changes*,
+batch and shows a bottom **pending-changes bar** with _N pending changes_,
 **Review SQL** (the statements the batch implies), **Discard** (revert the UI to
 introspected truth), and **Apply changes** (execute the batch transactionally).
 After a successful apply the view re-introspects so the rows, sidebar counts, and
@@ -76,14 +77,14 @@ with six variants — one per §3.6 editing operation. A batch is a JSON array:
 
 Variants and field semantics:
 
-| variant        | wire token (`op`) | fields                                                   | meaning |
-|----------------|-------------------|----------------------------------------------------------|---------|
+| variant        | wire token (`op`) | fields                                                       | meaning                                                                  |
+| -------------- | ----------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------ |
 | `AddColumn`    | `addColumn`       | `name`, `dataType`, `nullable`, `default` (`Option<String>`) | add column; `default` is the verbatim default expression (`null` = none) |
-| `RenameColumn` | `renameColumn`    | `from`, `to`                                             | rename `from` → `to` |
-| `ChangeType`   | `changeType`      | `column`, `newType`                                      | change declared type |
-| `SetNullable`  | `setNullable`     | `column`, `nullable`                                     | `true` ⇒ DROP NOT NULL, `false` ⇒ SET NOT NULL |
-| `SetDefault`   | `setDefault`      | `column`, `default` (`Option<String>`)                  | `Some(expr)` ⇒ SET DEFAULT, `None` ⇒ DROP DEFAULT |
-| `DropColumn`   | `dropColumn`      | `name`                                                    | drop column; pk-protected |
+| `RenameColumn` | `renameColumn`    | `from`, `to`                                                 | rename `from` → `to`                                                     |
+| `ChangeType`   | `changeType`      | `column`, `newType`                                          | change declared type                                                     |
+| `SetNullable`  | `setNullable`     | `column`, `nullable`                                         | `true` ⇒ DROP NOT NULL, `false` ⇒ SET NOT NULL                           |
+| `SetDefault`   | `setDefault`      | `column`, `default` (`Option<String>`)                       | `Some(expr)` ⇒ SET DEFAULT, `None` ⇒ DROP DEFAULT                        |
+| `DropColumn`   | `dropColumn`      | `name`                                                       | drop column; pk-protected                                                |
 
 The Rust field `default_value` is renamed to the wire name `default` (a Rust
 keyword) via `#[serde(rename = "default")]`; variant structs that carry it also
@@ -153,7 +154,7 @@ Pipeline:
 
 1. `ensure_schema_exists` + `table_meta_blocking` — existence + the real column
    set (gives pk membership). Empty batch ⇒ `AppError::Invalid("No structure
-   changes to apply.")`.
+changes to apply.")`.
 2. `validate_ops(&meta, table, ops)` — for every op with a `target_column`: the
    column must exist (else a §5 `Database` error listing the real columns), and a
    pk column rejects `ChangeType` / `DropColumn` ("…is part of the primary key…
@@ -162,17 +163,18 @@ Pipeline:
 3. `preview_statement(table, op)` for each op — the "Review SQL" strings (logical
    intent, same list for preview and apply):
 
-   | op           | preview statement |
-   |--------------|-------------------|
-   | `AddColumn`  | `ALTER TABLE "t" ADD COLUMN "c" TYPE [NOT NULL] [DEFAULT x]` |
-   | `RenameColumn` | `ALTER TABLE "t" RENAME COLUMN "a" TO "b"` |
-   | `DropColumn` | `ALTER TABLE "t" DROP COLUMN "c"` |
-   | `ChangeType` | `ALTER TABLE "t" ALTER COLUMN "c" TYPE x` |
-   | `SetNullable`| `ALTER TABLE "t" ALTER COLUMN "c" SET/DROP NOT NULL` |
-   | `SetDefault` | `ALTER TABLE "t" ALTER COLUMN "c" SET DEFAULT x / DROP DEFAULT` |
+   | op             | preview statement                                               |
+   | -------------- | --------------------------------------------------------------- |
+   | `AddColumn`    | `ALTER TABLE "t" ADD COLUMN "c" TYPE [NOT NULL] [DEFAULT x]`    |
+   | `RenameColumn` | `ALTER TABLE "t" RENAME COLUMN "a" TO "b"`                      |
+   | `DropColumn`   | `ALTER TABLE "t" DROP COLUMN "c"`                               |
+   | `ChangeType`   | `ALTER TABLE "t" ALTER COLUMN "c" TYPE x`                       |
+   | `SetNullable`  | `ALTER TABLE "t" ALTER COLUMN "c" SET/DROP NOT NULL`            |
+   | `SetDefault`   | `ALTER TABLE "t" ALTER COLUMN "c" SET DEFAULT x / DROP DEFAULT` |
 
    All identifiers go through `quote_ident`. `apply == false` returns here with
    `applied: false` (no mutation).
+
 4. Apply strategy:
    - **All native** (`ops.iter().all(AlterOp::is_native)`) → `apply_native`: run
      `native_exec_statement` for each op (schema-qualified `ALTER TABLE`) in order
@@ -184,12 +186,12 @@ Other Kinds Of Table Schema Changes" procedure, because SQLite has no native
 `ALTER COLUMN`:
 
 1. **Safety guard** (`rebuild_unsupported_feature`): fetch the original `CREATE
-   TABLE` DDL (`table_ddl`) and trigger presence (`table_has_triggers`). A
+TABLE` DDL (`table_ddl`) and trigger presence (`table_has_triggers`). A
    metadata rebuild cannot preserve CHECK constraints, generated/virtual columns
-   (` AS `/`GENERATED`), AUTOINCREMENT, WITHOUT ROWID, COLLATE, or triggers, so if
+   (`AS`/`GENERATED`), AUTOINCREMENT, WITHOUT ROWID, COLLATE, or triggers, so if
    any are present it returns `AppError::Unsupported("Changing the type,
-   nullability, or default of a column on 't' isn't supported yet because the
-   table uses {feature}…")`. The DDL scan first runs `strip_quoted` (removes
+nullability, or default of a column on 't' isn't supported yet because the
+table uses {feature}…")`. The DDL scan first runs `strip_quoted` (removes
    single-quoted strings and `"`/`` ` ``/`[]` identifiers) so a column literally
    named `check_in` or a default `'GENERATED'` does not trip the guard.
 2. `compute_target_columns(meta, ops)` — replay all ops in order over the
@@ -203,15 +205,15 @@ Other Kinds Of Table Schema Changes" procedure, because SQLite has no native
    from the target columns + original FKs + pk (`build_create_table`: single pk
    inline `PRIMARY KEY`, composite pk as a table-level clause; FKs whose local
    columns survive are re-emitted with ON DELETE / ON UPDATE); (2) `INSERT INTO
-   tmp(mapped cols) SELECT (source cols) FROM orig` (added columns omitted so
+tmp(mapped cols) SELECT (source cols) FROM orig` (added columns omitted so
    their DEFAULT/NULL applies); (3) `DROP TABLE orig`; (4) `ALTER TABLE tmp RENAME
-   TO orig`; (5) recreate user `CREATE INDEX`es (`origin == "c"`) whose columns
+TO orig`; (5) recreate user `CREATE INDEX`es (`origin == "c"`) whose columns
    all survive — implicit pk/UNIQUE indexes are recreated by the new `CREATE
-   TABLE` itself; `COMMIT`.
+TABLE` itself; `COMMIT`.
 5. Restore `PRAGMA foreign_keys = ON` (always attempted, regardless of rebuild
    outcome), then run `PRAGMA {schema}.foreign_key_check(table)`; a violation ⇒
    `AppError::Database("…would violate a foreign-key constraint; no changes were
-   applied.")`.
+applied.")`.
 
 Rollback is guaranteed by a small RAII `Transaction` guard over the shared
 `&Connection`: `BEGIN` with a 5s busy_timeout, `commit()` on success, and
@@ -232,10 +234,10 @@ SQLite editing).
 Both are `async`, read `ConnectionsState` for the handle manager, deserialize →
 use-case → serialize (no logic in the command layer).
 
-| command | args | returns | errors |
-|---------|------|---------|--------|
-| `alter_preview` | `handleId: String`, `schema: String`, `table: String`, `ops: Vec<AlterOp>` | `AlterResult { statements: Vec<String>, applied: false }` | §5 `{kind, message}`: closed handle (`NotFound`), unknown schema/table/column, pk-protected op (`Database`), empty batch (`Invalid`). Never mutates. |
-| `alter_apply`   | same as above | `AlterResult { statements, applied: true }` | all of the above **plus** rebuild-unsupported feature (`Unsupported`), FK-check violation / constraint failure during apply (`Database`). On any failure the engine rolls back fully and returns the §5 error. |
+| command         | args                                                                       | returns                                                   | errors                                                                                                                                                                                                         |
+| --------------- | -------------------------------------------------------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `alter_preview` | `handleId: String`, `schema: String`, `table: String`, `ops: Vec<AlterOp>` | `AlterResult { statements: Vec<String>, applied: false }` | §5 `{kind, message}`: closed handle (`NotFound`), unknown schema/table/column, pk-protected op (`Database`), empty batch (`Invalid`). Never mutates.                                                           |
+| `alter_apply`   | same as above                                                              | `AlterResult { statements, applied: true }`               | all of the above **plus** rebuild-unsupported feature (`Unsupported`), FK-check violation / constraint failure during apply (`Database`). On any failure the engine rolls back fully and returns the §5 error. |
 
 ## Frontend (React)
 
@@ -258,7 +260,7 @@ snapshot for discard — per table tab").
 **Derived on render (`src/features/structure/ops.ts`):**
 
 - `applyOpsToColumns(columns, ops): WorkingColumn[]` — replay the batch over the
-  introspected `ColumnInfo[]` to get the *working column set* the rows display.
+  introspected `ColumnInfo[]` to get the _working column set_ the rows display.
   Dropped columns are kept (flagged `markedForDrop`, struck-through) rather than
   vanishing; added columns get `isNew`; each carries `origin` (the introspected
   name it maps from, `null` for a freshly added column). Mirrors the backend's
@@ -339,9 +341,9 @@ is prepended if absent).
     `.pending-error`.
   - **Apply** (`applyPending`): calls `alterApply(...)`; on success clears the
     batch, closes review, `invalidate(handleId, schema)` + `loadTableMeta(force)`
-    + `loadTables(force)` (sidebar counts) + `requestRefetch(tabId)` (data grid),
-    and toasts "Applied N change(s)". On failure keeps the batch and shows the §5
-    engine error **in the pending bar** (`applyError`).
+    - `loadTables(force)` (sidebar counts) + `requestRefetch(tabId)` (data grid),
+      and toasts "Applied N change(s)". On failure keeps the batch and shows the §5
+      engine error **in the pending bar** (`applyError`).
   - **Discard** (`discardPending`): `setOps([])`, resets review/preview/apply
     state, toasts "Pending changes discarded".
 
@@ -351,7 +353,7 @@ is prepended if absent).
 ByteTable.html"):
 
 - `.pending-bar` — top border `color-mix(accent 40%, border)`, bg `color-mix(accent
-  5%, bg1)` (accent-tinted, §3.6).
+5%, bg1)` (accent-tinted, §3.6).
 - `.pending-bar-row` — flex, gap 9px, padding 7px 14px; `.pending-count` 12px/600;
   `.pending-review` 11.5px dim, hover lifts to `--text` on `--bg2`.
 - `.pending-list` — padding 10px 14px 2px, dashed bottom border, `max-height:180px`
@@ -367,16 +369,16 @@ ByteTable.html"):
 
 ## Shared data contracts — TS + Rust types
 
-| concept | Rust (`src-tauri`) | TS (`src`) |
-|---------|--------------------|-----------|
-| staged edit | `features::structure::domain::AlterOp` (enum, `tag="op"`, camelCase) | `AlterOp` union in `shared/api/engine.ts` |
-| preview/apply result | `shared::engine::AlterResult { statements: Vec<String>, applied: bool }` | `interface AlterResult { statements: string[]; applied: boolean }` |
-| port | `EngineConnection::alter_table(schema, table, ops, apply) -> AlterResult` | `alterPreview` / `alterApply` invoke wrappers |
-| working column (UI only) | n/a (server uses `compute_target_columns` → `TargetColumn`) | `WorkingColumn { name, dataType, nullable, pk, default, fk, origin, isNew, markedForDrop }` in `structure/ops.ts` |
-| persisted batch (UI only) | n/a | `ws.ui.structureEdits[tabId]: AlterOp[]` |
+| concept                   | Rust (`src-tauri`)                                                        | TS (`src`)                                                                                                        |
+| ------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| staged edit               | `features::structure::domain::AlterOp` (enum, `tag="op"`, camelCase)      | `AlterOp` union in `shared/api/engine.ts`                                                                         |
+| preview/apply result      | `shared::engine::AlterResult { statements: Vec<String>, applied: bool }`  | `interface AlterResult { statements: string[]; applied: boolean }`                                                |
+| port                      | `EngineConnection::alter_table(schema, table, ops, apply) -> AlterResult` | `alterPreview` / `alterApply` invoke wrappers                                                                     |
+| working column (UI only)  | n/a (server uses `compute_target_columns` → `TargetColumn`)               | `WorkingColumn { name, dataType, nullable, pk, default, fk, origin, isNew, markedForDrop }` in `structure/ops.ts` |
+| persisted batch (UI only) | n/a                                                                       | `ws.ui.structureEdits[tabId]: AlterOp[]`                                                                          |
 
 `AlterResult.statements` is the SAME list for preview and apply (logical intent;
-on SQLite this is truthful about *what* changes, not the verbatim rebuild SQL).
+on SQLite this is truthful about _what_ changes, not the verbatim rebuild SQL).
 
 ## Behavior & edge cases
 
@@ -414,7 +416,7 @@ on SQLite this is truthful about *what* changes, not the verbatim rebuild SQL).
 
 - **Add + rename + retype a column on SQLite, verified externally.** A single
   batch — `AddColumn("in_stock", INTEGER, NOT NULL, DEFAULT 1)` + `RenameColumn
-  label→name` + `ChangeType price→NUMERIC` — applies in one transaction, preserves
+label→name` + `ChangeType price→NUMERIC` — applies in one transaction, preserves
   every row (renamed column keeps values, added column defaults, retyped column
   re-cast per affinity), preserves composite pk + FKs, and recreates user indexes.
   Pinned by `engines/sqlite/structure.rs::acceptance_add_rename_retype_in_one_batch`

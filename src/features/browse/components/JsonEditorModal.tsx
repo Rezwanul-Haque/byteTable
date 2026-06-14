@@ -21,7 +21,9 @@ function JsonTree({ value, depth = 0 }: { value: unknown; depth?: number }) {
   if (typeof value !== "object") {
     const cls =
       typeof value === "string" ? "jx-str" : typeof value === "boolean" ? "jx-bool" : "jx-num";
-    return <span className={cls}>{typeof value === "string" ? '"' + value + '"' : String(value)}</span>;
+    return (
+      <span className={cls}>{typeof value === "string" ? '"' + value + '"' : String(value)}</span>
+    );
   }
   const isArr = Array.isArray(value);
   const entries: [string, unknown][] = isArr
@@ -260,7 +262,11 @@ export function JsonEditorModal({
         </div>
       ) : (
         <div className="json-tree-wrap">
-          {res.ok && !res.empty ? <JsonTree value={res.value} /> : <div className="dg-pop-empty">Nothing to show</div>}
+          {res.ok && !res.empty ? (
+            <JsonTree value={res.value} />
+          ) : (
+            <div className="dg-pop-empty">Nothing to show</div>
+          )}
         </div>
       )}
 

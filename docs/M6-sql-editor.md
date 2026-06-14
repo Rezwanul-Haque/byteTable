@@ -66,6 +66,7 @@ Deliberately **sync** (the store is a tiny local JSON file; each call is effecti
 **Statement execution (reused)** — `run_query` in `src-tauri/src/features/connections/application/mod.rs:491`: `manager.get_sql(handle).await?.run_query(sql, options).await`. Timing (`elapsed_ms`) is produced by the engine adapter inside `EngineConnection::run_query` and carried on `QueryResult`.
 
 **Persistence location** — `JsonFileSavedQueryRepository` (`infrastructure/mod.rs`) writes pretty-printed JSON at `<app_config_dir>/saved_queries.json` (composed in `src-tauri/src/lib.rs:96` via `config_dir.join("saved_queries.json")`). Corrupt-file policy follows the **connections** slice, not preferences:
+
 - Missing file → empty list (first launch is not an error).
 - Corrupt file → **`AppError::Serialization`** naming the file (`"Saved queries file is corrupted: … fix or remove the file to continue"`) — **never a silent reset** (saved queries are user data). The corrupt file is left untouched.
 - Saves are **atomic**: write `*.json.tmp`, then `fs::rename` over the target; `create_dir_all` on parents.
@@ -75,12 +76,12 @@ Deliberately **sync** (the store is a tiny local JSON file; each call is effecti
 
 `src-tauri/src/features/saved_queries/commands.rs` — thin presentation layer (deserialize → use-case → serialize). State `SavedQueriesState { repository: Box<dyn SavedQueryRepository + Send + Sync> }` is managed in `lib.rs:98`; commands registered in `lib.rs:174-176`. The execution command lives in the connections slice.
 
-| command | args | returns | errors |
-|---|---|---|---|
-| `saved_query_list` | — | `Vec<SavedQuery>` | `Serialization` (corrupt file), `Io` |
-| `saved_query_save` | `query: SavedQuery` | `SavedQuery` (stored, with assigned id/`savedAt`) | `Invalid` (blank name/SQL), `Io`, `Serialization` |
-| `saved_query_delete` | `id: String` | `()` | `NotFound` (unknown id), `Io`, `Serialization` |
-| `query_run` *(reused, connections slice)* | `handleId: ConnectionHandleId`, `sql: String`, `options: Option<QueryOptions>` | `QueryResult` | engine/driver errors as §5 messages; `NotFound` (unknown handle) |
+| command                                   | args                                                                           | returns                                           | errors                                                           |
+| ----------------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------- | ---------------------------------------------------------------- |
+| `saved_query_list`                        | —                                                                              | `Vec<SavedQuery>`                                 | `Serialization` (corrupt file), `Io`                             |
+| `saved_query_save`                        | `query: SavedQuery`                                                            | `SavedQuery` (stored, with assigned id/`savedAt`) | `Invalid` (blank name/SQL), `Io`, `Serialization`                |
+| `saved_query_delete`                      | `id: String`                                                                   | `()`                                              | `NotFound` (unknown id), `Io`, `Serialization`                   |
+| `query_run` _(reused, connections slice)_ | `handleId: ConnectionHandleId`, `sql: String`, `options: Option<QueryOptions>` | `QueryResult`                                     | engine/driver errors as §5 messages; `NotFound` (unknown handle) |
 
 `query_run` clamps `options.row_limit` to `MAX_ROW_LIMIT = 10_000` (`commands.rs:30`, `clamp_row_limit`); the default when `options` is omitted is `row_limit: 500`, `schema: None`.
 
@@ -91,16 +92,24 @@ Deliberately **sync** (the store is a tiny local JSON file; each call is effecti
 **SQL editor / tab store** — the tab object carries its editor state inline so each tab is independent and survives workspace switches (`src/features/workspaces/types.ts`):
 
 ```ts
-interface SqlTabState {       // merged into the kind:"sql" Tab variant
-  text: string;               // editor buffer (committed on every change)
+interface SqlTabState {
+  // merged into the kind:"sql" Tab variant
+  text: string; // editor buffer (committed on every change)
   result: QueryResult | null; // last success; mutually exclusive with error
-  error: string | null;       // last §5 failure message
+  error: string | null; // last §5 failure message
   history: SqlHistoryEntry[]; // newest-first, deduped by sql, capped at 20
 }
-interface SqlHistoryEntry { sql: string; ok: boolean; rowCount?: number; error?: string; ranAt: number; }
+interface SqlHistoryEntry {
+  sql: string;
+  ok: boolean;
+  rowCount?: number;
+  error?: string;
+  ranAt: number;
+}
 ```
 
 `running` is **not** in the store — it is transient local component state, since an in-flight query cannot outlive a tab unmount. Actions in `src/features/workspaces/state.ts`:
+
 - `setSqlText(tabId, text)` — commits the buffer.
 - `setSqlResult(tabId, result)` — sets `result`, clears `error`.
 - `setSqlError(tabId, error)` — sets `error`, clears `result`.
@@ -109,6 +118,7 @@ interface SqlHistoryEntry { sql: string; ok: boolean; rowCount?: number; error?:
 - All SQL mutations route through `patchSqlTab`, a no-op on non-SQL tabs.
 
 **Saved-queries store** — `src/features/saved_queries/state.ts` (zustand, **one global instance**, holds ALL queries regardless of attachment; does no attachment filtering):
+
 - `savedQueries: SavedQuery[]`, `loaded: boolean`, `loadError: string | null`.
 - `load()` — idempotent (a settled load short-circuits, so every tab mount / palette open can call it freely). Structured `AppError` (corrupt file) → empty list + `loadError`; non-Tauri (browser dev) → empty list, no error.
 - `save(input)` — **backend-first**, then patch the in-memory list from the backend reply (the JSON store is source of truth — never optimistic). Returns the stored value.
@@ -118,6 +128,7 @@ interface SqlHistoryEntry { sql: string; ok: boolean; rowCount?: number; error?:
 ### API — typed invoke wrappers
 
 `src/features/saved_queries/api.ts` (mirrors the Rust wire type; cross-feature consumption of another slice's `api.ts`/`state.ts` is sanctioned):
+
 - `interface SavedQuery { id; name; sql; savedAt; connectionId?: string | null }` and `interface SavedQueryInput { id?; name; sql; connectionId?: string | null }`.
 - `savedQueryList(): Promise<SavedQuery[]>` → `invoke("saved_query_list")`.
 - `savedQuerySave(query): Promise<SavedQuery>` → `invoke("saved_query_save", { query: { id: id ?? "", name, sql, savedAt: 0, connectionId: connectionId ?? null } })`. `savedAt` is filled by the backend, so a fresh save sends 0.
@@ -135,6 +146,7 @@ Execution wrapper — `src/shared/api/engine.ts:440`: `queryRun(handleId, sql, o
 - **`doSave()`** — name defaults to "Untitled query"; `connectionId = attach ? workspace.saved.id : null`; calls the store `save`, toasts `Saved "…" — attached to this workspace` or `… — shared across all workspaces`, resets the form, closes the popover; failure toasts the §5 message.
 
 **`SqlCodeEditor`** (`src/features/workspaces/components/SqlCodeEditor.tsx`) — CodeMirror 6, mounted imperatively (one `EditorView` per mount in a layout effect; latest callbacks held in refs so the view is not re-created on parent renders). External `value` changes (snippet/history/saved load) are reconciled by a dispatched transaction, guarded by an equality check so typing doesn't trigger a redundant cursor-resetting dispatch.
+
 - **Highlight palette** (`HighlightStyle` on lezer tags, §3.7): keyword/operatorKeyword/modifier → `var(--accent)` weight 500; string → `#e5c07b`; number/bool/null → `#7fb8e8`; function/standard-name → `#c678dd`; comments → `var(--text-faint)` italic.
 - **Theme** (`EditorView.theme`, dark): transparent over `--bg0`, `--mono` 13px / line-height 1.65, content padding `12px 0`, line padding `0 16px`, accent caret, selection `color-mix(--accent 24%)`, no gutters, no `outline` on focus, no line wrapping (long lines scroll horizontally).
 - **Keymap**: `Mod-Enter` runs (own keymap, wins over defaults); `indentWithTab` + `EditorState.tabSize.of(2)` + `indentUnit.of("  ")` make **Tab insert 2 spaces**; `history()` + `historyKeymap` give undo/redo; `bracketMatching()`, `drawSelection()`.
@@ -142,6 +154,7 @@ Execution wrapper — `src/shared/api/engine.ts:440`: `queryRun(handleId, sql, o
 **Snippet chips** (`.snippet-chip`, `SQL_SNIPPETS` in `SqlEditorTab.tsx:43`) — per-engine starters; the shipped set is SQLite-appropriate: `list tables` (`sqlite_master`), `table columns` (`pragma_table_info`), `row counts` (`COUNT(*)`), `recent rows` (`ORDER BY rowid DESC LIMIT 50`). Clicking loads the snippet into the editor.
 
 **Results area** (`.sql-results`) — four states:
+
 1. **Explain** view (when toggled) — a back-to-Results tab strip + `ExplainPanel`.
 2. **Error** (`.sql-error`, `role="alert"`) — red card: `error` icon + "Query failed" title + the mono driver message (§5).
 3. **Result** — a status bar (`.sql-result-bar`): `check_circle` + either `Query OK` (no columns) or `N row(s)` + optional `(truncated)`, then `· {elapsedMs} ms · {schemaName}`. Body: nothing for non-row results; "Query returned no rows" placeholder for an empty SELECT; otherwise `<SqlResultGrid result={result} />`.
@@ -158,6 +171,7 @@ Execution wrapper — `src/shared/api/engine.ts:440`: `queryRun(handleId, sql, o
 ### Styling — §3.7 palette + layout
 
 `src/features/workspaces/components/SqlEditorTab.css` (ported byte-identical from the prototype `ByteTable.html`, plus the two real-code additions `.save-pop-attach` and `.saved-scope`):
+
 - `.sql-toolbar`: `padding: 8px 12px`, `border-bottom: 1px solid var(--border)`.
 - `.sql-hint`: `10.5px`, `var(--text-faint)`.
 - `.snippet-chip`: pill (`border-radius: 99px`), `var(--mono)` 10.5px, `var(--text-dim)` on `--bg2` with `--border`, `padding: 3px 10px`; hover → accent text + accent@50% border.
@@ -168,14 +182,14 @@ Execution wrapper — `src/shared/api/engine.ts:440`: `queryRun(handleId, sql, o
 
 ## Shared data contracts
 
-| concept | Rust (`src-tauri`) | TS (`src`) |
-|---|---|---|
-| Saved query | `domain::SavedQuery { id, name, sql, saved_at: u64, connection_id: Option<String> }` (camelCase wire; `connectionId` omitted when `None`) | `api.ts SavedQuery { id; name; sql; savedAt: number; connectionId?: string \| null }` |
-| Save input | `query: SavedQuery` (id `""` = new) | `api.ts SavedQueryInput { id?; name; sql; connectionId?: string \| null }` |
-| Run request | `query_run(handle_id, sql, options: Option<QueryOptions>)`; `QueryOptions { row_limit: usize (default 500, clamp 10_000), schema: Option<String> }` | `queryRun(handleId, sql, options?)`; `QueryOptions { rowLimit?: number; schema?: string }` |
-| Run result | `engine::QueryResult { columns: Vec<ColumnMeta>, rows: Vec<Vec<Value>>, row_count, truncated, elapsed_ms }`; `ColumnMeta { name, type_hint }` | `engine.ts QueryResult { columns: ColumnMeta[]; rows: CellValue[][]; rowCount; truncated; elapsedMs }`; `CellValue = string \| number \| boolean \| null` |
-| History entry | — (renderer-only) | `types.ts SqlHistoryEntry { sql; ok; rowCount?; error?; ranAt }` |
-| Error card §5 | `AppError { Io \| Serialization \| NotFound \| Invalid }` with kind tags `io/serialization/notFound/invalid` (`shared/error.rs`) | rendered via `appErrorMessage(err, fallback)` into `.sql-error` |
+| concept       | Rust (`src-tauri`)                                                                                                                                  | TS (`src`)                                                                                                                                                |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Saved query   | `domain::SavedQuery { id, name, sql, saved_at: u64, connection_id: Option<String> }` (camelCase wire; `connectionId` omitted when `None`)           | `api.ts SavedQuery { id; name; sql; savedAt: number; connectionId?: string \| null }`                                                                     |
+| Save input    | `query: SavedQuery` (id `""` = new)                                                                                                                 | `api.ts SavedQueryInput { id?; name; sql; connectionId?: string \| null }`                                                                                |
+| Run request   | `query_run(handle_id, sql, options: Option<QueryOptions>)`; `QueryOptions { row_limit: usize (default 500, clamp 10_000), schema: Option<String> }` | `queryRun(handleId, sql, options?)`; `QueryOptions { rowLimit?: number; schema?: string }`                                                                |
+| Run result    | `engine::QueryResult { columns: Vec<ColumnMeta>, rows: Vec<Vec<Value>>, row_count, truncated, elapsed_ms }`; `ColumnMeta { name, type_hint }`       | `engine.ts QueryResult { columns: ColumnMeta[]; rows: CellValue[][]; rowCount; truncated; elapsedMs }`; `CellValue = string \| number \| boolean \| null` |
+| History entry | — (renderer-only)                                                                                                                                   | `types.ts SqlHistoryEntry { sql; ok; rowCount?; error?; ranAt }`                                                                                          |
+| Error card §5 | `AppError { Io \| Serialization \| NotFound \| Invalid }` with kind tags `io/serialization/notFound/invalid` (`shared/error.rs`)                    | rendered via `appErrorMessage(err, fallback)` into `.sql-error`                                                                                           |
 
 Cell JSON mapping (engine adapter): NULL→null, int/real→number, text→string; integers beyond ±2^53→string (precision). Postgres `boolean`→JS bool (since M12) drives green/red rendering; SQLite never emits a bool.
 

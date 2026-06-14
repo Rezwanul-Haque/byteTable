@@ -11,13 +11,13 @@ The two data-grid "superpowers" of `DESIGN_SPEC.md` §3.5, on the M4 browse grid
 
 Both run entirely against existing connection handles; M10 adds **two thin slices** — `browse::row_lookup` (FK peek) and `insights::column_stats` — over the engine port.
 
-> **Shipped delta vs. the MILESTONES sketch.** The sketch lists a third scope item: *"Both features also work on SQL-result grids when columns map to a known table."* **This is NOT shipped.** The M6 SQL-results grid (`src/features/workspaces/components/SqlResultGrid.tsx`) reuses the shared `CellContent` for cell visuals but does **not** thread FK metadata or an insights icon, because a SQL result has **no per-column table origin** (an arbitrary `SELECT` projects/joins/aliases columns, so a column cannot be mapped to a base table+column). `GridCell.tsx` documents this explicitly: a cell "without `fk`/`onFkClick` … renders exactly as before, so the SQL-results grid — which has no per-column table origin — is unchanged." Both superpowers ship **on the browse table grid only** (`DataGrid.tsx`). The `CellContent` API is the seam: if a future milestone supplies a column→(table, fk) origin for SQL results, the link cell lights up with no rewrite.
+> **Shipped delta vs. the MILESTONES sketch.** The sketch lists a third scope item: _"Both features also work on SQL-result grids when columns map to a known table."_ **This is NOT shipped.** The M6 SQL-results grid (`src/features/workspaces/components/SqlResultGrid.tsx`) reuses the shared `CellContent` for cell visuals but does **not** thread FK metadata or an insights icon, because a SQL result has **no per-column table origin** (an arbitrary `SELECT` projects/joins/aliases columns, so a column cannot be mapped to a base table+column). `GridCell.tsx` documents this explicitly: a cell "without `fk`/`onFkClick` … renders exactly as before, so the SQL-results grid — which has no per-column table origin — is unchanged." Both superpowers ship **on the browse table grid only** (`DataGrid.tsx`). The `CellContent` API is the seam: if a future milestone supplies a column→(table, fk) origin for SQL results, the link cell lights up with no rewrite.
 
 ## Dependencies
 
 - **M4 grid** (`src/features/browse/components/DataGrid.tsx`, `GridCell.tsx`) — hosts the FK link cells and the per-header chart icon; the header/cell structure was left with extensibility seams (see the `DataGrid.tsx` header comment, ~L20–L25) so M10 slots in without a rewrite. Cell rendering is the shared `CellContent`.
 - **M7 introspection** (`features::introspection`, `table_meta`) — supplies FK metadata. Each column's `fk: FkRef | null` (`{ table, column }`) comes from `tableMeta`, cached in the grid's `colMeta` map (`colMeta.get(c.name)?.fk`). The backend lookups (`fetch_row_by_key`, `column_stats`) also re-introspect (`table_meta_blocking`) to validate schema/table/column and obtain the column list.
-- **M5 filters** (`src/features/browse/filter.ts`, the `FilterSpec` compilation) — the **seeded condition** for "Open in {table}" is a one-condition `FilterSpec` (`column = value`), and column insights pass the grid's **current applied `FilterSpec`** to the backend so stats reflect the visible set. The backend reuses the *same* parameterized `where_clause` compilation that `fetch_rows` uses.
+- **M5 filters** (`src/features/browse/filter.ts`, the `FilterSpec` compilation) — the **seeded condition** for "Open in {table}" is a one-condition `FilterSpec` (`column = value`), and column insights pass the grid's **current applied `FilterSpec`** to the backend so stats reflect the visible set. The backend reuses the _same_ parameterized `where_clause` compilation that `fetch_rows` uses.
 
 ---
 
@@ -27,7 +27,7 @@ Both run entirely against existing connection handles; M10 adds **two thin slice
 
 There is **no per-slice domain or infrastructure**; both M10 slices are deliberately thin (see `src-tauri/src/features/insights/mod.rs` doc comment). The wire DTOs live in the shared kernel `src-tauri/src/shared/engine.rs` because every slice that talks to a connection shares them:
 
-- **`RowLookupRequest`** (`engine.rs` ~L834) — `{ schema, table, column, value: serde_json::Value }`, `serde(rename_all = "camelCase")`. `column` is the *referenced* column (parent pk/unique key); `value` is the FK cell's key, **bound as a parameter**. A `null` value never matches `=` in SQL, so the adapter treats it as "no match" rather than emitting `IS NULL`.
+- **`RowLookupRequest`** (`engine.rs` ~L834) — `{ schema, table, column, value: serde_json::Value }`, `serde(rename_all = "camelCase")`. `column` is the _referenced_ column (parent pk/unique key); `value` is the FK cell's key, **bound as a parameter**. A `null` value never matches `=` in SQL, so the adapter treats it as "no match" rather than emitting `IS NULL`.
 - **`RowLookup`** (~L856) — `{ columns: Vec<ColumnMeta>, row: Option<Vec<Value>>, match_count: u64 }`. `columns` is **always** returned (even on a miss) so the UI can label empty fields; `row` is the first match (or `None`); `match_count` is the total matching rows so the UI can flag a non-unique key as "1 of N".
 - **`ColumnStatsRequest`** (~L885) — `{ schema, table, column, filter: Option<FilterSpec> (#[serde(default)]) }`. `filter` omitted/`None` ⇒ stats over the whole table.
 - **`ColumnStats`** (~L905) — `{ total, distinct, nulls: u64, min, max: Option<Value>, avg: Option<f64>, numeric: bool, top: Vec<FreqEntry> }`. `total` includes NULLs; `distinct` = `count(DISTINCT col)`; `min`/`max` always returned (lexicographic for text); `avg`/`numeric` only meaningful for numeric columns.
@@ -57,10 +57,10 @@ A closed/unknown handle is an `AppError::NotFound` whose message contains "close
 
 ### Tauri commands
 
-| table | command | args | returns | errors |
-|---|---|---|---|---|
-| `browse` | `row_lookup` | `handle_id: ConnectionHandleId`, `req: RowLookupRequest` | `RowLookup` | `AppError` (§5) — `NotFound` (closed handle / unknown schema/table/column), engine errors via `map_query_error` |
-| `insights` | `column_stats` | `handle_id: ConnectionHandleId`, `req: ColumnStatsRequest` | `ColumnStats` | `AppError` (§5) — same `NotFound`/validation/engine surfaces |
+| table      | command        | args                                                       | returns       | errors                                                                                                          |
+| ---------- | -------------- | ---------------------------------------------------------- | ------------- | --------------------------------------------------------------------------------------------------------------- |
+| `browse`   | `row_lookup`   | `handle_id: ConnectionHandleId`, `req: RowLookupRequest`   | `RowLookup`   | `AppError` (§5) — `NotFound` (closed handle / unknown schema/table/column), engine errors via `map_query_error` |
+| `insights` | `column_stats` | `handle_id: ConnectionHandleId`, `req: ColumnStatsRequest` | `ColumnStats` | `AppError` (§5) — same `NotFound`/validation/engine surfaces                                                    |
 
 Defined in `src-tauri/src/features/browse/commands.rs` (`row_lookup`) and `src-tauri/src/features/insights/commands.rs` (`column_stats`); both `#[tauri::command] async fn`, read the connections feature's managed `ConnectionsState`, deserialize → use-case → serialize (no logic). Registered in `src-tauri/src/lib.rs`'s `generate_handler!` (`features::browse::commands::row_lookup`, `features::insights::commands::column_stats`).
 
@@ -108,14 +108,14 @@ All popover CSS is in `src/features/browse/components/Popovers.css`, byte-ported
 
 ## Shared data contracts — TS + Rust types
 
-| Concept | Rust (`src-tauri/src/shared/engine.rs`) | TS (`src/shared/api/engine.ts`) |
-|---|---|---|
-| FK peek request | `RowLookupRequest { schema, table, column: String, value: Value }` | `RowLookupRequest { schema, table, column: string, value: CellValue }` |
-| FK peek result | `RowLookup { columns: Vec<ColumnMeta>, row: Option<Vec<Value>>, match_count: u64 }` | `RowLookup { columns: ColumnMeta[]; row: CellValue[] \| null; matchCount: number }` |
-| Stats request | `ColumnStatsRequest { schema, table, column, filter: Option<FilterSpec> }` | `ColumnStatsRequest { schema, table, column; filter?: FilterSpec \| null }` |
-| Stats result | `ColumnStats { total, distinct, nulls: u64, min, max: Option<Value>, avg: Option<f64>, numeric: bool, top: Vec<FreqEntry> }` | `ColumnStats { total, distinct, nulls: number; min, max: CellValue; avg: number \| null; numeric: boolean; top: FreqEntry[] }` |
-| Freq pair | `FreqEntry { value: Value, count: u64 }` | `FreqEntry { value: CellValue; count: number }` |
-| FK metadata (from M7) | `FkRef { table, column: String }` (empty `column` = unresolved) | `FkRef { table: string; column: string }` |
+| Concept               | Rust (`src-tauri/src/shared/engine.rs`)                                                                                      | TS (`src/shared/api/engine.ts`)                                                                                                |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| FK peek request       | `RowLookupRequest { schema, table, column: String, value: Value }`                                                           | `RowLookupRequest { schema, table, column: string, value: CellValue }`                                                         |
+| FK peek result        | `RowLookup { columns: Vec<ColumnMeta>, row: Option<Vec<Value>>, match_count: u64 }`                                          | `RowLookup { columns: ColumnMeta[]; row: CellValue[] \| null; matchCount: number }`                                            |
+| Stats request         | `ColumnStatsRequest { schema, table, column, filter: Option<FilterSpec> }`                                                   | `ColumnStatsRequest { schema, table, column; filter?: FilterSpec \| null }`                                                    |
+| Stats result          | `ColumnStats { total, distinct, nulls: u64, min, max: Option<Value>, avg: Option<f64>, numeric: bool, top: Vec<FreqEntry> }` | `ColumnStats { total, distinct, nulls: number; min, max: CellValue; avg: number \| null; numeric: boolean; top: FreqEntry[] }` |
+| Freq pair             | `FreqEntry { value: Value, count: u64 }`                                                                                     | `FreqEntry { value: CellValue; count: number }`                                                                                |
+| FK metadata (from M7) | `FkRef { table, column: String }` (empty `column` = unresolved)                                                              | `FkRef { table: string; column: string }`                                                                                      |
 
 All Rust DTOs are `#[serde(rename_all = "camelCase")]`; round-trip / camelCase wire-shape tests live in `engine.rs` (~L2279–L2420). `match_count` ⇄ `matchCount`. `CellValue = string | number | boolean | null` (booleans reachable since M12 Postgres).
 

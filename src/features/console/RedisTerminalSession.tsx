@@ -121,13 +121,17 @@ export function RedisTerminalSession({ workspace, session, embedded }: RedisTerm
   // --- transcript helpers (read latest state via the store, never stale) ---
   const appendLines = (more: TermLine[]) => {
     if (more.length === 0) return;
-    const cur = usePanelStore.getState().byWorkspace[wsId]?.sessions.find((s) => s.id === session.id);
+    const cur = usePanelStore
+      .getState()
+      .byWorkspace[wsId]?.sessions.find((s) => s.id === session.id);
     patchSession(wsId, session.id, { lines: [...(cur?.lines ?? []), ...more] });
   };
   const setLines = (lines: TermLine[]) => patchSession(wsId, session.id, { lines });
   const pushHistory = (line: string) => {
     if (!line.trim()) return;
-    const cur = usePanelStore.getState().byWorkspace[wsId]?.sessions.find((s) => s.id === session.id);
+    const cur = usePanelStore
+      .getState()
+      .byWorkspace[wsId]?.sessions.find((s) => s.id === session.id);
     patchSession(wsId, session.id, {
       history: [line, ...(cur?.history ?? [])].slice(0, 80),
     });
@@ -155,7 +159,9 @@ export function RedisTerminalSession({ workspace, session, embedded }: RedisTerm
         }
       })
       .catch((e: unknown) => {
-        appendLines([{ cls: "cli-error", text: "(error) " + appErrorMessage(e, "command failed") }]);
+        appendLines([
+          { cls: "cli-error", text: "(error) " + appErrorMessage(e, "command failed") },
+        ]);
       })
       .finally(() => {
         setRunning(false);
@@ -250,11 +256,7 @@ export function RedisTerminalSession({ workspace, session, embedded }: RedisTerm
           onClick={() => setLines([])}
         />
       </div>
-      <div
-        className="rcli-body term-body"
-        ref={bodyRef}
-        onClick={() => inputRef.current?.focus()}
-      >
+      <div className="rcli-body term-body" ref={bodyRef} onClick={() => inputRef.current?.focus()}>
         {session.lines.map((l, i) => (
           <div key={i} className={"rcli-line " + l.cls}>
             {l.text || " "}
@@ -283,8 +285,8 @@ export function RedisTerminalSession({ workspace, session, embedded }: RedisTerm
       {confirm ? (
         <Modal onClose={() => setConfirm(null)} label="Confirm destructive command" width={460}>
           <ModalTitle>
-            <Icon name="warning" size={18} style={{ color: "#e06c75" }} /> Run a destructive
-            command on a production connection?
+            <Icon name="warning" size={18} style={{ color: "#e06c75" }} /> Run a destructive command
+            on a production connection?
           </ModalTitle>
           <p className="dg-confirm-body">
             This connection points at <b>production</b>. The following command will run against{" "}

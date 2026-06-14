@@ -58,20 +58,20 @@ adapter and the feature both depend on it without depending on each other).
   - `KeyEntry { name: String, key_type: KeyType, ttl: i64 }` — one row in a scan page (`ttl`: `-1`
     no expiry, `-2` vanished mid-scan).
   - `KeyView { key_type: KeyType, ttl: i64, encoding: Option<String>, memory: Option<u64>,
-    idle: Option<u64>, value: KvValue }` — the full single-key view: `encoding` from
+idle: Option<u64>, value: KvValue }` — the full single-key view: `encoding` from
     `OBJECT ENCODING`, `memory` from `MEMORY USAGE`, `idle` from `OBJECT IDLETIME`.
 - **Scan paging.** `ScanRequest { pattern: String, type_filter: Option<KeyType>, cursor: String,
-  count: u32 }` and `ScanPage { cursor: String, keys: Vec<KeyEntry> }` (`cursor == "0"` ends paging).
+count: u32 }` and `ScanPage { cursor: String, keys: Vec<KeyEntry> }` (`cursor == "0"` ends paging).
 - **Keyspace stats / identity.**
   - `KvServerInfo { server_version, mode, role, resp_version: u8 }` (dashboard header / status bar).
   - `KvServerStats { keyspace_hits, keyspace_misses, instantaneous_ops_per_sec, connected_clients,
-    used_memory, maxmemory, uptime_in_days, expired_keys, evicted_keys }` — best-effort from `INFO`
+used_memory, maxmemory, uptime_in_days, expired_keys, evicted_keys }` — best-effort from `INFO`
     (`maxmemory == 0` = unbounded).
   - `KvDbInfo { index: u8, key_count: u64 }` — per-db counts from the `INFO keyspace` section.
 - **RESP reply model** — `RespReply` enum, internally tagged by `kind`:
   - `Status { value }` (`+OK`, `+PONG`), `Error { value }` (`-ERR`, `-WRONGTYPE` — surfaced, **not**
     thrown), `Int { value: i64 }`, `Bulk { value: Option<String> }` (`None` = nil), `Array { items:
-    Vec<RespReply> }` (nests).
+Vec<RespReply> }` (nests).
 
 ### Ports — key-value port family
 
@@ -89,7 +89,7 @@ adapter and the feature both depend on it without depending on each other).
   `rename_key`, `expire(.., seconds: i64) -> bool`, `persist -> bool`,
   `create_key(.., key_type: KeyType, initial: Option<&str>)`. Every method takes `db: u8, key: &str`.
 - **`CommandRunner`** — `async fn run_command(&self, db: u8, args: Vec<String>) -> Result<RespReply,
-  AppError>` (the raw redis-cli executor).
+AppError>` (the raw redis-cli executor).
 - **`KeyValueConnection`** — super-trait bundling all three, plus `fn engine_info(&self) -> EngineInfo`
   and `async fn close(&self) -> Result<(), AppError>`. This is the object stored per handle.
 
@@ -155,27 +155,27 @@ Registered in `src-tauri/src/lib.rs` (`generate_handler!`); defined in
 `src-tauri/src/features/keyvalue/commands.rs`. All take `state: State<ConnectionsState>` +
 `handle_id: ConnectionHandleId` and return `Result<_, AppError>`. **19 commands:**
 
-| Command | Args (beyond state + handle_id) | Returns | Errors |
-|---|---|---|---|
-| `kv_server_info` | — | `KvServerInfo` | `AppError` (conn down / wrong kind) |
-| `kv_server_stats` | — | `KvServerStats` | `AppError` |
-| `kv_keyspace` | — | `Vec<KvDbInfo>` | `AppError` |
-| `kv_scan` | `db: u8, request: ScanRequest` | `ScanPage` | `AppError` |
-| `kv_get_key` | `db: u8, key: String` | `KeyView` | `AppError` |
-| `kv_set_string` | `db, key, value: String` | `()` | `AppError` |
-| `kv_hash_set` | `db, key, field, value` | `()` | `AppError` |
-| `kv_hash_del` | `db, key, field` | `bool` | `AppError` |
-| `kv_list_set` | `db, key, index: i64, value` | `()` | `AppError` (out-of-range index) |
-| `kv_set_add` | `db, key, member` | `bool` | `AppError` |
-| `kv_set_remove` | `db, key, member` | `bool` | `AppError` |
-| `kv_zset_add` | `db, key, member, score: f64` | `()` | `AppError` |
-| `kv_zset_remove` | `db, key, member` | `bool` | `AppError` |
-| `kv_delete_key` | `db, key` | `bool` | `AppError` |
-| `kv_rename_key` | `db, key, new_key` | `()` | `AppError::NotFound` on missing key |
-| `kv_expire` | `db, key, seconds: i64` | `bool` | `AppError` |
-| `kv_persist` | `db, key` | `bool` | `AppError` |
-| `kv_create_key` | `db, key, key_type: KeyType, initial: Option<String>` | `()` | `AppError::Unsupported` for unsupported seed |
-| `kv_command` | `db, args: Vec<String>` | `RespReply` | `AppError` only on I/O failure; server errors arrive as `RespReply::Error` |
+| Command           | Args (beyond state + handle_id)                       | Returns         | Errors                                                                     |
+| ----------------- | ----------------------------------------------------- | --------------- | -------------------------------------------------------------------------- |
+| `kv_server_info`  | —                                                     | `KvServerInfo`  | `AppError` (conn down / wrong kind)                                        |
+| `kv_server_stats` | —                                                     | `KvServerStats` | `AppError`                                                                 |
+| `kv_keyspace`     | —                                                     | `Vec<KvDbInfo>` | `AppError`                                                                 |
+| `kv_scan`         | `db: u8, request: ScanRequest`                        | `ScanPage`      | `AppError`                                                                 |
+| `kv_get_key`      | `db: u8, key: String`                                 | `KeyView`       | `AppError`                                                                 |
+| `kv_set_string`   | `db, key, value: String`                              | `()`            | `AppError`                                                                 |
+| `kv_hash_set`     | `db, key, field, value`                               | `()`            | `AppError`                                                                 |
+| `kv_hash_del`     | `db, key, field`                                      | `bool`          | `AppError`                                                                 |
+| `kv_list_set`     | `db, key, index: i64, value`                          | `()`            | `AppError` (out-of-range index)                                            |
+| `kv_set_add`      | `db, key, member`                                     | `bool`          | `AppError`                                                                 |
+| `kv_set_remove`   | `db, key, member`                                     | `bool`          | `AppError`                                                                 |
+| `kv_zset_add`     | `db, key, member, score: f64`                         | `()`            | `AppError`                                                                 |
+| `kv_zset_remove`  | `db, key, member`                                     | `bool`          | `AppError`                                                                 |
+| `kv_delete_key`   | `db, key`                                             | `bool`          | `AppError`                                                                 |
+| `kv_rename_key`   | `db, key, new_key`                                    | `()`            | `AppError::NotFound` on missing key                                        |
+| `kv_expire`       | `db, key, seconds: i64`                               | `bool`          | `AppError`                                                                 |
+| `kv_persist`      | `db, key`                                             | `bool`          | `AppError`                                                                 |
+| `kv_create_key`   | `db, key, key_type: KeyType, initial: Option<String>` | `()`            | `AppError::Unsupported` for unsupported seed                               |
+| `kv_command`      | `db, args: Vec<String>`                               | `RespReply`     | `AppError` only on I/O failure; server errors arrive as `RespReply::Error` |
 
 Connection lifecycle (open/close/test) reuses the shared M1/M12 connection commands; Redis flows
 through `OpenConnection::Kv` and `ConnectionsState::manager().get_kv(&handle_id)`.
@@ -252,14 +252,14 @@ All under `src/features/redis_browse/components/` unless noted.
   - `ListViewer` — `index | value` grid; edit value → `LSET`.
   - `SetViewer` — `member` grid; add → `SADD`; remove → `SREM`.
   - `ZsetViewer` — `rank | member | score` grid sorted by score; edit score → `ZADD key score
-    member`; remove → `ZREM`.
+member`; remove → `ZREM`.
   - `StreamViewer` — read-only `id | fields` grid (fields flattened `k=v  k=v`).
   - **Info mode** — type badge + key + copy; two-column grid (Type, Encoding, Elements, Size
     `humanBytes`, Idle `humanTTL`, TTL `no expiry (∞)` / `29m (1740s)`); quick-action row: seconds
     input + **Set TTL (EXPIRE)**, **Persist** (only when a TTL exists), **Delete key (DEL)**
     (confirms, then closes the tab). Reports active-key meta up via `onMeta` for the status bar.
 - **`DashboardTab.tsx`** (+ `DashboardTab.css`) — `Rd` badge + "Keyspace dashboard" + `{mode} ·
-  {role} · Redis {version}`; 4-up **stat grid** (Total keys, Memory used of max, Hit rate %, Ops/sec,
+{role} · Redis {version}`; 4-up **stat grid** (Total keys, Memory used of max, Hit rate %, Ops/sec,
   Clients, Uptime, Expired, Evicted from `kvServerStats`); **Keys by type** panel (one colored bar per
   type, sampled from a bounded SCAN, caption `Sample of db{N} (X keys)`); **Keys per database** panel
   (db0–db15 mini-cells, empty dimmed, current highlighted, click switches db).
@@ -297,26 +297,26 @@ All under `src/features/redis_browse/components/` unless noted.
 
 ## Shared data contracts — TS + Rust types
 
-| Concept | Rust (`shared/keyvalue.rs`) | TS (`redis_browse/api.ts` + `state.ts`) |
-|---|---|---|
-| key type | `KeyType` (`String`…`Stream`) | `KeyType = "string"\|"hash"\|"list"\|"set"\|"zset"\|"stream"` |
-| scan row | `KeyEntry { name, key_type, ttl }` | `KeyEntry { name; keyType; ttl }` |
-| key view | `KeyView { key_type, ttl, encoding: Option<String>, memory: Option<u64>, idle: Option<u64>, value }` | `KeyView { keyType; ttl; encoding; memory; idle; value: KvValue }` |
-| value (string) | `KvValue::Str { value }` | `{ type: "str"; value: string }` |
-| value (list) | `KvValue::List { items }` | `{ type: "list"; items: string[] }` |
-| value (set) | `KvValue::Set { members }` | `{ type: "set"; members: string[] }` |
-| value (hash) | `KvValue::Hash { fields: Vec<KvField> }` | `{ type: "hash"; fields: KvField[] }` |
-| value (zset) | `KvValue::Zset { entries: Vec<KvScored> }` | `{ type: "zset"; entries: KvScored[] }` |
-| value (stream) | `KvValue::Stream { entries: Vec<KvStreamEntry> }` | `{ type: "stream"; entries: KvStreamEntry[] }` |
-| value (missing) | `KvValue::Missing {}` | `{ type: "missing" }` |
-| field | `KvField { field, value }` | `KvField { field; value }` |
-| scored | `KvScored { member, score: f64 }` | `KvScored { member; score }` |
-| stream entry | `KvStreamEntry { id, fields }` | `KvStreamEntry { id; fields: KvField[] }` |
-| scan req/page | `ScanRequest { pattern, type_filter, cursor, count }` / `ScanPage { cursor, keys }` | `ScanRequest { pattern; typeFilter?; cursor; count }` / `ScanPage { cursor; keys: KeyEntry[] }` |
-| server info | `KvServerInfo { server_version, mode, role, resp_version }` | `KvServerInfo { serverVersion; mode; role; respVersion }` |
-| server stats | `KvServerStats { keyspace_hits, …, evicted_keys }` | `KvServerStats { keyspaceHits; …; evictedKeys }` |
-| per-db count | `KvDbInfo { index, key_count }` | `KvDbInfo { index; keyCount }` |
-| RESP reply | `RespReply::{Status,Error,Int,Bulk,Array}` (tag `kind`) | `{ kind: "status"\|"error"\|"int"\|"bulk"\|"array"; … }` |
+| Concept         | Rust (`shared/keyvalue.rs`)                                                                          | TS (`redis_browse/api.ts` + `state.ts`)                                                         |
+| --------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| key type        | `KeyType` (`String`…`Stream`)                                                                        | `KeyType = "string"\|"hash"\|"list"\|"set"\|"zset"\|"stream"`                                   |
+| scan row        | `KeyEntry { name, key_type, ttl }`                                                                   | `KeyEntry { name; keyType; ttl }`                                                               |
+| key view        | `KeyView { key_type, ttl, encoding: Option<String>, memory: Option<u64>, idle: Option<u64>, value }` | `KeyView { keyType; ttl; encoding; memory; idle; value: KvValue }`                              |
+| value (string)  | `KvValue::Str { value }`                                                                             | `{ type: "str"; value: string }`                                                                |
+| value (list)    | `KvValue::List { items }`                                                                            | `{ type: "list"; items: string[] }`                                                             |
+| value (set)     | `KvValue::Set { members }`                                                                           | `{ type: "set"; members: string[] }`                                                            |
+| value (hash)    | `KvValue::Hash { fields: Vec<KvField> }`                                                             | `{ type: "hash"; fields: KvField[] }`                                                           |
+| value (zset)    | `KvValue::Zset { entries: Vec<KvScored> }`                                                           | `{ type: "zset"; entries: KvScored[] }`                                                         |
+| value (stream)  | `KvValue::Stream { entries: Vec<KvStreamEntry> }`                                                    | `{ type: "stream"; entries: KvStreamEntry[] }`                                                  |
+| value (missing) | `KvValue::Missing {}`                                                                                | `{ type: "missing" }`                                                                           |
+| field           | `KvField { field, value }`                                                                           | `KvField { field; value }`                                                                      |
+| scored          | `KvScored { member, score: f64 }`                                                                    | `KvScored { member; score }`                                                                    |
+| stream entry    | `KvStreamEntry { id, fields }`                                                                       | `KvStreamEntry { id; fields: KvField[] }`                                                       |
+| scan req/page   | `ScanRequest { pattern, type_filter, cursor, count }` / `ScanPage { cursor, keys }`                  | `ScanRequest { pattern; typeFilter?; cursor; count }` / `ScanPage { cursor; keys: KeyEntry[] }` |
+| server info     | `KvServerInfo { server_version, mode, role, resp_version }`                                          | `KvServerInfo { serverVersion; mode; role; respVersion }`                                       |
+| server stats    | `KvServerStats { keyspace_hits, …, evicted_keys }`                                                   | `KvServerStats { keyspaceHits; …; evictedKeys }`                                                |
+| per-db count    | `KvDbInfo { index, key_count }`                                                                      | `KvDbInfo { index; keyCount }`                                                                  |
+| RESP reply      | `RespReply::{Status,Error,Int,Bulk,Array}` (tag `kind`)                                              | `{ kind: "status"\|"error"\|"int"\|"bulk"\|"array"; … }`                                        |
 
 Helpers (port from `redis_browse/helpers.ts`): `humanTTL(s)` → `∞ / Ns / Nm / Nh / Nd`;
 `humanBytes(b)` → `B/KB/MB/GB`; `humanNum(n)` → `K/M`; `patternToRegExp(glob)` (glob→regex for the

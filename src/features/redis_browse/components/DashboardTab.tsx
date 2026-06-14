@@ -155,12 +155,7 @@ export function DashboardTab({
           </span>
         ) : null}
         <div className="rdash-head-spacer" />
-        <IconBtn
-          icon="sync"
-          title="Refresh stats"
-          onClick={refresh}
-          disabled={loading}
-        />
+        <IconBtn icon="sync" title="Refresh stats" onClick={refresh} disabled={loading} />
       </div>
 
       {error ? <div className="rdash-error">{error}</div> : null}

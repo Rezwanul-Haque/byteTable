@@ -94,7 +94,9 @@ export function CellContent({
               if (hop) onFkClick!(value, e);
               else onBinClick!(e);
             }}
-            title={hop ? "→ " + fk.table + " · double-click to edit" : "BINARY · double-click to edit"}
+            title={
+              hop ? "→ " + fk.table + " · double-click to edit" : "BINARY · double-click to edit"
+            }
           >
             {inner}
           </button>

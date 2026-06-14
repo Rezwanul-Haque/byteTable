@@ -10,6 +10,7 @@ Status: shipped, merged on `main` (`feat: M4 — tab system + virtualized data g
 > satisfy; prose marked "shipped:" records a decision already made.
 >
 > Two notable deltas from the §3.5 sketch, both load-bearing:
+>
 > 1. **Explicit paging, not scroll-driven windowing.** The grid does NOT
 >    virtualize the whole table. The table tab owns `offset` + `pageSize`, a
 >    bottom **pager** (prev/next/page-size) moves the window, and the grid
@@ -56,8 +57,8 @@ cross-feature composition).
 ### Domain / Ports / Application — paged query (limit/offset), sort, row count
 
 - **Port** (`shared::engine`, `EngineConnection` trait): `fetch_rows(req:
-  FetchRowsRequest) -> Result<RowsPage, AppError>` and `fetch_row_by_key(req:
-  RowLookupRequest) -> Result<RowLookup, AppError>`.
+FetchRowsRequest) -> Result<RowsPage, AppError>` and `fetch_row_by_key(req:
+RowLookupRequest) -> Result<RowLookup, AppError>`.
 - **Application** (`features/browse/application.rs`):
   - `fetch_rows(manager, handle, req)` → `manager.get_sql(handle).await?.fetch_rows(req).await`.
   - `fetch_row_by_key(manager, handle, req)` → same shape (M10 FK peek).
@@ -72,7 +73,7 @@ cross-feature composition).
   enum — `SortDirection::sql_keyword()` — so the direction carries no injection
   surface. `None` leaves order to the engine.
 - **Row count:** `RowsPage.total_rows: Option<u64>` is an EXACT `COUNT(*)`
-  matching the request (whole table in M4; the *filtered* count once M5 adds a
+  matching the request (whole table in M4; the _filtered_ count once M5 adds a
   `FilterSpec`). Computed per fetch. `None` means the count could not be
   obtained.
 
@@ -104,10 +105,10 @@ Registered in `src-tauri/src/lib.rs` `generate_handler!`. Deserialize →
 use-case → serialize; no logic. All `async fn` (real DB work). Commands read
 the connections feature's managed `ConnectionsState` for the handle manager.
 
-| command | args | returns | errors |
-|---|---|---|---|
-| `rows_fetch` | `handle_id: ConnectionHandleId`, `req: FetchRowsRequest` | `RowsPage` | `NotFound` (closed/unknown handle, msg contains "closed"); §5 unknown schema/table; §5 unknown sort column |
-| `row_lookup` | `handle_id`, `req: RowLookupRequest` | `RowLookup` | as above; §5 unknown lookup column (M10 FK peek; not exercised by M4 itself) |
+| command      | args                                                     | returns     | errors                                                                                                     |
+| ------------ | -------------------------------------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------- |
+| `rows_fetch` | `handle_id: ConnectionHandleId`, `req: FetchRowsRequest` | `RowsPage`  | `NotFound` (closed/unknown handle, msg contains "closed"); §5 unknown schema/table; §5 unknown sort column |
+| `row_lookup` | `handle_id`, `req: RowLookupRequest`                     | `RowLookup` | as above; §5 unknown lookup column (M10 FK peek; not exercised by M4 itself)                               |
 
 > `query_run` (connections slice) and `row_update` (`features/mutate/commands.rs`,
 > M11) are NOT part of M4 but share the grid surface — `query_run` feeds the M6
@@ -146,8 +147,9 @@ synchronous — never touches the backend; the grid fetches lazily on mount.
 
 **Ephemeral result + scroll/refresh store** (`tabMeta.ts`, zustand, GLOBAL —
 keyed by globally-unique tab id, so it spans workspaces). Deliberately separate
-from persisted `ui` because counts/timing/scroll are ephemeral *result* state
+from persisted `ui` because counts/timing/scroll are ephemeral _result_ state
 and high-frequency:
+
 - `meta[tabId]: { totalRows?, shownRows?, elapsedMs? }` — the grid reports
   `totalRows` + `elapsedMs` after each fetch; the toolbar + status bar read it.
 - `scrollTop[tabId]` — grid vertical scroll, committed on UNMOUNT only (churn
@@ -171,21 +173,22 @@ tab's `tabMeta`. Shows context info only for `table` tabs:
 rowsFetch(handleId, req: FetchRowsRequest): Promise<RowsPage>   // invoke("rows_fetch", { handleId, req })
 rowLookup(handleId, req: RowLookupRequest): Promise<RowLookup>  // invoke("row_lookup", …) — M10
 ```
+
 camelCase wire shape matches the Rust `#[serde(rename_all = "camelCase")]`
 DTOs. Errors come back as `{ kind, message }`; render via
 `appErrorMessage(err, fallback)` (`shared/api/error`).
 
 ### Components
 
-| component | file | role |
-|---|---|---|
-| **TabBar** | `features/workspaces/components/TabBar.tsx` (+ `.css`) | 37px strip: kind-icon + mono title + close ×; active = 2px accent top bar; "+" → new SQL tab; trailing terminal toggle (M14). |
-| **Tab** (row) | same file | one `role="tab"` div: icon (`table`/`account_tree` in structure mode / `terminal` for sql / `hub` for map), `tab-title`, hover/active close button. |
-| **DataGrid** | `features/browse/components/DataGrid.tsx` (+ `.css`) | virtualized rows of ONE page, sticky header, sticky row-number gutter, sort, FK/insights/edit seams. |
-| **GridCell** (`CellContent`) | `features/browse/components/GridCell.tsx` | the ONLY place `.cell-*` visuals are produced; shared with the M6 SQL result grid. |
-| **TableTab** | `features/workspaces/components/TableTab.tsx` (+ `.css`) | toolbar (Data/Structure seg, Filters, WHERE readout, refresh, "N rows"), hosts `DataGrid`, owns the bottom **pager** + hint footer. |
-| **StatusBar** | `features/workspaces/components/StatusBar.tsx` | §3.10 bottom strip. |
-| **WorkspaceContent** | `features/workspaces/components/WorkspaceContent.tsx` | routes the active tab to TableTab / SqlEditorTab / map placeholder / EmptyState; renders TabBar. |
+| component                    | file                                                     | role                                                                                                                                                |
+| ---------------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **TabBar**                   | `features/workspaces/components/TabBar.tsx` (+ `.css`)   | 37px strip: kind-icon + mono title + close ×; active = 2px accent top bar; "+" → new SQL tab; trailing terminal toggle (M14).                       |
+| **Tab** (row)                | same file                                                | one `role="tab"` div: icon (`table`/`account_tree` in structure mode / `terminal` for sql / `hub` for map), `tab-title`, hover/active close button. |
+| **DataGrid**                 | `features/browse/components/DataGrid.tsx` (+ `.css`)     | virtualized rows of ONE page, sticky header, sticky row-number gutter, sort, FK/insights/edit seams.                                                |
+| **GridCell** (`CellContent`) | `features/browse/components/GridCell.tsx`                | the ONLY place `.cell-*` visuals are produced; shared with the M6 SQL result grid.                                                                  |
+| **TableTab**                 | `features/workspaces/components/TableTab.tsx` (+ `.css`) | toolbar (Data/Structure seg, Filters, WHERE readout, refresh, "N rows"), hosts `DataGrid`, owns the bottom **pager** + hint footer.                 |
+| **StatusBar**                | `features/workspaces/components/StatusBar.tsx`           | §3.10 bottom strip.                                                                                                                                 |
+| **WorkspaceContent**         | `features/workspaces/components/WorkspaceContent.tsx`    | routes the active tab to TableTab / SqlEditorTab / map placeholder / EmptyState; renders TabBar.                                                    |
 
 **TabBar** (`TabBar.tsx`): `tabIcon(tab)` maps kind → Material Symbol with the
 structure-mode swap; `tabTitle(tab, defaultSchema)` → bare `table` for the
@@ -196,13 +199,14 @@ select, Delete/Backspace close; `role="tablist"`/`role="tab"`/`aria-selected`.
 **DataGrid** (`DataGrid.tsx`) — props from `TableTab`: `handleId`, `tabId`,
 `schema`, `table`, `filter`/`filterKey` (M5), `hiddenColumns` (M15),
 **`offset`**, **`pageSize`**, `onSortChange`. Behavior:
+
 - One `rows_fetch` per `(handleId, schema, table, sort, filterKey, refetchNonce,
-  offset, pageSize)` generation; a `generationRef` discards stale late responses.
+offset, pageSize)` generation; a `generationRef` discards stale late responses.
 - Page rows cached by **absolute** index (`offset + i`) in a ref so the row
   gutter + edit pk logic stay correct across pages; `pageRowCount` drives the
   virtualizer count; absent rows render a shimmer skeleton.
 - `useVirtualizer({ count: pageRowCount, estimateSize: () => rowHeight,
-  overscan: 12 })`; `rowHeight` read live from `--grid-row-h` and re-measured
+overscan: 12 })`; `rowHeight` read live from `--grid-row-h` and re-measured
   via a `MutationObserver` on `:root[data-density]`.
 - **Explicit per-column pixel tracks** (Bug 1): each row is its own CSS grid, so
   the grid measures one width per visible column once
@@ -246,7 +250,7 @@ insights".
   small-caps; `.cell-num` `--number`; `.cell-true` accent / `.cell-false`
   `#e06c75`; `.cell-pill` r99 tinted `{color}1a`. Row hover tint (`--bg2` 70%);
   `.row-selected` accent 7% tint; **`.cell-selected` outline `1.5px solid
-  --accent`, offset `-1.5px`, r2** (the selected-cell outline).
+--accent`, offset `-1.5px`, r2** (the selected-cell outline).
 - **§3.10 status bar** (`StatusBar.css`): 28px, `--bg1`, top border — ws color
   chip · name (600) · `EnvTag` · server version (mono faint) · tunnel lock
   (when tunneled; SQLite never) · "schema: x" · spacer · context info (rows ·

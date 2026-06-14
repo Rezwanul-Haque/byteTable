@@ -3,3 +3,7 @@ node_modules/
 src-tauri/target/
 src-tauri/gen/
 pnpm-lock.yaml
+
+# Prose/data, not source — don't gate CI formatting on these.
+docs/
+test-fixtures/

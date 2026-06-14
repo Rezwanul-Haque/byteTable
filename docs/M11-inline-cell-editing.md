@@ -21,7 +21,7 @@ Real, safe single-cell data mutation per §3.5. Double-click a grid cell → a b
 The mutate slice is deliberately thin (no domain/infra of its own — see `src-tauri/src/features/mutate/mod.rs`). The cell-update model lives in `crate::shared::engine` and is shared by every slice that talks to a connection:
 
 - **`UpdateCellRequest`** (`shared/engine.rs:961`): `{ schema, table, column, value: serde_json::Value, pk: Vec<PkPredicate> }`. `value` is the new cell value (`null` ⇒ set the cell to NULL). `pk` is the **full** primary key of the target row.
-- **`PkPredicate`** (`shared/engine.rs:938`): `{ column, value }`. One per pk column; the adapter ANDs them so the WHERE clause matches exactly one row. `column` must be a real pk column (validated); `value` is *bound*, never interpolated. A `null` pk value is a no-match (`= NULL` is never true).
+- **`PkPredicate`** (`shared/engine.rs:938`): `{ column, value }`. One per pk column; the adapter ANDs them so the WHERE clause matches exactly one row. `column` must be a real pk column (validated); `value` is _bound_, never interpolated. A `null` pk value is a no-match (`= NULL` is never true).
 - **`UpdateResult`** (`shared/engine.rs:984`): `{ affected: u64, statement: String }`. `affected` is exactly `1` on success. `statement` is a **cosmetic, values-inlined display** rendering (e.g. `UPDATE "main"."users" SET "name" = 'Ada' WHERE "id" = 42`) for the §3.11 toast — it is NOT the verbatim query sent to the engine (which binds every value).
 
 ### Application — route the request; the safety contract lives in the adapter
@@ -39,8 +39,8 @@ The **mutation safety contract** is enforced in the adapter (port docs at `share
 
 ### Tauri commands
 
-| Command | Args | Returns | Errors |
-|---|---|---|---|
+| Command      | Args                                                      | Returns                                  | Errors                                                                                                                                                                                                                       |
+| ------------ | --------------------------------------------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `row_update` | `handle_id: ConnectionHandleId`, `req: UpdateCellRequest` | `UpdateResult` `{ affected, statement }` | `{ kind, message }` (§5): closed handle → `NotFound`; unknown schema/table/column, no/partial/non-pk primary key, stale pk (0 rows), >1 rows, engine constraint failure → `Database`; engine without support → `Unsupported` |
 
 Registered in `src-tauri/src/lib.rs:163` (`features::mutate::commands::row_update`). Handler `features/mutate/commands.rs:30` is deserialize → use-case → serialize; reads the connections feature's managed `ConnectionsState` for the handle manager (sanctioned cross-feature composition at the presentation boundary). `async fn` per the async-commands rule.
@@ -65,6 +65,7 @@ A reset clears both `editing` and `pendingConfirm` (`DataGrid.tsx:401`).
 ### API — typed invoke wrapper
 
 `src/shared/api/engine.ts`:
+
 - `rowUpdate(handleId, req: UpdateCellRequest): Promise<UpdateResult>` → `invoke("row_update", { handleId, req })` (`engine.ts:457`).
 - Types: `UpdateCellRequest` (`engine.ts:332`), `PkPredicate` (`engine.ts:316`), `UpdateResult` (`engine.ts:353`) — camelCase mirrors of the Rust DTOs (`CellValue = string | number | boolean | null`).
 
@@ -86,6 +87,7 @@ All in `DataGrid.tsx`. The `td` (`.dg-td`) keeps its M4 structure; M11 adds:
 ### Styling — §3.5 cell-edit affordances
 
 `src/features/browse/components/DataGrid.css`:
+
 - **`.cell-input`** (`:198`) — full-width, transparent-style borderless input: `background: var(--bg0)`, `border: none`, `outline: none`, mono font at `--grid-fs`, zero padding, `color: var(--text)`. (Borderless in-cell input per §3.5.)
 - **`.dg-td.cell-editing`** (`:209`) — `outline: 1.5px solid var(--accent)` (offset -1.5px) + `var(--bg0)` background — the 1.5px accent inset matching the §3.5 selected-cell treatment.
 - **`.dg-confirm-body`** (`:216`) / **`.dg-confirm-sql`** (`:223`) — confirm modal body (UI font, dim) + the mono SQL block (`--bg0` bg, bordered, r7).
@@ -93,12 +95,12 @@ All in `DataGrid.tsx`. The `td` (`.dg-td`) keeps its M4 structure; M11 adds:
 
 ## Shared data contracts
 
-| TypeScript (`src/shared/api/engine.ts`) | Rust (`src-tauri/src/shared/engine.rs`) | Notes |
-|---|---|---|
-| `PkPredicate { column: string; value: CellValue }` | `PkPredicate { column: String, value: serde_json::Value }` | one per pk column; `value` bound |
-| `UpdateCellRequest { schema; table; column; value: CellValue; pk: PkPredicate[] }` | `UpdateCellRequest { schema, table, column, value: Value, pk: Vec<PkPredicate> }` | `value` null ⇒ SET NULL; `pk` = full pk |
-| `UpdateResult { affected: number; statement: string }` | `UpdateResult { affected: u64, statement: String }` | `affected == 1` on success; `statement` cosmetic |
-| `Env = "dev" \| "staging" \| "production"` (`src/shared/types.ts`) | `Env` on `SavedConnection` | drives production confirm |
+| TypeScript (`src/shared/api/engine.ts`)                                            | Rust (`src-tauri/src/shared/engine.rs`)                                           | Notes                                            |
+| ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `PkPredicate { column: string; value: CellValue }`                                 | `PkPredicate { column: String, value: serde_json::Value }`                        | one per pk column; `value` bound                 |
+| `UpdateCellRequest { schema; table; column; value: CellValue; pk: PkPredicate[] }` | `UpdateCellRequest { schema, table, column, value: Value, pk: Vec<PkPredicate> }` | `value` null ⇒ SET NULL; `pk` = full pk          |
+| `UpdateResult { affected: number; statement: string }`                             | `UpdateResult { affected: u64, statement: String }`                               | `affected == 1` on success; `statement` cosmetic |
+| `Env = "dev" \| "staging" \| "production"` (`src/shared/types.ts`)                 | `Env` on `SavedConnection`                                                        | drives production confirm                        |
 
 All structs `#[serde(rename_all = "camelCase")]`. `CellValue = string | number | boolean | null`.
 

@@ -32,7 +32,7 @@ Renderer-and-backend milestone; depends only on the M2 connection seam and the M
 
 - **`Engine`** (`enum { Sqlite, Mysql, Postgres, Redis }`, `#[serde(rename_all="lowercase")]`). `display_name()` → `"SQLite"`/`"MySQL"`/`"PostgreSQL"`/`"Redis"`.
 - **`TlsMode`** (`#[serde(rename_all="kebab-case")]`): `Disable`, `Prefer` (`#[default]`), `Require`, `VerifyCa`, `VerifyFull`. `as_token()` → `disable`/`prefer`/`require`/`verify-ca`/`verify-full` — the exact strings the renderer `<select>` emits and the adapters' `ssl_mode_from_token` accepts.
-- **`SshAuth`** (`#[serde(tag="method", rename_all="lowercase", rename_all_fields="camelCase")]`): `Key { key_path }` (`{"method":"key","keyPath":"…"}`), `Password` (`{"method":"password"}`), `Agent` (`{"method":"agent"}`). **Carries NO secret** — the key passphrase / SSH password live in the keychain; the key *path* and method are non-secret. `method_name()` → `"private key"`/`"password"`/`"ssh-agent"`.
+- **`SshAuth`** (`#[serde(tag="method", rename_all="lowercase", rename_all_fields="camelCase")]`): `Key { key_path }` (`{"method":"key","keyPath":"…"}`), `Password` (`{"method":"password"}`), `Agent` (`{"method":"agent"}`). **Carries NO secret** — the key passphrase / SSH password live in the keychain; the key _path_ and method are non-secret. `method_name()` → `"private key"`/`"password"`/`"ssh-agent"`.
 - **`SshConfig`** (`#[serde(rename_all="camelCase")]`): `{ host, port: u16, user, auth: SshAuth }`. No secret here either.
 - **`ConnectionParams`** (`#[serde(tag="engine", rename_all="lowercase", rename_all_fields="camelCase")]`), all server variants secret-free:
   - `Sqlite { path }`
@@ -110,7 +110,7 @@ Renderer-and-backend milestone; depends only on the M2 connection seam and the M
 - **`table_meta`** — columns from `information_schema.columns` (display type = full `COLUMN_TYPE`, e.g. `tinyint(1)`, `varchar(255)`, `int unsigned`); PK from `column_key='PRI'`; FKs from `key_column_usage × referential_constraints`; indexes from `statistics`; `comment` from `tables.TABLE_COMMENT`; **DDL via `SHOW CREATE TABLE` (verbatim, faithful)** — reads result column index 1.
 - **`run_query`** — `USE "{schema}"` (best-effort) when `options.schema` set; truncates client-side. **`fetch_rows`** uses fully-qualified `` `db`.`table` `` (not `USE`); `?` placeholders, limit/offset bound; exact filtered `count(*)`.
 - **Row→JSON deltas**: `BOOLEAN/BOOL` (a `tinyint(1)`) → **integer 0/1**, NOT a JSON bool (only Postgres emits JSON bools); integer types via `decode_signed_width` reading the exact native width incl. unsigned (large → string); `DECIMAL/NEWDECIMAL` via `BigDecimal`; `BIT` folded big-endian; `JSON` → string; `BLOB/BINARY/VARBINARY/GEOMETRY` → `"[N bytes]"`.
-- **`quote_identifier` override → backticks**: `` `{ident with `` doubled}` ``; `qualified` → `` `db`.`table` ``. LIKE family uses no explicit `ESCAPE` clause (MySQL's default escape is already `\`).
+- **`quote_identifier` override → backticks**: `` `{ident with `` doubled}` ``; `qualified` → `` `db`.`table` ``. LIKE family uses no explicit `ESCAPE`clause (MySQL's default escape is already`\`).
 - **Non-atomic DDL caveats** (MySQL DDL auto-commits): `drop_schema` = `DROP DATABASE` + `CREATE DATABASE` (NOT atomic); `execute_script` runs statements one-by-one via the **text protocol** (dump DDL is rejected by the prepared-statement protocol) and reports how far it got on failure; `alter_table` builds all statements up front, validates ALL ops first, runs them sequentially and names the failing statement (no rollback). `SetNullable` uses `MODIFY COLUMN col {current_type} {NULL|NOT NULL}` (MODIFY couples type+nullability, so the current type is read from meta). `update_cell`/`truncate_table` are transactional/native like Postgres.
 - **Errors** — `map_connect_error` → `"Could not connect to the MySQL server: {driver msg}."` (auth, unreachable host, unknown database all flow through this); `map_query_error` surfaces the server message via `humanize`. Same §5 app-level sentences.
 
@@ -122,17 +122,17 @@ The handoff scope line says "type lists for M8 per engine"; **the shipped code d
 
 `src-tauri/src/features/connections/commands.rs`. M12 adds the two transient-secret args (`password`, `ssh_secret`) to save/test/open; the rest of the surface is unchanged (and now simply works for two more engines).
 
-| command | args | returns | errors / notes |
-|---|---|---|---|
-| `connection_list` | — | `Vec<SavedConnection>` | — |
-| `connection_save` | `connection`, `password?`, `ssh_secret?` | `SavedConnection` | `Invalid` (blank name / engine-params mismatch); stores supplied non-empty secrets to keychain keyed by assigned id (DELTA: `ssh_secret` arg) |
-| `connection_delete` | `id` | `()` | clears both keychain accounts (best-effort) |
-| `connection_test` | `params`, `password?`, `ssh_secret?` | `EngineInfo` | uses transient secrets ONLY (never touches keychain); SSH/connect/TLS errors are §5 `Database` (DELTA: `ssh_secret` arg) |
-| `connection_open` | `id?` XOR `params?`, `password?`, `ssh_secret?` | `OpenedConnection` | `Invalid` if both/neither id+params; saved id → keychain secrets via `resolve_open_secret` (gated), transient overrides; ad-hoc params → transient only (DELTA: `ssh_secret` arg) |
-| `connection_close` | `handle_id` | `()` | unknown handle is a no-op `Ok(())` |
-| `connection_schemas` | `handle_id` | `Vec<SchemaInfo>` | `get_sql` kind-mismatch / not-open §5 (now returns real PG/MySQL schemas) |
-| `connection_tables` | `handle_id`, `schema` | `Vec<TableInfo>` | unknown schema → §5 |
-| `query_run` | `handle_id`, `sql`, `options?` | `QueryResult` | `row_limit` clamped to `MAX_ROW_LIMIT = 10_000` |
+| command              | args                                            | returns                | errors / notes                                                                                                                                                                    |
+| -------------------- | ----------------------------------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `connection_list`    | —                                               | `Vec<SavedConnection>` | —                                                                                                                                                                                 |
+| `connection_save`    | `connection`, `password?`, `ssh_secret?`        | `SavedConnection`      | `Invalid` (blank name / engine-params mismatch); stores supplied non-empty secrets to keychain keyed by assigned id (DELTA: `ssh_secret` arg)                                     |
+| `connection_delete`  | `id`                                            | `()`                   | clears both keychain accounts (best-effort)                                                                                                                                       |
+| `connection_test`    | `params`, `password?`, `ssh_secret?`            | `EngineInfo`           | uses transient secrets ONLY (never touches keychain); SSH/connect/TLS errors are §5 `Database` (DELTA: `ssh_secret` arg)                                                          |
+| `connection_open`    | `id?` XOR `params?`, `password?`, `ssh_secret?` | `OpenedConnection`     | `Invalid` if both/neither id+params; saved id → keychain secrets via `resolve_open_secret` (gated), transient overrides; ad-hoc params → transient only (DELTA: `ssh_secret` arg) |
+| `connection_close`   | `handle_id`                                     | `()`                   | unknown handle is a no-op `Ok(())`                                                                                                                                                |
+| `connection_schemas` | `handle_id`                                     | `Vec<SchemaInfo>`      | `get_sql` kind-mismatch / not-open §5 (now returns real PG/MySQL schemas)                                                                                                         |
+| `connection_tables`  | `handle_id`, `schema`                           | `Vec<TableInfo>`       | unknown schema → §5                                                                                                                                                               |
+| `query_run`          | `handle_id`, `sql`, `options?`                  | `QueryResult`          | `row_limit` clamped to `MAX_ROW_LIMIT = 10_000`                                                                                                                                   |
 
 Composition root (`src-tauri/src/lib.rs`): `registry.register(Engine::Postgres, Arc::new(PostgresConnector))` and `Engine::Mysql, MysqlConnector`; `ConnectionsState::new(…, Box::new(KeyringSecretStore::new()))`. Every engine now has a registered connector (no more "arrives in a later milestone").
 
@@ -141,24 +141,35 @@ Composition root (`src-tauri/src/lib.rs`): `registry.register(Engine::Postgres, 
 ### State — connection form; schema switcher real schemas; tunnel status
 
 `src/features/connections/components/NewConnectionModal.tsx` — single `useReducer` over **`FormState`**:
+
 ```ts
 interface FormState {
   engine: Engine;
   section: "general" | "tunnel";
-  name: string; host: string; port: string;
-  portTouched: boolean;          // switching engines keeps a user-edited port
-  db: string; user: string; file: string;
+  name: string;
+  host: string;
+  port: string;
+  portTouched: boolean; // switching engines keeps a user-edited port
+  db: string;
+  user: string;
+  file: string;
   tls: TlsMode;
-  password: string;              // transient
+  password: string; // transient
   useSsh: boolean;
-  sshHost: string; sshPort: string; sshUser: string;
-  sshAuth: SshAuthMethod;        // = SshAuth["method"]
-  sshKey: string; sshPassword: string;
-  env: Env; envColors: Record<Env, string>;
-  test: TestState; saving: boolean;
+  sshHost: string;
+  sshPort: string;
+  sshUser: string;
+  sshAuth: SshAuthMethod; // = SshAuth["method"]
+  sshKey: string;
+  sshPassword: string;
+  env: Env;
+  envColors: Record<Env, string>;
+  test: TestState;
+  saving: boolean;
 }
 // TestState = {idle} | {testing} | { ok; serverVersion } | { err; message }
 ```
+
 - `DEFAULT_PORTS = { postgres: "5432", mysql: "3306", redis: "6379" }`; the `engine` action fills the default port only when `!portTouched`.
 - `secrets()` builds `{ password, sshSecret }` — `sshSecret` is sent only when tunnelling with **password** auth (key passphrase is also a secret; agent sends none).
 - The `field` action resets the test verdict; `section`/`saving`/`test`/`env`/`engine` do not.
@@ -168,21 +179,52 @@ Schema-switcher state lives in the workspaces store: `workspace.schemas: SchemaI
 ### API — typed invoke wrappers
 
 `src/features/connections/api.ts`:
+
 - `connectionList()`, `connectionSave(connection, secrets?)` (`{connection, password, sshSecret}`), `connectionDelete(id)`, `connectionTest(params, secrets?) → EngineInfo`, `connectionOpen(target, secrets?) → OpenResult`, `connectionClose(handleId)`, `connectionSchemas(handleId) → SchemaInfo[]`, `connectionTables(handleId, schema)`. `secrets` is `{ password?, sshSecret? }` everywhere.
 - Tunnel helpers: `connectionIsTunneled(params)` (`engine !== "sqlite" && params.ssh !== undefined`), `tunnelTitle(params)` (`"Tunnelled through {user}@{host}:{port}"`), `connectionDetail(params)`.
 - Verbatim TS types (mirror the Rust wire shapes):
+
 ```ts
 export type TlsMode = "disable" | "prefer" | "require" | "verify-ca" | "verify-full";
 export type SshAuth =
   | { method: "key"; keyPath: string }
   | { method: "password" }
   | { method: "agent" };
-export interface SshConfig { host: string; port: number; user: string; auth: SshAuth; }
+export interface SshConfig {
+  host: string;
+  port: number;
+  user: string;
+  auth: SshAuth;
+}
 export type ConnectionParams =
   | { engine: "sqlite"; path: string }
-  | { engine: "mysql";    host: string; port: number; database: string; user: string; tlsMode: TlsMode; ssh?: SshConfig }
-  | { engine: "postgres"; host: string; port: number; database: string; user: string; tlsMode: TlsMode; ssh?: SshConfig }
-  | { engine: "redis";    host: string; port: number; dbIndex: number; user?: string; tlsMode: TlsMode; ssh?: SshConfig };
+  | {
+      engine: "mysql";
+      host: string;
+      port: number;
+      database: string;
+      user: string;
+      tlsMode: TlsMode;
+      ssh?: SshConfig;
+    }
+  | {
+      engine: "postgres";
+      host: string;
+      port: number;
+      database: string;
+      user: string;
+      tlsMode: TlsMode;
+      ssh?: SshConfig;
+    }
+  | {
+      engine: "redis";
+      host: string;
+      port: number;
+      dbIndex: number;
+      user?: string;
+      tlsMode: TlsMode;
+      ssh?: SshConfig;
+    };
 ```
 
 ### Components — modal SSH + TLS sections, schema switcher, tunnel indicator
@@ -195,7 +237,7 @@ export type ConnectionParams =
 - **Tunnel status indicator** — `vpn_lock` Material icon tinted `var(--accent)`, gated on `connectionIsTunneled(params)`, title `tunnelTitle(params)`:
   - **Sidebar header**: `.tunnel-lock` in `.sidebar-conn-detail` (`Sidebar.tsx`).
   - **Status bar**: `.status-dim.status-tunnel` (`StatusBar.tsx`).
-  (Redis has parallel `RedisSidebar`/`RedisStatusBar`.)
+    (Redis has parallel `RedisSidebar`/`RedisStatusBar`.)
 
 ### Styling — §3.2 SSH/TLS; §5 error mapping
 

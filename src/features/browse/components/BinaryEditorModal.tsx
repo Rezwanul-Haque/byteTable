@@ -66,8 +66,7 @@ export function BinaryEditorModal({
   };
 
   const uuidRepr = res.ok && !res.empty ? (res.uuid ?? "—") : res.ok ? "∅" : "—";
-  const bytesRepr =
-    res.ok && !res.empty ? "0x" + res.hex.toUpperCase() : res.ok ? "NULL" : "—";
+  const bytesRepr = res.ok && !res.empty ? "0x" + res.hex.toUpperCase() : res.ok ? "NULL" : "—";
 
   return (
     <Modal className="binary-modal" width={460} label="Edit binary value" onClose={onClose}>

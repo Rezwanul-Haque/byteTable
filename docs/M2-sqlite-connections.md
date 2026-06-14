@@ -21,6 +21,7 @@ Acceptance shorthand: open a real `.db` file → a workspace appears with its ac
 **On M0/M1** (already merged): the design-system primitives the modal/screen reuse (`shared/ui/Modal`, `Btn`, `IconBtn`, `Icon`, `EngineBadge`, `EnvTag`, `BrandMark`, `toastContext`), the workspaces store + rail (`useWorkspacesStore.openWorkspace`, `WorkspaceConnection`), the `shared/engine` port traits and `AppError` shared kernel, and the connect-screen / new-connection-modal shells (M1 shipped them against mocks; M2 wires them to the backend).
 
 **Crates** (`src-tauri/Cargo.toml`):
+
 - `rusqlite = { version = "0.37", features = ["bundled", "column_decltype"] }` — `bundled` statically links SQLite (no system dep); `column_decltype` gives `Column::decl_type()` for `ColumnMeta.type_hint`.
 - `serde = { version = "1", features = ["derive"] }`, `serde_json = "1"` — wire/persistence serialization.
 - `uuid = { version = "1", features = ["v4", "serde"] }` — handle ids and saved-connection ids.
@@ -30,6 +31,7 @@ Acceptance shorthand: open a real `.db` file → a workspace appears with its ac
 - `keyring = "3"` — `KeyringSecretStore` is wired in M2's composition root, but **SQLite never touches it** (it's exercised by server engines, M12).
 
 **Tauri plugins**:
+
 - `tauri-plugin-dialog` (`2.7.x`) — native open-file dialog for "Open SQLite file…" and the modal's Browse button. Registered via `.plugin(tauri_plugin_dialog::init())` in `lib.rs`; capability `dialog:allow-open` (+ `dialog:allow-save`) in `src-tauri/capabilities/default.json`. Renderer side: `@tauri-apps/plugin-dialog`'s `open()`.
 - `tauri-plugin-opener` (`2.5.x`) — registered (`opener:allow-open-url`); used for external links, not connection-critical for M2.
 
@@ -43,15 +45,15 @@ Slice root: `src-tauri/src/features/connections/` with layers `domain/`, `applic
 
 `SavedConnection` (the registry entity, `#[serde(rename_all = "camelCase")]` — the same derives double as the wire and persisted shape):
 
-| field | type | notes |
-|---|---|---|
-| `id` | `String` | UUID assigned by the save use-case when empty (new entry). |
-| `name` | `String` | rejected if blank/whitespace on save. |
-| `engine` | `Engine` | denormalized from `params`; save rejects a mismatch. |
-| `params` | `ConnectionParams` | the engine-tagged params (below). |
-| `env` | `Env` | `dev` \| `staging` \| `production`; `Default = Dev`. |
-| `color` | `Option<String>` | m15 env swatch; `#[serde(default, skip_serializing_if = "Option::is_none")]`. |
-| `created_at` | `Option<u64>` | Unix epoch **ms**, set on first save; optional on the wire. |
+| field        | type               | notes                                                                         |
+| ------------ | ------------------ | ----------------------------------------------------------------------------- |
+| `id`         | `String`           | UUID assigned by the save use-case when empty (new entry).                    |
+| `name`       | `String`           | rejected if blank/whitespace on save.                                         |
+| `engine`     | `Engine`           | denormalized from `params`; save rejects a mismatch.                          |
+| `params`     | `ConnectionParams` | the engine-tagged params (below).                                             |
+| `env`        | `Env`              | `dev` \| `staging` \| `production`; `Default = Dev`.                          |
+| `color`      | `Option<String>`   | m15 env swatch; `#[serde(default, skip_serializing_if = "Option::is_none")]`. |
+| `created_at` | `Option<u64>`      | Unix epoch **ms**, set on first save; optional on the wire.                   |
 
 `Env` (`#[serde(rename_all = "lowercase")]`): `Dev` (carries `#[serde(alias = "local")]` so pre-m15 `"local"` entries still load), `Staging`, `Production`.
 
@@ -65,6 +67,7 @@ Domain has unit tests asserting the exact camelCase/lowercase wire JSON, the `lo
 ### Ports — `src-tauri/src/features/connections/ports.rs`
 
 `ConnectionRepository: Send + Sync` — the persistence boundary for the registry. Deliberately **sync** (the backing store is a small local JSON file; commands are still `async fn` and call these inline):
+
 - `fn list(&self) -> Result<Vec<SavedConnection>, AppError>` — all saved, in stored order.
 - `fn get(&self, id: &str) -> Result<Option<SavedConnection>, AppError>` — `Ok(None)` for an unknown id (not an error).
 - `fn save(&self, connection: &SavedConnection) -> Result<(), AppError>` — insert or update by id.
@@ -84,16 +87,18 @@ Pure use-cases (no Tauri, no driver imports). Three sub-systems:
 **Connector registry** — `ConnectorRegistry` maps `Engine → Arc<dyn Connector>`. `register(engine, connector)` (composition root), `get(engine)` returns the connector or `AppError::Unsupported("{EngineName} connections arrive in a later milestone.")` for an unregistered engine.
 
 **Connection manager** — `ConnectionManager` holds `RwLock<HashMap<ConnectionHandleId, OpenConnection>>`. `ConnectionHandleId(pub String)` is `#[serde(transparent)]` — the opaque id the renderer round-trips.
+
 - `insert(OpenConnection) -> ConnectionHandleId` — mints a v4 UUID, stores the connection.
 - `get_sql(&handle) -> Arc<dyn EngineConnection>` — clones the `Arc` and **drops the read lock before the caller awaits driver work** (so a slow query never blocks other handles). Returns `NotFound("connection handle '{id}' is not open (it may have been closed)")` for an unknown handle, or `Unsupported(…needs a SQL connection)` on a kind mismatch (a Redis handle). (`get_kv` is the symmetric Redis accessor, M13.)
 - `remove(&handle) -> Option<OpenConnection>`, `close_all()` (drain + `close()` each, swallowing errors at teardown), `open_count()`.
 
 **Use-cases** (all the `commands.rs` handlers delegate here):
+
 - `list_connections(repo) -> Vec<SavedConnection>`.
 - `save_connection(repo, secret_store, mut conn, &TransientSecrets) -> SavedConnection` — validates non-blank name and `engine == params.engine()` (both `AppError::Invalid` otherwise); assigns UUID + `created_at = now_epoch_ms()` for a new entry (empty id); persists via the repo; writes only **supplied, non-empty** secrets to the keychain (SQLite supplies none → keychain untouched); returns the stored value (so the renderer learns the assigned id).
 - `delete_connection(repo, secret_store, id)` — repo delete first (so an unknown id is `NotFound`), then best-effort keychain clear of `db_account`/`ssh_account`.
 - `test_connection(registry, &params, &secrets) -> EngineInfo` — `registry.get(engine)?.test_with_secret(params, secret)`; no keychain touch (testing is pre-save). SQLite ignores the secret.
-- `open_connection(repo, registry, secret_store, manager, OpenTarget, &transient) -> OpenedConnection` — resolves params from a saved id or ad-hoc `OpenTarget::Params`; resolves the effective secret (`None` for SQLite); opens via the connector; gathers the **initial schema list** (`conn.list_schemas()` for a SQL connection) *before* handing the connection to the manager; inserts; returns `OpenedConnection`.
+- `open_connection(repo, registry, secret_store, manager, OpenTarget, &transient) -> OpenedConnection` — resolves params from a saved id or ad-hoc `OpenTarget::Params`; resolves the effective secret (`None` for SQLite); opens via the connector; gathers the **initial schema list** (`conn.list_schemas()` for a SQL connection) _before_ handing the connection to the manager; inserts; returns `OpenedConnection`.
 - `close_connection(manager, &handle)` — removes + `close()`; **closing an unknown handle is `Ok(())`** (benign teardown race), not an error.
 - `connection_schemas(manager, &handle)` / `connection_tables(manager, &handle, schema)` / `run_query(manager, &handle, sql, options)` — `manager.get_sql(handle).await?` then the matching `EngineConnection` call.
 
@@ -104,6 +109,7 @@ Application has extensive unit tests with fakes (`FakeRepository`, `FakeConnecto
 ### Infrastructure — registry persistence + SQLite adapter
 
 **`JsonFileConnectionRepository`** (`src-tauri/src/features/connections/infrastructure/mod.rs`) — implements `ConnectionRepository` over pretty-printed JSON at `<app_config_dir>/connections.json`:
+
 - Missing file → empty list (first launch is not an error).
 - **Corrupt file → `AppError::Serialization` naming the file, NOT a silent reset** — saved connections are user data; the file is left untouched for the user to fix.
 - **Atomic saves**: write `connections.json.tmp`, then `rename` over the target; `create_dir_all` for parents.
@@ -111,7 +117,7 @@ Application has extensive unit tests with fakes (`FakeRepository`, `FakeConnecto
 
 **SQLite adapter** — `src-tauri/src/engines/sqlite/mod.rs` (the only place SQLite-specific SQL lives). `SqliteConnector` (stateless, `impl Connector`) and `SqliteEngineConnection { conn: Arc<Mutex<rusqlite::Connection>>, info: EngineInfo }` (`impl EngineConnection`). Every driver call hops to tokio's blocking pool via `run_blocking` / `with_conn` (rusqlite is sync), locking the connection `Mutex` (a poisoned lock → graceful `AppError::Database("…broken state after an earlier crash; close and reopen it.")`).
 
-- **File open** — `open_validated(path)`: errors `Database("SQLite database file '{path}' does not exist.")` if the path is not a file; `Connection::open_with_flags(path, SQLITE_OPEN_READ_WRITE)`; then **forces a header read** (`SELECT count(*) FROM sqlite_schema`) so a non-database file fails *here* with a clear message rather than on first use. `map_open_error` translates rusqlite codes to §5 sentences: `NotADatabase` → "'{path}' is not a SQLite database file."; `CannotOpen` → "…could not be opened."; `PermissionDenied` → "Permission denied opening …". `test` opens-and-discards (returning `sqlite_engine_info()`); `open` keeps the connection in `OpenConnection::sql(…)`. `engine_info` → `EngineInfo { engine: Sqlite, server_version: "SQLite {rusqlite::version()}" }`.
+- **File open** — `open_validated(path)`: errors `Database("SQLite database file '{path}' does not exist.")` if the path is not a file; `Connection::open_with_flags(path, SQLITE_OPEN_READ_WRITE)`; then **forces a header read** (`SELECT count(*) FROM sqlite_schema`) so a non-database file fails _here_ with a clear message rather than on first use. `map_open_error` translates rusqlite codes to §5 sentences: `NotADatabase` → "'{path}' is not a SQLite database file."; `CannotOpen` → "…could not be opened."; `PermissionDenied` → "Permission denied opening …". `test` opens-and-discards (returning `sqlite_engine_info()`); `open` keeps the connection in `OpenConnection::sql(…)`. `engine_info` → `EngineInfo { engine: Sqlite, server_version: "SQLite {rusqlite::version()}" }`.
 - **Schema list** (`main` + ATTACHed) — `list_schemas_blocking`: `PRAGMA database_list` for names, then a best-effort `count(*)` of user tables per schema (`table_count` downgrades to `None` on failure rather than failing the listing). `ensure_schema_exists` yields the §5 "Schema 'x' does not exist. Available schemas: …" message for callers given an unknown schema.
 - **Table introspection** — `list_tables_blocking(schema)`: validates the schema, selects user tables (`type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`), and for the first `MAX_COUNTED_TABLES` (200) attaches an exact `count(*)` as `approx_row_count` (best effort; `None` past the cap or on failure). (M3 leans on this for the sidebar; `table_meta` columns/indexes/FKs/DDL also live here for M3/M7.)
 - **Query w/ timing + LIMIT** — `run_query_blocking(sql, &options)`: `prepare(sql)`, build `ColumnMeta { name, type_hint: decl_type().unwrap_or("") }` per column, then stream rows; **stop and set `truncated = true`** once `out_rows.len() >= options.row_limit` (reads no further). Times the whole thing with `Instant` → `elapsed_ms`. Each cell maps via `value_to_json` (below). Driver errors go through `map_query_error`.
@@ -123,17 +129,17 @@ Application has extensive unit tests with fakes (`FakeRepository`, `FakeConnecto
 
 Thin presentation layer (`deserialize → use-case → serialize`). Managed state `ConnectionsState { repository, registry, manager, secret_store }`, built once in `lib.rs`'s `setup` (the composition root): `JsonFileConnectionRepository`, a `ConnectorRegistry` with `Engine::Sqlite → SqliteConnector` registered (plus Postgres/MySQL/Redis from later milestones), a fresh `ConnectionManager`, and `KeyringSecretStore`. All commands are `async fn`. Registered in `tauri::generate_handler![…]`. `lib.rs` also calls `manager().close_all()` on `RunEvent::ExitRequested`.
 
-| command | args (typed) | returns | error cases (`AppError` → `{kind, message}`) |
-|---|---|---|---|
-| `connection_list` | — | `Vec<SavedConnection>` | `Serialization` (corrupt registry file, named), `Io`. |
-| `connection_save` | `connection: SavedConnection`, `password: Option<String>`, `ssh_secret: Option<String>` | `SavedConnection` (with assigned id/`createdAt`) | `Invalid` (blank name; engine/params mismatch), `Io`/`Serialization` (write). SQLite passes no secrets. |
-| `connection_delete` | `id: String` | `()` | `NotFound` (unknown id), `Io`. |
-| `connection_test` | `params: ConnectionParams`, `password: Option<String>`, `ssh_secret: Option<String>` | `EngineInfo` | `Database` (file missing / not a db / unreadable — §5 sentences), `Unsupported` (engine without a connector), `Invalid` (params/engine mismatch). |
-| `connection_open` | `id: Option<String>`, `params: Option<ConnectionParams>`, `password: Option<String>`, `ssh_secret: Option<String>` | `OpenedConnection` | `Invalid` (both or neither of id/params), `NotFound` (unknown saved id), `Database` (open failure), `Unsupported`. |
-| `connection_close` | `handle_id: ConnectionHandleId` | `()` | never errors for an unknown handle (benign `Ok(())`). |
-| `connection_schemas` | `handle_id: ConnectionHandleId` | `Vec<SchemaInfo>` | `NotFound` (handle not open), `Unsupported` (kind mismatch), `Database`. |
-| `connection_tables` | `handle_id: ConnectionHandleId`, `schema: String` | `Vec<TableInfo>` | `NotFound`, `Database` ("Schema 'x' does not exist…"), `Unsupported`. |
-| `query_run` | `handle_id: ConnectionHandleId`, `sql: String`, `options: Option<QueryOptions>` | `QueryResult` | `NotFound`, `Database` (SQL errors, §5), `Unsupported`. |
+| command              | args (typed)                                                                                                       | returns                                          | error cases (`AppError` → `{kind, message}`)                                                                                                      |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `connection_list`    | —                                                                                                                  | `Vec<SavedConnection>`                           | `Serialization` (corrupt registry file, named), `Io`.                                                                                             |
+| `connection_save`    | `connection: SavedConnection`, `password: Option<String>`, `ssh_secret: Option<String>`                            | `SavedConnection` (with assigned id/`createdAt`) | `Invalid` (blank name; engine/params mismatch), `Io`/`Serialization` (write). SQLite passes no secrets.                                           |
+| `connection_delete`  | `id: String`                                                                                                       | `()`                                             | `NotFound` (unknown id), `Io`.                                                                                                                    |
+| `connection_test`    | `params: ConnectionParams`, `password: Option<String>`, `ssh_secret: Option<String>`                               | `EngineInfo`                                     | `Database` (file missing / not a db / unreadable — §5 sentences), `Unsupported` (engine without a connector), `Invalid` (params/engine mismatch). |
+| `connection_open`    | `id: Option<String>`, `params: Option<ConnectionParams>`, `password: Option<String>`, `ssh_secret: Option<String>` | `OpenedConnection`                               | `Invalid` (both or neither of id/params), `NotFound` (unknown saved id), `Database` (open failure), `Unsupported`.                                |
+| `connection_close`   | `handle_id: ConnectionHandleId`                                                                                    | `()`                                             | never errors for an unknown handle (benign `Ok(())`).                                                                                             |
+| `connection_schemas` | `handle_id: ConnectionHandleId`                                                                                    | `Vec<SchemaInfo>`                                | `NotFound` (handle not open), `Unsupported` (kind mismatch), `Database`.                                                                          |
+| `connection_tables`  | `handle_id: ConnectionHandleId`, `schema: String`                                                                  | `Vec<TableInfo>`                                 | `NotFound`, `Database` ("Schema 'x' does not exist…"), `Unsupported`.                                                                             |
+| `query_run`          | `handle_id: ConnectionHandleId`, `sql: String`, `options: Option<QueryOptions>`                                    | `QueryResult`                                    | `NotFound`, `Database` (SQL errors, §5), `Unsupported`.                                                                                           |
 
 `query_run` clamps `options.row_limit` to `MAX_ROW_LIMIT = 10_000` at the command boundary (`clamp_row_limit`) regardless of what the renderer asks, so a renderer bug or a hand-crafted invoke can't marshal an unbounded result across IPC; the engine still sets `truncated` when the clamp cuts the result. `options` defaults to `QueryOptions::default()` (`row_limit: 500`, `schema: None`).
 
@@ -150,11 +156,13 @@ Slice root: `src/features/connections/`. The connect screen + connect flow live 
 Zustand store `useConnectionsStore` (`ConnectionsFeatureState`). **Backend-first**: mutations call the backend and patch the in-memory list from the reply (the registry file is the source of truth — never optimistic).
 
 Fields:
+
 - `savedConnections: SavedConnection[]` — the registry list.
 - `loaded: boolean` — true once the first `load()` settles (gates the connect screen's empty state).
 - `loadError: string | null` — the backend's human message when the registry read failed (structured `AppError`); `null` when load succeeded or there is no Tauri at all (plain browser dev).
 
 Actions:
+
 - `load()` — `connectionList()`, map each through `migrate` (env `local`→`dev`); on a structured `AppError` set `{ savedConnections: [], loaded: true, loadError: message }`; on a non-Tauri rejection set an empty list with `loadError: null` (browser dev still renders).
 - `save(connection, secrets?)` — `connectionSave(...)`, migrate the reply, upsert by id into the list, set `loaded: true`; rejections bubble to the caller for inline display.
 - `remove(id)` — `connectionDelete(id)`, filter out of the list; rejections bubble.
@@ -194,15 +202,16 @@ SQLite variant (`engine === "sqlite"` ⇒ `isFileBased`): hides the General/SSH 
 **File dialog wrapper** (`src/features/connections/dialog.ts`): `pickSqliteFile(): Promise<string | null>` calls the plugin's `open({ multiple: false, directory: false, filters: [{ name: "SQLite database", extensions: ["db","sqlite","sqlite3","db3"] }, { name: "All files", extensions: ["*"] }] })` — resolves the absolute path or `null` on cancel; rejects in plain browser dev (callers catch). (`pickPrivateKeyFile` exists for M12's SSH key.)
 
 **ConnectScreen wiring** (`src/features/workspaces/components/ConnectScreen.tsx` + `src/features/workspaces/connect.ts`):
+
 - On mount `load()`s the registry (cheap local JSON read; keeps the list fresh after saves/deletes).
 - Renders the saved-connection **cards** (`EngineBadge`, name + `EnvTag`, `connectionDetail(params)` mono detail line, arrow / spinner). Clicking a card runs the real `useConnectAndOpen()` → `connectionOpen({ id })` → `openWorkspace(toWorkspaceConnection(saved, opened))`; the spinner reflects **actual** latency (the M1 prototype's simulated 650ms delay is gone). Failures are toasted inside the flow (the §5 message) and resolve falsy.
-- **"Open SQLite file…"** runs `pickSqliteFile()` then `useOpenSqliteFile(path)`: `connectionOpen({ params: { engine: "sqlite", path } })` (open *is* the test for a local file — no separate `connection_test`); then **auto-saves** the opened file to the registry (name = file stem, env `dev`) so it appears next launch, **reusing an existing entry for the same path** instead of stacking duplicate cards. If the auto-save fails the workspace still opens (ephemeral entry) and the save failure is its own toast.
+- **"Open SQLite file…"** runs `pickSqliteFile()` then `useOpenSqliteFile(path)`: `connectionOpen({ params: { engine: "sqlite", path } })` (open _is_ the test for a local file — no separate `connection_test`); then **auto-saves** the opened file to the registry (name = file stem, env `dev`) so it appears next launch, **reusing an existing entry for the same path** instead of stacking duplicate cards. If the auto-save fails the workspace still opens (ephemeral entry) and the save failure is its own toast.
 - "New connection" conditionally mounts `<NewConnectionModal>` (so its reducer state resets on every open).
 - `loadError !== null` renders the backend's human sentence inline where the list would be (`connect-load-error`); an empty registry renders the empty-state copy.
 
 ### Styling
 
-**§3.2 modal layout** (`NewConnectionModal.css`): a 480px modal. Top-to-bottom: engine **picker** (4-up card grid; active card = accent border + tint), the tinted **Environment** sub-panel (label + live env-tag preview top-right; 3-up segmented control with color dot + Material icon `code`/`science`/`public`, active segment takes its env color as border + 16% tint; an 8-swatch Color row recoloring the *selected* env; a red production-warning row when production is selected), then — **for SQLite only** — a 2-column `form-grid` with Name and the `span-2` Database-file `file-row` (input + Browse) and the `span-2` `form-note` ("SQLite is a local file…"). Footer (`ModalActions`): a left `test-result` live region, a text "Test connection" button (disabled while testing), a filled "Save" button.
+**§3.2 modal layout** (`NewConnectionModal.css`): a 480px modal. Top-to-bottom: engine **picker** (4-up card grid; active card = accent border + tint), the tinted **Environment** sub-panel (label + live env-tag preview top-right; 3-up segmented control with color dot + Material icon `code`/`science`/`public`, active segment takes its env color as border + 16% tint; an 8-swatch Color row recoloring the _selected_ env; a red production-warning row when production is selected), then — **for SQLite only** — a 2-column `form-grid` with Name and the `span-2` Database-file `file-row` (input + Browse) and the `span-2` `form-note` ("SQLite is a local file…"). Footer (`ModalActions`): a left `test-result` live region, a text "Test connection" button (disabled while testing), a filled "Save" button.
 
 **§5 inline error style**: the test verdict region renders the backend's exact human sentence in `.test-result-err` (red) — never a stack trace; the OK state shows a `check_circle` accent icon + "Connection OK · {serverVersion}". The connect screen's registry-read failure renders the same human sentence in `.connect-load-error`. Connect/open failures from the flow surface as red error toasts carrying the backend message.
 
@@ -228,9 +237,9 @@ Rust (`src-tauri/src/shared/engine.rs`, `…/features/connections/domain/mod.rs`
 
 - **Connect failure shown in modal, never a stack trace.** Test/open failures arrive as structured `AppError` `{ kind, message }`; the modal renders `message` inline (§5) and the connect flow toasts it. The SQLite adapter pre-translates rusqlite errors to human sentences (`map_open_error` / `map_query_error`), so a Rust error chain never reaches the renderer.
 - **No secrets persisted for SQLite.** `ConnectionParams::Sqlite` has only a `path`; `uses_password()` is false and `ssh()` is `None`, so `resolve_open_secret` short-circuits to `None` — **no keychain read (no OS prompt) and no secret written** on save/open/test. The JSON registry stores the whole SQLite entry as plain JSON safely.
-- **Cancel handling.** `pickSqliteFile()` resolves `null` on cancel; both the modal Browse and the connect screen treat `null` as a no-op (no error, no spinner). The connect screen only enters the file-open spinner (`FILE_OPEN_ID`) *after* a path is returned.
+- **Cancel handling.** `pickSqliteFile()` resolves `null` on cancel; both the modal Browse and the connect screen treat `null` as a no-op (no error, no spinner). The connect screen only enters the file-open spinner (`FILE_OPEN_ID`) _after_ a path is returned.
 - **Plain browser dev (no Tauri).** Dialog/invoke rejections that aren't structured `AppError`s are detected (`!isAppErrorPayload`) and shown as info toasts ("…requires the desktop app") rather than errors; `load()` presents an empty registry with no `loadError`.
-- **Open is the test for a local file.** "Open SQLite file…" skips `connection_test` — opening the file *is* the validation; `open_validated` forces a header read so a bad file fails immediately with a §5 message.
+- **Open is the test for a local file.** "Open SQLite file…" skips `connection_test` — opening the file _is_ the validation; `open_validated` forces a header read so a bad file fails immediately with a §5 message.
 - **Auto-save dedupe.** Opening the same file twice reuses the existing registry entry (matched by `params.engine === "sqlite" && params.path === path`) instead of stacking duplicate cards.
 - **Row-limit truncation.** Results over `rowLimit` (default 500, hard cap 10 000) come back with `truncated: true` and exactly `rowLimit` rows; the adapter reads no further.
 - **Large integers.** SQLite integers beyond ±2^53−1 cross IPC as **strings**, not numbers, so the renderer never silently loses precision.

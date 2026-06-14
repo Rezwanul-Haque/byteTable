@@ -305,7 +305,6 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   const doExport = (kind: ExportKind, table?: string) =>
     void runExport(kind, { handleId, schema: schemaName, table }, toast);
 
-
   const onRowKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>, table: string) => {
     // Keydowns on the nested expand chevron bubble up here — they belong to
     // the chevron (its native click), not the row.

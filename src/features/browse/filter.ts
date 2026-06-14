@@ -16,12 +16,7 @@
 //     never sent as the query in `conditions` mode.
 
 import type { ColumnInfo } from "../../shared/api/engine";
-import type {
-  CellValue,
-  Condition,
-  FilterOp,
-  FilterSpec,
-} from "../../shared/api/engine";
+import type { CellValue, Condition, FilterOp, FilterSpec } from "../../shared/api/engine";
 import type { FilterDraft, UiCondition } from "../workspaces/types";
 import { isBinaryType } from "./components/binaryCell";
 
@@ -54,9 +49,7 @@ export const FILTER_OPS: FilterOpDef[] = [
   { op: "isNotNull", label: "is not null", needsValue: false },
 ];
 
-const NEEDS_VALUE = new Set<FilterOp>(
-  FILTER_OPS.filter((o) => o.needsValue).map((o) => o.op),
-);
+const NEEDS_VALUE = new Set<FilterOp>(FILTER_OPS.filter((o) => o.needsValue).map((o) => o.op));
 
 /** Whether an operator takes a value input (false for the null checks). */
 export function opNeedsValue(op: FilterOp): boolean {
@@ -218,10 +211,7 @@ export function draftToDisplaySql(draft: FilterDraft, columns: ColumnInfo[]): st
 }
 
 /** The cosmetic WHERE for the *applied* filter (null → empty). */
-export function appliedDisplaySql(
-  applied: FilterDraft | null,
-  columns: ColumnInfo[],
-): string {
+export function appliedDisplaySql(applied: FilterDraft | null, columns: ColumnInfo[]): string {
   return applied ? draftToDisplaySql(applied, columns) : "";
 }
 

@@ -220,9 +220,7 @@ export function StructureView({
     if (next === col.default) return;
     if (col.origin === null) {
       setOps(
-        ops.map((o) =>
-          o.op === "addColumn" && o.name === col.name ? { ...o, default: next } : o,
-        ),
+        ops.map((o) => (o.op === "addColumn" && o.name === col.name ? { ...o, default: next } : o)),
       );
       return;
     }
@@ -700,8 +698,7 @@ function ColumnRow({
   onUndrop,
 }: ColumnRowProps) {
   const cellId = (kind: string) => (col.origin ?? "new:" + col.name) + ":" + kind;
-  const rowClass =
-    (col.isNew ? "st-row-new" : "") + (col.markedForDrop ? " st-row-drop" : "");
+  const rowClass = (col.isNew ? "st-row-new" : "") + (col.markedForDrop ? " st-row-drop" : "");
 
   // Auto-focus into name editing right after Add column.
   const startNameEdit = autoEditName === col.name && col.origin === null;

@@ -55,10 +55,7 @@ export function StatusBar({ workspace }: { workspace: Workspace }) {
       {/* Tunnel lock (M12 Task 3): shown when the connection routes through an
           SSH bastion. SQLite never tunnels. */}
       {connectionIsTunneled(workspace.saved.params) ? (
-        <span
-          className="status-dim status-tunnel"
-          title={tunnelTitle(workspace.saved.params)}
-        >
+        <span className="status-dim status-tunnel" title={tunnelTitle(workspace.saved.params)}>
           <Icon name="vpn_lock" size={13} style={{ color: "var(--accent)" }} />
         </span>
       ) : null}

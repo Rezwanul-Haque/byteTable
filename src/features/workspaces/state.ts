@@ -119,12 +119,7 @@ interface WorkspacesFeatureState {
    * sets both `applied` (what the grid fetches) and `draft` (so the filter
    * panel shows the same condition if opened).
    */
-  openTableTabWithFilter: (
-    schema: string,
-    table: string,
-    column: string,
-    value: CellValue,
-  ) => void;
+  openTableTabWithFilter: (schema: string, table: string, column: string, value: CellValue) => void;
   /** Open a fresh SQL editor tab ("Query N") and focus it. */
   openSqlTab: () => void;
   /**

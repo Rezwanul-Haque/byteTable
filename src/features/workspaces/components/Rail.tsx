@@ -193,8 +193,14 @@ export function Rail({ onDonate }: RailProps) {
             strokeLinecap="round"
             fill="none"
           >
-            <path className="smoke s1" d="M9 6 C9 4.5, 10.5 4.5, 10.5 3 C10.5 1.8, 9.5 1.6, 9.5 0.6" />
-            <path className="smoke s2" d="M13.5 6 C13.5 4.5, 15 4.5, 15 3 C15 1.8, 14 1.6, 14 0.6" />
+            <path
+              className="smoke s1"
+              d="M9 6 C9 4.5, 10.5 4.5, 10.5 3 C10.5 1.8, 9.5 1.6, 9.5 0.6"
+            />
+            <path
+              className="smoke s2"
+              d="M13.5 6 C13.5 4.5, 15 4.5, 15 3 C15 1.8, 14 1.6, 14 0.6"
+            />
           </g>
           <path d="M4 9 h13 v4 a4 4 0 0 1 -4 4 h-5 a4 4 0 0 1 -4 -4 z" fill="currentColor" />
           <path

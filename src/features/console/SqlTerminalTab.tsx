@@ -18,10 +18,7 @@
 
 import { useLayoutEffect, useRef, useState } from "react";
 
-import {
-  connectionSchemas,
-  connectionTables,
-} from "../connections/api";
+import { connectionSchemas, connectionTables } from "../connections/api";
 import {
   queryRun,
   tableMeta,
@@ -208,7 +205,9 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
   // --- transcript helpers (read latest state via the store, never stale) ---
   const appendLines = (more: TermLine[]) => {
     if (more.length === 0) return;
-    const cur = usePanelStore.getState().byWorkspace[wsId]?.sessions.find((s) => s.id === session.id);
+    const cur = usePanelStore
+      .getState()
+      .byWorkspace[wsId]?.sessions.find((s) => s.id === session.id);
     patchSession(wsId, session.id, { lines: [...(cur?.lines ?? []), ...more] });
   };
   const setLines = (lines: TermLine[]) => patchSession(wsId, session.id, { lines });
@@ -216,7 +215,9 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
   const setTiming = (timing: boolean) => patchSession(wsId, session.id, { timing });
   const pushHistory = (line: string) => {
     if (!line.trim()) return;
-    const cur = usePanelStore.getState().byWorkspace[wsId]?.sessions.find((s) => s.id === session.id);
+    const cur = usePanelStore
+      .getState()
+      .byWorkspace[wsId]?.sessions.find((s) => s.id === session.id);
     patchSession(wsId, session.id, {
       history: [line, ...(cur?.history ?? [])].slice(0, 80),
     });
@@ -228,15 +229,21 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
     const names = tables.map((t) => t.name);
     if (engine === "mysql") {
       const col = "Tables_in_" + schemaName;
-      return asciiObjTable([col], names.map((n) => ({ [col]: n }))).concat([
-        { cls: "term-meta", text: names.length + " rows in set" },
-      ]);
+      return asciiObjTable(
+        [col],
+        names.map((n) => ({ [col]: n })),
+      ).concat([{ cls: "term-meta", text: names.length + " rows in set" }]);
     }
     if (engine === "sqlite") {
       return [{ cls: "term-row", text: names.join("  ") }];
     }
     // postgres \dt
-    const rows = names.map((n) => ({ Schema: schemaName, Name: n, Type: "table", Owner: connName }));
+    const rows = names.map((n) => ({
+      Schema: schemaName,
+      Name: n,
+      Type: "table",
+      Owner: connName,
+    }));
     return [{ cls: "term-meta", text: "List of relations" }]
       .concat(asciiObjTable(["Schema", "Name", "Type", "Owner"], rows))
       .concat([{ cls: "term-meta", text: "(" + names.length + " rows)" }]);
@@ -249,7 +256,10 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
       names = fetched.map((s) => s.name);
     }
     if (engine === "mysql") {
-      return asciiObjTable(["Database"], names.map((s) => ({ Database: s })));
+      return asciiObjTable(
+        ["Database"],
+        names.map((s) => ({ Database: s })),
+      );
     }
     const rows = names.map((s) => ({ Name: s, Owner: connName }));
     return [{ cls: "term-meta", text: "List of schemas" }].concat(
@@ -267,10 +277,7 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
     const out: TermLine[] = [
       {
         cls: "term-meta",
-        text:
-          engine === "postgres"
-            ? 'Table "' + schemaName + "." + name + '"'
-            : "Table: " + name,
+        text: engine === "postgres" ? 'Table "' + schemaName + "." + name + '"' : "Table: " + name,
       },
     ];
     const rows = meta.columns.map((c) => ({
@@ -492,7 +499,10 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
     }
 
     // unknown backslash/dot command
-    if ((cfg.metaChar && t.startsWith(cfg.metaChar)) || (engine === "mysql" && t.startsWith("\\"))) {
+    if (
+      (cfg.metaChar && t.startsWith(cfg.metaChar)) ||
+      (engine === "mysql" && t.startsWith("\\"))
+    ) {
       appendLines([{ cls: "term-err", text: "unknown command: " + t.split(/\s+/)[0] }]);
       return true;
     }
@@ -518,7 +528,11 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
             cls: "term-meta",
             text:
               engine === "mysql"
-                ? "Query OK, " + res.rowCount + " row" + (res.rowCount === 1 ? "" : "s") + " affected"
+                ? "Query OK, " +
+                  res.rowCount +
+                  " row" +
+                  (res.rowCount === 1 ? "" : "s") +
+                  " affected"
                 : "Query OK",
           });
         }
@@ -533,7 +547,9 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
         appendLines(out);
       })
       .catch((e: unknown) => {
-        appendLines([{ cls: "term-err", text: cfg.errPrefix + appErrorMessage(e, "query failed") }]);
+        appendLines([
+          { cls: "term-err", text: cfg.errPrefix + appErrorMessage(e, "query failed") },
+        ]);
       })
       .finally(() => {
         setRunning(false);
@@ -627,7 +643,11 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
     engine === "sqlite"
       ? [".tables", ".schema users", "SELECT * FROM users LIMIT 5;"]
       : engine === "mysql"
-        ? ["SHOW TABLES;", "DESCRIBE orders;", "SELECT status, COUNT(*) FROM orders GROUP BY status;"]
+        ? [
+            "SHOW TABLES;",
+            "DESCRIBE orders;",
+            "SELECT status, COUNT(*) FROM orders GROUP BY status;",
+          ]
         : ["\\dt", "\\d orders", "SELECT * FROM users WHERE country = 'DE';"];
 
   const promptStr = session.buffer ? cfg.cont : cfg.prompt;
@@ -659,13 +679,14 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
         </div>
         <div style={{ flex: 1 }} />
         {session.timing ? <span className="term-timing">timing on</span> : null}
-        <IconBtn icon="delete_sweep" size={15} title="Clear (Ctrl+L)" onClick={() => setLines([])} />
+        <IconBtn
+          icon="delete_sweep"
+          size={15}
+          title="Clear (Ctrl+L)"
+          onClick={() => setLines([])}
+        />
       </div>
-      <div
-        className="rcli-body term-body"
-        ref={bodyRef}
-        onClick={() => inputRef.current?.focus()}
-      >
+      <div className="rcli-body term-body" ref={bodyRef} onClick={() => inputRef.current?.focus()}>
         {session.lines.map((l, i) => (
           <div key={i} className={"rcli-line " + l.cls}>
             {l.text || " "}

@@ -90,8 +90,7 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
   }, [openPanel, togglePanel, wsId, termLabel]);
 
   const activeTab = rs.tabs.find((t) => t.id === rs.activeTabId) ?? rs.tabs[0];
-  const activeKey =
-    activeTab?.kind === "key" && activeTab.db === rs.dbIndex ? activeTab.key : null;
+  const activeKey = activeTab?.kind === "key" && activeTab.db === rs.dbIndex ? activeTab.key : null;
 
   // Active-key meta for the status bar's right side (§9: `type · memory`). The
   // active KeyTab reports its loaded type + memory here; cleared when no key
@@ -181,7 +180,9 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
         workspaceColor={workspace.color}
         workspaceName={workspace.name}
         env={env}
-        serverVersion={serverInfo ? "Redis " + serverInfo.serverVersion : workspace.info.serverVersion}
+        serverVersion={
+          serverInfo ? "Redis " + serverInfo.serverVersion : workspace.info.serverVersion
+        }
         respVersion={serverInfo?.respVersion ?? 3}
         isTunneled={isTunneled}
         tunnelHint={tunnelHint}

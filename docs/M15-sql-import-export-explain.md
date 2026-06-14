@@ -3,6 +3,7 @@
 > provenance: reconstructed from shipped code + the four M15 commits; imperative = requirement.
 >
 > M15 is the post-M13 polish pass (it is **not** in `MILESTONES.md`). It shipped across these commits — read with `git show <hash>`:
+>
 > - `ee1eb89` feat(export): backend CSV/SQL export + engine-aware truncate (Task 1)
 > - `b043f97` feat(sql): export, truncate, and column show/hide UI (Task 2)
 > - `e8ec267` feat(sql): execution-order minimap + Explain panel (Task 3)
@@ -96,16 +97,16 @@ There is **no** "explain result" domain type — Explain is renderer-only (see F
 
 Registered in `src-tauri/src/lib.rs` (lines 164–171). All read `ConnectionsState` for the handle manager. All names match the `src/shared/api/engine.ts` wrappers.
 
-| command | args | returns | errors |
-|---|---|---|---|
-| `export_table` | `handleId, schema, table, format: "csv"\|"sql"` | `String` (export text) | §5 unknown schema/table |
-| `export_schema` | `handleId, schema` | `String` (SQL dump) | §5 unknown schema |
-| `export_save` | `path, contents` | `()` | §5 `Io` ("Could not write {path}") |
-| `read_text_file` | `path` | `String` | §5 `Io` ("Could not read {path}") |
-| `execute_script_text` | `handleId, schema, sql` | `ImportResult { statements }` | §5 SQL error (engine-aware atomicity) |
-| `import_sql` | `handleId, schema, path` | `ImportResult { statements }` | §5 `Io` on read; §5 SQL error |
-| `truncate_table` | `handleId, schema, table` | `TruncateResult { affected }` | §5 unknown schema/table; engine refusal (e.g. MySQL FK-parent) |
-| `drop_schema` | `handleId, schema` | `()` | §5 unknown schema |
+| command               | args                                            | returns                       | errors                                                         |
+| --------------------- | ----------------------------------------------- | ----------------------------- | -------------------------------------------------------------- |
+| `export_table`        | `handleId, schema, table, format: "csv"\|"sql"` | `String` (export text)        | §5 unknown schema/table                                        |
+| `export_schema`       | `handleId, schema`                              | `String` (SQL dump)           | §5 unknown schema                                              |
+| `export_save`         | `path, contents`                                | `()`                          | §5 `Io` ("Could not write {path}")                             |
+| `read_text_file`      | `path`                                          | `String`                      | §5 `Io` ("Could not read {path}")                              |
+| `execute_script_text` | `handleId, schema, sql`                         | `ImportResult { statements }` | §5 SQL error (engine-aware atomicity)                          |
+| `import_sql`          | `handleId, schema, path`                        | `ImportResult { statements }` | §5 `Io` on read; §5 SQL error                                  |
+| `truncate_table`      | `handleId, schema, table`                       | `TruncateResult { affected }` | §5 unknown schema/table; engine refusal (e.g. MySQL FK-parent) |
+| `drop_schema`         | `handleId, schema`                              | `()`                          | §5 unknown schema                                              |
 
 `truncate_table` / `drop_schema` are in `features/mutate/commands.rs`; the rest in `features/export/commands.rs`.
 
@@ -159,14 +160,14 @@ Import parsing helpers are **pure, client-side** in `src/features/import/parse.t
 
 ## Shared data contracts — TS + Rust types
 
-| concept | Rust (`src-tauri`) | TS (`src/shared/api/engine.ts`) |
-|---|---|---|
-| export format | `enum ExportFormat { Csv, Sql }` (lowercase wire) | `type ExportFormat = "csv" \| "sql"` |
-| truncate result | `struct TruncateResult { affected: u64 }` (camelCase) | `interface TruncateResult { affected: number }` |
-| import result | `struct ImportResult { statements: u64 }` (camelCase) | `interface ImportResult { statements: number }` |
-| export request | command args: `handleId, schema, table?, format` | `exportTable` / `exportSchema` params |
-| import request | command args: `handleId, schema, path` (file) or `…, sql` (text) | `importSql` / `executeScriptText` params |
-| explain | **none** (client-side only) | `DetectedClauses` (`explainClauses.ts`); never crosses the wire |
+| concept         | Rust (`src-tauri`)                                               | TS (`src/shared/api/engine.ts`)                                 |
+| --------------- | ---------------------------------------------------------------- | --------------------------------------------------------------- |
+| export format   | `enum ExportFormat { Csv, Sql }` (lowercase wire)                | `type ExportFormat = "csv" \| "sql"`                            |
+| truncate result | `struct TruncateResult { affected: u64 }` (camelCase)            | `interface TruncateResult { affected: number }`                 |
+| import result   | `struct ImportResult { statements: u64 }` (camelCase)            | `interface ImportResult { statements: number }`                 |
+| export request  | command args: `handleId, schema, table?, format`                 | `exportTable` / `exportSchema` params                           |
+| import request  | command args: `handleId, schema, path` (file) or `…, sql` (text) | `importSql` / `executeScriptText` params                        |
+| explain         | **none** (client-side only)                                      | `DetectedClauses` (`explainClauses.ts`); never crosses the wire |
 
 Import preview / parse contracts (TS-only, `features/import/parse.ts`): `Parsed`, `ParsedValue`, `RowObject`, `ImportFormat`, `TablePreview`/`TablePreviewResult` (+ `isPreviewError`), `SchemaPreview`/`SchemaPreviewResult` (+ `isSchemaPreviewError`), `TableGroup`.
 

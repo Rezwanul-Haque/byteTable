@@ -451,10 +451,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         }
         if (!path) return; // user cancelled
 
-        const data =
-          format === "png"
-            ? await rasterizeToPngBase64(svg, b.width, b.height, 2)
-            : svg;
+        const data = format === "png" ? await rasterizeToPngBase64(svg, b.width, b.height, 2) : svg;
         await diagramExport(path, format, data);
         const file = path.split(/[\\/]/).pop() ?? defaultName;
         toast(`Exported schema map to ${file}`, "ok");
@@ -657,9 +654,7 @@ function CardIcon({
   className?: string;
 }) {
   const s = size / 24;
-  return (
-    <path className={className} d={icon.d} transform={`translate(${x},${y}) scale(${s})`} />
-  );
+  return <path className={className} d={icon.d} transform={`translate(${x},${y}) scale(${s})`} />;
 }
 
 /** One FK edge: visible curve + wide hit-area + endpoints + bend handle. */
@@ -681,11 +676,7 @@ function Edge({
   return (
     <g className={"map-edge" + (selected ? " is-selected" : "")} data-edge-id={edge.id}>
       {/* Wide transparent hit-area makes the thin curve easy to click/touch. */}
-      <path
-        className="map-edge-hit"
-        d={edge.path}
-        onPointerDown={onSelectPointerDown}
-      />
+      <path className="map-edge-hit" d={edge.path} onPointerDown={onSelectPointerDown} />
       <path className="map-edge-path" d={edge.path} />
       <circle className="map-edge-dot" cx={edge.sx} cy={edge.sy} r={3.5} />
       <circle className="map-edge-ring" cx={edge.tx} cy={edge.ty} r={5} />
@@ -738,12 +729,7 @@ function Card({
         <rect className="map-card-head-bg" x={0} y={HEAD_H - 11} width={w} height={11} />
         <line className="map-card-head-rule" x1={0} y1={HEAD_H} x2={w} y2={HEAD_H} />
         <CardIcon className="map-card-icon" icon={ICON_TABLE} x={9} y={HEAD_H / 2 - 7} size={14} />
-        <text
-          className="map-card-name"
-          x={30}
-          y={HEAD_H / 2}
-          dominantBaseline="central"
-        >
+        <text className="map-card-name" x={30} y={HEAD_H / 2} dominantBaseline="central">
           {truncate(card.table, 18)}
         </text>
         {rowCount !== null ? (
@@ -797,9 +783,21 @@ function Card({
         return (
           <g key={col.name} className="map-card-row">
             {col.pk ? (
-              <CardIcon className="map-col-icon map-col-pk" icon={ICON_KEY} x={4} y={cy - 5.5} size={11} />
+              <CardIcon
+                className="map-col-icon map-col-pk"
+                icon={ICON_KEY}
+                x={4}
+                y={cy - 5.5}
+                size={11}
+              />
             ) : col.fk ? (
-              <CardIcon className="map-col-icon map-col-fk" icon={ICON_LINK} x={4} y={cy - 5.5} size={11} />
+              <CardIcon
+                className="map-col-icon map-col-fk"
+                icon={ICON_LINK}
+                x={4}
+                y={cy - 5.5}
+                size={11}
+              />
             ) : null}
             <text
               className={"map-col-name" + (col.fk ? " is-fk" : "")}
@@ -809,7 +807,13 @@ function Card({
             >
               {truncate(col.name, 16)}
             </text>
-            <text className="map-col-type" x={w - 10} y={cy} textAnchor="end" dominantBaseline="central">
+            <text
+              className="map-col-type"
+              x={w - 10}
+              y={cy}
+              textAnchor="end"
+              dominantBaseline="central"
+            >
               {truncate(col.dataType.toLowerCase(), 12)}
             </text>
           </g>

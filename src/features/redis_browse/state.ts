@@ -80,7 +80,13 @@ interface RedisBrowseState {
    * db+key is focused instead of duplicating (REDIS_SPEC §5). `keyType` sets
    * the tab's leading badge.
    */
-  openKeyTab: (workspaceId: string, initialDb: number, db: number, key: string, keyType: KeyType) => void;
+  openKeyTab: (
+    workspaceId: string,
+    initialDb: number,
+    db: number,
+    key: string,
+    keyType: KeyType,
+  ) => void;
   /** Focus the (single) dashboard tab — it always exists. */
   openDashboardTab: (workspaceId: string, initialDb: number) => void;
   /** Set the active tab (no-op if the id is unknown). */

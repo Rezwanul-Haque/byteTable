@@ -62,10 +62,7 @@ export function TruncateModal({
         // and let the caller re-fetch the open grid for this table.
         void loadTables(handleId, schemaName, { force: true });
         onDone?.();
-        toast(
-          "Truncated " + table + " — " + affected.toLocaleString() + " rows removed",
-          "ok",
-        );
+        toast("Truncated " + table + " — " + affected.toLocaleString() + " rows removed", "ok");
         onClose();
       } catch (err) {
         // Keep the modal open and show the §5 message where the action was.

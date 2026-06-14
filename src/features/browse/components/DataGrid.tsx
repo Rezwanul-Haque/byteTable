@@ -97,7 +97,13 @@ function affinityOf(dataType: string): "integer" | "real" | "boolean" | "text" {
   const t = dataType.toUpperCase();
   if (t.includes("BOOL")) return "boolean";
   if (t.includes("INT")) return "integer";
-  if (t.includes("REAL") || t.includes("FLOA") || t.includes("DOUB") || t.includes("DEC") || t.includes("NUM"))
+  if (
+    t.includes("REAL") ||
+    t.includes("FLOA") ||
+    t.includes("DOUB") ||
+    t.includes("DEC") ||
+    t.includes("NUM")
+  )
     return "real";
   return "text";
 }
@@ -539,7 +545,14 @@ export function DataGrid({
         fkHopTimer.current = null;
         setInsights(null);
         // A binary FK key binds its value as bytes for the lookup + seeded filter.
-        setFkPeek({ rect, refSchema: schema, refTable: fk.table, refColumn: fk.column, value, binary });
+        setFkPeek({
+          rect,
+          refSchema: schema,
+          refTable: fk.table,
+          refColumn: fk.column,
+          value,
+          binary,
+        });
       }, 250);
     },
     [schema],
@@ -660,7 +673,14 @@ export function DataGrid({
   // toast shows the executed statement; on error the prior value is restored
   // and the §5 message is shown. `prior` is the value to roll back to.
   const runUpdate = useCallback(
-    (rowIndex: number, ci: number, column: string, value: CellValue, prior: CellValue, pk: PkPredicate[]) => {
+    (
+      rowIndex: number,
+      ci: number,
+      column: string,
+      value: CellValue,
+      prior: CellValue,
+      pk: PkPredicate[],
+    ) => {
       // Optimistic: apply now, exit edit mode.
       writeCache(rowIndex, ci, value);
       const generation = generationRef.current;
@@ -718,8 +738,16 @@ export function DataGrid({
       // Park on the confirm modal; the cache is NOT yet mutated (Cancel must
       // leave the cell as it was).
       const display =
-        'UPDATE "' + schema + '"."' + table + '" SET "' + colName + '" = ' + sqlLiteral(value) +
-        " WHERE " + pk.map((p) => '"' + p.column + '" = ' + sqlLiteral(p.value)).join(" AND ");
+        'UPDATE "' +
+        schema +
+        '"."' +
+        table +
+        '" SET "' +
+        colName +
+        '" = ' +
+        sqlLiteral(value) +
+        " WHERE " +
+        pk.map((p) => '"' + p.column + '" = ' + sqlLiteral(p.value)).join(" AND ");
       setPendingConfirm({ row: rowIndex, col: ci, column: colName, value, prior, pk, display });
       return;
     }
@@ -747,7 +775,14 @@ export function DataGrid({
     (kind: "json" | "binary", rowIndex: number, ci: number, col: ColumnMeta) => {
       const row = rowCacheRef.current.get(rowIndex);
       if (!row) return;
-      setCellModal({ kind, row: rowIndex, col: ci, column: col.name, type: col.typeHint, value: row[ci] ?? null });
+      setCellModal({
+        kind,
+        row: rowIndex,
+        col: ci,
+        column: col.name,
+        type: col.typeHint,
+        value: row[ci] ?? null,
+      });
     },
     [],
   );
@@ -760,15 +795,26 @@ export function DataGrid({
       const row = rowCacheRef.current.get(rowIndex);
       if (!row) return;
       const prior = row[ci] ?? null;
-      if (value === prior || (value !== null && prior !== null && String(value) === String(prior))) {
+      if (
+        value === prior ||
+        (value !== null && prior !== null && String(value) === String(prior))
+      ) {
         return;
       }
       const pk = buildPk(row);
       if (pk === null) return;
       if (isProduction) {
         const display =
-          'UPDATE "' + schema + '"."' + table + '" SET "' + colName + '" = ' + sqlLiteral(value) +
-          " WHERE " + pk.map((p) => '"' + p.column + '" = ' + sqlLiteral(p.value)).join(" AND ");
+          'UPDATE "' +
+          schema +
+          '"."' +
+          table +
+          '" SET "' +
+          colName +
+          '" = ' +
+          sqlLiteral(value) +
+          " WHERE " +
+          pk.map((p) => '"' + p.column + '" = ' + sqlLiteral(p.value)).join(" AND ");
         setPendingConfirm({ row: rowIndex, col: ci, column: colName, value, prior, pk, display });
         return;
       }
@@ -984,7 +1030,9 @@ export function DataGrid({
                       <div
                         key={c.name}
                         className={
-                          "dg-td" + (isSel ? " cell-selected" : "") + (isEditing ? " cell-editing" : "")
+                          "dg-td" +
+                          (isSel ? " cell-selected" : "") +
+                          (isEditing ? " cell-editing" : "")
                         }
                         // Read-only cells explain why on hover (per M11); editable
                         // cells fall back to the value-as-string title.
@@ -1006,7 +1054,9 @@ export function DataGrid({
                             aria-label={"Edit " + c.name}
                             value={editing.draft}
                             onChange={(e) =>
-                              setEditing((prev) => (prev ? { ...prev, draft: e.target.value } : prev))
+                              setEditing((prev) =>
+                                prev ? { ...prev, draft: e.target.value } : prev,
+                              )
                             }
                             onBlur={commitEdit}
                             onKeyDown={(e) => {
@@ -1027,10 +1077,14 @@ export function DataGrid({
                             fk={fk}
                             onFkClick={fk ? (value, e) => onFkClick(fk, value, bin, e) : undefined}
                             onJsonClick={
-                              editable && json ? () => openCellModal("json", rowIndex, ci, c) : undefined
+                              editable && json
+                                ? () => openCellModal("json", rowIndex, ci, c)
+                                : undefined
                             }
                             onBinClick={
-                              editable && bin ? () => openCellModal("binary", rowIndex, ci, c) : undefined
+                              editable && bin
+                                ? () => openCellModal("binary", rowIndex, ci, c)
+                                : undefined
                             }
                           />
                         )}

@@ -547,11 +547,7 @@ export function exportSave(path: string, contents: string): Promise<void> {
  * failure surfaces a `{ kind, message }` §5 error. Returns `{ statements }`, the
  * number of statements executed.
  */
-export function importSql(
-  handleId: string,
-  schema: string,
-  path: string,
-): Promise<ImportResult> {
+export function importSql(handleId: string, schema: string, path: string): Promise<ImportResult> {
   return invoke<ImportResult>("import_sql", { handleId, schema, path });
 }
 

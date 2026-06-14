@@ -117,8 +117,7 @@ export function ExplainPanel({
           <div>
             <div className="sql-error-title">Nothing to explain yet</div>
             <div className="sql-error-msg">
-              The execution-order view explains a SELECT query — write one above to see how it
-              runs.
+              The execution-order view explains a SELECT query — write one above to see how it runs.
             </div>
           </div>
         </div>

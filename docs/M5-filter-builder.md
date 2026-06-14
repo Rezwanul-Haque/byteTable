@@ -12,7 +12,7 @@ The load-bearing security invariant: in builder ("conditions") mode **every valu
 
 Builds directly on **M4 — Tab system + data grid**:
 
-- The grid (`DataGrid`) and `rows_fetch` command already exist; M5 adds an optional `filter: FilterSpec | null` to `FetchRowsRequest` (the wire request M4 introduced for paging + sort). When present it applies to BOTH the page query and the `COUNT(*)`, so `RowsPage.totalRows` becomes the *filtered* total ("n of N rows").
+- The grid (`DataGrid`) and `rows_fetch` command already exist; M5 adds an optional `filter: FilterSpec | null` to `FetchRowsRequest` (the wire request M4 introduced for paging + sort). When present it applies to BOTH the page query and the `COUNT(*)`, so `RowsPage.totalRows` becomes the _filtered_ total ("n of N rows").
 - Filter state lives in the per-workspace, per-tab `ui.filters` map keyed by tab id (the same WorkspaceUiState that survives workspace switches). The grid's reset machinery keys on the compiled filter (`filterKey`), so committing a filter re-windows + re-counts exactly like a sort change.
 - The toolbar (Data | Structure segmented control, refresh, row-count) and `TableTab.tsx` host already exist from M4; M5 inserts the Filters toggle, the WHERE readout, the clear-filters icon, and mounts `FilterPanel` under the toolbar.
 
@@ -22,23 +22,23 @@ Builds directly on **M4 — Tab system + data grid**:
 
 All wire types live in `src-tauri/src/shared/engine.rs`.
 
-**`FilterOp`** (`#[serde(rename_all = "camelCase")]`) — the **13 operators**, the *only* thing that selects a comparison; each maps to a fixed SQL fragment in the adapters:
+**`FilterOp`** (`#[serde(rename_all = "camelCase")]`) — the **13 operators**, the _only_ thing that selects a comparison; each maps to a fixed SQL fragment in the adapters:
 
-| # | Variant | Wire token | §3.5 label | SQL fragment (value bound as `?`/`$n`) |
-|---|---------|-----------|-----------|----------------------------------------|
-| 1 | `Eq` | `eq` | `=` | `"c" = ?` |
-| 2 | `Ne` | `ne` | `≠` | `"c" <> ?` |
-| 3 | `Gt` | `gt` | `>` | `"c" > ?` |
-| 4 | `Gte` | `gte` | `≥` | `"c" >= ?` |
-| 5 | `Lt` | `lt` | `<` | `"c" < ?` |
-| 6 | `Lte` | `lte` | `≤` | `"c" <= ?` |
-| 7 | `Contains` | `contains` | `contains` | `"c" LIKE ? ESCAPE '\'` (pattern `%v%`) |
-| 8 | `NotContains` | `notContains` | `not contains` | `"c" NOT LIKE ? ESCAPE '\'` (pattern `%v%`) |
-| 9 | `BeginsWith` | `beginsWith` | `begins with` | `"c" LIKE ? ESCAPE '\'` (pattern `v%`) |
-| 10 | `EndsWith` | `endsWith` | `ends with` | `"c" LIKE ? ESCAPE '\'` (pattern `%v`) |
-| 11 | `InList` | `inList` | `in list` | `"c" IN (?, ?, …)` |
-| 12 | `IsNull` | `isNull` | `is null` | `"c" IS NULL` (no value, no bind) |
-| 13 | `IsNotNull` | `isNotNull` | `is not null` | `"c" IS NOT NULL` (no value, no bind) |
+| #   | Variant       | Wire token    | §3.5 label     | SQL fragment (value bound as `?`/`$n`)      |
+| --- | ------------- | ------------- | -------------- | ------------------------------------------- |
+| 1   | `Eq`          | `eq`          | `=`            | `"c" = ?`                                   |
+| 2   | `Ne`          | `ne`          | `≠`            | `"c" <> ?`                                  |
+| 3   | `Gt`          | `gt`          | `>`            | `"c" > ?`                                   |
+| 4   | `Gte`         | `gte`         | `≥`            | `"c" >= ?`                                  |
+| 5   | `Lt`          | `lt`          | `<`            | `"c" < ?`                                   |
+| 6   | `Lte`         | `lte`         | `≤`            | `"c" <= ?`                                  |
+| 7   | `Contains`    | `contains`    | `contains`     | `"c" LIKE ? ESCAPE '\'` (pattern `%v%`)     |
+| 8   | `NotContains` | `notContains` | `not contains` | `"c" NOT LIKE ? ESCAPE '\'` (pattern `%v%`) |
+| 9   | `BeginsWith`  | `beginsWith`  | `begins with`  | `"c" LIKE ? ESCAPE '\'` (pattern `v%`)      |
+| 10  | `EndsWith`    | `endsWith`    | `ends with`    | `"c" LIKE ? ESCAPE '\'` (pattern `%v`)      |
+| 11  | `InList`      | `inList`      | `in list`      | `"c" IN (?, ?, …)`                          |
+| 12  | `IsNull`      | `isNull`      | `is null`      | `"c" IS NULL` (no value, no bind)           |
+| 13  | `IsNotNull`   | `isNotNull`   | `is not null`  | `"c" IS NOT NULL` (no value, no bind)       |
 
 `FilterOp::needs_value(self) -> bool` returns `false` only for `IsNull`/`IsNotNull`. The prototype `filters.jsx` internal ids differ (`neq`/`ncontains`/`begins`/`ends`/`in`/`null`/`nnull`); the renderer maps them to these wire tokens (documented in `engine.ts`).
 
@@ -69,7 +69,7 @@ Each adapter owns a `where_clause(meta, table, &FilterSpec) -> Result<WhereClaus
   - `json_to_sql_value`: JSON null → §5 "Use IS NULL / IS NOT NULL"; bool → integer 0/1 (SQLite/MySQL) or native bool (Postgres); number → i64/f64 (u64 overflow preserved as text); string → text; array/object → §5 "A filter value must be a single text, number, or boolean."
   - `inList`: a `Scalar` where a list is expected, or an empty list, → §5 errors. Each item bound, placeholders joined.
   - Empty `items` → `WhereClause::default()` (whole table).
-  - Fragments joined by ` {combinator.sql_keyword()} `.
+  - Fragments joined by `{combinator.sql_keyword()}`.
 
 The WHERE params **bind first** (positional order), then `LIMIT`/`OFFSET` (also bound), so the page query and the `COUNT(*)` share the identical compiled clause + binds. The injection guarantee is asserted by adapter tests (`where_clause_every_operator_shape_and_bind_order`, the round-trip serde tests in `engine.rs`).
 
@@ -77,10 +77,10 @@ The WHERE params **bind first** (positional order), then `LIMIT`/`OFFSET` (also 
 
 `src-tauri/src/features/browse/commands.rs` — M5 adds **no new command**; it extends M4's `rows_fetch` (and M10's `column_stats`) with the optional `filter` field.
 
-| command | args | returns | errors (`AppError` → `{kind, message}`) |
-|---------|------|---------|------------------------------------------|
-| `rows_fetch` | `handleId: string`, `req: FetchRowsRequest` (`schema`, `table`, `sort?`, **`filter?: FilterSpec`**, `offset`, `limit`) | `RowsPage` (`columns`, `rows`, `offset`, `limit`, **`totalRows` = filtered count**, `elapsedMs`) | `NotFound` (closed/unknown handle, "…closed"); `Database` (unknown column, NULL-compare misuse, non-scalar value, empty `inList`, or any raw-mode syntax error from the engine) |
-| `column_stats` (M10, filter-aware) | `handleId`, `req: ColumnStatsRequest` (`schema`, `table`, `column`, **`filter?`**) | `ColumnStats` over the current filtered set | same families |
+| command                            | args                                                                                                                   | returns                                                                                          | errors (`AppError` → `{kind, message}`)                                                                                                                                         |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rows_fetch`                       | `handleId: string`, `req: FetchRowsRequest` (`schema`, `table`, `sort?`, **`filter?: FilterSpec`**, `offset`, `limit`) | `RowsPage` (`columns`, `rows`, `offset`, `limit`, **`totalRows` = filtered count**, `elapsedMs`) | `NotFound` (closed/unknown handle, "…closed"); `Database` (unknown column, NULL-compare misuse, non-scalar value, empty `inList`, or any raw-mode syntax error from the engine) |
+| `column_stats` (M10, filter-aware) | `handleId`, `req: ColumnStatsRequest` (`schema`, `table`, `column`, **`filter?`**)                                     | `ColumnStats` over the current filtered set                                                      | same families                                                                                                                                                                   |
 
 ## Frontend (React)
 
@@ -93,6 +93,7 @@ Per-tab filter state lives in the persisted per-workspace `ui.filters: Record<st
 - **`TabFilterState`** = `{ draft: FilterDraft; applied: FilterDraft | null }`. `draft` = what the panel edits (dirty); `applied` = what the grid fetches with (`null` = no filter). Apply deep-clones `draft` into `applied` so later draft edits don't leak in.
 
 `TableTab.tsx` derives, via `useMemo`:
+
 - `filterSpec = applied ? compileToSpec(applied, columns) : null` — the wire `FilterSpec | null`.
 - `filterKey = filterSpec ? JSON.stringify(filterSpec) : ""` — the grid's reset key.
 - `appliedWhere = appliedDisplaySql(applied, columns)` — the **cosmetic** effective WHERE readout.
@@ -106,10 +107,12 @@ Per-tab filter state lives in the persisted per-workspace `ui.filters: Record<st
 ### Components
 
 **`FilterPanel`** (`src/features/browse/components/FilterPanel.tsx`) — props `{ open, columns, state: TabFilterState, error, onChange }`. Two commit paths:
+
 - `apply(nextDraft)` → `onChange({ draft: nextDraft, applied: cloneDraft(nextDraft) })` (commit draft→applied).
 - `setDraft(nextDraft)` → `onChange({ ...state, draft: nextDraft })` (dirty mutate only).
 
 **`ConditionRow`** (rendered inline per `draft.conditions`):
+
 - **Prefix** `.filter-and`: `WHERE` for row 0, else `draft.combinator.toUpperCase()`.
 - **Enable checkbox** `.filter-check`/`.filter-checkbox` (custom 16px box, accent fill + check icon when on): `onChange` → `updateCond(id, { enabled }, reapply=true)` — **re-applies immediately**.
 - **Column select** `.filter-select`: options from `columns`; `updateCond(id, { column }, false)` (draft only).
@@ -130,6 +133,7 @@ Per-tab filter state lives in the persisted per-workspace `ui.filters: Record<st
 ### Styling — §3.5 filter panel
 
 `src/features/browse/components/FilterPanel.css` (ported byte-identical from `ByteTable.html` "v2: stackable filter builder"; the toolbar toggle + WHERE readout live in `TableTab.css`):
+
 - Panel `--bg1`, bottom border, `padding: 9px 12px 8px`, column flex `gap: 7px`; `.hidden` → `display: none`.
 - Rows: flex `gap: 8px`, `align-items: center`; `.disabled` dims select/value/prefix to `opacity: 0.45`.
 - Prefix `.filter-and`: mono 10px, weight 600, accent, `width: 44px` right-aligned, `letter-spacing: 0.04em`.
@@ -150,10 +154,10 @@ A 3-condition filter set, on the wire (`conditions` mode), with values **bound**
   "mode": "conditions",
   "combinator": "and",
   "items": [
-    { "column": "status",  "op": "eq",     "value": "paid" },          // → "status" = $1   ($1="paid")
-    { "column": "total",   "op": "gte",    "value": 100 },             // → "total" >= $2   ($2=100)
-    { "column": "country", "op": "inList", "value": ["DE", "FR"] }      // → "country" IN ($3,$4)
-  ]
+    { "column": "status", "op": "eq", "value": "paid" }, // → "status" = $1   ($1="paid")
+    { "column": "total", "op": "gte", "value": 100 }, // → "total" >= $2   ($2=100)
+    { "column": "country", "op": "inList", "value": ["DE", "FR"] }, // → "country" IN ($3,$4)
+  ],
 }
 ```
 
@@ -180,7 +184,7 @@ Raw mode: `{ "mode": "raw", "sql": "status = 'paid' AND (total > 100 OR country 
 - **Per-type quoting/binding**: builder values are bound (numbers as numeric binds, bools as 0/1 or native bool, strings as text). The cosmetic display (`draftToDisplaySql` → `quoteDisplay`) quotes numbers/bools raw and single-quotes+escapes strings (`'` doubled) — **for human reading only**; it is never executed in conditions mode.
 - **LIKE wildcards bind literally**: a user `%` or `_` in a `contains` value is escaped (`escape_like` + `ESCAPE '\'`) so it matches literally, not as a wildcard.
 - **NULL handling**: comparing against NULL via `eq`/etc. is rejected ("Use IS NULL / IS NOT NULL…"); the null-check ops (`isNull`/`isNotNull`) hide the value input and bind nothing.
-- **SQL injection inert** (conditions mode): an injection payload typed into a value field (e.g. `'; DROP TABLE users; --`) is bound as a parameter — it becomes an inert string literal that simply matches no rows. The cosmetic readout may *show* the payload quoted, but that string is never the query. Identifiers (columns) are validated against the table and `quote_ident`-quoted; operators and combinators are enum-driven fixed literals. Only raw mode interpolates — a documented, opt-in escape hatch.
+- **SQL injection inert** (conditions mode): an injection payload typed into a value field (e.g. `'; DROP TABLE users; --`) is bound as a parameter — it becomes an inert string literal that simply matches no rows. The cosmetic readout may _show_ the payload quoted, but that string is never the query. Identifiers (columns) are validated against the table and `quote_ident`-quoted; operators and combinators are enum-driven fixed literals. Only raw mode interpolates — a documented, opt-in escape hatch.
 - **Raw-mode errors render inline §5-style**: a bad raw clause fails at execution; the grid's `onFilterError(message)` sets `filterError`, keeps the panel open (`setPanelOpen(true)`), shows the message in `.filter-err-inline` (red error icon + text), and applies `.error` to the `.where-input`. A fresh `onFilterChange` clears the error; the grid clears it on success.
 - **Empty filter = whole table**: no active conditions (or empty raw SQL) compiles to `null`/`WhereClause::default()` — the grid fetches the unfiltered table and the readout shows "no filters applied".
 - **Filtered count**: with a filter applied, `RowsPage.totalRows` is the filtered `COUNT(*)`, so the toolbar reads "n of N rows" against the filtered total.

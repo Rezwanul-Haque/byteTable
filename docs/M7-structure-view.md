@@ -29,12 +29,13 @@ All structure value objects live in the shared engine module (`src-tauri/src/sha
 
 - **Port**: `EngineConnection::table_meta(&self, schema, table) -> Result<TableMeta, AppError>` (`engine.rs:1232`). One async call returns the full structure. Each engine adapter implements it; the renderer's introspection slice (M3) owns the command and the cache.
 - **Compute referenced-by**: there is no inbound-FK catalog lookup that is uniform across engines, so each adapter **scans the schema's other tables** and collects every FK whose target is this table (grouped per constraint). This is the §3.6 "referenced by" list.
-- **Assemble DDL**: engine-specific (see Infrastructure). SQLite and MySQL return the engine's *verbatim* `CREATE TABLE`; Postgres reconstructs a best-effort one from the catalog.
+- **Assemble DDL**: engine-specific (see Infrastructure). SQLite and MySQL return the engine's _verbatim_ `CREATE TABLE`; Postgres reconstructs a best-effort one from the catalog.
 - M7 adds **no** application use-cases of its own — `table_meta` is a thin port call driven by the M3 command. (The `features/structure/application` module — `preview_alter`/`apply_alter` — is **M8**, the staged-ALTER pipeline; it does not participate in the read-only view.)
 
 ### Infrastructure — engine-specific DDL retrieval (sqlite_master / SHOW CREATE TABLE / pg-style)
 
 **SQLite** (`src-tauri/src/engines/sqlite/mod.rs`, `table_meta_blocking` at `:440`):
+
 - Existence is proven first via `sqlite_schema` count → §5 unknown-table message (`:450`), because `PRAGMA table_info` returns zero rows for an unknown table.
 - Columns: `PRAGMA "schema".table_info("table")` → name/type/notnull/dflt_value/pk; `pk > 0` marks pk membership (`:475`).
 - Foreign keys: `PRAGMA "schema".foreign_key_list("table")` read **once** (`foreign_key_rows`, `:544`) and used for both the per-column `ColumnInfo.fk` map and the grouped table-level `ForeignKeyInfo` list (`group_foreign_keys`). Implicit `REFERENCES t` (NULL `to`) resolves the parent pk column at `seq` best-effort via `referenced_pk_column` (`:762`), yielding an empty string when unresolvable rather than a guessed `id`.
@@ -43,6 +44,7 @@ All structure value objects live in the shared engine module (`src-tauri/src/sha
 - DDL: `table_ddl` (`:746`) = `SELECT sql FROM "schema".sqlite_schema WHERE type='table' AND name=?1` — the verbatim stored `CREATE TABLE`; `None` when the stored SQL is NULL.
 
 **MySQL** (`src-tauri/src/engines/mysql/mod.rs`, `table_meta` at `:770`):
+
 - Existence: `information_schema.tables` (`:775`) → §5 `missing_table_error` (`:1092`).
 - Columns: `information_schema.columns` (`COLUMN_TYPE` = full declared type) (`:791`).
 - Foreign keys + referenced-by: `information_schema.key_column_usage` JOIN `referential_constraints` (`:869`, `:1012`); inbound scans constraints whose referenced table is this table (`inbound_foreign_keys`, `:1001`).
@@ -50,15 +52,16 @@ All structure value objects live in the shared engine module (`src-tauri/src/sha
 - DDL: `SHOW CREATE TABLE` (`show_create_table`, `:1076`) — faithful, schema-qualified; reads result column index 1 ("Create Table").
 
 **Postgres** (`src-tauri/src/engines/postgres/mod.rs`, `table_meta` at `:682`):
+
 - FKs / referenced-by: `pg_constraint` (`:805`, `:936`); `on_delete`/`on_update` decoded from `confdeltype`/`confupdtype` action chars (`:839`).
-- DDL: **assembled** from the catalog (`assemble_ddl`, `:989`) — best-effort, *not* pg_dump-grade. Emits `CREATE TABLE "schema"."table" (` then each column (`"name" type [NOT NULL] [DEFAULT expr]`), the `PRIMARY KEY (...)`, and table-level `FOREIGN KEY (...) REFERENCES "t" (...)` with `ON DELETE`/`ON UPDATE` (omitting `NO ACTION`) (`:997`–`:1045`).
+- DDL: **assembled** from the catalog (`assemble_ddl`, `:989`) — best-effort, _not_ pg_dump-grade. Emits `CREATE TABLE "schema"."table" (` then each column (`"name" type [NOT NULL] [DEFAULT expr]`), the `PRIMARY KEY (...)`, and table-level `FOREIGN KEY (...) REFERENCES "t" (...)` with `ON DELETE`/`ON UPDATE` (omitting `NO ACTION`) (`:997`–`:1045`).
 
 ### Tauri commands — table
 
 M7 reuses the M3 engine-shared introspection command. No M7-specific commands.
 
-| command | args | returns | errors |
-| --- | --- | --- | --- |
+| command      | args                          | returns                                                                      | errors                                                                                                        |
+| ------------ | ----------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | `table_meta` | `handleId`, `schema`, `table` | `TableMeta` (columns + comment + indexes + foreignKeys + referencedBy + ddl) | §5 `AppError`: `NotFound` (closed handle), `Database` (unknown table/schema — message lists available tables) |
 
 (The `alter_preview` / `alter_apply` commands in `src-tauri/src/features/structure/commands.rs` are **M8**, the staged-ALTER pipeline, and are out of scope for the read-only M7 view.)
@@ -94,20 +97,21 @@ The introspection slice (`src/features/introspection/state.ts`) caches the full 
 ### Styling — §3.6: 348px rail, independent column scroll, clipped DDL preview
 
 `src/features/browse/components/StructureView.css`:
+
 - **Body grid** `.structure-body { grid-template-columns: 1fr 348px }` (`:65`) — the rail is exactly **348px**.
 - **Independent scroll**: `.columns-scroll { overflow-y: auto }` (`:134`) and `.structure-rail { overflow-y: auto }` (`:407`) scroll independently; the columns table's `<th>` is `position: sticky` (`:147`) so headers stay while rows scroll.
 - **Clipped DDL preview**: `.ddl-preview { overflow: hidden }` (`:527`) / `.ddl-preview-block { max-height: 218px; overflow: hidden }` (`:531`) with a gradient fade; the **DDL modal** is `.ddl-modal { width: 660px }` (`:572`) and `.ddl-modal-block { overflow: auto }` (`:578`) scrolls.
 
 ## Shared data contracts — TS + Rust types
 
-| Concept | Rust (`src-tauri/src/shared/engine.rs`) | TS (`src/shared/api/engine.ts`) |
-| --- | --- | --- |
-| Table meta | `TableMeta` (`:434`) | `TableMeta` (`:125`) |
-| Column | `ColumnInfo` (`:517`) — `default_value` ⇒ wire `default` | `ColumnInfo` (`:47`) — `default?: string \| null` |
-| FK target | `FkRef` (`:543`) | `FkRef` |
-| Index | `IndexInfo` (`:462`) | `IndexInfo` (`:67`) |
-| Outbound FK | `ForeignKeyInfo` (`:482`) | `ForeignKeyInfo` (`:88`) |
-| Referenced-by | `InboundFkInfo` (`:503`) | `InboundFkInfo` (`:107`) |
+| Concept       | Rust (`src-tauri/src/shared/engine.rs`)                  | TS (`src/shared/api/engine.ts`)                   |
+| ------------- | -------------------------------------------------------- | ------------------------------------------------- |
+| Table meta    | `TableMeta` (`:434`)                                     | `TableMeta` (`:125`)                              |
+| Column        | `ColumnInfo` (`:517`) — `default_value` ⇒ wire `default` | `ColumnInfo` (`:47`) — `default?: string \| null` |
+| FK target     | `FkRef` (`:543`)                                         | `FkRef`                                           |
+| Index         | `IndexInfo` (`:462`)                                     | `IndexInfo` (`:67`)                               |
+| Outbound FK   | `ForeignKeyInfo` (`:482`)                                | `ForeignKeyInfo` (`:88`)                          |
+| Referenced-by | `InboundFkInfo` (`:503`)                                 | `InboundFkInfo` (`:107`)                          |
 
 All `camelCase` on the wire. `Vec` fields are always present (empty array when none); `comment`/`ddl` are `null` when absent. Keep the two columns in sync.
 

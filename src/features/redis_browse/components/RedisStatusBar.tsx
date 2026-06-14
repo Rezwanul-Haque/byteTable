@@ -43,8 +43,7 @@ export function RedisStatusBar(props: RedisStatusBarProps) {
   } = props;
 
   const keyMeta = activeKeyType
-    ? activeKeyType +
-      (activeKeyMemory !== null ? " · " + humanBytes(activeKeyMemory) : "")
+    ? activeKeyType + (activeKeyMemory !== null ? " · " + humanBytes(activeKeyMemory) : "")
     : null;
 
   return (

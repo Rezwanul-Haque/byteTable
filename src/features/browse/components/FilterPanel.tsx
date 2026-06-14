@@ -109,9 +109,7 @@ export function FilterPanel({ open, columns, state, error, onChange }: FilterPan
         <div className="filter-raw-row">
           <span className="where-label">WHERE</span>
           <input
-            className={
-              "where-input" + (error ? " error" : "") + (state.applied ? " applied" : "")
-            }
+            className={"where-input" + (error ? " error" : "") + (state.applied ? " applied" : "")}
             placeholder="status = 'paid' AND (total > 100 OR country IN ('DE', 'FR'))"
             value={draft.rawSql}
             onChange={(e) => setDraft({ ...draft, rawSql: e.target.value })}
@@ -131,7 +129,9 @@ export function FilterPanel({ open, columns, state, error, onChange }: FilterPan
             const numeric = NUMERIC_RE.test(colType);
             return (
               <div className={"filter-row" + (c.enabled ? "" : " disabled")} key={c.id}>
-                <span className="filter-and">{i === 0 ? "WHERE" : draft.combinator.toUpperCase()}</span>
+                <span className="filter-and">
+                  {i === 0 ? "WHERE" : draft.combinator.toUpperCase()}
+                </span>
                 <label
                   className="filter-check"
                   title={

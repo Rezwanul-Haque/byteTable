@@ -181,9 +181,7 @@ export const usePanelStore = create<PanelFeatureState>((set) => ({
 
   togglePanel: (workspaceId, shellLabel) =>
     set((state) =>
-      patch(state, workspaceId, (cur) =>
-        cur.open ? { open: false } : openWith(cur, shellLabel),
-      ),
+      patch(state, workspaceId, (cur) => (cur.open ? { open: false } : openWith(cur, shellLabel))),
     ),
 
   openPanel: (workspaceId, shellLabel) =>
@@ -233,9 +231,7 @@ export const usePanelStore = create<PanelFeatureState>((set) => ({
   patchSession: (workspaceId, sessionId, sessionPatch) =>
     set((state) =>
       patch(state, workspaceId, (cur) => ({
-        sessions: cur.sessions.map((s) =>
-          s.id === sessionId ? { ...s, ...sessionPatch } : s,
-        ),
+        sessions: cur.sessions.map((s) => (s.id === sessionId ? { ...s, ...sessionPatch } : s)),
       })),
     ),
 }));

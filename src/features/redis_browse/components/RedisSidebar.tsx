@@ -178,10 +178,7 @@ export function RedisSidebar(props: RedisSidebarProps) {
   useEffect(() => {
     if (!dbOpen) return;
     const onDown = (event: MouseEvent) => {
-      if (
-        event.target instanceof Element &&
-        event.target.closest(".rdb-pop, .redis-db-btn")
-      )
+      if (event.target instanceof Element && event.target.closest(".rdb-pop, .redis-db-btn"))
         return;
       setDbOpen(false);
     };
@@ -298,9 +295,7 @@ export function RedisSidebar(props: RedisSidebarProps) {
                 <span className="rns-name">{seg}</span>
                 <span className="rns-count">{count}</span>
               </div>
-              {!isCollapsed ? (
-                <div>{renderNode(child, path, depth + 1)}</div>
-              ) : null}
+              {!isCollapsed ? <div>{renderNode(child, path, depth + 1)}</div> : null}
             </div>
           );
         })}
@@ -465,14 +460,11 @@ export function RedisSidebar(props: RedisSidebarProps) {
           </div>
         ) : matchCount === 0 ? (
           <div className="sidebar-nomatch">
-            No keys match “{pattern}”
-            {typeFilter !== "all" ? " · " + typeFilter : ""}
+            No keys match “{pattern}”{typeFilter !== "all" ? " · " + typeFilter : ""}
           </div>
         ) : (
           <>
-            {view === "flat"
-              ? sorted.map((k) => keyRow(k.name, k.name))
-              : renderNode(tree, "", 0)}
+            {view === "flat" ? sorted.map((k) => keyRow(k.name, k.name)) : renderNode(tree, "", 0)}
             {!done ? (
               <div className="rkey-loadmore">
                 {loading ? (

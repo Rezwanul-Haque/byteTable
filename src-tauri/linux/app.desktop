@@ -1,0 +1,16 @@
+[Desktop Entry]
+Categories={{categories}}
+{{#if comment}}Comment={{comment}}
+{{/if}}Exec={{exec}}
+Icon={{icon}}
+Name={{name}}
+Terminal=false
+Type=Application
+StartupNotify=true
+# StartupWMClass lets the dock/taskbar map the running WINDOW (by its X11
+# WM_CLASS, and GNOME's matching heuristic) to THIS .desktop entry, so the
+# bundled icon is shown instead of a generic fallback. It must equal the
+# class the window reports — verify on the target with `xprop WM_CLASS`
+# (X11) or Looking Glass on Wayland, and adjust if it differs. See the
+# README "Linux: app icon in the dock" note for the Wayland app_id caveat.
+StartupWMClass=ByteTable

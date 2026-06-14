@@ -165,6 +165,45 @@ compatibility is forward, not backward).
   > Ubuntu limitation, not a problem with the package; use the `apt install ./…` command above.
 - **`.rpm`** (Fedora/RHEL/openSUSE) — `sudo dnf install ./bytetable-*.rpm` (or `sudo zypper install`).
 
+#### App icon in the dock / taskbar
+
+Unlike macOS (where the `.app` bundle carries the icon and the Dock reads it directly), Linux
+docks resolve an icon by matching the running **window** — its `app_id` (Wayland) or `WM_CLASS`
+(X11) — to an **installed `.desktop` entry**, then showing that entry's `Icon=`.
+
+- **A raw `.AppImage` installs nothing**, so there is no `.desktop` to match → the dock shows a
+  generic icon. Either **install the `.deb`/`.rpm`** (they install the `.desktop` + hicolor icons,
+  so the icon appears in the dock and app menu), or integrate the AppImage with
+  [AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher) / **Gear Lever** ("Add to
+  menu"), which creates the `.desktop` + extracts the icon.
+- **GNOME on Wayland** maps a window to its icon by matching the window's `app_id` to the
+  `.desktop` **file name** (it largely ignores `StartupWMClass`). ByteTable's app id is its bundle
+  identifier, `com.bytetable.app`, while the bundler names the entry `ByteTable.desktop` — so on a
+  pure-Wayland session the icon can still be missing even after installing the `.deb`. The bundled
+  desktop entry sets `StartupWMClass` (which fixes X11 and GNOME-on-Xorg), but if you're on Wayland
+  and still see a generic icon, drop a matching entry into your user applications:
+
+  ```sh
+  # confirm the class/app-id the window actually reports:
+  xprop WM_CLASS            # X11 — click the ByteTable window
+  # (Wayland: Alt+F2 → "lg" → Windows tab shows each window's app_id)
+
+  # then install a user .desktop whose FILE NAME equals that app_id:
+  cat > ~/.local/share/applications/com.bytetable.app.desktop <<'EOF'
+  [Desktop Entry]
+  Type=Application
+  Name=ByteTable
+  Exec=bytetable
+  Icon=bytetable
+  StartupWMClass=com.bytetable.app
+  Categories=Development;Database;
+  Terminal=false
+  EOF
+  update-desktop-database ~/.local/share/applications 2>/dev/null || true
+  ```
+
+  Adjust `StartupWMClass` / the file name to whatever `xprop`/Looking Glass reported if it differs.
+
 ### Windows
 
 ```powershell

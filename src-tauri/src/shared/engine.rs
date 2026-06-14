@@ -1367,6 +1367,15 @@ pub trait EngineConnection: Send + Sync {
         format!("\"{}\"", ident.replace('"', "\"\""))
     }
 
+    /// Render `hex` (lowercase hex digits, no `0x`/`X` prefix; may be empty) as
+    /// an engine-correct binary literal for a SQL dump's INSERT values, so a
+    /// binary column round-trips. Default: the SQL-standard `X'..'` blob literal
+    /// — correct for SQLite and accepted by MySQL. Postgres overrides it to a
+    /// `bytea` literal.
+    fn binary_literal(&self, hex: &str) -> String {
+        format!("X'{hex}'")
+    }
+
     /// Empty a table of all rows, keeping its structure (M15 truncate).
     ///
     /// **Mutates user data.** Engine-aware: Postgres/MySQL run `TRUNCATE TABLE`;
@@ -1637,9 +1646,71 @@ pub fn split_statements(script: &str) -> Vec<String> {
 /// structure editor milestones (M8/M14).
 pub trait DdlDialect {}
 
+/// Upper bound (bytes) for inlining a binary/blob value as hex. Covers the
+/// common fixed-size cases — UUID (16), SHA-1 (20), SHA-256 (32) — which are
+/// routinely used as keys / foreign keys. Larger values stay a placeholder.
+pub const INLINE_BINARY_MAX_BYTES: usize = 32;
+
+/// Render a binary/blob column value as JSON, shared by every engine adapter so
+/// SQLite/MySQL/Postgres represent binary identically.
+///
+/// Small values (≤ [`INLINE_BINARY_MAX_BYTES`]) become a `0x`-prefixed
+/// lowercase-hex string — readable in the grid AND usable as a real value (e.g.
+/// a binary primary/foreign key). Larger blobs keep the `[N bytes]` placeholder:
+/// there is no blob viewer yet, and shipping megabytes of hex across IPC for one
+/// grid cell helps no one.
+/// True for binary column types (binary / varbinary / blob / bytea), matched
+/// case-insensitively on the declared type text. Used by the SQL export to emit
+/// hex literals for binary columns so they round-trip.
+pub fn is_binary_type(data_type: &str) -> bool {
+    let t = data_type.to_ascii_lowercase();
+    t.contains("binary") || t.contains("blob") || t.contains("bytea")
+}
+
+pub fn binary_to_json(bytes: &[u8]) -> serde_json::Value {
+    use std::fmt::Write as _;
+    if bytes.len() <= INLINE_BINARY_MAX_BYTES {
+        let mut s = String::with_capacity(2 + bytes.len() * 2);
+        s.push_str("0x");
+        for b in bytes {
+            let _ = write!(s, "{b:02x}");
+        }
+        serde_json::Value::String(s)
+    } else {
+        serde_json::Value::String(format!("[{} bytes]", bytes.len()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn binary_to_json_inlines_small_as_hex_and_placeholders_large() {
+        assert_eq!(binary_to_json(&[]), serde_json::json!("0x"));
+        assert_eq!(
+            binary_to_json(&[0x00, 0xab, 0xff]),
+            serde_json::json!("0x00abff")
+        );
+        // 16-byte UUID-shaped value → 0x + 32 hex chars.
+        let uuid = [0x12u8; 16];
+        assert_eq!(
+            binary_to_json(&uuid),
+            serde_json::json!("0x12121212121212121212121212121212")
+        );
+        // Exactly at the limit still inlines; one over falls back to placeholder.
+        assert_eq!(
+            binary_to_json(&[0u8; INLINE_BINARY_MAX_BYTES])
+                .as_str()
+                .unwrap()
+                .len(),
+            2 + INLINE_BINARY_MAX_BYTES * 2
+        );
+        assert_eq!(
+            binary_to_json(&[0u8; INLINE_BINARY_MAX_BYTES + 1]),
+            serde_json::json!(format!("[{} bytes]", INLINE_BINARY_MAX_BYTES + 1))
+        );
+    }
 
     #[test]
     fn count_statements_counts_terminated_and_trailing() {

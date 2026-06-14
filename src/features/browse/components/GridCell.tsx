@@ -14,6 +14,10 @@
 // — is unchanged until/unless an origin is supplied.
 
 import type { CellValue, FkRef } from "../../../shared/api/engine";
+import { Icon } from "../../../shared/ui/Icon";
+import { formatBinary, isBinaryType } from "./binaryCell";
+import { isJsonType, jsonPreview } from "./jsonCell";
+import "./CellEditors.css";
 
 /** Enum→color map for status/method-like string pills (prototype ui.jsx). */
 const STATUS_COLORS: Record<string, string> = {
@@ -43,13 +47,80 @@ interface CellContentProps {
   fk?: FkRef | null;
   /** Called with the cell's value + the click event when an FK link is clicked. */
   onFkClick?: (value: CellValue, event: React.MouseEvent<HTMLButtonElement>) => void;
+  /** The column's declared type, used to render JSON/binary cells specially. */
+  type?: string;
+  /** Opens the JSON editor (DataGrid only); display-only grids omit it. */
+  onJsonClick?: (event: React.MouseEvent<HTMLElement>) => void;
+  /** Opens the binary editor (DataGrid only); display-only grids omit it. */
+  onBinClick?: (event: React.MouseEvent<HTMLElement>) => void;
 }
 
 /** One cell's rendered value, typed per spec §1.3 / §3.5. */
-export function CellContent({ value, column, fk, onFkClick }: CellContentProps) {
+export function CellContent({
+  value,
+  column,
+  fk,
+  onFkClick,
+  type,
+  onJsonClick,
+  onBinClick,
+}: CellContentProps) {
   if (value === null) {
     // NULL → italic faint small-caps "null" (a NULL FK is not a link).
     return <span className="cell-null">null</span>;
+  }
+  // Binary (BINARY/VARBINARY/BLOB/BYTEA) → BIN badge + UUID/hex/blob chip; takes
+  // precedence over FK so a binary key shows its UUID. Clickable (editor) only
+  // when a handler is supplied (DataGrid); read-only grids render a plain span.
+  if (type && isBinaryType(type)) {
+    const fb = formatBinary(value, type);
+    if (fb) {
+      const inner = (
+        <>
+          <span className="bin-badge">BIN</span>
+          <span className={"bin-val " + fb.kind}>{fb.text}</span>
+        </>
+      );
+      return onBinClick ? (
+        <button
+          type="button"
+          className="bin-cell"
+          onClick={(e) => {
+            e.stopPropagation();
+            onBinClick(e);
+          }}
+          title="BINARY · double-click to edit"
+        >
+          {inner}
+        </button>
+      ) : (
+        <span className="bin-cell">{inner}</span>
+      );
+    }
+  }
+  // JSON / JSONB → data_object icon + one-line preview.
+  if (type && isJsonType(type) && typeof value === "string") {
+    const inner = (
+      <>
+        <Icon name="data_object" size={11} style={{ color: "var(--accent)" }} />
+        <span className="json-cell-prev">{jsonPreview(value)}</span>
+      </>
+    );
+    return onJsonClick ? (
+      <button
+        type="button"
+        className="json-cell"
+        onClick={(e) => {
+          e.stopPropagation();
+          onJsonClick(e);
+        }}
+        title="Double-click to edit JSON"
+      >
+        {inner}
+      </button>
+    ) : (
+      <span className="json-cell">{inner}</span>
+    );
   }
   // FK link (M10 §3.5): accent underlined, keyboard-operable button. Only when
   // the column has an FK target and a hop handler — otherwise fall through to

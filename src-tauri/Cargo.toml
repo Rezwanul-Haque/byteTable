@@ -49,6 +49,16 @@ sqlx = { version = "0.8", default-features = false, features = [
     # precision contract — see the adapter's `decode_value`).
     "bigdecimal",
 ] }
+# DATE/DATETIME/TIMESTAMP/TIME come over the binary protocol as temporal values,
+# not strings — without chrono Decode impls sqlx returns them as NULL (the
+# "timestamps don't show" bug). We enable `chrono` on the MySQL + Postgres
+# sub-crates directly (same crate instances the facade uses; additive) rather
+# than via the facade `chrono` feature, because that feature's
+# `sqlx-sqlite?/chrono` line drags in `sqlx-sqlite`, which conflicts with our
+# `rusqlite` (both link the native `sqlite3`). The sub-crate `chrono` feature
+# transitively enables `sqlx-core/chrono`, so `sqlx::types::chrono` is available.
+sqlx-mysql = { version = "=0.8.6", default-features = false, features = ["chrono"] }
+sqlx-postgres = { version = "=0.8.6", default-features = false, features = ["chrono"] }
 # Used by the schema_map slice to decode base64 PNG export bytes received over
 # IPC (base64 is ~1.33× the raw size vs. ~10× for a JSON number array).
 base64 = "0.22"

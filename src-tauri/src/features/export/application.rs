@@ -197,6 +197,13 @@ async fn export_table_sql(
     // table_meta validates existence (§5) and supplies the DDL + column order.
     let meta = connection.table_meta(schema, table).await?;
     let columns: Vec<String> = meta.columns.iter().map(|c| c.name.clone()).collect();
+    // Per-column "is binary" flags: binary columns export as an engine hex
+    // literal (X'..' / bytea) so they round-trip, instead of a quoted string.
+    let binary_cols: Vec<bool> = meta
+        .columns
+        .iter()
+        .map(|c| crate::shared::engine::is_binary_type(&c.data_type))
+        .collect();
 
     let qualified = format!(
         "{}.{}",
@@ -239,7 +246,18 @@ async fn export_table_sql(
             break;
         }
         for row in &page.rows {
-            let values = row.iter().map(sql_value).collect::<Vec<_>>().join(", ");
+            let values = row
+                .iter()
+                .enumerate()
+                .map(|(i, v)| {
+                    if binary_cols.get(i).copied().unwrap_or(false) {
+                        binary_sql_value(connection, v)
+                    } else {
+                        sql_value(v)
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
             out.push_str(&format!(
                 "INSERT INTO {qualified} ({quoted_cols}) VALUES ({values});\n"
             ));
@@ -256,6 +274,26 @@ async fn export_table_sql(
     }
 
     Ok(out)
+}
+
+/// Render one cell of a binary column for the SQL dump. A `0x`-hex value (from
+/// `binary_to_json`) becomes an engine binary literal (`X'..'` / bytea) so it
+/// round-trips; NULL stays NULL. A large-blob placeholder ("[N bytes]") — whose
+/// bytes were never loaded — cannot be reconstructed, so it exports as NULL (a
+/// documented loss; ByteTable does not yet stream full blobs).
+fn binary_sql_value(connection: &dyn EngineConnection, value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::Null => "NULL".to_string(),
+        serde_json::Value::String(s) => {
+            match s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+                Some(hex) if hex.len() % 2 == 0 && hex.bytes().all(|b| b.is_ascii_hexdigit()) => {
+                    connection.binary_literal(&hex.to_ascii_lowercase())
+                }
+                _ => "NULL".to_string(),
+            }
+        }
+        other => sql_value(other),
+    }
 }
 
 /// Fetch one export-sized page (no sort, no filter) at `offset`.
@@ -374,6 +412,29 @@ mod tests {
         let manager = ConnectionManager::new();
         let handle = manager.insert(OpenConnection::sql(conn)).await;
         (manager, handle)
+    }
+
+    #[test]
+    fn binary_sql_value_emits_hex_literal_else_null() {
+        // FakeTable inherits the default `X'..'` binary literal.
+        let conn = FakeTable {
+            columns: vec![],
+            rows: vec![],
+            ddl: None,
+        };
+        assert_eq!(
+            binary_sql_value(&conn, &serde_json::json!("0xC0FFEE")),
+            "X'c0ffee'"
+        );
+        assert_eq!(binary_sql_value(&conn, &serde_json::json!("0x")), "X''");
+        assert_eq!(binary_sql_value(&conn, &serde_json::Value::Null), "NULL");
+        // A large-blob placeholder can't be reconstructed → NULL.
+        assert_eq!(
+            binary_sql_value(&conn, &serde_json::json!("[4096 bytes]")),
+            "NULL"
+        );
+        // Odd-length / non-hex strings are not treated as binary literals.
+        assert_eq!(binary_sql_value(&conn, &serde_json::json!("0xABC")), "NULL");
     }
 
     #[tokio::test]

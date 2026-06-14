@@ -425,6 +425,13 @@ impl EngineConnection for PostgresEngineConnection {
         quote_ident(ident)
     }
 
+    /// Postgres bytea literal: `'\xDEADBEEF'::bytea` (hex format; valid with the
+    /// default standard_conforming_strings=on). Overrides the default `X'..'`,
+    /// which Postgres does not accept for bytea.
+    fn binary_literal(&self, hex: &str) -> String {
+        format!("'\\x{hex}'::bytea")
+    }
+
     async fn truncate_table(&self, schema: &str, table: &str) -> Result<u64, AppError> {
         truncate_table(&self.pool, schema, table).await
     }
@@ -601,9 +608,10 @@ fn decode_value(row: &PgRow, index: usize) -> serde_json::Value {
         "MONEY" => get_as_text(row, index)
             .map(|t| numeric_text_to_json(&t))
             .unwrap_or(Value::Null),
-        // bytea → placeholder, matching the SQLite blob style.
+        // bytea → hex when small (UUID/key), placeholder when large; shared with
+        // SQLite/MySQL so binary renders identically everywhere.
         "BYTEA" => match row.try_get::<Option<Vec<u8>>, _>(index) {
-            Ok(Some(bytes)) => Value::String(format!("[{} bytes]", bytes.len())),
+            Ok(Some(bytes)) => crate::shared::engine::binary_to_json(&bytes),
             _ => Value::Null,
         },
         // json/jsonb → serialized JSON string (kept a string so the grid renders
@@ -615,12 +623,51 @@ fn decode_value(row: &PgRow, index: usize) -> serde_json::Value {
                 .map(Value::String)
                 .unwrap_or(Value::Null),
         },
-        // Text-like and everything else (uuid, timestamps, dates, intervals,
-        // arrays, enums, …): the column's text form. sqlx decodes most of these
-        // as String directly; arrays/unknowns fall through to the text cast.
+        // Temporal types decode to chrono values, not String — format them to a
+        // display string (the "timestamps don't show" fix). TIMETZ/INTERVAL stay
+        // in the text fallback below.
+        "DATE" | "TIMESTAMP" | "TIMESTAMPTZ" | "TIME" => get_temporal(row, index, type_name)
+            .or_else(|| get_as_text(row, index))
+            .map(Value::String)
+            .unwrap_or(Value::Null),
+        // Text-like and everything else (uuid, timetz, interval, arrays, enums,
+        // …): the column's text form. sqlx decodes most of these as String
+        // directly; arrays/unknowns fall through to the text cast.
         _ => get_as_text(row, index)
             .map(Value::String)
             .unwrap_or(Value::Null),
+    }
+}
+
+/// Decode a Postgres temporal column (DATE/TIMESTAMP/TIMESTAMPTZ/TIME) to a
+/// display string. These arrive as chrono types (the `chrono` sqlx feature),
+/// NOT as `String`, so a plain text read returns NULL — the "timestamps don't
+/// show" bug. TIMESTAMPTZ keeps its offset; the rest format naively.
+fn get_temporal(row: &PgRow, index: usize, type_name: &str) -> Option<String> {
+    use sqlx::types::chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
+    const DT_FMT: &str = "%Y-%m-%d %H:%M:%S%.f";
+    match type_name {
+        "DATE" => row
+            .try_get::<Option<NaiveDate>, _>(index)
+            .ok()
+            .flatten()
+            .map(|d| d.format("%Y-%m-%d").to_string()),
+        "TIMESTAMP" => row
+            .try_get::<Option<NaiveDateTime>, _>(index)
+            .ok()
+            .flatten()
+            .map(|d| d.format(DT_FMT).to_string()),
+        "TIMESTAMPTZ" => row
+            .try_get::<Option<DateTime<Utc>>, _>(index)
+            .ok()
+            .flatten()
+            .map(|d| d.format("%Y-%m-%d %H:%M:%S%.f%:z").to_string()),
+        "TIME" => row
+            .try_get::<Option<NaiveTime>, _>(index)
+            .ok()
+            .flatten()
+            .map(|t| t.format("%H:%M:%S%.f").to_string()),
+        _ => None,
     }
 }
 

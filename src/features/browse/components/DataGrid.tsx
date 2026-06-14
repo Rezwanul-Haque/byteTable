@@ -46,9 +46,13 @@ import { useToast } from "../../../shared/ui/toastContext";
 import { useIntrospectionStore } from "../../introspection/state";
 import { useWorkspacesStore } from "../../workspaces/state";
 import { useTabMetaStore } from "../../workspaces/tabMeta";
+import { BinaryEditorModal } from "./BinaryEditorModal";
+import { isBinaryType } from "./binaryCell";
 import { ColumnInsights, type InsightsAnchor } from "./ColumnInsights";
 import { FkPeek, type FkPeekAnchor } from "./FkPeek";
 import { CellContent } from "./GridCell";
+import { JsonEditorModal } from "./JsonEditorModal";
+import { isJsonType } from "./jsonCell";
 import "./DataGrid.css";
 
 /** Per-column metadata the grid keeps from tableMeta: pk/fk drive icons + FK
@@ -285,6 +289,18 @@ export function DataGrid({
   // modal moves focus into the modal, which would re-fire blur and double-fire
   // the commit. This flag makes commit/cancel idempotent for one edit session.
   const committingRef = useRef(false);
+
+  // --- JSON / binary cell editor modals (ported design) ----------------
+  // Double-clicking a JSON or binary cell opens a dedicated modal instead of
+  // the inline input. Holds the target cell + its declared type, or null.
+  const [cellModal, setCellModal] = useState<{
+    kind: "json" | "binary";
+    row: number;
+    col: number;
+    column: string;
+    type: string;
+    value: CellValue;
+  } | null>(null);
 
   // --- M10 popovers (FK peek + column insights) ------------------------
   // Each holds the anchor (clicked cell / header rect + target) for an open
@@ -714,6 +730,42 @@ export function DataGrid({
     committingRef.current = false;
   }, []);
 
+  // Open the JSON / binary editor for a cell (only when editable — the caller
+  // gates on readOnlyReason). Snapshots the cell's identity + current value.
+  const openCellModal = useCallback(
+    (kind: "json" | "binary", rowIndex: number, ci: number, col: ColumnMeta) => {
+      const row = rowCacheRef.current.get(rowIndex);
+      if (!row) return;
+      setCellModal({ kind, row: rowIndex, col: ci, column: col.name, type: col.typeHint, value: row[ci] ?? null });
+    },
+    [],
+  );
+
+  // Apply a final value chosen in a cell modal: no-op if unchanged, then either
+  // fire immediately or (on a production connection) park on the confirm modal —
+  // the same safety path as inline edits, minus the draft coercion.
+  const commitCellValue = useCallback(
+    (rowIndex: number, ci: number, colName: string, value: CellValue) => {
+      const row = rowCacheRef.current.get(rowIndex);
+      if (!row) return;
+      const prior = row[ci] ?? null;
+      if (value === prior || (value !== null && prior !== null && String(value) === String(prior))) {
+        return;
+      }
+      const pk = buildPk(row);
+      if (pk === null) return;
+      if (isProduction) {
+        const display =
+          'UPDATE "' + schema + '"."' + table + '" SET "' + colName + '" = ' + sqlLiteral(value) +
+          " WHERE " + pk.map((p) => '"' + p.column + '" = ' + sqlLiteral(p.value)).join(" AND ");
+        setPendingConfirm({ row: rowIndex, col: ci, column: colName, value, prior, pk, display });
+        return;
+      }
+      runUpdate(rowIndex, ci, colName, value, prior, pk);
+    },
+    [buildPk, isProduction, schema, table, runUpdate],
+  );
+
   // --- M11 FK coexistence: defer the single-click hop so a double-click on
   // an FK cell enters edit instead of navigating. The FK link's onClick
   // schedules the hop on a short timer; the td's onDoubleClick clears it
@@ -912,6 +964,11 @@ export function DataGrid({
                     // M11: edit state + editability for this cell.
                     const isEditing = editing?.row === rowIndex && editing?.col === ci;
                     const roReason = readOnlyReason(rowIndex, ci);
+                    const editable = roReason === null;
+                    // JSON / binary columns get their own editor modal (ported
+                    // design) instead of the inline input.
+                    const json = isJsonType(c.typeHint);
+                    const bin = isBinaryType(c.typeHint);
                     return (
                       <div
                         key={c.name}
@@ -926,7 +983,9 @@ export function DataGrid({
                           // A double-click on an FK cell must edit, not hop:
                           // cancel any pending deferred hop first.
                           clearPendingHop();
-                          startEdit(rowIndex, ci);
+                          if (editable && json) openCellModal("json", rowIndex, ci, c);
+                          else if (editable && bin) openCellModal("binary", rowIndex, ci, c);
+                          else startEdit(rowIndex, ci);
                         }}
                       >
                         {isEditing ? (
@@ -953,8 +1012,15 @@ export function DataGrid({
                           <CellContent
                             value={row[ci] ?? null}
                             column={c.name}
+                            type={c.typeHint}
                             fk={fk}
                             onFkClick={fk ? (value, e) => onFkClick(fk, value, e) : undefined}
+                            onJsonClick={
+                              editable && json ? () => openCellModal("json", rowIndex, ci, c) : undefined
+                            }
+                            onBinClick={
+                              editable && bin ? () => openCellModal("binary", rowIndex, ci, c) : undefined
+                            }
                           />
                         )}
                       </div>
@@ -1006,6 +1072,34 @@ export function DataGrid({
             </Btn>
           </ModalActions>
         </Modal>
+      ) : null}
+      {cellModal?.kind === "json" ? (
+        <JsonEditorModal
+          schemaName={schema}
+          table={table}
+          column={cellModal.column}
+          type={cellModal.type}
+          value={cellModal.value}
+          onClose={() => setCellModal(null)}
+          onSave={(next) => {
+            commitCellValue(cellModal.row, cellModal.col, cellModal.column, next);
+            setCellModal(null);
+          }}
+        />
+      ) : null}
+      {cellModal?.kind === "binary" ? (
+        <BinaryEditorModal
+          schemaName={schema}
+          table={table}
+          column={cellModal.column}
+          type={cellModal.type}
+          value={cellModal.value}
+          onClose={() => setCellModal(null)}
+          onSave={(next) => {
+            commitCellValue(cellModal.row, cellModal.col, cellModal.column, next);
+            setCellModal(null);
+          }}
+        />
       ) : null}
     </>
   );

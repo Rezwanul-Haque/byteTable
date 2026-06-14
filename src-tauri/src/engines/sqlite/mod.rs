@@ -23,10 +23,10 @@
 //!   `Number.MAX_SAFE_INTEGER`) map to JSON strings, not numbers — the
 //!   renderer would otherwise round them on parse. See
 //!   [`JS_MAX_SAFE_INTEGER`].
-//! - BLOB values map to the placeholder string `"[blob N bytes]"` rather
-//!   than base64: the renderer has no blob viewer yet, and shipping
-//!   megabytes of base64 across IPC for a grid cell helps no one. A real
-//!   blob inspector (then base64 or a side channel) is a later milestone.
+//! - BLOB values: small ones (≤ 32 bytes — UUIDs/keys) map to a `0x…` hex
+//!   string so they're readable + usable; larger ones map to the `"[N bytes]"`
+//!   placeholder (no blob viewer yet, and shipping megabytes across IPC for a
+//!   grid cell helps no one). Shared via `shared::engine::binary_to_json`.
 //! - `QueryOptions::schema` is advisory for SQLite (see the port docs):
 //!   unqualified names resolve per SQLite's rules across `main` + attached.
 //! - `run_query` executes whatever SQL it is given (read/write contexts are
@@ -1822,7 +1822,7 @@ fn order_by_clause(meta: &TableMeta, table: &str, sort: &SortSpec) -> Result<Str
     ))
 }
 
-/// SQLite value → JSON. Blobs become a `"[blob N bytes]"` placeholder (see
+/// SQLite value → JSON. Blobs become hex or a `"[N bytes]"` placeholder (see
 /// module docs); non-finite reals become null (JSON has no NaN/Infinity);
 /// integers beyond ±[`JS_MAX_SAFE_INTEGER`] become decimal strings so the
 /// renderer never rounds them (see `QueryResult::rows` in `shared::engine`).
@@ -1839,7 +1839,9 @@ fn value_to_json(value: ValueRef<'_>) -> serde_json::Value {
         ValueRef::Text(bytes) => {
             serde_json::Value::String(String::from_utf8_lossy(bytes).into_owned())
         }
-        ValueRef::Blob(bytes) => serde_json::Value::String(format!("[blob {} bytes]", bytes.len())),
+        // Blobs: hex when small (UUID/key), `[N bytes]` placeholder when large.
+        // Shared with MySQL/Postgres so binary renders identically everywhere.
+        ValueRef::Blob(bytes) => crate::shared::engine::binary_to_json(bytes),
     }
 }
 
@@ -2575,7 +2577,7 @@ mod tests {
                 serde_json::json!(1),
                 serde_json::json!("ada"),
                 serde_json::json!(9.5),
-                serde_json::json!("[blob 3 bytes]"),
+                serde_json::json!("0xc0ffee"),
             ]
         );
         // NULLs map to JSON null.
@@ -2768,10 +2770,10 @@ mod tests {
         assert_eq!(page.limit, 10);
         assert_eq!(page.total_rows, Some(3));
         assert!(page.elapsed_ms < 60_000);
-        // Values map exactly like run_query (blob placeholder, null).
+        // Values map exactly like run_query (blob → hex, null).
         assert_eq!(page.rows[0][0], serde_json::json!(1));
         assert_eq!(page.rows[0][1], serde_json::json!("ada"));
-        assert_eq!(page.rows[0][3], serde_json::json!("[blob 3 bytes]"));
+        assert_eq!(page.rows[0][3], serde_json::json!("0xc0ffee"));
         assert_eq!(page.rows[1][2], serde_json::Value::Null);
     }
 

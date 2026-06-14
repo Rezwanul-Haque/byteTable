@@ -139,7 +139,7 @@ export function SqlResultGrid({ result }: { result: QueryResult }) {
                 <div className="dg-rownum">{vr.index + 1}</div>
                 {columns.map((c, ci) => (
                   <div key={c.name + ":" + ci} className="dg-td">
-                    <CellContent value={row[ci] ?? null} column={c.name} />
+                    <CellContent value={row[ci] ?? null} column={c.name} type={c.typeHint} />
                   </div>
                 ))}
               </div>

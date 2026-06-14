@@ -642,16 +642,23 @@ fn decode_value(row: &MySqlRow, index: usize) -> serde_json::Value {
         "JSON" => get_as_text(row, index)
             .map(Value::String)
             .unwrap_or(Value::Null),
-        // Binary families → placeholder, matching the SQLite/Postgres blob style.
+        // Binary families → hex when small (UUID/key), placeholder when large;
+        // shared with SQLite/Postgres so binary renders identically everywhere.
         "BLOB" | "TINYBLOB" | "MEDIUMBLOB" | "LONGBLOB" | "BINARY" | "VARBINARY" | "GEOMETRY" => {
             match row.try_get::<Option<Vec<u8>>, _>(index) {
-                Ok(Some(bytes)) => Value::String(format!("[{} bytes]", bytes.len())),
+                Ok(Some(bytes)) => crate::shared::engine::binary_to_json(&bytes),
                 _ => Value::Null,
             }
         }
+        // Temporal types decode to chrono values, not String — format them to a
+        // display string (the "timestamps don't show" fix). YEAR stays in the
+        // text/numeric fallback below.
+        "DATE" | "DATETIME" | "TIMESTAMP" | "TIME" => get_temporal(row, index, base.as_str())
+            .or_else(|| get_as_text(row, index))
+            .map(Value::String)
+            .unwrap_or(Value::Null),
         // Text-like and everything else (char/varchar/text families, enum, set,
-        // date/datetime/timestamp/time/year, …): the column's string form. sqlx
-        // decodes these as String directly.
+        // year, …): the column's string form. sqlx decodes these as String.
         _ => get_as_text(row, index)
             .map(Value::String)
             .unwrap_or(Value::Null),
@@ -760,6 +767,47 @@ fn numeric_text_to_json(text: &str) -> serde_json::Value {
 /// `String`; `None` on NULL or decode failure.
 fn get_as_text(row: &MySqlRow, index: usize) -> Option<String> {
     row.try_get::<Option<String>, _>(index).ok().flatten()
+}
+
+/// Decode a MySQL temporal column (DATE/DATETIME/TIMESTAMP/TIME) to a display
+/// string. These arrive over the binary protocol as chrono types (the `chrono`
+/// sqlx feature), NOT as `String`, so a plain text read returns NULL — that was
+/// the "timestamps don't show" bug. DATETIME/TIMESTAMP format to
+/// `YYYY-MM-DD HH:MM:SS[.ffffff]` (fractional shown only when present).
+fn get_temporal(row: &MySqlRow, index: usize, base: &str) -> Option<String> {
+    use sqlx::types::chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
+    const DT_FMT: &str = "%Y-%m-%d %H:%M:%S%.f";
+    match base {
+        "DATE" => row
+            .try_get::<Option<NaiveDate>, _>(index)
+            .ok()
+            .flatten()
+            .map(|d| d.format("%Y-%m-%d").to_string()),
+        "DATETIME" => row
+            .try_get::<Option<NaiveDateTime>, _>(index)
+            .ok()
+            .flatten()
+            .map(|d| d.format(DT_FMT).to_string()),
+        // TIMESTAMP is UTC-backed; try the tz-aware decode first, then fall back
+        // to a naive read for servers/drivers that hand it back naive.
+        "TIMESTAMP" => row
+            .try_get::<Option<DateTime<Utc>>, _>(index)
+            .ok()
+            .flatten()
+            .map(|d| d.naive_utc().format(DT_FMT).to_string())
+            .or_else(|| {
+                row.try_get::<Option<NaiveDateTime>, _>(index)
+                    .ok()
+                    .flatten()
+                    .map(|d| d.format(DT_FMT).to_string())
+            }),
+        "TIME" => row
+            .try_get::<Option<NaiveTime>, _>(index)
+            .ok()
+            .flatten()
+            .map(|t| t.format("%H:%M:%S%.f").to_string()),
+        _ => None,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1423,19 +1471,39 @@ async fn execute_script(
         .await
         .map_err(map_query_error)?;
 
+    // Disable FK checks for this import session. A schema dump lists tables in
+    // listing order, NOT foreign-key order, so a `CREATE TABLE` with a forward
+    // FK (referencing a table dumped later) fails with "Failed to open the
+    // referenced table" — and INSERTs can likewise arrive parent-after-child.
+    // This is exactly what `mysqldump` does (`SET FOREIGN_KEY_CHECKS=0` around
+    // the dump). It is session-scoped on this one acquired connection; we
+    // restore it before the connection returns to the pool (below), regardless
+    // of outcome, so no other query inherits the relaxed setting.
+    conn.execute("SET FOREIGN_KEY_CHECKS = 0")
+        .await
+        .map_err(map_query_error)?;
+
+    let mut outcome: Result<(), AppError> = Ok(());
     for (applied, statement) in statements.iter().enumerate() {
         let applied = applied as u64;
         if let Err(err) = conn.execute(statement.as_str()).await {
             let engine_msg = map_query_error(err);
-            return Err(AppError::Database(format!(
+            outcome = Err(AppError::Database(format!(
                 "Import failed at statement {} of {total}: {engine_msg} \
                  MySQL commits each statement as it runs, so the {applied} statement(s) \
                  before the failure were applied and were NOT rolled back.",
                 applied + 1,
             )));
+            break;
         }
     }
 
+    // Restore FK enforcement on this pooled connection before returning (on the
+    // happy path AND after a mid-script failure), so a later borrower of the
+    // same connection isn't left with checks disabled.
+    let _ = conn.execute("SET FOREIGN_KEY_CHECKS = 1").await;
+
+    outcome?;
     Ok(ImportResult { statements: total })
 }
 

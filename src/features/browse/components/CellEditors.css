@@ -1,0 +1,351 @@
+/* JSON + BINARY cell display chips and editor modals — ported byte-for-byte
+   from the prototype (ByteTable.html). Used by JsonEditorModal / BinaryEditorModal
+   and the grid cells (GridCell.tsx). */
+
+/* ---- grid cell chips ---- */
+.json-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 0;
+  cursor: pointer;
+}
+.json-cell-prev {
+  font-family: var(--mono);
+  font-size: 0.92em;
+  color: #e5c07b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.json-cell:hover .json-cell-prev {
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, #e5c07b 50%, transparent);
+  text-underline-offset: 2px;
+}
+
+.bin-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 0;
+  cursor: pointer;
+}
+.bin-badge {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: #56b6c2;
+  background: #56b6c21f;
+  border: 1px solid #56b6c244;
+  border-radius: 4px;
+  padding: 0 4px;
+  line-height: 1.5;
+  flex: none;
+}
+.bin-val {
+  font-family: var(--mono);
+  font-size: 0.92em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bin-val.uuid {
+  color: #56b6c2;
+}
+.bin-val.hex {
+  color: #d19a66;
+}
+.bin-val.blob {
+  color: var(--text-faint);
+  font-style: italic;
+}
+.bin-cell:hover .bin-val {
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, currentColor 45%, transparent);
+  text-underline-offset: 2px;
+}
+
+/* ---- shared modal header bits ---- */
+.json-title-col {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.json-title-col b {
+  color: var(--text);
+  font-weight: 600;
+}
+.json-type-tag {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+  border-radius: 5px;
+  padding: 1px 7px;
+}
+
+/* ---- JSON editor modal ---- */
+.json-modal {
+  width: 600px;
+  max-width: calc(100vw - 48px);
+}
+.json-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.json-seg {
+  display: inline-flex;
+  gap: 2px;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2px;
+}
+.json-seg-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  padding: 4px 9px;
+  border-radius: 6px;
+}
+.json-seg-btn:hover:not(:disabled) {
+  color: var(--text);
+}
+.json-seg-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.json-seg-btn.active {
+  background: color-mix(in oklab, var(--accent) 16%, var(--bg3));
+  color: var(--accent);
+  font-weight: 500;
+}
+.json-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  padding: 5px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+}
+.json-tool:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+}
+.json-tool:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.json-editor-wrap {
+  display: flex;
+  height: 300px;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.json-gutter {
+  flex: none;
+  padding: 12px 0;
+  background: var(--bg1);
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+  text-align: right;
+  user-select: none;
+}
+.json-ln {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-faint);
+  padding: 0 10px;
+}
+.json-ln.err {
+  color: #e06c75;
+  background: #e06c7518;
+}
+.json-code {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+.json-highlight,
+.json-input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 12px 14px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre;
+  overflow: auto;
+  tab-size: 2;
+}
+.json-highlight {
+  pointer-events: none;
+  color: var(--text);
+}
+.json-input {
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  color: transparent;
+  caret-color: var(--accent);
+}
+.jx-key {
+  color: #61afef;
+}
+.jx-str {
+  color: #98c379;
+}
+.jx-num {
+  color: #d19a66;
+}
+.jx-bool {
+  color: #c678dd;
+}
+.jx-null {
+  color: #e06c75;
+}
+.jx-punct {
+  color: var(--text-dim);
+}
+
+.json-tree-wrap {
+  height: 300px;
+  overflow: auto;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+.jtree-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--text-dim);
+  padding: 0;
+}
+.jtree-toggle:hover {
+  color: var(--text);
+}
+.jtree-collapsed {
+  color: var(--text-faint);
+  margin-left: 2px;
+}
+.jtree-children {
+  padding-left: 18px;
+  border-left: 1px solid var(--border);
+  margin-left: 6px;
+}
+.jtree-row {
+  display: flex;
+}
+
+.json-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  padding: 8px 11px;
+  border-radius: 8px;
+}
+.json-status.ok {
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+}
+.json-status.err {
+  color: #e06c75;
+  background: #e06c7512;
+}
+.json-hint {
+  flex: 1;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+}
+.dg-pop-empty {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+/* ---- BINARY editor modal ---- */
+.binary-modal {
+  width: 460px;
+}
+.binary-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.binary-label {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+.binary-sub {
+  color: var(--text-faint);
+  font-weight: 400;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  margin-left: 6px;
+}
+.binary-input {
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-family: var(--mono);
+  font-size: 13.5px;
+  letter-spacing: 0.02em;
+  outline: none;
+  color: var(--text);
+}
+.binary-input:focus {
+  border-color: var(--accent);
+}
+.binary-input.err {
+  border-color: #e06c75;
+}
+.binary-repr {
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 0;
+}
+.binary-repr-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  font-size: 11.5px;
+}
+.binary-repr-row span {
+  width: 86px;
+  flex: none;
+  color: var(--text-faint);
+  font-family: var(--mono);
+}
+.binary-repr-row code {
+  font-family: var(--mono);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

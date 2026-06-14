@@ -587,8 +587,12 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         <svg
           ref={svgRef}
           className="map-svg"
-          width="100%"
-          height="100%"
+          // Size the SVG to the SCALED content extent (not the viewport) so cards
+          // laid out beyond the visible area aren't clipped by the SVG's own box
+          // — the wrap then scrolls to reach them. min-width/height:100% (CSS)
+          // keeps it filling the viewport when the schema is small.
+          width={extent.width * zoom}
+          height={extent.height * zoom}
           onPointerDown={onCanvasPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={endDrag}
@@ -631,8 +635,12 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
             ))}
           </g>
         </svg>
-        {/* Off-screen extent keeps scroll/pan room sane for large schemas. */}
-        <div className="map-extent" style={{ width: extent.width, height: extent.height }} />
+        {/* Off-screen spacer matching the scaled SVG, so the wrap reserves the
+            same scroll room at any zoom level. */}
+        <div
+          className="map-extent"
+          style={{ width: extent.width * zoom, height: extent.height * zoom }}
+        />
       </div>
     </div>
   );

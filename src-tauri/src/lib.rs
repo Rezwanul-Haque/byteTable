@@ -60,6 +60,11 @@ pub fn run() {
         // M9 schema-map "Export diagram…" save dialog) are granted in
         // capabilities/default.json.
         .plugin(tauri_plugin_dialog::init())
+        // Updater + process plugins: the renderer checks GitHub releases for a
+        // newer signed build, downloads/installs it, and relaunches. Updater is
+        // desktop-only (no-op target on mobile, which we don't ship).
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             // Composition root: the only place concrete adapters are chosen.
             let config_dir = app.path().app_config_dir()?;

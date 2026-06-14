@@ -264,6 +264,11 @@ async fn authenticate(
 
 /// Try every identity the local ssh-agent offers, in order, until one is
 /// accepted. The ssh-agent socket comes from `SSH_AUTH_SOCK`.
+///
+/// Unix only: `AgentClient::connect_env` (which reads `SSH_AUTH_SOCK`) does not
+/// exist on Windows in russh, so the Windows build gets the stub below that
+/// returns a §5 error pointing the user at key/password auth.
+#[cfg(unix)]
 async fn authenticate_agent(
     session: &mut Handle<TunnelHandler>,
     ssh: &SshConfig,
@@ -293,6 +298,20 @@ async fn authenticate_agent(
     }
     Err(bad_auth(
         "no ssh-agent key was accepted by the server.".into(),
+    ))
+}
+
+/// Windows stub: russh's `AgentClient::connect_env` (`SSH_AUTH_SOCK`) is
+/// unix-only, so ssh-agent auth is unavailable here. Surface a clear §5 error.
+#[cfg(not(unix))]
+async fn authenticate_agent(
+    _session: &Handle<TunnelHandler>,
+    _ssh: &SshConfig,
+    bad_auth: &impl Fn(String) -> AppError,
+) -> Result<(), AppError> {
+    Err(bad_auth(
+        "SSH agent authentication isn't supported on Windows — use a private key or password instead."
+            .into(),
     ))
 }
 

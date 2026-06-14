@@ -11,6 +11,8 @@ import { Rail } from "./features/workspaces/components/Rail";
 import { WorkspaceShell } from "./features/workspaces/components/WorkspaceShell";
 import { RedisWorkspace } from "./features/redis_browse/components/RedisWorkspace";
 import { selectShowConnect, useWorkspacesStore } from "./features/workspaces/state";
+import { checkForUpdate, skippedVersion, type Update } from "./features/updater/api";
+import { UpdateModal } from "./features/updater/UpdateModal";
 import "./App.css";
 
 // Dev gallery (M0) is no longer the main screen: in dev builds it is toggled
@@ -35,9 +37,30 @@ export function App() {
 
   const [galleryOpen, setGalleryOpen] = useState(false);
 
+  // In-app updater (M-updater): check GitHub releases once on launch; surface
+  // the modal when a newer signed build exists and the user hasn't skipped it.
+  // Failures (offline, rate-limit, plain-browser dev) are silent.
+  const [update, setUpdate] = useState<Update | null>(null);
+
   useEffect(() => {
     void loadPreferences();
   }, [loadPreferences]);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const found = await checkForUpdate();
+        if (!alive || !found) return;
+        if (found.version.replace(/^v/, "") !== (skippedVersion() ?? "")) setUpdate(found);
+      } catch {
+        /* offline / rate-limited / no desktop shell — no update prompt */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // Dev-only: ⌘⇧G / Ctrl+Shift+G toggles the M0 component gallery overlay.
   useEffect(() => {
@@ -81,6 +104,8 @@ export function App() {
       </div>
 
       {donateOpen ? <DonateModal onClose={() => setDonateOpen(false)} /> : null}
+
+      {update ? <UpdateModal update={update} onClose={() => setUpdate(null)} /> : null}
 
       {Gallery && galleryOpen ? (
         <Suspense fallback={null}>

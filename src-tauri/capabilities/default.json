@@ -10,9 +10,15 @@
     "core:window:allow-close",
     "dialog:allow-open",
     "dialog:allow-save",
+    "updater:default",
+    "process:allow-restart",
     {
       "identifier": "opener:allow-open-url",
-      "allow": [{ "url": "https://github.com/sponsors/*" }, { "url": "https://buymeacoffee.com/*" }]
+      "allow": [
+        { "url": "https://github.com/sponsors/*" },
+        { "url": "https://buymeacoffee.com/*" },
+        { "url": "https://github.com/rezwanul-Haque/byteTable/*" }
+      ]
     }
   ]
 }

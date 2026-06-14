@@ -62,8 +62,14 @@
 
 .map-svg {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
   display: block;
+  /* The SVG is sized to the scaled content extent (inline width/height) so it
+     covers every card instead of clipping at the viewport. min-* keeps it
+     filling the wrap when the schema is smaller than the viewport. */
+  min-width: 100%;
+  min-height: 100%;
   /* Empty-canvas drag = pan; cards stop propagation so they drag instead. */
   cursor: grab;
   touch-action: none;

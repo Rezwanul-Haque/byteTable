@@ -39,6 +39,17 @@ const TREE_INDENT = 13;
 /** The number of databases a Redis connection exposes (REDIS_SPEC §2). */
 const DB_COUNT = 16;
 
+/** Turn the MATCH box's raw text into the glob sent to `SCAN MATCH`. A bare
+ *  term (no glob metacharacters) is wrapped as `*term*` so typing "session"
+ *  matches "session:abc" — the substring behavior users expect. An empty box
+ *  means "everything" (`*`); anything containing `* ? [ ]` is treated as an
+ *  explicit glob and passed through verbatim. */
+function scanGlob(raw: string): string {
+  const t = raw.trim();
+  if (t === "") return "*";
+  return /[*?[\]]/.test(t) ? t : `*${t}*`;
+}
+
 interface RedisSidebarProps {
   /** Workspace identity for the header (color/name/env/detail/tunnel). */
   workspaceColor: string;
@@ -121,7 +132,7 @@ export function RedisSidebar(props: RedisSidebarProps) {
       setLoading(true);
       try {
         const page = await kvScan(handleId, dbIndex, {
-          pattern: pattern || "*",
+          pattern: scanGlob(pattern),
           ...(typeFilter !== "all" ? { typeFilter } : {}),
           cursor: fromCursor,
           count: SCAN_COUNT,

@@ -174,3 +174,28 @@
   color: #e2b340;
   font-size: 10px;
 }
+
+/* Import progress bar (driven by the backend's per-statement progress events). */
+.import-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.import-progress-bar {
+  height: 7px;
+  border-radius: 4px;
+  background: var(--bg3);
+  overflow: hidden;
+}
+.import-progress-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 4px;
+  transition: width 0.15s;
+}
+.import-progress-txt {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}

@@ -315,3 +315,16 @@
   transform: translateX(14px);
   background: #fff;
 }
+
+/* Delete (edit mode): danger-tinted text button, two-click armed confirm. */
+.conn-delete.btn-text {
+  color: var(--error);
+  margin-right: auto;
+}
+.conn-delete.btn-text:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--error) 13%, transparent);
+}
+.conn-delete.btn-text.armed {
+  background: color-mix(in srgb, var(--error) 18%, transparent);
+  font-weight: 600;
+}

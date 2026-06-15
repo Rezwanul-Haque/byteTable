@@ -137,27 +137,38 @@ export function Rail({ onDonate }: RailProps) {
       <div className="rail-list" ref={listRef}>
         {workspaces.map((ws) => {
           const isActive = ws.id === activeWorkspaceId && !showConnect;
+          const menuOpen = editPop?.id === ws.id;
           return (
-            <button
-              key={ws.id}
-              type="button"
-              className={"ws-tile" + (isActive ? " active" : "")}
-              style={{ "--ws-color": ws.color } as CSSProperties}
-              onClick={() => setActive(ws.id)}
-              onContextMenu={(event) => {
-                event.preventDefault();
-                openEdit(event.currentTarget, ws);
-              }}
-              onKeyDown={(event) => onTileKeyDown(event, ws)}
-              aria-label={ws.name}
-              aria-current={isActive ? "true" : undefined}
-              title={
-                ws.name + " · " + ENGINE_META[ws.saved.engine].label + " (right-click to edit)"
-              }
-            >
-              <span className="ws-tile-initials">{wsInitials(ws.name)}</span>
-              <span className="ws-tile-engine">{ENGINE_META[ws.saved.engine].short}</span>
-            </button>
+            <div key={ws.id} className="ws-tile-wrap">
+              <button
+                type="button"
+                className={"ws-tile" + (isActive ? " active" : "") + (menuOpen ? " menu-open" : "")}
+                style={{ "--ws-color": ws.color } as CSSProperties}
+                onClick={() => setActive(ws.id)}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  openEdit(event.currentTarget, ws);
+                }}
+                onKeyDown={(event) => onTileKeyDown(event, ws)}
+                aria-label={ws.name}
+                aria-current={isActive ? "true" : undefined}
+                title={ws.name + " · " + ENGINE_META[ws.saved.engine].label}
+              >
+                <span className="ws-tile-initials">{wsInitials(ws.name)}</span>
+                <span className="ws-tile-engine">{ENGINE_META[ws.saved.engine].short}</span>
+              </button>
+              {/* Hover (or focus) reveals a three-dot button that opens the edit
+                  popover — the discoverable path alongside right-click. */}
+              <button
+                type="button"
+                className="ws-tile-opts"
+                onClick={(event) => openEdit(event.currentTarget, ws)}
+                title="Edit workspace"
+                aria-label={"Edit workspace " + ws.name}
+              >
+                <Icon name="more_horiz" size={14} />
+              </button>
+            </div>
           );
         })}
         <button
@@ -220,7 +231,20 @@ export function Rail({ onDonate }: RailProps) {
           role="dialog"
           aria-label={"Edit workspace " + editingWs.name}
         >
-          <div className="ws-edit-title">Workspace</div>
+          <div className="ws-edit-head">
+            <span
+              className="ws-edit-badge"
+              style={{
+                background: editingWs.color + "22",
+                color: editingWs.color,
+                border: "1px solid " + editingWs.color + "55",
+              }}
+            >
+              {ENGINE_META[editingWs.saved.engine].short}
+            </span>
+            <div className="ws-edit-title">Edit workspace</div>
+          </div>
+          <div className="ws-edit-label">Name</div>
           <input
             className="ws-edit-input"
             value={draftName}
@@ -251,15 +275,16 @@ export function Rail({ onDonate }: RailProps) {
               />
             ))}
           </div>
+          <div className="ws-edit-sep" />
           <button
             type="button"
-            className="ws-edit-close"
+            className="ws-edit-remove"
             onClick={() => {
               closeWorkspace(editPop.id);
               closeEdit();
             }}
           >
-            <Icon name="power_settings_new" size={14} /> Close workspace
+            <Icon name="delete" size={14} /> Remove workspace
           </button>
         </div>
       ) : null}

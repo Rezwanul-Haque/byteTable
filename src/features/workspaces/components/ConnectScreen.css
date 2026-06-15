@@ -187,3 +187,25 @@
   border-radius: 99px;
   padding: 1px 7px;
 }
+
+/* Edit + remove affordances: sit over the card's right edge (left of the arrow)
+   and reveal on hover/focus. They're siblings of the card <button>, so clicking
+   them edits/removes instead of connecting. */
+.connect-card-wrap {
+  position: relative;
+}
+.connect-card-actions {
+  position: absolute;
+  top: 50%;
+  right: 36px;
+  transform: translateY(-50%);
+  z-index: 1;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.connect-card-wrap:hover .connect-card-actions,
+.connect-card-actions:focus-within {
+  opacity: 1;
+}

@@ -237,11 +237,25 @@ impl EngineConnection for SqliteEngineConnection {
             .await
     }
 
-    async fn execute_script(&self, schema: &str, sql: &str) -> Result<ImportResult, AppError> {
+    async fn execute_script(
+        &self,
+        schema: &str,
+        sql: &str,
+        on_progress: crate::shared::engine::ProgressCallback<'_>,
+    ) -> Result<ImportResult, AppError> {
+        // SQLite runs the dump as one atomic `execute_batch` on a blocking
+        // thread, which can't report mid-batch (and the borrowed callback can't
+        // cross into spawn_blocking), so progress is coarse: 0% before, 100%
+        // after. Local SQLite imports are fast, so a single jump is fine.
+        let total = count_statements(sql);
+        on_progress(0, total);
         let schema = schema.to_string();
         let sql = sql.to_string();
-        self.with_conn(move |conn| execute_script_blocking(conn, &schema, &sql))
-            .await
+        let result = self
+            .with_conn(move |conn| execute_script_blocking(conn, &schema, &sql))
+            .await?;
+        on_progress(result.statements, result.statements);
+        Ok(result)
     }
 
     async fn close(&self) -> Result<(), AppError> {

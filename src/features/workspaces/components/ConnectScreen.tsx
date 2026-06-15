@@ -14,6 +14,7 @@ import { Btn } from "../../../shared/ui/Btn";
 import { EngineBadge } from "../../../shared/ui/EngineBadge";
 import { EnvTag } from "../../../shared/ui/EnvTag";
 import { Icon } from "../../../shared/ui/Icon";
+import { IconBtn } from "../../../shared/ui/IconBtn";
 import { useToast } from "../../../shared/ui/toastContext";
 import { connectionDetail, type SavedConnection } from "../../connections/api";
 import { NewConnectionModal } from "../../connections/components/NewConnectionModal";
@@ -31,10 +32,14 @@ const OPENED_TOAST_SUFFIX = "” opened — right-click its tile to rename or re
 export function ConnectScreen() {
   const [connecting, setConnecting] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
+  // The saved connection being edited (its pencil clicked), or null. Opens the
+  // same modal in edit mode.
+  const [editConn, setEditConn] = useState<SavedConnection | null>(null);
   const savedConnections = useConnectionsStore((state) => state.savedConnections);
   const loaded = useConnectionsStore((state) => state.loaded);
   const loadError = useConnectionsStore((state) => state.loadError);
   const load = useConnectionsStore((state) => state.load);
+  const removeConnection = useConnectionsStore((state) => state.remove);
   const connectAndOpen = useConnectAndOpen();
   const openSqliteFile = useOpenSqliteFile();
   const toast = useToast();
@@ -44,6 +49,21 @@ export function ConnectScreen() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Remove a saved connection (the card's trash button) — drops the registry
+  // entry + its keychain secrets via the store.
+  const removeConn = async (conn: SavedConnection) => {
+    try {
+      await removeConnection(conn.id);
+    } catch (error) {
+      toast(
+        isAppErrorPayload(error) ? error.message : "Removing connections requires the desktop app",
+        "err",
+      );
+      return;
+    }
+    toast("Removed connection “" + conn.name + "”", "ok");
+  };
 
   const connect = async (conn: SavedConnection) => {
     setConnecting(conn.id);
@@ -105,27 +125,47 @@ export function ConnectScreen() {
         ) : (
           <div className="connect-list">
             {savedConnections.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                className="connect-card"
-                onClick={() => void connect(c)}
-                disabled={connecting !== null}
-              >
-                <EngineBadge engine={c.engine} size={34} />
-                <div className="connect-card-info">
-                  <div className="connect-card-name">
-                    {c.name}
-                    <EnvTag env={c.env} />
+              // Wrapper so the edit affordance is a sibling of the card button
+              // (a <button> can't nest another button).
+              <div key={c.id} className="connect-card-wrap">
+                <button
+                  type="button"
+                  className="connect-card"
+                  onClick={() => void connect(c)}
+                  disabled={connecting !== null}
+                >
+                  <EngineBadge engine={c.engine} size={34} />
+                  <div className="connect-card-info">
+                    <div className="connect-card-name">
+                      {c.name}
+                      <EnvTag env={c.env} />
+                    </div>
+                    <div className="connect-card-detail">{connectionDetail(c.params)}</div>
                   </div>
-                  <div className="connect-card-detail">{connectionDetail(c.params)}</div>
+                  {connecting === c.id ? (
+                    <span className="spinner" />
+                  ) : (
+                    <Icon name="arrow_forward" size={18} className="connect-arrow" />
+                  )}
+                </button>
+                <div className="connect-card-actions">
+                  <IconBtn
+                    icon="edit"
+                    size={15}
+                    title="Edit connection"
+                    disabled={connecting !== null}
+                    onClick={() => setEditConn(c)}
+                  />
+                  <IconBtn
+                    icon="delete"
+                    size={15}
+                    danger
+                    title="Remove connection"
+                    disabled={connecting !== null}
+                    onClick={() => void removeConn(c)}
+                  />
                 </div>
-                {connecting === c.id ? (
-                  <span className="spinner" />
-                ) : (
-                  <Icon name="arrow_forward" size={18} className="connect-arrow" />
-                )}
-              </button>
+              </div>
             ))}
           </div>
         )}
@@ -156,7 +196,15 @@ export function ConnectScreen() {
         machine.
       </div>
 
-      {showNew ? <NewConnectionModal onClose={() => setShowNew(false)} /> : null}
+      {showNew || editConn ? (
+        <NewConnectionModal
+          edit={editConn ?? undefined}
+          onClose={() => {
+            setShowNew(false);
+            setEditConn(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

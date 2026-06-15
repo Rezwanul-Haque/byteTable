@@ -21,7 +21,7 @@
 //! batch size below bounds peak row buffering, not the final string.
 
 use crate::features::connections::application::{ConnectionHandleId, ConnectionManager};
-use crate::shared::engine::{EngineConnection, FetchRowsRequest, ImportResult};
+use crate::shared::engine::{EngineConnection, FetchRowsRequest, ImportResult, ProgressCallback};
 use crate::shared::error::AppError;
 
 use super::domain::{csv_value, sql_value, ExportFormat};
@@ -38,11 +38,16 @@ pub async fn export_table(
     schema: &str,
     table: &str,
     format: ExportFormat,
+    on_progress: ProgressCallback<'_>,
 ) -> Result<String, AppError> {
     let connection = manager.get_sql(handle).await?;
     match format {
-        ExportFormat::Csv => export_table_csv(connection.as_ref(), schema, table).await,
-        ExportFormat::Sql => export_table_sql(connection.as_ref(), schema, table).await,
+        ExportFormat::Csv => {
+            export_table_csv(connection.as_ref(), schema, table, on_progress).await
+        }
+        ExportFormat::Sql => {
+            export_table_sql(connection.as_ref(), schema, table, on_progress).await
+        }
     }
 }
 
@@ -54,9 +59,11 @@ pub async fn export_schema_sql(
     manager: &ConnectionManager,
     handle: &ConnectionHandleId,
     schema: &str,
+    on_progress: ProgressCallback<'_>,
 ) -> Result<String, AppError> {
     let connection = manager.get_sql(handle).await?;
     let tables = connection.list_tables(schema).await?;
+    let total = tables.len() as u64;
 
     let mut out = String::new();
     out.push_str("-- ByteTable schema dump\n");
@@ -67,16 +74,20 @@ pub async fn export_schema_sql(
          a restore may need FK checks disabled.\n\n",
     );
 
+    // Progress is reported per table dumped (each table's own row paging uses a
+    // no-op callback — the schema-level unit is tables).
+    let noop = |_: u64, _: u64| {};
     for (index, table) in tables.iter().enumerate() {
         if index > 0 {
             out.push('\n');
         }
         out.push_str(&format!("-- ===== Table: {} =====\n", table.name));
-        let dump = export_table_sql(connection.as_ref(), schema, &table.name).await?;
+        let dump = export_table_sql(connection.as_ref(), schema, &table.name, &noop).await?;
         out.push_str(&dump);
         if !dump.ends_with('\n') {
             out.push('\n');
         }
+        on_progress(index as u64 + 1, total);
     }
     Ok(out)
 }
@@ -112,9 +123,10 @@ pub async fn execute_script_text(
     handle: &ConnectionHandleId,
     schema: &str,
     sql: &str,
+    on_progress: ProgressCallback<'_>,
 ) -> Result<ImportResult, AppError> {
     let connection = manager.get_sql(handle).await?;
-    connection.execute_script(schema, sql).await
+    connection.execute_script(schema, sql, on_progress).await
 }
 
 /// Import a `.sql` dump: read the file at `path` (the path comes from the
@@ -134,9 +146,10 @@ pub async fn import_sql(
     handle: &ConnectionHandleId,
     schema: &str,
     path: &str,
+    on_progress: ProgressCallback<'_>,
 ) -> Result<ImportResult, AppError> {
     let contents = read_text_file(path)?;
-    execute_script_text(manager, handle, schema, &contents).await
+    execute_script_text(manager, handle, schema, &contents, on_progress).await
 }
 
 // ---------------------------------------------------------------------------
@@ -150,11 +163,15 @@ async fn export_table_csv(
     connection: &dyn EngineConnection,
     schema: &str,
     table: &str,
+    on_progress: ProgressCallback<'_>,
 ) -> Result<String, AppError> {
     // First page also gives us the column metadata for the header. An unknown
     // schema/table surfaces here as the adapter's §5 error.
     let first = fetch_page(connection, schema, table, 0).await?;
     let columns: Vec<String> = first.columns.iter().map(|c| c.name.clone()).collect();
+    // Total rows for the progress denominator (best-effort; `null` → use the
+    // running count so the bar still completes).
+    let total = first.total_rows;
 
     let mut lines: Vec<String> = Vec::new();
     lines.push(
@@ -166,11 +183,14 @@ async fn export_table_csv(
     );
 
     let mut offset = 0u64;
+    let mut written = 0u64;
     let mut page = first;
     loop {
         for row in &page.rows {
             lines.push(row.iter().map(csv_value).collect::<Vec<_>>().join(","));
         }
+        written += page.rows.len() as u64;
+        on_progress(written, total.unwrap_or(written));
         let fetched = page.rows.len() as u64;
         if fetched < u64::from(EXPORT_BATCH_ROWS) {
             break; // last (short) page
@@ -193,6 +213,7 @@ async fn export_table_sql(
     connection: &dyn EngineConnection,
     schema: &str,
     table: &str,
+    on_progress: ProgressCallback<'_>,
 ) -> Result<String, AppError> {
     // table_meta validates existence (§5) and supplies the DDL + column order.
     let meta = connection.table_meta(schema, table).await?;
@@ -240,8 +261,13 @@ async fn export_table_sql(
 
     let mut wrote_any = false;
     let mut offset = 0u64;
+    let mut written = 0u64;
+    let mut total: Option<u64> = None;
     loop {
         let page = fetch_page(connection, schema, table, offset).await?;
+        if total.is_none() {
+            total = page.total_rows;
+        }
         if page.rows.is_empty() {
             break;
         }
@@ -263,6 +289,8 @@ async fn export_table_sql(
             ));
             wrote_any = true;
         }
+        written += page.rows.len() as u64;
+        on_progress(written, total.unwrap_or(written));
         let fetched = page.rows.len() as u64;
         if fetched < u64::from(EXPORT_BATCH_ROWS) {
             break;
@@ -449,9 +477,16 @@ mod tests {
             ddl: None,
         };
         let (manager, handle) = manager_with(conn).await;
-        let csv = export_table(&manager, &handle, "main", "t", ExportFormat::Csv)
-            .await
-            .unwrap();
+        let csv = export_table(
+            &manager,
+            &handle,
+            "main",
+            "t",
+            ExportFormat::Csv,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .unwrap();
         assert_eq!(csv, "id,name\n1,Ada\n2,\"a,\"\"b\"\"\"\n3,");
     }
 
@@ -466,9 +501,16 @@ mod tests {
             ddl: Some("CREATE TABLE t (id INTEGER, name TEXT)".into()),
         };
         let (manager, handle) = manager_with(conn).await;
-        let sql = export_table(&manager, &handle, "main", "t", ExportFormat::Sql)
-            .await
-            .unwrap();
+        let sql = export_table(
+            &manager,
+            &handle,
+            "main",
+            "t",
+            ExportFormat::Sql,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .unwrap();
         // The DDL is terminated with `;` so the dump re-imports cleanly.
         assert!(sql.starts_with("CREATE TABLE t (id INTEGER, name TEXT);\n\n"));
         assert!(
@@ -485,9 +527,16 @@ mod tests {
             ddl: None,
         };
         let (manager, handle) = manager_with(conn).await;
-        let csv = export_table(&manager, &handle, "main", "t", ExportFormat::Csv)
-            .await
-            .unwrap();
+        let csv = export_table(
+            &manager,
+            &handle,
+            "main",
+            "t",
+            ExportFormat::Csv,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .unwrap();
         assert_eq!(csv, "id");
     }
 
@@ -499,9 +548,16 @@ mod tests {
             ddl: Some("CREATE TABLE t (id INTEGER)".into()),
         };
         let (manager, handle) = manager_with(conn).await;
-        let sql = export_table(&manager, &handle, "main", "t", ExportFormat::Sql)
-            .await
-            .unwrap();
+        let sql = export_table(
+            &manager,
+            &handle,
+            "main",
+            "t",
+            ExportFormat::Sql,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .unwrap();
         assert!(sql.contains("-- (no rows)"));
     }
 
@@ -517,16 +573,30 @@ mod tests {
             ddl: Some("CREATE TABLE t (id INTEGER)".into()),
         };
         let (manager, handle) = manager_with(conn).await;
-        let csv = export_table(&manager, &handle, "main", "t", ExportFormat::Csv)
-            .await
-            .unwrap();
+        let csv = export_table(
+            &manager,
+            &handle,
+            "main",
+            "t",
+            ExportFormat::Csv,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .unwrap();
         // header + every row present
         assert_eq!(csv.lines().count(), n + 1);
         assert!(csv.lines().last().unwrap().ends_with(&(n - 1).to_string()));
 
-        let sql = export_table(&manager, &handle, "main", "t", ExportFormat::Sql)
-            .await
-            .unwrap();
+        let sql = export_table(
+            &manager,
+            &handle,
+            "main",
+            "t",
+            ExportFormat::Sql,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .unwrap();
         assert_eq!(sql.matches("INSERT INTO").count(), n);
     }
 
@@ -538,7 +608,9 @@ mod tests {
             ddl: Some("CREATE TABLE t (id INTEGER)".into()),
         };
         let (manager, handle) = manager_with(conn).await;
-        let dump = export_schema_sql(&manager, &handle, "main").await.unwrap();
+        let dump = export_schema_sql(&manager, &handle, "main", &|_: u64, _: u64| {})
+            .await
+            .unwrap();
         assert!(dump.starts_with("-- ByteTable schema dump"));
         assert!(dump.contains("-- schema: main"));
         assert!(dump.contains("-- ===== Table: t ====="));
@@ -586,9 +658,16 @@ mod tests {
     async fn closed_handle_is_a_not_found() {
         let manager = ConnectionManager::new();
         let handle = ConnectionHandleId("ghost".into());
-        let err = export_table(&manager, &handle, "main", "t", ExportFormat::Csv)
-            .await
-            .unwrap_err();
+        let err = export_table(
+            &manager,
+            &handle,
+            "main",
+            "t",
+            ExportFormat::Csv,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .unwrap_err();
         assert!(matches!(err, AppError::NotFound(_)));
     }
 
@@ -597,9 +676,16 @@ mod tests {
         let conn = FakeUnknownTable;
         let manager = ConnectionManager::new();
         let handle = manager.insert(OpenConnection::sql(conn)).await;
-        let err = export_table(&manager, &handle, "main", "ghost", ExportFormat::Csv)
-            .await
-            .unwrap_err();
+        let err = export_table(
+            &manager,
+            &handle,
+            "main",
+            "ghost",
+            ExportFormat::Csv,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .unwrap_err();
         assert!(matches!(err, AppError::Database(_)));
         assert!(err.to_string().contains("does not exist"));
     }
@@ -692,9 +778,16 @@ mod sqlite_integration {
     async fn csv_export_header_rows_and_escaping_against_real_sqlite() {
         let dir = tempfile::tempdir().expect("tempdir");
         let (manager, handle) = open_fixture(&dir).await;
-        let csv = export_table(&manager, &handle, "main", "users", ExportFormat::Csv)
-            .await
-            .expect("export csv");
+        let csv = export_table(
+            &manager,
+            &handle,
+            "main",
+            "users",
+            ExportFormat::Csv,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .expect("export csv");
         let lines: Vec<&str> = csv.lines().collect();
         assert_eq!(lines[0], "id,name,note");
         // header + 3 rows, but row 3's name contains a literal newline inside a
@@ -713,9 +806,16 @@ mod sqlite_integration {
     async fn sql_export_has_ddl_and_one_insert_per_row_against_real_sqlite() {
         let dir = tempfile::tempdir().expect("tempdir");
         let (manager, handle) = open_fixture(&dir).await;
-        let sql = export_table(&manager, &handle, "main", "users", ExportFormat::Sql)
-            .await
-            .expect("export sql");
+        let sql = export_table(
+            &manager,
+            &handle,
+            "main",
+            "users",
+            ExportFormat::Sql,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .expect("export sql");
         assert!(sql.contains("CREATE TABLE users"));
         assert_eq!(sql.matches("INSERT INTO").count(), 3);
         assert!(sql.contains("INSERT INTO \"main\".\"users\" (\"id\", \"name\", \"note\")"));
@@ -729,13 +829,27 @@ mod sqlite_integration {
     async fn empty_table_exports_against_real_sqlite() {
         let dir = tempfile::tempdir().expect("tempdir");
         let (manager, handle) = open_fixture(&dir).await;
-        let csv = export_table(&manager, &handle, "main", "empties", ExportFormat::Csv)
-            .await
-            .expect("export csv");
+        let csv = export_table(
+            &manager,
+            &handle,
+            "main",
+            "empties",
+            ExportFormat::Csv,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .expect("export csv");
         assert_eq!(csv, "id");
-        let sql = export_table(&manager, &handle, "main", "empties", ExportFormat::Sql)
-            .await
-            .expect("export sql");
+        let sql = export_table(
+            &manager,
+            &handle,
+            "main",
+            "empties",
+            ExportFormat::Sql,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .expect("export sql");
         assert!(sql.contains("-- (no rows)"));
     }
 
@@ -743,7 +857,7 @@ mod sqlite_integration {
     async fn schema_dump_covers_all_tables_against_real_sqlite() {
         let dir = tempfile::tempdir().expect("tempdir");
         let (manager, handle) = open_fixture(&dir).await;
-        let dump = export_schema_sql(&manager, &handle, "main")
+        let dump = export_schema_sql(&manager, &handle, "main", &|_: u64, _: u64| {})
             .await
             .expect("export schema");
         assert!(dump.contains("-- ByteTable schema dump"));
@@ -756,9 +870,16 @@ mod sqlite_integration {
     async fn export_then_save_round_trips_to_a_tempdir_file() {
         let dir = tempfile::tempdir().expect("tempdir");
         let (manager, handle) = open_fixture(&dir).await;
-        let csv = export_table(&manager, &handle, "main", "users", ExportFormat::Csv)
-            .await
-            .expect("export csv");
+        let csv = export_table(
+            &manager,
+            &handle,
+            "main",
+            "users",
+            ExportFormat::Csv,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .expect("export csv");
         let out = dir.path().join("users.csv");
         export_save(&out.to_string_lossy(), &csv).expect("save");
         assert_eq!(std::fs::read_to_string(&out).expect("read back"), csv);
@@ -789,17 +910,30 @@ mod sqlite_integration {
         // fresh database and verify the table + every row landed.
         let src_dir = tempfile::tempdir().expect("tempdir");
         let (src_mgr, src_handle) = open_fixture(&src_dir).await;
-        let dump = export_table(&src_mgr, &src_handle, "main", "users", ExportFormat::Sql)
-            .await
-            .expect("export sql");
+        let dump = export_table(
+            &src_mgr,
+            &src_handle,
+            "main",
+            "users",
+            ExportFormat::Sql,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .expect("export sql");
         let path = src_dir.path().join("users.sql");
         export_save(&path.to_string_lossy(), &dump).expect("save dump");
 
         let dst_dir = tempfile::tempdir().expect("tempdir");
         let (dst_mgr, dst_handle) = open_empty(&dst_dir).await;
-        let result = import_sql(&dst_mgr, &dst_handle, "main", &path.to_string_lossy())
-            .await
-            .expect("import");
+        let result = import_sql(
+            &dst_mgr,
+            &dst_handle,
+            "main",
+            &path.to_string_lossy(),
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .expect("import");
         // DDL + 3 INSERTs.
         assert_eq!(result.statements, 4);
 
@@ -807,9 +941,16 @@ mod sqlite_integration {
         let conn = dst_mgr.get_sql(&dst_handle).await.unwrap();
         let meta = conn.table_meta("main", "users").await.expect("meta");
         assert!(meta.columns.iter().any(|c| c.name == "name"));
-        let page = export_table(&dst_mgr, &dst_handle, "main", "users", ExportFormat::Csv)
-            .await
-            .expect("read back");
+        let page = export_table(
+            &dst_mgr,
+            &dst_handle,
+            "main",
+            "users",
+            ExportFormat::Csv,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .expect("read back");
         assert!(page.contains("Ada"));
         assert!(page.contains("O'Brien"));
         assert_eq!(page.lines().count(), 5); // header + 3 rows (one spans lines)
@@ -825,9 +966,15 @@ mod sqlite_integration {
         let path = dir.path().join("widgets.sql");
         export_save(&path.to_string_lossy(), script).expect("write script");
 
-        let result = import_sql(&mgr, &handle, "main", &path.to_string_lossy())
-            .await
-            .expect("import");
+        let result = import_sql(
+            &mgr,
+            &handle,
+            "main",
+            &path.to_string_lossy(),
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .expect("import");
         assert_eq!(result.statements, 3);
 
         let conn = mgr.get_sql(&handle).await.unwrap();
@@ -848,9 +995,15 @@ mod sqlite_integration {
         let path = dir.path().join("bad.sql");
         export_save(&path.to_string_lossy(), script).expect("write script");
 
-        let err = import_sql(&mgr, &handle, "main", &path.to_string_lossy())
-            .await
-            .unwrap_err();
+        let err = import_sql(
+            &mgr,
+            &handle,
+            "main",
+            &path.to_string_lossy(),
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .unwrap_err();
         assert!(matches!(err, AppError::Database(_)));
 
         // Rolled back: `good` was NOT created.
@@ -868,9 +1021,15 @@ mod sqlite_integration {
         let dir = tempfile::tempdir().expect("tempdir");
         let (mgr, handle) = open_empty(&dir).await;
         let missing = dir.path().join("does_not_exist.sql");
-        let err = import_sql(&mgr, &handle, "main", &missing.to_string_lossy())
-            .await
-            .unwrap_err();
+        let err = import_sql(
+            &mgr,
+            &handle,
+            "main",
+            &missing.to_string_lossy(),
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .unwrap_err();
         assert!(matches!(err, AppError::Io(_)));
         assert!(err.to_string().contains("Could not read"));
     }
@@ -884,7 +1043,7 @@ mod sqlite_integration {
         let sql = "CREATE TABLE gadgets (id INTEGER PRIMARY KEY, label TEXT);\n\
                    INSERT INTO gadgets (id, label) VALUES (1, 'one');\n\
                    INSERT INTO gadgets (id, label) VALUES (2, 'O''Brien');\n";
-        let result = execute_script_text(&mgr, &handle, "main", sql)
+        let result = execute_script_text(&mgr, &handle, "main", sql, &|_: u64, _: u64| {})
             .await
             .expect("execute_script_text");
         assert_eq!(result.statements, 3);
@@ -897,9 +1056,16 @@ mod sqlite_integration {
             .expect("gadgets table created");
         assert_eq!(gadgets.approx_row_count, Some(2));
         // The apostrophe-bearing row round-trips through the SQL string literal.
-        let csv = export_table(&mgr, &handle, "main", "gadgets", ExportFormat::Csv)
-            .await
-            .expect("read back");
+        let csv = export_table(
+            &mgr,
+            &handle,
+            "main",
+            "gadgets",
+            ExportFormat::Csv,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .expect("read back");
         assert!(csv.contains("O'Brien"));
     }
 
@@ -911,13 +1077,20 @@ mod sqlite_integration {
         let (mgr, handle) = open_fixture(&dir).await;
         let sql = "INSERT INTO \"main\".\"users\" (\"id\", \"name\", \"note\") \
                    VALUES (10, 'Imported', 'via text');\n";
-        let result = execute_script_text(&mgr, &handle, "main", sql)
+        let result = execute_script_text(&mgr, &handle, "main", sql, &|_: u64, _: u64| {})
             .await
             .expect("execute_script_text");
         assert_eq!(result.statements, 1);
-        let csv = export_table(&mgr, &handle, "main", "users", ExportFormat::Csv)
-            .await
-            .expect("read back");
+        let csv = export_table(
+            &mgr,
+            &handle,
+            "main",
+            "users",
+            ExportFormat::Csv,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .expect("read back");
         assert!(csv.contains("Imported"));
     }
 
@@ -925,9 +1098,15 @@ mod sqlite_integration {
     async fn execute_script_text_with_a_bad_statement_is_a_human_error() {
         let dir = tempfile::tempdir().expect("tempdir");
         let (mgr, handle) = open_empty(&dir).await;
-        let err = execute_script_text(&mgr, &handle, "main", "INSERT INTO ghost (id) VALUES (1);")
-            .await
-            .unwrap_err();
+        let err = execute_script_text(
+            &mgr,
+            &handle,
+            "main",
+            "INSERT INTO ghost (id) VALUES (1);",
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .unwrap_err();
         assert!(matches!(err, AppError::Database(_)));
     }
 }

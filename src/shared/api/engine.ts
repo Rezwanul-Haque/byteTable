@@ -8,7 +8,7 @@
 // bookkeeping). The M6 query feature will own query-execution UX, but the
 // wire contract stays shared.
 
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 
 import type { Engine } from "../types";
 
@@ -500,6 +500,26 @@ export interface ImportResult {
   statements: number;
 }
 
+/** A progress tick from a long export/import: `done` of `total` units. */
+export interface ImportExportProgress {
+  done: number;
+  total: number;
+}
+
+/** Progress callback for export/import: `(done, total)`. */
+export type ProgressFn = (done: number, total: number) => void;
+
+/**
+ * Build the Tauri `Channel` the export/import commands stream progress through.
+ * Always returns a channel (the commands require the arg); when no callback is
+ * given the messages are simply ignored.
+ */
+function progressChannel(onProgress?: ProgressFn): Channel<ImportExportProgress> {
+  const channel = new Channel<ImportExportProgress>();
+  if (onProgress) channel.onmessage = (m) => onProgress(m.done, m.total);
+  return channel;
+}
+
 /**
  * Generate the export text for one table (`export_table` command). `format`
  * picks CSV (header + every row, prototype `csvVal` escaping) or SQL (the
@@ -513,8 +533,15 @@ export function exportTable(
   schema: string,
   table: string,
   format: ExportFormat,
+  onProgress?: ProgressFn,
 ): Promise<string> {
-  return invoke<string>("export_table", { handleId, schema, table, format });
+  return invoke<string>("export_table", {
+    handleId,
+    schema,
+    table,
+    format,
+    onProgress: progressChannel(onProgress),
+  });
 }
 
 /**
@@ -523,8 +550,16 @@ export function exportTable(
  * dumped in listing order, not foreign-key order (the dump notes a restore may
  * need FK checks disabled).
  */
-export function exportSchema(handleId: string, schema: string): Promise<string> {
-  return invoke<string>("export_schema", { handleId, schema });
+export function exportSchema(
+  handleId: string,
+  schema: string,
+  onProgress?: ProgressFn,
+): Promise<string> {
+  return invoke<string>("export_schema", {
+    handleId,
+    schema,
+    onProgress: progressChannel(onProgress),
+  });
 }
 
 /**
@@ -547,8 +582,18 @@ export function exportSave(path: string, contents: string): Promise<void> {
  * failure surfaces a `{ kind, message }` §5 error. Returns `{ statements }`, the
  * number of statements executed.
  */
-export function importSql(handleId: string, schema: string, path: string): Promise<ImportResult> {
-  return invoke<ImportResult>("import_sql", { handleId, schema, path });
+export function importSql(
+  handleId: string,
+  schema: string,
+  path: string,
+  onProgress?: ProgressFn,
+): Promise<ImportResult> {
+  return invoke<ImportResult>("import_sql", {
+    handleId,
+    schema,
+    path,
+    onProgress: progressChannel(onProgress),
+  });
 }
 
 /**
@@ -575,8 +620,14 @@ export function executeScriptText(
   handleId: string,
   schema: string,
   sql: string,
+  onProgress?: ProgressFn,
 ): Promise<ImportResult> {
-  return invoke<ImportResult>("execute_script_text", { handleId, schema, sql });
+  return invoke<ImportResult>("execute_script_text", {
+    handleId,
+    schema,
+    sql,
+    onProgress: progressChannel(onProgress),
+  });
 }
 
 /**

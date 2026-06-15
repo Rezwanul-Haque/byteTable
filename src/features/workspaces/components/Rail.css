@@ -48,8 +48,9 @@
      looked cut off on Linux/WebKitGTK. The 2px top also keeps the first tile's
      hover lift (translateY(-1px)) from clipping at the top edge. The side
      padding equals (rail 56 − tile 40)/2, so tiles stay centered and the rail
-     width is unchanged. */
-  padding: 2px 8px;
+     width is unchanged. The 4px top also clears the three-dot opts button
+     (top:-4px) on the first tile. */
+  padding: 4px 8px;
 }
 
 .rail-list::-webkit-scrollbar {
@@ -117,6 +118,50 @@
   border: 1px solid var(--border);
   border-radius: 5px;
   padding: 1px 3px;
+}
+
+/* Tile + its hover/menu three-dot button. The opts button sits at the tile's
+   top-right corner and reveals on hover or while its menu is open. */
+.ws-tile-wrap {
+  position: relative;
+  flex: none;
+  display: flex;
+}
+
+.ws-tile-opts {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  z-index: 4;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg3);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  opacity: 0;
+  transform: scale(0.8);
+  transition:
+    opacity 0.12s,
+    transform 0.12s,
+    color 0.12s,
+    border-color 0.12s;
+}
+
+.ws-tile-wrap:hover .ws-tile-opts,
+.ws-tile.menu-open + .ws-tile-opts,
+.ws-tile-opts:focus-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.ws-tile-opts:hover {
+  color: var(--text);
+  border-color: var(--accent);
 }
 
 .ws-add {
@@ -258,12 +303,34 @@
   gap: 9px;
 }
 
+.ws-edit-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.ws-edit-badge {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 600;
+  border-radius: 5px;
+  padding: 2px 5px;
+  flex: none;
+}
+
 .ws-edit-title {
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--text-faint);
+}
+
+.ws-edit-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0 2px;
 }
 
 .ws-edit-input {
@@ -310,7 +377,7 @@
   border-color: var(--text);
 }
 
-.ws-edit-close {
+.ws-edit-remove {
   display: flex;
   align-items: center;
   gap: 7px;
@@ -319,9 +386,8 @@
   font-size: 12px;
   color: #e06c75;
   background: #e06c7510;
-  margin-top: 2px;
 }
 
-.ws-edit-close:hover {
+.ws-edit-remove:hover {
   background: #e06c7522;
 }

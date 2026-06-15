@@ -74,6 +74,7 @@ export function ImportModal({
   const [text, setText] = useState("");
   const [prev, setPrev] = useState<TablePreviewResult | null>(null);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // The target columns come from the introspection cache (warm them on open).
@@ -135,9 +136,12 @@ export function ImportModal({
     const script = buildInsertScript(schemaName, table, ordered, objects);
     setBusy(true);
     setError(null);
+    setProgress({ done: 0, total: objects.length });
     void (async () => {
       try {
-        await executeScriptText(handleId, schemaName, script);
+        await executeScriptText(handleId, schemaName, script, (done, total) =>
+          setProgress({ done, total }),
+        );
         const n = objects.length;
         // Refresh: sidebar counts + any open data grid for this table.
         const introspection = useIntrospectionStore.getState();
@@ -162,9 +166,13 @@ export function ImportModal({
       } catch (err) {
         setError(appErrorMessage(err, "Could not import the data."));
         setBusy(false);
+        setProgress(null);
       }
     })();
   };
+
+  const pct =
+    progress && progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
 
   const placeholder =
     format === "csv"
@@ -299,6 +307,17 @@ export function ImportModal({
       {error ? (
         <div className="import-err">
           <Icon name="error" size={14} /> {error}
+        </div>
+      ) : null}
+
+      {busy && progress ? (
+        <div className="import-progress">
+          <div className="import-progress-bar">
+            <span style={{ width: pct + "%" }} />
+          </div>
+          <span className="import-progress-txt">
+            Importing… {progress.done.toLocaleString()} / {progress.total.toLocaleString()} ({pct}%)
+          </span>
         </div>
       ) : null}
 

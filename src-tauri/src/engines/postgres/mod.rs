@@ -444,8 +444,13 @@ impl EngineConnection for PostgresEngineConnection {
         drop_schema(&self.pool, schema).await
     }
 
-    async fn execute_script(&self, schema: &str, sql: &str) -> Result<ImportResult, AppError> {
-        execute_script(&self.pool, schema, sql).await
+    async fn execute_script(
+        &self,
+        schema: &str,
+        sql: &str,
+        on_progress: crate::shared::engine::ProgressCallback<'_>,
+    ) -> Result<ImportResult, AppError> {
+        execute_script(&self.pool, schema, sql, on_progress).await
     }
 
     async fn alter_table(
@@ -1414,9 +1419,15 @@ async fn drop_schema(pool: &PgPool, schema: &str) -> Result<(), AppError> {
 ///
 /// The schema must exist (a §5 error otherwise — same message vocabulary as the
 /// rest of the adapter). Any engine error surfaces §5-style after the rollback.
-async fn execute_script(pool: &PgPool, schema: &str, sql: &str) -> Result<ImportResult, AppError> {
+async fn execute_script(
+    pool: &PgPool,
+    schema: &str,
+    sql: &str,
+    on_progress: crate::shared::engine::ProgressCallback<'_>,
+) -> Result<ImportResult, AppError> {
     ensure_schema_exists(pool, schema).await?;
     let statements = split_statements(sql);
+    let total = statements.len() as u64;
 
     let mut tx = pool.begin().await.map_err(map_query_error)?;
     // search_path inside the transaction so the dump's unqualified names resolve
@@ -1428,18 +1439,17 @@ async fn execute_script(pool: &PgPool, schema: &str, sql: &str) -> Result<Import
         let _ = tx.rollback().await;
         return Err(map_query_error(err));
     }
-    for statement in &statements {
+    for (i, statement) in statements.iter().enumerate() {
         if let Err(err) = sqlx::query(statement).execute(&mut *tx).await {
             // Roll the whole import back — no table left half-created.
             let _ = tx.rollback().await;
             return Err(map_query_error(err));
         }
+        on_progress(i as u64 + 1, total);
     }
     tx.commit().await.map_err(map_query_error)?;
 
-    Ok(ImportResult {
-        statements: statements.len() as u64,
-    })
+    Ok(ImportResult { statements: total })
 }
 
 /// Enforce the full-primary-key policy (mass-update prevention). Identical
@@ -2837,23 +2847,37 @@ mod integration {
         let handle = manager.insert(open).await;
 
         // CSV: header + every authors row (3), NULL bio → empty field.
-        let csv = export_table(&manager, &handle, schema, "authors", ExportFormat::Csv)
-            .await
-            .expect("export csv");
+        let csv = export_table(
+            &manager,
+            &handle,
+            schema,
+            "authors",
+            ExportFormat::Csv,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .expect("export csv");
         assert_eq!(csv.lines().next().unwrap(), "id,name,bio");
         assert_eq!(csv.lines().count(), 4);
         assert!(csv.contains("2,Grace,")); // null bio → trailing empty field
 
         // SQL: DDL + one INSERT per row, backtick-free double-quoted idents.
-        let sql = export_table(&manager, &handle, schema, "books", ExportFormat::Sql)
-            .await
-            .expect("export sql");
+        let sql = export_table(
+            &manager,
+            &handle,
+            schema,
+            "books",
+            ExportFormat::Sql,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .expect("export sql");
         assert!(sql.contains(&format!("INSERT INTO \"{schema}\".\"books\"")));
         assert_eq!(sql.matches("INSERT INTO").count(), 4);
         assert!(sql.contains("NULL")); // the null note book
 
         // Schema dump touches both base tables.
-        let dump = export_schema_sql(&manager, &handle, schema)
+        let dump = export_schema_sql(&manager, &handle, schema, &|_: u64, _: u64| {})
             .await
             .expect("export schema");
         assert!(dump.contains("-- ByteTable schema dump"));
@@ -2862,9 +2886,16 @@ mod integration {
 
         // Empty table after a truncate exports the no-rows marker.
         conn_truncate(&manager, &handle, schema, "books").await;
-        let empty_sql = export_table(&manager, &handle, schema, "books", ExportFormat::Sql)
-            .await
-            .expect("export empty");
+        let empty_sql = export_table(
+            &manager,
+            &handle,
+            schema,
+            "books",
+            ExportFormat::Sql,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .expect("export empty");
         assert!(empty_sql.contains("-- (no rows)"));
 
         drop_fixture(&pool, schema, other).await;
@@ -2904,18 +2935,31 @@ mod integration {
 
         // --- ROUND-TRIP: export authors (qualified dump) → rewrite it to target
         // the FRESH schema → import → verify the table + 3 rows landed there.
-        let dump = export_table(&manager, &handle, schema, "authors", ExportFormat::Sql)
-            .await
-            .expect("export sql");
+        let dump = export_table(
+            &manager,
+            &handle,
+            schema,
+            "authors",
+            ExportFormat::Sql,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .expect("export sql");
         let retargeted = dump.replace(
             &format!("\"{schema}\".\"authors\""),
             &format!("\"{fresh}\".\"authors\""),
         );
         let rt_path = dir.path().join("authors.sql");
         std::fs::write(&rt_path, &retargeted).expect("write dump");
-        let result = import_sql(&manager, &handle, fresh, &rt_path.to_string_lossy())
-            .await
-            .expect("import round-trip");
+        let result = import_sql(
+            &manager,
+            &handle,
+            fresh,
+            &rt_path.to_string_lossy(),
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .expect("import round-trip");
         // DDL + 3 INSERTs.
         assert_eq!(result.statements, 4);
         let n: i64 = sqlx::query_scalar(&format!("SELECT count(*) FROM {fresh}.authors"))
@@ -2931,9 +2975,15 @@ mod integration {
                       INSERT INTO gadgets (id, label) VALUES (2, 'two');\n";
         let ms_path = dir.path().join("gadgets.sql");
         std::fs::write(&ms_path, script).expect("write script");
-        let result = import_sql(&manager, &handle, fresh, &ms_path.to_string_lossy())
-            .await
-            .expect("import multi-statement");
+        let result = import_sql(
+            &manager,
+            &handle,
+            fresh,
+            &ms_path.to_string_lossy(),
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .expect("import multi-statement");
         assert_eq!(result.statements, 3);
         let n: i64 = sqlx::query_scalar(&format!("SELECT count(*) FROM {fresh}.gadgets"))
             .fetch_one(&pool)
@@ -2948,9 +2998,15 @@ mod integration {
                    INSERT INTO no_such_table (id) VALUES (1);\n";
         let bad_path = dir.path().join("bad.sql");
         std::fs::write(&bad_path, bad).expect("write bad");
-        let err = import_sql(&manager, &handle, fresh, &bad_path.to_string_lossy())
-            .await
-            .unwrap_err();
+        let err = import_sql(
+            &manager,
+            &handle,
+            fresh,
+            &bad_path.to_string_lossy(),
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .unwrap_err();
         assert!(matches!(err, AppError::Database(_)), "got {err:?}");
         let exists: Option<i32> = sqlx::query_scalar(
             "SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace \
@@ -2963,9 +3019,15 @@ mod integration {
         assert!(exists.is_none(), "statement 1 must have rolled back");
 
         // --- BAD PATH: a missing file is a §5 IO error naming the path.
-        let err = import_sql(&manager, &handle, fresh, "/tmp/bytetable-nonexistent.sql")
-            .await
-            .unwrap_err();
+        let err = import_sql(
+            &manager,
+            &handle,
+            fresh,
+            "/tmp/bytetable-nonexistent.sql",
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .unwrap_err();
         assert!(matches!(err, AppError::Io(_)), "got {err:?}");
         assert!(err.to_string().contains("Could not read"));
 
@@ -2975,7 +3037,7 @@ mod integration {
             use crate::features::export::application::execute_script_text;
             let text = "CREATE TABLE from_text (id INT PRIMARY KEY, label TEXT);\n\
                         INSERT INTO from_text (id, label) VALUES (1, 'O''Brien');\n";
-            let result = execute_script_text(&manager, &handle, fresh, text)
+            let result = execute_script_text(&manager, &handle, fresh, text, &|_: u64, _: u64| {})
                 .await
                 .expect("execute_script_text");
             assert_eq!(result.statements, 2);

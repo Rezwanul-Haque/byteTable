@@ -23,7 +23,7 @@
 // state.ts — the workspaces connect screen mounts it directly (the modal is
 // a connections concern; the screen that hosts it is not).
 
-import { useId, useReducer, useRef, type KeyboardEvent } from "react";
+import { useId, useReducer, useRef, useState, type KeyboardEvent } from "react";
 
 import { isAppErrorPayload } from "../../../shared/api/error";
 import type { Engine, Env } from "../../../shared/types";
@@ -38,6 +38,7 @@ import { useToast } from "../../../shared/ui/toastContext";
 import {
   connectionTest,
   type ConnectionParams,
+  type SavedConnection,
   type SshAuth,
   type SshConfig,
   type TlsMode,
@@ -193,12 +194,64 @@ function reducer(state: FormState, action: Action): FormState {
   }
 }
 
-interface NewConnectionModalProps {
-  onClose: () => void;
+/** Derive the form state from an existing saved connection (edit mode). Secrets
+ *  are NOT prefilled — they live in the keychain; leaving the password blank
+ *  keeps the stored secret (the backend only overwrites when a non-empty secret
+ *  is supplied). */
+function formStateFromConnection(c: SavedConnection): FormState {
+  const p = c.params;
+  const base: FormState = {
+    ...INITIAL,
+    engine: c.engine,
+    name: c.name,
+    env: c.env,
+    portTouched: true,
+    envColors: { ...ENV_COLOR, [c.env]: c.color ?? ENV_COLOR[c.env] },
+  };
+  if (p.engine === "sqlite") {
+    return { ...base, file: p.path };
+  }
+  const sshFields = p.ssh
+    ? {
+        useSsh: true,
+        sshHost: p.ssh.host,
+        sshPort: String(p.ssh.port),
+        sshUser: p.ssh.user,
+        sshAuth: p.ssh.auth.method,
+        sshKey: p.ssh.auth.method === "key" ? p.ssh.auth.keyPath : INITIAL.sshKey,
+      }
+    : {};
+  if (p.engine === "redis") {
+    return {
+      ...base,
+      host: p.host,
+      port: String(p.port),
+      db: String(p.dbIndex),
+      user: p.user ?? "",
+      tls: p.tlsMode,
+      ...sshFields,
+    };
+  }
+  return {
+    ...base,
+    host: p.host,
+    port: String(p.port),
+    db: p.database,
+    user: p.user,
+    tls: p.tlsMode,
+    ...sshFields,
+  };
 }
 
-export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
-  const [state, dispatch] = useReducer(reducer, INITIAL);
+interface NewConnectionModalProps {
+  onClose: () => void;
+  /** When set, the modal edits this saved connection (prefilled, saved back to
+   *  the same id) instead of creating a new one. */
+  edit?: SavedConnection;
+}
+
+export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
+  const [state, dispatch] = useReducer(reducer, edit ? formStateFromConnection(edit) : INITIAL);
   const {
     engine,
     section,
@@ -228,7 +281,11 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
   const envColor = envColors[env];
 
   const saveConnection = useConnectionsStore((s) => s.save);
+  const removeConnection = useConnectionsStore((s) => s.remove);
   const toast = useToast();
+  // Two-click delete confirm (edit mode only) — destructive, so the first click
+  // arms it and the second removes.
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const sshToggleId = useId();
   const envLabelId = useId();
 
@@ -395,7 +452,9 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
       // registry file.
       await saveConnection(
         {
-          id: "",
+          // Editing reuses the existing id so the backend updates in place
+          // (keeping created_at + the keychain secret); "" creates a new entry.
+          id: edit ? edit.id : "",
           name: name.trim(),
           engine,
           params: built.params,
@@ -411,6 +470,21 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
       return;
     }
     toast("Connection “" + name.trim() + "” saved", "ok");
+    onClose();
+  };
+
+  // Delete the connection being edited (removes it + its keychain secrets). The
+  // first click arms (confirmDelete); this runs on the second.
+  const remove = async () => {
+    if (!edit) return;
+    try {
+      await removeConnection(edit.id);
+    } catch (error) {
+      if (isAppErrorPayload(error)) toast(error.message, "err");
+      else toast("Deleting connections requires the desktop app", "info");
+      return;
+    }
+    toast("Connection “" + edit.name + "” deleted", "ok");
     onClose();
   };
 
@@ -436,9 +510,9 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
   };
 
   return (
-    <Modal label="New connection" onClose={onClose}>
+    <Modal label={edit ? "Edit connection" : "New connection"} onClose={onClose}>
       <ModalTitle>
-        <span>New connection</span>
+        <span>{edit ? "Edit connection" : "New connection"}</span>
         <IconBtn icon="close" onClick={onClose} title="Close" />
       </ModalTitle>
 
@@ -773,6 +847,18 @@ export function NewConnectionModal({ onClose }: NewConnectionModalProps) {
       )}
 
       <ModalActions>
+        {edit ? (
+          <Btn
+            variant="text"
+            className={"conn-delete" + (confirmDelete ? " armed" : "")}
+            icon={confirmDelete ? "warning" : "delete"}
+            disabled={saving}
+            onClick={() => (confirmDelete ? void remove() : setConfirmDelete(true))}
+            onBlur={() => setConfirmDelete(false)}
+          >
+            {confirmDelete ? "Confirm delete" : "Delete"}
+          </Btn>
+        ) : null}
         <div className="test-result" aria-live="polite">
           {testState.phase === "testing" ? (
             <>

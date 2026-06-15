@@ -11,7 +11,7 @@
 // we surface an info toast rather than a hard failure — mirroring the schema
 // map export.
 
-import { exportSchema, exportTable, exportSave } from "../../shared/api/engine";
+import { exportSchema, exportTable, exportSave, type ProgressFn } from "../../shared/api/engine";
 import { appErrorMessage } from "../../shared/api/error";
 import type { ToastFn } from "../../shared/ui/toastContext";
 
@@ -48,15 +48,15 @@ function exportTarget(kind: ExportKind, schema: string, table: string | undefine
 }
 
 /** Generate the export text for the given kind via the Task-1 wrappers. */
-function generate(kind: ExportKind, args: RunExportArgs): Promise<string> {
+function generate(kind: ExportKind, args: RunExportArgs, onProgress?: ProgressFn): Promise<string> {
   const { handleId, schema, table } = args;
   switch (kind) {
     case "tableCsv":
-      return exportTable(handleId, schema, table!, "csv");
+      return exportTable(handleId, schema, table!, "csv", onProgress);
     case "tableSql":
-      return exportTable(handleId, schema, table!, "sql");
+      return exportTable(handleId, schema, table!, "sql", onProgress);
     case "schemaSql":
-      return exportSchema(handleId, schema);
+      return exportSchema(handleId, schema, onProgress);
   }
 }
 
@@ -70,12 +70,15 @@ export async function runExport(
   kind: ExportKind,
   args: RunExportArgs,
   toast: ToastFn,
+  onProgress?: ProgressFn,
 ): Promise<void> {
   const { name, ext, label } = exportTarget(kind, args.schema, args.table);
   try {
     // Generate first so a backend error (unknown table, etc.) surfaces before
-    // we bother the user with a file picker.
-    const text = await generate(kind, args);
+    // we bother the user with a file picker. `onProgress` (when supplied by a
+    // caller showing a progress UI) streams rows/tables done via the backend's
+    // Channel events.
+    const text = await generate(kind, args, onProgress);
 
     let path: string | null;
     try {

@@ -2,14 +2,14 @@
 // prototype's `bytetable/schema-import.jsx` `SchemaImportModal` (minus the
 // destructive DropSchemaModal, intentionally out of scope for this task).
 //
-// Imports a multi-table `.sql` dump into one schema. Flow: pick a `.sql` file
-// via the native open dialog → `readTextFile` → preview client-side
-// (`previewSchema` lists the tables it would touch + each table's INSERT row
-// count + the total) → on Import, run the WHOLE dump server-side via
-// `importSql(handle, schema, path)` (it re-reads + executes the file; atomic on
-// SQLite/Postgres, non-atomic on MySQL). Running the original file (not the
-// parsed text) preserves DDL and ordering exactly — the preview is purely
-// informational, so a dump that CREATEs new tables imports fine.
+// Imports a multi-table `.sql` dump into one schema. The user PASTES SQL into a
+// textarea (or loads a `.sql` file into it via the native open dialog). Flow:
+// SQL text → preview client-side (`previewSchema` lists the tables it would
+// touch + each table's INSERT row count + the total) → on Import, run the WHOLE
+// script server-side via `executeScriptText(handle, schema, sql)` (atomic on
+// SQLite/Postgres, non-atomic on MySQL). The script runs verbatim, preserving
+// DDL + ordering — the preview is purely informational, so a dump that CREATEs
+// new tables imports fine.
 //
 // Success → toast + refresh the sidebar (invalidate + force-reload the table
 // list) so any new tables appear; the dialog stays open on error with the §5
@@ -17,7 +17,7 @@
 
 import { useState } from "react";
 
-import { importSql, readTextFile } from "../../../shared/api/engine";
+import { executeScriptText, readTextFile } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
 import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
@@ -51,11 +51,21 @@ export function SchemaImportModal({
   onDone?: () => void;
 }) {
   const toast = useToast();
-  // The chosen file's path (run as-is by import_sql) + its preview.
-  const [path, setPath] = useState<string | null>(null);
+  // The SQL to import — pasted directly OR loaded from a chosen file into the
+  // textarea. Run as text (not by path) so a paste works the same as a file.
+  const [text, setText] = useState("");
+  const [fileName, setFileName] = useState<string | null>(null);
   const [prev, setPrev] = useState<SchemaPreviewResult | null>(null);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Re-preview whenever the SQL changes (empty → no preview).
+  const onText = (sql: string) => {
+    setText(sql);
+    setError(null);
+    setPrev(sql.trim() ? previewSchema(sql) : null);
+  };
 
   const onChooseFile = () => {
     void (async () => {
@@ -63,15 +73,14 @@ export function SchemaImportModal({
       try {
         chosen = await openSqlDialog();
       } catch {
-        toast("Import requires the desktop app", "info");
+        toast("Choosing a file requires the desktop app — you can paste SQL instead", "info");
         return;
       }
       if (!chosen) return; // cancelled
       try {
         const contents = await readTextFile(chosen);
-        setPath(chosen);
-        setPrev(previewSchema(contents));
-        setError(null);
+        setFileName(chosen.split(/[\\/]/).pop() ?? chosen);
+        onText(contents);
       } catch (err) {
         setError(appErrorMessage(err, "Could not read the file."));
       }
@@ -79,15 +88,18 @@ export function SchemaImportModal({
   };
 
   const ok = prev !== null && !isSchemaPreviewError(prev);
-  const canImport = ok && path !== null && prev.totalStatements > 0 && !busy;
+  const canImport = ok && text.trim() !== "" && prev.totalStatements > 0 && !busy;
 
   const doImport = () => {
-    if (!canImport || path === null) return;
+    if (!canImport) return;
     setBusy(true);
     setError(null);
+    setProgress({ done: 0, total: prev.totalStatements });
     void (async () => {
       try {
-        const { statements } = await importSql(handleId, schemaName, path);
+        const { statements } = await executeScriptText(handleId, schemaName, text, (done, total) =>
+          setProgress({ done, total }),
+        );
         // Refresh the sidebar so newly created tables appear.
         const introspection = useIntrospectionStore.getState();
         introspection.invalidate(handleId, schemaName);
@@ -101,18 +113,25 @@ export function SchemaImportModal({
             if (tab.kind === "table" && tab.schema === schemaName) requestRefetch(tab.id);
           }
         }
-        const file = path.split(/[\\/]/).pop() ?? path;
-        toast("Imported " + file + " — " + statements.toLocaleString() + " statements", "ok");
+        toast(
+          "Imported " +
+            (fileName ? fileName + " — " : "") +
+            statements.toLocaleString() +
+            " statements",
+          "ok",
+        );
         onDone?.();
         onClose();
       } catch (err) {
         setError(appErrorMessage(err, "Could not import the dump."));
         setBusy(false);
+        setProgress(null);
       }
     })();
   };
 
-  const fileName = path ? (path.split(/[\\/]/).pop() ?? path) : null;
+  const pct =
+    progress && progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
 
   return (
     <Modal
@@ -131,13 +150,24 @@ export function SchemaImportModal({
 
       <div className="import-format">
         <span className="import-note" style={{ flex: 1 }}>
-          Choose a multi-table <code>.sql</code> dump. The whole file (DDL + INSERTs) runs into{" "}
-          <code>{schemaName}</code>. {fileName ? <b>{fileName}</b> : null}
+          Paste a multi-table <code>.sql</code> dump, or load one from a file. The whole script (DDL
+          + INSERTs) runs into <code>{schemaName}</code>. {fileName ? <b>{fileName}</b> : null}
         </span>
         <Btn icon="folder_open" variant="tonal" small onClick={onChooseFile}>
           Choose .sql file…
         </Btn>
       </div>
+
+      <textarea
+        className="import-textarea"
+        value={text}
+        spellCheck={false}
+        autoCapitalize="off"
+        autoComplete="off"
+        aria-label="SQL to import"
+        placeholder={"Paste SQL here:\nCREATE TABLE …;\nINSERT INTO … VALUES (…);"}
+        onChange={(e) => onText(e.target.value)}
+      />
 
       {prev !== null ? (
         isSchemaPreviewError(prev) ? (
@@ -169,6 +199,17 @@ export function SchemaImportModal({
       {error ? (
         <div className="import-err">
           <Icon name="error" size={14} /> {error}
+        </div>
+      ) : null}
+
+      {busy && progress ? (
+        <div className="import-progress">
+          <div className="import-progress-bar">
+            <span style={{ width: pct + "%" }} />
+          </div>
+          <span className="import-progress-txt">
+            Importing… {progress.done.toLocaleString()} / {progress.total.toLocaleString()} ({pct}%)
+          </span>
         </div>
       ) : null}
 

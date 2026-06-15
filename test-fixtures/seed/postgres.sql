@@ -56,3 +56,36 @@ CREATE TABLE IF NOT EXISTS analytics.events (
   ts      timestamptz DEFAULT now()
 );
 INSERT INTO analytics.events (kind,user_id) VALUES ('login',1),('view',1),('purchase',2);
+
+-- UUID (bytea) + JSONB demo. Exercises: UUID-aware binary cells, the JSON
+-- viewer, and binary FK hop/filter (documents.account_id → accounts.id).
+CREATE TABLE IF NOT EXISTS accounts (
+  id         bytea PRIMARY KEY,
+  handle     varchar(64) NOT NULL,
+  prefs      jsonb,
+  created_at timestamptz DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS documents (
+  id         bytea PRIMARY KEY,
+  account_id bytea NOT NULL REFERENCES accounts(id),
+  title      varchar(160) NOT NULL,
+  body       jsonb,
+  updated_at timestamptz DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_documents_account ON documents(account_id);
+
+INSERT INTO accounts (id, handle, prefs) VALUES
+  (decode(replace('11111111-1111-4111-8111-111111111111','-',''),'hex'), 'ada',
+    '{"theme":"midnight","notifications":{"email":true,"push":false},"tags":["admin","early-access"]}'),
+  (decode(replace('22222222-2222-4222-8222-222222222222','-',''),'hex'), 'grace',
+    '{"theme":"light","notifications":{"email":false,"push":true},"tags":[]}');
+INSERT INTO documents (id, account_id, title, body) VALUES
+  (decode(replace('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','-',''),'hex'),
+   decode(replace('11111111-1111-4111-8111-111111111111','-',''),'hex'),
+    'Q3 Roadmap', '{"status":"published","wordCount":1280,"reviewers":["grace","alan"],"meta":{"pinned":true}}'),
+  (decode(replace('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','-',''),'hex'),
+   decode(replace('11111111-1111-4111-8111-111111111111','-',''),'hex'),
+    'Release Notes', '{"status":"draft","wordCount":340,"reviewers":[]}'),
+  (decode(replace('cccccccc-cccc-4ccc-8ccc-cccccccccccc','-',''),'hex'),
+   decode(replace('22222222-2222-4222-8222-222222222222','-',''),'hex'),
+    'Design Spec', '{"status":"review","wordCount":2110,"reviewers":["ada"],"meta":{"pinned":false}}');

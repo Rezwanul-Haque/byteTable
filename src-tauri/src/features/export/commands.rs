@@ -8,6 +8,7 @@
 //! `export_table` / `export_schema` build the text; `export_save` writes it to
 //! the path the renderer obtained from the native save dialog.
 
+use tauri::ipc::Channel;
 use tauri::State;
 
 use crate::features::connections::application::ConnectionHandleId;
@@ -19,6 +20,17 @@ use crate::shared::engine::ImportResult;
 use super::application;
 use super::domain::ExportFormat;
 
+/// One progress tick streamed to the renderer over a Tauri [`Channel`] during a
+/// long export/import: `done` of `total` units (rows for a table export, tables
+/// for a schema dump, statements for an import). Scoped to the one invoke, so
+/// concurrent operations never cross-talk.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Progress {
+    pub done: u64,
+    pub total: u64,
+}
+
 /// Generate the export text for one table in the chosen format (`csv` / `sql`).
 /// Unknown schema/table surface as `{ kind, message }` §5 errors.
 #[tauri::command]
@@ -28,8 +40,20 @@ pub async fn export_table(
     schema: String,
     table: String,
     format: ExportFormat,
+    on_progress: Channel<Progress>,
 ) -> Result<String, AppError> {
-    application::export_table(state.manager(), &handle_id, &schema, &table, format).await
+    let progress = move |done, total| {
+        let _ = on_progress.send(Progress { done, total });
+    };
+    application::export_table(
+        state.manager(),
+        &handle_id,
+        &schema,
+        &table,
+        format,
+        &progress,
+    )
+    .await
 }
 
 /// Generate a SQL dump (DDL + data) for every base table in a schema.
@@ -38,8 +62,12 @@ pub async fn export_schema(
     state: State<'_, ConnectionsState>,
     handle_id: ConnectionHandleId,
     schema: String,
+    on_progress: Channel<Progress>,
 ) -> Result<String, AppError> {
-    application::export_schema_sql(state.manager(), &handle_id, &schema).await
+    let progress = move |done, total| {
+        let _ = on_progress.send(Progress { done, total });
+    };
+    application::export_schema_sql(state.manager(), &handle_id, &schema, &progress).await
 }
 
 /// Write generated export text to a user-chosen path (from the native save
@@ -69,8 +97,12 @@ pub async fn execute_script_text(
     handle_id: ConnectionHandleId,
     schema: String,
     sql: String,
+    on_progress: Channel<Progress>,
 ) -> Result<ImportResult, AppError> {
-    application::execute_script_text(state.manager(), &handle_id, &schema, &sql).await
+    let progress = move |done, total| {
+        let _ = on_progress.send(Progress { done, total });
+    };
+    application::execute_script_text(state.manager(), &handle_id, &schema, &sql, &progress).await
 }
 
 /// Import a `.sql` dump (the I/O counterpart of `export_save`): read the file at
@@ -84,6 +116,10 @@ pub async fn import_sql(
     handle_id: ConnectionHandleId,
     schema: String,
     path: String,
+    on_progress: Channel<Progress>,
 ) -> Result<ImportResult, AppError> {
-    application::import_sql(state.manager(), &handle_id, &schema, &path).await
+    let progress = move |done, total| {
+        let _ = on_progress.send(Progress { done, total });
+    };
+    application::import_sql(state.manager(), &handle_id, &schema, &path, &progress).await
 }

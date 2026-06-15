@@ -441,8 +441,13 @@ impl EngineConnection for MysqlEngineConnection {
         drop_schema(&self.pool, schema).await
     }
 
-    async fn execute_script(&self, schema: &str, sql: &str) -> Result<ImportResult, AppError> {
-        execute_script(&self.pool, schema, sql).await
+    async fn execute_script(
+        &self,
+        schema: &str,
+        sql: &str,
+        on_progress: crate::shared::engine::ProgressCallback<'_>,
+    ) -> Result<ImportResult, AppError> {
+        execute_script(&self.pool, schema, sql, on_progress).await
     }
 
     async fn alter_table(
@@ -1470,6 +1475,7 @@ async fn execute_script(
     pool: &MySqlPool,
     schema: &str,
     sql: &str,
+    on_progress: crate::shared::engine::ProgressCallback<'_>,
 ) -> Result<ImportResult, AppError> {
     ensure_schema_exists(pool, schema).await?;
     let statements = split_statements(sql);
@@ -1517,6 +1523,7 @@ async fn execute_script(
             )));
             break;
         }
+        on_progress(applied + 1, total);
     }
 
     // Restore FK enforcement on this pooled connection before returning (on the
@@ -2962,22 +2969,36 @@ mod integration {
         let handle = manager.insert(open).await;
 
         // CSV: header + every authors row (3); NULL bio → empty field.
-        let csv = export_table(&manager, &handle, schema, "authors", ExportFormat::Csv)
-            .await
-            .expect("export csv");
+        let csv = export_table(
+            &manager,
+            &handle,
+            schema,
+            "authors",
+            ExportFormat::Csv,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .expect("export csv");
         assert_eq!(csv.lines().next().unwrap(), "id,name,bio");
         assert_eq!(csv.lines().count(), 4);
         assert!(csv.contains("2,Grace,"));
 
         // SQL: DDL + one INSERT per row, MySQL backtick identifiers.
-        let sql = export_table(&manager, &handle, schema, "books", ExportFormat::Sql)
-            .await
-            .expect("export sql");
+        let sql = export_table(
+            &manager,
+            &handle,
+            schema,
+            "books",
+            ExportFormat::Sql,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .expect("export sql");
         assert!(sql.contains(&format!("INSERT INTO `{schema}`.`books`")));
         assert_eq!(sql.matches("INSERT INTO").count(), 4);
         assert!(sql.contains("NULL"));
 
-        let dump = export_schema_sql(&manager, &handle, schema)
+        let dump = export_schema_sql(&manager, &handle, schema, &|_: u64, _: u64| {})
             .await
             .expect("export schema");
         assert!(dump.contains("-- ByteTable schema dump"));
@@ -2992,9 +3013,16 @@ mod integration {
             .truncate_table(schema, "books")
             .await
             .expect("truncate");
-        let empty_sql = export_table(&manager, &handle, schema, "books", ExportFormat::Sql)
-            .await
-            .expect("export empty");
+        let empty_sql = export_table(
+            &manager,
+            &handle,
+            schema,
+            "books",
+            ExportFormat::Sql,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .expect("export empty");
         assert!(empty_sql.contains("-- (no rows)"));
 
         drop_fixture(&pool, schema, other).await;
@@ -3034,9 +3062,16 @@ mod integration {
 
         // --- ROUND-TRIP: export authors → retarget the qualified names to the
         // FRESH db → import → verify the table + 3 rows landed there.
-        let dump = export_table(&manager, &handle, schema, "authors", ExportFormat::Sql)
-            .await
-            .expect("export sql");
+        let dump = export_table(
+            &manager,
+            &handle,
+            schema,
+            "authors",
+            ExportFormat::Sql,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .expect("export sql");
         // The INSERTs are `schema`.`authors`; the SHOW CREATE TABLE DDL names the
         // table unqualified, so it lands in the USEd (fresh) db. Retarget the
         // qualified INSERT prefix to the fresh db.
@@ -3046,9 +3081,15 @@ mod integration {
         );
         let rt_path = dir.path().join("authors.sql");
         std::fs::write(&rt_path, &retargeted).expect("write dump");
-        let result = import_sql(&manager, &handle, fresh, &rt_path.to_string_lossy())
-            .await
-            .expect("import round-trip");
+        let result = import_sql(
+            &manager,
+            &handle,
+            fresh,
+            &rt_path.to_string_lossy(),
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .expect("import round-trip");
         assert_eq!(result.statements, 4); // DDL + 3 INSERTs
         let n: i64 = sqlx::query_scalar(&format!("SELECT count(*) FROM `{fresh}`.`authors`"))
             .fetch_one(&pool)
@@ -3062,9 +3103,15 @@ mod integration {
                       INSERT INTO gadgets (id, label) VALUES (2, 'two');\n";
         let ms_path = dir.path().join("gadgets.sql");
         std::fs::write(&ms_path, script).expect("write script");
-        let result = import_sql(&manager, &handle, fresh, &ms_path.to_string_lossy())
-            .await
-            .expect("import multi-statement");
+        let result = import_sql(
+            &manager,
+            &handle,
+            fresh,
+            &ms_path.to_string_lossy(),
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .expect("import multi-statement");
         assert_eq!(result.statements, 3);
         let n: i64 = sqlx::query_scalar(&format!("SELECT count(*) FROM `{fresh}`.`gadgets`"))
             .fetch_one(&pool)
@@ -3079,9 +3126,15 @@ mod integration {
                    INSERT INTO no_such_table (id) VALUES (1);\n";
         let bad_path = dir.path().join("bad.sql");
         std::fs::write(&bad_path, bad).expect("write bad");
-        let err = import_sql(&manager, &handle, fresh, &bad_path.to_string_lossy())
-            .await
-            .unwrap_err();
+        let err = import_sql(
+            &manager,
+            &handle,
+            fresh,
+            &bad_path.to_string_lossy(),
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .unwrap_err();
         assert!(matches!(err, AppError::Database(_)), "got {err:?}");
         let msg = err.to_string();
         assert!(
@@ -3107,9 +3160,15 @@ mod integration {
         );
 
         // --- BAD PATH: a missing file is a §5 IO error naming the path.
-        let err = import_sql(&manager, &handle, fresh, "/tmp/bytetable-nonexistent.sql")
-            .await
-            .unwrap_err();
+        let err = import_sql(
+            &manager,
+            &handle,
+            fresh,
+            "/tmp/bytetable-nonexistent.sql",
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .unwrap_err();
         assert!(matches!(err, AppError::Io(_)), "got {err:?}");
         assert!(err.to_string().contains("Could not read"));
 
@@ -3119,7 +3178,7 @@ mod integration {
             use crate::features::export::application::execute_script_text;
             let text = "CREATE TABLE from_text (id INT PRIMARY KEY, label TEXT);\n\
                         INSERT INTO from_text (id, label) VALUES (1, 'O''Brien');\n";
-            let result = execute_script_text(&manager, &handle, fresh, text)
+            let result = execute_script_text(&manager, &handle, fresh, text, &|_: u64, _: u64| {})
                 .await
                 .expect("execute_script_text");
             assert_eq!(result.statements, 2);

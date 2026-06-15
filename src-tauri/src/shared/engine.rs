@@ -1191,6 +1191,13 @@ pub enum ConnectionKind {
 /// engine, registered by `Engine` in the composition root; the renderer
 /// only ever sees opaque handle ids, never driver handles.
 ///
+/// Progress callback for long-running operations — `(done, total)`. Export
+/// reports rows (per table) or tables (per schema dump) written; import reports
+/// statements executed. The command layer forwards each call to a Tauri
+/// `Channel` so the renderer can drive a progress bar. `Send + Sync` so it can
+/// be held across `await` points in the async command future.
+pub type ProgressCallback<'a> = &'a (dyn Fn(u64, u64) + Send + Sync);
+
 /// M13: `open` now yields an [`OpenConnection`] (the SQL/KV kind seam) rather
 /// than a bare `Box<dyn EngineConnection>`. SQL connectors wrap their
 /// connection in [`OpenConnection::Sql`]; the Redis connector returns
@@ -1472,8 +1479,16 @@ pub trait EngineConnection: Send + Sync {
     /// rolls back where the engine allows. Unknown-schema and the engine's own
     /// SQL errors are §5 messages.
     ///
+    /// `on_progress(done, total)` is called after each statement so the importer
+    /// can drive a progress bar (see [`ProgressCallback`]).
+    ///
     /// Default impl: `Unsupported` — only engines that implement it override it.
-    async fn execute_script(&self, _schema: &str, _sql: &str) -> Result<ImportResult, AppError> {
+    async fn execute_script(
+        &self,
+        _schema: &str,
+        _sql: &str,
+        _on_progress: ProgressCallback<'_>,
+    ) -> Result<ImportResult, AppError> {
         Err(AppError::Unsupported(
             "Importing SQL is not supported for this engine yet.".into(),
         ))

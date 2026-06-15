@@ -49,3 +49,34 @@ INSERT INTO orders (user_id,total,status,method,paid) VALUES
   (3,36.50,'delivered','paypal',1);
 INSERT INTO order_items (order_id,product_id,qty) VALUES
   (1,1,2),(1,3,1),(2,2,1),(3,2,3),(5,1,1),(5,3,2);
+
+-- UUID (BINARY(16)) + JSON demo. Exercises: UUID-aware binary cells, the JSON
+-- viewer, and binary FK hop/filter (documents.account_id → accounts.id).
+CREATE TABLE IF NOT EXISTS accounts (
+  id         BINARY(16) PRIMARY KEY,
+  handle     VARCHAR(64) NOT NULL,
+  prefs      JSON,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS documents (
+  id         BINARY(16) PRIMARY KEY,
+  account_id BINARY(16) NOT NULL,
+  title      VARCHAR(160) NOT NULL,
+  body       JSON,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (account_id) REFERENCES accounts(id)
+);
+CREATE INDEX idx_documents_account ON documents(account_id);
+
+INSERT INTO accounts (id, handle, prefs) VALUES
+  (UUID_TO_BIN('11111111-1111-4111-8111-111111111111'), 'ada',
+    '{"theme":"midnight","notifications":{"email":true,"push":false},"tags":["admin","early-access"]}'),
+  (UUID_TO_BIN('22222222-2222-4222-8222-222222222222'), 'grace',
+    '{"theme":"light","notifications":{"email":false,"push":true},"tags":[]}');
+INSERT INTO documents (id, account_id, title, body) VALUES
+  (UUID_TO_BIN('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'), UUID_TO_BIN('11111111-1111-4111-8111-111111111111'),
+    'Q3 Roadmap', '{"status":"published","wordCount":1280,"reviewers":["grace","alan"],"meta":{"pinned":true}}'),
+  (UUID_TO_BIN('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'), UUID_TO_BIN('11111111-1111-4111-8111-111111111111'),
+    'Release Notes', '{"status":"draft","wordCount":340,"reviewers":[]}'),
+  (UUID_TO_BIN('cccccccc-cccc-4ccc-8ccc-cccccccccccc'), UUID_TO_BIN('22222222-2222-4222-8222-222222222222'),
+    'Design Spec', '{"status":"review","wordCount":2110,"reviewers":["ada"],"meta":{"pinned":false}}');

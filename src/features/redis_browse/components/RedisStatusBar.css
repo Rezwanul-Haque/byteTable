@@ -40,3 +40,25 @@
   border-radius: 3px;
   flex: none;
 }
+
+/* "Built by" credit — clickable button reset to inline-text styling; keeps the
+   label faint, makes the name pop (accent), opens the repo on click. */
+.redis-statusbar .status-credit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
+.redis-statusbar .status-credit b {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.redis-statusbar .status-credit:hover b {
+  text-decoration: underline;
+}

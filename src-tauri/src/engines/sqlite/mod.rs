@@ -2101,8 +2101,8 @@ mod tests {
             .test(&ConnectionParams::Postgres {
                 host: "h".into(),
                 port: 5432,
-                database: "d".into(),
-                user: "u".into(),
+                database: Some("d".into()),
+                user: Some("u".into()),
                 tls_mode: crate::shared::engine::TlsMode::Disable,
                 ssh: None,
             })

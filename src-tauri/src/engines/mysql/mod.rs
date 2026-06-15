@@ -2298,8 +2298,8 @@ mod integration {
         let params = ConnectionParams::Mysql {
             host,
             port,
-            database: db.to_string(),
-            user,
+            database: Some(db.to_string()),
+            user: Some(user),
             tls_mode: crate::shared::engine::TlsMode::Disable,
             ssh: None,
         };

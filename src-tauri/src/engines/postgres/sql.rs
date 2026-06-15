@@ -441,12 +441,18 @@ pub fn connect_options(
     let mut options = PgConnectOptions::new()
         .host(host_override.unwrap_or(host))
         .port(port_override.unwrap_or(*port))
-        .database(database)
-        .username(user)
         .ssl_mode(ssl_mode_from_token(tls_mode.as_token()))
         // Identify ByteTable in pg_stat_activity for the DBA looking at who is
         // connected — a small courtesy, not behaviorally significant.
         .application_name("ByteTable");
+    // Database / user are optional: when absent (or blank) libpq defaults the
+    // database to the user name and the user to the OS role.
+    if let Some(database) = database.as_deref().filter(|d| !d.is_empty()) {
+        options = options.database(database);
+    }
+    if let Some(user) = user.as_deref().filter(|u| !u.is_empty()) {
+        options = options.username(user);
+    }
     if let Some(password) = password {
         options = options.password(password);
     }
@@ -556,8 +562,8 @@ mod tests {
         let params = ConnectionParams::Postgres {
             host: "db.internal".into(),
             port: 5433,
-            database: "shop".into(),
-            user: "app".into(),
+            database: Some("shop".into()),
+            user: Some("app".into()),
             tls_mode: crate::shared::engine::TlsMode::Disable,
             ssh: None,
         };

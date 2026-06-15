@@ -447,9 +447,15 @@ pub fn connect_options(
     let mut options = MySqlConnectOptions::new()
         .host(host_override.unwrap_or(host))
         .port(port_override.unwrap_or(*port))
-        .database(database)
-        .username(user)
         .ssl_mode(ssl_mode_from_token(tls_mode.as_token()));
+    // Database / user are optional: when absent (or blank) let the driver use
+    // its default (no default schema / the server's default user).
+    if let Some(database) = database.as_deref().filter(|d| !d.is_empty()) {
+        options = options.database(database);
+    }
+    if let Some(user) = user.as_deref().filter(|u| !u.is_empty()) {
+        options = options.username(user);
+    }
     if let Some(password) = password {
         options = options.password(password);
     }
@@ -587,8 +593,8 @@ mod tests {
         let params = ConnectionParams::Mysql {
             host: "db.internal".into(),
             port: 3307,
-            database: "shop".into(),
-            user: "app".into(),
+            database: Some("shop".into()),
+            user: Some("app".into()),
             tls_mode: crate::shared::engine::TlsMode::Disable,
             ssh: None,
         };
@@ -605,8 +611,8 @@ mod tests {
         let pg = ConnectionParams::Postgres {
             host: "h".into(),
             port: 5432,
-            database: "d".into(),
-            user: "u".into(),
+            database: Some("d".into()),
+            user: Some("u".into()),
             tls_mode: crate::shared::engine::TlsMode::Disable,
             ssh: None,
         };

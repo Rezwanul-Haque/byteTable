@@ -2081,8 +2081,8 @@ mod integration {
         let params = ConnectionParams::Postgres {
             host,
             port,
-            database: db.to_string(),
-            user,
+            database: Some(db.to_string()),
+            user: Some(user),
             tls_mode: crate::shared::engine::TlsMode::Disable,
             ssh: None,
         };
@@ -2826,8 +2826,8 @@ mod integration {
         ConnectionParams::Postgres {
             host: target_host.to_string(),
             port: target_port,
-            database: db.to_string(),
-            user: db_user.to_string(),
+            database: Some(db.to_string()),
+            user: Some(db_user.to_string()),
             tls_mode: crate::shared::engine::TlsMode::Disable,
             ssh: Some(crate::shared::engine::SshConfig {
                 host: bastion_host.to_string(),

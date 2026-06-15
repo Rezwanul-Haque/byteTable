@@ -26,6 +26,28 @@
   font-size: 10.5px;
 }
 
+/* "Built by" credit — a clickable button reset to inline-text styling; keeps
+   the label faint, makes the name pop (accent), opens the repo on click. */
+.status-credit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
+.status-credit b {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.status-credit:hover b {
+  text-decoration: underline;
+}
+
 /* Tunnel-lock indicator (M12 Task 3): the status-bar counterpart of the
    sidebar header's lock, shown when the connection routes through a bastion. */
 .status-tunnel {

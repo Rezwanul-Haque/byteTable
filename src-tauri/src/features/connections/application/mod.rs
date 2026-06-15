@@ -678,8 +678,8 @@ mod tests {
         let params = ConnectionParams::Postgres {
             host: "db".into(),
             port: 5432,
-            database: "app".into(),
-            user: "u".into(),
+            database: Some("app".into()),
+            user: Some("u".into()),
             tls_mode: crate::shared::engine::TlsMode::Disable,
             ssh: None,
         };
@@ -808,8 +808,8 @@ mod tests {
         let params = ConnectionParams::Mysql {
             host: "h".into(),
             port: 3306,
-            database: "d".into(),
-            user: "u".into(),
+            database: Some("d".into()),
+            user: Some("u".into()),
             tls_mode: crate::shared::engine::TlsMode::Disable,
             ssh: None,
         };
@@ -946,8 +946,8 @@ mod tests {
         let pg = |ssh: Option<SshConfig>| ConnectionParams::Postgres {
             host: "db".into(),
             port: 5432,
-            database: "app".into(),
-            user: "u".into(),
+            database: Some("app".into()),
+            user: Some("u".into()),
             tls_mode: TlsMode::Disable,
             ssh,
         };

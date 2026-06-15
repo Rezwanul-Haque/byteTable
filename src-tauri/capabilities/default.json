@@ -17,6 +17,7 @@
       "allow": [
         { "url": "https://github.com/sponsors/*" },
         { "url": "https://buymeacoffee.com/*" },
+        { "url": "https://github.com/rezwanul-Haque/byteTable" },
         { "url": "https://github.com/rezwanul-Haque/byteTable/*" }
       ]
     }

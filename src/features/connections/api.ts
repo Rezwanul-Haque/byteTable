@@ -68,20 +68,24 @@ export interface SshConfig {
 export type ConnectionParams =
   | { engine: "sqlite"; path: string }
   | {
+      // `database` + `user` optional: omitted, MySQL connects with no default
+      // schema / the server's default user (passwordless/socket auth).
       engine: "mysql";
       host: string;
       port: number;
-      database: string;
-      user: string;
+      database?: string;
+      user?: string;
       tlsMode: TlsMode;
       ssh?: SshConfig;
     }
   | {
+      // `database` + `user` optional: omitted, libpq defaults the database to
+      // the user name and the user to the OS role.
       engine: "postgres";
       host: string;
       port: number;
-      database: string;
-      user: string;
+      database?: string;
+      user?: string;
       tlsMode: TlsMode;
       ssh?: SshConfig;
     }
@@ -272,7 +276,10 @@ export function connectionDetail(params: ConnectionParams): string {
   if (params.engine === "redis") {
     return params.host + ":" + params.port + " · db" + params.dbIndex;
   }
-  return params.host + ":" + params.port + " · " + params.database;
+  // database is optional now; omit the " · db" suffix when absent.
+  return params.database
+    ? params.host + ":" + params.port + " · " + params.database
+    : params.host + ":" + params.port;
 }
 
 /**

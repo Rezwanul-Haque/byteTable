@@ -236,8 +236,8 @@ function formStateFromConnection(c: SavedConnection): FormState {
     ...base,
     host: p.host,
     port: String(p.port),
-    db: p.database,
-    user: p.user,
+    db: p.database ?? "",
+    user: p.user ?? "",
     tls: p.tlsMode,
     ...sshFields,
   };
@@ -388,16 +388,15 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
       };
     }
 
-    if (!db.trim()) return { error: "Database is required" };
-    if (!user.trim()) return { error: "User is required" };
-
+    // database + user are optional (MySQL: no default schema / default user;
+    // Postgres: libpq defaults db→user, user→OS role). Omit when blank.
     return {
       params: {
         engine,
         host: host.trim(),
         port: portNumber,
-        database: db.trim(),
-        user: user.trim(),
+        ...(db.trim() ? { database: db.trim() } : {}),
+        ...(user.trim() ? { user: user.trim() } : {}),
         tlsMode: tls,
         ...(ssh ? { ssh } : {}),
       },
@@ -705,7 +704,7 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
               />
             </label>
             <label>
-              {isRedis ? "DB index" : "Database"}
+              {isRedis ? "DB index" : "Database (optional)"}
               <input
                 value={db}
                 onChange={(e) => field({ db: e.target.value })}
@@ -714,7 +713,7 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
               />
             </label>
             <label>
-              {isRedis ? "ACL user" : "User"}
+              {isRedis ? "ACL user" : "User (optional)"}
               <input
                 value={user}
                 onChange={(e) => field({ user: e.target.value })}
@@ -726,12 +725,12 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
               OS keychain on Save (M12 Task 3); it is NEVER part of the saved
               params or the registry file. */}
             <label className="span-2">
-              Password
+              Password (optional)
               <input
                 type="password"
                 value={password}
                 onChange={(e) => field({ password: e.target.value })}
-                placeholder="••••••••"
+                placeholder="leave blank if none"
               />
             </label>
           </div>

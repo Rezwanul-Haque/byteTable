@@ -4,12 +4,27 @@
 // "RESP{N}". The active-key info is reported up by the active KeyTab and passed
 // in here. (The prototype's "mock engine" tag is dropped in production.)
 
+import { openUrl } from "@tauri-apps/plugin-opener";
+
 import { EnvTag } from "../../../shared/ui/EnvTag";
 import { Icon } from "../../../shared/ui/Icon";
 import type { Env } from "../../../shared/types";
 import type { KeyType } from "../api";
 import { humanBytes, REDIS_TYPES } from "../helpers";
 import "./RedisStatusBar.css";
+
+/** The project's source repository (opened from the "Built by" credit). */
+const REPO_URL = "https://github.com/rezwanul-Haque/byteTable";
+
+/** Open a URL in the OS default browser; falls back to window.open in plain
+ *  browser dev (no Tauri IPC). Mirrors StatusBar/DonateModal. */
+function openExternal(url: string): void {
+  if ("__TAURI_INTERNALS__" in window) {
+    void openUrl(url);
+    return;
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
+}
 
 interface RedisStatusBarProps {
   workspaceColor: string;
@@ -69,6 +84,14 @@ export function RedisStatusBar(props: RedisStatusBarProps) {
           {keyMeta}
         </span>
       ) : null}
+      <button
+        type="button"
+        className="status-dim status-credit"
+        title="View ByteTable source on GitHub"
+        onClick={() => openExternal(REPO_URL)}
+      >
+        Built by <b>Rezwanul-Haque</b>
+      </button>
       <span className="status-dim">RESP{respVersion}</span>
     </div>
   );

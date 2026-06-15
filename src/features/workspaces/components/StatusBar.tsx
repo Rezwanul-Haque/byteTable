@@ -13,12 +13,27 @@
 // (tabMeta store): the grid reports totalRows + elapsedMs per fetch; until
 // then it shows "— rows".
 
+import { openUrl } from "@tauri-apps/plugin-opener";
+
 import { connectionIsTunneled, tunnelTitle } from "../../connections/api";
 import { EnvTag } from "../../../shared/ui/EnvTag";
 import { Icon } from "../../../shared/ui/Icon";
 import { rowCountLabel, useTabMetaStore } from "../tabMeta";
 import type { Workspace } from "../types";
 import "./StatusBar.css";
+
+/** The project's source repository (opened from the "Built by" credit). */
+const REPO_URL = "https://github.com/rezwanul-Haque/byteTable";
+
+/** Open a URL in the OS default browser; falls back to window.open in plain
+ *  browser dev (no Tauri IPC). Mirrors DonateModal's `openExternal`. */
+function openExternal(url: string): void {
+  if ("__TAURI_INTERNALS__" in window) {
+    void openUrl(url);
+    return;
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
+}
 
 export function StatusBar({ workspace }: { workspace: Workspace }) {
   const tabs = workspace.ui.tabs ?? [];
@@ -62,6 +77,14 @@ export function StatusBar({ workspace }: { workspace: Workspace }) {
       <span className="status-dim">schema: {schemaName}</span>
       <div style={{ flex: 1 }} />
       {context ? <span className="status-dim">{context}</span> : null}
+      <button
+        type="button"
+        className="status-dim status-credit"
+        title="View ByteTable source on GitHub"
+        onClick={() => openExternal(REPO_URL)}
+      >
+        Built by <b>Rezwanul-Haque</b>
+      </button>
       <span className="status-dim">UTF-8</span>
     </div>
   );

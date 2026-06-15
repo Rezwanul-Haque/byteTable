@@ -185,21 +185,29 @@ pub enum ConnectionParams {
     /// A SQLite database file on disk. No secrets, no TLS, no tunnel.
     Sqlite { path: String },
     /// A MySQL server (M12). Password + SSH secrets live in the keychain.
+    /// `database` and `user` are optional: omitted, the driver connects with no
+    /// default schema / the server's default user (passwordless/socket auth).
     Mysql {
         host: String,
         port: u16,
-        database: String,
-        user: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        database: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        user: Option<String>,
         tls_mode: TlsMode,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         ssh: Option<SshConfig>,
     },
     /// A PostgreSQL server (M12). Password + SSH secrets live in the keychain.
+    /// `database` and `user` are optional: omitted, libpq defaults the database
+    /// to the user name and the user to the OS role.
     Postgres {
         host: String,
         port: u16,
-        database: String,
-        user: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        database: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        user: Option<String>,
         tls_mode: TlsMode,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         ssh: Option<SshConfig>,
@@ -295,9 +303,17 @@ impl<'de> Deserialize<'de> for ConnectionParams {
                         .map(str::to_string)
                         .ok_or_else(|| D::Error::custom(format!("server params missing '{k}'")))
                 };
+                // database / user are optional (absent or blank → None).
+                let opt_str_field = |k: &str| -> Option<String> {
+                    value
+                        .get(k)
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string)
+                        .filter(|s| !s.is_empty())
+                };
                 let host = str_field("host")?;
-                let database = str_field("database")?;
-                let user = str_field("user")?;
+                let database = opt_str_field("database");
+                let user = opt_str_field("user");
                 let port = value
                     .get("port")
                     .and_then(serde_json::Value::as_u64)
@@ -1928,8 +1944,8 @@ mod tests {
         let params = ConnectionParams::Mysql {
             host: "db.internal".into(),
             port: 3306,
-            database: "shop".into(),
-            user: "app".into(),
+            database: Some("shop".into()),
+            user: Some("app".into()),
             tls_mode: TlsMode::Require,
             ssh: None,
         };
@@ -2010,8 +2026,8 @@ mod tests {
         let params = ConnectionParams::Postgres {
             host: "bt-pg".into(),
             port: 5432,
-            database: "bytetable".into(),
-            user: "postgres".into(),
+            database: Some("bytetable".into()),
+            user: Some("postgres".into()),
             tls_mode: TlsMode::Disable,
             ssh: Some(SshConfig {
                 host: "bastion".into(),
@@ -2041,8 +2057,8 @@ mod tests {
             let p = ConnectionParams::Mysql {
                 host: "h".into(),
                 port: 3306,
-                database: "d".into(),
-                user: "u".into(),
+                database: Some("d".into()),
+                user: Some("u".into()),
                 tls_mode: TlsMode::Prefer,
                 ssh: Some(SshConfig {
                     host: "b".into(),

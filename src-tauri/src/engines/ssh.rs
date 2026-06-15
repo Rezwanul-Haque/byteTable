@@ -320,11 +320,18 @@ async fn authenticate_agent(
 /// path is returned and `load_secret_key` surfaces the real "not found" error.
 fn expand_tilde(path: &str) -> String {
     if let Some(rest) = path.strip_prefix("~/") {
-        if let Some(home) = std::env::var_os("HOME") {
-            return std::path::Path::new(&home)
-                .join(rest)
-                .to_string_lossy()
-                .into_owned();
+        // `HOME` on unix; `USERPROFILE` is the Windows equivalent.
+        let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"));
+        if let Some(home) = home {
+            // Join with a literal `/` rather than `Path::join` (which uses the
+            // OS separator — `\` on Windows, breaking the SSH-style path). A
+            // forward slash is accepted by the filesystem on every platform.
+            let mut out = home.to_string_lossy().into_owned();
+            if !out.ends_with('/') && !out.ends_with('\\') {
+                out.push('/');
+            }
+            out.push_str(rest);
+            return out;
         }
     }
     path.to_string()

@@ -641,10 +641,16 @@ fn decode_value(row: &MySqlRow, index: usize) -> serde_json::Value {
             Err(_) => Value::Null,
         },
         // json → the JSON text (kept a string so the grid renders it as text,
-        // consistent with other engines). MySQL returns JSON columns as a UTF-8
-        // string, so a plain text decode is correct and avoids pulling in
-        // sqlx's `json` feature.
-        "JSON" => get_as_text(row, index)
+        // consistent with other engines). Over sqlx's binary protocol a JSON
+        // column does NOT satisfy the checked `String` decode (distinct type
+        // code), so `get_as_text` returns NULL — that was the "JSON column shows
+        // NULL" bug. `try_get_unchecked` decodes the raw bytes as a String
+        // regardless of the type code; MySQL stores JSON as UTF-8 text, so this
+        // yields the JSON document, with no `json` sqlx feature needed.
+        "JSON" => row
+            .try_get_unchecked::<Option<String>, _>(index)
+            .ok()
+            .flatten()
             .map(Value::String)
             .unwrap_or(Value::Null),
         // Binary families → hex when small (UUID/key), placeholder when large;

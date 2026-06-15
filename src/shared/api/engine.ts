@@ -681,7 +681,8 @@ export function createSchema(handleId: string, schema: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 /**
- * One staged structure edit. Six kinds matching §3.6's editing operations.
+ * One staged structure edit. Ten kinds matching §3.6's editing operations
+ * (six column ops plus index and foreign-key add/drop).
  *
  * - `setNullable.nullable`: `true` ⇒ DROP NOT NULL, `false` ⇒ SET NOT NULL.
  * - `setDefault.default` / `addColumn.default`: `null` ⇒ no default (DROP
@@ -697,7 +698,18 @@ export type AlterOp =
   | { op: "changeType"; column: string; newType: string }
   | { op: "setNullable"; column: string; nullable: boolean }
   | { op: "setDefault"; column: string; default: string | null }
-  | { op: "dropColumn"; name: string };
+  | { op: "dropColumn"; name: string }
+  | { op: "addIndex"; name: string; columns: string[]; unique: boolean }
+  | { op: "dropIndex"; name: string }
+  | {
+      op: "addForeignKey";
+      name: string;
+      columns: string[];
+      refTable: string;
+      refColumns: string[];
+      onDelete: string | null;
+    }
+  | { op: "dropForeignKey"; name: string; columns: string[] };
 
 /**
  * The outcome of an `alterPreview` / `alterApply` call: the SQL statement

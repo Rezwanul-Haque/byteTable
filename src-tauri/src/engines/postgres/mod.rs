@@ -1566,7 +1566,7 @@ async fn alter_table(
     let qualified = qualified(schema, table);
     let statements: Vec<String> = ops
         .iter()
-        .map(|op| alter_statement(&qualified, op))
+        .map(|op| alter_statement(schema, &qualified, op))
         .collect();
 
     if !apply {
@@ -1617,7 +1617,7 @@ fn validate_ops(meta: &TableMeta, table: &str, ops: &[AlterOp]) -> Result<(), Ap
 /// The native `ALTER TABLE` statement for one op. Postgres supports every op
 /// directly; `default` expressions are the verbatim SQL text the user supplied
 /// (never re-quoted), consistent with `ColumnInfo.default_value`.
-fn alter_statement(qualified: &str, op: &AlterOp) -> String {
+fn alter_statement(schema: &str, qualified: &str, op: &AlterOp) -> String {
     match op {
         AlterOp::AddColumn {
             name,
@@ -1674,7 +1674,56 @@ fn alter_statement(qualified: &str, op: &AlterOp) -> String {
         AlterOp::DropColumn { name } => {
             format!("ALTER TABLE {qualified} DROP COLUMN {}", quote_ident(name))
         }
+        AlterOp::AddIndex {
+            name,
+            columns,
+            unique,
+        } => format!(
+            "CREATE {}INDEX {} ON {qualified} ({})",
+            if *unique { "UNIQUE " } else { "" },
+            quote_ident(name),
+            quote_idents(columns)
+        ),
+        // Postgres indexes live in a schema; drop by schema-qualified name.
+        AlterOp::DropIndex { name } => {
+            format!("DROP INDEX {}.{}", quote_ident(schema), quote_ident(name))
+        }
+        AlterOp::AddForeignKey {
+            name,
+            columns,
+            ref_table,
+            ref_columns,
+            on_delete,
+        } => {
+            let mut s = format!(
+                "ALTER TABLE {qualified} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {}.{} ({})",
+                quote_ident(name),
+                quote_idents(columns),
+                quote_ident(schema),
+                quote_ident(ref_table),
+                quote_idents(ref_columns)
+            );
+            if let Some(action) = on_delete {
+                s.push_str(&format!(" ON DELETE {action}"));
+            }
+            s
+        }
+        AlterOp::DropForeignKey { name, .. } => {
+            format!(
+                "ALTER TABLE {qualified} DROP CONSTRAINT {}",
+                quote_ident(name)
+            )
+        }
     }
+}
+
+/// Quote and comma-join a list of identifiers (index / FK column lists).
+fn quote_idents(names: &[String]) -> String {
+    names
+        .iter()
+        .map(|c| quote_ident(c))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 // ---------------------------------------------------------------------------
@@ -1808,6 +1857,7 @@ mod tests {
         let q = "\"bt\".\"books\"";
         assert_eq!(
             alter_statement(
+                "bt",
                 q,
                 &AlterOp::AddColumn {
                     name: "note".into(),
@@ -1820,6 +1870,7 @@ mod tests {
         );
         assert_eq!(
             alter_statement(
+                "bt",
                 q,
                 &AlterOp::RenameColumn {
                     from: "a".into(),
@@ -1830,6 +1881,7 @@ mod tests {
         );
         assert_eq!(
             alter_statement(
+                "bt",
                 q,
                 &AlterOp::ChangeType {
                     column: "price".into(),
@@ -1840,6 +1892,7 @@ mod tests {
         );
         assert_eq!(
             alter_statement(
+                "bt",
                 q,
                 &AlterOp::SetNullable {
                     column: "email".into(),
@@ -1850,6 +1903,7 @@ mod tests {
         );
         assert_eq!(
             alter_statement(
+                "bt",
                 q,
                 &AlterOp::SetNullable {
                     column: "email".into(),
@@ -1860,6 +1914,7 @@ mod tests {
         );
         assert_eq!(
             alter_statement(
+                "bt",
                 q,
                 &AlterOp::SetDefault {
                     column: "status".into(),
@@ -1870,6 +1925,7 @@ mod tests {
         );
         assert_eq!(
             alter_statement(
+                "bt",
                 q,
                 &AlterOp::SetDefault {
                     column: "status".into(),
@@ -1880,12 +1936,61 @@ mod tests {
         );
         assert_eq!(
             alter_statement(
+                "bt",
                 q,
                 &AlterOp::DropColumn {
                     name: "legacy".into()
                 }
             ),
             "ALTER TABLE \"bt\".\"books\" DROP COLUMN \"legacy\""
+        );
+        assert_eq!(
+            alter_statement(
+                "bt",
+                q,
+                &AlterOp::AddIndex {
+                    name: "idx_books_email".into(),
+                    columns: vec!["email".into()],
+                    unique: true,
+                }
+            ),
+            "CREATE UNIQUE INDEX \"idx_books_email\" ON \"bt\".\"books\" (\"email\")"
+        );
+        assert_eq!(
+            alter_statement(
+                "bt",
+                q,
+                &AlterOp::DropIndex {
+                    name: "idx_old".into(),
+                }
+            ),
+            "DROP INDEX \"bt\".\"idx_old\""
+        );
+        assert_eq!(
+            alter_statement(
+                "bt",
+                q,
+                &AlterOp::AddForeignKey {
+                    name: "books_author_id_fkey".into(),
+                    columns: vec!["author_id".into()],
+                    ref_table: "authors".into(),
+                    ref_columns: vec!["id".into()],
+                    on_delete: Some("CASCADE".into()),
+                }
+            ),
+            "ALTER TABLE \"bt\".\"books\" ADD CONSTRAINT \"books_author_id_fkey\" \
+             FOREIGN KEY (\"author_id\") REFERENCES \"bt\".\"authors\" (\"id\") ON DELETE CASCADE"
+        );
+        assert_eq!(
+            alter_statement(
+                "bt",
+                q,
+                &AlterOp::DropForeignKey {
+                    name: "books_author_id_fkey".into(),
+                    columns: vec!["author_id".into()],
+                }
+            ),
+            "ALTER TABLE \"bt\".\"books\" DROP CONSTRAINT \"books_author_id_fkey\""
         );
     }
 

@@ -19,7 +19,12 @@
 //!   { "op": "changeType", "column": "price", "newType": "NUMERIC(10,2)" },
 //!   { "op": "setNullable", "column": "email", "nullable": false },
 //!   { "op": "setDefault", "column": "status", "default": "'pending'" },
-//!   { "op": "dropColumn", "name": "legacy" }
+//!   { "op": "dropColumn", "name": "legacy" },
+//!   { "op": "addIndex", "name": "idx_t_email", "columns": ["email"], "unique": true },
+//!   { "op": "dropIndex", "name": "idx_old" },
+//!   { "op": "addForeignKey", "name": "t_user_id_fkey", "columns": ["user_id"],
+//!     "refTable": "users", "refColumns": ["id"], "onDelete": "CASCADE" },
+//!   { "op": "dropForeignKey", "name": "t_user_id_fkey", "columns": ["user_id"] }
 //! ]
 //! ```
 //!
@@ -37,8 +42,9 @@
 
 use serde::{Deserialize, Serialize};
 
-/// One staged structure edit. Six kinds, matching DESIGN_SPEC §3.6's editing
-/// operations. Internally tagged on the wire (`op`), camelCase variant tokens
+/// One staged structure edit. Ten kinds, matching DESIGN_SPEC §3.6's editing
+/// operations (six column ops plus index and foreign-key add/drop). Internally
+/// tagged on the wire (`op`), camelCase variant tokens
 /// and fields. The `default` fields use the wire name `default` (a Rust
 /// keyword), renamed from `default_value` like [`crate::shared::engine::ColumnInfo`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -73,16 +79,50 @@ pub enum AlterOp {
     },
     /// Drop a column. Native on SQLite ≥3.35 (`DROP COLUMN`). PK-protected.
     DropColumn { name: String },
+    /// Create an index over one or more columns. Native everywhere
+    /// (`CREATE [UNIQUE] INDEX … ON …`). `name` is the (frontend-generated)
+    /// index name; `unique` selects a UNIQUE index.
+    AddIndex {
+        name: String,
+        columns: Vec<String>,
+        unique: bool,
+    },
+    /// Drop an index by name. Native everywhere (`DROP INDEX`).
+    DropIndex { name: String },
+    /// Add a foreign-key constraint. Native on server engines
+    /// (`ALTER TABLE … ADD CONSTRAINT … FOREIGN KEY …`); SQLite has no
+    /// `ADD CONSTRAINT`, so it is realized via a table rebuild (see the adapter).
+    /// `on_delete` is the verbatim referential action (`None` ⇒ omit the clause).
+    #[serde(rename_all = "camelCase")]
+    AddForeignKey {
+        name: String,
+        columns: Vec<String>,
+        ref_table: String,
+        ref_columns: Vec<String>,
+        #[serde(default)]
+        on_delete: Option<String>,
+    },
+    /// Drop a foreign-key constraint. Native on server engines
+    /// (`DROP CONSTRAINT` / MySQL `DROP FOREIGN KEY`); SQLite realizes it via a
+    /// table rebuild. `name` identifies the constraint on server engines;
+    /// `columns` (the local columns) identifies it on SQLite, whose
+    /// `foreign_key_list` exposes no constraint name.
+    DropForeignKey { name: String, columns: Vec<String> },
 }
 
 impl AlterOp {
-    /// Whether this op is realizable with a native SQLite `ALTER TABLE`
-    /// statement (add / rename / drop column). The others
-    /// (type/nullable/default changes) require a full table rebuild.
+    /// Whether this op is realizable on SQLite without a table rebuild: a native
+    /// `ALTER TABLE` (add / rename / drop column) or a `CREATE`/`DROP INDEX`.
+    /// The others (type/nullable/default changes and foreign-key add/drop, which
+    /// SQLite cannot do with `ALTER TABLE`) require a full table rebuild.
     pub fn is_native(&self) -> bool {
         matches!(
             self,
-            Self::AddColumn { .. } | Self::RenameColumn { .. } | Self::DropColumn { .. }
+            Self::AddColumn { .. }
+                | Self::RenameColumn { .. }
+                | Self::DropColumn { .. }
+                | Self::AddIndex { .. }
+                | Self::DropIndex { .. }
         )
     }
 
@@ -97,6 +137,13 @@ impl AlterOp {
             Self::SetNullable { column, .. } => Some(column),
             Self::SetDefault { column, .. } => Some(column),
             Self::DropColumn { name } => Some(name),
+            // Index / foreign-key ops do not target a single existing column for
+            // pk-protection purposes (their column references are validated by
+            // the adapter against the introspected set separately).
+            Self::AddIndex { .. }
+            | Self::DropIndex { .. }
+            | Self::AddForeignKey { .. }
+            | Self::DropForeignKey { .. } => None,
         }
     }
 
@@ -191,6 +238,47 @@ mod tests {
                 AlterOp::DropColumn { name: "x".into() },
                 serde_json::json!({ "op": "dropColumn", "name": "x" }),
             ),
+            (
+                AlterOp::AddIndex {
+                    name: "idx_t_email".into(),
+                    columns: vec!["email".into()],
+                    unique: true,
+                },
+                serde_json::json!({
+                    "op": "addIndex", "name": "idx_t_email",
+                    "columns": ["email"], "unique": true
+                }),
+            ),
+            (
+                AlterOp::DropIndex {
+                    name: "idx_old".into(),
+                },
+                serde_json::json!({ "op": "dropIndex", "name": "idx_old" }),
+            ),
+            (
+                AlterOp::AddForeignKey {
+                    name: "t_user_id_fkey".into(),
+                    columns: vec!["user_id".into()],
+                    ref_table: "users".into(),
+                    ref_columns: vec!["id".into()],
+                    on_delete: Some("CASCADE".into()),
+                },
+                serde_json::json!({
+                    "op": "addForeignKey", "name": "t_user_id_fkey",
+                    "columns": ["user_id"], "refTable": "users",
+                    "refColumns": ["id"], "onDelete": "CASCADE"
+                }),
+            ),
+            (
+                AlterOp::DropForeignKey {
+                    name: "t_user_id_fkey".into(),
+                    columns: vec!["user_id".into()],
+                },
+                serde_json::json!({
+                    "op": "dropForeignKey", "name": "t_user_id_fkey",
+                    "columns": ["user_id"]
+                }),
+            ),
         ];
         for (op, expected) in cases {
             assert_eq!(
@@ -226,6 +314,27 @@ mod tests {
         assert!(!AlterOp::SetNullable {
             column: "c".into(),
             nullable: true
+        }
+        .is_native());
+        // CREATE / DROP INDEX are native; FK add/drop need a rebuild on SQLite.
+        assert!(AlterOp::AddIndex {
+            name: "i".into(),
+            columns: vec!["c".into()],
+            unique: false,
+        }
+        .is_native());
+        assert!(AlterOp::DropIndex { name: "i".into() }.is_native());
+        assert!(!AlterOp::AddForeignKey {
+            name: "f".into(),
+            columns: vec!["c".into()],
+            ref_table: "u".into(),
+            ref_columns: vec!["id".into()],
+            on_delete: None,
+        }
+        .is_native());
+        assert!(!AlterOp::DropForeignKey {
+            name: "f".into(),
+            columns: vec!["c".into()],
         }
         .is_native());
 

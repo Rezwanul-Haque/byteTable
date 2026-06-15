@@ -56,7 +56,7 @@
 // column) a valid wire batch: add → retype → rename, all referencing original
 // names, renames last.
 
-import type { AlterOp, ColumnInfo } from "../../shared/api/engine";
+import type { AlterOp, ColumnInfo, ForeignKeyInfo, IndexInfo } from "../../shared/api/engine";
 
 /** The list of SQLite types offered in the type-change select (prototype list,
  *  adapted to SQLite-native affinities). The current type is prepended if not
@@ -159,16 +159,19 @@ export function applyOpsToColumns(columns: ColumnInfo[], ops: AlterOp[]): Workin
 
 /**
  * Serialize the accumulated ops into a wire batch in the backend-safe phase
- * order: drops → addColumns → in-place edits → renames (see the ordering note
- * above). The ops the editor stores are already deduped/keyed; this only
- * reorders. Drops of a just-added column (origin null) are elided — there is
- * nothing on the server to drop.
+ * order: drops → addColumns → in-place edits → renames → index/FK changes (see
+ * the ordering note above). The ops the editor stores are already deduped/keyed;
+ * this only reorders. Index and FK changes go last so they reference the final
+ * column names (a column rename runs before a new index/FK over it), and FK/
+ * index drops precede adds so a re-create in the same batch is well-ordered.
  */
 export function toWireBatch(ops: AlterOp[]): AlterOp[] {
   const drops: AlterOp[] = [];
   const adds: AlterOp[] = [];
   const inPlace: AlterOp[] = [];
   const renames: AlterOp[] = [];
+  const structDrops: AlterOp[] = []; // dropIndex / dropForeignKey
+  const structAdds: AlterOp[] = []; // addForeignKey / addIndex
   for (const op of ops) {
     switch (op.op) {
       case "dropColumn":
@@ -180,9 +183,158 @@ export function toWireBatch(ops: AlterOp[]): AlterOp[] {
       case "renameColumn":
         renames.push(op);
         break;
+      case "dropIndex":
+      case "dropForeignKey":
+        structDrops.push(op);
+        break;
+      case "addIndex":
+      case "addForeignKey":
+        structAdds.push(op);
+        break;
       default:
         inPlace.push(op);
     }
   }
-  return [...drops, ...adds, ...inPlace, ...renames];
+  return [...drops, ...adds, ...inPlace, ...renames, ...structDrops, ...structAdds];
+}
+
+// ---------------------------------------------------------------------------
+// Index + foreign-key working sets (rail display) + name generation
+// ---------------------------------------------------------------------------
+
+/** An index in the working (post-edit) set the rail renders. Carries the
+ *  staged add/drop flags so the card shows accent-new / struck-drop styling. */
+export interface WorkingIndex {
+  name: string;
+  columns: string[];
+  unique: boolean;
+  primary: boolean;
+  isNew: boolean;
+  markedForDrop: boolean;
+}
+
+/** A foreign key in the working (post-edit) set the rail renders. `name` is the
+ *  display/identity name (synthetic for nameless SQLite FKs). */
+export interface WorkingForeignKey {
+  name: string;
+  columns: string[];
+  refTable: string;
+  refColumns: string[];
+  onDelete: string | null;
+  isNew: boolean;
+  markedForDrop: boolean;
+}
+
+/** A stable display/identity name for a foreign key. Server engines expose a
+ *  real name; SQLite does not, so synthesize one from the local columns (this
+ *  is also what a `dropForeignKey` op carries for matching on the backend). */
+export function foreignKeyName(
+  fk: { name: string | null; columns: string[] },
+  table: string,
+): string {
+  return fk.name ?? `${table}_${fk.columns.join("_")}_fkey`;
+}
+
+/** Replay `ops` over the introspected indexes to produce the rail's working
+ *  set: staged `addIndex`es appended (flagged new), `dropIndex`es kept but
+ *  flagged for drop (struck-through, matching the column affordance). */
+export function applyOpsToIndexes(indexes: IndexInfo[], ops: AlterOp[]): WorkingIndex[] {
+  const working: WorkingIndex[] = indexes.map((ix) => ({
+    name: ix.name,
+    columns: ix.columns,
+    unique: ix.unique,
+    primary: ix.primary,
+    isNew: false,
+    markedForDrop: false,
+  }));
+  for (const op of ops) {
+    if (op.op === "addIndex") {
+      working.push({
+        name: op.name,
+        columns: op.columns,
+        unique: op.unique,
+        primary: false,
+        isNew: true,
+        markedForDrop: false,
+      });
+    } else if (op.op === "dropIndex") {
+      const ix = working.find((w) => w.name === op.name);
+      if (ix) ix.markedForDrop = true;
+    }
+  }
+  return working;
+}
+
+/** Replay `ops` over the introspected foreign keys to produce the rail's
+ *  working set. `dropForeignKey` ops are matched the same way the backend does:
+ *  by synthetic name (server FKs) falling back to local-column equality
+ *  (nameless SQLite FKs). */
+export function applyOpsToForeignKeys(
+  foreignKeys: ForeignKeyInfo[],
+  ops: AlterOp[],
+  table: string,
+): WorkingForeignKey[] {
+  const working: WorkingForeignKey[] = foreignKeys.map((fk) => ({
+    name: foreignKeyName(fk, table),
+    columns: fk.columns,
+    refTable: fk.refTable,
+    refColumns: fk.refColumns,
+    onDelete: fk.onDelete,
+    isNew: false,
+    markedForDrop: false,
+  }));
+  for (const op of ops) {
+    if (op.op === "addForeignKey") {
+      working.push({
+        name: op.name,
+        columns: op.columns,
+        refTable: op.refTable,
+        refColumns: op.refColumns,
+        onDelete: op.onDelete,
+        isNew: true,
+        markedForDrop: false,
+      });
+    } else if (op.op === "dropForeignKey") {
+      const fk =
+        working.find((w) => w.name === op.name) ??
+        working.find((w) => sameColumns(w.columns, op.columns));
+      if (fk) fk.markedForDrop = true;
+    }
+  }
+  return working;
+}
+
+function sameColumns(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((c, i) => c === b[i]);
+}
+
+/** Generate a unique index name for a new index over `columns`, avoiding any
+ *  name already present in `existing`. Mirrors the prototype's `idx_<t>_<cols>`
+ *  scheme. */
+export function generateIndexName(
+  table: string,
+  columns: string[],
+  existing: Iterable<string>,
+): string {
+  const taken = new Set(existing);
+  const base = `idx_${table}_${columns.join("_")}`;
+  let name = base;
+  let i = 2;
+  while (taken.has(name)) name = `${base}_${i++}`;
+  return name;
+}
+
+/** Generate a unique FK constraint name for a new FK over `columns`. Mirrors
+ *  the prototype's `<table>_<cols>_fkey` scheme. */
+export function generateForeignKeyName(
+  table: string,
+  columns: string[],
+  existing: Iterable<string>,
+): string {
+  const taken = new Set(existing);
+  const base = `${table}_${columns.join("_")}_fkey`;
+  let name = base;
+  let i = 2;
+  while (taken.has(name)) name = `${base}_${i++}`;
+  return name;
 }

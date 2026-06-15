@@ -6,4 +6,10 @@
 // Task 2 structure view imports from its own slice. Keep this thin — add
 // structure-specific UI helpers here if/when they are needed, not wire glue.
 
-export { alterApply, alterPreview, type AlterOp, type AlterResult } from "../../shared/api/engine";
+export {
+  alterApply,
+  alterPreview,
+  type AlterOp,
+  type AlterResult,
+  type ColumnInfo,
+} from "../../shared/api/engine";

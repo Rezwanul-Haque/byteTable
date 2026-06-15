@@ -16,20 +16,30 @@
 //! | ChangeType     | `ALTER TABLE "t" ALTER COLUMN "c" TYPE x`                       | table rebuild |
 //! | SetNullable    | `ALTER TABLE "t" ALTER COLUMN "c" SET/DROP NOT NULL`           | table rebuild |
 //! | SetDefault     | `ALTER TABLE "t" ALTER COLUMN "c" SET DEFAULT x / DROP DEFAULT` | table rebuild |
+//! | AddIndex       | `CREATE [UNIQUE] INDEX "i" ON "t" (…)`                          | native CREATE INDEX |
+//! | DropIndex      | `DROP INDEX "i"`                                                | native DROP INDEX |
+//! | AddForeignKey  | `ALTER TABLE "t" ADD CONSTRAINT "f" FOREIGN KEY (…) REFERENCES …` | table rebuild |
+//! | DropForeignKey | `ALTER TABLE "t" DROP CONSTRAINT "f"`                           | table rebuild |
 //!
-//! SQLite has NO native `ALTER COLUMN`, so the last three are shown as their
-//! logical intent but executed via the 12-step table rebuild ("Making Other
-//! Kinds Of Table Schema Changes" in the SQLite docs). The preview SQL is
-//! therefore truthful about WHAT changes, not the literal rebuild SQL.
+//! SQLite has NO native `ALTER COLUMN` (type/nullable/default) and no
+//! `ADD/DROP CONSTRAINT` (foreign keys), so those are shown as their logical
+//! intent but executed via the 12-step table rebuild ("Making Other Kinds Of
+//! Table Schema Changes" in the SQLite docs). `CREATE`/`DROP INDEX` are native.
+//! The preview SQL is therefore truthful about WHAT changes, not the literal
+//! rebuild SQL.
 //!
 //! # Apply strategy
 //!
-//! - If EVERY op is native (add/rename/drop column) → run the native ALTER
-//!   statements in order inside a transaction.
-//! - If ANY op needs a rebuild → compute the target column set (apply all ops
-//!   in order to the introspected columns), then do the metadata-reconstruction
-//!   rebuild: build a fresh `CREATE TABLE` from the target columns + the table's
-//!   foreign keys, copy data across with column mapping, swap, recreate indexes.
+//! - If EVERY op is native (add/rename/drop column, create/drop index) → run
+//!   the native statements in order inside a transaction.
+//! - If ANY op needs a rebuild (type/nullable/default change, or a foreign-key
+//!   add/drop) → compute the target column set, foreign-key set, and user-index
+//!   set (apply all ops in order to the introspected metadata), then do the
+//!   metadata-reconstruction rebuild: build a fresh `CREATE TABLE` from the
+//!   target columns + target foreign keys, copy data across with column mapping,
+//!   swap, recreate the target user indexes. With FK enforcement originally on,
+//!   `foreign_key_check` runs inside the transaction before commit so a
+//!   violation rolls the whole rebuild back.
 //!
 //! # Rebuild safety guard
 //!
@@ -46,7 +56,7 @@ use rusqlite::Connection;
 
 use super::{ensure_schema_exists, map_query_error, quote_ident, table_ddl, table_meta_blocking};
 use crate::features::structure::domain::AlterOp;
-use crate::shared::engine::{AlterResult, ColumnInfo, TableMeta};
+use crate::shared::engine::{AlterResult, ColumnInfo, ForeignKeyInfo, IndexInfo, TableMeta};
 use crate::shared::error::AppError;
 
 /// Preview or apply a batch of structure edits on one SQLite table.
@@ -108,13 +118,33 @@ pub fn alter_table_blocking(
 /// Validate each op against the introspected columns: the targeted column must
 /// exist, and pk columns are protected from drop/retype. A §5 error otherwise.
 fn validate_ops(meta: &TableMeta, table: &str, ops: &[AlterOp]) -> Result<(), AppError> {
+    // The columns an index / FK may reference: the introspected set with this
+    // batch's column ops folded in (adds, renames, drops), since the rebuild
+    // applies those before recreating indexes / FKs — so an index or FK may
+    // reference a column added or renamed in the same batch.
+    let mut available: Vec<String> = meta.columns.iter().map(|c| c.name.clone()).collect();
+    for op in ops {
+        match op {
+            AlterOp::AddColumn { name, .. } => available.push(name.clone()),
+            AlterOp::DropColumn { name } => available.retain(|c| c != name),
+            AlterOp::RenameColumn { from, to } => {
+                if let Some(slot) = available.iter_mut().find(|c| *c == from) {
+                    *slot = to.clone();
+                }
+            }
+            _ => {}
+        }
+    }
+    let exists = |c: &str| available.iter().any(|a| a == c);
+    let listing = || available.join(", ");
+
     for op in ops {
         if let Some(column) = op.target_column() {
             let Some(info) = meta.columns.iter().find(|c| c.name == column) else {
-                let listing: Vec<&str> = meta.columns.iter().map(|c| c.name.as_str()).collect();
+                let cols: Vec<&str> = meta.columns.iter().map(|c| c.name.as_str()).collect();
                 return Err(AppError::Database(format!(
                     "Column '{column}' does not exist on '{table}' (columns: {}).",
-                    listing.join(", ")
+                    cols.join(", ")
                 )));
             };
             if info.pk && op.rejected_on_pk() {
@@ -123,6 +153,51 @@ fn validate_ops(meta: &TableMeta, table: &str, ops: &[AlterOp]) -> Result<(), Ap
                      cannot be dropped or retyped."
                 )));
             }
+        }
+        match op {
+            AlterOp::AddIndex { columns, name, .. } => {
+                if columns.is_empty() {
+                    return Err(AppError::Invalid(format!(
+                        "Index '{name}' must cover at least one column."
+                    )));
+                }
+                for c in columns {
+                    if !exists(c) {
+                        return Err(AppError::Database(format!(
+                            "Cannot index '{c}': no such column on '{table}' (columns: {}).",
+                            listing()
+                        )));
+                    }
+                }
+            }
+            AlterOp::AddForeignKey {
+                columns,
+                ref_columns,
+                ..
+            } => {
+                if columns.is_empty() || ref_columns.is_empty() {
+                    return Err(AppError::Invalid(
+                        "A foreign key needs at least one local and one referenced column."
+                            .to_string(),
+                    ));
+                }
+                if columns.len() != ref_columns.len() {
+                    return Err(AppError::Invalid(
+                        "A foreign key's local and referenced columns must match in count."
+                            .to_string(),
+                    ));
+                }
+                for c in columns {
+                    if !exists(c) {
+                        return Err(AppError::Database(format!(
+                            "Cannot reference '{c}' in a foreign key: no such column on \
+                             '{table}' (columns: {}).",
+                            listing()
+                        )));
+                    }
+                }
+            }
+            _ => {}
         }
     }
     Ok(())
@@ -188,11 +263,53 @@ fn preview_statement(table: &str, op: &AlterOp) -> String {
         AlterOp::DropColumn { name } => {
             format!("ALTER TABLE {t} DROP COLUMN {}", quote_ident(name))
         }
+        AlterOp::AddIndex {
+            name,
+            columns,
+            unique,
+        } => format!(
+            "CREATE {}INDEX {} ON {t} ({})",
+            if *unique { "UNIQUE " } else { "" },
+            quote_ident(name),
+            quote_idents(columns)
+        ),
+        AlterOp::DropIndex { name } => format!("DROP INDEX {}", quote_ident(name)),
+        AlterOp::AddForeignKey {
+            name,
+            columns,
+            ref_table,
+            ref_columns,
+            on_delete,
+        } => {
+            let mut s = format!(
+                "ALTER TABLE {t} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {} ({})",
+                quote_ident(name),
+                quote_idents(columns),
+                quote_ident(ref_table),
+                quote_idents(ref_columns)
+            );
+            if let Some(action) = on_delete {
+                s.push_str(&format!(" ON DELETE {action}"));
+            }
+            s
+        }
+        AlterOp::DropForeignKey { name, .. } => {
+            format!("ALTER TABLE {t} DROP CONSTRAINT {}", quote_ident(name))
+        }
     }
 }
 
+/// Quote and comma-join a list of identifiers (index / FK column lists).
+fn quote_idents(names: &[String]) -> String {
+    names
+        .iter()
+        .map(|c| quote_ident(c))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 // ---------------------------------------------------------------------------
-// Native apply (add / rename / drop column only)
+// Native apply (add / rename / drop column, create / drop index)
 // ---------------------------------------------------------------------------
 
 /// The native `ALTER TABLE` statement actually executed for a native op.
@@ -229,7 +346,22 @@ fn native_exec_statement(schema: &str, table: &str, op: &AlterOp) -> String {
         AlterOp::DropColumn { name } => {
             format!("ALTER TABLE {t} DROP COLUMN {}", quote_ident(name))
         }
-        // Non-native ops never reach here.
+        AlterOp::AddIndex {
+            name,
+            columns,
+            unique,
+        } => format!(
+            "CREATE {}INDEX {}.{} ON {} ({})",
+            if *unique { "UNIQUE " } else { "" },
+            quote_ident(schema),
+            quote_ident(name),
+            quote_ident(table),
+            quote_idents(columns)
+        ),
+        AlterOp::DropIndex { name } => {
+            format!("DROP INDEX {}.{}", quote_ident(schema), quote_ident(name))
+        }
+        // Rebuild-only ops (type/nullable/default, foreign keys) never reach here.
         _ => unreachable!("native_exec_statement called on a non-native op"),
     }
 }
@@ -438,6 +570,12 @@ fn compute_target_columns(
                 let idx = require_idx(&cols, name)?;
                 cols.remove(idx);
             }
+            // Index / foreign-key ops do not change the column set; they are
+            // realized separately (target index set + rebuilt FK clauses).
+            AlterOp::AddIndex { .. }
+            | AlterOp::DropIndex { .. }
+            | AlterOp::AddForeignKey { .. }
+            | AlterOp::DropForeignKey { .. } => {}
         }
     }
 
@@ -453,6 +591,78 @@ fn require_idx(cols: &[TargetColumn], name: &str) -> Result<usize, AppError> {
     cols.iter()
         .position(|c| c.info.name == name)
         .ok_or_else(|| AppError::Database(format!("Column '{name}' does not exist.")))
+}
+
+/// Whether a [`DropForeignKey`](AlterOp::DropForeignKey) op identifies `fk`.
+/// Server-introspected FKs carry a name (match on it); SQLite's do not, so we
+/// fall back to matching the local-column set.
+fn fk_matches(fk: &ForeignKeyInfo, name: &str, columns: &[String]) -> bool {
+    if let Some(n) = &fk.name {
+        if !name.is_empty() && n == name {
+            return true;
+        }
+    }
+    !columns.is_empty() && fk.columns == columns
+}
+
+/// The foreign keys the rebuilt table should carry: the introspected set plus
+/// any `AddForeignKey` in the batch, minus any `DropForeignKey`.
+fn compute_target_foreign_keys(meta: &TableMeta, ops: &[AlterOp]) -> Vec<ForeignKeyInfo> {
+    let mut fks: Vec<ForeignKeyInfo> = meta.foreign_keys.clone();
+    for op in ops {
+        match op {
+            AlterOp::AddForeignKey {
+                name,
+                columns,
+                ref_table,
+                ref_columns,
+                on_delete,
+            } => fks.push(ForeignKeyInfo {
+                name: Some(name.clone()),
+                columns: columns.clone(),
+                ref_table: ref_table.clone(),
+                ref_columns: ref_columns.clone(),
+                on_delete: on_delete.clone(),
+                on_update: None,
+            }),
+            AlterOp::DropForeignKey { name, columns } => {
+                fks.retain(|fk| !fk_matches(fk, name, columns));
+            }
+            _ => {}
+        }
+    }
+    fks
+}
+
+/// The user-created indexes (SQLite `origin == "c"`) the rebuild should
+/// recreate: the introspected user indexes plus any `AddIndex`, minus any
+/// `DropIndex` (by name). The implicit pk / UNIQUE-constraint indexes are
+/// reconstructed by the fresh `CREATE TABLE` itself, so they are excluded here.
+fn compute_target_indexes(meta: &TableMeta, ops: &[AlterOp]) -> Vec<IndexInfo> {
+    let mut indexes: Vec<IndexInfo> = meta
+        .indexes
+        .iter()
+        .filter(|ix| ix.origin.as_deref() == Some("c"))
+        .cloned()
+        .collect();
+    for op in ops {
+        match op {
+            AlterOp::AddIndex {
+                name,
+                columns,
+                unique,
+            } => indexes.push(IndexInfo {
+                name: name.clone(),
+                columns: columns.clone(),
+                unique: *unique,
+                primary: false,
+                origin: Some("c".to_string()),
+            }),
+            AlterOp::DropIndex { name } => indexes.retain(|ix| &ix.name != name),
+            _ => {}
+        }
+    }
+    indexes
 }
 
 /// The metadata-reconstruction rebuild. Wrapped in a transaction with the
@@ -482,6 +692,8 @@ fn apply_with_rebuild(
     }
 
     let target = compute_target_columns(meta, ops)?;
+    let target_fks = compute_target_foreign_keys(meta, ops);
+    let target_indexes = compute_target_indexes(meta, ops);
 
     // SQLite's documented procedure: foreign_keys must be OFF for the rebuild,
     // and it cannot be toggled inside a transaction. Read the current setting,
@@ -499,10 +711,20 @@ fn apply_with_rebuild(
             .map_err(|err| map_query_error(conn, err))?;
     }
 
-    let rebuild = rebuild_in_transaction(conn, schema, table, meta, &target);
+    // The rebuild runs foreign_key_check inside the transaction (before commit)
+    // when `fk_on`, so a violation rolls the whole rebuild back.
+    let rebuild = rebuild_in_transaction(
+        conn,
+        schema,
+        table,
+        &target,
+        &target_fks,
+        &target_indexes,
+        fk_on,
+    );
 
     // Always attempt to restore the fk setting, regardless of the rebuild
-    // outcome. A successful rebuild then runs foreign_key_check.
+    // outcome.
     let restore = if fk_on {
         conn.execute_batch("PRAGMA foreign_keys = ON")
             .map_err(|err| map_query_error(conn, err))
@@ -513,28 +735,6 @@ fn apply_with_rebuild(
     rebuild?;
     restore?;
 
-    if fk_on {
-        // Confirm the rebuilt table did not break referential integrity.
-        let mut stmt = conn
-            .prepare(&format!(
-                "PRAGMA {}.foreign_key_check({})",
-                quote_ident(schema),
-                quote_ident(table)
-            ))
-            .map_err(|err| map_query_error(conn, err))?;
-        let mut rows = stmt.query([]).map_err(|err| map_query_error(conn, err))?;
-        if rows
-            .next()
-            .map_err(|err| map_query_error(conn, err))?
-            .is_some()
-        {
-            return Err(AppError::Database(format!(
-                "The structure change on '{table}' would violate a foreign-key \
-                 constraint; no changes were applied."
-            )));
-        }
-    }
-
     Ok(())
 }
 
@@ -544,8 +744,10 @@ fn rebuild_in_transaction(
     conn: &Connection,
     schema: &str,
     table: &str,
-    meta: &TableMeta,
     target: &[TargetColumn],
+    target_fks: &[ForeignKeyInfo],
+    target_indexes: &[IndexInfo],
+    fk_on: bool,
 ) -> Result<(), AppError> {
     let tx = Transaction::begin(conn)?;
 
@@ -553,8 +755,8 @@ fn rebuild_in_transaction(
     let qualified_tmp = format!("{}.{}", quote_ident(schema), quote_ident(&tmp_name));
     let qualified_orig = format!("{}.{}", quote_ident(schema), quote_ident(table));
 
-    // 1. Create the new table from the target columns + the original fks.
-    let create_sql = build_create_table(&qualified_tmp, target, meta);
+    // 1. Create the new table from the target columns + the target fks.
+    let create_sql = build_create_table(&qualified_tmp, target, target_fks);
     conn.execute_batch(&create_sql)
         .map_err(|err| map_query_error(conn, err))?;
 
@@ -586,15 +788,10 @@ fn rebuild_in_transaction(
     ))
     .map_err(|err| map_query_error(conn, err))?;
 
-    // 5. Recreate non-implicit indexes from the introspected metadata, skipping
-    //    any whose columns no longer all exist (e.g. a dropped column).
+    // 5. Recreate the target user indexes (introspected + staged adds − drops),
+    //    skipping any whose columns no longer all exist (e.g. a dropped column).
     let target_names: Vec<&str> = target.iter().map(|c| c.info.name.as_str()).collect();
-    for index in &meta.indexes {
-        // The implicit pk / UNIQUE-constraint indexes are recreated by the
-        // CREATE TABLE itself; only user CREATE INDEXes ("c") are reissued.
-        if index.origin.as_deref() != Some("c") {
-            continue;
-        }
+    for index in target_indexes {
         if index.columns.is_empty()
             || !index
                 .columns
@@ -616,13 +813,45 @@ fn rebuild_in_transaction(
             .map_err(|err| map_query_error(conn, err))?;
     }
 
+    // 6. If FK enforcement was originally on, confirm the rebuilt table did not
+    //    break referential integrity BEFORE committing (foreign_key_check is
+    //    independent of the enforcement pragma, so it runs while it is off).
+    //    A violation returns Err, and the Transaction guard rolls back on drop —
+    //    so the table is untouched, which the post-commit check could not
+    //    guarantee.
+    if fk_on {
+        let mut stmt = conn
+            .prepare(&format!(
+                "PRAGMA {}.foreign_key_check({})",
+                quote_ident(schema),
+                quote_ident(table)
+            ))
+            .map_err(|err| map_query_error(conn, err))?;
+        let mut rows = stmt.query([]).map_err(|err| map_query_error(conn, err))?;
+        if rows
+            .next()
+            .map_err(|err| map_query_error(conn, err))?
+            .is_some()
+        {
+            return Err(AppError::Database(format!(
+                "The structure change on '{table}' would violate a foreign-key \
+                 constraint; no changes were applied."
+            )));
+        }
+    }
+
     tx.commit()
 }
 
 /// Build a `CREATE TABLE` for the rebuilt table from the target columns + the
-/// original table's foreign keys. Composite primary keys become a table-level
-/// `PRIMARY KEY (...)` clause; a single pk column is declared inline.
-fn build_create_table(qualified: &str, target: &[TargetColumn], meta: &TableMeta) -> String {
+/// target foreign keys (introspected set plus staged adds, minus drops).
+/// Composite primary keys become a table-level `PRIMARY KEY (...)` clause; a
+/// single pk column is declared inline.
+fn build_create_table(
+    qualified: &str,
+    target: &[TargetColumn],
+    foreign_keys: &[ForeignKeyInfo],
+) -> String {
     let pk_columns: Vec<&str> = target
         .iter()
         .filter(|c| c.info.pk)
@@ -659,7 +888,7 @@ fn build_create_table(qualified: &str, target: &[TargetColumn], meta: &TableMeta
     // Foreign keys from the original table, dropping any whose local columns no
     // longer exist (e.g. a dropped fk column).
     let target_names: Vec<&str> = target.iter().map(|c| c.info.name.as_str()).collect();
-    for fk in &meta.foreign_keys {
+    for fk in foreign_keys {
         if fk.columns.is_empty()
             || !fk
                 .columns
@@ -1347,6 +1576,198 @@ mod tests {
         .unwrap_err();
         assert!(err.to_string().contains("'nope'"));
         assert!(err.to_string().contains("does not exist"));
+    }
+
+    // -- index + foreign-key ops -------------------------------------------
+
+    #[test]
+    fn preview_renders_index_and_fk_ops() {
+        let conn = db("CREATE TABLE t (id INTEGER PRIMARY KEY, email TEXT, user_id INTEGER);");
+        let cases: Vec<(AlterOp, &str)> = vec![
+            (
+                AlterOp::AddIndex {
+                    name: "idx_t_email".into(),
+                    columns: vec!["email".into()],
+                    unique: true,
+                },
+                r#"CREATE UNIQUE INDEX "idx_t_email" ON "t" ("email")"#,
+            ),
+            (
+                AlterOp::AddIndex {
+                    name: "idx_t_uid".into(),
+                    columns: vec!["user_id".into()],
+                    unique: false,
+                },
+                r#"CREATE INDEX "idx_t_uid" ON "t" ("user_id")"#,
+            ),
+            (
+                AlterOp::DropIndex {
+                    name: "idx_old".into(),
+                },
+                r#"DROP INDEX "idx_old""#,
+            ),
+            (
+                AlterOp::AddForeignKey {
+                    name: "t_uid_fkey".into(),
+                    columns: vec!["user_id".into()],
+                    ref_table: "users".into(),
+                    ref_columns: vec!["id".into()],
+                    on_delete: Some("CASCADE".into()),
+                },
+                r#"ALTER TABLE "t" ADD CONSTRAINT "t_uid_fkey" FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON DELETE CASCADE"#,
+            ),
+            (
+                AlterOp::DropForeignKey {
+                    name: "t_uid_fkey".into(),
+                    columns: vec!["user_id".into()],
+                },
+                r#"ALTER TABLE "t" DROP CONSTRAINT "t_uid_fkey""#,
+            ),
+        ];
+        for (op, expected) in cases {
+            let stmts = preview(&conn, "t", std::slice::from_ref(&op)).expect("preview");
+            assert_eq!(stmts, vec![expected.to_string()], "op {op:?}");
+        }
+    }
+
+    #[test]
+    fn native_add_and_drop_index() {
+        let conn = db("CREATE TABLE t (id INTEGER PRIMARY KEY, email TEXT); \
+             INSERT INTO t VALUES (1, 'a@b');");
+        apply(
+            &conn,
+            "t",
+            &[AlterOp::AddIndex {
+                name: "idx_t_email".into(),
+                columns: vec!["email".into()],
+                unique: true,
+            }],
+        )
+        .expect("add index");
+        assert!(
+            meta(&conn, "t")
+                .indexes
+                .iter()
+                .any(|ix| ix.name == "idx_t_email" && ix.unique),
+            "unique index should exist"
+        );
+        apply(
+            &conn,
+            "t",
+            &[AlterOp::DropIndex {
+                name: "idx_t_email".into(),
+            }],
+        )
+        .expect("drop index");
+        assert!(
+            !meta(&conn, "t")
+                .indexes
+                .iter()
+                .any(|ix| ix.name == "idx_t_email"),
+            "index should be gone"
+        );
+    }
+
+    #[test]
+    fn unknown_index_column_is_rejected() {
+        let conn = db("CREATE TABLE t (id INTEGER PRIMARY KEY, email TEXT);");
+        let err = preview(
+            &conn,
+            "t",
+            &[AlterOp::AddIndex {
+                name: "idx_bad".into(),
+                columns: vec!["nope".into()],
+                unique: false,
+            }],
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("nope"));
+    }
+
+    #[test]
+    fn rebuild_add_foreign_key_preserves_data() {
+        let conn = db("CREATE TABLE users (id INTEGER PRIMARY KEY); \
+             CREATE TABLE t (id INTEGER PRIMARY KEY, user_id INTEGER); \
+             INSERT INTO users VALUES (1); INSERT INTO t VALUES (1, 1);");
+        apply(
+            &conn,
+            "t",
+            &[AlterOp::AddForeignKey {
+                name: "t_user_id_fkey".into(),
+                columns: vec!["user_id".into()],
+                ref_table: "users".into(),
+                ref_columns: vec!["id".into()],
+                on_delete: Some("CASCADE".into()),
+            }],
+        )
+        .expect("add fk");
+        let m = meta(&conn, "t");
+        assert_eq!(m.foreign_keys.len(), 1, "fk added: {:?}", m.foreign_keys);
+        assert_eq!(m.foreign_keys[0].ref_table, "users");
+        assert_eq!(m.foreign_keys[0].columns, vec!["user_id"]);
+        assert_eq!(m.foreign_keys[0].on_delete.as_deref(), Some("CASCADE"));
+        let n: i64 = conn
+            .query_row("SELECT count(*) FROM t", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 1, "row preserved through rebuild");
+    }
+
+    #[test]
+    fn rebuild_add_foreign_key_with_orphan_row_rolls_back() {
+        // user_id 2 has no matching users row → foreign_key_check fails → the
+        // whole change rolls back and the table keeps no FK.
+        let conn = db("CREATE TABLE users (id INTEGER PRIMARY KEY); \
+             CREATE TABLE t (id INTEGER PRIMARY KEY, user_id INTEGER); \
+             INSERT INTO users VALUES (1); INSERT INTO t VALUES (1, 2);");
+        // foreign_key_check only runs when FK enforcement is on (off by default
+        // for an in-memory connection).
+        conn.execute_batch("PRAGMA foreign_keys = ON").unwrap();
+        let err = apply(
+            &conn,
+            "t",
+            &[AlterOp::AddForeignKey {
+                name: "t_user_id_fkey".into(),
+                columns: vec!["user_id".into()],
+                ref_table: "users".into(),
+                ref_columns: vec!["id".into()],
+                on_delete: None,
+            }],
+        )
+        .unwrap_err();
+        assert!(matches!(err, AppError::Database(_)));
+        assert!(
+            meta(&conn, "t").foreign_keys.is_empty(),
+            "no fk after rollback"
+        );
+    }
+
+    #[test]
+    fn rebuild_drop_foreign_key_by_columns() {
+        // SQLite's foreign_key_list exposes no constraint name, so DropForeignKey
+        // identifies the FK by its local columns.
+        let conn = db("CREATE TABLE users (id INTEGER PRIMARY KEY); \
+             CREATE TABLE t (id INTEGER PRIMARY KEY, \
+                 user_id INTEGER REFERENCES users(id)); \
+             INSERT INTO users VALUES (1); INSERT INTO t VALUES (1, 1);");
+        assert_eq!(meta(&conn, "t").foreign_keys.len(), 1);
+        apply(
+            &conn,
+            "t",
+            &[AlterOp::DropForeignKey {
+                name: String::new(),
+                columns: vec!["user_id".into()],
+            }],
+        )
+        .expect("drop fk");
+        assert!(
+            meta(&conn, "t").foreign_keys.is_empty(),
+            "fk should be dropped"
+        );
+        // Data preserved.
+        let n: i64 = conn
+            .query_row("SELECT count(*) FROM t", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 1);
     }
 
     #[test]

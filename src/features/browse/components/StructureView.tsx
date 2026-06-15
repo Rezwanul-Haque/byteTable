@@ -26,15 +26,21 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { highlightSql } from "../highlightSql";
-import { useIntrospectionStore, tableMetaKey } from "../../introspection/state";
+import { useIntrospectionStore, tableMetaKey, tablesKey } from "../../introspection/state";
 import { useTabMetaStore } from "../../workspaces/tabMeta";
 import { useWorkspacesStore } from "../../workspaces/state";
-import { alterApply, alterPreview, type AlterOp } from "../../structure/api";
+import { alterApply, alterPreview, type AlterOp, type ColumnInfo } from "../../structure/api";
 import {
   applyOpsToColumns,
+  applyOpsToForeignKeys,
+  applyOpsToIndexes,
+  generateForeignKeyName,
+  generateIndexName,
   toWireBatch,
   SQLITE_TYPES,
   type WorkingColumn,
+  type WorkingForeignKey,
+  type WorkingIndex,
 } from "../../structure/ops";
 import { appErrorMessage } from "../../../shared/api/error";
 import { Btn } from "../../../shared/ui/Btn";
@@ -77,6 +83,12 @@ export function StructureView({
   const toast = useToast();
   const [colQuery, setColQuery] = useState("");
   const [ddlOpen, setDdlOpen] = useState(false);
+  // Rail accordion: which section is expanded, and whether its add-form is open.
+  const [openSection, setOpenSection] = useState<"indexes" | "fks" | "refs" | "ddl" | null>(
+    "indexes",
+  );
+  const [addingIndex, setAddingIndex] = useState(false);
+  const [addingFk, setAddingFk] = useState(false);
 
   const loadTableMeta = useIntrospectionStore((state) => state.loadTableMeta);
   const invalidate = useIntrospectionStore((state) => state.invalidate);
@@ -251,6 +263,76 @@ export function StructureView({
     setOps(ops.filter((o) => !(o.op === "dropColumn" && o.name === origin)));
   };
 
+  // ---- index + foreign-key working sets + staging ----------------------
+  const workingIndexes: WorkingIndex[] = useMemo(
+    () => (meta ? applyOpsToIndexes(meta.indexes, ops) : []),
+    [meta, ops],
+  );
+  const workingForeignKeys: WorkingForeignKey[] = useMemo(
+    () => (meta ? applyOpsToForeignKeys(meta.foreignKeys, ops, table) : []),
+    [meta, ops, table],
+  );
+
+  const addIndex = (cols: string[], unique: boolean) => {
+    if (cols.length === 0) return;
+    const taken = workingIndexes.map((ix) => ix.name);
+    const name = generateIndexName(table, cols, taken);
+    setOps([...ops, { op: "addIndex", name, columns: cols, unique }]);
+    setAddingIndex(false);
+  };
+
+  const dropIndex = (ix: WorkingIndex) => {
+    if (ix.primary) return; // primary-key index is protected
+    if (ix.isNew) {
+      // A just-staged index: remove its addIndex op.
+      setOps(ops.filter((o) => !(o.op === "addIndex" && o.name === ix.name)));
+      return;
+    }
+    setOps([...ops, { op: "dropIndex", name: ix.name }]);
+  };
+
+  const undropIndex = (ix: WorkingIndex) => {
+    setOps(ops.filter((o) => !(o.op === "dropIndex" && o.name === ix.name)));
+  };
+
+  const addForeignKey = (
+    cols: string[],
+    refTable: string,
+    refCols: string[],
+    onDelete: string | null,
+  ) => {
+    if (cols.length === 0 || !refTable || refCols.length === 0) return;
+    const taken = workingForeignKeys.map((fk) => fk.name);
+    const name = generateForeignKeyName(table, cols, taken);
+    setOps([
+      ...ops,
+      { op: "addForeignKey", name, columns: cols, refTable, refColumns: refCols, onDelete },
+    ]);
+    setAddingFk(false);
+  };
+
+  const dropForeignKey = (fk: WorkingForeignKey) => {
+    if (fk.isNew) {
+      setOps(ops.filter((o) => !(o.op === "addForeignKey" && o.name === fk.name)));
+      return;
+    }
+    setOps([...ops, { op: "dropForeignKey", name: fk.name, columns: fk.columns }]);
+  };
+
+  const undropForeignKey = (fk: WorkingForeignKey) => {
+    setOps(
+      ops.filter(
+        (o) =>
+          !(
+            o.op === "dropForeignKey" &&
+            (o.name === fk.name ||
+              (o.columns.length === fk.columns.length &&
+                o.columns.every((c, i) => c === fk.columns[i])))
+          ),
+      ),
+    );
+  };
+
   // ---- preview / apply / discard ---------------------------------------
   const wireBatch = useMemo(() => toWireBatch(ops), [ops]);
 
@@ -326,7 +408,6 @@ export function StructureView({
   }, [working, q]);
 
   const ddl = meta?.ddl ?? "";
-  const ddlLines = ddl ? ddl.split("\n").length : 0;
   const copyDdl = () => {
     if (navigator.clipboard?.writeText) void navigator.clipboard.writeText(ddl);
     toast("DDL copied to clipboard", "ok");
@@ -383,10 +464,10 @@ export function StructureView({
             <b>{colCount}</b> columns
           </span>
           <span className="structure-chip">
-            <b>{meta.indexes.length}</b> indexes
+            <b>{workingIndexes.filter((ix) => !ix.markedForDrop).length}</b> indexes
           </span>
           <span className="structure-chip">
-            <b>{meta.foreignKeys.length}</b> FKs
+            <b>{workingForeignKeys.filter((fk) => !fk.markedForDrop).length}</b> FKs
           </span>
           <span className="structure-chip">
             <b>{inbound.length}</b> referenced by
@@ -471,118 +552,242 @@ export function StructureView({
           </div>
         </section>
 
-        <aside className="structure-rail">
-          <div className="structure-section">
-            <h3>
-              <Icon name="speed" size={15} /> Indexes{" "}
-              <span className="rail-count">{meta.indexes.length}</span>
-            </h3>
-            {meta.indexes.length === 0 ? (
-              <div className="structure-none">No indexes</div>
-            ) : (
-              meta.indexes.map((ix) => (
-                <div key={ix.name} className="structure-card">
-                  <div className="structure-card-name">
-                    {ix.name}
-                    {ix.primary ? (
-                      <span className="tag tag-accent">PRIMARY</span>
-                    ) : ix.unique ? (
-                      <span className="tag">UNIQUE</span>
-                    ) : null}
+        <aside className="structure-rail accordion">
+          <AccSection
+            open={openSection === "indexes"}
+            onToggle={() => setOpenSection((s) => (s === "indexes" ? null : "indexes"))}
+            icon="speed"
+            label="Indexes"
+            count={workingIndexes.filter((ix) => !ix.markedForDrop).length}
+            add={{
+              active: addingIndex,
+              title: "Add index",
+              onToggle: () => {
+                setOpenSection("indexes");
+                setAddingIndex((v) => !v);
+                setAddingFk(false);
+              },
+            }}
+          >
+            {addingIndex ? (
+              <AddIndexForm
+                columns={working.filter((c) => !c.markedForDrop)}
+                onCancel={() => setAddingIndex(false)}
+                onAdd={addIndex}
+              />
+            ) : null}
+            <div className="acc-scroll">
+              {workingIndexes.length === 0 ? (
+                <div className="structure-none">No indexes</div>
+              ) : (
+                workingIndexes.map((ix) => (
+                  <div
+                    key={ix.name}
+                    className={
+                      "structure-card" +
+                      (ix.isNew ? " structure-card-new" : "") +
+                      (ix.markedForDrop ? " structure-card-drop" : "")
+                    }
+                  >
+                    <div className="structure-card-name">
+                      {ix.name}
+                      {ix.primary ? (
+                        <span className="tag tag-accent">PRIMARY</span>
+                      ) : ix.unique ? (
+                        <span className="tag">UNIQUE</span>
+                      ) : null}
+                      <span style={{ flex: 1 }} />
+                      {ix.primary ? null : ix.markedForDrop ? (
+                        <button
+                          type="button"
+                          className="card-drop"
+                          title={"Keep " + ix.name}
+                          onClick={() => undropIndex(ix)}
+                        >
+                          <Icon name="undo" size={13} />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="card-drop"
+                          title={"Drop " + ix.name}
+                          onClick={() => dropIndex(ix)}
+                        >
+                          <Icon name="delete" size={13} />
+                        </button>
+                      )}
+                    </div>
+                    <div className="structure-card-detail">({ix.columns.join(", ")})</div>
                   </div>
-                  <div className="structure-card-detail">({ix.columns.join(", ")})</div>
-                </div>
-              ))
-            )}
-          </div>
+                ))
+              )}
+            </div>
+          </AccSection>
 
-          <div className="structure-section">
-            <h3>
-              <Icon name="link" size={15} /> Foreign keys{" "}
-              <span className="rail-count">{meta.foreignKeys.length}</span>
-            </h3>
-            {meta.foreignKeys.length === 0 ? (
-              <div className="structure-none">No foreign keys</div>
-            ) : (
-              meta.foreignKeys.map((fk, i) => (
-                <div key={fk.name ?? "fk-" + i} className="structure-card">
-                  <div className="structure-card-name">{fk.name ?? "fk"}</div>
-                  <div className="structure-card-detail">
-                    ({fk.columns.join(", ")}) → {fk.refTable}({fk.refColumns.join(", ")})
-                    {fk.onDelete ? (
-                      <span className="tag" style={{ marginLeft: 8 }}>
-                        ON DELETE {fk.onDelete}
-                      </span>
-                    ) : null}
+          <AccSection
+            open={openSection === "fks"}
+            onToggle={() => setOpenSection((s) => (s === "fks" ? null : "fks"))}
+            icon="link"
+            label="Foreign keys"
+            count={workingForeignKeys.filter((fk) => !fk.markedForDrop).length}
+            add={{
+              active: addingFk,
+              title: "Add foreign key",
+              onToggle: () => {
+                setOpenSection("fks");
+                setAddingFk((v) => !v);
+                setAddingIndex(false);
+              },
+            }}
+          >
+            {addingFk ? (
+              <AddFkForm
+                handleId={handleId}
+                schema={schema}
+                table={table}
+                columns={working.filter((c) => !c.markedForDrop)}
+                onCancel={() => setAddingFk(false)}
+                onAdd={addForeignKey}
+              />
+            ) : null}
+            <div className="acc-scroll">
+              {workingForeignKeys.length === 0 && !addingFk ? (
+                <div className="structure-none">No foreign keys</div>
+              ) : (
+                workingForeignKeys.map((fk) => (
+                  <div
+                    key={fk.name}
+                    className={
+                      "structure-card" +
+                      (fk.isNew ? " structure-card-new" : "") +
+                      (fk.markedForDrop ? " structure-card-drop" : "")
+                    }
+                  >
+                    <div className="structure-card-name">
+                      {fk.name}
+                      <span style={{ flex: 1 }} />
+                      {fk.markedForDrop ? (
+                        <button
+                          type="button"
+                          className="card-drop"
+                          title={"Keep " + fk.name}
+                          onClick={() => undropForeignKey(fk)}
+                        >
+                          <Icon name="undo" size={13} />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="card-drop"
+                          title={"Drop " + fk.name}
+                          onClick={() => dropForeignKey(fk)}
+                        >
+                          <Icon name="delete" size={13} />
+                        </button>
+                      )}
+                    </div>
+                    <div className="structure-card-detail">
+                      ({fk.columns.join(", ")}) → {fk.refTable}({fk.refColumns.join(", ")})
+                      {fk.onDelete ? (
+                        <span className="tag" style={{ marginLeft: 8 }}>
+                          ON DELETE {fk.onDelete}
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
-                </div>
-              ))
-            )}
-          </div>
+                ))
+              )}
+            </div>
+          </AccSection>
 
-          <div className="structure-section">
-            <h3>
-              <Icon name="call_received" size={15} /> Referenced by{" "}
-              <span className="rail-count">{inbound.length}</span>
-            </h3>
-            {inbound.length === 0 ? (
-              <div className="structure-none">No tables reference {table}</div>
-            ) : (
-              inbound.map((fk, i) => (
-                <div key={fk.table + "-" + i} className="structure-card">
-                  <div className="structure-card-name">{fk.table}</div>
-                  <div className="structure-card-detail">
-                    {fk.table}({fk.columns.join(", ")}) → {table}({fk.refColumns.join(", ")})
-                    {fk.onDelete ? (
-                      <span className="tag" style={{ marginLeft: 8 }}>
-                        ON DELETE {fk.onDelete}
-                      </span>
-                    ) : null}
+          <AccSection
+            open={openSection === "refs"}
+            onToggle={() => setOpenSection((s) => (s === "refs" ? null : "refs"))}
+            icon="call_received"
+            label="Referenced by"
+            count={inbound.length}
+          >
+            <div className="acc-scroll">
+              {inbound.length === 0 ? (
+                <div className="structure-none">No tables reference {table}</div>
+              ) : (
+                inbound.map((fk, i) => (
+                  <div key={fk.table + "-" + i} className="structure-card">
+                    <div className="structure-card-name">{fk.table}</div>
+                    <div className="structure-card-detail">
+                      {fk.table}({fk.columns.join(", ")}) → {table}({fk.refColumns.join(", ")})
+                      {fk.onDelete ? (
+                        <span className="tag" style={{ marginLeft: 8 }}>
+                          ON DELETE {fk.onDelete}
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
-                </div>
-              ))
-            )}
-          </div>
+                ))
+              )}
+            </div>
+            <div className="rail-readonly-note">Edit these on the referencing table</div>
+          </AccSection>
 
-          <div className="structure-section">
-            <h3>
-              <Icon name="code" size={15} /> DDL
-              <span style={{ flex: 1 }} />
-              {ddl ? (
+          <AccSection
+            open={openSection === "ddl"}
+            onToggle={() => setOpenSection((s) => (s === "ddl" ? null : "ddl"))}
+            icon="code"
+            label="DDL"
+            actions={
+              ddl ? (
                 <>
-                  <button className="ddl-copy" onClick={copyDdl} title="Copy DDL">
-                    <Icon name="content_copy" size={13} /> copy
-                  </button>
-                  <button
+                  <span
                     className="ddl-copy"
-                    onClick={() => setDdlOpen(true)}
+                    role="button"
+                    tabIndex={0}
+                    title="Copy DDL"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      copyDdl();
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        copyDdl();
+                      }
+                    }}
+                  >
+                    <Icon name="content_copy" size={13} /> copy
+                  </span>
+                  <span
+                    className="ddl-copy"
+                    role="button"
+                    tabIndex={0}
                     title="View full DDL"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDdlOpen(true);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setDdlOpen(true);
+                      }
+                    }}
                   >
                     <Icon name="open_in_full" size={13} /> expand
-                  </button>
-                </>
-              ) : null}
-            </h3>
-            {ddl ? (
-              <div
-                className="ddl-preview"
-                onClick={() => setDdlOpen(true)}
-                title="Click to view full DDL"
-              >
-                <pre
-                  className="ddl-block ddl-preview-block"
-                  dangerouslySetInnerHTML={{ __html: highlightSql(ddl) }}
-                />
-                <div className="ddl-fade">
-                  <span className="ddl-fade-hint">
-                    <Icon name="open_in_full" size={12} /> view all {ddlLines} lines
                   </span>
-                </div>
-              </div>
+                </>
+              ) : null
+            }
+          >
+            {ddl ? (
+              <pre
+                className="ddl-block acc-ddl-block"
+                dangerouslySetInnerHTML={{ __html: highlightSql(ddl) }}
+              />
             ) : (
               <div className="structure-none">No DDL available</div>
             )}
-          </div>
+          </AccSection>
         </aside>
       </div>
 
@@ -949,5 +1154,251 @@ function TypeCell({ value, pk, editing, onEdit, onDone, onCommit }: TypeCellProp
     >
       {value.toLowerCase() || "—"}
     </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Rail accordion section + index/FK add-forms
+// ---------------------------------------------------------------------------
+
+interface AccSectionProps {
+  open: boolean;
+  onToggle: () => void;
+  icon: string;
+  label: string;
+  count?: number;
+  /** Optional "+" add toggle in the head (Indexes / Foreign keys). */
+  add?: { active: boolean; title: string; onToggle: () => void };
+  /** Optional head-trailing actions (DDL copy/expand). */
+  actions?: ReactNode;
+  children: ReactNode;
+}
+
+/** One collapsible rail section (ported from the prototype's `.acc-section`).
+ *  The head is a `role="button"` div so the optional "+" / action controls
+ *  inside it stay valid interactive children. */
+function AccSection({
+  open,
+  onToggle,
+  icon,
+  label,
+  count,
+  add,
+  actions,
+  children,
+}: AccSectionProps) {
+  return (
+    <div className={"acc-section" + (open ? " open" : "")}>
+      <div
+        className="acc-head"
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        onClick={onToggle}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onToggle();
+          }
+        }}
+      >
+        <Icon
+          name={open ? "expand_more" : "chevron_right"}
+          size={16}
+          style={{ color: "var(--text-faint)" }}
+        />
+        <Icon name={icon} size={15} /> {label}
+        {typeof count === "number" ? <span className="rail-count">{count}</span> : null}
+        <span style={{ flex: 1 }} />
+        {actions}
+        {add ? (
+          <button
+            type="button"
+            className="rail-add"
+            title={add.title}
+            aria-pressed={add.active}
+            onClick={(e) => {
+              e.stopPropagation();
+              add.onToggle();
+            }}
+          >
+            <Icon name={add.active && open ? "close" : "add"} size={15} />
+          </button>
+        ) : null}
+      </div>
+      {open ? <div className="acc-body">{children}</div> : null}
+    </div>
+  );
+}
+
+interface AddIndexFormProps {
+  columns: WorkingColumn[];
+  onAdd: (columns: string[], unique: boolean) => void;
+  onCancel: () => void;
+}
+
+/** Inline "add index" form: toggle column chips + a unique flag. */
+function AddIndexForm({ columns, onAdd, onCancel }: AddIndexFormProps) {
+  const [picked, setPicked] = useState<string[]>([]);
+  const [unique, setUnique] = useState(false);
+  const toggle = (n: string) =>
+    setPicked((p) => (p.includes(n) ? p.filter((x) => x !== n) : [...p, n]));
+  return (
+    <div className="st-addform">
+      <div className="st-addform-cols">
+        {columns.map((c) => (
+          <button
+            key={c.name}
+            type="button"
+            className={"st-chip" + (picked.includes(c.name) ? " on" : "")}
+            onClick={() => toggle(c.name)}
+          >
+            {c.name}
+          </button>
+        ))}
+      </div>
+      <label className="st-addform-row">
+        <input type="checkbox" checked={unique} onChange={(e) => setUnique(e.target.checked)} />{" "}
+        Unique index
+      </label>
+      <div className="st-addform-actions">
+        <Btn variant="text" small onClick={onCancel}>
+          Cancel
+        </Btn>
+        <Btn
+          variant="filled"
+          small
+          icon="add"
+          disabled={picked.length === 0}
+          onClick={() => onAdd(picked, unique)}
+        >
+          Add index
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
+interface AddFkFormProps {
+  handleId: string;
+  schema: string;
+  table: string;
+  columns: WorkingColumn[];
+  onAdd: (
+    columns: string[],
+    refTable: string,
+    refColumns: string[],
+    onDelete: string | null,
+  ) => void;
+  onCancel: () => void;
+}
+
+const ON_DELETE_ACTIONS = ["RESTRICT", "CASCADE", "SET NULL", "NO ACTION"] as const;
+
+/** Inline "add foreign key" form: a local column → referenced table.column, plus
+ *  an ON DELETE action. The referenced table's columns are introspected lazily
+ *  via the store (other tables in the same schema). */
+function AddFkForm({ handleId, schema, table, columns, onAdd, onCancel }: AddFkFormProps) {
+  const loadTables = useIntrospectionStore((s) => s.loadTables);
+  const loadTableMeta = useIntrospectionStore((s) => s.loadTableMeta);
+  const tablesEntry = useIntrospectionStore((s) => s.tables[tablesKey(handleId, schema)]);
+
+  useEffect(() => {
+    void loadTables(handleId, schema);
+  }, [loadTables, handleId, schema]);
+
+  const otherTables = useMemo(
+    () => (tablesEntry?.tables ?? []).map((t) => t.name).filter((n) => n !== table),
+    [tablesEntry, table],
+  );
+
+  const [col, setCol] = useState(columns[0]?.name ?? "");
+  // Selections start empty and fall back to a derived default (first other
+  // table / referenced pk) — derived rather than set via effects to avoid
+  // cascading-render set-state-in-effect.
+  const [refTableSel, setRefTable] = useState("");
+  const [refColSel, setRefCol] = useState("");
+  const [onDelete, setOnDelete] = useState<string>("RESTRICT");
+
+  const refTable = refTableSel || otherTables[0] || "";
+
+  // Introspect the referenced table's columns (cache-first).
+  const refMetaEntry = useIntrospectionStore((s) =>
+    refTable ? s.tableMetas[tableMetaKey(handleId, schema, refTable)] : undefined,
+  );
+  useEffect(() => {
+    if (refTable) void loadTableMeta(handleId, schema, refTable);
+  }, [loadTableMeta, handleId, schema, refTable]);
+
+  const refCols: ColumnInfo[] = refMetaEntry?.meta?.columns ?? [];
+  const defaultRefCol = (refCols.find((c) => c.pk) ?? refCols[0])?.name ?? "";
+  const refCol = refColSel || defaultRefCol;
+
+  if (otherTables.length === 0) {
+    return (
+      <div className="st-addform">
+        <div className="structure-none">No other tables in this schema to reference.</div>
+        <div className="st-addform-actions">
+          <Btn variant="text" small onClick={onCancel}>
+            Cancel
+          </Btn>
+        </div>
+      </div>
+    );
+  }
+
+  const canAdd = col !== "" && refTable !== "" && refCol !== "";
+
+  return (
+    <div className="st-addform">
+      <div className="st-fk-grid">
+        <Select
+          aria-label="Local column"
+          value={col}
+          options={columns.map((c) => ({ value: c.name, label: c.name }))}
+          onChange={setCol}
+        />
+        <span className="st-fk-arrow">→</span>
+        <Select
+          aria-label="Referenced table"
+          value={refTable}
+          options={otherTables.map((t) => ({ value: t, label: t }))}
+          onChange={(t) => {
+            setRefTable(t);
+            setRefCol(""); // re-default to the new table's pk
+          }}
+        />
+        <Select
+          aria-label="Referenced column"
+          value={refCol}
+          options={refCols.map((c) => ({ value: c.name, label: c.name }))}
+          onChange={setRefCol}
+        />
+      </div>
+      <label className="st-addform-row">
+        ON DELETE
+        <Select
+          aria-label="ON DELETE action"
+          mono={false}
+          value={onDelete}
+          options={ON_DELETE_ACTIONS.map((a) => ({ value: a, label: a }))}
+          onChange={setOnDelete}
+        />
+      </label>
+      <div className="st-addform-actions">
+        <Btn variant="text" small onClick={onCancel}>
+          Cancel
+        </Btn>
+        <Btn
+          variant="filled"
+          small
+          icon="add"
+          disabled={!canAdd}
+          onClick={() => onAdd([col], refTable, [refCol], onDelete)}
+        >
+          Add FK
+        </Btn>
+      </div>
+    </div>
   );
 }

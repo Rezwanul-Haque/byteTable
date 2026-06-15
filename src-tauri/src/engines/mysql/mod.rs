@@ -1659,7 +1659,7 @@ async fn alter_table(
     // pass the introspected meta to the builder.
     let statements: Vec<String> = ops
         .iter()
-        .map(|op| alter_statement(&qualified, op, &meta))
+        .map(|op| alter_statement(schema, &qualified, op, &meta))
         .collect::<Result<Vec<_>, _>>()?;
 
     if !apply {
@@ -1727,7 +1727,12 @@ fn validate_ops(meta: &TableMeta, table: &str, ops: &[AlterOp]) -> Result<(), Ap
 /// [NOT NULL]` (MySQL couples type + nullability in MODIFY, so we read the
 /// current type from `meta`); default uses `ALTER COLUMN col SET/DROP DEFAULT`.
 /// `default` and type expressions are the verbatim SQL text the user supplied.
-fn alter_statement(qualified: &str, op: &AlterOp, meta: &TableMeta) -> Result<String, AppError> {
+fn alter_statement(
+    schema: &str,
+    qualified: &str,
+    op: &AlterOp,
+    meta: &TableMeta,
+) -> Result<String, AppError> {
     let stmt = match op {
         AlterOp::AddColumn {
             name,
@@ -1791,8 +1796,59 @@ fn alter_statement(qualified: &str, op: &AlterOp, meta: &TableMeta) -> Result<St
         AlterOp::DropColumn { name } => {
             format!("ALTER TABLE {qualified} DROP COLUMN {}", quote_ident(name))
         }
+        AlterOp::AddIndex {
+            name,
+            columns,
+            unique,
+        } => format!(
+            "CREATE {}INDEX {} ON {qualified} ({})",
+            if *unique { "UNIQUE " } else { "" },
+            quote_ident(name),
+            quote_idents(columns)
+        ),
+        // MySQL drops indexes with ALTER TABLE … DROP INDEX (index names are
+        // table-local).
+        AlterOp::DropIndex { name } => {
+            format!("ALTER TABLE {qualified} DROP INDEX {}", quote_ident(name))
+        }
+        AlterOp::AddForeignKey {
+            name,
+            columns,
+            ref_table,
+            ref_columns,
+            on_delete,
+        } => {
+            let mut s = format!(
+                "ALTER TABLE {qualified} ADD CONSTRAINT {} FOREIGN KEY ({}) REFERENCES {}.{} ({})",
+                quote_ident(name),
+                quote_idents(columns),
+                quote_ident(schema),
+                quote_ident(ref_table),
+                quote_idents(ref_columns)
+            );
+            if let Some(action) = on_delete {
+                s.push_str(&format!(" ON DELETE {action}"));
+            }
+            s
+        }
+        // MySQL drops FK constraints with DROP FOREIGN KEY (by constraint name).
+        AlterOp::DropForeignKey { name, .. } => {
+            format!(
+                "ALTER TABLE {qualified} DROP FOREIGN KEY {}",
+                quote_ident(name)
+            )
+        }
     };
     Ok(stmt)
+}
+
+/// Quote and comma-join a list of identifiers (index / FK column lists).
+fn quote_idents(names: &[String]) -> String {
+    names
+        .iter()
+        .map(|c| quote_ident(c))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 // ---------------------------------------------------------------------------
@@ -1911,6 +1967,7 @@ mod tests {
 
         assert_eq!(
             alter_statement(
+                "bytetable",
                 q,
                 &AlterOp::AddColumn {
                     name: "note".into(),
@@ -1926,6 +1983,7 @@ mod tests {
         // RENAME COLUMN (MySQL 8.0+), not CHANGE.
         assert_eq!(
             alter_statement(
+                "bytetable",
                 q,
                 &AlterOp::RenameColumn {
                     from: "a".into(),
@@ -1939,6 +1997,7 @@ mod tests {
         // Type change uses MODIFY COLUMN.
         assert_eq!(
             alter_statement(
+                "bytetable",
                 q,
                 &AlterOp::ChangeType {
                     column: "price".into(),
@@ -1952,6 +2011,7 @@ mod tests {
         // SetNullable couples the CURRENT type into MODIFY (SET NOT NULL).
         assert_eq!(
             alter_statement(
+                "bytetable",
                 q,
                 &AlterOp::SetNullable {
                     column: "title".into(),
@@ -1965,6 +2025,7 @@ mod tests {
         // SetNullable → NULL also repeats the current type.
         assert_eq!(
             alter_statement(
+                "bytetable",
                 q,
                 &AlterOp::SetNullable {
                     column: "title".into(),
@@ -1978,6 +2039,7 @@ mod tests {
         // SetNullable on an unknown column is a §5 error (type unknown).
         assert!(matches!(
             alter_statement(
+                "bytetable",
                 q,
                 &AlterOp::SetNullable {
                     column: "ghost".into(),
@@ -1989,6 +2051,7 @@ mod tests {
         ));
         assert_eq!(
             alter_statement(
+                "bytetable",
                 q,
                 &AlterOp::SetDefault {
                     column: "status".into(),
@@ -2001,6 +2064,7 @@ mod tests {
         );
         assert_eq!(
             alter_statement(
+                "bytetable",
                 q,
                 &AlterOp::SetDefault {
                     column: "status".into(),
@@ -2013,6 +2077,7 @@ mod tests {
         );
         assert_eq!(
             alter_statement(
+                "bytetable",
                 q,
                 &AlterOp::DropColumn {
                     name: "legacy".into()
@@ -2021,6 +2086,66 @@ mod tests {
             )
             .unwrap(),
             "ALTER TABLE `bytetable`.`books` DROP COLUMN `legacy`"
+        );
+        // CREATE INDEX (unique).
+        assert_eq!(
+            alter_statement(
+                "bytetable",
+                q,
+                &AlterOp::AddIndex {
+                    name: "idx_books_title".into(),
+                    columns: vec!["title".into()],
+                    unique: true,
+                },
+                &meta
+            )
+            .unwrap(),
+            "CREATE UNIQUE INDEX `idx_books_title` ON `bytetable`.`books` (`title`)"
+        );
+        // DROP INDEX via ALTER TABLE.
+        assert_eq!(
+            alter_statement(
+                "bytetable",
+                q,
+                &AlterOp::DropIndex {
+                    name: "idx_old".into(),
+                },
+                &meta
+            )
+            .unwrap(),
+            "ALTER TABLE `bytetable`.`books` DROP INDEX `idx_old`"
+        );
+        // ADD CONSTRAINT … FOREIGN KEY, ref table qualified with the schema.
+        assert_eq!(
+            alter_statement(
+                "bytetable",
+                q,
+                &AlterOp::AddForeignKey {
+                    name: "books_author_id_fkey".into(),
+                    columns: vec!["author_id".into()],
+                    ref_table: "authors".into(),
+                    ref_columns: vec!["id".into()],
+                    on_delete: Some("CASCADE".into()),
+                },
+                &meta
+            )
+            .unwrap(),
+            "ALTER TABLE `bytetable`.`books` ADD CONSTRAINT `books_author_id_fkey` \
+             FOREIGN KEY (`author_id`) REFERENCES `bytetable`.`authors` (`id`) ON DELETE CASCADE"
+        );
+        // DROP FOREIGN KEY (by constraint name).
+        assert_eq!(
+            alter_statement(
+                "bytetable",
+                q,
+                &AlterOp::DropForeignKey {
+                    name: "books_author_id_fkey".into(),
+                    columns: vec!["author_id".into()],
+                },
+                &meta
+            )
+            .unwrap(),
+            "ALTER TABLE `bytetable`.`books` DROP FOREIGN KEY `books_author_id_fkey`"
         );
     }
 

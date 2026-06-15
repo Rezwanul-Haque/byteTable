@@ -1453,6 +1453,19 @@ pub trait EngineConnection: Send + Sync {
         ))
     }
 
+    /// Create a new empty schema/database. Engine-aware: Postgres `CREATE
+    /// SCHEMA "x"`, MySQL `CREATE DATABASE \`x\``. **SQLite has no notion of
+    /// creating a schema** (a "schema" there is an ATTACHed database file), so it
+    /// stays `Unsupported`. The adapter quotes the identifier per engine; a
+    /// duplicate name surfaces the engine's §5 error.
+    ///
+    /// Default impl: `Unsupported` — only engines that implement it override it.
+    async fn create_schema(&self, _schema: &str) -> Result<(), AppError> {
+        Err(AppError::Unsupported(
+            "Creating a schema is not supported for this engine.".into(),
+        ))
+    }
+
     /// Run a whole multi-statement SQL script (a dump: `CREATE TABLE` + `INSERT`
     /// + …) into the given schema (M15 import — the I/O counterpart of export).
     ///

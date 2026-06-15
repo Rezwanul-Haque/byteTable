@@ -67,6 +67,15 @@ pub async fn drop_schema(
     manager.get_sql(handle).await?.drop_schema(schema).await
 }
 
+/// Create a new empty schema/database (engine-aware; SQLite is unsupported).
+pub async fn create_schema(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    schema: &str,
+) -> Result<(), AppError> {
+    manager.get_sql(handle).await?.create_schema(schema).await
+}
+
 #[cfg(test)]
 mod tests {
     use async_trait::async_trait;

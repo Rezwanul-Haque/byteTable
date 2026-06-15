@@ -44,7 +44,22 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  margin-top: 1px;
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Env label (design refresh): tiny uppercase, env-colored (inline color). */
+.conn-env {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 9px;
+}
+
+.conn-eng {
+  color: var(--text-faint);
 }
 
 /* Tunnel-lock indicator (M12 Task 3): inline before the host:port detail when
@@ -135,6 +150,30 @@
   /* React-port addition: items are <button>s (prototype: divs) — fill the
      popover like block divs did. */
   width: 100%;
+}
+
+/* "Create schema" action at the top of the switcher (accent-tinted). */
+.schema-pop-create {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.schema-pop-create:hover {
+  background: color-mix(in oklab, var(--accent) 14%, var(--bg3));
+}
+.schema-pop-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 2px;
 }
 
 .schema-pop-item:hover {
@@ -293,12 +332,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.table-item-count {
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--text-faint);
 }
 
 .table-expand {

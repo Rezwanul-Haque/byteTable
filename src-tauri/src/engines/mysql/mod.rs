@@ -441,6 +441,17 @@ impl EngineConnection for MysqlEngineConnection {
         drop_schema(&self.pool, schema).await
     }
 
+    async fn create_schema(&self, schema: &str) -> Result<(), AppError> {
+        use sqlx::Executor as _;
+        // MySQL "schema" == database. A duplicate name surfaces the engine's §5
+        // error via map_query_error.
+        self.pool
+            .execute(format!("CREATE DATABASE {}", quote_ident(schema)).as_str())
+            .await
+            .map_err(map_query_error)?;
+        Ok(())
+    }
+
     async fn execute_script(
         &self,
         schema: &str,

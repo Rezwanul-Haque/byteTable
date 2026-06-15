@@ -33,6 +33,7 @@ import {
   tunnelTitle,
   type SchemaInfo,
 } from "../../connections/api";
+import { CreateSchemaModal } from "../../export/components/CreateSchemaModal";
 import { DropSchemaModal } from "../../export/components/DropSchemaModal";
 import { TruncateModal } from "../../export/components/TruncateModal";
 import { runExport, type ExportKind } from "../../export/exportFlow";
@@ -44,13 +45,16 @@ import { useTabMetaStore } from "../tabMeta";
 import type { Workspace } from "../types";
 import "./Sidebar.css";
 
-/** Row-count cell: counts the backend chose not to compute render as —. */
-function rowCountLabel(count: number | null): string {
-  return count === null ? "—" : count.toLocaleString();
-}
-
 /** Stable default so the no-expansions case never re-triggers effects. */
 const NO_EXPANDED: string[] = [];
+
+/** Engine display labels for the connection header's detail line. */
+const ENGINE_LABEL: Record<string, string> = {
+  sqlite: "SQLite",
+  mysql: "MySQL",
+  postgres: "PostgreSQL",
+  redis: "Redis",
+};
 
 /** The context menu's anchor + target table. */
 interface CtxMenu {
@@ -141,6 +145,8 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   const [schemaImportOpen, setSchemaImportOpen] = useState(false);
   // M15 SQL enhancements: the destructive drop-schema confirm (null when closed).
   const [dropSchemaOpen, setDropSchemaOpen] = useState(false);
+  // Create-schema modal (from the schema switcher's "Create schema" item).
+  const [createSchemaOpen, setCreateSchemaOpen] = useState(false);
   const secActionsRef = useRef<HTMLDivElement | null>(null);
   const secActionsBtnRef = useRef<HTMLButtonElement | null>(null);
 
@@ -236,6 +242,19 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
     schemaBtnRef.current?.focus();
   };
 
+  // After creating a schema: re-introspect the connection's schema list (so the
+  // new one appears in the switcher), then switch to it.
+  const onSchemaCreated = (newName: string) => {
+    void (async () => {
+      try {
+        setWorkspaceSchemas(workspace.id, await connectionSchemas(handleId));
+      } catch {
+        /* keep the stale list — we still switch to the new schema below */
+      }
+      setSchema(newName);
+    })();
+  };
+
   const toggleExpanded = (name: string) => {
     patchWorkspaceUi(workspace.id, {
       expandedTables: expandedTables.includes(name)
@@ -328,27 +347,28 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
 
   return (
     <aside className="sidebar">
-      <div className="sidebar-conn">
+      <div className="sidebar-conn" title={connectionDetail(workspace.saved.params)}>
         <span className="ws-color-bar" style={{ background: workspace.color }} />
         <EngineBadge engine={engine} size={26} />
         <div className="sidebar-conn-info">
-          <div className="sidebar-conn-name">
-            {workspace.name}
-            <span
-              className="env-dot"
-              style={{ background: ENV_COLOR[normalizeEnv(workspace.saved.env)] }}
-              title={normalizeEnv(workspace.saved.env)}
-            />
-          </div>
-          {/* Tunnel lock (M12 Task 3): shown when the connection is reached
-              through an SSH bastion. SQLite never tunnels. */}
+          <div className="sidebar-conn-name">{workspace.name}</div>
+          {/* Detail line (design refresh): the env as a small uppercase, env-
+              colored label + the engine name. The host:port detail moves to the
+              header's hover tooltip. Tunnel lock (M12) shows when reached through
+              an SSH bastion. */}
           <div className="sidebar-conn-detail">
             {connectionIsTunneled(workspace.saved.params) ? (
               <span className="tunnel-lock" title={tunnelTitle(workspace.saved.params)}>
-                <Icon name="vpn_lock" size={13} style={{ color: "var(--accent)" }} />
+                <Icon name="vpn_lock" size={11} style={{ color: "var(--text-faint)" }} />
               </span>
             ) : null}
-            {connectionDetail(workspace.saved.params)}
+            <span
+              className="conn-env"
+              style={{ color: ENV_COLOR[normalizeEnv(workspace.saved.env)] }}
+            >
+              {normalizeEnv(workspace.saved.env)}
+            </span>
+            <span className="conn-eng">{ENGINE_LABEL[engine] ?? engine}</span>
           </div>
         </div>
         <IconBtn
@@ -383,6 +403,19 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
               aria-label="Switch schema"
               onKeyDown={onMenuKeyDown}
             >
+              <button
+                type="button"
+                className="schema-pop-create"
+                role="menuitem"
+                onClick={() => {
+                  setSchemaOpen(false);
+                  setCreateSchemaOpen(true);
+                }}
+              >
+                <Icon name="create_new_folder" size={14} />
+                <span>Create schema</span>
+              </button>
+              <div className="schema-pop-sep" />
               {workspace.schemas.map((s) => {
                 const count = schemaTableCount(s);
                 return (
@@ -549,7 +582,6 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                       style={{ color: isActive ? "var(--accent)" : "var(--text-faint)" }}
                     />
                     <span className="table-item-name">{t.name}</span>
-                    <span className="table-item-count">{rowCountLabel(t.approxRowCount)}</span>
                   </div>
                   {isExpanded ? (
                     columnsEntry ? (
@@ -757,6 +789,15 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
           tables={tables ?? []}
           env={workspace.saved.env}
           onClose={() => setDropSchemaOpen(false)}
+        />
+      ) : null}
+
+      {createSchemaOpen ? (
+        <CreateSchemaModal
+          handleId={handleId}
+          existing={workspace.schemas.map((s) => s.name)}
+          onCreated={onSchemaCreated}
+          onClose={() => setCreateSchemaOpen(false)}
         />
       ) : null}
     </aside>

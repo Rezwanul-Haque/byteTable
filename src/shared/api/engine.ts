@@ -659,6 +659,16 @@ export function dropSchema(handleId: string, schema: string): Promise<void> {
   return invoke<void>("drop_schema", { handleId, schema });
 }
 
+/**
+ * Create a new empty schema/database (`create_schema` command). Engine-aware:
+ * Postgres `CREATE SCHEMA`, MySQL `CREATE DATABASE`; **SQLite is unsupported**
+ * (a "schema" there is an ATTACHed file). A duplicate name surfaces the
+ * engine's `{ kind, message }` §5 error.
+ */
+export function createSchema(handleId: string, schema: string): Promise<void> {
+  return invoke<void>("create_schema", { handleId, schema });
+}
+
 // ---------------------------------------------------------------------------
 // Structure editing (M8, DESIGN_SPEC §3.6) — staged ALTER pipeline.
 //

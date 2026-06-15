@@ -444,6 +444,15 @@ impl EngineConnection for PostgresEngineConnection {
         drop_schema(&self.pool, schema).await
     }
 
+    async fn create_schema(&self, schema: &str) -> Result<(), AppError> {
+        // A duplicate name surfaces the engine's §5 error via map_query_error.
+        sqlx::query(&format!("CREATE SCHEMA {}", quote_ident(schema)))
+            .execute(&self.pool)
+            .await
+            .map_err(map_query_error)?;
+        Ok(())
+    }
+
     async fn execute_script(
         &self,
         schema: &str,

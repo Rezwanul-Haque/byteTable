@@ -64,3 +64,15 @@ pub async fn drop_schema(
 ) -> Result<(), AppError> {
     application::drop_schema(state.manager(), &handle_id, &schema).await
 }
+
+/// Create a new empty schema/database (`create_schema` command). Engine-aware:
+/// Postgres `CREATE SCHEMA`, MySQL `CREATE DATABASE`; SQLite is unsupported. A
+/// duplicate name surfaces the engine's `{ kind, message }` §5 error.
+#[tauri::command]
+pub async fn create_schema(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+    schema: String,
+) -> Result<(), AppError> {
+    application::create_schema(state.manager(), &handle_id, &schema).await
+}

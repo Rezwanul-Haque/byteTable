@@ -431,7 +431,10 @@ function KeyGrid({ columns, rows, onEdit, empty }: KeyGridProps) {
     }
   }, [editing]);
 
-  const gridCols = "38px " + columns.map(() => "minmax(90px, max-content)").join(" ");
+  // Equal flexible tracks (fixed 90px min, no content-based sizing) so every
+  // row shares identical column widths and the grid aligns — KeyGrid isn't
+  // virtualized, so it can't use the SQL grid's measured fixed px tracks.
+  const gridCols = "38px " + columns.map(() => "minmax(90px, 1fr)").join(" ");
 
   const commit = () => {
     if (!editing) return;
@@ -447,7 +450,7 @@ function KeyGrid({ columns, rows, onEdit, empty }: KeyGridProps) {
   }
 
   return (
-    <div className="datagrid-wrap">
+    <div className="datagrid-wrap rkey-grid">
       <div className="dg-canvas" style={{ "--grid-cols": gridCols } as React.CSSProperties}>
         <div className="dg-header dg-row">
           <div className="dg-rownum-h">#</div>

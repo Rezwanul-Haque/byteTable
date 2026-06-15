@@ -11,6 +11,28 @@
   flex-direction: column;
 }
 
+/* KeyGrid reuses the DataGrid look but is NOT virtualized — its rows render in
+   normal document flow. DataGrid.css absolutely-positions `.dg-tr` (the SQL grid
+   sets each row's transform/width inline via the virtualizer); without those
+   inline styles the rows would collapse to the top and the body looks empty.
+   Undo that here so rows stack normally, and give them an explicit height since
+   `--grid-row-h` (a virtualizer var) is unset in this context. */
+.rkey-grid .dg-tr {
+  position: static;
+  transform: none;
+}
+.rkey-grid .dg-td {
+  height: 32px;
+}
+/* Rows + canvas fill the width (DataGrid sizes them to max-content for the
+   virtualized SQL grid); with full-width rows the `1fr` tracks resolve equally,
+   so every row's columns line up. */
+.rkey-grid .dg-canvas,
+.rkey-grid .dg-row {
+  width: 100%;
+  min-width: 100%;
+}
+
 /* Toolbar — mirrors .table-toolbar (Value/Info seg, key chip, TTL, size). */
 .rkey-toolbar {
   display: flex;

@@ -1,8 +1,13 @@
 name: Release
 
 # Builds signed installers + updater artifacts for all three desktop OSes and
-# publishes them (plus the `latest.json` the in-app updater reads) to a GitHub
-# release, on every `v*` tag push.
+# publishes them (plus the `latest.json` the in-app updater reads) to a SINGLE
+# GitHub release, on every `v*` tag push.
+#
+# Why three jobs: a build matrix that each call tauri-action with only `tagName`
+# races to create its OWN release (duplicate drafts, split assets). Instead we
+# create ONE draft release up front, have every platform upload into it by
+# `releaseId`, then publish it once all builds finish.
 #
 # Required repo secrets (see docs/AUTO_UPDATE.md):
 #   TAURI_SIGNING_PRIVATE_KEY           — the updater private key
@@ -17,7 +22,32 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  create-release:
+    runs-on: ubuntu-22.04
+    outputs:
+      release_id: ${{ steps.create.outputs.result }}
+    steps:
+      - name: Create the draft release
+        id: create
+        uses: actions/github-script@v7
+        env:
+          TAG: ${{ github.ref_name }}
+        with:
+          script: |
+            const tag = process.env.TAG;
+            const { data } = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: tag,
+              name: `ByteTable ${tag}`,
+              body: "Download the installer for your OS below. The app also self-updates from this release.",
+              draft: true,
+              prerelease: false,
+            });
+            return data.id;
+
+  build:
+    needs: create-release
     strategy:
       fail-fast: false
       matrix:
@@ -60,16 +90,30 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build, sign, and publish the release
+      - name: Build, sign, and upload into the shared release
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "ByteTable ${{ github.ref_name }}"
-          releaseBody: "Download the installer for your OS below. The app also self-updates from this release."
-          releaseDraft: true
-          prerelease: false
+          releaseId: ${{ needs.create-release.outputs.release_id }}
           args: ${{ matrix.args }}
+
+  publish-release:
+    needs: [create-release, build]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Publish the release (flip draft → latest)
+        uses: actions/github-script@v7
+        env:
+          RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
+        with:
+          script: |
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: Number(process.env.RELEASE_ID),
+              draft: false,
+              make_latest: "true",
+            });

@@ -37,6 +37,9 @@
 //! - `connection_delete` — delete both keychain entries for the id (best
 //!   effort: a missing entry is not an error).
 
+use std::collections::HashMap;
+use std::sync::Mutex;
+
 use crate::shared::error::AppError;
 
 /// The keychain service name for every ByteTable secret.
@@ -66,12 +69,31 @@ pub trait SecretStore: Send + Sync {
     fn delete(&self, account: &str) -> Result<(), AppError>;
 }
 
-/// The real OS-keychain adapter (the `keyring` crate).
-pub struct KeyringSecretStore;
+/// The real OS-keychain adapter (the `keyring` crate), with a process-lifetime
+/// in-memory cache.
+///
+/// # Why the cache
+///
+/// Each OS-keychain *read* can pop an access dialog on macOS — and a dev build
+/// (ad-hoc re-signed on every rebuild) is never added to the item's trusted-app
+/// ACL, so the dialog reappears, sometimes more than once for a single open.
+/// Caching the resolved value (hits AND misses) means the keychain is touched
+/// at most once per account per app session: re-opening a workspace, switching
+/// Redis dbs, or opening the CLI all reuse the cached secret instead of
+/// re-prompting. The secret already lives in RAM for the session (the live
+/// pool/connection holds it), so this adds no new exposure. A signed release
+/// build prompts once ("Always Allow") and never again; the cache simply makes
+/// the dev experience match that.
+pub struct KeyringSecretStore {
+    /// account → Some(secret) (a hit) / None (a known-missing entry).
+    cache: Mutex<HashMap<String, Option<String>>>,
+}
 
 impl KeyringSecretStore {
     pub fn new() -> Self {
-        Self
+        Self {
+            cache: Mutex::new(HashMap::new()),
+        }
     }
 
     fn entry(account: &str) -> Result<keyring::Entry, AppError> {
@@ -88,28 +110,51 @@ impl Default for KeyringSecretStore {
 
 impl SecretStore for KeyringSecretStore {
     fn set(&self, account: &str, secret: &str) -> Result<(), AppError> {
-        Self::entry(account)?
-            .set_password(secret)
-            .map_err(|e| AppError::Io(format!("could not save a secret to the OS keychain ({e}).")))
+        Self::entry(account)?.set_password(secret).map_err(|e| {
+            AppError::Io(format!("could not save a secret to the OS keychain ({e})."))
+        })?;
+        // Keep the cache coherent with the write so the next read serves it
+        // without an OS round-trip (or prompt).
+        self.cache
+            .lock()
+            .unwrap()
+            .insert(account.to_string(), Some(secret.to_string()));
+        Ok(())
     }
 
     fn get(&self, account: &str) -> Result<Option<String>, AppError> {
-        match Self::entry(account)?.get_password() {
-            Ok(secret) => Ok(Some(secret)),
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(e) => Err(AppError::Io(format!(
-                "could not read a secret from the OS keychain ({e})."
-            ))),
+        if let Some(cached) = self.cache.lock().unwrap().get(account) {
+            return Ok(cached.clone());
         }
+        let result = match Self::entry(account)?.get_password() {
+            Ok(secret) => Some(secret),
+            Err(keyring::Error::NoEntry) => None,
+            Err(e) => {
+                return Err(AppError::Io(format!(
+                    "could not read a secret from the OS keychain ({e})."
+                )))
+            }
+        };
+        // Cache the outcome (hit or miss) so a repeat read never re-prompts.
+        self.cache
+            .lock()
+            .unwrap()
+            .insert(account.to_string(), result.clone());
+        Ok(result)
     }
 
     fn delete(&self, account: &str) -> Result<(), AppError> {
         match Self::entry(account)?.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(e) => Err(AppError::Io(format!(
-                "could not delete a secret from the OS keychain ({e})."
-            ))),
+            Ok(()) | Err(keyring::Error::NoEntry) => {}
+            Err(e) => {
+                return Err(AppError::Io(format!(
+                    "could not delete a secret from the OS keychain ({e})."
+                )))
+            }
         }
+        // A deleted secret is now known-missing — drop any cached value.
+        self.cache.lock().unwrap().insert(account.to_string(), None);
+        Ok(())
     }
 }
 

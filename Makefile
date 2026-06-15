@@ -12,7 +12,7 @@ MANIFEST    := src-tauri/Cargo.toml
 export PATH := $(HOME)/.cargo/bin:$(PATH)
 
 .DEFAULT_GOAL := help
-.PHONY: help install ensure-cargo dev test lint fmt build build-debug run db-up db-down clean
+.PHONY: help install ensure-cargo dev dev-cert test lint fmt build build-debug run db-up db-down clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -56,9 +56,13 @@ build: install ensure-cargo ## Build a production desktop bundle (Tauri release)
 build-debug: install ensure-cargo ## Build the renderer + a debug binary (fast, no bundling)
 	$(PNPM) build
 	$(CARGO) build --manifest-path $(MANIFEST)
+	@bash scripts/codesign-dev.sh sign 2>/dev/null || true
 
 run: build-debug ## Build (debug) then launch the binary
 	./src-tauri/target/debug/bytetable
+
+dev-cert: ## macOS: create the stable self-signed identity used to sign dev builds (one-time)
+	bash scripts/codesign-dev.sh setup
 
 db-up: ## Start the test databases (Postgres/MySQL/Redis) + seed them
 	cd test-fixtures && docker compose up -d && ./seed/seed-redis.sh

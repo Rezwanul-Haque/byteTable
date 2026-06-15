@@ -218,7 +218,15 @@ installer auto-fetches it on older Windows). Signing is optional — set `WINDOW
 > webview + toolchain). The repo's GitHub Actions CI already builds on an ubuntu/macos/windows
 > matrix — use that to produce all three from one push, or run `make build` on each OS.
 
+## Contributing
+
+Contributions are welcome — bug reports, fixes, features, and docs. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the dev setup, project layout, and the
+checks a PR must pass.
+
 ## License & funding
+
+Licensed under the [Apache License 2.0](LICENSE).
 
 Free forever — no feature is ever paywalled. Development is donation-funded (the in-app
 donate button links to GitHub Sponsors / Buy Me a Coffee).

@@ -30,6 +30,34 @@ ASSETS="$(curl -fsSL "$API" | grep -o '"browser_download_url": *"[^"]*"' | sed '
 # First asset URL matching the given extended-regex, or empty.
 match() { printf '%s\n' "$ASSETS" | grep -iE "$1" | head -1; }
 
+# Verify <file> against its entry in the release's SHASUMS256.txt (by asset
+# name). Aborts on mismatch; warns (and continues) if checksums or a hash tool
+# are unavailable. Hashing is sub-second — no real effect on install time.
+verify_checksum() {
+  file="$1"
+  name="$2"
+  sums_url="$(match 'SHASUMS256\.txt$')"
+  if [ -z "$sums_url" ]; then
+    say "No SHASUMS256.txt in the release — skipping checksum verification."
+    return 0
+  fi
+  expected="$(curl -fsSL "$sums_url" | awk -v n="$name" '$2 == n { print $1 }' | head -1)"
+  [ -n "$expected" ] || err "No checksum listed for ${name} in SHASUMS256.txt."
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual="$(sha256sum "$file" | awk '{ print $1 }')"
+  elif command -v shasum >/dev/null 2>&1; then
+    actual="$(shasum -a 256 "$file" | awk '{ print $1 }')"
+  else
+    say "No sha256 tool found — skipping checksum verification."
+    return 0
+  fi
+  if [ "$expected" != "$actual" ]; then
+    rm -f "$file"
+    err "Checksum mismatch for ${name} (expected ${expected}, got ${actual}). Aborted."
+  fi
+  say "Checksum verified."
+}
+
 case "$OS" in
 Darwin)
   URL="$(match '\.dmg$')"
@@ -38,6 +66,7 @@ Darwin)
   trap 'rm -rf "$TMP"' EXIT
   say "Downloading $(basename "$URL")…"
   curl -fSL# "$URL" -o "$TMP/ByteTable.dmg"
+  verify_checksum "$TMP/ByteTable.dmg" "$(basename "$URL")"
   say "Mounting…"
   MNT="$(hdiutil attach "$TMP/ByteTable.dmg" -nobrowse -quiet | grep -o '/Volumes/[^[:cntrl:]]*' | tail -1)"
   [ -n "$MNT" ] || err "Could not mount the disk image."
@@ -68,6 +97,7 @@ Linux)
   mkdir -p "$DEST"
   say "Downloading $(basename "$URL")…"
   curl -fSL# "$URL" -o "$DEST/bytetable"
+  verify_checksum "$DEST/bytetable" "$(basename "$URL")"
   chmod +x "$DEST/bytetable"
   say "Installed to $DEST/bytetable."
   case ":${PATH}:" in

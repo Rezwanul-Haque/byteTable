@@ -123,6 +123,19 @@ jobs:
     needs: [create-release, build]
     runs-on: ubuntu-22.04
     steps:
+      # Hash every uploaded asset into a single SHASUMS256.txt (sha256sum
+      # format: "<hash>  <filename>") and attach it. The install scripts verify
+      # their download against it.
+      - name: Generate + attach SHA-256 checksums
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          mkdir dist && cd dist
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*' --dir .
+          sha256sum * > SHASUMS256.txt
+          gh release upload "$TAG" SHASUMS256.txt --repo "$GITHUB_REPOSITORY" --clobber
+
       - name: Publish the release (flip draft → latest)
         uses: actions/github-script@v7
         env:

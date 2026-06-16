@@ -127,11 +127,18 @@ curl -fsSL https://raw.githubusercontent.com/rezwanul-Haque/byteTable/main/insta
   Grab it from the [releases page](https://github.com/rezwanul-Haque/byteTable/releases/latest)
   and `sudo apt install ./bytetable_*_amd64.deb`.
 
-**Windows** — download the `.exe` installer from the
-[latest release](https://github.com/rezwanul-Haque/byteTable/releases/latest).
+**Windows** — in PowerShell:
 
-> Prefer not to pipe to a shell? Read [`install.sh`](install.sh) first, or just download the
-> installer for your OS from the releases page. The script needs a published release to exist.
+```powershell
+irm https://raw.githubusercontent.com/rezwanul-Haque/byteTable/main/install.ps1 | iex
+```
+
+It downloads the latest installer and runs it (or grab the `.exe` directly from the
+[latest release](https://github.com/rezwanul-Haque/byteTable/releases/latest)).
+
+> Prefer not to pipe to a shell? Read [`install.sh`](install.sh) / [`install.ps1`](install.ps1)
+> first, or just download the installer for your OS from the releases page. The scripts need a
+> published release to exist.
 
 ## Building a distributable
 

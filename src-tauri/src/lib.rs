@@ -51,6 +51,13 @@ fn toggle_main_window(app: &AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Single-instance guard (MUST be the first plugin registered): a second
+        // launch — e.g. clicking the AppImage again — does not spawn another
+        // process; instead this callback fires in the already-running instance
+        // and brings its window to the front.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            show_main_window(app);
+        }))
         // Opener plugin: lets the frontend open external links (donate modal)
         // in the OS default browser. Scoped to https URLs in
         // capabilities/default.json.

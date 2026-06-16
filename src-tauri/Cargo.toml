@@ -29,6 +29,9 @@ tauri-plugin-dialog = "2.7.1"
 # process plugin). Desktop-only.
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+# Single-instance guard: a second launch (e.g. double-clicking the AppImage)
+# focuses the running window instead of spawning another process. Desktop-only.
+tauri-plugin-single-instance = "2"
 async-trait = "0.1.89"
 uuid = { version = "1.20.0", features = ["v4", "serde"] }
 # `net` + `io-util` + `time` are added in M12 Task 3 for the SSH tunnel

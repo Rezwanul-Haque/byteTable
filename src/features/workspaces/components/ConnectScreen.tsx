@@ -35,6 +35,11 @@ export function ConnectScreen() {
   // The saved connection being edited (its pencil clicked), or null. Opens the
   // same modal in edit mode.
   const [editConn, setEditConn] = useState<SavedConnection | null>(null);
+  // Project grouping + filtering (prototype connect.jsx v2).
+  const [filter, setFilter] = useState("");
+  const [projFilter, setProjFilter] = useState<string>("all");
+  const [projOpen, setProjOpen] = useState(false);
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
   const savedConnections = useConnectionsStore((state) => state.savedConnections);
   const loaded = useConnectionsStore((state) => state.loaded);
   const loadError = useConnectionsStore((state) => state.loadError);
@@ -95,6 +100,43 @@ export function ConnectScreen() {
     setConnecting(null);
   };
 
+  // ---- project grouping + filtering ------------------------------------
+  const projectOf = (c: SavedConnection) => c.project || "Ungrouped";
+  const allProjects = [...new Set(savedConnections.map(projectOf))];
+  const q = filter.trim().toLowerCase();
+  const matches = (c: SavedConnection) =>
+    !q ||
+    c.name.toLowerCase().includes(q) ||
+    connectionDetail(c.params).toLowerCase().includes(q) ||
+    c.env.toLowerCase().includes(q) ||
+    c.engine.toLowerCase().includes(q) ||
+    projectOf(c).toLowerCase().includes(q);
+  const shown = savedConnections.filter(
+    (c) => (projFilter === "all" || projectOf(c) === projFilter) && matches(c),
+  );
+  // Group by project; "Ungrouped" sinks to the end, the rest alphabetical.
+  const groups: Record<string, SavedConnection[]> = {};
+  for (const c of shown) (groups[projectOf(c)] ??= []).push(c);
+  const groupKeys = Object.keys(groups).sort((a, b) => {
+    if (a === "Ungrouped") return 1;
+    if (b === "Ungrouped") return -1;
+    return a.localeCompare(b);
+  });
+  // Within a project: production → staging → dev.
+  const ENV_ORDER: SavedConnection["env"][] = ["production", "staging", "dev"];
+  for (const k of groupKeys) {
+    groups[k]!.sort((a, b) => {
+      const ia = ENV_ORDER.indexOf(a.env);
+      const ib = ENV_ORDER.indexOf(b.env);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+    });
+  }
+  // Default-open the first group; while searching, every matching group opens.
+  const effectiveOpen = q ? null : (openGroup ?? groupKeys[0]);
+  // Show the filter once there's more than one connection to sift through.
+  const showSearch = savedConnections.length > 1;
+  const hasConnections = savedConnections.length > 0;
+
   return (
     // Frameless window: data-tauri-drag-region on the screen container makes
     // the empty chrome around the panel (including the top padding zone) a
@@ -113,60 +155,158 @@ export function ConnectScreen() {
           </div>
         </div>
 
-        <div className="connect-list-label">Open a workspace</div>
+        <div className="connect-list-label">
+          <span>Open a workspace</span>
+          {hasConnections ? (
+            <span className="connect-list-count">{savedConnections.length}</span>
+          ) : null}
+          <span style={{ flex: 1 }} />
+          {allProjects.length > 1 ? (
+            <div className="proj-filter">
+              <button
+                type="button"
+                className="proj-filter-btn"
+                onClick={() => setProjOpen((o) => !o)}
+                onBlur={() => setTimeout(() => setProjOpen(false), 120)}
+              >
+                <Icon name="folder" size={13} />
+                <span>{projFilter === "all" ? "All projects" : projFilter}</span>
+                <Icon name="expand_more" size={14} style={{ color: "var(--text-faint)" }} />
+              </button>
+              {projOpen ? (
+                <div className="proj-pop">
+                  <button
+                    type="button"
+                    className={"proj-pop-item" + (projFilter === "all" ? " on" : "")}
+                    onClick={() => {
+                      setProjFilter("all");
+                      setProjOpen(false);
+                    }}
+                  >
+                    All projects <span className="proj-pop-n">{savedConnections.length}</span>
+                  </button>
+                  {allProjects.map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      className={"proj-pop-item" + (projFilter === p ? " on" : "")}
+                      onClick={() => {
+                        setProjFilter(p);
+                        setProjOpen(false);
+                      }}
+                    >
+                      {p}{" "}
+                      <span className="proj-pop-n">
+                        {savedConnections.filter((c) => projectOf(c) === p).length}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+        {showSearch ? (
+          <div className="connect-search">
+            <Icon name="search" size={15} style={{ color: "var(--text-faint)" }} />
+            <input
+              placeholder="Filter connections…"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              spellCheck={false}
+            />
+            {filter ? (
+              <IconBtn icon="close" size={13} title="Clear" onClick={() => setFilter("")} />
+            ) : null}
+          </div>
+        ) : null}
         {loaded && loadError !== null ? (
           // §5-style inline error: the backend's human sentence, where the
           // list would have been.
           <div className="connect-load-error">{loadError}</div>
-        ) : loaded && savedConnections.length === 0 ? (
+        ) : loaded && !hasConnections ? (
           <div className="connect-empty">
             No saved connections yet — open a SQLite file below to get started.
           </div>
         ) : (
           <div className="connect-list">
-            {savedConnections.map((c) => (
-              // Wrapper so the edit affordance is a sibling of the card button
-              // (a <button> can't nest another button).
-              <div key={c.id} className="connect-card-wrap">
-                <button
-                  type="button"
-                  className="connect-card"
-                  onClick={() => void connect(c)}
-                  disabled={connecting !== null}
-                >
-                  <EngineBadge engine={c.engine} size={34} />
-                  <div className="connect-card-info">
-                    <div className="connect-card-name">
-                      {c.name}
-                      <EnvTag env={c.env} />
+            {groupKeys.map((proj) => {
+              const isOpen = q ? true : effectiveOpen === proj;
+              return (
+                <div className={"proj-acc" + (isOpen ? " open" : "")} key={proj}>
+                  <button
+                    type="button"
+                    className="proj-acc-head"
+                    onClick={() => setOpenGroup(isOpen && !q ? "__none__" : proj)}
+                  >
+                    <Icon
+                      name={isOpen ? "expand_more" : "chevron_right"}
+                      size={16}
+                      style={{ color: "var(--text-faint)" }}
+                    />
+                    <Icon
+                      name={proj === "Ungrouped" ? "folder_off" : "folder"}
+                      size={14}
+                      style={{ color: isOpen ? "var(--accent)" : "var(--text-dim)" }}
+                    />
+                    <span className="proj-group-name">{proj}</span>
+                    <span className="connect-group-n">{groups[proj]!.length}</span>
+                  </button>
+                  {isOpen ? (
+                    <div className="proj-acc-body">
+                      {groups[proj]!.map((c) => (
+                        // Wrapper so the edit affordance is a sibling of the card
+                        // button (a <button> can't nest another button).
+                        <div key={c.id} className="connect-card-wrap">
+                          <button
+                            type="button"
+                            className="connect-card"
+                            onClick={() => void connect(c)}
+                            disabled={connecting !== null}
+                          >
+                            <EngineBadge engine={c.engine} size={34} />
+                            <div className="connect-card-info">
+                              <div className="connect-card-name">
+                                {c.name}
+                                <EnvTag env={c.env} />
+                              </div>
+                              <div className="connect-card-detail">
+                                {connectionDetail(c.params)}
+                              </div>
+                            </div>
+                            {connecting === c.id ? (
+                              <span className="spinner" />
+                            ) : (
+                              <Icon name="arrow_forward" size={18} className="connect-arrow" />
+                            )}
+                          </button>
+                          <div className="connect-card-actions">
+                            <IconBtn
+                              icon="edit"
+                              size={15}
+                              title="Edit connection"
+                              disabled={connecting !== null}
+                              onClick={() => setEditConn(c)}
+                            />
+                            <IconBtn
+                              icon="delete"
+                              size={15}
+                              danger
+                              title="Remove connection"
+                              disabled={connecting !== null}
+                              onClick={() => void removeConn(c)}
+                            />
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                    <div className="connect-card-detail">{connectionDetail(c.params)}</div>
-                  </div>
-                  {connecting === c.id ? (
-                    <span className="spinner" />
-                  ) : (
-                    <Icon name="arrow_forward" size={18} className="connect-arrow" />
-                  )}
-                </button>
-                <div className="connect-card-actions">
-                  <IconBtn
-                    icon="edit"
-                    size={15}
-                    title="Edit connection"
-                    disabled={connecting !== null}
-                    onClick={() => setEditConn(c)}
-                  />
-                  <IconBtn
-                    icon="delete"
-                    size={15}
-                    danger
-                    title="Remove connection"
-                    disabled={connecting !== null}
-                    onClick={() => void removeConn(c)}
-                  />
+                  ) : null}
                 </div>
-              </div>
-            ))}
+              );
+            })}
+            {hasConnections && shown.length === 0 ? (
+              <div className="connect-empty">No connections match “{filter}”</div>
+            ) : null}
           </div>
         )}
 

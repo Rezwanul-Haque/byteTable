@@ -652,6 +652,7 @@ mod tests {
             params: sqlite_params(),
             env: Env::Dev,
             color: None,
+            project: None,
             created_at: None,
         }
     }
@@ -690,6 +691,7 @@ mod tests {
             params,
             env: Env::Dev,
             color: None,
+            project: None,
             created_at: None,
         }
     }

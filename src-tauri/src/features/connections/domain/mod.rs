@@ -48,6 +48,11 @@ pub struct SavedConnection {
     /// saved before m15 (the renderer falls back to its auto-cycle palette).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
+    /// Optional project label used to group connections on the connect screen
+    /// (absent ⇒ "Ungrouped"). Free-form text the user assigns/creates in the
+    /// new-connection modal; persisted so the grouping survives restarts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_at: Option<u64>,
 }
@@ -66,6 +71,7 @@ mod tests {
             },
             env: Env::Dev,
             color: Some("#56b6c2".into()),
+            project: None,
             created_at: Some(1_700_000_000_000),
         }
     }

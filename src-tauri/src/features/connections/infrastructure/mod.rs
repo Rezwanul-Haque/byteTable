@@ -133,6 +133,7 @@ mod tests {
             },
             env: Env::Dev,
             color: None,
+            project: None,
             created_at: Some(1_700_000_000_000),
         }
     }

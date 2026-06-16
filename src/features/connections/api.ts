@@ -123,6 +123,9 @@ export interface SavedConnection {
    * Optional + omitted-when-absent on the Rust side.
    */
   color?: string;
+  /** Optional project label for grouping connections on the connect screen
+   *  (absent ⇒ "Ungrouped"). Assigned/created in the new-connection modal. */
+  project?: string;
   createdAt?: number;
 }
 

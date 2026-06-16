@@ -61,6 +61,29 @@
   color: var(--text-faint);
 }
 
+/* A flat (un-boxed) labeled section — Engine / Environment stacked above their
+   controls, matching the design (no surrounding card). */
+.ee-block {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+/* Field label with an inline "optional" tag (Database / User / Password). */
+.lbl-row {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.opt-tag {
+  font-size: 10px;
+  font-weight: 400;
+  font-style: italic;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-faint);
+}
+
 .env-seg {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -150,10 +173,19 @@
   display: none;
 }
 
-.form-grid label {
+.form-grid label,
+.form-grid .form-field {
   display: flex;
   flex-direction: column;
   gap: 5px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+/* The ProjectField uses a <div> (not <label>) to avoid click-forwarding; its
+   label text needs the same styling a <label>'s text gets. */
+.form-field-label {
   font-size: 11.5px;
   color: var(--text-dim);
   font-weight: 500;
@@ -177,6 +209,13 @@
 
 .form-grid input:focus {
   border-color: var(--accent);
+}
+
+/* Match the TLS-mode Select trigger to the input height (the Select's default
+   6px vertical padding is shorter than the form input's 8px). */
+.form-grid .sel-trigger {
+  padding: 8px 10px;
+  font-size: 12.5px;
 }
 
 .file-row {
@@ -327,4 +366,118 @@
 .conn-delete.btn-text.armed {
   background: color-mix(in srgb, var(--error) 18%, transparent);
   font-weight: 600;
+}
+
+/* ---------- Project picker (ProjectField) ---------- */
+.proj-select {
+  position: relative;
+}
+.proj-select-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.12s;
+}
+.proj-select-btn:hover {
+  border-color: color-mix(in oklab, var(--accent) 50%, var(--border));
+}
+.proj-select-val {
+  flex: 1;
+  text-align: left;
+  font-family: var(--mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.proj-select-val.empty {
+  color: var(--text-faint);
+}
+.proj-dd {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 40;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  padding: 5px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.proj-dd-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+  text-align: left;
+}
+.proj-dd-item:hover {
+  background: var(--bg3);
+  color: var(--text);
+}
+.proj-dd-item.on {
+  color: var(--accent);
+}
+.proj-dd-item.create {
+  color: var(--accent);
+  font-weight: 500;
+}
+.proj-dd-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 2px;
+}
+.proj-dd-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+}
+.proj-dd-add input {
+  flex: 1;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  outline: none;
+}
+.proj-dd-add input:focus {
+  border-color: var(--accent);
+}
+.proj-dd-addbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg0);
+  color: var(--accent);
+  cursor: pointer;
+  flex: none;
+}
+.proj-dd-addbtn:hover {
+  border-color: var(--accent);
 }

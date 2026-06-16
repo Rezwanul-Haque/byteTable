@@ -23,7 +23,7 @@
 // state.ts — the workspaces connect screen mounts it directly (the modal is
 // a connections concern; the screen that hosts it is not).
 
-import { useId, useReducer, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useReducer, useRef, useState, type KeyboardEvent } from "react";
 
 import { isAppErrorPayload } from "../../../shared/api/error";
 import type { Engine, Env } from "../../../shared/types";
@@ -95,6 +95,8 @@ interface FormState {
   engine: Engine;
   section: "general" | "tunnel";
   name: string;
+  /** Project label for grouping on the connect screen ("" ⇒ Ungrouped). */
+  project: string;
   host: string;
   port: string;
   // True once the user edited the port — switching engines then keeps it.
@@ -128,6 +130,7 @@ const INITIAL: FormState = {
   engine: "postgres",
   section: "general",
   name: "",
+  project: "",
   host: "localhost",
   port: "5432",
   portTouched: false,
@@ -161,6 +164,8 @@ type Action =
   // it never invalidates the test verdict.
   | { type: "env"; env: Env }
   | { type: "envColor"; color: string }
+  // Project label is connect-screen metadata — never invalidates the verdict.
+  | { type: "project"; project: string }
   // Engine switch: resets section + auto-fills the default port when untouched.
   | { type: "engine"; engine: Engine };
 
@@ -175,6 +180,8 @@ function reducer(state: FormState, action: Action): FormState {
       return { ...state, test: action.test };
     case "env":
       return { ...state, env: action.env };
+    case "project":
+      return { ...state, project: action.project };
     case "envColor":
       // Recolor only the currently-selected env (prototype `setEnvColors`).
       return { ...state, envColors: { ...state.envColors, [state.env]: action.color } };
@@ -204,6 +211,7 @@ function formStateFromConnection(c: SavedConnection): FormState {
     ...INITIAL,
     engine: c.engine,
     name: c.name,
+    project: c.project ?? "",
     env: c.env,
     portTouched: true,
     envColors: { ...ENV_COLOR, [c.env]: c.color ?? ENV_COLOR[c.env] },
@@ -250,12 +258,136 @@ interface NewConnectionModalProps {
   edit?: SavedConnection;
 }
 
+/** Project picker (ported from the prototype's ProjectField): a dropdown of
+ *  "Ungrouped" + known project labels, with an inline "New project…" add. */
+function ProjectField({
+  value,
+  onChange,
+  known,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  known: string[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState("");
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+        setAdding(false);
+      }
+    };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const commitNew = () => {
+    const v = draft.trim();
+    if (v) onChange(v);
+    setAdding(false);
+    setDraft("");
+    setOpen(false);
+  };
+  // A value the user typed that isn't in the known list yet (shown as selected).
+  const isNew = value !== "" && !known.includes(value);
+
+  return (
+    // A <div>, NOT a <label>: a <label> forwards clicks on any inner element to
+    // its first control (the select button), which would re-toggle the dropdown
+    // shut when you click "New project…".
+    <div className="form-field">
+      <span className="form-field-label">Project</span>
+      <div className="proj-select" ref={ref}>
+        <button type="button" className="proj-select-btn" onClick={() => setOpen((o) => !o)}>
+          <Icon
+            name={value ? "folder" : "folder_off"}
+            size={13}
+            style={{ color: value ? "var(--accent)" : "var(--text-faint)" }}
+          />
+          <span className={"proj-select-val" + (value ? "" : " empty")}>
+            {value || "Ungrouped"}
+          </span>
+          <Icon name="expand_more" size={14} style={{ color: "var(--text-faint)" }} />
+        </button>
+        {open ? (
+          <div className="proj-dd">
+            <button
+              type="button"
+              className={"proj-dd-item" + (!value ? " on" : "")}
+              onClick={() => {
+                onChange("");
+                setOpen(false);
+              }}
+            >
+              <Icon name="folder_off" size={13} /> Ungrouped
+            </button>
+            {known.map((p) => (
+              <button
+                key={p}
+                type="button"
+                className={"proj-dd-item" + (value === p ? " on" : "")}
+                onClick={() => {
+                  onChange(p);
+                  setOpen(false);
+                }}
+              >
+                <Icon name="folder" size={13} style={{ color: "var(--accent)" }} /> {p}
+              </button>
+            ))}
+            {isNew ? (
+              <div className="proj-dd-item on">
+                <Icon name="folder" size={13} style={{ color: "var(--accent)" }} /> {value}
+              </div>
+            ) : null}
+            <div className="proj-dd-sep" />
+            {adding ? (
+              <div className="proj-dd-add">
+                <input
+                  autoFocus
+                  value={draft}
+                  placeholder="New project name"
+                  spellCheck={false}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") commitNew();
+                    if (e.key === "Escape") setAdding(false);
+                  }}
+                />
+                <button type="button" className="proj-dd-addbtn" onClick={commitNew}>
+                  <Icon name="check" size={14} />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="proj-dd-item create"
+                onClick={() => {
+                  setAdding(true);
+                  setDraft("");
+                }}
+              >
+                <Icon name="add" size={13} /> New project…
+              </button>
+            )}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
   const [state, dispatch] = useReducer(reducer, edit ? formStateFromConnection(edit) : INITIAL);
   const {
     engine,
     section,
     name,
+    project,
     host,
     port,
     db,
@@ -282,6 +414,11 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
 
   const saveConnection = useConnectionsStore((s) => s.save);
   const removeConnection = useConnectionsStore((s) => s.remove);
+  // Existing project labels (for the ProjectField dropdown).
+  const savedConnections = useConnectionsStore((s) => s.savedConnections);
+  const knownProjects = [
+    ...new Set(savedConnections.map((c) => c.project).filter((p): p is string => !!p)),
+  ].sort((a, b) => a.localeCompare(b));
   const toast = useToast();
   // Two-click delete confirm (edit mode only) — destructive, so the first click
   // arms it and the second removes.
@@ -459,6 +596,7 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
           params: built.params,
           env,
           color: envColor,
+          ...(project.trim() ? { project: project.trim() } : {}),
         },
         secrets(),
       );
@@ -515,34 +653,47 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
         <IconBtn icon="close" onClick={onClose} title="Close" />
       </ModalTitle>
 
-      <div className="engine-picker" role="radiogroup" aria-label="Database engine">
-        {ENGINES.map((e) => (
-          <button
-            key={e.engine}
-            type="button"
-            role="radio"
-            aria-checked={engine === e.engine}
-            className={"engine-choice" + (engine === e.engine ? " active" : "")}
-            onClick={() => pickEngine(e.engine)}
-          >
-            <EngineBadge engine={e.engine} size={28} />
-            <span>{e.label}</span>
-          </button>
-        ))}
+      <div className="form-grid name-grid">
+        <label>
+          Name
+          <input
+            value={name}
+            onChange={(e) => field({ name: e.target.value })}
+            placeholder="my_database"
+            spellCheck={false}
+            autoFocus
+          />
+        </label>
+        <ProjectField
+          value={project}
+          onChange={(v) => dispatch({ type: "project", project: v })}
+          known={knownProjects}
+        />
       </div>
 
-      <div className="env-picker">
-        <div className="env-picker-head">
-          <span className="form-section-label" id={envLabelId}>
-            Environment
-          </span>
-          <span
-            className="env-tag"
-            style={{ color: envColor, borderColor: envColor + "66", background: envColor + "14" }}
-          >
-            {CONN_ENVS.find((e) => e.id === env)?.short}
-          </span>
+      <div className="ee-block">
+        <span className="form-section-label">Engine</span>
+        <div className="engine-picker" role="radiogroup" aria-label="Database engine">
+          {ENGINES.map((e) => (
+            <button
+              key={e.engine}
+              type="button"
+              role="radio"
+              aria-checked={engine === e.engine}
+              className={"engine-choice" + (engine === e.engine ? " active" : "")}
+              onClick={() => pickEngine(e.engine)}
+            >
+              <EngineBadge engine={e.engine} size={28} />
+              <span>{e.label}</span>
+            </button>
+          ))}
         </div>
+      </div>
+
+      <div className="ee-block">
+        <span className="form-section-label" id={envLabelId}>
+          Environment
+        </span>
         <div className="env-seg" role="radiogroup" aria-labelledby={envLabelId}>
           {CONN_ENVS.map((e) => {
             const isActive = env === e.id;
@@ -628,15 +779,6 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
 
       {isFileBased ? (
         <div className="form-grid">
-          <label>
-            Name
-            <input
-              value={name}
-              onChange={(e) => field({ name: e.target.value })}
-              placeholder="my_database"
-              spellCheck={false}
-            />
-          </label>
           <label className="span-2">
             Database file
             <div className="file-row">
@@ -669,11 +811,10 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
             hidden={section !== "general"}
           >
             <label>
-              Name
+              Host
               <input
-                value={name}
-                onChange={(e) => field({ name: e.target.value })}
-                placeholder="my_database"
+                value={host}
+                onChange={(e) => field({ host: e.target.value })}
                 spellCheck={false}
               />
             </label>
@@ -688,14 +829,6 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
               />
             </label>
             <label>
-              Host
-              <input
-                value={host}
-                onChange={(e) => field({ host: e.target.value })}
-                spellCheck={false}
-              />
-            </label>
-            <label>
               Port
               <input
                 value={port}
@@ -704,7 +837,13 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
               />
             </label>
             <label>
-              {isRedis ? "DB index" : "Database (optional)"}
+              {isRedis ? (
+                "DB index"
+              ) : (
+                <span className="lbl-row">
+                  Database <span className="opt-tag">optional</span>
+                </span>
+              )}
               <input
                 value={db}
                 onChange={(e) => field({ db: e.target.value })}
@@ -713,7 +852,13 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
               />
             </label>
             <label>
-              {isRedis ? "ACL user" : "User (optional)"}
+              {isRedis ? (
+                "ACL user"
+              ) : (
+                <span className="lbl-row">
+                  User <span className="opt-tag">optional</span>
+                </span>
+              )}
               <input
                 value={user}
                 onChange={(e) => field({ user: e.target.value })}
@@ -724,13 +869,15 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
             {/* The password is sent transiently to test/open and stored in the
               OS keychain on Save (M12 Task 3); it is NEVER part of the saved
               params or the registry file. */}
-            <label className="span-2">
-              Password (optional)
+            <label>
+              <span className="lbl-row">
+                Password <span className="opt-tag">optional</span>
+              </span>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => field({ password: e.target.value })}
-                placeholder="leave blank if none"
+                placeholder="••••••••"
               />
             </label>
           </div>

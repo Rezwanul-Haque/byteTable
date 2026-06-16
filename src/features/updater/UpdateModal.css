@@ -105,6 +105,12 @@
   font-size: 12px;
   color: var(--text-dim);
 }
+/* Underline only the label text (the external-link icon stays clean). */
+.update-link-label {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-align: left;
+}
 .update-link:hover {
   color: var(--accent);
 }

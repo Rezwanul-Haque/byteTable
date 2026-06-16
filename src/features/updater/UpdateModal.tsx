@@ -114,7 +114,7 @@ export function UpdateModal({ update, onClose }: { update: Update; onClose: () =
     <Modal className="update-modal" width={480} label="Update available" onClose={onClose}>
       <div className="update-head">
         <div className="update-mark">
-          <BrandMark size={26} />
+          <BrandMark size={26} blink />
         </div>
         <div style={{ flex: 1 }}>
           <div className="update-title">Update available</div>
@@ -147,7 +147,8 @@ export function UpdateModal({ update, onClose }: { update: Update; onClose: () =
           className="update-link"
           onClick={() => void openUrl(releaseUrl(version))}
         >
-          <Icon name="open_in_new" size={13} /> Release notes
+          <Icon name="open_in_new" size={13} />
+          <span className="update-link-label">Release notes</span>
         </button>
         <div style={{ flex: 1 }} />
         {stage === "idle" || stage === "error" ? (

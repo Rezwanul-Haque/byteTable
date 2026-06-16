@@ -12,7 +12,7 @@ MANIFEST    := src-tauri/Cargo.toml
 export PATH := $(HOME)/.cargo/bin:$(PATH)
 
 .DEFAULT_GOAL := help
-.PHONY: help install ensure-cargo dev dev-cert test lint fmt build build-debug run db-up db-down clean
+.PHONY: help install ensure-cargo dev dev-cert test lint fmt build build-debug run tag db-up db-down clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -63,6 +63,13 @@ run: build-debug ## Build (debug) then launch the binary
 
 dev-cert: ## macOS: create the stable self-signed identity used to sign dev builds (one-time)
 	bash scripts/codesign-dev.sh setup
+
+tag: ## Create + push a release tag (usage: make tag VERSION=0.0.2)
+	@test -n "$(VERSION)" || { echo "usage: make tag VERSION=0.0.2"; exit 1; }
+	@v=$$(echo "$(VERSION)" | sed 's/^v//'); \
+	git tag -a "v$$v" -m "ByteTable v$$v" && \
+	git push origin "v$$v" && \
+	echo "Pushed tag v$$v — the release workflow will build + publish it."
 
 db-up: ## Start the test databases (Postgres/MySQL/Redis) + seed them
 	cd test-fixtures && docker compose up -d && ./seed/seed-redis.sh

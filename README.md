@@ -113,6 +113,26 @@ test-fixtures/           docker-compose + seeds + sample SQLite
 docs/                    design specs
 ```
 
+## Install
+
+**macOS / Linux** — one line; it detects your OS/arch and installs the latest release:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/rezwanul-Haque/byteTable/main/install.sh | sh
+```
+
+- **macOS** mounts the `.dmg` and copies `ByteTable.app` to `/Applications` (and clears the
+  Gatekeeper quarantine flag, since the build isn't notarized yet).
+- **Linux** drops the `.AppImage` into `~/.local/bin/bytetable` (no `sudo`). Prefer the `.deb`?
+  Grab it from the [releases page](https://github.com/rezwanul-Haque/byteTable/releases/latest)
+  and `sudo apt install ./bytetable_*_amd64.deb`.
+
+**Windows** — download the `.exe` installer from the
+[latest release](https://github.com/rezwanul-Haque/byteTable/releases/latest).
+
+> Prefer not to pipe to a shell? Read [`install.sh`](install.sh) first, or just download the
+> installer for your OS from the releases page. The script needs a published release to exist.
+
 ## Building a distributable
 
 `make build` (= `pnpm tauri build`) produces installers for the **OS you run it on** — Tauri

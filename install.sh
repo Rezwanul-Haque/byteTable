@@ -68,7 +68,9 @@ Darwin)
   curl -fSL# "$URL" -o "$TMP/ByteTable.dmg"
   verify_checksum "$TMP/ByteTable.dmg" "$(basename "$URL")"
   say "Mounting…"
-  MNT="$(hdiutil attach "$TMP/ByteTable.dmg" -nobrowse -quiet | grep -o '/Volumes/[^[:cntrl:]]*' | tail -1)"
+  # NOTE: do NOT pass -quiet — we parse hdiutil's attach table for the mount
+  # point. `grep -o '/Volumes/.*'` keeps volume names that contain spaces.
+  MNT="$(hdiutil attach "$TMP/ByteTable.dmg" -nobrowse | grep -o '/Volumes/.*' | tail -1)"
   [ -n "$MNT" ] || err "Could not mount the disk image."
   APP="$(find "$MNT" -maxdepth 1 -name '*.app' | head -1)"
   if [ -z "$APP" ]; then

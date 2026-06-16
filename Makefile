@@ -12,7 +12,7 @@ MANIFEST    := src-tauri/Cargo.toml
 export PATH := $(HOME)/.cargo/bin:$(PATH)
 
 .DEFAULT_GOAL := help
-.PHONY: help install ensure-cargo dev dev-cert test lint fmt build build-debug run tag db-up db-down clean
+.PHONY: help install ensure-cargo dev dev-cert test lint fmt build build-debug run tag db-up db-down tunnel-up tunnel-down clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -76,6 +76,15 @@ db-up: ## Start the test databases (Postgres/MySQL/Redis) + seed them
 
 db-down: ## Stop and wipe the test databases
 	cd test-fixtures && docker compose down -v
+
+tunnel-up: ## Start the SSH-bastion tunnel rig (MySQL/Postgres/Redis behind a bastion) + seed
+	cd test-fixtures && \
+	  docker compose -p bytetable-tunnel -f docker-compose.tunnel.yml up -d && \
+	  until docker exec bt-redis-tunnel redis-cli -a bytetable ping >/dev/null 2>&1; do sleep 1; done && \
+	  BT_REDIS_CONTAINER=bt-redis-tunnel ./seed/seed-redis.sh
+
+tunnel-down: ## Stop and wipe the SSH-bastion tunnel rig
+	cd test-fixtures && docker compose -p bytetable-tunnel -f docker-compose.tunnel.yml down -v
 
 clean: ## Remove build artifacts (dist + Rust target)
 	rm -rf dist

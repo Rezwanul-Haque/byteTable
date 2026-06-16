@@ -1,0 +1,80 @@
+# SSH-tunnel test rig — MySQL, PostgreSQL, and Redis reachable ONLY through an
+# SSH bastion. Separate from the main docker-compose.yml (which keeps its
+# directly-exposed instances). None of the DBs here publish a host port, so the
+# only way in is to SSH into the bastion (localhost:2222) and port-forward to
+# the service — exactly what ByteTable's "SSH tunnel" does.
+#
+# Run with a DISTINCT project name (`-p bytetable-tunnel`) so it never touches
+# the main compose project's containers:
+#
+#   cd test-fixtures
+#   docker compose -p bytetable-tunnel -f docker-compose.tunnel.yml up -d
+#   # wait ~15s (bastion installs sshd; DBs initialize), then seed Redis:
+#   BT_REDIS_CONTAINER=bt-redis-tunnel ./seed/seed-redis.sh
+#   # (MySQL + Postgres auto-seed from their .sql files on first init.)
+#   docker compose -p bytetable-tunnel -f docker-compose.tunnel.yml down -v
+#
+# ByteTable connections — General-tab host/port resolve FROM the bastion's
+# network, so use the service names (NOT localhost). SSH-tunnel tab is identical
+# for all three: Host 127.0.0.1 · Port 2222 · User tunnel · Auth password · "tunnel".
+#
+#   MySQL    → Host: mysql     Port: 3306  Database: byteshop  User: root      Pass: bytetable
+#   Postgres → Host: postgres  Port: 5432  Database: byteshop  User: postgres  Pass: bytetable
+#   Redis    → Host: redis     Port: 6379  DB index: 0  Password: bytetable
+
+services:
+  bastion:
+    image: alpine:3.20
+    container_name: bt-bastion
+    ports:
+      - "2222:22"
+    # AllowTcpForwarding / PasswordAuthentication are set via `-o` on the sshd
+    # command line — authoritative regardless of the image's default config
+    # (appending to sshd_config does NOT win: sshd honors the FIRST occurrence,
+    # and Alpine's default already sets AllowTcpForwarding no).
+    command: >
+      sh -c "apk add --no-cache openssh >/dev/null &&
+             ssh-keygen -A &&
+             adduser -D tunnel && echo 'tunnel:tunnel' | chpasswd &&
+             exec /usr/sbin/sshd -D -e -o AllowTcpForwarding=yes -o PasswordAuthentication=yes -o GatewayPorts=no"
+    networks: [tunnel-net]
+
+  mysql:
+    # NOTE: MySQL publishes NO official Alpine image (Oracle Linux / Debian
+    # based only), so this stays mysql:8 — Postgres + Redis below use -alpine.
+    image: mysql:8
+    container_name: bt-mysql-tunnel
+    # Reaching MySQL through the bastion means many connections share the
+    # bastion's IP. A high max_connect_errors stops MySQL from blocking that host
+    # after a few aborted/probed TCP connections (the default 100 is easy to hit
+    # behind a forward, and shows up as "lost connection reading initial packet").
+    command: ["--max-connect-errors=100000"]
+    environment:
+      MYSQL_ROOT_PASSWORD: bytetable
+      MYSQL_DATABASE: byteshop
+    # No `ports:` — only reachable on the internal network, via the bastion.
+    volumes:
+      - ./seed/mysql.sql:/docker-entrypoint-initdb.d/seed.sql:ro
+    networks: [tunnel-net]
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: bt-pg-tunnel
+    environment:
+      POSTGRES_PASSWORD: bytetable
+      POSTGRES_DB: byteshop
+    # No `ports:` — only reachable on the internal network, via the bastion.
+    volumes:
+      - ./seed/postgres.sql:/docker-entrypoint-initdb.d/seed.sql:ro
+    networks: [tunnel-net]
+
+  redis:
+    image: redis:7-alpine
+    container_name: bt-redis-tunnel
+    command: ["redis-server", "--requirepass", "bytetable"]
+    # No `ports:` — only reachable via the bastion. Redis has no auto-init dir;
+    # seed it: BT_REDIS_CONTAINER=bt-redis-tunnel ./seed/seed-redis.sh
+    networks: [tunnel-net]
+
+networks:
+  tunnel-net:

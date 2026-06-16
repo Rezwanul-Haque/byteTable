@@ -10,11 +10,16 @@
 # Run after `docker compose up -d`. Redis has no auto-init dir, so this is manual.
 set -euo pipefail
 
+# Which Redis container to seed. Defaults to the directly-exposed `bt-redis`;
+# set BT_REDIS_CONTAINER=bt-redis-tunnel to seed the behind-bastion instance
+# (docker exec runs inside the container, so it works even with no host port).
+CONTAINER="${BT_REDIS_CONTAINER:-bt-redis}"
+
 # R <db> <args...> — run a redis-cli command against the given logical db.
 R() {
   local db="$1"
   shift
-  docker exec -i bt-redis redis-cli --no-auth-warning -a bytetable -n "$db" "$@" >/dev/null
+  docker exec -i "$CONTAINER" redis-cli --no-auth-warning -a bytetable -n "$db" "$@" >/dev/null
 }
 
 # Wipe the dbs we manage so re-runs are clean.
@@ -115,7 +120,7 @@ R 2 EXPIRE worker:heartbeat 30
 
 echo "Redis seeded:"
 for db in 0 1 2; do
-  size=$(docker exec bt-redis redis-cli --no-auth-warning -a bytetable -n "$db" DBSIZE)
+  size=$(docker exec "$CONTAINER" redis-cli --no-auth-warning -a bytetable -n "$db" DBSIZE)
   echo "  db$db: $size keys"
 done
 echo "Types: string · hash · list · set · zset · stream (+ TTL + JSON-string keys)"

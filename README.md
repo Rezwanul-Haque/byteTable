@@ -95,6 +95,10 @@ Then in the app's **New connection** modal (TLS: disable), use the credentials i
 user `postgres`, password `bytetable`, database `byteshop`. For SQLite, choose
 **"Open SQLite file…"** → `test-fixtures/byteshop.db`. Stop them with `make db-down`.
 
+To exercise the **SSH tunnel** feature, `make tunnel-up` starts a bastion with
+MySQL/PostgreSQL/Redis reachable only through it — see
+[`docs/SSH_TUNNEL_TESTING.md`](docs/SSH_TUNNEL_TESTING.md).
+
 ## Project layout
 
 ```

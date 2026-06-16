@@ -25,3 +25,21 @@ createRoot(rootElement).render(
     <App />
   </StrictMode>,
 );
+
+// Dismiss the index.html splash once React has painted, keeping it up long
+// enough to read (matches the prototype's ~1.4s min). Two rAFs ⇒ after the
+// first committed frame; then fade out (.hide) and remove.
+(() => {
+  const splash = document.getElementById("bt-splash");
+  if (!splash) return;
+  const start = performance.now();
+  const minShow = 1400;
+  const hide = () => {
+    const wait = Math.max(0, minShow - (performance.now() - start));
+    setTimeout(() => {
+      splash.classList.add("hide");
+      setTimeout(() => splash.remove(), 500);
+    }, wait);
+  };
+  requestAnimationFrame(() => requestAnimationFrame(hide));
+})();

@@ -4,8 +4,220 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ByteTable</title>
+    <!-- Splash screen — shown instantly (inline so it paints before the JS/CSS
+         bundle loads) and dismissed from main.tsx once React has mounted. Token
+         values are hardcoded here since tokens.css isn't loaded yet. -->
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #0f1013;
+        color-scheme: dark;
+      }
+      #bt-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: radial-gradient(900px 560px at 50% 38%, #1b1e24, #131418 72%);
+        transition:
+          opacity 0.45s ease,
+          visibility 0.45s;
+      }
+      #bt-splash.hide {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+      }
+      .splash-inner {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 14px;
+      }
+      .splash-logo {
+        filter: drop-shadow(0 8px 28px rgba(45, 212, 167, 0.28));
+      }
+      .splash-logo .sl-row {
+        transform-box: fill-box;
+        transform-origin: left center;
+        animation: sl-row-in 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+      }
+      .splash-logo .sl-a {
+        animation-delay: 0.05s;
+      }
+      .splash-logo .sl-b {
+        animation-delay: 0.14s;
+      }
+      .splash-logo .sl-c {
+        animation-delay: 0.23s;
+      }
+      .splash-logo .sl-d {
+        animation-delay: 0.32s;
+      }
+      .splash-logo .sl-cursor {
+        transform-box: fill-box;
+        transform-origin: center;
+        animation: sl-cursor 1s steps(2) 0.6s infinite;
+      }
+      @keyframes sl-row-in {
+        from {
+          transform: scaleX(0);
+          opacity: 0;
+        }
+        to {
+          transform: scaleX(1);
+          opacity: 1;
+        }
+      }
+      @keyframes sl-cursor {
+        50% {
+          opacity: 0.2;
+        }
+      }
+      .splash-word {
+        font-family: "IBM Plex Sans", system-ui, sans-serif;
+        font-size: 26px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        color: #e7eaef;
+        opacity: 0;
+        animation: sl-fade 0.5s ease 0.42s forwards;
+      }
+      .splash-accent {
+        color: #2dd4a7;
+      }
+      .splash-tag {
+        font-family: "IBM Plex Sans", system-ui, sans-serif;
+        font-size: 12.5px;
+        color: #9aa1ad;
+        opacity: 0;
+        animation: sl-fade 0.5s ease 0.52s forwards;
+      }
+      .splash-bar {
+        width: 168px;
+        height: 3px;
+        border-radius: 2px;
+        background: #262a32;
+        overflow: hidden;
+        margin-top: 8px;
+        opacity: 0;
+        animation: sl-fade 0.4s ease 0.6s forwards;
+      }
+      .splash-bar span {
+        display: block;
+        height: 100%;
+        width: 40%;
+        border-radius: 2px;
+        background: #2dd4a7;
+        animation: sl-load 1.1s ease-in-out infinite;
+      }
+      @keyframes sl-load {
+        0% {
+          transform: translateX(-120%);
+        }
+        100% {
+          transform: translateX(320%);
+        }
+      }
+      .splash-foot {
+        position: absolute;
+        bottom: 26px;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-size: 10.5px;
+        color: #5d6470;
+        opacity: 0;
+        animation: sl-fade 0.5s ease 0.7s forwards;
+      }
+      @keyframes sl-fade {
+        to {
+          opacity: 1;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .splash-logo .sl-row,
+        .splash-word,
+        .splash-tag,
+        .splash-bar,
+        .splash-foot {
+          animation: none;
+          opacity: 1;
+        }
+        .splash-logo .sl-row {
+          transform: none;
+        }
+      }
+    </style>
   </head>
   <body>
+    <div id="bt-splash">
+      <div class="splash-inner">
+        <svg
+          class="splash-logo"
+          width="76"
+          height="76"
+          viewBox="0 0 24 24"
+          fill="none"
+          aria-hidden="true"
+        >
+          <rect
+            class="sl-row sl-a"
+            x="3"
+            y="4"
+            width="8.5"
+            height="4"
+            rx="1.6"
+            fill="#2dd4a7"
+          ></rect>
+          <rect
+            class="sl-row sl-b"
+            x="13.5"
+            y="4"
+            width="7.5"
+            height="4"
+            rx="1.6"
+            fill="#2dd4a7"
+            opacity="0.45"
+          ></rect>
+          <rect
+            class="sl-row sl-c"
+            x="3"
+            y="10"
+            width="18"
+            height="4"
+            rx="1.6"
+            fill="#e3e6eb"
+            opacity="0.55"
+          ></rect>
+          <rect
+            class="sl-row sl-d"
+            x="3"
+            y="16"
+            width="11"
+            height="4"
+            rx="1.6"
+            fill="#e3e6eb"
+            opacity="0.35"
+          ></rect>
+          <rect
+            class="sl-cursor"
+            x="16.5"
+            y="16"
+            width="4.5"
+            height="4"
+            rx="1.2"
+            fill="#2dd4a7"
+          ></rect>
+        </svg>
+        <div class="splash-word"><span>Byte</span><span class="splash-accent">Table</span></div>
+        <div class="splash-tag">Local-first database client</div>
+        <div class="splash-bar"><span></span></div>
+      </div>
+      <div class="splash-foot">v0.0.1 · free &amp; open source</div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

@@ -5,10 +5,25 @@
 // modal drives `downloadAndInstall` + `relaunch`. A "skip this version" choice
 // is remembered in localStorage so the user isn't re-prompted for it.
 
+import { getVersion } from "@tauri-apps/api/app";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 
 /** The GitHub repo releases are published to (matches the updater endpoint). */
 export const UPDATE_REPO = "rezwanul-Haque/byteTable";
+
+/** Fallback shown before the real version resolves / in plain-browser dev. */
+export const FALLBACK_VERSION = "0.0.1";
+
+/** The running app version (from Cargo/tauri.conf), without a leading `v`.
+ *  Falls back to {@link FALLBACK_VERSION} outside the Tauri shell. */
+export async function appVersion(): Promise<string> {
+  if (!("__TAURI_INTERNALS__" in window)) return FALLBACK_VERSION;
+  try {
+    return await getVersion();
+  } catch {
+    return FALLBACK_VERSION;
+  }
+}
 
 const SKIP_KEY = "bytetable_skipped_version";
 

@@ -11,7 +11,14 @@ import { Rail } from "./features/workspaces/components/Rail";
 import { WorkspaceShell } from "./features/workspaces/components/WorkspaceShell";
 import { RedisWorkspace } from "./features/redis_browse/components/RedisWorkspace";
 import { selectShowConnect, useWorkspacesStore } from "./features/workspaces/state";
-import { checkForUpdate, skippedVersion, type Update } from "./features/updater/api";
+import {
+  appVersion,
+  checkForUpdate,
+  FALLBACK_VERSION,
+  skippedVersion,
+  type Update,
+} from "./features/updater/api";
+import { AboutModal } from "./features/updater/AboutModal";
 import { UpdateModal } from "./features/updater/UpdateModal";
 import "./App.css";
 
@@ -40,10 +47,23 @@ export function App() {
   // In-app updater (M-updater): check GitHub releases once on launch; surface
   // the modal when a newer signed build exists and the user hasn't skipped it.
   // Failures (offline, rate-limit, plain-browser dev) are silent.
+  // `update` is the found release; it persists so the rail keeps an "update
+  // available" indicator — even after the user skips that version (the icon
+  // then goes static instead of disappearing). `updateModalOpen` drives the
+  // modal (auto-opened on launch unless skipped, re-openable from the rail).
+  // `skippedVer` tracks which version is skipped so the rail can mute its
+  // animation for it.
   const [update, setUpdate] = useState<Update | null>(null);
+  const [updateModalOpen, setUpdateModalOpen] = useState(false);
+  const [skippedVer, setSkippedVer] = useState<string | null>(skippedVersion());
+
+  // About modal (rail version label) + the running app version it shows.
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const [version, setVersion] = useState(FALLBACK_VERSION);
 
   useEffect(() => {
     void loadPreferences();
+    void appVersion().then(setVersion);
   }, [loadPreferences]);
 
   useEffect(() => {
@@ -52,7 +72,13 @@ export function App() {
       try {
         const found = await checkForUpdate();
         if (!alive || !found) return;
-        if (found.version.replace(/^v/, "") !== (skippedVersion() ?? "")) setUpdate(found);
+        // Always keep the rail indicator for a found update; only auto-open the
+        // modal when this version hasn't been skipped.
+        setUpdate(found);
+        setSkippedVer(skippedVersion());
+        if (found.version.replace(/^v/, "") !== (skippedVersion() ?? "")) {
+          setUpdateModalOpen(true);
+        }
       } catch {
         /* offline / rate-limited / no desktop shell — no update prompt */
       }
@@ -61,6 +87,17 @@ export function App() {
       alive = false;
     };
   }, []);
+
+  // Closing the modal keeps the rail indicator either way. If the user skipped
+  // this version (the modal persists the skip before calling onClose), refresh
+  // `skippedVer` so the rail mutes the icon's animation instead of hiding it.
+  const closeUpdateModal = () => {
+    setUpdateModalOpen(false);
+    setSkippedVer(skippedVersion());
+  };
+
+  const updateVersion = update?.version.replace(/^v/, "") ?? null;
+  const updateSkipped = updateVersion !== null && updateVersion === skippedVer;
 
   // Dev-only: ⌘⇧G / Ctrl+Shift+G toggles the M0 component gallery overlay.
   useEffect(() => {
@@ -78,7 +115,14 @@ export function App() {
   return (
     <ToastProvider>
       <div className="app-frame">
-        <Rail onDonate={() => setDonateOpen(true)} />
+        <Rail
+          onDonate={() => setDonateOpen(true)}
+          updateAvailable={update !== null}
+          updateSkipped={updateSkipped}
+          onUpdate={() => setUpdateModalOpen(true)}
+          onAbout={() => setAboutOpen(true)}
+          version={version}
+        />
         <div className="app-body">
           {!showConnect && activeWorkspace ? (
             // §2 workspace layout: sidebar (248px) | tab bar + content,
@@ -105,7 +149,20 @@ export function App() {
 
       {donateOpen ? <DonateModal onClose={() => setDonateOpen(false)} /> : null}
 
-      {update ? <UpdateModal update={update} onClose={() => setUpdate(null)} /> : null}
+      {update && updateModalOpen ? (
+        <UpdateModal update={update} onClose={closeUpdateModal} />
+      ) : null}
+
+      {aboutOpen ? (
+        <AboutModal
+          version={version}
+          onClose={() => setAboutOpen(false)}
+          onShowUpdate={(found) => {
+            setUpdate(found);
+            setUpdateModalOpen(true);
+          }}
+        />
+      ) : null}
 
       {Gallery && galleryOpen ? (
         <Suspense fallback={null}>

@@ -19,15 +19,21 @@ import { Modal } from "../../../shared/ui/Modal";
 import { useToast } from "../../../shared/ui/toastContext";
 import "./DonateModal.css";
 
-// Donation targets — placeholder slugs until the real accounts exist.
-const GITHUB_SPONSORS_URL = "https://github.com/sponsors/bytetable";
-const BUY_ME_A_COFFEE_URL = "https://buymeacoffee.com/bytetable";
+// Donation targets.
+const GITHUB_SPONSORS_URL = "https://github.com/sponsors/rezwanul-Haque";
+// supportkori is a BDT "buy me a coffee" platform — it has no USD per-amount
+// deep link, so the coffee button just opens the page and the supporter picks
+// the amount there. The USD chips below drive only the GitHub Sponsors link.
+const BUY_ME_A_COFFEE_URL = "https://www.supportkori.com/rezwanul";
 
 // Selectable amounts. The user picks one, THEN clicks a provider button, which
 // opens that provider's page carrying the chosen amount (+ frequency).
+// USD tiers for the GitHub Sponsors deep link (supportkori ignores them — it
+// opens its own BDT page). Labels are provider-neutral, NOT coffee-themed, so
+// they don't read as Buy Me a Coffee amounts.
 const AMOUNTS = [
-  { id: "coffee", amount: 3, label: "coffee", recurring: false, popular: false },
-  { id: "big", amount: 5, label: "big coffee", recurring: false, popular: false },
+  { id: "coffee", amount: 3, label: "supporter", recurring: false, popular: false },
+  { id: "big", amount: 5, label: "backer", recurring: false, popular: false },
   { id: "sustainer", amount: 10, label: "sustainer", recurring: true, popular: true },
 ] as const;
 type AmountId = (typeof AMOUNTS)[number]["id"];
@@ -38,10 +44,11 @@ function sponsorsUrl(amount: number, recurring: boolean): string {
   return `${GITHUB_SPONSORS_URL}?frequency=${frequency}&amount=${amount}`;
 }
 
-/** Buy Me a Coffee carries the amount as a coffee count (`?amount` is its
- *  per-coffee multiplier on the support page). */
-function buyMeACoffeeUrl(amount: number): string {
-  return `${BUY_ME_A_COFFEE_URL}?amount=${amount}`;
+/** supportkori (BDT) has no USD per-amount deep link — open the base page and
+ *  let the supporter choose the amount/currency there. The selected USD chip
+ *  applies to GitHub Sponsors only. */
+function buyMeACoffeeUrl(): string {
+  return BUY_ME_A_COFFEE_URL;
 }
 
 /**
@@ -78,7 +85,7 @@ export function DonateModal({ onClose }: DonateModalProps) {
     const url =
       provider === "sponsors"
         ? sponsorsUrl(selected.amount, selected.recurring)
-        : buyMeACoffeeUrl(selected.amount);
+        : buyMeACoffeeUrl();
     try {
       await openExternal(url);
     } catch {
@@ -125,6 +132,9 @@ export function DonateModal({ onClose }: DonateModalProps) {
           </button>
         ))}
       </div>
+      <p className="donate-amount-note">
+        Amount applies to GitHub Sponsors. Buy Me a Coffee opens its page to choose there.
+      </p>
       <div className="donate-links">
         <Btn icon="favorite" variant="filled" onClick={() => void donate("sponsors")}>
           GitHub Sponsors

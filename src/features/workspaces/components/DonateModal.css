@@ -97,6 +97,14 @@
   padding: 1.5px 7px;
 }
 
+/* Clarifies the USD chips drive GitHub Sponsors only (supportkori is BDT). */
+.donate-amount-note {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin: 8px 2px 12px;
+  line-height: 1.4;
+}
+
 .donate-links {
   display: flex;
   gap: 8px;

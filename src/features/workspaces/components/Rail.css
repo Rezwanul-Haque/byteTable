@@ -190,6 +190,88 @@
   flex: 1;
 }
 
+/* Update-available button (above the donate icon) — pulsing accent tile with a
+   red dot. Ported from the prototype's .rail-update. */
+.rail-update {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  flex: none;
+  margin-bottom: 8px;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 15%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background 0.12s,
+    transform 0.12s;
+  animation: update-pulse 2.4s ease-in-out infinite;
+}
+
+.rail-update:hover {
+  background: color-mix(in oklab, var(--accent) 26%, transparent);
+  transform: translateY(-1px);
+}
+
+/* Skipped version: keep the button visible + clickable, but mute it — no pulse,
+   no red dot, faint until hovered. */
+.rail-update.skipped {
+  animation: none;
+  color: var(--text-faint);
+  background: transparent;
+}
+
+.rail-update.skipped:hover {
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 15%, transparent);
+}
+
+.rail-update-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e06c75;
+  border: 1.5px solid var(--bg1);
+}
+
+@keyframes update-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--accent) 40%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rail-update {
+    animation: none;
+  }
+}
+
+/* App-version label below the donate icon — opens the About modal. */
+.rail-version {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--text-faint);
+  padding: 4px 2px 2px;
+  letter-spacing: 0.02em;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: color 0.12s;
+}
+
+.rail-version:hover {
+  color: var(--accent);
+}
+
 .rail-donate {
   width: 38px;
   height: 38px;

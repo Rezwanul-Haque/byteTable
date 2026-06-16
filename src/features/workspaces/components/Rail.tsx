@@ -41,9 +41,27 @@ interface EditPop {
 interface RailProps {
   /** Donate button click — opens the donate modal. */
   onDonate: () => void;
+  /** True when a newer release was found — shows the update button. */
+  updateAvailable?: boolean;
+  /** True when the available version was skipped — the button shows static
+   *  (no pulse / dot) instead of animated, but stays visible + clickable. */
+  updateSkipped?: boolean;
+  /** Update button click — re-opens the update modal. */
+  onUpdate?: () => void;
+  /** Version label click — opens the About modal. */
+  onAbout?: () => void;
+  /** Running app version (no leading `v`), shown under the donate button. */
+  version?: string;
 }
 
-export function Rail({ onDonate }: RailProps) {
+export function Rail({
+  onDonate,
+  updateAvailable,
+  updateSkipped,
+  onUpdate,
+  onAbout,
+  version,
+}: RailProps) {
   const workspaces = useWorkspacesStore((state) => state.workspaces);
   const activeWorkspaceId = useWorkspacesStore((state) => state.activeWorkspaceId);
   const setActive = useWorkspacesStore((state) => state.setActive);
@@ -183,6 +201,22 @@ export function Rail({ onDonate }: RailProps) {
 
       <div className="rail-spacer" data-tauri-drag-region />
 
+      {updateAvailable ? (
+        <button
+          type="button"
+          className={"rail-update" + (updateSkipped ? " skipped" : "")}
+          onClick={onUpdate}
+          title={
+            updateSkipped
+              ? "Update available (skipped) — click to view"
+              : "Update available — click to install"
+          }
+        >
+          <Icon name="arrow_circle_up" size={20} fill={1} />
+          {updateSkipped ? null : <span className="rail-update-dot" />}
+        </button>
+      ) : null}
+
       <button
         type="button"
         className="rail-donate"
@@ -222,6 +256,10 @@ export function Rail({ onDonate }: RailProps) {
           />
           <rect x="4" y="19.2" width="13" height="1.8" rx="0.9" fill="currentColor" />
         </svg>
+      </button>
+
+      <button type="button" className="rail-version" onClick={onAbout} title="About ByteTable">
+        v{version ?? "0.0.1"}
       </button>
 
       {editPop && editingWs ? (

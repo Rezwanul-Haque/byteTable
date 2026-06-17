@@ -283,6 +283,23 @@
   font-size: 12.5px;
 }
 
+/* Empty-table message that sits in the body area beneath the column header
+   (so the columns stay visible). Mirrors .dg-state but is not full-flex — it
+   sticks to the left under the sticky header rather than centering. */
+.dg-empty-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 48px 24px;
+  color: var(--text-faint);
+  font-family: var(--ui);
+  font-size: 12.5px;
+  position: sticky;
+  left: 0;
+}
+
 /* §5 inline error — red, non-modal. */
 .dg-error {
   color: #e06c75;

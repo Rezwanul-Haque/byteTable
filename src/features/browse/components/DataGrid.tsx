@@ -908,18 +908,88 @@ export function DataGrid({
     );
   }
 
+  // The sticky column header, shared by the populated grid and the empty state
+  // so an empty table still shows its columns (the backend falls back to the
+  // introspected columns when a page comes back with no rows).
+  const headerRow = (
+    <div className="dg-header dg-row">
+      <div className="dg-rownum-h">#</div>
+      {columns.map((c) => {
+        if (isHidden(c.name)) return null;
+        const meta = colMeta.get(c.name);
+        const active = sort?.column === c.name;
+        return (
+          <div
+            key={c.name}
+            className="dg-th sortable"
+            onClick={() => onHeaderClick(c.name)}
+            title={c.typeHint ? c.name + " · " + c.typeHint : c.name}
+          >
+            <span className="dg-head">
+              {meta?.pk ? (
+                <Icon
+                  name="key"
+                  size={12}
+                  style={{ color: "var(--accent)", transform: "rotate(45deg)" }}
+                />
+              ) : null}
+              {meta?.fk ? (
+                <Icon name="link" size={12} style={{ color: "var(--text-faint)" }} />
+              ) : null}
+              <span className="dg-colname">{c.name}</span>
+              {c.typeHint ? <span className="dg-coltype">{c.typeHint.toLowerCase()}</span> : null}
+              {active ? (
+                <Icon
+                  name={sort!.direction === "asc" ? "arrow_upward" : "arrow_downward"}
+                  size={13}
+                  style={{ color: "var(--accent)" }}
+                />
+              ) : null}
+              {/* M10: column-insights chart icon, shown on th hover
+                  (.dg-th:hover .insight-btn). stopPropagation keeps the
+                  header's sort click from firing. */}
+              <button
+                type="button"
+                className="insight-btn"
+                title={"Insights: " + c.name}
+                onClick={(e) => onInsightClick(c.name, e)}
+              >
+                <Icon name="monitoring" size={13} />
+              </button>
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+
   // Empty when the filtered count is a known 0, or the current page came back
   // with no rows (e.g. an empty table). The footer pager (TableTab) still
-  // renders below this in either case.
+  // renders below this in either case. The header is kept so the columns stay
+  // visible — the "no rows" message sits in the body area beneath it. When the
+  // columns are unknown (defensive — a real table always reports them) we fall
+  // back to the plain centered state.
   if (totalRows === 0 || rowCount === 0) {
+    const message = filter
+      ? "No rows match the filter in " + schema + "." + table
+      : "Empty table — no rows in " + schema + "." + table;
+    if (columns.length === 0) {
+      return (
+        <div className="dg-state">
+          <Icon name="table_rows" size={28} style={{ opacity: 0.5 }} />
+          <span>{message}</span>
+        </div>
+      );
+    }
     return (
-      <div className="dg-state">
-        <Icon name="table_rows" size={28} style={{ opacity: 0.5 }} />
-        <span>
-          {filter
-            ? "No rows match the filter in " + schema + "." + table
-            : "Empty table — no rows in " + schema + "." + table}
-        </span>
+      <div className="datagrid-wrap" ref={scrollRef}>
+        <div className="dg-canvas" style={{ "--grid-cols": gridCols } as React.CSSProperties}>
+          {headerRow}
+          <div className="dg-empty-body">
+            <Icon name="table_rows" size={28} style={{ opacity: 0.5 }} />
+            <span>{message}</span>
+          </div>
+        </div>
       </div>
     );
   }
@@ -931,57 +1001,7 @@ export function DataGrid({
       <div className="datagrid-wrap" ref={scrollRef}>
         <div className="dg-canvas" style={{ "--grid-cols": gridCols } as React.CSSProperties}>
           {/* sticky header */}
-          <div className="dg-header dg-row">
-            <div className="dg-rownum-h">#</div>
-            {columns.map((c) => {
-              if (isHidden(c.name)) return null;
-              const meta = colMeta.get(c.name);
-              const active = sort?.column === c.name;
-              return (
-                <div
-                  key={c.name}
-                  className="dg-th sortable"
-                  onClick={() => onHeaderClick(c.name)}
-                  title={c.typeHint ? c.name + " · " + c.typeHint : c.name}
-                >
-                  <span className="dg-head">
-                    {meta?.pk ? (
-                      <Icon
-                        name="key"
-                        size={12}
-                        style={{ color: "var(--accent)", transform: "rotate(45deg)" }}
-                      />
-                    ) : null}
-                    {meta?.fk ? (
-                      <Icon name="link" size={12} style={{ color: "var(--text-faint)" }} />
-                    ) : null}
-                    <span className="dg-colname">{c.name}</span>
-                    {c.typeHint ? (
-                      <span className="dg-coltype">{c.typeHint.toLowerCase()}</span>
-                    ) : null}
-                    {active ? (
-                      <Icon
-                        name={sort!.direction === "asc" ? "arrow_upward" : "arrow_downward"}
-                        size={13}
-                        style={{ color: "var(--accent)" }}
-                      />
-                    ) : null}
-                    {/* M10: column-insights chart icon, shown on th hover
-                        (.dg-th:hover .insight-btn). stopPropagation keeps the
-                        header's sort click from firing. */}
-                    <button
-                      type="button"
-                      className="insight-btn"
-                      title={"Insights: " + c.name}
-                      onClick={(e) => onInsightClick(c.name, e)}
-                    >
-                      <Icon name="monitoring" size={13} />
-                    </button>
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+          {headerRow}
 
           {/* virtualized body. `cacheVersion` is read here only to re-run this
               render when a page lands (the rows live in a ref, not state). */}

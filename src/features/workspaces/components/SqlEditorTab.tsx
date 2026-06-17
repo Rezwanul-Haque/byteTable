@@ -407,12 +407,11 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
                 </>
               )}
             </div>
-            {result.columns.length === 0 ? null : result.rows.length === 0 ? (
-              <div className="sql-placeholder">
-                <Icon name="table_rows" size={28} style={{ color: "var(--text-faint)" }} />
-                <span>Query returned no rows</span>
-              </div>
-            ) : (
+            {result.columns.length === 0 ? null : (
+              // A SELECT with columns renders the grid even with zero rows, so
+              // the column headers stay visible (the status row above already
+              // reports the row count). Only a column-less result (DML/DDL) has
+              // no grid to show.
               <SqlResultGrid result={result} />
             )}
           </>

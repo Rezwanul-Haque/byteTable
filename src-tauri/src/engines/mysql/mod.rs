@@ -271,10 +271,23 @@ impl EngineConnection for MysqlEngineConnection {
         let columns = if let Some(first) = rows.first() {
             column_meta(first)
         } else {
-            // No rows: we cannot learn the column shape from sqlx without a
-            // describe; an empty result with no columns is acceptable for the
-            // grid (it shows "0 rows"). DML/DDL returns none.
-            Vec::new()
+            // No rows returned: ask the engine to describe the statement so an
+            // empty SELECT still reports its column headers (the grid shows the
+            // columns with a "0 rows" body). A DML/DDL statement describes to no
+            // columns, which is exactly what we want ("Query OK"). Best effort —
+            // a describe failure falls back to no columns.
+            use sqlx::Executor as _;
+            match (&mut *conn).describe(sql).await {
+                Ok(described) => described
+                    .columns()
+                    .iter()
+                    .map(|col| ColumnMeta {
+                        name: col.name().to_string(),
+                        type_hint: col.type_info().name().to_string(),
+                    })
+                    .collect(),
+                Err(_) => Vec::new(),
+            }
         };
 
         let mut out_rows: Vec<Vec<serde_json::Value>> = Vec::new();

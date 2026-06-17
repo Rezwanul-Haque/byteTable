@@ -1,0 +1,99 @@
+/* Autocomplete popup — the design's .ac-popup / .ac-item / .ac-label /
+ * .ac-hint / .ac-kind rows (ByteTable.html) themed onto CodeMirror's
+ * autocomplete tooltip structure. The popup element carries `ac-popup`
+ * (tooltipClass) and each option <li> carries `ac-item` (optionClass); the
+ * leading icon, source hint, and kind tag are injected render slots, and CM's
+ * default label slot (.cm-completionLabel) is styled as the design's .ac-label.
+ *
+ * Selectors are qualified with CM's own classes for enough specificity to win
+ * over CM's injected base theme. Values mirror the design tokens verbatim. */
+
+.cm-tooltip.cm-tooltip-autocomplete.ac-popup {
+  z-index: 20;
+  min-width: 200px;
+  max-width: 280px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.5);
+  padding: 4px;
+}
+
+.cm-tooltip-autocomplete.ac-popup > ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: none;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.cm-tooltip-autocomplete.ac-popup > ul > li.ac-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* CM marks the active row with aria-selected; the design uses .ac-item.sel. */
+.cm-tooltip-autocomplete.ac-popup > ul > li.ac-item[aria-selected] {
+  background: color-mix(in oklab, var(--accent) 16%, var(--bg3));
+  color: var(--text);
+}
+
+/* CM's default label slot, styled as the design's flexible .ac-label. */
+.ac-popup .cm-completionLabel {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* No fuzzy match-highlight (we prefix-filter ourselves), but neutralise CM's
+ * underline/bold if it ever renders a matched span. */
+.ac-popup .cm-completionMatchedText {
+  text-decoration: none;
+  font-weight: inherit;
+  color: var(--accent);
+}
+
+.ac-popup .ac-hint {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.ac-popup .ac-kind {
+  flex-shrink: 0;
+  font-size: 9.5px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Leading type icon (Material Symbols). Defaults faint; functions take the
+ * §3.7 function color and primary-key columns the accent (rotated key). */
+.ac-popup .ac-icon {
+  flex-shrink: 0;
+  font-size: 14px;
+  color: var(--text-faint);
+}
+
+.ac-popup .ac-icon-fn {
+  color: #c678dd;
+}
+
+.ac-popup .ac-icon-pk {
+  color: var(--accent);
+  transform: rotate(45deg);
+}

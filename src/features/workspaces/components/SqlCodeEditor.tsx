@@ -20,6 +20,12 @@
 // did NOT originate from typing (snippet/history/saved load) are reconciled
 // into the view via a dispatched transaction. `onChange` fires on user edits.
 
+import {
+  acceptCompletion,
+  autocompletion,
+  completionKeymap,
+  startCompletion,
+} from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { sql, SQLite } from "@codemirror/lang-sql";
 import {
@@ -33,7 +39,15 @@ import { EditorView, keymap, drawSelection } from "@codemirror/view";
 import { tags as t } from "@lezer/highlight";
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef } from "react";
 
+import {
+  completionAddToOptions,
+  completionOptionClass,
+  completionTooltipClass,
+  makeSqlCompletionSource,
+  type EditorSchema,
+} from "./sqlCompletion";
 import { statementRangeAt } from "./sqlStatement";
+import "./SqlCodeEditor.css";
 
 /**
  * Resolve what ⌘/Ctrl+Enter (or the Run/Explain buttons) should execute from
@@ -121,107 +135,139 @@ interface SqlCodeEditorProps {
   /** Caret offset, reported on every selection / document change (for the
    *  cursor-aware clause minimap). */
   onCaret?: (pos: number) => void;
+  /**
+   * Schema metadata (tables + each table's cached columns) for the
+   * context-aware autocomplete. Read live on every keystroke via a ref, so the
+   * editor never re-mounts as columns stream into the cache. Defaults to empty.
+   */
+  schema?: EditorSchema;
 }
 
 export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>(
-  function SqlCodeEditor({ value, onChange, onRun, onFormat, onCaret }, ref) {
-  const hostRef = useRef<HTMLDivElement>(null);
-  const viewRef = useRef<EditorView | null>(null);
-  // Keep the latest callbacks reachable from the (mount-once) CM extensions
-  // without re-creating the EditorView on every parent render.
-  const onChangeRef = useRef(onChange);
-  const onRunRef = useRef(onRun);
-  const onFormatRef = useRef(onFormat);
-  const onCaretRef = useRef(onCaret);
-  onChangeRef.current = onChange;
-  onRunRef.current = onRun;
-  onFormatRef.current = onFormat;
-  onCaretRef.current = onCaret;
+  function SqlCodeEditor({ value, onChange, onRun, onFormat, onCaret, schema }, ref) {
+    const hostRef = useRef<HTMLDivElement>(null);
+    const viewRef = useRef<EditorView | null>(null);
+    // Keep the latest callbacks reachable from the (mount-once) CM extensions
+    // without re-creating the EditorView on every parent render.
+    const onChangeRef = useRef(onChange);
+    const onRunRef = useRef(onRun);
+    const onFormatRef = useRef(onFormat);
+    const onCaretRef = useRef(onCaret);
+    // Latest schema, read by the completion source on each keystroke (so columns
+    // streaming into the cache appear without re-mounting the editor).
+    const schemaRef = useRef<EditorSchema>(schema ?? { tables: [] });
+    onChangeRef.current = onChange;
+    onRunRef.current = onRun;
+    onFormatRef.current = onFormat;
+    onCaretRef.current = onCaret;
+    schemaRef.current = schema ?? { tables: [] };
 
-  // The Run/Explain buttons resolve the statement at the caret through this
-  // handle — the same logic as ⌘/Ctrl+Enter. Falls back to the buffer (or "")
-  // before the view exists.
-  useImperativeHandle(ref, () => ({
-    pickStatement: () => {
+    // The Run/Explain buttons resolve the statement at the caret through this
+    // handle — the same logic as ⌘/Ctrl+Enter. Falls back to the buffer (or "")
+    // before the view exists.
+    useImperativeHandle(ref, () => ({
+      pickStatement: () => {
+        const view = viewRef.current;
+        return view ? pickAndSelect(view) : value;
+      },
+    }));
+
+    useLayoutEffect(() => {
+      const runKeymap = keymap.of([
+        {
+          key: "Mod-Enter",
+          preventDefault: true,
+          run: (view) => {
+            onRunRef.current(pickAndSelect(view));
+            return true;
+          },
+        },
+        {
+          key: "Shift-Alt-f",
+          preventDefault: true,
+          run: () => {
+            onFormatRef.current?.();
+            return true;
+          },
+        },
+        // Tab accepts the highlighted completion when the popup is open;
+        // acceptCompletion returns false otherwise, so Tab falls through to
+        // indentWithTab (two-space indent) below.
+        { key: "Tab", run: acceptCompletion },
+        // Ctrl/Cmd+Space triggers the popup manually (spec). Mod = Cmd on macOS,
+        // Ctrl elsewhere; the default completionKeymap also binds Ctrl-Space.
+        { key: "Mod-Space", preventDefault: true, run: startCompletion },
+      ]);
+      const view = new EditorView({
+        parent: hostRef.current!,
+        state: EditorState.create({
+          doc: value,
+          extensions: [
+            history(),
+            drawSelection(),
+            bracketMatching(),
+            // Mod-Enter must win over any default binding; indentWithTab makes
+            // Tab insert indentation (configured to two spaces below).
+            runKeymap,
+            // Context-aware SQL autocomplete. The source reads the live schema
+            // ref; CM owns caret-positioning, ↑/↓, hover/click, and blur-dismiss.
+            // closeOnBlur (default) dismisses on blur; activateOnTyping pops it as
+            // the user types (and right after FROM/JOIN/INTO/UPDATE).
+            autocompletion({
+              override: [makeSqlCompletionSource(() => schemaRef.current)],
+              icons: false,
+              tooltipClass: completionTooltipClass,
+              optionClass: completionOptionClass,
+              addToOptions: completionAddToOptions,
+            }),
+            // completionKeymap binds ↑/↓ (when open), Enter/Tab accept, Esc close,
+            // Ctrl-Space trigger. Before defaultKeymap so Enter accepts (and only
+            // inserts a newline when the popup is closed).
+            keymap.of(completionKeymap),
+            keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap]),
+            sql({ dialect: SQLite }),
+            syntaxHighlighting(sqlHighlight),
+            sqlTheme,
+            EditorState.tabSize.of(2),
+            // Tab inserts two spaces (spec §3.7), via indentWithTab + a 2-space
+            // indent unit (so Tab/Shift-Tab indent in two-space steps).
+            indentUnit.of("  "),
+            // No lineWrapping: the prototype's editor scrolls horizontally
+            // (white-space: pre), so long lines extend rather than wrap.
+            EditorView.updateListener.of((update) => {
+              if (update.docChanged) {
+                onChangeRef.current(update.state.doc.toString());
+              }
+              // Report caret moves (click / key / select / typing) so the
+              // clause minimap can follow the cursor across statements.
+              if (update.docChanged || update.selectionSet) {
+                onCaretRef.current?.(update.state.selection.main.head);
+              }
+            }),
+          ],
+        }),
+      });
+      viewRef.current = view;
+      return () => {
+        view.destroy();
+        viewRef.current = null;
+      };
+      // Mount once; the buffer is reconciled via the effect below.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Reconcile external `value` changes (snippet / history / saved-query load)
+    // into the view. Skip when the doc already matches — typing updates `value`
+    // through onChange, so without this guard we would dispatch a redundant
+    // (cursor-resetting) transaction on every keystroke.
+    useEffect(() => {
       const view = viewRef.current;
-      return view ? pickAndSelect(view) : value;
-    },
-  }));
+      if (!view) return;
+      const current = view.state.doc.toString();
+      if (current === value) return;
+      view.dispatch({ changes: { from: 0, to: current.length, insert: value } });
+    }, [value]);
 
-  useLayoutEffect(() => {
-    const runKeymap = keymap.of([
-      {
-        key: "Mod-Enter",
-        preventDefault: true,
-        run: (view) => {
-          onRunRef.current(pickAndSelect(view));
-          return true;
-        },
-      },
-      {
-        key: "Shift-Alt-f",
-        preventDefault: true,
-        run: () => {
-          onFormatRef.current?.();
-          return true;
-        },
-      },
-    ]);
-    const view = new EditorView({
-      parent: hostRef.current!,
-      state: EditorState.create({
-        doc: value,
-        extensions: [
-          history(),
-          drawSelection(),
-          bracketMatching(),
-          // Mod-Enter must win over any default binding; indentWithTab makes
-          // Tab insert indentation (configured to two spaces below).
-          runKeymap,
-          keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap]),
-          sql({ dialect: SQLite }),
-          syntaxHighlighting(sqlHighlight),
-          sqlTheme,
-          EditorState.tabSize.of(2),
-          // Tab inserts two spaces (spec §3.7), via indentWithTab + a 2-space
-          // indent unit (so Tab/Shift-Tab indent in two-space steps).
-          indentUnit.of("  "),
-          // No lineWrapping: the prototype's editor scrolls horizontally
-          // (white-space: pre), so long lines extend rather than wrap.
-          EditorView.updateListener.of((update) => {
-            if (update.docChanged) {
-              onChangeRef.current(update.state.doc.toString());
-            }
-            // Report caret moves (click / key / select / typing) so the
-            // clause minimap can follow the cursor across statements.
-            if (update.docChanged || update.selectionSet) {
-              onCaretRef.current?.(update.state.selection.main.head);
-            }
-          }),
-        ],
-      }),
-    });
-    viewRef.current = view;
-    return () => {
-      view.destroy();
-      viewRef.current = null;
-    };
-    // Mount once; the buffer is reconciled via the effect below.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Reconcile external `value` changes (snippet / history / saved-query load)
-  // into the view. Skip when the doc already matches — typing updates `value`
-  // through onChange, so without this guard we would dispatch a redundant
-  // (cursor-resetting) transaction on every keystroke.
-  useEffect(() => {
-    const view = viewRef.current;
-    if (!view) return;
-    const current = view.state.doc.toString();
-    if (current === value) return;
-    view.dispatch({ changes: { from: 0, to: current.length, insert: value } });
-  }, [value]);
-
-  return <div className="sql-cm" ref={hostRef} />;
+    return <div className="sql-cm" ref={hostRef} />;
   },
 );

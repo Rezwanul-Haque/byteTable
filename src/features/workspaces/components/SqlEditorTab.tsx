@@ -19,7 +19,7 @@
 // shows global + this-workspace-attached entries (selectQueriesForConnection)
 // with a per-row indicator.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { highlightSql } from "../../browse/highlightSql";
 import { queryRun } from "../../../shared/api/engine";
@@ -29,7 +29,7 @@ import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { useToast } from "../../../shared/ui/toastContext";
-import { columnsKey, useIntrospectionStore } from "../../introspection/state";
+import { columnsKey, tablesKey, useIntrospectionStore } from "../../introspection/state";
 import { type SavedQuery } from "../../saved_queries/api";
 import { selectQueriesForConnection, useSavedQueriesStore } from "../../saved_queries/state";
 import { useWorkspacesStore } from "../state";
@@ -37,6 +37,7 @@ import type { SqlHistoryEntry, Tab, Workspace } from "../types";
 import { ExecutionMinimap, ExplainPanel } from "./explain";
 import { detectedTable } from "./explainClauses";
 import { formatSql } from "./formatSql";
+import { type EditorSchema } from "./sqlCompletion";
 import { SqlCodeEditor, type SqlCodeEditorHandle } from "./SqlCodeEditor";
 import { SqlResultGrid } from "./SqlResultGrid";
 import "./SqlEditorTab.css";
@@ -86,7 +87,7 @@ function snippetsFor(engine: Engine, schemaName: string): Snippet[] {
           label: "table columns",
           sql: `SELECT column_name, data_type, is_nullable, column_default\nFROM information_schema.columns\nWHERE table_schema = '${schemaName}' AND table_name = 'table_name'\nORDER BY ordinal_position;`,
         },
-        { label: "row counts", sql: 'SELECT COUNT(*) AS row_count\nFROM table_name;' },
+        { label: "row counts", sql: "SELECT COUNT(*) AS row_count\nFROM table_name;" },
         { label: "recent rows", sql: "SELECT *\nFROM table_name\nLIMIT 50;" },
       ];
     case "sqlite":
@@ -207,6 +208,53 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
       ? (columnsCache[columnsKey(workspace.handleId, schemaName, explainTable)]?.columns.length ??
         null)
       : null;
+
+  // --- Autocomplete schema (PROMPT_autocomplete) -----------------------------
+  // The suggestion source is the active connection's introspected schema: the
+  // schema's table list plus whatever column lists are cached. Columns load
+  // lazily (sidebar expansion / the warm below), so the editor reads this live
+  // and re-renders as more columns arrive — never a per-keystroke backend call.
+  const tablesCache = useIntrospectionStore((s) => s.tables);
+  const loadTables = useIntrospectionStore((s) => s.loadTables);
+  const loadColumns = useIntrospectionStore((s) => s.loadColumns);
+  const tableEntries = tablesCache[tablesKey(workspace.handleId, schemaName)]?.tables;
+
+  // Ensure the table list exists even if the sidebar hasn't fetched it yet
+  // (cache-first — a no-op once warmed).
+  useEffect(() => {
+    void loadTables(workspace.handleId, schemaName);
+  }, [loadTables, workspace.handleId, schemaName]);
+
+  // Tables named after FROM/JOIN/INTO/UPDATE in the buffer — warm their columns
+  // so column suggestions for referenced tables are available. Cache-first, so
+  // re-runs are free; this is what keeps "no per-keystroke backend call" true.
+  const referencedNames = useMemo(() => {
+    const set = new Set<string>();
+    const re = /\b(?:from|join|into|update)\s+([a-z_][\w$]*)/gi;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text)) !== null) set.add(m[1]!.toLowerCase());
+    return set;
+  }, [text]);
+
+  useEffect(() => {
+    for (const t of tableEntries ?? []) {
+      if (referencedNames.has(t.name.toLowerCase())) {
+        void loadColumns(workspace.handleId, schemaName, t.name);
+      }
+    }
+  }, [referencedNames, tableEntries, loadColumns, workspace.handleId, schemaName]);
+
+  const editorSchema = useMemo<EditorSchema>(
+    () => ({
+      tables: (tableEntries ?? []).map((t) => ({
+        name: t.name,
+        columns: (
+          columnsCache[columnsKey(workspace.handleId, schemaName, t.name)]?.columns ?? []
+        ).map((c) => ({ name: c.name, pk: c.pk })),
+      })),
+    }),
+    [tableEntries, columnsCache, workspace.handleId, schemaName],
+  );
 
   // Run a statement. With no override the whole buffer runs; the toolbar Run
   // button and ⌘/Ctrl+Enter pass the statement at the caret (selection wins),
@@ -408,6 +456,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
             onRun={run}
             onFormat={format}
             onCaret={setCaret}
+            schema={editorSchema}
           />
         </div>
         <ExecutionMinimap sql={text} caret={caret} />
@@ -563,9 +612,7 @@ function SavedQueriesDrawer({
 
   const ql = q.trim().toLowerCase();
   const list = ql
-    ? queries.filter(
-        (x) => x.name.toLowerCase().includes(ql) || x.sql.toLowerCase().includes(ql),
-      )
+    ? queries.filter((x) => x.name.toLowerCase().includes(ql) || x.sql.toLowerCase().includes(ql))
     : queries;
 
   return (
@@ -604,10 +651,7 @@ function SavedQueriesDrawer({
                   <div className="sq-item-head">
                     <Icon name="bookmark" size={14} style={{ color: "var(--accent)" }} />
                     <span className="sq-item-name">{item.name}</span>
-                    <span
-                      className="saved-scope"
-                      title={scoped ? "This workspace" : "Global"}
-                    >
+                    <span className="saved-scope" title={scoped ? "This workspace" : "Global"}>
                       {scoped ? "this workspace" : "global"}
                     </span>
                     <button

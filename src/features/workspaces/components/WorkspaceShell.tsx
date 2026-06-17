@@ -20,6 +20,7 @@ import type { Workspace } from "../types";
 
 export function WorkspaceShell({ workspace }: { workspace: Workspace }) {
   const openSqlTab = useWorkspacesStore((state) => state.openSqlTab);
+  const closeTab = useWorkspacesStore((state) => state.closeTab);
   const togglePanel = usePanelStore((state) => state.togglePanel);
   const [paletteOpen, setPaletteOpen] = useState(false);
 
@@ -44,11 +45,27 @@ export function WorkspaceShell({ workspace }: { workspace: Workspace }) {
       } else if (key === "t") {
         event.preventDefault();
         openSqlTab();
+      } else if (key === "w") {
+        // Close the active tab, never the window. Always preventDefault so the
+        // key can't leak to the OS (where close-to-tray would hide the app);
+        // when there's no tab open it's simply a no-op.
+        event.preventDefault();
+        const activeTabId = workspace.ui.activeTabId;
+        if (activeTabId != null) {
+          closeTab(activeTabId);
+        }
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [openSqlTab, togglePanel, workspace.id, workspace.saved.engine]);
+  }, [
+    openSqlTab,
+    closeTab,
+    togglePanel,
+    workspace.id,
+    workspace.saved.engine,
+    workspace.ui.activeTabId,
+  ]);
 
   return (
     <div className="workspace">

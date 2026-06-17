@@ -218,10 +218,23 @@ pub fn run() {
         // `WindowEvent::Destroyed`, which is per-window and also fires
         // during window re-creation. `block_on` (not spawn) so every
         // connection's `close()` completes before the process exits.
-        .run(|app_handle, event| {
-            if let tauri::RunEvent::ExitRequested { .. } = event {
+        .run(|app_handle, event| match event {
+            tauri::RunEvent::ExitRequested { .. } => {
                 let state = app_handle.state::<ConnectionsState>();
                 tauri::async_runtime::block_on(state.manager().close_all());
             }
+            // macOS: clicking the Dock icon when no window is visible fires
+            // Reopen. Since close-to-tray hides (not destroys) the window, the
+            // Dock click must bring it back — without this the tray icon is the
+            // only way in. `has_visible_windows` is false exactly when hidden.
+            tauri::RunEvent::Reopen {
+                has_visible_windows,
+                ..
+            } => {
+                if !has_visible_windows {
+                    show_main_window(app_handle);
+                }
+            }
+            _ => {}
         });
 }

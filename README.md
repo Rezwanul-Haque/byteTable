@@ -9,6 +9,20 @@ like tool with first-class Linux, MacOS, Windows support, no pro tier, and no su
 Your credentials never leave your machine: all database I/O happens in the Rust core, secrets live
 in the OS keychain, and the renderer only ever sees opaque connection ids.
 
+## Table of contents
+
+- [Features](#features)
+- [Tech stack](#tech-stack)
+- [Prerequisites](#prerequisites)
+- [Run it (dev mode)](#run-it-dev-mode)
+- [Common commands (Makefile)](#common-commands-makefile)
+- [Try it against real databases](#try-it-against-real-databases)
+- [Project layout](#project-layout)
+- [Install](#install)
+- [Building a distributable](#building-a-distributable)
+- [Contributing](#contributing)
+- [License & funding](#license--funding)
+
 ## Features
 
 **Workspaces** — multiple simultaneous connections as colored, renamable tiles in a left rail,

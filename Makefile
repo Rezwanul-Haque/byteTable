@@ -12,7 +12,7 @@ MANIFEST    := src-tauri/Cargo.toml
 export PATH := $(HOME)/.cargo/bin:$(PATH)
 
 .DEFAULT_GOAL := help
-.PHONY: help install ensure-cargo dev dev-cert test lint fmt build build-debug run tag db-up db-down tunnel-up tunnel-down clean
+.PHONY: help install hooks ensure-cargo dev dev-cert test lint fmt build build-debug run tag db-up db-down tunnel-up tunnel-down clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -20,6 +20,9 @@ help: ## Show this help
 
 install: ## Install renderer dependencies (pnpm)
 	$(PNPM) install
+
+hooks: install ## Install the git pre-commit hook (husky + lint-staged)
+	$(PNPM) exec husky
 
 ensure-cargo: ## Install the Rust toolchain (rustup) if cargo is missing
 	@command -v cargo >/dev/null 2>&1 && exit 0; \

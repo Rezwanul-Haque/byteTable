@@ -794,9 +794,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         const sets = [...cells.entries()].map(
           ([ci, val]) => qi(columns[ci]!.name) + " = " + litCol(val, columns[ci]!.name),
         );
-        const where = pk
-          .map((p) => qi(p.column) + " = " + litCol(p.value, p.column))
-          .join(" AND ");
+        const where = pk.map((p) => qi(p.column) + " = " + litCol(p.value, p.column)).join(" AND ");
         stmts.push("UPDATE " + qtable + " SET " + sets.join(", ") + " WHERE " + where + ";");
       }
       for (const nr of rows) {

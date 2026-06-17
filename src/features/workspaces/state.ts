@@ -524,7 +524,9 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
     set((state) => ({ workspaces: patchSqlTab(state, tabId, () => ({ error, result: null })) })),
 
   clearSqlResults: (tabId) =>
-    set((state) => ({ workspaces: patchSqlTab(state, tabId, () => ({ result: null, error: null })) })),
+    set((state) => ({
+      workspaces: patchSqlTab(state, tabId, () => ({ result: null, error: null })),
+    })),
 
   pushSqlHistory: (tabId, entry) =>
     set((state) => ({

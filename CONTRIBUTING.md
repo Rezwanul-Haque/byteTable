@@ -32,6 +32,7 @@ By contributing you agree that your work is licensed under the project's
 
 ```bash
 make install      # install renderer dependencies (pnpm)
+make hooks        # install the git pre-commit hook (one-time)
 make dev          # run the app with hot reload (Tauri + Vite)
 ```
 
@@ -48,6 +49,18 @@ The seed data lives in `test-fixtures/seed/` (`*.sql` per engine, plus
 > **macOS keychain prompts in dev:** dev builds are ad-hoc signed, so the OS may
 > re-ask for keychain access. Run `make dev-cert` once to sign dev builds with a
 > stable identity (then `make run` is prompt-free after one "Always Allow").
+
+## Pre-commit hook
+
+`make hooks` installs a [husky](https://typicode.github.io/husky/) pre-commit
+hook (also installed automatically by `pnpm install` via the `prepare` script).
+On every commit it runs [lint-staged](https://github.com/lint-staged/lint-staged),
+which applies `prettier --write` to your **staged** files only (`*.{ts,tsx,js,jsx,json,css,md,html}`)
+and re-stages the result — so commits stay Prettier-clean and the CI
+`format:check` step won't fail. It does not touch unstaged files or run the
+slower full-repo `make fmt`.
+
+Bypass it for a one-off (e.g. a WIP commit) with `git commit --no-verify`.
 
 ## Project layout
 

@@ -1,0 +1,133 @@
+/* Create-table modal (ByteTable.html `.createtable-modal` + `.ct-*`). The
+   binary-field / json-status / form-section-label / rail-add / ddl-block base
+   classes are shared (defined in the cell-editor, connection, and structure
+   stylesheets, all in the bundle). */
+.createtable-modal {
+  width: 600px;
+}
+
+.ct-schema {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-left: 2px;
+}
+
+.ct-cols-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ct-cols {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  /* No overflow clip here: the column-type <Select> popover is absolutely
+     positioned and an `overflow: auto` ancestor would clip it. The list grows
+     with the modal instead. */
+}
+
+.ct-row {
+  display: grid;
+  grid-template-columns: 1.3fr 1.2fr 32px 44px 1fr 26px;
+  gap: 6px;
+  align-items: center;
+}
+
+.ct-row-head {
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-faint);
+  padding: 0 2px;
+}
+
+.ct-in {
+  height: 28px;
+  box-sizing: border-box;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 0 8px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  outline: none;
+  color: var(--text);
+  min-width: 0;
+}
+
+.ct-in:focus {
+  border-color: var(--accent);
+}
+
+/* The column-type custom dropdown (shared <Select>). Size its trigger to match
+   the 28px text inputs / flag buttons in the row. */
+.ct-sel .sel-trigger {
+  height: 28px;
+  box-sizing: border-box;
+  border-radius: 7px;
+  padding: 0 6px 0 8px;
+  font-size: 11px;
+}
+
+.ct-sel .sel-label {
+  font-size: 11px;
+}
+
+.ct-flag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--bg0);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+
+.ct-flag.on {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 12%, var(--bg0));
+}
+
+.ct-flag:disabled {
+  opacity: 0.4;
+}
+
+.ct-drop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 28px;
+  border-radius: 7px;
+  color: var(--text-faint);
+}
+
+.ct-drop:hover:not(:disabled) {
+  color: #e06c75;
+  background: #e06c7518;
+}
+
+.ct-drop:disabled {
+  opacity: 0.3;
+}
+
+.ct-ddl-label {
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-faint);
+}
+
+.ct-ddl {
+  max-height: 120px;
+  overflow: auto;
+  margin: 0;
+}

@@ -34,6 +34,7 @@ import {
   type SchemaInfo,
 } from "../../connections/api";
 import { CreateSchemaModal } from "../../export/components/CreateSchemaModal";
+import { CreateTableModal } from "../../export/components/CreateTableModal";
 import { DropSchemaModal } from "../../export/components/DropSchemaModal";
 import { ExportProgressModal } from "../../export/components/ExportProgressModal";
 import { TruncateModal } from "../../export/components/TruncateModal";
@@ -154,6 +155,8 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   const [dropSchemaOpen, setDropSchemaOpen] = useState(false);
   // Create-schema modal (from the schema switcher's "Create schema" item).
   const [createSchemaOpen, setCreateSchemaOpen] = useState(false);
+  // Create-table modal (from the schema-actions menu's "Create table…" item).
+  const [createTableOpen, setCreateTableOpen] = useState(false);
   const secActionsRef = useRef<HTMLDivElement | null>(null);
   const secActionsBtnRef = useRef<HTMLButtonElement | null>(null);
 
@@ -500,6 +503,17 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
               <div className="ctx-menu-label">Schema · {schemaName}</div>
               <button
                 type="button"
+                className="ctx-item ctx-item-accent"
+                role="menuitem"
+                onClick={() => {
+                  setSchemaMenu(false);
+                  setCreateTableOpen(true);
+                }}
+              >
+                <Icon name="add" size={15} /> Create table…
+              </button>
+              <button
+                type="button"
                 className="ctx-item"
                 role="menuitem"
                 onClick={() => {
@@ -817,6 +831,23 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
           existing={workspace.schemas.map((s) => s.name)}
           onCreated={onSchemaCreated}
           onClose={() => setCreateSchemaOpen(false)}
+        />
+      ) : null}
+
+      {/* Create table (Prompt 6): runs the previewed CREATE TABLE DDL, then
+          re-introspects the schema (so the new empty table appears) and opens
+          it automatically. */}
+      {createTableOpen ? (
+        <CreateTableModal
+          handleId={handleId}
+          schemaName={schemaName}
+          engine={engine}
+          existing={(tables ?? []).map((t) => t.name)}
+          onCreated={(newName) => {
+            void loadTables(handleId, schemaName, { force: true });
+            openTable(newName);
+          }}
+          onClose={() => setCreateTableOpen(false)}
         />
       ) : null}
     </aside>

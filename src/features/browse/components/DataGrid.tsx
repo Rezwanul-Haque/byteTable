@@ -17,17 +17,37 @@
 //     and next-enabled, and the toolbar's "N rows" stays consistent with it.
 //   - Sort / filter / refresh / page change all reset the cache and re-fetch.
 //
+// STAGED DATA EDITING (Prompts 1–4, prototype `workspace.jsx` `TableDataTab`):
+//   - Editing a cell on an EXISTING row does NOT write to the database. The
+//     edit is staged in `pendingEdits` keyed by the row's primary key; the cell
+//     gets the `cell-edited` highlight (accent tint + left accent bar). Editing
+//     a value back to its original clears it from the pending set.
+//   - New rows (⌘I / ⌘N add-row) are staged in `newRows` and ride at the TOP of
+//     page 0 (`row-staged` highlight + a ✱ in the gutter). Auto-incremented int
+//     pk for display; column defaults applied; everything else NULL.
+//   - A "save bar" pinned below the grid appears whenever anything is staged.
+//     ⌘S / Cmd+S (or the Save button) commits the whole batch in one
+//     transaction (`execute_script_text`: one UPDATE per edited row + one INSERT
+//     per new row), then clears staging and re-fetches. Discard reverts all.
+//   - Production safety: on a `production` connection Save first shows a confirm
+//     dialog with the exact batch SQL — staging means nothing hits the DB until
+//     that explicit, reviewed save.
+//
 // EXTENSIBILITY SEAMS (commented inline, NOT built this milestone):
-//   - M5  filters → a `where`/filter param threads into FetchRowsRequest and
-//          resets the window like sort does.
 //   - M10 FK hop + column insights → the header hosts an insights icon on
-//          hover; FK cells become accent links opening a peek popover. The
-//          header/cell structure is kept so those slot in without a rewrite.
-//   - M11 inline edit → double-click a cell → in-cell input (.cell-input /
-//          .cell-editing CSS already ported). onDoubleClick seam left on td.
+//          hover; FK cells become accent links opening a peek popover.
 
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import type {
   CellValue,
@@ -37,7 +57,7 @@ import type {
   PkPredicate,
   SortSpec,
 } from "../../../shared/api/engine";
-import { rowsFetch, rowUpdate } from "../../../shared/api/engine";
+import { executeScriptText, rowsFetch } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
 import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
@@ -47,17 +67,18 @@ import { useIntrospectionStore } from "../../introspection/state";
 import { useWorkspacesStore } from "../../workspaces/state";
 import { useTabMetaStore } from "../../workspaces/tabMeta";
 import { BinaryEditorModal } from "./BinaryEditorModal";
-import { isBinaryType } from "./binaryCell";
+import { isBinaryType, looksUuid, uuidToHex } from "./binaryCell";
 import { ColumnInsights, type InsightsAnchor } from "./ColumnInsights";
 import { FkPeek, type FkPeekAnchor } from "./FkPeek";
 import { CellContent } from "./GridCell";
 import { JsonEditorModal } from "./JsonEditorModal";
 import { isJsonType } from "./jsonCell";
+import type { Engine } from "../../../shared/types";
 import "./DataGrid.css";
 
 /** Per-column metadata the grid keeps from tableMeta: pk/fk drive icons + FK
- *  hop (M10); dataType/nullable drive M11 inline-edit type coercion + the
- *  pk-predicate / editability gate. */
+ *  hop (M10); dataType/nullable drive inline-edit type coercion + the
+ *  pk-predicate / editability gate; `default` seeds staged new rows. */
 interface ColCellMeta {
   pk: boolean;
   fk: FkRef | null;
@@ -65,29 +86,44 @@ interface ColCellMeta {
   dataType: string;
   /** True when the column has no NOT NULL constraint (empty input → NULL). */
   nullable: boolean;
+  /** The column's DEFAULT expression verbatim, or null. Seeds new staged rows. */
+  default: string | null;
+}
+
+/** What an active edit / cell-modal targets: an existing (real) row keyed by
+ *  absolute cache index, or a staged new row keyed by its stable id (staged
+ *  rows reorder as more are prepended, so an index would drift). */
+type EditTarget = { kind: "real"; rowIndex: number } | { kind: "staged"; stagedKey: number };
+
+/** A stable primitive identity for an edit target (used as a render key and as
+ *  the focus-effect dependency so it runs once per edit, not per keystroke). */
+function targetKey(t: EditTarget): string {
+  return t.kind === "real" ? "r" + t.rowIndex : "s" + t.stagedKey;
 }
 
 /** The in-flight inline edit: which cell, and the draft text in the input. */
 interface EditState {
-  /** Absolute row index in the sparse cache. */
-  row: number;
+  target: EditTarget;
   /** Column index into `columns`. */
   col: number;
   /** The text the borderless input currently holds. */
   draft: string;
 }
 
-/** A commit awaiting the production-confirm modal: everything `commitEdit`
- *  computed, parked so Confirm/Cancel can finish (or abort) it. */
-interface PendingConfirm {
-  row: number;
-  col: number;
-  column: string;
-  value: CellValue;
-  prior: CellValue;
+/** A staged, unsaved new row. `values` is aligned to `columns` order; `key` is
+ *  a stable identity that survives prepending more rows. */
+interface NewRow {
+  key: number;
+  values: CellValue[];
+}
+
+/** A staged set of edits to one existing row, self-contained so it can be saved
+ *  even after the row has scrolled off the cached page. */
+interface PendingRow {
+  /** The full primary key of the target row (for the UPDATE … WHERE). */
   pk: PkPredicate[];
-  /** Cosmetic SQL shown in the confirm dialog (built from the coerced value). */
-  display: string;
+  /** Column index → new value (only the changed cells). */
+  cells: Map<number, CellValue>;
 }
 
 /** SQLite type-affinity buckets we coerce edit input into. Keyword-based, the
@@ -115,10 +151,7 @@ function affinityOf(dataType: string): "integer" | "real" | "boolean" | "text" {
  * - integer/real columns → a Number when the trimmed text parses; otherwise
  *   the raw string (the engine validates / rejects).
  * - boolean columns → 1/0 (SQLite stores booleans as integers; the grid shows
- *   true/false) for "true"/"false"/"1"/"0"; otherwise the raw string. We send
- *   the integer rather than a JS bool because the wire `CellValue` is
- *   string|number|null (SQLite has no native bool) — the engine binds the
- *   integer exactly as SQLite stores it.
+ *   true/false) for "true"/"false"/"1"/"0"; otherwise the raw string.
  * - everything else → the string verbatim.
  */
 function coerceForColumn(draft: string, meta: ColCellMeta | undefined): CellValue {
@@ -138,16 +171,61 @@ function coerceForColumn(draft: string, meta: ColCellMeta | undefined): CellValu
   return draft;
 }
 
-/** Single-quote-escape a value for the *cosmetic* confirm-dialog SQL. The real
- *  query is parameterized server-side; this is display only (mirrors the
- *  backend's UpdateResult.statement rendering). */
-function sqlLiteral(value: CellValue): string {
-  if (value === null) return "NULL";
+/**
+ * Parse a column's DEFAULT expression into a display value for a staged new row
+ * (prototype `addRow`). Simple literals (numbers, quoted strings, true/false)
+ * are shown; anything we can't safely evaluate (e.g. `CURRENT_TIMESTAMP`,
+ * `nextval(...)`) stays NULL so the database fills it on INSERT.
+ */
+function parseDefault(def: string | null, affinity: ReturnType<typeof affinityOf>): CellValue {
+  if (def === null) return null;
+  const t = def.trim();
+  if (t === "" || /^null$/i.test(t)) return null;
+  if (affinity === "boolean") {
+    if (/^(true|1)$/i.test(t)) return 1;
+    if (/^(false|0)$/i.test(t)) return 0;
+  }
+  if (affinity === "integer" || affinity === "real") {
+    if (!Number.isNaN(Number(t))) return Number(t);
+  }
+  const quoted = t.match(/^'([\s\S]*)'$/);
+  if (quoted) return quoted[1]!.replace(/''/g, "'");
+  // Unparseable expression — let the DB apply it on INSERT.
+  return null;
+}
+
+/** Single-quote-escape a value for a SQL literal — engine-aware. Used for the
+ *  confirm-dialog SQL and the batch script run via execute_script_text. MySQL
+ *  treats backslash as an escape character inside string literals (unlike
+ *  standard SQL / Postgres / SQLite), so it must be doubled there too. */
+function sqlLiteral(value: CellValue, engine: Engine | undefined): string {
+  if (value === null || value === undefined) return "NULL";
   if (typeof value === "number") return String(value);
-  // Booleans (M12 Postgres) render unquoted, matching the backend's cosmetic
-  // `sql_literal`.
   if (typeof value === "boolean") return value ? "true" : "false";
-  return "'" + value.replace(/'/g, "''") + "'";
+  let s = String(value).replace(/'/g, "''");
+  if (engine === "mysql") s = s.replace(/\\/g, "\\\\");
+  return "'" + s + "'";
+}
+
+/** Quote an identifier for the batch SQL — engine-aware. MySQL uses backticks
+ *  (double quotes are string literals unless ANSI_QUOTES is set); Postgres and
+ *  SQLite use double quotes. */
+function quoteIdent(name: string, engine: Engine | undefined): string {
+  if (engine === "mysql") return "`" + name.replace(/`/g, "``") + "`";
+  return '"' + name.replace(/"/g, '""') + '"';
+}
+
+/** A binary value (UUID or `0x`-hex string) as an engine-specific binary
+ *  literal — so it binds as RAW BYTES, not a text string. A `BINARY(16)` /
+ *  `bytea` / `BLOB` column rejects the 36-char string form ("Data too long").
+ *  Falls back to a quoted string when the value isn't valid hex. */
+function binaryLiteral(value: CellValue, engine: Engine | undefined): string {
+  const s = String(value);
+  let hex = looksUuid(s) ? uuidToHex(s) : s.replace(/^0x/i, "").replace(/-/g, "");
+  if (hex.length % 2 !== 0 || !/^[0-9a-f]*$/i.test(hex)) return sqlLiteral(value, engine);
+  hex = hex.toUpperCase();
+  if (engine === "postgres") return "decode('" + hex + "', 'hex')";
+  return "X'" + hex + "'"; // MySQL + SQLite hex/blob literal
 }
 
 /** Row overscan handed to the virtualizer (DOM rows beyond the viewport). */
@@ -156,37 +234,22 @@ const ROW_OVERSCAN = 12;
 const FALLBACK_ROW_H = 26;
 
 // --- Bug 1: explicit per-column pixel widths (shared by header + all rows) ---
-// Each `.dg-row` is its own CSS grid (the body rows are absolutely positioned
-// by the virtualizer, so a single shared grid is impossible). With
-// `max-content` tracks, every row resolved its own track widths from its own
-// content → the header and body computed DIFFERENT widths and columns drifted.
-// Fix: measure one explicit pixel width per visible column ONCE (max of the
-// header's intrinsic width and the widest loaded cell, clamped), and build the
-// template from those fixed px tracks so every row uses identical tracks.
-
-/** Min/max column track width (px). MAX bounds one long value from blowing out
- *  the layout — the cell ellipsizes/scrolls within it. */
+/** Min/max column track width (px). */
 const COL_MIN_PX = 90;
 const COL_MAX_PX = 400;
 /** Row-number gutter width (px) — matches `.dg-rownum` min-width. */
 const ROWNUM_PX = 38;
 /** Horizontal cell/header padding (px) — `.dg-td`/`.dg-th` are `0 12px`. */
 const CELL_PAD_PX = 24;
-/** Cheap mono-font width estimates (JetBrains Mono ≈ 0.6em advance). The body
- *  cell font is `--grid-fs` (~12px → ~7.3px/char); the header name is 11.5px
- *  (~7px/char) and the type label is 9.5px (~5.7px/char). Estimates only —
- *  clamp + ellipsis absorb the slack. */
 const CELL_CHAR_PX = 7.3;
 const HEAD_NAME_CHAR_PX = 7;
 const HEAD_TYPE_CHAR_PX = 5.7;
 /** Allowance for header icons (pk/fk badge, sort arrow) + the inter-item gap. */
 const HEAD_ICON_PX = 40;
-/** Rows sampled when measuring cell widths — enough to be representative
- *  without scanning a 5000-row page on every recompute. */
+/** Rows sampled when measuring cell widths. */
 const WIDTH_SAMPLE_ROWS = 200;
 
-/** Render width of one cell value, mirroring GridCell's text output (numbers
- *  print compact; everything else its string form). */
+/** Render width of one cell value, mirroring GridCell's text output. */
 function cellTextLength(value: CellValue): number {
   if (value === null) return 4; // "null"
   if (typeof value === "number")
@@ -201,6 +264,16 @@ function cycleSort(current: SortSpec | null, column: string): SortSpec | null {
   return null;
 }
 
+/** Imperative actions the table-tab toolbar + keyboard shortcuts trigger. */
+export interface DataGridHandle {
+  /** Stage a new empty row at the top (⌘I / toolbar +). */
+  addRow: () => void;
+  /** Commit all staged changes (⌘S / Save button). */
+  save: () => void;
+  /** Revert all staged changes (Discard button). */
+  discard: () => void;
+}
+
 interface DataGridProps {
   /** Live backend handle from the active workspace. */
   handleId: string;
@@ -208,13 +281,7 @@ interface DataGridProps {
   tabId: string;
   schema: string;
   table: string;
-  /**
-   * The applied row filter (M5), or `null` for the whole table. Threads into
-   * every `rowsFetch` and the reset machinery: changing it re-windows to
-   * offset 0, re-fetches, and re-counts — exactly like a sort change. When a
-   * raw-mode filter fails, `onFilterError` is called with the backend message
-   * (the panel surfaces it) and the grid keeps its prior rows.
-   */
+  /** The applied row filter (M5), or `null` for the whole table. */
   filter: FilterSpec | null;
   /** A stable identity for `filter`, so the reset effect can depend on it. */
   filterKey: string;
@@ -222,50 +289,42 @@ interface DataGridProps {
   onFilterError?: (message: string) => void;
   /** Called when a filtered fetch's first page succeeds (clears panel error). */
   onFilterOk?: () => void;
-  /**
-   * Columns hidden by the table tab's Columns popover (M15 Task 2). Display-
-   * only: the grid still FETCHES every column (the row cache stays aligned to
-   * the full `columns`), it just skips rendering the hidden ones in the header
-   * + body and drops their tracks from the grid template.
-   */
+  /** Columns hidden by the table tab's Columns popover (display-only). */
   hiddenColumns?: ReadonlySet<string>;
-  /**
-   * Explicit paging (Bug 2 — the prototype's `.table-footer` pager). The table
-   * tab owns `offset`/`pageSize`; the grid fetches exactly that page
-   * (`rowsFetch(..., { offset, limit: pageSize })`) and virtualizes within it.
-   * This replaces the old scroll-driven sparse-window model for the table view.
-   * Changing either re-fetches the page. `pageSize` is already clamped by the
-   * caller to the backend ceiling (`MAX_PAGE_ROWS`) for the "All" option.
-   */
+  /** Explicit paging — the table tab owns `offset`/`pageSize`. */
   offset: number;
   pageSize: number;
-  /**
-   * Called when the user changes the sort (header click). The table tab resets
-   * `offset` to 0 on sort change (matches the prototype's paging reset), since
-   * a re-sort invalidates the current page window.
-   */
+  /** Called when the user changes the sort (resets paging to page 1). */
   onSortChange?: () => void;
+  /**
+   * Called by `addRow` BEFORE prepending the staged row: the table tab clears
+   * any applied filter and jumps to the first page so the new row (which rides
+   * at the top of page 0) is visible. Sort is the grid's own state, cleared here.
+   */
+  onAddRowReset?: () => void;
 }
 
-export function DataGrid({
-  handleId,
-  tabId,
-  schema,
-  table,
-  filter,
-  filterKey,
-  onFilterError,
-  onFilterOk,
-  hiddenColumns,
-  offset,
-  pageSize,
-  onSortChange,
-}: DataGridProps) {
+export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataGrid(
+  {
+    handleId,
+    tabId,
+    schema,
+    table,
+    filter,
+    filterKey,
+    onFilterError,
+    onFilterOk,
+    hiddenColumns,
+    offset,
+    pageSize,
+    onSortChange,
+    onAddRowReset,
+  },
+  ref,
+) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // --- column header meta (pk/fk/type) ---------------------------------
-  // Reuse the introspection cache (sidebar already warms it); falls back to a
-  // tableMeta fetch via loadColumns. Drives the pk key / fk link icons.
+  // --- column header meta (pk/fk/type/default) -------------------------
   const loadColumns = useIntrospectionStore((s) => s.loadColumns);
   const [colMeta, setColMeta] = useState<Map<string, ColCellMeta>>(new Map());
 
@@ -273,35 +332,45 @@ export function DataGrid({
   const [columns, setColumns] = useState<ColumnMeta[]>([]);
   const [totalRows, setTotalRows] = useState<number | null>(null);
   const [sort, setSort] = useState<SortSpec | null>(null);
-  const [selected, setSelected] = useState<{ row: number; col: number } | null>(null);
+  const [selected, setSelected] = useState<{ rowKey: string; col: number } | null>(null);
   const [initialError, setInitialError] = useState<string | null>(null);
   const [loadingInitial, setLoadingInitial] = useState(true);
 
-  // --- M11 inline edit -------------------------------------------------
+  // --- inline edit -----------------------------------------------------
   const toast = useToast();
-  // The active in-cell edit (null when not editing). Auto-focus + select on
-  // mount is handled by an effect on this value.
   const [editing, setEditing] = useState<EditState | null>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
-  // A commit parked on the production-confirm modal (null when no confirm is
-  // pending). Confirm fires the update; Cancel restores the cell.
-  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
-  // Production gate (§ M11 safety): this connection's deployment env. An edit
-  // on a `production` connection requires the confirm dialog before firing.
+  // Enter then blur must not double-commit one edit session.
+  const committingRef = useRef(false);
+
+  // --- staged data editing (Prompts 1–3) -------------------------------
+  // Pending edits to existing rows, keyed by primary-key string. Self-contained
+  // (carries the pk predicate + new values) so a save works even after the row
+  // scrolled off the cached page.
+  const [pendingEdits, setPendingEdits] = useState<Map<string, PendingRow>>(new Map());
+  // Staged new rows (ride at the top of page 0).
+  const [newRows, setNewRows] = useState<NewRow[]>([]);
+  // Monotonic id source for new-row keys (a ref — not render state).
+  const stagedKeySeq = useRef(0);
+  // Save-time production confirm: the batch SQL parked for review, or null.
+  const [saveConfirmSql, setSaveConfirmSql] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  // Production gate: a `production` connection requires a confirm before Save
+  // touches the database.
   const isProduction = useWorkspacesStore(
     (s) => s.workspaces.find((ws) => ws.handleId === handleId)?.saved.env === "production",
   );
-  // A blur fires when an edit commits — but a commit that opens the confirm
-  // modal moves focus into the modal, which would re-fire blur and double-fire
-  // the commit. This flag makes commit/cancel idempotent for one edit session.
-  const committingRef = useRef(false);
+  // The connection's engine — drives engine-aware identifier quoting + literal
+  // escaping in the batch SQL (MySQL backticks vs. Postgres/SQLite double quotes).
+  const engine = useWorkspacesStore(
+    (s) => s.workspaces.find((ws) => ws.handleId === handleId)?.info.engine,
+  );
 
-  // --- JSON / binary cell editor modals (ported design) ----------------
-  // Double-clicking a JSON or binary cell opens a dedicated modal instead of
-  // the inline input. Holds the target cell + its declared type, or null.
+  // --- JSON / binary cell editor modals --------------------------------
   const [cellModal, setCellModal] = useState<{
     kind: "json" | "binary";
-    row: number;
+    target: EditTarget;
     col: number;
     column: string;
     type: string;
@@ -309,43 +378,25 @@ export function DataGrid({
   } | null>(null);
 
   // --- M10 popovers (FK peek + column insights) ------------------------
-  // Each holds the anchor (clicked cell / header rect + target) for an open
-  // popover, or null when closed. Only one of each is open at a time.
   const [fkPeek, setFkPeek] = useState<FkPeekAnchor | null>(null);
   const [insights, setInsights] = useState<InsightsAnchor | null>(null);
   const closeFkPeek = useCallback(() => setFkPeek(null), []);
   const closeInsights = useCallback(() => setInsights(null), []);
 
-  // The current page's rows, keyed by ABSOLUTE row index (`offset + i`). Keyed
-  // absolutely (not 0-based) so the inline-edit pk logic + the row-number
-  // gutter stay correct across pages. Rows absent here (page in flight) render
-  // a shimmer.
+  // The current page's rows, keyed by ABSOLUTE row index (`offset + i`).
   const rowCacheRef = useRef<Map<number, CellValue[]>>(new Map());
-  // How many rows the current page actually returned (≤ pageSize; the last
-  // page is short). Drives the virtualizer's row count for THIS page.
   const [pageRowCount, setPageRowCount] = useState(0);
-  // Bumped whenever the cache changes so the virtual rows re-render.
   const [cacheVersion, setCacheVersion] = useState(0);
-  // Incremented on every reset (sort/refresh/identity change) so late page
-  // responses from a stale generation are discarded.
   const generationRef = useRef(0);
 
-  // Refresh nonce + restored scroll, from the tabMeta seam.
+  // Refresh nonce from the tabMeta seam.
   const refetchNonce = useTabMetaStore((s) => s.refetchNonce[tabId] ?? 0);
 
-  // Filter-result callbacks kept in a ref so fetchCurrentPage stays stable (it
-  // must not re-create — and re-fetch — when the parent re-renders with a new
-  // callback identity; the reset triggers are the identity/sort/filter/page
-  // deps below).
   const filterCbRef = useRef({ onFilterError, onFilterOk });
   filterCbRef.current = { onFilterError, onFilterOk };
-  // The live filter, read inside fetchCurrentPage without making it a dep
-  // (filterKey is its stable identity and drives the reset effect).
   const filterRef = useRef(filter);
   filterRef.current = filter;
 
-  // Reset everything for a fresh page load (mount, sort/filter/page change,
-  // refresh).
   const resetForLoad = useCallback(() => {
     generationRef.current += 1;
     rowCacheRef.current = new Map();
@@ -357,8 +408,6 @@ export function DataGrid({
   }, []);
 
   // --- page fetcher ----------------------------------------------------
-  // Fetch EXACTLY the current page [offset, offset+pageSize). One request per
-  // (sort/filter/identity/offset/pageSize/refresh) generation.
   const fetchCurrentPage = useCallback(() => {
     const generation = generationRef.current;
     void rowsFetch(handleId, {
@@ -371,7 +420,6 @@ export function DataGrid({
     })
       .then((page) => {
         if (generation !== generationRef.current) return; // stale
-        // The page echoes the column list; keep the latest.
         setColumns(page.columns);
         setTotalRows(page.totalRows);
         rowCacheRef.current = new Map();
@@ -381,13 +429,7 @@ export function DataGrid({
         setPageRowCount(page.rows.length);
         setCacheVersion((v) => v + 1);
         setLoadingInitial(false);
-        // A successful (re)load clears any stale filter error the panel showed
-        // (e.g. a fixed raw-mode clause).
         filterCbRef.current.onFilterOk?.();
-
-        // Report to the tabMeta seam: total count + timing. The toolbar's
-        // "N rows" reads totalRows (the filtered total when a filter applies);
-        // no shownRows — the footer pager shows the page range instead.
         useTabMetaStore.getState().setTabMeta(tabId, {
           totalRows: page.totalRows,
           elapsedMs: page.elapsedMs,
@@ -397,10 +439,6 @@ export function DataGrid({
       .catch((err: unknown) => {
         if (generation !== generationRef.current) return;
         const message = appErrorMessage(err, "Could not load rows.");
-        // A filtered fetch that fails is almost always a bad raw WHERE — keep
-        // the prior rows visible and route the §5 message to the filter panel
-        // (it stays open so the user can fix the clause). Without a filter, it
-        // is a genuine load failure → the full-screen error state.
         if (filterRef.current !== null && filterCbRef.current.onFilterError) {
           filterCbRef.current.onFilterError(message);
           setLoadingInitial(false);
@@ -412,34 +450,37 @@ export function DataGrid({
   }, [handleId, schema, table, sort, tabId, offset, pageSize]);
 
   // Initial load + reload on identity / sort / filter / page / refresh changes.
-  // A reset flips loadingInitial true, which unmounts the scroll canvas, so a
-  // sort/filter/page change naturally returns to row 1 on the fresh mount.
   useEffect(() => {
     resetForLoad();
-    // A reset re-keys the row cache: any open edit / parked production confirm
-    // points at a now-stale row index, so drop them (M11) — committing them
-    // against a re-windowed cache would target the wrong row.
     committingRef.current = false;
     setEditing(null);
-    setPendingConfirm(null);
     fetchCurrentPage();
-    // fetchCurrentPage closes over sort/identity/offset/pageSize + reads the
-    // live filter via a ref; filterKey is the filter's stable identity, so an
-    // applied-filter change re-fetches + re-counts here like a sort change.
-    // resetForLoad is stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [handleId, schema, table, sort, filterKey, refetchNonce, offset, pageSize]);
 
-  // Load the column header meta (pk/fk) once per identity. Independent of the
-  // row pages — the prototype shows the icons from table metadata, not the
-  // row result's column list.
+  // Staging clears ONLY on table/schema identity change (NOT on sort/filter/
+  // page/refresh — edits are keyed by pk and re-applied; new rows persist and
+  // re-show on page 0). Mirrors the prototype's reset-on-table-change.
+  useEffect(() => {
+    setPendingEdits(new Map());
+    setNewRows([]);
+    setSaveConfirmSql(null);
+  }, [handleId, schema, table]);
+
+  // Load the column header meta (pk/fk/default) once per identity.
   useEffect(() => {
     let alive = true;
     void loadColumns(handleId, schema, table).then((cols) => {
       if (!alive || !cols) return;
       const map = new Map<string, ColCellMeta>();
       for (const c of cols)
-        map.set(c.name, { pk: c.pk, fk: c.fk, dataType: c.dataType, nullable: c.nullable });
+        map.set(c.name, {
+          pk: c.pk,
+          fk: c.fk,
+          dataType: c.dataType,
+          nullable: c.nullable,
+          default: c.default ?? null,
+        });
       setColMeta(map);
     });
     return () => {
@@ -448,30 +489,23 @@ export function DataGrid({
   }, [handleId, schema, table, loadColumns]);
 
   // --- virtualizer -----------------------------------------------------
-  // Row height is the live CSS var (--grid-row-h: 26/32 by density). Measure
-  // it from the scroll container so density changes are honored.
   const [rowHeight, setRowHeight] = useState(FALLBACK_ROW_H);
   useLayoutEffect(() => {
-    // Read --grid-row-h from :root (where the density tokens live) — it always
-    // exists, unlike the scroll element which is absent during loading.
     const read = () => {
       const v = getComputedStyle(document.documentElement).getPropertyValue("--grid-row-h").trim();
       const px = parseFloat(v);
       if (!Number.isNaN(px) && px > 0) setRowHeight((prev) => (prev === px ? prev : px));
     };
     read();
-    // Re-measure when density (a data-attr on :root) flips live (preferences).
     const obs = new MutationObserver(read);
     obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-density"] });
     return () => obs.disconnect();
   }, []);
 
-  // Virtual row count: the rows in the CURRENT PAGE (the grid only holds one
-  // page at a time now). The virtualizer indexes the page 0-based; the body map
-  // adds `offset` to recover the absolute row index (gutter shows index+1, and
-  // the cache is keyed absolutely). `cacheVersion` (read in the JSX below)
-  // re-renders when the page lands.
-  const rowCount = pageRowCount;
+  // Staged new rows ride at the top of page 0 only.
+  const stagedShown = offset === 0 ? newRows.length : 0;
+  // Virtual row count: staged rows (page 0) + the current backend page's rows.
+  const rowCount = stagedShown + pageRowCount;
   const rowVirtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => scrollRef.current,
@@ -479,7 +513,6 @@ export function DataGrid({
     overscan: ROW_OVERSCAN,
   });
 
-  // When the row height changes (density), re-measure all virtual items.
   useEffect(() => {
     rowVirtualizer.measure();
   }, [rowHeight, rowVirtualizer]);
@@ -487,12 +520,6 @@ export function DataGrid({
   const virtualRows = rowVirtualizer.getVirtualItems();
 
   // --- scroll persistence (per-tab, across workspace switches) ---------
-  // The grid remounts on every workspace switch (WorkspaceContent mounts only
-  // the active workspace's active tab), so we save scrollTop on unmount and
-  // restore it once the canvas exists AND has its full height — the scroll
-  // container is not rendered during the loading state, and the browser clamps
-  // scrollTop to the content height, so restoring before totalRows is known
-  // would snap to 0. `restoredRef` makes restore one-shot per mount.
   const restoredRef = useRef(false);
   useLayoutEffect(() => {
     if (restoredRef.current || loadingInitial) return;
@@ -503,11 +530,6 @@ export function DataGrid({
     if (saved && saved > 0) el.scrollTop = saved;
   }, [loadingInitial, totalRows, tabId]);
 
-  // Commit scrollTop on unmount (the churn rule: only on switch, never per
-  // frame). We intentionally read scrollRef.current *at cleanup time* (not a
-  // value captured at mount): during the loading state the element is null, so
-  // a captured value would be stale — we want the live element that exists by
-  // the time the tab is switched away. Hence the rule is disabled here.
   useEffect(() => {
     return () => {
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -517,25 +539,13 @@ export function DataGrid({
   }, [tabId]);
 
   // --- render ----------------------------------------------------------
-  // Keep the sort-change callback in a ref so onHeaderClick stays stable.
   const onSortChangeRef = useRef(onSortChange);
   onSortChangeRef.current = onSortChange;
   const onHeaderClick = useCallback((column: string) => {
-    // A re-sort invalidates the current page window — reset paging to page 1
-    // (the table tab owns offset). Fired before the local sort flips so the
-    // parent's offset reset and our sort change land in the same render pass.
     onSortChangeRef.current?.();
     setSort((prev) => cycleSort(prev, column));
   }, []);
 
-  // FK hop (M10 §3.5): clicking an FK cell link opens the peek popover for the
-  // column's referenced table, anchored at the clicked cell. The referenced
-  // schema is the same as the source for SQLite (one db, one schema). Closing
-  // any prior insights popover keeps a single popover open at a time.
-  // M11 coexistence: the hop is *deferred* on a short timer so a double-click
-  // on an FK cell enters edit (the td's onDoubleClick clears the timer first)
-  // rather than navigating. A lone single click runs the hop once the timer
-  // elapses. The browser's dblclick threshold (~250–500ms) bounds the wait.
   const onFkClick = useCallback(
     (fk: FkRef, value: CellValue, binary: boolean, event: React.MouseEvent<HTMLButtonElement>) => {
       event.stopPropagation();
@@ -544,7 +554,6 @@ export function DataGrid({
       fkHopTimer.current = window.setTimeout(() => {
         fkHopTimer.current = null;
         setInsights(null);
-        // A binary FK key binds its value as bytes for the lookup + seeded filter.
         setFkPeek({
           rect,
           refSchema: schema,
@@ -558,21 +567,13 @@ export function DataGrid({
     [schema],
   );
 
-  // "Open in {refTable}": open/focus that table's data tab seeded with the
-  // referenced `refColumn = value` filter (so the grid shows the row(s)), then
-  // close the peek.
   const onOpenInTable = useCallback((anchor: FkPeekAnchor) => {
-    // The seeded filter's binary-ness is derived from the column type at compile
-    // time (compileToSpec), so no flag needs threading here.
     useWorkspacesStore
       .getState()
       .openTableTabWithFilter(anchor.refSchema, anchor.refTable, anchor.refColumn, anchor.value);
     setFkPeek(null);
   }, []);
 
-  // Column insights (M10 §3.5): the header's chart icon opens the insights
-  // popover for that column, anchored at the icon. stopPropagation keeps the
-  // header's sort handler from firing on the same click.
   const onInsightClick = useCallback(
     (column: string, event: React.MouseEvent<HTMLButtonElement>) => {
       event.stopPropagation();
@@ -583,25 +584,19 @@ export function DataGrid({
     [],
   );
 
-  // --- M11 inline edit: editability gating + commit flow ---------------
-  // The table's primary-key columns, in `columns` order (so the pk predicate
-  // is built deterministically). A table with no pk → empty → read-only cells.
+  // --- inline edit: editability gating + staging -----------------------
   const pkColumns = useMemo(
     () => columns.filter((c) => colMeta.get(c.name)?.pk).map((c) => c.name),
     [columns, colMeta],
   );
   const hasPk = pkColumns.length > 0;
 
-  // Build the full-pk predicate for a row from its loaded values. Returns null
-  // if any pk value is missing (a row not fully present can't be safely keyed).
   const buildPk = useCallback(
     (row: CellValue[]): PkPredicate[] | null => {
       const preds: PkPredicate[] = [];
       for (const pkName of pkColumns) {
         const ci = columns.findIndex((c) => c.name === pkName);
         if (ci < 0) return null;
-        // A binary pk binds its value (0x-hex / UUID) as raw bytes so the
-        // WHERE pk = ? matches (binary edit + binary-keyed rows).
         preds.push({
           column: pkName,
           value: row[ci] ?? null,
@@ -613,10 +608,19 @@ export function DataGrid({
     [columns, pkColumns, colMeta],
   );
 
-  // A cell is editable when the table has a pk, the cell's own column is NOT a
-  // pk column (editing a pk changes row identity — read-only, recommended safe
-  // default), and the row's pk values are all present. Returns a reason string
-  // for the read-only tooltip, or null when editable.
+  /** Stable string key for an existing row from its pk values. */
+  const pkKeyOf = useCallback(
+    (row: CellValue[]): string | null => {
+      const pk = buildPk(row);
+      if (pk === null) return null;
+      return JSON.stringify(pk.map((p) => p.value));
+    },
+    [buildPk],
+  );
+
+  // A real cell is editable when the table has a pk, the cell's own column is
+  // NOT a pk column, and the row's pk values are all present. Staged-row cells
+  // are always editable (no commit until save).
   const readOnlyReason = useCallback(
     (rowIndex: number, ci: number): string | null => {
       if (!hasPk) return "Read-only: table has no primary key";
@@ -629,204 +633,358 @@ export function DataGrid({
     [hasPk, columns, colMeta, buildPk],
   );
 
-  // Begin editing a cell: prefill with the current value as text (NULL → empty
-  // input). No-op on a read-only cell (the td shows the reason as a tooltip).
-  const startEdit = useCallback(
-    (rowIndex: number, ci: number) => {
-      if (readOnlyReason(rowIndex, ci) !== null) return;
+  // The displayed value for a real cell = pending override (if any) else cache.
+  const realCellValue = useCallback(
+    (rowIndex: number, ci: number): CellValue => {
       const row = rowCacheRef.current.get(rowIndex);
-      if (!row) return;
-      const cur = row[ci] ?? null;
-      committingRef.current = false;
-      setEditing({ row: rowIndex, col: ci, draft: cur === null ? "" : String(cur) });
+      if (!row) return null;
+      const key = pkKeyOf(row);
+      if (key) {
+        const pend = pendingEdits.get(key);
+        if (pend && pend.cells.has(ci)) return pend.cells.get(ci) ?? null;
+      }
+      return row[ci] ?? null;
     },
-    [readOnlyReason],
+    [pendingEdits, pkKeyOf],
   );
 
-  // Discard the active edit without writing.
+  const isRealCellEdited = useCallback(
+    (rowIndex: number, ci: number): boolean => {
+      const row = rowCacheRef.current.get(rowIndex);
+      if (!row) return false;
+      const key = pkKeyOf(row);
+      return key ? (pendingEdits.get(key)?.cells.has(ci) ?? false) : false;
+    },
+    [pendingEdits, pkKeyOf],
+  );
+
+  // Begin editing a cell. Prefills with the currently DISPLAYED value (so a
+  // staged override round-trips). No-op on a read-only real cell.
+  const startEdit = useCallback(
+    (target: EditTarget, ci: number) => {
+      let cur: CellValue = null;
+      if (target.kind === "real") {
+        if (readOnlyReason(target.rowIndex, ci) !== null) return;
+        cur = realCellValue(target.rowIndex, ci);
+      } else {
+        const nr = newRows.find((r) => r.key === target.stagedKey);
+        if (!nr) return;
+        cur = nr.values[ci] ?? null;
+      }
+      committingRef.current = false;
+      setEditing({ target, col: ci, draft: cur === null ? "" : String(cur) });
+    },
+    [readOnlyReason, realCellValue, newRows],
+  );
+
   const cancelEdit = useCallback(() => {
     committingRef.current = false;
     setEditing(null);
   }, []);
 
-  // Auto-focus + select the input when an edit starts.
+  // P4 fix: focus + select ONCE when an edit STARTS. Depends on the target's
+  // primitive identity (+ column), NOT the whole editing object — so it does
+  // not re-run on every keystroke (which re-selected the text mid-type).
+  const editFocusKey = editing ? targetKey(editing.target) + ":" + editing.col : null;
   useEffect(() => {
     if (editing && editInputRef.current) {
       editInputRef.current.focus();
       editInputRef.current.select();
     }
-  }, [editing]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editFocusKey]);
 
-  // Apply a coerced value to the page cache at (row, col) and re-render. Used
-  // for the optimistic write and for the rollback on error.
-  const writeCache = useCallback((rowIndex: number, ci: number, value: CellValue) => {
-    const row = rowCacheRef.current.get(rowIndex);
-    if (!row) return;
-    const next = row.slice();
-    next[ci] = value;
-    rowCacheRef.current.set(rowIndex, next);
-    setCacheVersion((v) => v + 1);
-  }, []);
-
-  // Fire the backend update with optimistic write + rollback-on-error. The
-  // cache is mutated to `value` immediately and edit mode exits; on success a
-  // toast shows the executed statement; on error the prior value is restored
-  // and the §5 message is shown. `prior` is the value to roll back to.
-  const runUpdate = useCallback(
-    (
-      rowIndex: number,
-      ci: number,
-      column: string,
-      value: CellValue,
-      prior: CellValue,
-      pk: PkPredicate[],
-    ) => {
-      // Optimistic: apply now, exit edit mode.
-      writeCache(rowIndex, ci, value);
-      const generation = generationRef.current;
-      // A binary target column binds its value (0x-hex / UUID) as raw bytes.
-      const binary = isBinaryType(colMeta.get(column)?.dataType);
-      void rowUpdate(handleId, { schema, table, column, value, binary, pk })
-        .then((result) => {
-          // A reset (sort/filter/refresh) since we fired invalidated the cache;
-          // the toast is still truthful (the row was updated server-side).
-          toast(result.statement + " — " + result.affected + " row affected", "ok");
-        })
-        .catch((err: unknown) => {
-          // Roll back the optimistic write if the cache is still the same
-          // generation (otherwise the row is gone / re-fetched anyway).
-          if (generation === generationRef.current) writeCache(rowIndex, ci, prior);
-          toast(appErrorMessage(err, "Could not update the cell."), "err");
-        });
-    },
-    [writeCache, handleId, schema, table, toast, colMeta],
-  );
-
-  // Commit the active edit: coerce by column type, no-op if unchanged, build
-  // the pk predicate, then either fire immediately or (on a production
-  // connection) park the commit on the confirm modal. Idempotent per session
-  // via committingRef (Enter then blur must not double-fire).
-  const commitEdit = useCallback(() => {
-    if (!editing || committingRef.current) return;
-    const { row: rowIndex, col: ci, draft } = editing;
-    const row = rowCacheRef.current.get(rowIndex);
-    const colName = columns[ci]?.name;
-    if (!row || !colName) {
-      cancelEdit();
-      return;
-    }
-    const prior = row[ci] ?? null;
-    const value = coerceForColumn(draft, colMeta.get(colName));
-    // No-op: the coerced value is unchanged — don't fire an update. Compare by
-    // string form too: big integers (>2^53) arrive as strings but coerce to a
-    // number for INT columns, so `value === prior` would miss an unchanged edit
-    // and fire a precision-losing write. String-equal means "no real change".
-    if (value === prior || (value !== null && prior !== null && String(value) === String(prior))) {
-      cancelEdit();
-      return;
-    }
-    const pk = buildPk(row);
-    if (pk === null) {
-      // Should not happen (startEdit gated on this), but never fire without a
-      // full pk — restore and bail.
-      cancelEdit();
-      return;
-    }
-    committingRef.current = true;
-    setEditing(null);
-    if (isProduction) {
-      // Park on the confirm modal; the cache is NOT yet mutated (Cancel must
-      // leave the cell as it was).
-      const display =
-        'UPDATE "' +
-        schema +
-        '"."' +
-        table +
-        '" SET "' +
-        colName +
-        '" = ' +
-        sqlLiteral(value) +
-        " WHERE " +
-        pk.map((p) => '"' + p.column + '" = ' + sqlLiteral(p.value)).join(" AND ");
-      setPendingConfirm({ row: rowIndex, col: ci, column: colName, value, prior, pk, display });
-      return;
-    }
-    runUpdate(rowIndex, ci, colName, value, prior, pk);
-  }, [editing, columns, colMeta, buildPk, isProduction, schema, table, runUpdate, cancelEdit]);
-
-  // Confirm dialog (production): proceed with the parked commit, or cancel it
-  // (the cell was never mutated, so cancel just drops the pending state).
-  const confirmProceed = useCallback(() => {
-    const p = pendingConfirm;
-    if (!p) return;
-    setPendingConfirm(null);
-    committingRef.current = false;
-    runUpdate(p.row, p.col, p.column, p.value, p.prior, p.pk);
-  }, [pendingConfirm, runUpdate]);
-
-  const confirmCancel = useCallback(() => {
-    setPendingConfirm(null);
-    committingRef.current = false;
-  }, []);
-
-  // Open the JSON / binary editor for a cell (only when editable — the caller
-  // gates on readOnlyReason). Snapshots the cell's identity + current value.
-  const openCellModal = useCallback(
-    (kind: "json" | "binary", rowIndex: number, ci: number, col: ColumnMeta) => {
+  // Stage a value for a real-row cell: record under the row's pk, or clear it
+  // if the value returns to the original cached value.
+  const stageRealValue = useCallback(
+    (rowIndex: number, ci: number, value: CellValue) => {
       const row = rowCacheRef.current.get(rowIndex);
       if (!row) return;
-      setCellModal({
-        kind,
-        row: rowIndex,
-        col: ci,
-        column: col.name,
-        type: col.typeHint,
-        value: row[ci] ?? null,
+      const pk = buildPk(row);
+      const key = pkKeyOf(row);
+      if (!pk || !key) return;
+      const original = row[ci] ?? null;
+      const isRevert =
+        value === original ||
+        (value !== null && original !== null && String(value) === String(original));
+      setPendingEdits((prev) => {
+        const next = new Map(prev);
+        const existing = next.get(key);
+        const cells = new Map(existing?.cells ?? []);
+        if (isRevert) cells.delete(ci);
+        else cells.set(ci, value);
+        if (cells.size === 0) next.delete(key);
+        else next.set(key, { pk, cells });
+        return next;
       });
     },
-    [],
+    [buildPk, pkKeyOf],
   );
 
-  // Apply a final value chosen in a cell modal: no-op if unchanged, then either
-  // fire immediately or (on a production connection) park on the confirm modal —
-  // the same safety path as inline edits, minus the draft coercion.
-  const commitCellValue = useCallback(
-    (rowIndex: number, ci: number, colName: string, value: CellValue) => {
-      const row = rowCacheRef.current.get(rowIndex);
-      if (!row) return;
-      const prior = row[ci] ?? null;
-      if (
-        value === prior ||
-        (value !== null && prior !== null && String(value) === String(prior))
-      ) {
-        return;
-      }
-      const pk = buildPk(row);
-      if (pk === null) return;
-      if (isProduction) {
-        const display =
-          'UPDATE "' +
-          schema +
-          '"."' +
-          table +
-          '" SET "' +
-          colName +
-          '" = ' +
-          sqlLiteral(value) +
-          " WHERE " +
-          pk.map((p) => '"' + p.column + '" = ' + sqlLiteral(p.value)).join(" AND ");
-        setPendingConfirm({ row: rowIndex, col: ci, column: colName, value, prior, pk, display });
-        return;
-      }
-      runUpdate(rowIndex, ci, colName, value, prior, pk);
+  // Stage a value for a staged new-row cell (always recorded; the whole row is
+  // unsaved).
+  const stageNewValue = useCallback((stagedKey: number, ci: number, value: CellValue) => {
+    setNewRows((prev) =>
+      prev.map((r) => {
+        if (r.key !== stagedKey) return r;
+        const values = r.values.slice();
+        values[ci] = value;
+        return { ...r, values };
+      }),
+    );
+  }, []);
+
+  // Commit the active inline edit into the staging set (no DB write).
+  const commitEdit = useCallback(() => {
+    if (!editing || committingRef.current) return;
+    const { target, col: ci, draft } = editing;
+    const colName = columns[ci]?.name;
+    if (!colName) {
+      cancelEdit();
+      return;
+    }
+    const value = coerceForColumn(draft, colMeta.get(colName));
+    committingRef.current = true;
+    setEditing(null);
+    if (target.kind === "real") stageRealValue(target.rowIndex, ci, value);
+    else stageNewValue(target.stagedKey, ci, value);
+  }, [editing, columns, colMeta, stageRealValue, stageNewValue, cancelEdit]);
+
+  // Open the JSON / binary editor for a cell (caller gates on editability).
+  const openCellModal = useCallback(
+    (kind: "json" | "binary", target: EditTarget, ci: number, col: ColumnMeta) => {
+      let value: CellValue = null;
+      if (target.kind === "real") value = realCellValue(target.rowIndex, ci);
+      else value = newRows.find((r) => r.key === target.stagedKey)?.values[ci] ?? null;
+      setCellModal({ kind, target, col: ci, column: col.name, type: col.typeHint, value });
     },
-    [buildPk, isProduction, schema, table, runUpdate],
+    [realCellValue, newRows],
   );
 
-  // --- M11 FK coexistence: defer the single-click hop so a double-click on
-  // an FK cell enters edit instead of navigating. The FK link's onClick
-  // schedules the hop on a short timer; the td's onDoubleClick clears it
-  // before starting the edit, so the hop never fires on a double-click.
+  // Apply a final value chosen in a cell modal — stages it like an inline edit.
+  const commitCellValue = useCallback(
+    (target: EditTarget, ci: number, value: CellValue) => {
+      if (target.kind === "real") stageRealValue(target.rowIndex, ci, value);
+      else stageNewValue(target.stagedKey, ci, value);
+    },
+    [stageRealValue, stageNewValue],
+  );
+
+  // --- staged-row counts -----------------------------------------------
+  const editedRowCount = pendingEdits.size;
+  const newRowCount = newRows.length;
+  const dirtyCount = editedRowCount + newRowCount;
+
+  // Build the batch SQL for a save: one UPDATE per edited row, one INSERT per
+  // new row. Returns "" when nothing is staged. Takes the effective staging
+  // sets so `save` can fold in an open (un-blurred) inline edit.
+  const buildBatchSql = useCallback(
+    (edits: Map<string, PendingRow>, rows: NewRow[]): string => {
+      const qi = (n: string) => quoteIdent(n, engine);
+      // Column-aware literal: binary columns bind as raw bytes (hex/blob
+      // literal), everything else as a normal SQL literal.
+      const litCol = (v: CellValue, colName: string) =>
+        v !== null && isBinaryType(colMeta.get(colName)?.dataType)
+          ? binaryLiteral(v, engine)
+          : sqlLiteral(v, engine);
+      const qtable = qi(schema) + "." + qi(table);
+      const stmts: string[] = [];
+      for (const { pk, cells } of edits.values()) {
+        if (cells.size === 0) continue;
+        const sets = [...cells.entries()].map(
+          ([ci, val]) => qi(columns[ci]!.name) + " = " + litCol(val, columns[ci]!.name),
+        );
+        const where = pk
+          .map((p) => qi(p.column) + " = " + litCol(p.value, p.column))
+          .join(" AND ");
+        stmts.push("UPDATE " + qtable + " SET " + sets.join(", ") + " WHERE " + where + ";");
+      }
+      for (const nr of rows) {
+        const cols: string[] = [];
+        const vals: string[] = [];
+        columns.forEach((c, ci) => {
+          const v = nr.values[ci] ?? null;
+          if (v === null) return; // let the DB apply NULL / its default
+          const m = colMeta.get(c.name);
+          // Skip an integer primary key so SERIAL / AUTOINCREMENT assigns it
+          // (the displayed value is a hint only); a non-int / user-typed pk is
+          // kept (it is non-null here).
+          if (m?.pk && affinityOf(m.dataType) === "integer") return;
+          cols.push(qi(c.name));
+          vals.push(litCol(v, c.name));
+        });
+        if (cols.length === 0)
+          // MySQL has no `DEFAULT VALUES`; `() VALUES ()` is its empty-row form.
+          stmts.push(
+            engine === "mysql"
+              ? "INSERT INTO " + qtable + " () VALUES ();"
+              : "INSERT INTO " + qtable + " DEFAULT VALUES;",
+          );
+        else
+          stmts.push(
+            "INSERT INTO " +
+              qtable +
+              " (" +
+              cols.join(", ") +
+              ") VALUES (" +
+              vals.join(", ") +
+              ");",
+          );
+      }
+      return stmts.join("\n");
+    },
+    [schema, table, columns, colMeta, engine],
+  );
+
+  // Run the batch against the DB (after the production confirm, if any).
+  const runSave = useCallback(
+    (sql: string, nNew: number, nUpdated: number) => {
+      setSaving(true);
+      void executeScriptText(handleId, schema, sql)
+        .then(() => {
+          setPendingEdits(new Map());
+          setNewRows([]);
+          const parts: string[] = [];
+          if (nNew) parts.push(nNew + " inserted");
+          if (nUpdated) parts.push(nUpdated + " updated");
+          toast("Committed to " + table + " — " + parts.join(", "), "ok");
+          // Re-fetch so the committed rows replace the staged ones.
+          useTabMetaStore.getState().requestRefetch(tabId);
+        })
+        .catch((err: unknown) => {
+          toast(appErrorMessage(err, "Could not save changes."), "err");
+        })
+        .finally(() => setSaving(false));
+    },
+    [handleId, schema, table, tabId, toast],
+  );
+
+  // Save (⌘S / Save button). Folds in an open (un-blurred) inline edit, then
+  // either runs the batch or parks it on the production confirm.
+  const save = useCallback(() => {
+    // Effective staging = current state + any open inline edit, applied without
+    // waiting for the async setState the blur/Enter path would do.
+    let edits = pendingEdits;
+    let rows = newRows;
+    if (editing) {
+      const { target, col: ci, draft } = editing;
+      const colName = columns[ci]?.name;
+      if (colName) {
+        const value = coerceForColumn(draft, colMeta.get(colName));
+        if (target.kind === "staged") {
+          rows = rows.map((r) => {
+            if (r.key !== target.stagedKey) return r;
+            const values = r.values.slice();
+            values[ci] = value;
+            return { ...r, values };
+          });
+        } else {
+          const row = rowCacheRef.current.get(target.rowIndex);
+          const pk = row ? buildPk(row) : null;
+          const key = row ? pkKeyOf(row) : null;
+          if (row && pk && key) {
+            const original = row[ci] ?? null;
+            const revert =
+              value === original ||
+              (value !== null && original !== null && String(value) === String(original));
+            edits = new Map(edits);
+            const cells = new Map(edits.get(key)?.cells ?? []);
+            if (revert) cells.delete(ci);
+            else cells.set(ci, value);
+            if (cells.size === 0) edits.delete(key);
+            else edits.set(key, { pk, cells });
+          }
+        }
+      }
+      committingRef.current = true;
+      setEditing(null);
+    }
+    const sql = buildBatchSql(edits, rows);
+    if (!sql) return;
+    const nUpdated = [...edits.values()].filter((e) => e.cells.size > 0).length;
+    const nNew = rows.length;
+    if (isProduction) {
+      setSaveConfirmSql(sql);
+      // Stash the counts for the confirm path.
+      saveCountsRef.current = { nNew, nUpdated };
+      return;
+    }
+    runSave(sql, nNew, nUpdated);
+  }, [
+    editing,
+    columns,
+    colMeta,
+    buildPk,
+    pkKeyOf,
+    pendingEdits,
+    newRows,
+    buildBatchSql,
+    isProduction,
+    runSave,
+  ]);
+
+  // Counts parked alongside `saveConfirmSql` for the production-confirm path.
+  const saveCountsRef = useRef<{ nNew: number; nUpdated: number }>({ nNew: 0, nUpdated: 0 });
+
+  const discard = useCallback(() => {
+    setEditing(null);
+    committingRef.current = false;
+    setPendingEdits(new Map());
+    setNewRows([]);
+  }, []);
+
+  // Add a staged new row at the top of page 0 (prototype `addRow`).
+  const addRow = useCallback(() => {
+    if (columns.length === 0) return;
+    // Clear filter + jump to page 0 (table tab) and sort (ours) so the new row
+    // is visible at the top.
+    onAddRowReset?.();
+    setSort(null);
+    const values: CellValue[] = columns.map((c) => {
+      const m = colMeta.get(c.name);
+      const affinity = affinityOf(m?.dataType ?? "");
+      if (m?.pk && affinity === "integer") {
+        // Auto-increment: max over the cached page + the staged rows, + 1.
+        let max = 0;
+        for (const row of rowCacheRef.current.values()) {
+          const ci = columns.indexOf(c);
+          const v = Number(row[ci]);
+          if (!Number.isNaN(v) && v > max) max = v;
+        }
+        for (const nr of newRows) {
+          const ci = columns.indexOf(c);
+          const v = Number(nr.values[ci]);
+          if (!Number.isNaN(v) && v > max) max = v;
+        }
+        return max + 1;
+      }
+      return parseDefault(m?.default ?? null, affinity);
+    });
+    stagedKeySeq.current += 1;
+    setNewRows((prev) => [{ key: stagedKeySeq.current, values }, ...prev]);
+  }, [columns, colMeta, newRows, onAddRowReset]);
+
+  useImperativeHandle(ref, () => ({ addRow, save, discard }), [addRow, save, discard]);
+
+  // ⌘I / Ctrl+I → add row; ⌘S / Ctrl+S → save. The grid is mounted only for the
+  // active table tab in data mode, so a window listener is correctly scoped.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      const k = e.key.toLowerCase();
+      if (k === "i") {
+        e.preventDefault();
+        addRow();
+      } else if (k === "s") {
+        e.preventDefault();
+        save();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [addRow, save]);
+
+  // --- M11 FK coexistence: defer the single-click hop ------------------
   const fkHopTimer = useRef<number | null>(null);
   const clearPendingHop = useCallback(() => {
     if (fkHopTimer.current !== null) {
@@ -836,32 +994,22 @@ export function DataGrid({
   }, []);
   useEffect(() => () => clearPendingHop(), [clearPendingHop]);
 
-  // Visibility predicate for the Columns popover (M15 Task 2). Hiding is
-  // display-only — `columns` (and therefore the row cache's `ci` indexing)
-  // stays the full set; we only skip rendering + drop the track.
   const isHidden = useCallback(
     (name: string) => hiddenColumns?.has(name) ?? false,
     [hiddenColumns],
   );
 
-  // Grid column template (Bug 1): row-number gutter + one EXPLICIT pixel track
-  // per VISIBLE column, shared by the header and every body row so columns line
-  // up exactly. Each track = clamp(max(header intrinsic, widest sampled cell),
-  // MIN, MAX). Recomputes only when the columns, hidden set, header meta, or
-  // the loaded page changes (cacheVersion/offset/pageRowCount) — NOT per
-  // scroll. Hidden columns drop their track so the layout closes up.
+  // Grid column template (Bug 1).
   const gridCols = useMemo(() => {
     const widths: string[] = [];
     for (const c of columns) {
       if (isHidden(c.name)) continue;
-      // Header intrinsic width: name + (smaller) type label + icons + padding.
       const typeLen = c.typeHint ? c.typeHint.length : 0;
       const headerPx =
         c.name.length * HEAD_NAME_CHAR_PX +
         typeLen * HEAD_TYPE_CHAR_PX +
         HEAD_ICON_PX +
         CELL_PAD_PX;
-      // Widest sampled cell value in the current page.
       let maxCellLen = 0;
       let sampled = 0;
       const ci = columns.indexOf(c);
@@ -875,10 +1023,112 @@ export function DataGrid({
       widths.push(w + "px");
     }
     return ROWNUM_PX + "px " + widths.join(" ");
-    // rowCacheRef is a ref; cacheVersion/pageRowCount/offset stand in for its
-    // contents changing (a page landed / the window moved).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [columns, isHidden, cacheVersion, pageRowCount, offset]);
+
+  // The save bar + production-confirm modal, shared by the populated and the
+  // (staged-rows-only) empty render branches.
+  const saveBar =
+    dirtyCount > 0 ? (
+      <div className="save-bar">
+        <Icon name="edit_note" size={16} style={{ color: "var(--accent)" }} />
+        <span className="save-bar-count">
+          {newRowCount ? newRowCount + " new" : ""}
+          {newRowCount && editedRowCount ? " · " : ""}
+          {editedRowCount ? editedRowCount + " edited" : ""} {dirtyCount === 1 ? "row" : "rows"}{" "}
+          unsaved
+        </span>
+        <span className="save-bar-hint">nothing is written to the database until you save</span>
+        <div style={{ flex: 1 }} />
+        <Btn variant="text" small onClick={discard} disabled={saving}>
+          Discard
+        </Btn>
+        <Btn variant="filled" small icon="save" onClick={save} disabled={saving}>
+          {saving ? "Saving…" : "Save · ⌘S"}
+        </Btn>
+      </div>
+    ) : null;
+
+  const popovers = (
+    <>
+      {fkPeek ? (
+        <FkPeek
+          handleId={handleId}
+          anchor={fkPeek}
+          onClose={closeFkPeek}
+          onOpenInTable={onOpenInTable}
+        />
+      ) : null}
+      {insights ? (
+        <ColumnInsights
+          handleId={handleId}
+          schema={schema}
+          table={table}
+          filter={filter}
+          anchor={insights}
+          onClose={closeInsights}
+        />
+      ) : null}
+      {/* Save confirm (production): the exact batch SQL the save will run. */}
+      {saveConfirmSql ? (
+        <Modal onClose={() => setSaveConfirmSql(null)} label="Confirm save" width={520}>
+          <ModalTitle>
+            <Icon name="warning" size={18} style={{ color: "#e06c75" }} /> Save changes to a
+            production connection?
+          </ModalTitle>
+          <p className="dg-confirm-body">
+            This connection points at <b>production</b>. The following batch will run in one
+            transaction:
+          </p>
+          <code className="dg-confirm-sql">{saveConfirmSql}</code>
+          <ModalActions>
+            <Btn variant="text" onClick={() => setSaveConfirmSql(null)}>
+              Cancel
+            </Btn>
+            <Btn
+              variant="filled"
+              onClick={() => {
+                const sql = saveConfirmSql;
+                const { nNew, nUpdated } = saveCountsRef.current;
+                setSaveConfirmSql(null);
+                runSave(sql, nNew, nUpdated);
+              }}
+            >
+              Confirm save
+            </Btn>
+          </ModalActions>
+        </Modal>
+      ) : null}
+      {cellModal?.kind === "json" ? (
+        <JsonEditorModal
+          schemaName={schema}
+          table={table}
+          column={cellModal.column}
+          type={cellModal.type}
+          value={cellModal.value}
+          onClose={() => setCellModal(null)}
+          onSave={(next) => {
+            commitCellValue(cellModal.target, cellModal.col, next);
+            setCellModal(null);
+          }}
+        />
+      ) : null}
+      {cellModal?.kind === "binary" ? (
+        <BinaryEditorModal
+          schemaName={schema}
+          table={table}
+          column={cellModal.column}
+          type={cellModal.type}
+          value={cellModal.value}
+          onClose={() => setCellModal(null)}
+          onSave={(next) => {
+            commitCellValue(cellModal.target, cellModal.col, next);
+            setCellModal(null);
+          }}
+        />
+      ) : null}
+    </>
+  );
 
   if (initialError) {
     return (
@@ -908,15 +1158,13 @@ export function DataGrid({
     );
   }
 
-  // The sticky column header, shared by the populated grid and the empty state
-  // so an empty table still shows its columns (the backend falls back to the
-  // introspected columns when a page comes back with no rows).
+  // The sticky column header.
   const headerRow = (
     <div className="dg-header dg-row">
       <div className="dg-rownum-h">#</div>
       {columns.map((c) => {
         if (isHidden(c.name)) return null;
-        const meta = colMeta.get(c.name);
+        const m = colMeta.get(c.name);
         const active = sort?.column === c.name;
         return (
           <div
@@ -926,16 +1174,14 @@ export function DataGrid({
             title={c.typeHint ? c.name + " · " + c.typeHint : c.name}
           >
             <span className="dg-head">
-              {meta?.pk ? (
+              {m?.pk ? (
                 <Icon
                   name="key"
                   size={12}
                   style={{ color: "var(--accent)", transform: "rotate(45deg)" }}
                 />
               ) : null}
-              {meta?.fk ? (
-                <Icon name="link" size={12} style={{ color: "var(--text-faint)" }} />
-              ) : null}
+              {m?.fk ? <Icon name="link" size={12} style={{ color: "var(--text-faint)" }} /> : null}
               <span className="dg-colname">{c.name}</span>
               {c.typeHint ? <span className="dg-coltype">{c.typeHint.toLowerCase()}</span> : null}
               {active ? (
@@ -945,9 +1191,6 @@ export function DataGrid({
                   style={{ color: "var(--accent)" }}
                 />
               ) : null}
-              {/* M10: column-insights chart icon, shown on th hover
-                  (.dg-th:hover .insight-btn). stopPropagation keeps the
-                  header's sort click from firing. */}
               <button
                 type="button"
                 className="insight-btn"
@@ -963,34 +1206,38 @@ export function DataGrid({
     </div>
   );
 
-  // Empty when the filtered count is a known 0, or the current page came back
-  // with no rows (e.g. an empty table). The footer pager (TableTab) still
-  // renders below this in either case. The header is kept so the columns stay
-  // visible — the "no rows" message sits in the body area beneath it. When the
-  // columns are unknown (defensive — a real table always reports them) we fall
-  // back to the plain centered state.
-  if (totalRows === 0 || rowCount === 0) {
+  // Empty state — only when there are NO rows AND no staged new rows to show.
+  if ((totalRows === 0 || rowCount === 0) && stagedShown === 0) {
     const message = filter
       ? "No rows match the filter in " + schema + "." + table
       : "Empty table — no rows in " + schema + "." + table;
     if (columns.length === 0) {
       return (
-        <div className="dg-state">
-          <Icon name="table_rows" size={28} style={{ opacity: 0.5 }} />
-          <span>{message}</span>
-        </div>
+        <>
+          <div className="dg-state">
+            <Icon name="table_rows" size={28} style={{ opacity: 0.5 }} />
+            <span>{message}</span>
+          </div>
+          {popovers}
+        </>
       );
     }
     return (
-      <div className="datagrid-wrap" ref={scrollRef}>
-        <div className="dg-canvas" style={{ "--grid-cols": gridCols } as React.CSSProperties}>
-          {headerRow}
+      <>
+        <div className="datagrid-wrap" ref={scrollRef}>
+          <div className="dg-canvas" style={{ "--grid-cols": gridCols } as React.CSSProperties}>
+            {headerRow}
+          </div>
+          {/* Sibling of the (wide) canvas, not a child — so it spans the
+              viewport width and centers in it, not across all the columns. */}
           <div className="dg-empty-body">
             <Icon name="table_rows" size={28} style={{ opacity: 0.5 }} />
             <span>{message}</span>
           </div>
         </div>
-      </div>
+        {saveBar}
+        {popovers}
+      </>
     );
   }
 
@@ -1000,32 +1247,36 @@ export function DataGrid({
     <>
       <div className="datagrid-wrap" ref={scrollRef}>
         <div className="dg-canvas" style={{ "--grid-cols": gridCols } as React.CSSProperties}>
-          {/* sticky header */}
           {headerRow}
 
-          {/* virtualized body. `cacheVersion` is read here only to re-run this
-              render when a page lands (the rows live in a ref, not state). */}
           <div
             style={{ height: totalHeight, position: "relative" }}
             data-cache-version={cacheVersion}
           >
             {virtualRows.map((vr) => {
-              // vr.index is 0-based within the page; recover the absolute row
-              // index so the gutter, cache key, and pk/edit logic stay correct.
-              const rowIndex = offset + vr.index;
-              const row = rowCacheRef.current.get(rowIndex);
-              const isSelectedRow = selected?.row === rowIndex;
+              const isStaged = vr.index < stagedShown;
+              const nr = isStaged ? newRows[vr.index] : undefined;
+              const rowIndex = isStaged ? -1 : offset + (vr.index - stagedShown);
+              const rowKey = isStaged ? "s" + nr!.key : "r" + rowIndex;
+              const target: EditTarget = isStaged
+                ? { kind: "staged", stagedKey: nr!.key }
+                : { kind: "real", rowIndex };
+              const row = isStaged ? nr!.values : rowCacheRef.current.get(rowIndex);
+              const isSelectedRow = selected?.rowKey === rowKey;
               return (
                 <div
-                  key={rowIndex}
-                  className={"dg-tr dg-row" + (isSelectedRow ? " row-selected" : "")}
+                  key={rowKey}
+                  className={
+                    "dg-tr dg-row" +
+                    (isSelectedRow ? " row-selected" : "") +
+                    (isStaged ? " row-staged" : "")
+                  }
                   style={{ height: vr.size, transform: `translateY(${vr.start}px)` }}
                 >
-                  <div className="dg-rownum">{rowIndex + 1}</div>
+                  <div className="dg-rownum">{isStaged ? "✱" : rowIndex + 1}</div>
                   {columns.map((c, ci) => {
                     if (isHidden(c.name)) return null;
                     if (!row) {
-                      // Page not yet loaded — shimmer skeleton.
                       return (
                         <div key={c.name} className="dg-td cell-loading">
                           <span className="dg-cell-skeleton" />
@@ -1033,17 +1284,16 @@ export function DataGrid({
                       );
                     }
                     const isSel = isSelectedRow && selected?.col === ci;
-                    // Only hop when the fk target column resolved (engine may
-                    // report an empty `column` for an unresolvable implicit fk);
-                    // otherwise the cell renders as plain text (no link).
                     const fkMeta = colMeta.get(c.name)?.fk ?? null;
                     const fk = fkMeta && fkMeta.column ? fkMeta : null;
-                    // M11: edit state + editability for this cell.
-                    const isEditing = editing?.row === rowIndex && editing?.col === ci;
-                    const roReason = readOnlyReason(rowIndex, ci);
+                    const isEditing =
+                      editing !== null &&
+                      targetKey(editing.target) === targetKey(target) &&
+                      editing.col === ci;
+                    const roReason = isStaged ? null : readOnlyReason(rowIndex, ci);
                     const editable = roReason === null;
-                    // JSON / binary columns get their own editor modal (ported
-                    // design) instead of the inline input.
+                    const edited = isStaged ? false : isRealCellEdited(rowIndex, ci);
+                    const cellVal = isStaged ? (row[ci] ?? null) : realCellValue(rowIndex, ci);
                     const json = isJsonType(c.typeHint);
                     const bin = isBinaryType(c.typeHint);
                     return (
@@ -1052,19 +1302,16 @@ export function DataGrid({
                         className={
                           "dg-td" +
                           (isSel ? " cell-selected" : "") +
-                          (isEditing ? " cell-editing" : "")
+                          (isEditing ? " cell-editing" : "") +
+                          (edited ? " cell-edited" : "")
                         }
-                        // Read-only cells explain why on hover (per M11); editable
-                        // cells fall back to the value-as-string title.
                         title={roReason ?? undefined}
-                        onClick={() => setSelected({ row: rowIndex, col: ci })}
+                        onClick={() => setSelected({ rowKey, col: ci })}
                         onDoubleClick={() => {
-                          // A double-click on an FK cell must edit, not hop:
-                          // cancel any pending deferred hop first.
                           clearPendingHop();
-                          if (editable && json) openCellModal("json", rowIndex, ci, c);
-                          else if (editable && bin) openCellModal("binary", rowIndex, ci, c);
-                          else startEdit(rowIndex, ci);
+                          if (editable && json) openCellModal("json", target, ci, c);
+                          else if (editable && bin) openCellModal("binary", target, ci, c);
+                          else if (editable) startEdit(target, ci);
                         }}
                       >
                         {isEditing ? (
@@ -1091,19 +1338,19 @@ export function DataGrid({
                           />
                         ) : (
                           <CellContent
-                            value={row[ci] ?? null}
+                            value={cellVal}
                             column={c.name}
                             type={c.typeHint}
                             fk={fk}
                             onFkClick={fk ? (value, e) => onFkClick(fk, value, bin, e) : undefined}
                             onJsonClick={
                               editable && json
-                                ? () => openCellModal("json", rowIndex, ci, c)
+                                ? () => openCellModal("json", target, ci, c)
                                 : undefined
                             }
                             onBinClick={
                               editable && bin
-                                ? () => openCellModal("binary", rowIndex, ci, c)
+                                ? () => openCellModal("binary", target, ci, c)
                                 : undefined
                             }
                           />
@@ -1117,75 +1364,8 @@ export function DataGrid({
           </div>
         </div>
       </div>
-      {fkPeek ? (
-        <FkPeek
-          handleId={handleId}
-          anchor={fkPeek}
-          onClose={closeFkPeek}
-          onOpenInTable={onOpenInTable}
-        />
-      ) : null}
-      {insights ? (
-        <ColumnInsights
-          handleId={handleId}
-          schema={schema}
-          table={table}
-          filter={filter}
-          anchor={insights}
-          onClose={closeInsights}
-        />
-      ) : null}
-      {/* Production-edit confirm (§ M11 safety): only reached when the
-          connection's env is `production`. Confirm fires the update (with the
-          optimistic write + rollback); Cancel leaves the cell untouched. */}
-      {pendingConfirm ? (
-        <Modal onClose={confirmCancel} label="Confirm update" width={460}>
-          <ModalTitle>
-            <Icon name="warning" size={18} style={{ color: "#e06c75" }} /> Update a row on a
-            production connection?
-          </ModalTitle>
-          <p className="dg-confirm-body">
-            This connection points at <b>production</b>. The following update will run:
-          </p>
-          <code className="dg-confirm-sql">{pendingConfirm.display}</code>
-          <ModalActions>
-            <Btn variant="text" onClick={confirmCancel}>
-              Cancel
-            </Btn>
-            <Btn variant="filled" onClick={confirmProceed}>
-              Confirm
-            </Btn>
-          </ModalActions>
-        </Modal>
-      ) : null}
-      {cellModal?.kind === "json" ? (
-        <JsonEditorModal
-          schemaName={schema}
-          table={table}
-          column={cellModal.column}
-          type={cellModal.type}
-          value={cellModal.value}
-          onClose={() => setCellModal(null)}
-          onSave={(next) => {
-            commitCellValue(cellModal.row, cellModal.col, cellModal.column, next);
-            setCellModal(null);
-          }}
-        />
-      ) : null}
-      {cellModal?.kind === "binary" ? (
-        <BinaryEditorModal
-          schemaName={schema}
-          table={table}
-          column={cellModal.column}
-          type={cellModal.type}
-          value={cellModal.value}
-          onClose={() => setCellModal(null)}
-          onSave={(next) => {
-            commitCellValue(cellModal.row, cellModal.col, cellModal.column, next);
-            setCellModal(null);
-          }}
-        />
-      ) : null}
+      {saveBar}
+      {popovers}
     </>
   );
-}
+});

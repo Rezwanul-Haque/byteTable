@@ -479,6 +479,15 @@
   background: #e06c7518;
   color: #e06c75;
 }
+/* Accent (green) context-menu item — the schema "Create table…" action
+   (ByteTable.html `.ctx-item.ctx-item-accent`). */
+.ctx-item.ctx-item-accent {
+  color: var(--accent);
+}
+.ctx-item.ctx-item-accent:hover {
+  background: color-mix(in oklab, var(--accent) 14%, var(--bg3));
+  color: var(--accent);
+}
 .ctx-menu-label {
   font-size: 9.5px;
   font-weight: 600;

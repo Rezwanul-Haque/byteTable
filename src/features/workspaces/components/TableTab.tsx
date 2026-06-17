@@ -17,7 +17,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { DataGrid } from "../../browse/components/DataGrid";
+import { DataGrid, type DataGridHandle } from "../../browse/components/DataGrid";
 import { FilterPanel } from "../../browse/components/FilterPanel";
 import { StructureView } from "../../browse/components/StructureView";
 import { appliedDisplaySql, compileToSpec, emptyDraft } from "../../browse/filter";
@@ -107,6 +107,8 @@ export function TableTab({
   const [offset, setOffset] = useState(0);
   const colRef = useRef<HTMLDivElement | null>(null);
   const actionsRef = useRef<HTMLDivElement | null>(null);
+  // Imperative handle to the grid's staged-editing actions (add-row toolbar +).
+  const gridRef = useRef<DataGridHandle | null>(null);
 
   const visibleCount = columns.length - hiddenCols.size;
   const toggleCol = (name: string) =>
@@ -356,6 +358,11 @@ export function TableTab({
 
             <div style={{ flex: 1 }} />
 
+            <IconBtn
+              icon="add_box"
+              title="Add row (⌘I / Ctrl+I)"
+              onClick={() => gridRef.current?.addRow()}
+            />
             <IconBtn icon="refresh" title="Refresh" onClick={() => requestRefetch(tab.id)} />
 
             {/* Table-actions menu (M15 Task 2): export CSV / SQL, truncate. */}
@@ -448,6 +455,7 @@ export function TableTab({
               key + the current page window; reports totalRows/elapsedMs back
               through tabMeta (which feeds the footer's range readout). */}
           <DataGrid
+            ref={gridRef}
             handleId={handleId}
             tabId={tab.id}
             schema={tab.schema}
@@ -458,6 +466,13 @@ export function TableTab({
             offset={offset}
             pageSize={pageSize}
             onSortChange={() => setOffset(0)}
+            onAddRowReset={() => {
+              // A new staged row rides at the top of page 0 with no filter — so
+              // clear any applied filter and jump to the first page (the grid
+              // clears its own sort).
+              if (hasApplied) clearFilters();
+              setOffset(0);
+            }}
             onFilterError={(message) => {
               setFilterError(message);
               setPanelOpen(true); // keep the panel open so the user can fix it

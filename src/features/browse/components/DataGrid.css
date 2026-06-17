@@ -212,6 +212,47 @@
   background: var(--bg0);
 }
 
+/* ---------- staged data editing (Prompts 1–3) ---------- */
+/* A pending edit to an existing cell: accent tint + a left accent bar
+   (ByteTable.html `.datagrid td.cell-edited`). */
+.dg-td.cell-edited {
+  background: color-mix(in oklab, var(--accent) 15%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* A staged (unsaved) new row: accent tint across the row + accent gutter mark
+   (ByteTable.html `.datagrid tr.row-staged`). */
+.dg-tr.row-staged .dg-td {
+  background: color-mix(in oklab, var(--accent) 11%, transparent);
+  border-bottom-color: color-mix(in oklab, var(--accent) 30%, var(--border));
+}
+
+.dg-tr.row-staged .dg-rownum {
+  color: var(--accent);
+}
+
+/* The save bar pinned below the grid while changes are staged
+   (ByteTable.html `.save-bar`). */
+.save-bar {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 14px;
+  border-top: 1px solid color-mix(in oklab, var(--accent) 40%, var(--border));
+  background: color-mix(in oklab, var(--accent) 6%, var(--bg1));
+  flex: none;
+}
+
+.save-bar-count {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.save-bar-hint {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
 /* M11 — production-edit confirm dialog body (reuses the shared Modal shell). */
 .dg-confirm-body {
   margin: 0 0 10px;
@@ -296,8 +337,12 @@
   color: var(--text-faint);
   font-family: var(--ui);
   font-size: 12.5px;
+  /* Sibling of .dg-canvas: width resolves to the wrap's viewport (not the wide
+     column track sum), and sticky-left keeps it centered in view while the
+     header scrolls horizontally. */
   position: sticky;
   left: 0;
+  width: 100%;
 }
 
 /* §5 inline error — red, non-modal. */

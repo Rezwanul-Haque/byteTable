@@ -62,6 +62,14 @@ const DEFAULT_PORTS: Partial<Record<Engine, string>> = {
   redis: "6379",
 };
 
+// The conventional superuser each engine ships with — prefilled into the User
+// field so the common case is one click. Untouched switches re-default it (like
+// the port); once the user edits the field it is left alone.
+const DEFAULT_USERS: Partial<Record<Engine, string>> = {
+  postgres: "postgres",
+  mysql: "root",
+};
+
 /**
  * The environment picker's segmented choices (prototype connect.jsx
  * `CONN_ENVS`): the canonical {@link Env} ids plus their display label and the
@@ -103,6 +111,9 @@ interface FormState {
   portTouched: boolean;
   db: string;
   user: string;
+  // True once the user edited the username — switching engines then keeps it
+  // (mirrors portTouched).
+  userTouched: boolean;
   file: string;
   tls: TlsMode;
   // Transient secrets — sent to the backend, never part of saved params.
@@ -135,7 +146,8 @@ const INITIAL: FormState = {
   port: "5432",
   portTouched: false,
   db: "",
-  user: "",
+  user: "postgres",
+  userTouched: false,
   file: "",
   tls: "disable",
   password: "",
@@ -192,6 +204,7 @@ function reducer(state: FormState, action: Action): FormState {
         engine: action.engine,
         section: "general",
         port: defaultPort !== undefined && !state.portTouched ? defaultPort : state.port,
+        user: !state.userTouched ? (DEFAULT_USERS[action.engine] ?? "") : state.user,
         test: IDLE,
       };
     }
@@ -214,6 +227,7 @@ function formStateFromConnection(c: SavedConnection): FormState {
     project: c.project ?? "",
     env: c.env,
     portTouched: true,
+    userTouched: true,
     envColors: { ...ENV_COLOR, [c.env]: c.color ?? ENV_COLOR[c.env] },
   };
   if (p.engine === "sqlite") {
@@ -525,8 +539,16 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
       };
     }
 
+    // Postgres binds a connection to ONE database with no in-session switch, so
+    // a blank database strands the user in the libpq username-default db (which
+    // can't reach the intended database's schemas). Require it. MySQL stays
+    // optional (schema == database there; the adapter qualifies every reference).
+    if (engine === "postgres" && !db.trim()) {
+      return { error: "Database is required for PostgreSQL" };
+    }
+
     // database + user are optional (MySQL: no default schema / default user;
-    // Postgres: libpq defaults db→user, user→OS role). Omit when blank.
+    // Postgres handled above). Omit when blank.
     return {
       params: {
         engine,
@@ -841,7 +863,8 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
                 "DB index"
               ) : (
                 <span className="lbl-row">
-                  Database <span className="opt-tag">optional</span>
+                  Database{" "}
+                  {engine === "postgres" ? null : <span className="opt-tag">optional</span>}
                 </span>
               )}
               <input
@@ -861,7 +884,7 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
               )}
               <input
                 value={user}
-                onChange={(e) => field({ user: e.target.value })}
+                onChange={(e) => field({ user: e.target.value, userTouched: true })}
                 placeholder={isRedis ? "default" : engine === "postgres" ? "postgres" : "root"}
                 spellCheck={false}
               />

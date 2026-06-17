@@ -246,15 +246,25 @@ impl EngineConnection for MysqlEngineConnection {
 
     async fn run_query(&self, sql: &str, options: QueryOptions) -> Result<QueryResult, AppError> {
         let started = Instant::now();
+
+        // One acquired connection so a `USE` and the query share a session.
+        // A `USE` on the pool surface lands on a random pooled connection, so
+        // the query — which may grab a DIFFERENT pooled connection — would not
+        // see the selected database. With an empty default database (the
+        // connection's database field is optional) an unqualified query then
+        // fails with MySQL ERROR 1046 "No database selected". Pinning the
+        // session is the same fix `execute_script` uses for imports.
+        let mut conn = self.pool.acquire().await.map_err(map_query_error)?;
+
         // Apply the schema as the default database for unqualified names, when
         // given. Best effort: a bad schema simply leaves the current default.
         if let Some(schema) = &options.schema {
-            let use_db = format!("USE {}", quote_ident(schema));
-            let _ = sqlx::query(&use_db).execute(&self.pool).await;
+            use sqlx::Executor as _;
+            let _ = conn.execute(format!("USE {}", quote_ident(schema)).as_str()).await;
         }
 
         let rows = sqlx::query(sql)
-            .fetch_all(&self.pool)
+            .fetch_all(&mut *conn)
             .await
             .map_err(map_query_error)?;
 

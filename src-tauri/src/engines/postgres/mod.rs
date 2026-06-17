@@ -237,16 +237,25 @@ impl EngineConnection for PostgresEngineConnection {
 
     async fn run_query(&self, sql: &str, options: QueryOptions) -> Result<QueryResult, AppError> {
         let started = Instant::now();
+
+        // One acquired connection so the `SET search_path` and the query share a
+        // session. `SET` on the pool surface lands on a random pooled connection,
+        // so the query — which may grab a DIFFERENT pooled connection — would
+        // resolve unqualified names against the default search_path instead of
+        // the selected schema. Pinning the session is the same fix the MySQL
+        // adapter uses.
+        let mut conn = self.pool.acquire().await.map_err(map_query_error)?;
+
         // Apply the schema as the search_path for unqualified names, when given.
         // Best effort: a bad schema simply leaves the default search_path.
         if let Some(schema) = &options.schema {
-            let set = format!("SET search_path TO {}", quote_ident(schema));
-            let _ = sqlx::query(&set).execute(&self.pool).await;
+            use sqlx::Executor as _;
+            let _ = conn.execute(format!("SET search_path TO {}", quote_ident(schema)).as_str()).await;
         }
 
         // Read one extra row to detect truncation (matches the SQLite adapter).
         let rows = sqlx::query(sql)
-            .fetch_all(&self.pool)
+            .fetch_all(&mut *conn)
             .await
             .map_err(map_query_error)?;
 

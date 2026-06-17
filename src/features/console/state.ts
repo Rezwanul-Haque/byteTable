@@ -19,6 +19,8 @@
 
 import { create } from "zustand";
 
+import type { CellValue } from "../../shared/api/engine";
+
 import type { Engine } from "../../shared/types";
 import { useWorkspacesStore } from "../workspaces/state";
 
@@ -57,15 +59,29 @@ export const TERM_DEFAULT_HEIGHT = 280;
 export const TERM_RESERVED_HEIGHT = 160;
 
 /**
- * One rendered line of a session's REPL transcript. `cls` is the CSS class that
- * colors it like the engine shell (`term-info`/`term-err`/`term-prompt`/
- * `term-thead`/`term-rule`/`term-row`/`term-meta`/`term-help`), `text` is the
- * already-formatted line. Mirrors the prototype's `{ cls, text }` line objects.
+ * One rendered line of a session's REPL transcript.
+ *
+ * A TEXT line: `cls` is the CSS class that colors it like the engine shell
+ * (`term-info`/`term-err`/`term-prompt`/`term-thead`/`term-rule`/`term-row`/
+ * `term-meta`/`term-help`), `text` is the already-formatted line. Mirrors the
+ * prototype's `{ cls, text }` line objects.
+ *
+ * A GRID line (`kind: "grid"`): a SELECT result rendered as a real HTML table
+ * (M-terminal-table) instead of ASCII art — `columns` are the header names and
+ * `rows` the positional cell values. Numbers right-align, NULLs italicize.
  */
-export interface TermLine {
+export interface TermTextLine {
   cls: string;
   text: string;
 }
+
+export interface TermGridLine {
+  kind: "grid";
+  columns: string[];
+  rows: CellValue[][];
+}
+
+export type TermLine = TermTextLine | TermGridLine;
 
 /**
  * One terminal session inside a workspace's panel. The prototype's per-tab REPL

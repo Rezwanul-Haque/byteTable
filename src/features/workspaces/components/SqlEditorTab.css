@@ -79,6 +79,37 @@
   min-width: 0;
 }
 
+/* Beautify / format wand — fades in on hover in the editor's top-right corner. */
+.sql-format-fab {
+  position: absolute;
+  top: 8px;
+  right: 14px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  color: var(--text-faint);
+  background: color-mix(in oklab, var(--bg2) 80%, transparent);
+  border: 1px solid var(--border);
+  opacity: 0;
+  transition:
+    opacity 0.12s,
+    color 0.12s,
+    border-color 0.12s;
+}
+
+.sql-editor-wrap:hover .sql-format-fab {
+  opacity: 1;
+}
+
+.sql-format-fab:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 /* CodeMirror host — fills the editor main column. The CM view is themed in TS
    to the prototype's look (mono 13px/1.65, --bg0, accent caret, 12/16 padding). */
 .sql-cm {
@@ -89,7 +120,7 @@
 
 /* ---------- execution-order minimap (ported byte-exact from ByteTable.html) ---------- */
 .exec-minimap {
-  width: 196px;
+  width: 240px;
   flex: none;
   border-left: 1px solid var(--border);
   background: var(--bg1);
@@ -108,6 +139,22 @@
   text-transform: uppercase;
   letter-spacing: 0.07em;
   color: var(--text-faint);
+}
+
+/* "Statement N of M" label (multi-statement, cursor-aware minimap). */
+.exec-mini-stmt {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px 0;
+  font-size: 9.5px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.exec-mini-stmt-hint {
+  color: var(--text-faint);
+  font-weight: 400;
 }
 
 .exec-mini-cols {

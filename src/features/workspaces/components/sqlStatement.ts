@@ -109,3 +109,45 @@ export function statementRangeAt(doc: string, pos: number): StatementRange | nul
   }
   return null;
 }
+
+export interface StatementContext {
+  /** The text of the statement the caret is in (trimmed). */
+  text: string;
+  /** Zero-based index of that statement among the non-empty statements. */
+  index: number;
+  /** Total non-empty statements in the buffer. */
+  count: number;
+}
+
+/**
+ * The statement the caret is in, plus its position among all non-empty
+ * statements — for the clause-order minimap's "Statement N of M" label.
+ *
+ * Boundary rule (Prompt 5): each statement's character range includes its
+ * trailing semicolon, and we pick the first statement whose END is
+ * greater-than-or-equal-to the caret; a caret sitting immediately after a `;`
+ * (== that statement's end) therefore belongs to the statement that just
+ * ended, not the next one. The caret is clamped to the last statement when it
+ * is past the final semicolon.
+ */
+export function statementContextAt(doc: string, caret: number): StatementContext {
+  const n = doc.length;
+  const semis = topLevelSemicolons(doc);
+
+  // Statements as ranges, each including its terminating semicolon.
+  const ranges: { text: string; start: number; end: number }[] = [];
+  let start = 0;
+  for (const s of semis) {
+    ranges.push({ text: doc.slice(start, s), start, end: s + 1 });
+    start = s + 1;
+  }
+  if (start < n) ranges.push({ text: doc.slice(start), start, end: n });
+
+  const nonEmpty = ranges.filter((r) => r.text.trim());
+  if (nonEmpty.length <= 1) {
+    return { text: doc, index: 0, count: nonEmpty.length || 1 };
+  }
+  const c = Math.max(0, Math.min(caret, n));
+  const pick = nonEmpty.find((r) => c <= r.end) ?? nonEmpty[nonEmpty.length - 1]!;
+  return { text: pick.text, index: nonEmpty.indexOf(pick), count: nonEmpty.length };
+}

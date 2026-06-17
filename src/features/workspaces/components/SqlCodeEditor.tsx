@@ -116,18 +116,27 @@ interface SqlCodeEditorProps {
    * whole buffer" — the caller decides.
    */
   onRun: (sql?: string) => void;
+  /** Shift+Alt+F handler — beautify the buffer (also bound to the wand FAB). */
+  onFormat?: () => void;
+  /** Caret offset, reported on every selection / document change (for the
+   *  cursor-aware clause minimap). */
+  onCaret?: (pos: number) => void;
 }
 
 export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>(
-  function SqlCodeEditor({ value, onChange, onRun }, ref) {
+  function SqlCodeEditor({ value, onChange, onRun, onFormat, onCaret }, ref) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   // Keep the latest callbacks reachable from the (mount-once) CM extensions
   // without re-creating the EditorView on every parent render.
   const onChangeRef = useRef(onChange);
   const onRunRef = useRef(onRun);
+  const onFormatRef = useRef(onFormat);
+  const onCaretRef = useRef(onCaret);
   onChangeRef.current = onChange;
   onRunRef.current = onRun;
+  onFormatRef.current = onFormat;
+  onCaretRef.current = onCaret;
 
   // The Run/Explain buttons resolve the statement at the caret through this
   // handle — the same logic as ⌘/Ctrl+Enter. Falls back to the buffer (or "")
@@ -146,6 +155,14 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
         preventDefault: true,
         run: (view) => {
           onRunRef.current(pickAndSelect(view));
+          return true;
+        },
+      },
+      {
+        key: "Shift-Alt-f",
+        preventDefault: true,
+        run: () => {
+          onFormatRef.current?.();
           return true;
         },
       },
@@ -174,6 +191,11 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
           EditorView.updateListener.of((update) => {
             if (update.docChanged) {
               onChangeRef.current(update.state.doc.toString());
+            }
+            // Report caret moves (click / key / select / typing) so the
+            // clause minimap can follow the cursor across statements.
+            if (update.docChanged || update.selectionSet) {
+              onCaretRef.current?.(update.state.selection.main.head);
             }
           }),
         ],

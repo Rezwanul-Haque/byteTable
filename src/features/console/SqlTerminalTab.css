@@ -157,3 +157,70 @@
   color: var(--accent);
   border-color: color-mix(in oklab, var(--accent) 50%, transparent);
 }
+
+/* ---- terminal SELECT result as a real HTML table (ported from ByteTable.html) ---- */
+.term-grid-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 4px 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.term-grid {
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  min-width: 100%;
+}
+
+.term-grid th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--bg2);
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.term-grid th:last-child {
+  border-right: none;
+}
+
+.term-grid td {
+  padding: 4px 12px;
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+  border-right: 1px solid color-mix(in oklab, var(--border) 40%, transparent);
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.term-grid td:last-child {
+  border-right: none;
+}
+
+.term-grid tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.term-grid tbody tr:hover td {
+  background: color-mix(in oklab, var(--bg2) 60%, transparent);
+}
+
+.term-grid-num {
+  text-align: right;
+  color: #7fb8e8;
+}
+
+.term-grid-null {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.term-grid-empty {
+  color: var(--text-faint);
+  font-style: italic;
+  padding: 8px 12px;
+}

@@ -23,10 +23,18 @@ import {
   stepByKey,
   WRITTEN_ORDER,
 } from "./explainClauses";
+import { statementContextAt } from "./sqlStatement";
 
-/** Compact two-column "written vs. run order" minimap shown under the editor. */
-export function ExecutionMinimap({ sql }: { sql: string }) {
-  const c = detectClauses(sql);
+/**
+ * Compact two-column "written vs. run order" minimap shown under the editor.
+ * Cursor-aware: in a multi-statement buffer it shows the clause order for only
+ * the statement the caret is in (live on click / key / select), with a
+ * "Statement N of M" label; the label is hidden when there is a single
+ * statement.
+ */
+export function ExecutionMinimap({ sql, caret = 0 }: { sql: string; caret?: number }) {
+  const stmt = statementContextAt(sql, caret);
+  const c = detectClauses(stmt.text);
 
   const renderCol = (label: string, sub: string, orderKeys: StepKey[]) => {
     let n = 0;
@@ -54,6 +62,13 @@ export function ExecutionMinimap({ sql }: { sql: string }) {
       <div className="exec-mini-title">
         <Icon name="account_tree" size={13} style={{ color: "var(--accent)" }} /> Clause order
       </div>
+      {stmt.count > 1 ? (
+        <div className="exec-mini-stmt">
+          <Icon name="my_location" size={11} style={{ color: "var(--accent)" }} /> Statement{" "}
+          {stmt.index + 1} of {stmt.count}{" "}
+          <span className="exec-mini-stmt-hint">· where the cursor is</span>
+        </div>
+      ) : null}
       <div className="exec-mini-cols">
         {renderCol("Written", "how you type it", WRITTEN_ORDER)}
         {renderCol("Run", "how it executes", RUN_ORDER)}

@@ -36,6 +36,7 @@ import { useWorkspacesStore } from "../state";
 import type { SqlHistoryEntry, Tab, Workspace } from "../types";
 import { ExecutionMinimap, ExplainPanel } from "./explain";
 import { detectedTable } from "./explainClauses";
+import { formatSql } from "./formatSql";
 import { SqlCodeEditor, type SqlCodeEditorHandle } from "./SqlCodeEditor";
 import { SqlResultGrid } from "./SqlResultGrid";
 import "./SqlEditorTab.css";
@@ -134,6 +135,8 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   // buttons; `explainSql` is the statement captured when Explain was opened.
   const editorRef = useRef<SqlCodeEditorHandle>(null);
   const [explainSql, setExplainSql] = useState("");
+  // Caret offset, reported by the editor; drives the cursor-aware clause minimap.
+  const [caret, setCaret] = useState(0);
   // Transient view toggle: the results area shows either the query result
   // ('result') or the execution-order teaching panel ('explain'). Local —
   // it's a view flip, not buffer/result state, so it need not survive a switch.
@@ -239,6 +242,9 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
     setSqlText(tab.id, sql);
     setPop(null);
   };
+
+  // Beautify the whole buffer in place (wand FAB / Shift+Alt+F).
+  const format = () => setSqlText(tab.id, formatSql(text));
 
   const doSave = () => {
     const name = saveName.trim() || "Untitled query";
@@ -386,14 +392,25 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
 
       <div className={"sql-editor-wrap" + (editorGrows ? " grow" : "")}>
         <div className="sql-editor-main">
+          <button
+            type="button"
+            className="sql-format-fab"
+            title="Beautify / format SQL (⇧⌥F)"
+            aria-label="Format SQL"
+            onClick={format}
+          >
+            <Icon name="auto_fix_high" size={15} />
+          </button>
           <SqlCodeEditor
             ref={editorRef}
             value={text}
             onChange={(v) => setSqlText(tab.id, v)}
             onRun={run}
+            onFormat={format}
+            onCaret={setCaret}
           />
         </div>
-        <ExecutionMinimap sql={text} />
+        <ExecutionMinimap sql={text} caret={caret} />
       </div>
 
       {resultsShown ? (

@@ -257,11 +257,13 @@ export function RedisTerminalSession({ workspace, session, embedded }: RedisTerm
         />
       </div>
       <div className="rcli-body term-body" ref={bodyRef} onClick={() => inputRef.current?.focus()}>
-        {session.lines.map((l, i) => (
-          <div key={i} className={"rcli-line " + l.cls}>
-            {l.text || " "}
-          </div>
-        ))}
+        {session.lines.map((l, i) =>
+          "kind" in l ? null : (
+            <div key={i} className={"rcli-line " + l.cls}>
+              {l.text || " "}
+            </div>
+          ),
+        )}
         <div className="rcli-inputline">
           <span className="rcli-prompt">
             {connName}:db{dbIndex}&gt;

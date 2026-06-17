@@ -23,7 +23,6 @@ import {
   queryRun,
   tableMeta,
   type CellValue,
-  type ColumnMeta,
   type QueryResult,
 } from "../../shared/api/engine";
 import { appErrorMessage } from "../../shared/api/error";
@@ -32,7 +31,7 @@ import { Icon } from "../../shared/ui/Icon";
 import { IconBtn } from "../../shared/ui/IconBtn";
 import { useWorkspacesStore } from "../workspaces/state";
 import type { Workspace } from "../workspaces/types";
-import { usePanelStore, type TermLine, type TermSession } from "./state";
+import { usePanelStore, type TermLine, type TermSession, type TermTextLine } from "./state";
 import "./SqlTerminalTab.css";
 
 // ---- engine-specific shell config (ported verbatim from termConfig) ----
@@ -81,11 +80,15 @@ function termConfig(engine: Engine, connName: string): TermConfig {
 // Core builder: `headers` are column titles, `cells` is a row-major grid of
 // already-stringified values, `numeric` flags right-aligned columns. Returns
 // { cls, text } lines: a centered header, a `--+--` rule, then one row each.
-function asciiTableCore(headers: string[], cells: string[][], numeric: boolean[]): TermLine[] {
+function asciiTableCore(
+  headers: string[],
+  cells: string[][],
+  numeric: boolean[],
+): TermTextLine[] {
   const widths = headers.map((h, i) =>
     Math.max(h.length, ...cells.map((r) => (r[i] ?? "").length), 0),
   );
-  const lines: TermLine[] = [];
+  const lines: TermTextLine[] = [];
   // header: centered like psql (" col1 | col2 ").
   const head = headers
     .map((h, i) => {
@@ -110,35 +113,12 @@ function asciiTableCore(headers: string[], cells: string[][], numeric: boolean[]
   return lines;
 }
 
-// Render a CellValue per psql conventions: null/undefined → "", boolean → t/f,
-// else String(v).
-function fmtCell(v: CellValue): string {
-  if (v === null || v === undefined) return "";
-  if (typeof v === "boolean") return v ? "t" : "f";
-  return String(v);
-}
-
-const NUMERIC_TYPE = /INT|NUMERIC|DECIMAL|REAL|DOUBLE|FLOAT/;
-
-// Build an ASCII table from a QueryResult (right-align numeric columns: by the
-// column's type hint, or all-numeric values when the hint is uninformative).
-function asciiTable(columns: ColumnMeta[], rows: CellValue[][]): TermLine[] {
-  const headers = columns.map((c) => c.name);
-  const numeric = columns.map((c, i) =>
-    NUMERIC_TYPE.test((c.typeHint || "").toUpperCase())
-      ? true
-      : rows.length > 0 && rows.every((r) => r[i] == null || typeof r[i] === "number"),
-  );
-  const cells = rows.map((r) => columns.map((_, i) => fmtCell(r[i] ?? null)));
-  return asciiTableCore(headers, cells, numeric);
-}
-
 // Build an ASCII table from named string rows (meta-command output: \dt, \d).
 function asciiObjTable(
   headers: string[],
   rows: Record<string, string>[],
   numeric?: boolean[],
-): TermLine[] {
+): TermTextLine[] {
   const cells = rows.map((r) => headers.map((h) => r[h] ?? ""));
   return asciiTableCore(headers, cells, numeric ?? headers.map(() => false));
 }
@@ -517,7 +497,13 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
       .then((res: QueryResult) => {
         const out: TermLine[] = [];
         if (res.columns.length > 0) {
-          asciiTable(res.columns, res.rows).forEach((x) => out.push(x));
+          // SELECT results render as a real HTML table (not ASCII art), then
+          // the conventional "(N rows)" line.
+          out.push({
+            kind: "grid",
+            columns: res.columns.map((c) => c.name),
+            rows: res.rows,
+          });
           out.push({
             cls: "term-meta",
             text: "(" + res.rowCount + " row" + (res.rowCount === 1 ? "" : "s") + ")",
@@ -687,11 +673,15 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
         />
       </div>
       <div className="rcli-body term-body" ref={bodyRef} onClick={() => inputRef.current?.focus()}>
-        {session.lines.map((l, i) => (
+        {session.lines.map((l, i) =>
+          "kind" in l ? (
+            <TermGrid key={i} columns={l.columns} rows={l.rows} />
+          ) : (
           <div key={i} className={"rcli-line " + l.cls}>
             {l.text || " "}
           </div>
-        ))}
+          ),
+        )}
         <div className="rcli-inputline">
           <span className="rcli-prompt term-prompt-str">{promptStr}</span>
           <input
@@ -709,6 +699,59 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
           />
         </div>
       </div>
+    </div>
+  );
+}
+
+// ---- compact HTML result table for terminal SELECT output ----
+// A bordered grid with a header row, monospace cells, right-aligned blue
+// numbers, italic NULLs, hover row highlight, and horizontal scroll when wider
+// than the panel (.term-grid-wrap). Ported from the prototype's TermGrid;
+// adapted to positional CellValue rows.
+function TermGrid({ columns, rows }: { columns: string[]; rows: CellValue[][] }) {
+  if (columns.length === 0) return null;
+  return (
+    <div className="term-grid-wrap">
+      <table className="term-grid">
+        <thead>
+          <tr>
+            {columns.map((c, i) => (
+              <th key={i}>{c}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 ? (
+            <tr>
+              <td className="term-grid-empty" colSpan={columns.length}>
+                0 rows
+              </td>
+            </tr>
+          ) : (
+            rows.map((r, i) => (
+              <tr key={i}>
+                {columns.map((_, j) => {
+                  const v = r[j] ?? null;
+                  if (v === null || v === undefined) {
+                    return (
+                      <td key={j} className="term-grid-null">
+                        NULL
+                      </td>
+                    );
+                  }
+                  const isNum = typeof v === "number";
+                  const text = typeof v === "boolean" ? (v ? "t" : "f") : String(v);
+                  return (
+                    <td key={j} className={isNum ? "term-grid-num" : ""}>
+                      {text}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
     </div>
   );
 }

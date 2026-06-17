@@ -20,8 +20,12 @@
 //! streaming straight to the destination file is a future enhancement. The
 //! batch size below bounds peak row buffering, not the final string.
 
+use std::collections::{HashMap, HashSet};
+
 use crate::features::connections::application::{ConnectionHandleId, ConnectionManager};
-use crate::shared::engine::{EngineConnection, FetchRowsRequest, ImportResult, ProgressCallback};
+use crate::shared::engine::{
+    EngineConnection, FetchRowsRequest, ImportResult, ProgressCallback, TableMeta,
+};
 use crate::shared::error::AppError;
 
 use super::domain::{csv_value, sql_value, ExportFormat, ExportScope};
@@ -55,9 +59,15 @@ pub async fn export_table(
 }
 
 /// Generate a SQL dump (DDL + data) for every base table in a schema,
-/// concatenated in `list_tables` order, separated by blank lines, under a
-/// header comment. FK ordering is NOT applied (M15 scope) — the header notes
-/// that a restore may need foreign-key checks disabled.
+/// separated by blank lines, under a header comment.
+///
+/// Tables are emitted in **foreign-key dependency order** (a referenced/parent
+/// table before any table whose FK points at it), so the dump restores cleanly
+/// into another tool/database without disabling FK checks. The order is a
+/// topological sort of the in-schema FK graph (see [`topo_order`]); when a
+/// circular reference makes a full ordering impossible, the tables in that
+/// cycle fall back to listing order and the header notes that a restore of that
+/// group may still need FK checks disabled.
 pub async fn export_schema_sql(
     manager: &ConnectionManager,
     handle: &ConnectionHandleId,
@@ -68,6 +78,28 @@ pub async fn export_schema_sql(
     let connection = manager.get_sql(handle).await?;
     let tables = connection.list_tables(schema).await?;
     let total = tables.len() as u64;
+    let names: Vec<String> = tables.iter().map(|t| t.name.clone()).collect();
+
+    // Fetch every table's meta up front: it supplies BOTH the FK edges used to
+    // order the dump AND the DDL/columns each table's dump needs, so the
+    // per-table generation below reuses it instead of re-querying `table_meta`.
+    let mut metas: HashMap<String, TableMeta> = HashMap::with_capacity(names.len());
+    for name in &names {
+        metas.insert(name.clone(), connection.table_meta(schema, name).await?);
+    }
+    // A table depends on each in-schema table its foreign keys reference.
+    let deps: HashMap<String, Vec<String>> = names
+        .iter()
+        .map(|name| {
+            let refs = metas[name]
+                .foreign_keys
+                .iter()
+                .map(|fk| fk.ref_table.clone())
+                .collect();
+            (name.clone(), refs)
+        })
+        .collect();
+    let (ordered, had_cycle) = topo_order(&names, &deps);
 
     let contents = match scope {
         ExportScope::Schema => "structure only",
@@ -78,21 +110,29 @@ pub async fn export_schema_sql(
     out.push_str("-- ByteTable schema dump\n");
     out.push_str(&format!("-- schema: {schema}\n"));
     out.push_str(&format!("-- contents: {contents}\n"));
-    out.push_str(&format!("-- {} tables\n", tables.len()));
-    out.push_str(
-        "-- NOTE: tables are dumped in listing order, NOT foreign-key order; \
-         a restore may need FK checks disabled.\n\n",
-    );
+    out.push_str(&format!("-- {} tables\n", names.len()));
+    if had_cycle {
+        out.push_str(
+            "-- NOTE: tables are ordered by foreign-key dependency where possible, but a \
+             circular foreign-key reference was found; the tables in that cycle are dumped in \
+             listing order, so a restore may need FK checks disabled.\n\n",
+        );
+    } else {
+        out.push_str("-- tables ordered by foreign-key dependency (referenced tables first)\n\n");
+    }
 
     // Progress is reported per table dumped (each table's own row paging uses a
     // no-op callback — the schema-level unit is tables).
     let noop = |_: u64, _: u64| {};
-    for (index, table) in tables.iter().enumerate() {
+    for (index, name) in ordered.iter().enumerate() {
         if index > 0 {
             out.push('\n');
         }
-        out.push_str(&format!("-- ===== Table: {} =====\n", table.name));
-        let dump = export_table_sql(connection.as_ref(), schema, &table.name, scope, &noop).await?;
+        out.push_str(&format!("-- ===== Table: {name} =====\n"));
+        let meta = &metas[name];
+        let dump =
+            export_table_sql_with_meta(connection.as_ref(), schema, name, meta, scope, &noop)
+                .await?;
         out.push_str(&dump);
         if !dump.ends_with('\n') {
             out.push('\n');
@@ -100,6 +140,64 @@ pub async fn export_schema_sql(
         on_progress(index as u64 + 1, total);
     }
     Ok(out)
+}
+
+/// Order `tables` so a referenced (parent) table is emitted before any table
+/// whose foreign keys point at it — a stable topological sort (Kahn's, with
+/// listing order as the tiebreaker). `deps[t]` lists the tables `t` references;
+/// references to itself or to tables outside `tables` are ignored, and multiple
+/// FKs to the same parent count once.
+///
+/// Returns the ordering plus whether a cycle was detected. On a cycle the nodes
+/// that cannot be ordered are appended in listing order (their relative FK order
+/// can't be honoured), and the caller notes that a restore may need FK checks
+/// disabled.
+fn topo_order(tables: &[String], deps: &HashMap<String, Vec<String>>) -> (Vec<String>, bool) {
+    let present: HashSet<&str> = tables.iter().map(String::as_str).collect();
+
+    // indegree[t] = number of distinct in-set, non-self parents t depends on;
+    // children[p] = tables that depend on p (edges to decrement as p is emitted).
+    let mut indegree: HashMap<&str, usize> = tables.iter().map(|t| (t.as_str(), 0)).collect();
+    let mut children: HashMap<&str, Vec<&str>> = HashMap::new();
+    for table in tables {
+        let mut parents: HashSet<&str> = HashSet::new();
+        for parent in deps.get(table).map(Vec::as_slice).unwrap_or(&[]) {
+            let parent = parent.as_str();
+            if parent == table.as_str() || !present.contains(parent) || !parents.insert(parent) {
+                continue;
+            }
+            *indegree.get_mut(table.as_str()).expect("seeded") += 1;
+            children.entry(parent).or_default().push(table.as_str());
+        }
+    }
+
+    let mut order: Vec<String> = Vec::with_capacity(tables.len());
+    let mut emitted: HashSet<&str> = HashSet::new();
+    // Repeatedly take the first listing-order table with no unmet dependency.
+    // O(n^2), but schema table counts are small and this keeps the output
+    // deterministic and as close to listing order as the FK graph allows.
+    while let Some(next) = tables
+        .iter()
+        .map(String::as_str)
+        .find(|t| !emitted.contains(t) && indegree[t] == 0)
+    {
+        order.push(next.to_string());
+        emitted.insert(next);
+        for child in children.get(next).map(Vec::as_slice).unwrap_or(&[]) {
+            *indegree.get_mut(child).expect("seeded") -= 1;
+        }
+    }
+
+    let had_cycle = order.len() < tables.len();
+    if had_cycle {
+        // Append the cyclic remainder in listing order.
+        for table in tables {
+            if !emitted.contains(table.as_str()) {
+                order.push(table.clone());
+            }
+        }
+    }
+    (order, had_cycle)
 }
 
 /// Write generated export text to a user-chosen path (create/truncate). The
@@ -228,6 +326,21 @@ async fn export_table_sql(
 ) -> Result<String, AppError> {
     // table_meta validates existence (§5) and supplies the DDL + column order.
     let meta = connection.table_meta(schema, table).await?;
+    export_table_sql_with_meta(connection, schema, table, &meta, scope, on_progress).await
+}
+
+/// The body of [`export_table_sql`] against an ALREADY-fetched `meta`. The
+/// schema dump prefetches every table's meta (to order tables by FK
+/// dependency) and reuses it here, so the per-table dump does not re-query
+/// `table_meta`.
+async fn export_table_sql_with_meta(
+    connection: &dyn EngineConnection,
+    schema: &str,
+    table: &str,
+    meta: &TableMeta,
+    scope: ExportScope,
+    on_progress: ProgressCallback<'_>,
+) -> Result<String, AppError> {
     let columns: Vec<String> = meta.columns.iter().map(|c| c.name.clone()).collect();
     // Per-column "is binary" flags: binary columns export as an engine hex
     // literal (X'..' / bytea) so they round-trip, instead of a quoted string.
@@ -587,6 +700,91 @@ mod tests {
         .unwrap();
         assert!(!sql.contains("CREATE TABLE"), "data-only must emit no DDL");
         assert_eq!(sql.matches("INSERT INTO").count(), 2);
+    }
+
+    // --- topo_order (FK dependency ordering for schema dumps) -------------
+
+    /// Build a `deps` map from `(table, &[refs])` pairs.
+    fn deps_of(pairs: &[(&str, &[&str])]) -> HashMap<String, Vec<String>> {
+        pairs
+            .iter()
+            .map(|(t, refs)| {
+                (
+                    (*t).to_string(),
+                    refs.iter().map(|r| (*r).to_string()).collect(),
+                )
+            })
+            .collect()
+    }
+
+    fn names(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    #[test]
+    fn topo_puts_referenced_table_before_its_child() {
+        // `orders` references `users`; listed child-first to prove reordering.
+        let tables = names(&["orders", "users"]);
+        let deps = deps_of(&[("orders", &["users"]), ("users", &[])]);
+        let (order, cycle) = topo_order(&tables, &deps);
+        assert!(!cycle);
+        assert_eq!(order, names(&["users", "orders"]));
+    }
+
+    #[test]
+    fn topo_orders_a_dependency_chain_parents_first() {
+        // a → b → c (a depends on b, b depends on c); deepest parent first.
+        let tables = names(&["a", "b", "c"]);
+        let deps = deps_of(&[("a", &["b"]), ("b", &["c"]), ("c", &[])]);
+        let (order, cycle) = topo_order(&tables, &deps);
+        assert!(!cycle);
+        assert_eq!(order, names(&["c", "b", "a"]));
+    }
+
+    #[test]
+    fn topo_keeps_listing_order_for_independent_tables() {
+        let tables = names(&["b", "a", "c"]);
+        let deps = deps_of(&[("b", &[]), ("a", &[]), ("c", &[])]);
+        let (order, cycle) = topo_order(&tables, &deps);
+        assert!(!cycle);
+        assert_eq!(order, names(&["b", "a", "c"]));
+    }
+
+    #[test]
+    fn topo_ignores_self_reference_and_out_of_set_refs() {
+        // `node` references itself and a table not in the dump set; neither
+        // creates an unmet dependency, so it orders cleanly with no cycle.
+        let tables = names(&["node"]);
+        let deps = deps_of(&[("node", &["node", "external"])]);
+        let (order, cycle) = topo_order(&tables, &deps);
+        assert!(!cycle);
+        assert_eq!(order, names(&["node"]));
+    }
+
+    #[test]
+    fn topo_flags_a_cycle_and_falls_back_to_listing_order() {
+        // a ↔ b mutual reference: unorderable, so listing order + cycle flag.
+        let tables = names(&["a", "b"]);
+        let deps = deps_of(&[("a", &["b"]), ("b", &["a"])]);
+        let (order, cycle) = topo_order(&tables, &deps);
+        assert!(cycle);
+        assert_eq!(order, names(&["a", "b"]));
+    }
+
+    #[test]
+    fn topo_orders_acyclic_tables_even_when_a_separate_cycle_exists() {
+        // `child` → `parent` is orderable; `x ↔ y` is a cycle. The acyclic pair
+        // sorts (parent before child); the cyclic pair appends in listing order.
+        let tables = names(&["child", "parent", "x", "y"]);
+        let deps = deps_of(&[
+            ("child", &["parent"]),
+            ("parent", &[]),
+            ("x", &["y"]),
+            ("y", &["x"]),
+        ]);
+        let (order, cycle) = topo_order(&tables, &deps);
+        assert!(cycle);
+        assert_eq!(order, names(&["parent", "child", "x", "y"]));
     }
 
     #[tokio::test]
@@ -956,6 +1154,52 @@ mod sqlite_integration {
         assert!(dump.contains("-- ===== Table: empties ====="));
         assert!(dump.contains("-- ===== Table: users ====="));
         assert!(dump.contains("CREATE TABLE users"));
+    }
+
+    #[tokio::test]
+    async fn schema_dump_orders_parent_before_child_by_foreign_key() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("fk_order.db");
+        {
+            let conn = rusqlite::Connection::open(&path).expect("create db");
+            // `orders` references `users`. Create the child FIRST so listing
+            // order would put it before its parent — the dump must reorder it.
+            conn.execute_batch(
+                "CREATE TABLE orders (
+                     id INTEGER PRIMARY KEY,
+                     user_id INTEGER REFERENCES users(id)
+                 );
+                 CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);",
+            )
+            .expect("seed db");
+        }
+        let params = ConnectionParams::Sqlite {
+            path: path.to_string_lossy().into_owned(),
+        };
+        let open = SqliteConnector.open(&params).await.expect("open fixture");
+        let manager = ConnectionManager::new();
+        let handle = manager.insert(open).await;
+
+        let dump = export_schema_sql(
+            &manager,
+            &handle,
+            "main",
+            ExportScope::Schema,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .expect("export schema");
+
+        let users_at = dump.find("CREATE TABLE users").expect("users DDL");
+        let orders_at = dump.find("CREATE TABLE orders").expect("orders DDL");
+        assert!(
+            users_at < orders_at,
+            "referenced table `users` must be dumped before `orders`"
+        );
+        assert!(
+            dump.contains("ordered by foreign-key dependency"),
+            "header should note FK ordering for an acyclic schema"
+        );
     }
 
     #[tokio::test]

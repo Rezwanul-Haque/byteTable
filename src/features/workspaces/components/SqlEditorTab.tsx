@@ -22,7 +22,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { highlightSql } from "../../browse/highlightSql";
-import { queryRun } from "../../../shared/api/engine";
+import { queryRun, readTextFile } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
 import type { Engine } from "../../../shared/types";
 import { Btn } from "../../../shared/ui/Btn";
@@ -105,6 +105,22 @@ function snippetsFor(engine: Engine, schemaName: string): Snippet[] {
         { label: "recent rows", sql: "SELECT *\nFROM table_name\nORDER BY rowid DESC\nLIMIT 50;" },
       ];
   }
+}
+
+/**
+ * Native file-open dialog for a `.sql` / `.txt` file (the real Tauri build).
+ * Lazily imports the dialog plugin so plain-browser dev doesn't crash at load
+ * (mirrors the import modals' `openSqlDialog`). Returns the chosen path, or
+ * null when the user cancels. Throws (no Tauri) when not running in the desktop
+ * shell — the caller turns that into a toast.
+ */
+async function openSqlFileDialog(): Promise<string | null> {
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const chosen = await open({
+    multiple: false,
+    filters: [{ name: "SQL", extensions: ["sql", "txt"] }],
+  });
+  return typeof chosen === "string" ? chosen : null;
 }
 
 /** Only the save popover remains a popover; browse/manage moved to drawers. */
@@ -291,6 +307,32 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
     setPop(null);
   };
 
+  // Open a .sql/.txt file via the native dialog and load its text into the
+  // editor (replacing the buffer). Reads from disk through the read_text_file
+  // command — the user's pick in the OS dialog is the consent. The open
+  // autocomplete popup is dismissed so it doesn't linger over the new text.
+  const openFile = () => {
+    void (async () => {
+      let chosen: string | null;
+      try {
+        chosen = await openSqlFileDialog();
+      } catch {
+        toast("Opening a file requires the desktop app", "info");
+        return;
+      }
+      if (!chosen) return; // cancelled
+      try {
+        const contents = await readTextFile(chosen);
+        editorRef.current?.dismissCompletion();
+        load(contents);
+        const fileName = chosen.split(/[\\/]/).pop() ?? chosen;
+        toast(`Opened “${fileName}”`, "ok");
+      } catch (err) {
+        toast(appErrorMessage(err, "Could not read the file."), "err");
+      }
+    })();
+  };
+
   // Beautify the whole buffer in place (wand FAB / Shift+Alt+F).
   const format = () => setSqlText(tab.id, formatSql(text));
 
@@ -380,6 +422,9 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
           ))}
         </div>
         <div style={{ flex: 1 }} />
+
+        {/* open a .sql/.txt file into the editor */}
+        <IconBtn icon="folder_open" title="Open .sql file" onClick={openFile} />
 
         {/* save-query popover */}
         <div className="editor-pop-anchor" style={{ position: "relative" }}>

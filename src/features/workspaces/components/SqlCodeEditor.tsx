@@ -23,6 +23,7 @@
 import {
   acceptCompletion,
   autocompletion,
+  closeCompletion,
   completionKeymap,
   startCompletion,
 } from "@codemirror/autocomplete";
@@ -71,6 +72,8 @@ function pickAndSelect(view: EditorView): string {
 export interface SqlCodeEditorHandle {
   /** Select and return the statement at the caret (or the selection). */
   pickStatement: () => string;
+  /** Dismiss the open autocomplete popup, if any (used when loading a file). */
+  dismissCompletion: () => void;
 }
 
 /** §3.7 highlight palette, mapped onto lezer tags. Colors are literal where
@@ -169,6 +172,10 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
       pickStatement: () => {
         const view = viewRef.current;
         return view ? pickAndSelect(view) : value;
+      },
+      dismissCompletion: () => {
+        const view = viewRef.current;
+        if (view) closeCompletion(view);
       },
     }));
 

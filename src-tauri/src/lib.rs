@@ -4,9 +4,9 @@ pub mod shared;
 
 use std::sync::Arc;
 
-use tauri::menu::{MenuBuilder, MenuItemBuilder};
+use tauri::menu::{CheckMenuItemBuilder, Menu, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, Runtime, WindowEvent};
 
 use engines::mysql::MysqlConnector;
 use engines::postgres::PostgresConnector;
@@ -46,6 +46,68 @@ fn toggle_main_window(app: &AppHandle) {
             let _ = window.set_focus();
         }
     }
+}
+
+/// One saved connection as the tray's Workspaces submenu needs it: the
+/// registry id (the menu-item payload), its display name, and whether a
+/// workspace is currently open for it (so the item shows a check). The
+/// frontend computes `open` by matching open workspaces to their saved id and
+/// pushes the whole list via `tray_update` whenever it changes.
+#[derive(serde::Deserialize)]
+pub struct TrayWorkspace {
+    id: String,
+    name: String,
+    open: bool,
+}
+
+/// Build the tray's right-click menu: Show, a "Workspaces" submenu (one
+/// checkable item per saved connection — checked = a workspace is open for
+/// it), then Quit. Reused at startup (empty list) and on every `tray_update`.
+/// Workspace items carry the id `ws:<connectionId>`; the menu-event handler
+/// strips that prefix to know which connection was picked.
+fn build_tray_menu<R: Runtime, M: Manager<R>>(
+    manager: &M,
+    workspaces: &[TrayWorkspace],
+) -> tauri::Result<Menu<R>> {
+    let show = MenuItemBuilder::with_id("show", "Show ByteTable").build(manager)?;
+    let quit = MenuItemBuilder::with_id("quit", "Quit ByteTable").build(manager)?;
+
+    let mut ws_sub = SubmenuBuilder::new(manager, "Workspaces");
+    if workspaces.is_empty() {
+        // A disabled placeholder so the submenu is never empty/confusing.
+        let none = MenuItemBuilder::with_id("ws-none", "No saved connections")
+            .enabled(false)
+            .build(manager)?;
+        ws_sub = ws_sub.item(&none);
+    } else {
+        for w in workspaces {
+            let item = CheckMenuItemBuilder::with_id(format!("ws:{}", w.id), &w.name)
+                .checked(w.open)
+                .build(manager)?;
+            ws_sub = ws_sub.item(&item);
+        }
+    }
+    let ws_menu = ws_sub.build()?;
+
+    MenuBuilder::new(manager)
+        .item(&show)
+        .item(&ws_menu)
+        .separator()
+        .item(&quit)
+        .build()
+}
+
+/// Rebuild the tray menu from the frontend's current saved-connection list.
+/// The tray-icon's menu-event handler (registered once at build) keeps working
+/// across `set_menu`, so this only swaps the menu contents.
+#[tauri::command]
+fn tray_update(app: AppHandle, workspaces: Vec<TrayWorkspace>) -> Result<(), String> {
+    let tray = app
+        .tray_by_id("main-tray")
+        .ok_or_else(|| "tray icon not found".to_string())?;
+    let menu = build_tray_menu(&app, &workspaces).map_err(|e| e.to_string())?;
+    tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -120,9 +182,10 @@ pub fn run() {
             // running in the tray when the window is closed (see CloseRequested
             // below), so the tray is the way back in — and "Quit" is the only
             // path that actually exits (besides ⌘Q).
-            let show = MenuItemBuilder::with_id("show", "Show ByteTable").build(app)?;
-            let quit = MenuItemBuilder::with_id("quit", "Quit ByteTable").build(app)?;
-            let menu = MenuBuilder::new(app).items(&[&show, &quit]).build()?;
+            // Starts with an empty Workspaces submenu; the frontend repopulates
+            // it via `tray_update` once the saved-connection list loads (and on
+            // every change after).
+            let menu = build_tray_menu(app, &[])?;
             let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?;
             TrayIconBuilder::with_id("main-tray")
                 .icon(tray_icon)
@@ -132,7 +195,15 @@ pub fn run() {
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "show" => show_main_window(app),
                     "quit" => app.exit(0),
-                    _ => {}
+                    // A Workspaces item: bring the window forward and tell the
+                    // frontend which saved connection was picked (it focuses an
+                    // open workspace or opens one from the connection).
+                    other => {
+                        if let Some(connection_id) = other.strip_prefix("ws:") {
+                            show_main_window(app);
+                            let _ = app.emit("tray://select-workspace", connection_id.to_string());
+                        }
+                    }
                 })
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click {
@@ -157,6 +228,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            tray_update,
             features::preferences::commands::prefs_get,
             features::preferences::commands::prefs_set,
             features::connections::commands::connection_list,

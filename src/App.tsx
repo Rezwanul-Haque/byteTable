@@ -11,6 +11,7 @@ import { Rail } from "./features/workspaces/components/Rail";
 import { WorkspaceShell } from "./features/workspaces/components/WorkspaceShell";
 import { RedisWorkspace } from "./features/redis_browse/components/RedisWorkspace";
 import { selectShowConnect, useWorkspacesStore } from "./features/workspaces/state";
+import { useTrayWorkspaces } from "./features/workspaces/trayMenu";
 import {
   appVersion,
   checkForUpdate,
@@ -114,6 +115,10 @@ export function App() {
 
   return (
     <ToastProvider>
+      {/* Keeps the native tray "Workspaces" submenu in sync + handles its
+          clicks. Renders nothing; must sit inside ToastProvider (it toasts on
+          a failed open). */}
+      <TrayWorkspacesBridge />
       <div className="app-frame">
         <Rail
           onDonate={() => setDonateOpen(true)}
@@ -173,4 +178,10 @@ export function App() {
       ) : null}
     </ToastProvider>
   );
+}
+
+/** Mounts the tray↔workspaces bridge inside the toast context; renders nothing. */
+function TrayWorkspacesBridge() {
+  useTrayWorkspaces();
+  return null;
 }

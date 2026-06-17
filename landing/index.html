@@ -130,6 +130,20 @@
   .dl-logo { width:27px; height:27px; flex:none; color:var(--text); display:block; }
   .dl-card b { display:block; font-size:14.5px; }
   .dl-card div span { font-size:11.5px; color:var(--faint); font-family:var(--mono); white-space:nowrap; }
+  /* terminal one-liner install, under the download cards */
+  .dl-cli { max-width:660px; margin:22px auto 0; display:flex; flex-direction:column; gap:8px; align-items:center; }
+  .dl-cli-label { display:inline-flex; align-items:center; gap:6px; font-size:12.5px; color:var(--dim); }
+  .dl-cli-label .msym { font-size:15px; color:var(--accent); }
+  .dl-cli-box { display:flex; align-items:center; gap:10px; width:100%; background:var(--bg0); border:1px solid color-mix(in oklab, var(--accent) 35%, var(--border)); border-radius:10px; padding:11px 12px; box-shadow:0 0 0 3px color-mix(in oklab, var(--accent) 8%, transparent); }
+  .dl-cli-prompt { color:var(--accent); font-family:var(--mono); font-weight:600; }
+  .dl-cli-box code { flex:1; min-width:0; overflow-x:auto; white-space:nowrap; font-family:var(--mono); font-size:12.5px; color:var(--text); scrollbar-width:none; -ms-overflow-style:none; }
+  .dl-cli-box code::-webkit-scrollbar { display:none; }
+  .dl-cli-copy { flex:none; display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:7px; border:1px solid var(--border); background:var(--bg2); color:var(--dim); cursor:pointer; transition:color .15s, border-color .15s; }
+  .dl-cli-copy:hover { color:var(--accent); border-color:var(--accent); }
+  .dl-cli-copy.copied { color:var(--accent); }
+  .dl-cli-copy .msym { font-size:16px; }
+  .dl-cli-note { font-size:11px; color:var(--faint); text-align:center; }
+  .dl-cli-note code { font-family:var(--mono); color:var(--dim); }
 
   /* ---------- support ---------- */
   .support { text-align:center; }
@@ -278,6 +292,18 @@
         <div><b>Windows</b><span>.exe installer</span></div>
       </a>
     </div>
+
+    <div class="dl-cli">
+      <span class="dl-cli-label"><span class="msym">terminal</span> …or install from your terminal</span>
+      <div class="dl-cli-box">
+        <span class="dl-cli-prompt">$</span>
+        <code id="dlCliCmd">curl -fsSL https://raw.githubusercontent.com/rezwanul-Haque/byteTable/main/install.sh | sh</code>
+        <button class="dl-cli-copy" id="dlCliCopy" type="button" aria-label="Copy install command">
+          <span class="msym">content_copy</span>
+        </button>
+      </div>
+      <span class="dl-cli-note">macOS &amp; Linux. On Windows: <code>irm https://raw.githubusercontent.com/rezwanul-Haque/byteTable/main/install.ps1 | iex</code></span>
+    </div>
   </div>
 </section>
 
@@ -321,6 +347,29 @@
 </footer>
 
 <script>
+  // Copy the install one-liner (hero) to the clipboard, with a ✓ flash.
+  (function () {
+    var btn = document.getElementById('dlCliCopy');
+    var cmd = document.getElementById('dlCliCmd');
+    if (!btn || !cmd) return;
+    var icon = btn.querySelector('.msym');
+    btn.addEventListener('click', function () {
+      var done = function () {
+        btn.classList.add('copied');
+        if (icon) icon.textContent = 'check';
+        setTimeout(function () {
+          btn.classList.remove('copied');
+          if (icon) icon.textContent = 'content_copy';
+        }, 1400);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(cmd.textContent).then(done).catch(function () {});
+      } else {
+        done();
+      }
+    });
+  })();
+
   // Latest release tag — shown in the hero badge. Falls back to the static
   // text on rate-limit/offline/no-release.
   (function () {

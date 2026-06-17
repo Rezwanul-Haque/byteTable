@@ -19,11 +19,12 @@
 // shows global + this-workspace-attached entries (selectQueriesForConnection)
 // with a per-row indicator.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { highlightSql } from "../../browse/highlightSql";
 import { queryRun } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
+import type { Engine } from "../../../shared/types";
 import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
@@ -35,7 +36,7 @@ import { useWorkspacesStore } from "../state";
 import type { SqlHistoryEntry, Tab, Workspace } from "../types";
 import { ExecutionMinimap, ExplainPanel } from "./explain";
 import { detectedTable } from "./explainClauses";
-import { SqlCodeEditor } from "./SqlCodeEditor";
+import { SqlCodeEditor, type SqlCodeEditorHandle } from "./SqlCodeEditor";
 import { SqlResultGrid } from "./SqlResultGrid";
 import "./SqlEditorTab.css";
 
@@ -50,19 +51,59 @@ function previewHtml(sql: string): string {
   return highlightSql(clipped);
 }
 
-/** SQLite-appropriate starter snippets (prototype chips, adapted to SQLite). */
-const SQL_SNIPPETS: { label: string; sql: string }[] = [
-  {
-    label: "list tables",
-    sql: "SELECT name, type\nFROM sqlite_master\nWHERE type = 'table'\nORDER BY name;",
-  },
-  {
-    label: "table columns",
-    sql: "SELECT name, type, \"notnull\", dflt_value\nFROM pragma_table_info('table_name');",
-  },
-  { label: "row counts", sql: "SELECT COUNT(*) AS rows\nFROM table_name;" },
-  { label: "recent rows", sql: "SELECT *\nFROM table_name\nORDER BY rowid DESC\nLIMIT 50;" },
-];
+/**
+ * Starter snippet chips. These are REAL, runnable introspection queries — but
+ * each engine speaks a different dialect, so the chips are engine-specific
+ * (a SQLite `pragma_table_info(...)` is a syntax error on MySQL/Postgres, etc.).
+ * The placeholder `table_name` is meant to be replaced with a real table.
+ * `schema_name` resolves the introspection chips to the tab's active schema.
+ */
+type Snippet = { label: string; sql: string };
+
+function snippetsFor(engine: Engine, schemaName: string): Snippet[] {
+  switch (engine) {
+    case "mysql":
+      return [
+        {
+          label: "list tables",
+          sql: `SELECT table_name, table_type\nFROM information_schema.tables\nWHERE table_schema = '${schemaName}'\nORDER BY table_name;`,
+        },
+        {
+          label: "table columns",
+          sql: `SELECT column_name, data_type, is_nullable, column_default\nFROM information_schema.columns\nWHERE table_schema = '${schemaName}' AND table_name = 'table_name'\nORDER BY ordinal_position;`,
+        },
+        { label: "row counts", sql: "SELECT COUNT(*) AS row_count\nFROM table_name;" },
+        { label: "recent rows", sql: "SELECT *\nFROM table_name\nLIMIT 50;" },
+      ];
+    case "postgres":
+      return [
+        {
+          label: "list tables",
+          sql: `SELECT table_name, table_type\nFROM information_schema.tables\nWHERE table_schema = '${schemaName}'\nORDER BY table_name;`,
+        },
+        {
+          label: "table columns",
+          sql: `SELECT column_name, data_type, is_nullable, column_default\nFROM information_schema.columns\nWHERE table_schema = '${schemaName}' AND table_name = 'table_name'\nORDER BY ordinal_position;`,
+        },
+        { label: "row counts", sql: 'SELECT COUNT(*) AS row_count\nFROM table_name;' },
+        { label: "recent rows", sql: "SELECT *\nFROM table_name\nLIMIT 50;" },
+      ];
+    case "sqlite":
+    default:
+      return [
+        {
+          label: "list tables",
+          sql: "SELECT name, type\nFROM sqlite_master\nWHERE type = 'table'\nORDER BY name;",
+        },
+        {
+          label: "table columns",
+          sql: "SELECT name, type, \"notnull\", dflt_value\nFROM pragma_table_info('table_name');",
+        },
+        { label: "row counts", sql: "SELECT COUNT(*) AS row_count\nFROM table_name;" },
+        { label: "recent rows", sql: "SELECT *\nFROM table_name\nORDER BY rowid DESC\nLIMIT 50;" },
+      ];
+  }
+}
 
 /** Only the save popover remains a popover; browse/manage moved to drawers. */
 type Popover = "save" | null;
@@ -89,6 +130,10 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [resultsMin, setResultsMin] = useState(false);
+  // The editor handle resolves the statement at the caret for the Run/Explain
+  // buttons; `explainSql` is the statement captured when Explain was opened.
+  const editorRef = useRef<SqlCodeEditorHandle>(null);
+  const [explainSql, setExplainSql] = useState("");
   // Transient view toggle: the results area shows either the query result
   // ('result') or the execution-order teaching panel ('explain'). Local —
   // it's a view flip, not buffer/result state, so it need not survive a switch.
@@ -101,6 +146,9 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
     workspace.schemas.some((s) => s.name === workspace.ui.schemaName)
       ? workspace.ui.schemaName
       : workspace.schemas[0]?.name) ?? "main";
+
+  // Engine-specific starter chips, resolved to the active schema.
+  const snippets = snippetsFor(workspace.info.engine, schemaName);
 
   // Load the global saved-query store once on first mount (guarded inside the
   // store: a settled load short-circuits, and re-calling is cheap).
@@ -150,17 +198,20 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   // surface its column count on the FROM step. Falls back to null otherwise —
   // the panel works from clause detection alone.
   const columnsCache = useIntrospectionStore((s) => s.columns);
-  const explainTable = view === "explain" ? detectedTable(text) : null;
+  const explainTable = view === "explain" ? detectedTable(explainSql) : null;
   const columnCount =
     explainTable != null
       ? (columnsCache[columnsKey(workspace.handleId, schemaName, explainTable)]?.columns.length ??
         null)
       : null;
 
-  // Run the current buffer. Latest `running` is read off state so double-fires
-  // are ignored. Result/error/history all go to the store (survive switches).
-  const run = () => {
-    const sql = text.trim();
+  // Run a statement. With no override the whole buffer runs; the toolbar Run
+  // button and ⌘/Ctrl+Enter pass the statement at the caret (selection wins),
+  // so a multi-statement buffer runs only the one under the cursor. Latest
+  // `running` is read off state so double-fires are ignored; result / error /
+  // history all go to the store (survive switches).
+  const run = (override?: string) => {
+    const sql = (override ?? text).trim();
     if (running || sql === "") return;
     setRunning(true);
     setPop(null);
@@ -234,21 +285,36 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   return (
     <div className="sql-tab">
       <div className="sql-toolbar">
-        <Btn icon="play_arrow" variant="filled" onClick={run} disabled={runDisabled} small>
+        <Btn
+          icon="play_arrow"
+          variant="filled"
+          onClick={() => run(editorRef.current?.pickStatement())}
+          disabled={runDisabled}
+          small
+        >
           {running ? "Running…" : "Run"}
         </Btn>
         <Btn
           icon="account_tree"
           variant={view === "explain" ? "filled" : "tonal"}
           small
-          onClick={() => setView(view === "explain" ? "result" : "explain")}
+          onClick={() => {
+            if (view === "explain") {
+              setView("result");
+            } else {
+              // Capture the statement at the caret so Explain analyzes only the
+              // query under the cursor, matching Run / ⌘↩.
+              setExplainSql(editorRef.current?.pickStatement() ?? text);
+              setView("explain");
+            }
+          }}
           title="Explain & analyze the execution plan"
         >
           Explain
         </Btn>
         <span className="sql-hint">⌘↩ / Ctrl+Enter</span>
         <div className="sql-snippets">
-          {SQL_SNIPPETS.map((s) => (
+          {snippets.map((s) => (
             <button
               key={s.label}
               type="button"
@@ -320,7 +386,12 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
 
       <div className={"sql-editor-wrap" + (editorGrows ? " grow" : "")}>
         <div className="sql-editor-main">
-          <SqlCodeEditor value={text} onChange={(v) => setSqlText(tab.id, v)} onRun={run} />
+          <SqlCodeEditor
+            ref={editorRef}
+            value={text}
+            onChange={(v) => setSqlText(tab.id, v)}
+            onRun={run}
+          />
         </div>
         <ExecutionMinimap sql={text} />
       </div>
@@ -341,7 +412,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
                 <span className="dim">{schemaName}</span>
               </div>
               {resultsMin ? null : (
-                <ExplainPanel sql={text} schemaName={schemaName} columnCount={columnCount} />
+                <ExplainPanel sql={explainSql} schemaName={schemaName} columnCount={columnCount} />
               )}
             </>
           ) : error ? (

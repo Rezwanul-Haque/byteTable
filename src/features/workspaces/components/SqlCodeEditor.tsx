@@ -31,7 +31,33 @@ import {
 import { EditorState } from "@codemirror/state";
 import { EditorView, keymap, drawSelection } from "@codemirror/view";
 import { tags as t } from "@lezer/highlight";
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef } from "react";
+
+import { statementRangeAt } from "./sqlStatement";
+
+/**
+ * Resolve what ⌘/Ctrl+Enter (or the Run/Explain buttons) should execute from
+ * the current editor state: an explicit selection wins; otherwise the single
+ * statement the caret sits in. The matched range is selected in the view so
+ * the user sees exactly what ran. Falls back to the whole buffer only if no
+ * statement can be resolved. Returns the SQL string to run.
+ */
+function pickAndSelect(view: EditorView): string {
+  const sel = view.state.selection.main;
+  const doc = view.state.doc.toString();
+  if (!sel.empty) return doc.slice(sel.from, sel.to);
+  const range = statementRangeAt(doc, sel.head);
+  if (!range) return doc;
+  view.dispatch({ selection: { anchor: range.from, head: range.to } });
+  return doc.slice(range.from, range.to);
+}
+
+/** Imperative handle: lets the toolbar's Run/Explain buttons resolve the same
+ *  statement-at-cursor the keyboard shortcut uses. */
+export interface SqlCodeEditorHandle {
+  /** Select and return the statement at the caret (or the selection). */
+  pickStatement: () => string;
+}
 
 /** §3.7 highlight palette, mapped onto lezer tags. Colors are literal where
  *  the spec gives a hex; the keyword color reads the live --accent token. */
@@ -83,11 +109,17 @@ const sqlTheme = EditorView.theme(
 interface SqlCodeEditorProps {
   value: string;
   onChange: (value: string) => void;
-  /** ⌘/Ctrl+Enter handler — runs the current query. */
-  onRun: () => void;
+  /**
+   * ⌘/Ctrl+Enter handler. Receives the SQL to run: the active selection if
+   * one exists, otherwise the single statement the caret sits in (see
+   * statementRangeAt). Called with no argument from elsewhere means "run the
+   * whole buffer" — the caller decides.
+   */
+  onRun: (sql?: string) => void;
 }
 
-export function SqlCodeEditor({ value, onChange, onRun }: SqlCodeEditorProps) {
+export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>(
+  function SqlCodeEditor({ value, onChange, onRun }, ref) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   // Keep the latest callbacks reachable from the (mount-once) CM extensions
@@ -97,13 +129,23 @@ export function SqlCodeEditor({ value, onChange, onRun }: SqlCodeEditorProps) {
   onChangeRef.current = onChange;
   onRunRef.current = onRun;
 
+  // The Run/Explain buttons resolve the statement at the caret through this
+  // handle — the same logic as ⌘/Ctrl+Enter. Falls back to the buffer (or "")
+  // before the view exists.
+  useImperativeHandle(ref, () => ({
+    pickStatement: () => {
+      const view = viewRef.current;
+      return view ? pickAndSelect(view) : value;
+    },
+  }));
+
   useLayoutEffect(() => {
     const runKeymap = keymap.of([
       {
         key: "Mod-Enter",
         preventDefault: true,
-        run: () => {
-          onRunRef.current();
+        run: (view) => {
+          onRunRef.current(pickAndSelect(view));
           return true;
         },
       },
@@ -159,4 +201,5 @@ export function SqlCodeEditor({ value, onChange, onRun }: SqlCodeEditorProps) {
   }, [value]);
 
   return <div className="sql-cm" ref={hostRef} />;
-}
+  },
+);

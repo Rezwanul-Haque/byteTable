@@ -299,6 +299,8 @@ pub fn run() {
             // Reopen. Since close-to-tray hides (not destroys) the window, the
             // Dock click must bring it back — without this the tray icon is the
             // only way in. `has_visible_windows` is false exactly when hidden.
+            // `Reopen` only exists on macOS, so gate the arm to that target.
+            #[cfg(target_os = "macos")]
             tauri::RunEvent::Reopen {
                 has_visible_windows,
                 ..

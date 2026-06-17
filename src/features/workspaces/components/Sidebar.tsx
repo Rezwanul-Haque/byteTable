@@ -35,8 +35,9 @@ import {
 } from "../../connections/api";
 import { CreateSchemaModal } from "../../export/components/CreateSchemaModal";
 import { DropSchemaModal } from "../../export/components/DropSchemaModal";
+import { ExportProgressModal } from "../../export/components/ExportProgressModal";
 import { TruncateModal } from "../../export/components/TruncateModal";
-import { runExport, type ExportKind } from "../../export/exportFlow";
+import { type ExportKind } from "../../export/exportFlow";
 import { ImportModal } from "../../import/components/ImportModal";
 import { SchemaImportModal } from "../../import/components/SchemaImportModal";
 import { tablesKey, columnsKey, useIntrospectionStore } from "../../introspection/state";
@@ -138,6 +139,12 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   const [refreshing, setRefreshing] = useState(false);
   // M15 Task 2: which table the truncate modal targets (null when closed).
   const [truncateTarget, setTruncateTarget] = useState<string | null>(null);
+  // The export-in-progress (drives the progress modal): the kind + (for a table
+  // export) its name. null = no export open.
+  const [exportJob, setExportJob] = useState<{
+    kind: ExportKind;
+    table?: string;
+  } | null>(null);
   // M15 SQL enhancements: the schema-actions three-dot menu, the table-level
   // import modal target, and the schema-level dump-import modal.
   const [schemaMenu, setSchemaMenu] = useState(false);
@@ -319,10 +326,10 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   const openStructure = (table: string) => openTableTab(schemaName, table, "structure");
   const openMap = () => openMapTab(schemaName);
 
-  // M15 Task 2: the shared export flow (text → save dialog → write → toast),
-  // reused by the table context menu + the schema-row download button.
-  const doExport = (kind: ExportKind, table?: string) =>
-    void runExport(kind, { handleId, schema: schemaName, table }, toast);
+  // M15: open the export progress modal — it owns the whole flow (SQL opens on
+  // the scope-choice step, CSV straight to the building bar, then save dialog →
+  // write → toast). Reused by the table context menu + the schema-row download.
+  const doExport = (kind: ExportKind, table?: string) => setExportJob({ kind, table });
 
   const onRowKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>, table: string) => {
     // Keydowns on the nested expand chevron bubble up here — they belong to
@@ -737,6 +744,18 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
             <Icon name="delete_sweep" size={15} /> Truncate table…
           </button>
         </div>
+      ) : null}
+
+      {/* Export progress (M15): SQL opens on the scope-choice step (structure /
+          data / both), CSV straight to the bar; both write via the save dialog. */}
+      {exportJob ? (
+        <ExportProgressModal
+          kind={exportJob.kind}
+          handleId={handleId}
+          schema={schemaName}
+          table={exportJob.table}
+          onClose={() => setExportJob(null)}
+        />
       ) : null}
 
       {/* Truncate confirm (M15 Task 2): env-aware. Refreshes sidebar counts

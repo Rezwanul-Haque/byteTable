@@ -18,7 +18,7 @@ use crate::shared::error::AppError;
 use crate::shared::engine::ImportResult;
 
 use super::application;
-use super::domain::ExportFormat;
+use super::domain::{ExportFormat, ExportScope};
 
 /// One progress tick streamed to the renderer over a Tauri [`Channel`] during a
 /// long export/import: `done` of `total` units (rows for a table export, tables
@@ -40,6 +40,7 @@ pub async fn export_table(
     schema: String,
     table: String,
     format: ExportFormat,
+    scope: ExportScope,
     on_progress: Channel<Progress>,
 ) -> Result<String, AppError> {
     let progress = move |done, total| {
@@ -51,6 +52,7 @@ pub async fn export_table(
         &schema,
         &table,
         format,
+        scope,
         &progress,
     )
     .await
@@ -62,12 +64,13 @@ pub async fn export_schema(
     state: State<'_, ConnectionsState>,
     handle_id: ConnectionHandleId,
     schema: String,
+    scope: ExportScope,
     on_progress: Channel<Progress>,
 ) -> Result<String, AppError> {
     let progress = move |done, total| {
         let _ = on_progress.send(Progress { done, total });
     };
-    application::export_schema_sql(state.manager(), &handle_id, &schema, &progress).await
+    application::export_schema_sql(state.manager(), &handle_id, &schema, scope, &progress).await
 }
 
 /// Write generated export text to a user-chosen path (from the native save

@@ -490,6 +490,14 @@ export function rowUpdate(handleId: string, req: UpdateCellRequest): Promise<Upd
 /** The export output format (`csv` / `sql`). Lowercase, matching the Rust enum. */
 export type ExportFormat = "csv" | "sql";
 
+/**
+ * What a SQL dump should contain (the export "middleware" picker, prototype
+ * `export-progress.jsx` `EXPORT_CONTENTS`): structure only, data only, or both.
+ * Lowercase, matching the Rust `ExportScope` enum. Only affects SQL output —
+ * CSV is always data, so it ignores the scope.
+ */
+export type ExportScope = "schema" | "data" | "both";
+
 /** The outcome of {@link truncateTable}: the number of rows removed. */
 export interface TruncateResult {
   affected: number;
@@ -526,13 +534,15 @@ function progressChannel(onProgress?: ProgressFn): Channel<ImportExportProgress>
  * `CREATE TABLE` DDL + one INSERT per row, prototype `sqlVal` literals,
  * engine-correct identifier quoting). Unknown schema/table surface as
  * `{ kind, message }` §5 errors. The text is built from ALL rows (not the
- * grid's page).
+ * grid's page). `scope` (SQL only) picks structure-only / data-only / both;
+ * CSV ignores it.
  */
 export function exportTable(
   handleId: string,
   schema: string,
   table: string,
   format: ExportFormat,
+  scope: ExportScope,
   onProgress?: ProgressFn,
 ): Promise<string> {
   return invoke<string>("export_table", {
@@ -540,6 +550,7 @@ export function exportTable(
     schema,
     table,
     format,
+    scope,
     onProgress: progressChannel(onProgress),
   });
 }
@@ -548,16 +559,18 @@ export function exportTable(
  * Generate a SQL dump (DDL + data) for every base table in a schema
  * (`export_schema` command), concatenated under a header comment. Tables are
  * dumped in listing order, not foreign-key order (the dump notes a restore may
- * need FK checks disabled).
+ * need FK checks disabled). `scope` picks structure-only / data-only / both.
  */
 export function exportSchema(
   handleId: string,
   schema: string,
+  scope: ExportScope,
   onProgress?: ProgressFn,
 ): Promise<string> {
   return invoke<string>("export_schema", {
     handleId,
     schema,
+    scope,
     onProgress: progressChannel(onProgress),
   });
 }

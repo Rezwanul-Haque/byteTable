@@ -2944,7 +2944,7 @@ mod integration {
     async fn export_csv_and_sql_against_live_postgres() {
         use crate::features::connections::application::ConnectionManager;
         use crate::features::export::application::{export_schema_sql, export_table};
-        use crate::features::export::domain::ExportFormat;
+        use crate::features::export::domain::{ExportFormat, ExportScope};
 
         let Some((params, secret)) = gate("export_csv_and_sql_against_live_postgres") else {
             return;
@@ -2967,6 +2967,7 @@ mod integration {
             schema,
             "authors",
             ExportFormat::Csv,
+            ExportScope::Both,
             &|_: u64, _: u64| {},
         )
         .await
@@ -2982,6 +2983,7 @@ mod integration {
             schema,
             "books",
             ExportFormat::Sql,
+            ExportScope::Both,
             &|_: u64, _: u64| {},
         )
         .await
@@ -2991,9 +2993,15 @@ mod integration {
         assert!(sql.contains("NULL")); // the null note book
 
         // Schema dump touches both base tables.
-        let dump = export_schema_sql(&manager, &handle, schema, &|_: u64, _: u64| {})
-            .await
-            .expect("export schema");
+        let dump = export_schema_sql(
+            &manager,
+            &handle,
+            schema,
+            ExportScope::Both,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .expect("export schema");
         assert!(dump.contains("-- ByteTable schema dump"));
         assert!(dump.contains("authors"));
         assert!(dump.contains("books"));
@@ -3006,6 +3014,7 @@ mod integration {
             schema,
             "books",
             ExportFormat::Sql,
+            ExportScope::Both,
             &|_: u64, _: u64| {},
         )
         .await
@@ -3019,7 +3028,7 @@ mod integration {
     async fn import_round_trip_multi_statement_and_error_rollback_against_live_postgres() {
         use crate::features::connections::application::ConnectionManager;
         use crate::features::export::application::{export_table, import_sql};
-        use crate::features::export::domain::ExportFormat;
+        use crate::features::export::domain::{ExportFormat, ExportScope};
 
         let Some((params, secret)) =
             gate("import_round_trip_multi_statement_and_error_rollback_against_live_postgres")
@@ -3055,6 +3064,7 @@ mod integration {
             schema,
             "authors",
             ExportFormat::Sql,
+            ExportScope::Both,
             &|_: u64, _: u64| {},
         )
         .await

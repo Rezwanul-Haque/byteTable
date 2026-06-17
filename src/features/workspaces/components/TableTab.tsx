@@ -21,14 +21,13 @@ import { DataGrid } from "../../browse/components/DataGrid";
 import { FilterPanel } from "../../browse/components/FilterPanel";
 import { StructureView } from "../../browse/components/StructureView";
 import { appliedDisplaySql, compileToSpec, emptyDraft } from "../../browse/filter";
+import { ExportProgressModal } from "../../export/components/ExportProgressModal";
 import { TruncateModal } from "../../export/components/TruncateModal";
-import { runExport } from "../../export/exportFlow";
 import { ImportModal } from "../../import/components/ImportModal";
 import { useIntrospectionStore, columnsKey } from "../../introspection/state";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Icon } from "../../../shared/ui/Icon";
 import { Select } from "../../../shared/ui/Select";
-import { useToast } from "../../../shared/ui/toastContext";
 import type { ColumnInfo } from "../../../shared/api/engine";
 import { useWorkspacesStore } from "../state";
 import { rowCountLabel, useTabMetaStore } from "../tabMeta";
@@ -53,7 +52,6 @@ export function TableTab({
   handleId: string;
   defaultSchema: string;
 }) {
-  const toast = useToast();
   const setTableTabMode = useWorkspacesStore((state) => state.setTableTabMode);
   // Narrow selector: only this tab's meta, so other tabs' fetches don't
   // re-render the toolbar.
@@ -96,6 +94,8 @@ export function TableTab({
   const [colOpen, setColOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [truncateOpen, setTruncateOpen] = useState(false);
+  // The export-in-progress kind (drives the progress modal); null = closed.
+  const [exportKind, setExportKind] = useState<"tableCsv" | "tableSql" | null>(null);
   const [importOpen, setImportOpen] = useState(false);
 
   // --- Bug 2: explicit paging (the prototype's `.table-footer` pager) -------
@@ -144,7 +144,9 @@ export function TableTab({
 
   const doExport = (kind: "tableCsv" | "tableSql") => {
     setActionsOpen(false);
-    void runExport(kind, { handleId, schema: tab.schema, table: tab.table }, toast);
+    // The progress modal owns the whole flow: SQL opens on the scope-choice
+    // step, CSV goes straight to the building bar.
+    setExportKind(kind);
   };
 
   // The effective applied draft + its compiled wire spec. `applied` is the
@@ -520,6 +522,18 @@ export function TableTab({
           env={env}
           onClose={() => setTruncateOpen(false)}
           onDone={() => requestRefetch(tab.id)}
+        />
+      ) : null}
+
+      {/* Export progress (M15): SQL opens on the scope-choice step (structure /
+          data / both), CSV straight to the bar; both write via the save dialog. */}
+      {exportKind ? (
+        <ExportProgressModal
+          kind={exportKind}
+          handleId={handleId}
+          schema={tab.schema}
+          table={tab.table}
+          onClose={() => setExportKind(null)}
         />
       ) : null}
 

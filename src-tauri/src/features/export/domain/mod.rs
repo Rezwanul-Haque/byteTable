@@ -21,6 +21,33 @@ pub enum ExportFormat {
     Sql,
 }
 
+/// What a SQL dump should contain (the export "middleware" picker — prototype
+/// `export-progress.jsx` `EXPORT_CONTENTS`). Lowercase on the wire
+/// (`"schema"` / `"data"` / `"both"`) to match the renderer's `ExportScope`.
+/// Only affects SQL output; CSV is always data, so it ignores the scope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ExportScope {
+    /// `CREATE TABLE` statements only — no rows.
+    Schema,
+    /// `INSERT` statements only — no DDL.
+    Data,
+    /// Structure + data (the default): DDL followed by the rows.
+    #[default]
+    Both,
+}
+
+impl ExportScope {
+    /// Whether the DDL (`CREATE TABLE`) should be emitted for this scope.
+    pub fn includes_schema(self) -> bool {
+        matches!(self, Self::Schema | Self::Both)
+    }
+    /// Whether the rows (`INSERT`s) should be emitted for this scope.
+    pub fn includes_data(self) -> bool {
+        matches!(self, Self::Data | Self::Both)
+    }
+}
+
 /// Format one cell value for a CSV field, mirroring the prototype's `csvVal`:
 ///
 /// - `null` → an empty field.

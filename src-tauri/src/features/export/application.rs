@@ -24,7 +24,7 @@ use crate::features::connections::application::{ConnectionHandleId, ConnectionMa
 use crate::shared::engine::{EngineConnection, FetchRowsRequest, ImportResult, ProgressCallback};
 use crate::shared::error::AppError;
 
-use super::domain::{csv_value, sql_value, ExportFormat};
+use super::domain::{csv_value, sql_value, ExportFormat, ExportScope};
 
 /// Rows pulled per `fetch_rows` page during export. Each adapter clamps a
 /// request to its own `MAX_PAGE_ROWS` (10k for SQLite); 1000 is comfortably
@@ -38,6 +38,9 @@ pub async fn export_table(
     schema: &str,
     table: &str,
     format: ExportFormat,
+    // SQL only: structure-only / data-only / both. CSV is always data, so it
+    // ignores the scope.
+    scope: ExportScope,
     on_progress: ProgressCallback<'_>,
 ) -> Result<String, AppError> {
     let connection = manager.get_sql(handle).await?;
@@ -46,7 +49,7 @@ pub async fn export_table(
             export_table_csv(connection.as_ref(), schema, table, on_progress).await
         }
         ExportFormat::Sql => {
-            export_table_sql(connection.as_ref(), schema, table, on_progress).await
+            export_table_sql(connection.as_ref(), schema, table, scope, on_progress).await
         }
     }
 }
@@ -59,15 +62,22 @@ pub async fn export_schema_sql(
     manager: &ConnectionManager,
     handle: &ConnectionHandleId,
     schema: &str,
+    scope: ExportScope,
     on_progress: ProgressCallback<'_>,
 ) -> Result<String, AppError> {
     let connection = manager.get_sql(handle).await?;
     let tables = connection.list_tables(schema).await?;
     let total = tables.len() as u64;
 
+    let contents = match scope {
+        ExportScope::Schema => "structure only",
+        ExportScope::Data => "data only",
+        ExportScope::Both => "structure + data",
+    };
     let mut out = String::new();
     out.push_str("-- ByteTable schema dump\n");
     out.push_str(&format!("-- schema: {schema}\n"));
+    out.push_str(&format!("-- contents: {contents}\n"));
     out.push_str(&format!("-- {} tables\n", tables.len()));
     out.push_str(
         "-- NOTE: tables are dumped in listing order, NOT foreign-key order; \
@@ -82,7 +92,7 @@ pub async fn export_schema_sql(
             out.push('\n');
         }
         out.push_str(&format!("-- ===== Table: {} =====\n", table.name));
-        let dump = export_table_sql(connection.as_ref(), schema, &table.name, &noop).await?;
+        let dump = export_table_sql(connection.as_ref(), schema, &table.name, scope, &noop).await?;
         out.push_str(&dump);
         if !dump.ends_with('\n') {
             out.push('\n');
@@ -213,6 +223,7 @@ async fn export_table_sql(
     connection: &dyn EngineConnection,
     schema: &str,
     table: &str,
+    scope: ExportScope,
     on_progress: ProgressCallback<'_>,
 ) -> Result<String, AppError> {
     // table_meta validates existence (§5) and supplies the DDL + column order.
@@ -238,70 +249,77 @@ async fn export_table_sql(
         .join(", ");
 
     let mut out = String::new();
-    match &meta.ddl {
-        Some(ddl) => {
-            out.push_str(ddl);
-            // Terminate the CREATE statement so the dump is a valid, re-importable
-            // multi-statement script. Engines report the DDL verbatim WITHOUT a
-            // trailing `;` (SQLite's `sqlite_schema.sql`, MySQL's `SHOW CREATE
-            // TABLE`); Postgres's assembled DDL already ends `);`. Append `;`
-            // only when the DDL does not already end with one — so `import_sql`
-            // (and any external psql/sqlite3 restore) does not glue the first
-            // INSERT onto the CREATE.
-            if !ddl.trim_end().ends_with(';') {
-                out.push(';');
-            }
-            if !out.ends_with('\n') {
-                out.push('\n');
-            }
-        }
-        None => out.push_str(&format!("-- (no DDL available for {qualified})\n")),
-    }
-    out.push('\n');
 
-    let mut wrote_any = false;
-    let mut offset = 0u64;
-    let mut written = 0u64;
-    let mut total: Option<u64> = None;
-    loop {
-        let page = fetch_page(connection, schema, table, offset).await?;
-        if total.is_none() {
-            total = page.total_rows;
+    // --- structure (DDL) — emitted for Schema / Both ---
+    if scope.includes_schema() {
+        match &meta.ddl {
+            Some(ddl) => {
+                out.push_str(ddl);
+                // Terminate the CREATE statement so the dump is a valid,
+                // re-importable multi-statement script. Engines report the DDL
+                // verbatim WITHOUT a trailing `;` (SQLite's `sqlite_schema.sql`,
+                // MySQL's `SHOW CREATE TABLE`); Postgres's assembled DDL already
+                // ends `);`. Append `;` only when the DDL does not already end
+                // with one — so `import_sql` (and any external psql/sqlite3
+                // restore) does not glue the first INSERT onto the CREATE.
+                if !ddl.trim_end().ends_with(';') {
+                    out.push(';');
+                }
+                if !out.ends_with('\n') {
+                    out.push('\n');
+                }
+            }
+            None => out.push_str(&format!("-- (no DDL available for {qualified})\n")),
         }
-        if page.rows.is_empty() {
-            break;
-        }
-        for row in &page.rows {
-            let values = row
-                .iter()
-                .enumerate()
-                .map(|(i, v)| {
-                    if binary_cols.get(i).copied().unwrap_or(false) {
-                        binary_sql_value(connection, v)
-                    } else {
-                        sql_value(v)
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            out.push_str(&format!(
-                "INSERT INTO {qualified} ({quoted_cols}) VALUES ({values});\n"
-            ));
-            wrote_any = true;
-        }
-        written += page.rows.len() as u64;
-        on_progress(written, total.unwrap_or(written));
-        let fetched = page.rows.len() as u64;
-        if fetched < u64::from(EXPORT_BATCH_ROWS) {
-            break;
-        }
-        offset += fetched;
-    }
-    if !wrote_any {
-        out.push_str("-- (no rows)\n");
+        out.push('\n');
     }
 
-    Ok(out)
+    // --- data (INSERTs) — emitted for Data / Both ---
+    if scope.includes_data() {
+        let mut wrote_any = false;
+        let mut offset = 0u64;
+        let mut written = 0u64;
+        let mut total: Option<u64> = None;
+        loop {
+            let page = fetch_page(connection, schema, table, offset).await?;
+            if total.is_none() {
+                total = page.total_rows;
+            }
+            if page.rows.is_empty() {
+                break;
+            }
+            for row in &page.rows {
+                let values = row
+                    .iter()
+                    .enumerate()
+                    .map(|(i, v)| {
+                        if binary_cols.get(i).copied().unwrap_or(false) {
+                            binary_sql_value(connection, v)
+                        } else {
+                            sql_value(v)
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                out.push_str(&format!(
+                    "INSERT INTO {qualified} ({quoted_cols}) VALUES ({values});\n"
+                ));
+                wrote_any = true;
+            }
+            written += page.rows.len() as u64;
+            on_progress(written, total.unwrap_or(written));
+            let fetched = page.rows.len() as u64;
+            if fetched < u64::from(EXPORT_BATCH_ROWS) {
+                break;
+            }
+            offset += fetched;
+        }
+        if !wrote_any {
+            out.push_str("-- (no rows)\n");
+        }
+    }
+
+    Ok(out.trim_end().to_string() + "\n")
 }
 
 /// Render one cell of a binary column for the SQL dump. A `0x`-hex value (from
@@ -483,6 +501,7 @@ mod tests {
             "main",
             "t",
             ExportFormat::Csv,
+            ExportScope::Both,
             &|_: u64, _: u64| {},
         )
         .await
@@ -507,6 +526,7 @@ mod tests {
             "main",
             "t",
             ExportFormat::Sql,
+            ExportScope::Both,
             &|_: u64, _: u64| {},
         )
         .await
@@ -517,6 +537,56 @@ mod tests {
             sql.contains("INSERT INTO \"main\".\"t\" (\"id\", \"name\") VALUES (1, 'O''Brien');")
         );
         assert!(sql.contains("INSERT INTO \"main\".\"t\" (\"id\", \"name\") VALUES (2, NULL);"));
+    }
+
+    #[tokio::test]
+    async fn sql_scope_schema_only_has_ddl_no_inserts() {
+        let conn = FakeTable {
+            columns: vec!["id".into()],
+            rows: vec![vec![serde_json::json!(1)], vec![serde_json::json!(2)]],
+            ddl: Some("CREATE TABLE t (id INTEGER)".into()),
+        };
+        let (manager, handle) = manager_with(conn).await;
+        let sql = export_table(
+            &manager,
+            &handle,
+            "main",
+            "t",
+            ExportFormat::Sql,
+            ExportScope::Schema,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .unwrap();
+        assert!(sql.contains("CREATE TABLE t"));
+        assert!(
+            !sql.contains("INSERT INTO"),
+            "schema-only must emit no rows"
+        );
+        assert!(!sql.contains("-- (no rows)"));
+    }
+
+    #[tokio::test]
+    async fn sql_scope_data_only_has_inserts_no_ddl() {
+        let conn = FakeTable {
+            columns: vec!["id".into()],
+            rows: vec![vec![serde_json::json!(1)], vec![serde_json::json!(2)]],
+            ddl: Some("CREATE TABLE t (id INTEGER)".into()),
+        };
+        let (manager, handle) = manager_with(conn).await;
+        let sql = export_table(
+            &manager,
+            &handle,
+            "main",
+            "t",
+            ExportFormat::Sql,
+            ExportScope::Data,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .unwrap();
+        assert!(!sql.contains("CREATE TABLE"), "data-only must emit no DDL");
+        assert_eq!(sql.matches("INSERT INTO").count(), 2);
     }
 
     #[tokio::test]
@@ -533,6 +603,7 @@ mod tests {
             "main",
             "t",
             ExportFormat::Csv,
+            ExportScope::Both,
             &|_: u64, _: u64| {},
         )
         .await
@@ -554,6 +625,7 @@ mod tests {
             "main",
             "t",
             ExportFormat::Sql,
+            ExportScope::Both,
             &|_: u64, _: u64| {},
         )
         .await
@@ -579,6 +651,7 @@ mod tests {
             "main",
             "t",
             ExportFormat::Csv,
+            ExportScope::Both,
             &|_: u64, _: u64| {},
         )
         .await
@@ -593,6 +666,7 @@ mod tests {
             "main",
             "t",
             ExportFormat::Sql,
+            ExportScope::Both,
             &|_: u64, _: u64| {},
         )
         .await
@@ -608,9 +682,15 @@ mod tests {
             ddl: Some("CREATE TABLE t (id INTEGER)".into()),
         };
         let (manager, handle) = manager_with(conn).await;
-        let dump = export_schema_sql(&manager, &handle, "main", &|_: u64, _: u64| {})
-            .await
-            .unwrap();
+        let dump = export_schema_sql(
+            &manager,
+            &handle,
+            "main",
+            ExportScope::Both,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .unwrap();
         assert!(dump.starts_with("-- ByteTable schema dump"));
         assert!(dump.contains("-- schema: main"));
         assert!(dump.contains("-- ===== Table: t ====="));
@@ -664,6 +744,7 @@ mod tests {
             "main",
             "t",
             ExportFormat::Csv,
+            ExportScope::Both,
             &|_: u64, _: u64| {},
         )
         .await
@@ -682,6 +763,7 @@ mod tests {
             "main",
             "ghost",
             ExportFormat::Csv,
+            ExportScope::Both,
             &|_: u64, _: u64| {},
         )
         .await
@@ -784,6 +866,7 @@ mod sqlite_integration {
             "main",
             "users",
             ExportFormat::Csv,
+            ExportScope::Both,
             &|_: u64, _: u64| {},
         )
         .await
@@ -812,6 +895,7 @@ mod sqlite_integration {
             "main",
             "users",
             ExportFormat::Sql,
+            ExportScope::Both,
             &|_: u64, _: u64| {},
         )
         .await
@@ -835,6 +919,7 @@ mod sqlite_integration {
             "main",
             "empties",
             ExportFormat::Csv,
+            ExportScope::Both,
             &|_: u64, _: u64| {},
         )
         .await
@@ -846,6 +931,7 @@ mod sqlite_integration {
             "main",
             "empties",
             ExportFormat::Sql,
+            ExportScope::Both,
             &|_: u64, _: u64| {},
         )
         .await
@@ -857,9 +943,15 @@ mod sqlite_integration {
     async fn schema_dump_covers_all_tables_against_real_sqlite() {
         let dir = tempfile::tempdir().expect("tempdir");
         let (manager, handle) = open_fixture(&dir).await;
-        let dump = export_schema_sql(&manager, &handle, "main", &|_: u64, _: u64| {})
-            .await
-            .expect("export schema");
+        let dump = export_schema_sql(
+            &manager,
+            &handle,
+            "main",
+            ExportScope::Both,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .expect("export schema");
         assert!(dump.contains("-- ByteTable schema dump"));
         assert!(dump.contains("-- ===== Table: empties ====="));
         assert!(dump.contains("-- ===== Table: users ====="));
@@ -876,6 +968,7 @@ mod sqlite_integration {
             "main",
             "users",
             ExportFormat::Csv,
+            ExportScope::Both,
             &|_: u64, _: u64| {},
         )
         .await
@@ -916,6 +1009,7 @@ mod sqlite_integration {
             "main",
             "users",
             ExportFormat::Sql,
+            ExportScope::Both,
             &|_: u64, _: u64| {},
         )
         .await
@@ -947,6 +1041,7 @@ mod sqlite_integration {
             "main",
             "users",
             ExportFormat::Csv,
+            ExportScope::Both,
             &|_: u64, _: u64| {},
         )
         .await
@@ -1062,6 +1157,7 @@ mod sqlite_integration {
             "main",
             "gadgets",
             ExportFormat::Csv,
+            ExportScope::Both,
             &|_: u64, _: u64| {},
         )
         .await
@@ -1087,6 +1183,7 @@ mod sqlite_integration {
             "main",
             "users",
             ExportFormat::Csv,
+            ExportScope::Both,
             &|_: u64, _: u64| {},
         )
         .await

@@ -16,19 +16,22 @@
 // Session state (lines / history / buffer / timing) lives in the panel store
 // (state.ts) per session, so it survives workspace switches + panel hide.
 
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { connectionSchemas, connectionTables } from "../connections/api";
-import {
-  queryRun,
-  tableMeta,
-  type CellValue,
-  type QueryResult,
-} from "../../shared/api/engine";
+import { queryRun, tableMeta, type CellValue, type QueryResult } from "../../shared/api/engine";
 import { appErrorMessage } from "../../shared/api/error";
 import type { Engine } from "../../shared/types";
 import { Icon } from "../../shared/ui/Icon";
 import { IconBtn } from "../../shared/ui/IconBtn";
+import { columnsKey, tablesKey, useIntrospectionStore } from "../introspection/state";
+import {
+  suggestSql,
+  SUGGEST_KIND_LABEL,
+  type EditorSchema,
+  type Suggestion,
+} from "../workspaces/components/sqlSuggest";
 import { useWorkspacesStore } from "../workspaces/state";
 import type { Workspace } from "../workspaces/types";
 import { usePanelStore, type TermLine, type TermSession, type TermTextLine } from "./state";
@@ -80,11 +83,7 @@ function termConfig(engine: Engine, connName: string): TermConfig {
 // Core builder: `headers` are column titles, `cells` is a row-major grid of
 // already-stringified values, `numeric` flags right-aligned columns. Returns
 // { cls, text } lines: a centered header, a `--+--` rule, then one row each.
-function asciiTableCore(
-  headers: string[],
-  cells: string[][],
-  numeric: boolean[],
-): TermTextLine[] {
+function asciiTableCore(headers: string[], cells: string[][], numeric: boolean[]): TermTextLine[] {
   const widths = headers.map((h, i) =>
     Math.max(h.length, ...cells.map((r) => (r[i] ?? "").length), 0),
   );
@@ -123,6 +122,16 @@ function asciiObjTable(
   return asciiTableCore(headers, cells, numeric ?? headers.map(() => false));
 }
 
+/** Open-autocomplete state for the terminal input: the replace range within
+ *  the live input line, the ranked items, and the highlighted row. */
+interface AcState {
+  /** Replace [from, to) within the input string with the chosen insert. */
+  from: number;
+  to: number;
+  items: Suggestion[];
+  sel: number;
+}
+
 interface SqlTerminalTabProps {
   workspace: Workspace;
   session: TermSession;
@@ -156,9 +165,58 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
   // History cursor: -1 = the live (unsubmitted) input, 0 = most recent.
   const [hi, setHi] = useState(-1);
   const [running, setRunning] = useState(false);
+  // Autocomplete popup state (null = closed). `sel` is the highlighted row.
+  const [ac, setAc] = useState<AcState | null>(null);
 
   const bodyRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // --- Autocomplete schema (shares the editor's suggester, sqlSuggest) -------
+  // Same source as the SQL editor: the active connection's introspected schema
+  // (table list + cached columns), read live so columns appear as they warm.
+  const tablesCache = useIntrospectionStore((s) => s.tables);
+  const columnsCache = useIntrospectionStore((s) => s.columns);
+  const loadTables = useIntrospectionStore((s) => s.loadTables);
+  const loadColumns = useIntrospectionStore((s) => s.loadColumns);
+  const tableEntries = tablesCache[tablesKey(workspace.handleId, schemaName)]?.tables;
+
+  const editorSchema = useMemo<EditorSchema>(
+    () => ({
+      tables: (tableEntries ?? []).map((t) => ({
+        name: t.name,
+        columns: (
+          columnsCache[columnsKey(workspace.handleId, schemaName, t.name)]?.columns ?? []
+        ).map((c) => ({ name: c.name, pk: c.pk })),
+      })),
+    }),
+    [tableEntries, columnsCache, workspace.handleId, schemaName],
+  );
+  // Read the latest schema from the keystroke handlers without stale closures.
+  const schemaRef = useRef(editorSchema);
+  schemaRef.current = editorSchema;
+
+  // Warm the table list (cache-first; a no-op once the sidebar has fetched it).
+  useEffect(() => {
+    void loadTables(workspace.handleId, schemaName);
+  }, [loadTables, workspace.handleId, schemaName]);
+
+  // Warm columns for tables referenced in the pending statement (buffer + the
+  // live input line). Cache-first, so re-runs are free — no per-keystroke call.
+  const pendingText = (session.buffer ? session.buffer + "\n" : "") + input;
+  const referencedNames = useMemo(() => {
+    const set = new Set<string>();
+    const re = /\b(?:from|join|into|update)\s+([a-z_][\w$]*)/gi;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(pendingText)) !== null) set.add(m[1]!.toLowerCase());
+    return set;
+  }, [pendingText]);
+  useEffect(() => {
+    for (const t of tableEntries ?? []) {
+      if (referencedNames.has(t.name.toLowerCase())) {
+        void loadColumns(workspace.handleId, schemaName, t.name);
+      }
+    }
+  }, [referencedNames, tableEntries, loadColumns, workspace.handleId, schemaName]);
 
   // Banner: seed on first mount when the session has no lines yet.
   const seeded = useRef(false);
@@ -591,7 +649,80 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
     setInput("");
   };
 
+  // --- autocomplete helpers --------------------------------------------------
+  // Recompute suggestions for the current line + caret. Context spans the whole
+  // pending statement (any buffered lines + the live input), but the replace
+  // range is mapped back into input-line coordinates (the typed word is always
+  // within the live line). null result closes the popup.
+  const computeAc = (value: string, caret: number, explicit: boolean) => {
+    const prefix = session.buffer ? session.buffer + "\n" : "";
+    const res = suggestSql(prefix + value, prefix.length + caret, schemaRef.current, { explicit });
+    if (!res) {
+      setAc(null);
+      return;
+    }
+    setAc({
+      from: Math.max(0, res.from - prefix.length),
+      to: res.to - prefix.length,
+      items: res.items,
+      sel: 0,
+    });
+  };
+
+  // Accept a suggestion: splice its insert into the line, close the popup, and
+  // restore focus + caret just past the inserted text.
+  const acceptItem = (state: AcState, item: Suggestion | undefined) => {
+    if (!item) return;
+    const next = input.slice(0, state.from) + item.insert + input.slice(state.to);
+    const pos = state.from + item.insert.length;
+    setInput(next);
+    setAc(null);
+    setHi(-1);
+    requestAnimationFrame(() => {
+      const el = inputRef.current;
+      if (el) {
+        el.focus();
+        el.setSelectionRange(pos, pos);
+      }
+    });
+  };
+
   const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // While the popup is open it owns navigation / accept / dismiss.
+    if (ac && ac.items.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setAc({ ...ac, sel: (ac.sel + 1) % ac.items.length });
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setAc({ ...ac, sel: (ac.sel - 1 + ac.items.length) % ac.items.length });
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        acceptItem(ac, ac.items[ac.sel]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setAc(null);
+        return;
+      }
+      // Caret-moving keys close the popup, then perform their default move
+      // (onKeyUp re-derives context at the new caret).
+      if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) setAc(null);
+    }
+
+    // Ctrl/Cmd+Space triggers the popup manually (even with no partial word).
+    if ((e.ctrlKey || e.metaKey) && e.key === " ") {
+      e.preventDefault();
+      const el = e.currentTarget;
+      computeAc(el.value, el.selectionStart ?? el.value.length, true);
+      return;
+    }
+
     if (e.key === "Enter") {
       e.preventDefault();
       submit(input);
@@ -625,6 +756,15 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
     }
   };
 
+  // Re-derive suggestions after caret-only moves (Arrow Left/Right, Home/End)
+  // that don't fire onChange.
+  const onKeyUp = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) {
+      const el = e.currentTarget;
+      computeAc(el.value, el.selectionStart ?? el.value.length, false);
+    }
+  };
+
   const snippets =
     engine === "sqlite"
       ? [".tables", ".schema users", "SELECT * FROM users LIMIT 5;"]
@@ -637,6 +777,39 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
         : ["\\dt", "\\d orders", "SELECT * FROM users WHERE country = 'DE';"];
 
   const promptStr = session.buffer ? cfg.cont : cfg.prompt;
+
+  // Keep the highlighted row visible as ↑/↓ move the selection.
+  const acRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!ac) return;
+    acRef.current?.querySelector<HTMLElement>(".ac-item.sel")?.scrollIntoView({ block: "nearest" });
+  }, [ac]);
+
+  // Caret-x of the popup: width of the line up to the replace start, measured in
+  // the input's own font (canvas), offset by the prompt width (input.offsetLeft)
+  // and any horizontal scroll. The popup is portaled to <body> with fixed
+  // positioning so the terminal body's `overflow-y: auto` can't clip it; coords
+  // come from the input's viewport rect (anchored just ABOVE the input line).
+  const measureRef = useRef<CanvasRenderingContext2D | null>(null);
+  const acPos = (() => {
+    const el = inputRef.current;
+    if (!ac || !el) return null;
+    const rect = el.getBoundingClientRect();
+    let x = rect.left;
+    let ctx = measureRef.current;
+    if (!ctx) {
+      ctx = document.createElement("canvas").getContext("2d");
+      measureRef.current = ctx;
+    }
+    if (ctx) {
+      // Build the font from components — WKWebView (Tauri/macOS) often returns
+      // an empty `font` shorthand, which would silently fall back to 10px sans.
+      const cs = getComputedStyle(el);
+      ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      x = rect.left + ctx.measureText(input.slice(0, ac.from)).width - el.scrollLeft;
+    }
+    return { left: Math.max(8, x), bottom: window.innerHeight - rect.top + 4 };
+  })();
 
   return (
     <div className="rcli term">
@@ -656,6 +829,7 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
               className="snippet-chip"
               onClick={() => {
                 setInput(c);
+                setAc(null);
                 inputRef.current?.focus();
               }}
             >
@@ -677,9 +851,9 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
           "kind" in l ? (
             <TermGrid key={i} columns={l.columns} rows={l.rows} />
           ) : (
-          <div key={i} className={"rcli-line " + l.cls}>
-            {l.text || " "}
-          </div>
+            <div key={i} className={"rcli-line " + l.cls}>
+              {l.text || " "}
+            </div>
           ),
         )}
         <div className="rcli-inputline">
@@ -694,11 +868,53 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
             autoCapitalize="off"
             autoCorrect="off"
             aria-label="SQL command"
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value);
+              computeAc(e.target.value, e.target.selectionStart ?? e.target.value.length, false);
+            }}
             onKeyDown={onKey}
+            onKeyUp={onKeyUp}
+            onBlur={() => setAc(null)}
           />
         </div>
       </div>
+      {ac && ac.items.length > 0 && acPos
+        ? createPortal(
+            <div
+              ref={acRef}
+              className="ac-popup term-ac"
+              style={{ left: acPos.left, bottom: acPos.bottom }}
+              role="listbox"
+            >
+              {ac.items.map((it, i) => (
+                <div
+                  key={i}
+                  className={"ac-item" + (i === ac.sel ? " sel" : "")}
+                  role="option"
+                  aria-selected={i === ac.sel}
+                  // mousedown (not click) so accept runs before the input blurs.
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    acceptItem(ac, it);
+                  }}
+                  onMouseEnter={() => setAc({ ...ac, sel: i })}
+                >
+                  <span
+                    className={"msym ac-icon ac-icon-" + it.kind + (it.pk ? " ac-icon-pk" : "")}
+                  >
+                    {it.icon}
+                  </span>
+                  <span className="ac-label">{it.label}</span>
+                  {it.kind === "column" && it.source ? (
+                    <span className="ac-hint">{it.source}</span>
+                  ) : null}
+                  <span className="ac-kind">{SUGGEST_KIND_LABEL[it.kind]}</span>
+                </div>
+              ))}
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

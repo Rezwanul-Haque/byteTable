@@ -57,6 +57,77 @@
   caret-color: var(--accent);
 }
 
+/* Autocomplete popup for the terminal input — the design's .ac-* rows
+   (ByteTable.html), shared with the SQL editor's suggester (sqlSuggest). The
+   REPL input sits at the bottom of the scroll area, so the popup is anchored
+   ABOVE the input line; its left is the measured caret-x (set inline). */
+.rcli-inputline {
+  position: relative;
+}
+/* Portaled to <body> with fixed left/bottom (set inline) so the terminal
+   body's overflow can't clip it. */
+.term-ac {
+  position: fixed;
+}
+.ac-popup {
+  z-index: 20;
+  min-width: 200px;
+  max-width: 280px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.5);
+  padding: 4px;
+}
+.ac-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.ac-item.sel {
+  background: color-mix(in oklab, var(--accent) 16%, var(--bg3));
+}
+.ac-label {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ac-hint {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+.ac-kind {
+  flex-shrink: 0;
+  font-size: 9.5px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.ac-icon {
+  flex-shrink: 0;
+  font-size: 14px;
+  color: var(--text-faint);
+}
+.ac-icon-fn {
+  color: #c678dd;
+}
+.ac-icon-pk {
+  color: var(--accent);
+  transform: rotate(45deg);
+}
+
 /* redis-cli transcript line colors (M14) — byte-exact from ByteTable.html
    (.cli-* + .cli-info). Shared with the Redis terminal session body. */
 .cli-prompt {

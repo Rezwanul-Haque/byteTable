@@ -260,7 +260,9 @@ impl EngineConnection for MysqlEngineConnection {
         // given. Best effort: a bad schema simply leaves the current default.
         if let Some(schema) = &options.schema {
             use sqlx::Executor as _;
-            let _ = conn.execute(format!("USE {}", quote_ident(schema)).as_str()).await;
+            let _ = conn
+                .execute(format!("USE {}", quote_ident(schema)).as_str())
+                .await;
         }
 
         let rows = sqlx::query(sql)

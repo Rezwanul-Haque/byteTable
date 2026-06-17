@@ -17,7 +17,8 @@
     "prepare": "husky"
   },
   "lint-staged": {
-    "*.{ts,tsx,js,jsx,json,css,md,html}": "prettier --write"
+    "*.{ts,tsx,js,jsx,json,css,md,html}": "prettier --write",
+    "src-tauri/**/*.rs": "rustfmt --edition 2021"
   },
   "dependencies": {
     "@codemirror/autocomplete": "6.20.3",

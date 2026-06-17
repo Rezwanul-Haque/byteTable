@@ -250,7 +250,9 @@ impl EngineConnection for PostgresEngineConnection {
         // Best effort: a bad schema simply leaves the default search_path.
         if let Some(schema) = &options.schema {
             use sqlx::Executor as _;
-            let _ = conn.execute(format!("SET search_path TO {}", quote_ident(schema)).as_str()).await;
+            let _ = conn
+                .execute(format!("SET search_path TO {}", quote_ident(schema)).as_str())
+                .await;
         }
 
         // Read one extra row to detect truncation (matches the SQLite adapter).

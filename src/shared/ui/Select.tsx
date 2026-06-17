@@ -95,7 +95,6 @@ export function Select<T extends string>({
       document.removeEventListener("keydown", onKey);
       window.removeEventListener("blur", onBlur);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   // Focus the selected option when the popover opens (keyboard users land on

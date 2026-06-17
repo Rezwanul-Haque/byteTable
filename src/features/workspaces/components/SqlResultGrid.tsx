@@ -75,6 +75,11 @@ export function SqlResultGrid({ result }: { result: QueryResult }) {
     return () => obs.disconnect();
   }, []);
 
+  // React Compiler bails out of memoizing this component because
+  // `useVirtualizer()` returns non-memoizable functions. Safe here: its outputs
+  // (`virtualRows`/`totalHeight`) are consumed in this component's own render
+  // and never passed to a memoized child, so there's no stale-UI risk.
+  // eslint-disable-next-line react-hooks/incompatible-library
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,

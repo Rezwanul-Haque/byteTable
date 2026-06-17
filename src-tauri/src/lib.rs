@@ -302,10 +302,8 @@ pub fn run() {
             tauri::RunEvent::Reopen {
                 has_visible_windows,
                 ..
-            } => {
-                if !has_visible_windows {
-                    show_main_window(app_handle);
-                }
+            } if !has_visible_windows => {
+                show_main_window(app_handle);
             }
             _ => {}
         });

@@ -14,6 +14,8 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
+  /* Positioning context for the right-side drawers + scrim (Prompts 1–2). */
+  position: relative;
 }
 
 .sql-toolbar {
@@ -363,6 +365,39 @@
   flex-direction: column;
 }
 
+/* Prompt 4/5: when no results are shown, or the pane is minimized, the editor
+   wrap grows to reclaim the freed space. */
+.sql-editor-wrap.grow {
+  height: auto;
+  flex: 1 1 auto;
+}
+
+/* Minimized pane shrinks to just its header bar (Prompt 5). */
+.sql-results.minimized {
+  flex: none;
+}
+
+.results-min {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  color: var(--text-faint);
+  flex: none;
+  margin-left: -4px;
+}
+
+.results-min:hover {
+  color: var(--accent);
+  background: var(--bg2);
+}
+
+.error-bar {
+  gap: 6px;
+}
+
 .sql-result-bar {
   display: flex;
   align-items: center;
@@ -559,4 +594,193 @@
 .saved-del:hover {
   color: #e06c75;
   background: #e06c7518;
+}
+
+/* ---------- right-side drawers (saved queries / history, Prompts 1–2) ----------
+   Shared scrim + sliding panel, ported byte-exact from ByteTable.html. Both
+   drawers (SavedQueriesDrawer / HistoryDrawer) use these classes so they look
+   identical. The scrim/drawer are absolutely positioned within .sql-tab. */
+.drawer-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+  z-index: 45;
+}
+
+.drawer-scrim.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sq-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 360px;
+  max-width: 84%;
+  background: var(--bg1);
+  border-left: 1px solid var(--border);
+  box-shadow: -16px 0 44px rgba(0, 0, 0, 0.4);
+  transform: translateX(100%);
+  transition: transform 0.22s cubic-bezier(0.4, 0.1, 0.2, 1);
+  z-index: 46;
+  display: flex;
+  flex-direction: column;
+}
+
+.sq-drawer.open {
+  transform: translateX(0);
+}
+
+.sq-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 12px 4px 14px;
+}
+
+.sq-drawer-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.sq-drawer-sub {
+  padding: 0 14px 10px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.sq-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 12px 10px;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 6px 0 9px;
+}
+
+.sq-search:focus-within {
+  border-color: var(--accent);
+}
+
+.sq-search input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  font-size: 12.5px;
+  padding: 7px 0;
+  min-width: 0;
+}
+
+.sq-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.sq-empty {
+  padding: 24px 12px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-faint);
+  line-height: 1.5;
+}
+
+.sq-item {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 11px;
+  cursor: pointer;
+  transition: border-color 0.12s;
+}
+
+.sq-item:hover {
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+}
+
+.sq-item-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sq-item-name {
+  flex: 1;
+  font-size: 12.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sq-item-del {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  color: var(--text-faint);
+  opacity: 0;
+  transition: opacity 0.1s;
+  flex: none;
+}
+
+.sq-item:hover .sq-item-del {
+  opacity: 1;
+}
+
+.sq-item-del:hover {
+  color: #e06c75;
+  background: #e06c7518;
+}
+
+.sq-item-sql {
+  margin: 7px 0 0;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 76px;
+  overflow: hidden;
+}
+
+/* SQL token colors for the drawer previews (highlightSql output). Identical
+   to the §3.7 palette; declared here so the drawers are self-contained. */
+.sq-item-sql .sql-kw {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.sq-item-sql .sql-string {
+  color: #e5c07b;
+}
+
+.sq-item-sql .sql-num {
+  color: #7fb8e8;
+}
+
+.sq-item-sql .sql-func {
+  color: #c678dd;
+}
+
+.sq-item-sql .sql-comment {
+  color: var(--text-faint);
+  font-style: italic;
 }

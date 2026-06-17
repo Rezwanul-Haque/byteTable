@@ -21,6 +21,7 @@
 
 import { useEffect, useState } from "react";
 
+import { highlightSql } from "../../browse/highlightSql";
 import { queryRun } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
 import { Btn } from "../../../shared/ui/Btn";
@@ -28,9 +29,10 @@ import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { useToast } from "../../../shared/ui/toastContext";
 import { columnsKey, useIntrospectionStore } from "../../introspection/state";
+import { type SavedQuery } from "../../saved_queries/api";
 import { selectQueriesForConnection, useSavedQueriesStore } from "../../saved_queries/state";
 import { useWorkspacesStore } from "../state";
-import type { Tab, Workspace } from "../types";
+import type { SqlHistoryEntry, Tab, Workspace } from "../types";
 import { ExecutionMinimap, ExplainPanel } from "./explain";
 import { detectedTable } from "./explainClauses";
 import { SqlCodeEditor } from "./SqlCodeEditor";
@@ -38,6 +40,15 @@ import { SqlResultGrid } from "./SqlResultGrid";
 import "./SqlEditorTab.css";
 
 type SqlTab = Extract<Tab, { kind: "sql" }>;
+
+/** Cap on the SQL shown in a drawer preview (full multi-line, but bounded). */
+const PREVIEW_MAX = 240;
+
+/** Truncate (with ellipsis) then syntax-highlight SQL for a drawer preview. */
+function previewHtml(sql: string): string {
+  const clipped = sql.length > PREVIEW_MAX ? sql.slice(0, PREVIEW_MAX) + "…" : sql;
+  return highlightSql(clipped);
+}
 
 /** SQLite-appropriate starter snippets (prototype chips, adapted to SQLite). */
 const SQL_SNIPPETS: { label: string; sql: string }[] = [
@@ -53,12 +64,8 @@ const SQL_SNIPPETS: { label: string; sql: string }[] = [
   { label: "recent rows", sql: "SELECT *\nFROM table_name\nORDER BY rowid DESC\nLIMIT 50;" },
 ];
 
-type Popover = "save" | "saved" | "history" | null;
-
-/** Collapse whitespace + truncate a SQL string for popover previews. */
-function preview(sql: string, max: number): string {
-  return sql.replace(/\s+/g, " ").trim().slice(0, max);
-}
+/** Only the save popover remains a popover; browse/manage moved to drawers. */
+type Popover = "save" | null;
 
 export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: SqlTab }) {
   const toast = useToast();
@@ -66,6 +73,8 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   const setSqlResult = useWorkspacesStore((s) => s.setSqlResult);
   const setSqlError = useWorkspacesStore((s) => s.setSqlError);
   const pushSqlHistory = useWorkspacesStore((s) => s.pushSqlHistory);
+
+  const clearSqlResults = useWorkspacesStore((s) => s.clearSqlResults);
 
   const savedQueries = useSavedQueriesStore((s) => s.savedQueries);
   const loadSaved = useSavedQueriesStore((s) => s.load);
@@ -76,6 +85,10 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   const [pop, setPop] = useState<Popover>(null);
   const [saveName, setSaveName] = useState("");
   const [attach, setAttach] = useState(false);
+  // Right-side drawers (Prompts 1–2) and results minimize toggle (Prompt 5).
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [resultsMin, setResultsMin] = useState(false);
   // Transient view toggle: the results area shows either the query result
   // ('result') or the execution-order teaching panel ('explain'). Local —
   // it's a view flip, not buffer/result state, so it need not survive a switch.
@@ -114,6 +127,22 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
     };
   }, [pop]);
 
+  // Prompt 3: Ctrl/Cmd+S opens the save-query popover. The SQL tab is mounted
+  // only while active (WorkspaceContent renders just the active tab), so this
+  // window listener is correctly scoped to the active SQL tab — it never
+  // collides with the data grid's own Ctrl+S (a different tab kind, never
+  // mounted at the same time). preventDefault stops the browser save dialog.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        setPop("save");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const text = tab.text;
 
   // Optional, client-side enrichment for the Explain panel: if the detected
@@ -135,6 +164,8 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
     if (running || sql === "") return;
     setRunning(true);
     setPop(null);
+    // A new run always re-expands the results pane (Prompt 5).
+    setResultsMin(false);
     queryRun(workspace.handleId, sql, { schema: schemaName })
       .then((result) => {
         setSqlResult(tab.id, result);
@@ -181,6 +212,24 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   const visibleSaved = selectQueriesForConnection(savedQueries, workspace.saved.id);
   const { result, error, history } = tab;
   const runDisabled = running || text.trim() === "";
+
+  // Prompt 4: the results pane only exists once there's something to show —
+  // a result, an error, or the Explain view. Otherwise the editor grows to
+  // fill the tab (no placeholder pane). Prompt 5: a minimized pane also lets
+  // the editor reclaim the space.
+  const resultsShown = view === "explain" || result != null || error != null;
+  const editorGrows = !resultsShown || resultsMin;
+  const minBtn = (
+    <button
+      type="button"
+      className="results-min"
+      title={resultsMin ? "Expand" : "Minimize"}
+      aria-label={resultsMin ? "Expand results" : "Minimize results"}
+      onClick={() => setResultsMin((m) => !m)}
+    >
+      <Icon name={resultsMin ? "expand_less" : "expand_more"} size={16} />
+    </button>
+  );
 
   return (
     <div className="sql-tab">
@@ -252,176 +301,318 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
           ) : null}
         </div>
 
-        {/* saved-queries list popover */}
-        <div className="editor-pop-anchor" style={{ position: "relative" }}>
-          <IconBtn
-            icon="bookmarks"
-            title="Saved queries"
-            active={pop === "saved"}
-            onClick={() => setPop(pop === "saved" ? null : "saved")}
-          />
-          {pop === "saved" ? (
-            <div className="editor-pop history-pop" role="menu" aria-label="Saved queries">
-              <div className="history-pop-title">Saved queries</div>
-              {visibleSaved.length === 0 ? (
-                <div className="history-empty">
-                  Nothing saved yet — write a query and hit <Icon name="bookmark_add" size={12} />
-                </div>
-              ) : (
-                visibleSaved.map((q) => {
-                  const scoped = q.connectionId != null;
-                  return (
-                    <div
-                      key={q.id}
-                      className="history-item"
-                      role="menuitem"
-                      tabIndex={0}
-                      onClick={() => load(q.sql)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") load(q.sql);
-                      }}
-                    >
-                      <Icon name="bookmark" size={13} style={{ color: "var(--accent)" }} />
-                      <span className="saved-name">{q.name}</span>
-                      <span className="history-sql">{preview(q.sql, 30)}</span>
-                      <span className="saved-scope" title={scoped ? "This workspace" : "Global"}>
-                        {scoped ? "this workspace" : "global"}
-                      </span>
-                      <button
-                        type="button"
-                        className="saved-del"
-                        title="Delete"
-                        aria-label={"Delete " + q.name}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void removeQuery(q.id).catch((err: unknown) =>
-                            toast(appErrorMessage(err, "Could not delete query."), "err"),
-                          );
-                        }}
-                      >
-                        <Icon name="delete" size={13} />
-                      </button>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          ) : null}
-        </div>
+        {/* saved-queries drawer opener (Prompt 1) */}
+        <IconBtn
+          icon="bookmarks"
+          title="Saved queries"
+          active={drawerOpen}
+          onClick={() => setDrawerOpen(true)}
+        />
 
-        {/* this-tab history popover */}
-        <div className="editor-pop-anchor" style={{ position: "relative" }}>
-          <IconBtn
-            icon="history"
-            title="Query history"
-            active={pop === "history"}
-            onClick={() => setPop(pop === "history" ? null : "history")}
-          />
-          {pop === "history" ? (
-            <div className="editor-pop history-pop" role="menu" aria-label="Query history">
-              <div className="history-pop-title">Recent queries · this tab</div>
-              {history.length === 0 ? (
-                <div className="history-empty">Nothing yet — run a query</div>
-              ) : (
-                history.map((h, i) => (
-                  <div
-                    key={i}
-                    className="history-item"
-                    role="menuitem"
-                    tabIndex={0}
-                    onClick={() => load(h.sql)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") load(h.sql);
-                    }}
-                  >
-                    <Icon
-                      name={h.ok ? "check" : "close"}
-                      size={13}
-                      style={{ color: h.ok ? "var(--accent)" : "#e06c75" }}
-                    />
-                    <span className="history-sql">{preview(h.sql, 64)}</span>
-                    {h.ok && h.rowCount !== undefined ? (
-                      <span className="history-meta">{h.rowCount} rows</span>
-                    ) : null}
-                  </div>
-                ))
-              )}
-            </div>
-          ) : null}
-        </div>
+        {/* this-tab history drawer opener (Prompt 2) */}
+        <IconBtn
+          icon="history"
+          title="Query history"
+          active={historyOpen}
+          onClick={() => setHistoryOpen(true)}
+        />
       </div>
 
-      <div className="sql-editor-wrap">
+      <div className={"sql-editor-wrap" + (editorGrows ? " grow" : "")}>
         <div className="sql-editor-main">
           <SqlCodeEditor value={text} onChange={(v) => setSqlText(tab.id, v)} onRun={run} />
         </div>
         <ExecutionMinimap sql={text} />
       </div>
 
-      <div className="sql-results">
-        {view === "explain" ? (
-          <>
-            <div className="sql-result-bar explain-bar">
-              <button type="button" className="result-tab" onClick={() => setView("result")}>
-                <Icon name="arrow_back" size={13} /> Results
-              </button>
-              <span className="result-tab active">
-                <Icon name="account_tree" size={13} /> Explain &amp; analyze
-              </span>
-              <div style={{ flex: 1 }} />
-              <span className="dim">{schemaName}</span>
-            </div>
-            <ExplainPanel sql={text} schemaName={schemaName} columnCount={columnCount} />
-          </>
-        ) : error ? (
-          <div className="sql-error" role="alert">
-            <Icon name="error" size={18} />
-            <div>
-              <div className="sql-error-title">Query failed</div>
-              <div className="sql-error-msg">{error}</div>
-            </div>
-          </div>
-        ) : result ? (
-          <>
-            <div className="sql-result-bar">
-              {result.columns.length === 0 ? (
-                <>
-                  <Icon name="check_circle" size={14} style={{ color: "var(--accent)" }} />
-                  <span>Query OK</span>
-                  <span className="dim">·</span>
-                  <span className="dim">{result.elapsedMs} ms</span>
-                  <span className="dim">·</span>
-                  <span className="dim">{schemaName}</span>
-                </>
-              ) : (
-                <>
-                  <Icon name="check_circle" size={14} style={{ color: "var(--accent)" }} />
-                  <span>
-                    {result.rowCount} row{result.rowCount === 1 ? "" : "s"}
-                  </span>
-                  {result.truncated ? <span className="dim">(truncated)</span> : null}
-                  <span className="dim">·</span>
-                  <span className="dim">{result.elapsedMs} ms</span>
-                  <span className="dim">·</span>
-                  <span className="dim">{schemaName}</span>
-                </>
+      {resultsShown ? (
+        <div className={"sql-results" + (resultsMin ? " minimized" : "")}>
+          {view === "explain" ? (
+            <>
+              <div className="sql-result-bar explain-bar">
+                {minBtn}
+                <button type="button" className="result-tab" onClick={() => setView("result")}>
+                  <Icon name="arrow_back" size={13} /> Results
+                </button>
+                <span className="result-tab active">
+                  <Icon name="account_tree" size={13} /> Explain &amp; analyze
+                </span>
+                <div style={{ flex: 1 }} />
+                <span className="dim">{schemaName}</span>
+              </div>
+              {resultsMin ? null : (
+                <ExplainPanel sql={text} schemaName={schemaName} columnCount={columnCount} />
               )}
-            </div>
-            {result.columns.length === 0 ? null : (
-              // A SELECT with columns renders the grid even with zero rows, so
-              // the column headers stay visible (the status row above already
-              // reports the row count). Only a column-less result (DML/DDL) has
-              // no grid to show.
-              <SqlResultGrid result={result} />
-            )}
-          </>
-        ) : (
-          <div className="sql-placeholder">
-            <Icon name="terminal" size={28} style={{ color: "var(--text-faint)" }} />
-            <span>Run a query to see results — try a snippet above</span>
-          </div>
-        )}
-      </div>
+            </>
+          ) : error ? (
+            <>
+              <div className="sql-result-bar error-bar" role="alert">
+                {minBtn}
+                <Icon name="error" size={14} style={{ color: "#e06c75" }} />
+                <span style={{ color: "#e06c75" }}>Query failed</span>
+                <div style={{ flex: 1 }} />
+                <IconBtn
+                  icon="close"
+                  size={14}
+                  title="Dismiss results"
+                  onClick={() => clearSqlResults(tab.id)}
+                />
+              </div>
+              {resultsMin ? null : (
+                <div className="sql-error">
+                  <Icon name="error" size={18} />
+                  <div>
+                    <div className="sql-error-title">Query failed</div>
+                    <div className="sql-error-msg">{error}</div>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : result ? (
+            <>
+              <div className="sql-result-bar">
+                {minBtn}
+                {result.columns.length === 0 ? (
+                  <>
+                    <Icon name="check_circle" size={14} style={{ color: "var(--accent)" }} />
+                    <span>Query OK</span>
+                    <span className="dim">·</span>
+                    <span className="dim">{result.elapsedMs} ms</span>
+                    <span className="dim">·</span>
+                    <span className="dim">{schemaName}</span>
+                  </>
+                ) : (
+                  <>
+                    <Icon name="check_circle" size={14} style={{ color: "var(--accent)" }} />
+                    <span>
+                      {result.rowCount} row{result.rowCount === 1 ? "" : "s"}
+                    </span>
+                    {result.truncated ? <span className="dim">(truncated)</span> : null}
+                    <span className="dim">·</span>
+                    <span className="dim">{result.elapsedMs} ms</span>
+                    <span className="dim">·</span>
+                    <span className="dim">{schemaName}</span>
+                  </>
+                )}
+                <div style={{ flex: 1 }} />
+                <IconBtn
+                  icon="close"
+                  size={14}
+                  title="Close results"
+                  onClick={() => clearSqlResults(tab.id)}
+                />
+              </div>
+              {resultsMin || result.columns.length === 0 ? null : (
+                // A SELECT with columns renders the grid even with zero rows, so
+                // the column headers stay visible (the status row above already
+                // reports the row count). Only a column-less result (DML/DDL) has
+                // no grid to show.
+                <SqlResultGrid result={result} />
+              )}
+            </>
+          ) : null}
+        </div>
+      ) : null}
+
+      <SavedQueriesDrawer
+        open={drawerOpen}
+        queries={visibleSaved}
+        onClose={() => setDrawerOpen(false)}
+        onLoad={(q) => {
+          load(q.sql);
+          setDrawerOpen(false);
+          toast(`Loaded “${q.name}”`, "ok");
+        }}
+        onDelete={(id) =>
+          void removeQuery(id).catch((err: unknown) =>
+            toast(appErrorMessage(err, "Could not delete query."), "err"),
+          )
+        }
+      />
+
+      <HistoryDrawer
+        open={historyOpen}
+        history={history}
+        onClose={() => setHistoryOpen(false)}
+        onLoad={(h) => {
+          load(h.sql);
+          setHistoryOpen(false);
+        }}
+      />
     </div>
+  );
+}
+
+// ---- saved-queries side drawer (browse / search / load / delete) ----------
+// Shared right-side drawer pattern (Prompt 1): a dimmed scrim + a sliding
+// panel. Searches saved queries by name OR SQL content, shows each with a
+// full, multi-line, syntax-highlighted SQL preview, loads on click, and
+// deletes via a hover trash icon. The per-row scope chip (global /
+// this-workspace) preserves this app's workspace-attachment feature.
+function SavedQueriesDrawer({
+  open,
+  queries,
+  onClose,
+  onLoad,
+  onDelete,
+}: {
+  open: boolean;
+  queries: SavedQuery[];
+  onClose: () => void;
+  onLoad: (q: SavedQuery) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [q, setQ] = useState("");
+  // Esc closes the drawer (matches the popover dismissal it replaces).
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  const ql = q.trim().toLowerCase();
+  const list = ql
+    ? queries.filter(
+        (x) => x.name.toLowerCase().includes(ql) || x.sql.toLowerCase().includes(ql),
+      )
+    : queries;
+
+  return (
+    <>
+      <div className={"drawer-scrim" + (open ? " show" : "")} onClick={onClose} />
+      <aside className={"sq-drawer" + (open ? " open" : "")} aria-hidden={!open}>
+        <div className="sq-drawer-head">
+          <span className="sq-drawer-title">
+            <Icon name="bookmarks" size={16} style={{ color: "var(--accent)" }} /> Saved queries
+          </span>
+          <IconBtn icon="close" onClick={onClose} title="Close" />
+        </div>
+        <div className="sq-drawer-sub">Shared across all workspaces</div>
+        <div className="sq-search">
+          <Icon name="search" size={15} style={{ color: "var(--text-faint)" }} />
+          <input
+            placeholder="Search name or SQL…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            spellCheck={false}
+          />
+          {q ? <IconBtn icon="close" size={13} title="Clear" onClick={() => setQ("")} /> : null}
+        </div>
+        <div className="sq-list">
+          {list.length === 0 ? (
+            <div className="sq-empty">
+              {queries.length === 0
+                ? "Nothing saved yet — write a query and use the bookmark button."
+                : `No saved queries match “${q}”.`}
+            </div>
+          ) : (
+            list.map((item) => {
+              const scoped = item.connectionId != null;
+              return (
+                <div key={item.id} className="sq-item" onClick={() => onLoad(item)}>
+                  <div className="sq-item-head">
+                    <Icon name="bookmark" size={14} style={{ color: "var(--accent)" }} />
+                    <span className="sq-item-name">{item.name}</span>
+                    <span
+                      className="saved-scope"
+                      title={scoped ? "This workspace" : "Global"}
+                    >
+                      {scoped ? "this workspace" : "global"}
+                    </span>
+                    <button
+                      type="button"
+                      className="sq-item-del"
+                      title="Delete"
+                      aria-label={"Delete " + item.name}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDelete(item.id);
+                      }}
+                    >
+                      <Icon name="delete" size={14} />
+                    </button>
+                  </div>
+                  <pre
+                    className="sq-item-sql"
+                    dangerouslySetInnerHTML={{ __html: previewHtml(item.sql) }}
+                  />
+                </div>
+              );
+            })
+          )}
+        </div>
+      </aside>
+    </>
+  );
+}
+
+// ---- query-history side drawer (this tab) ---------------------------------
+// Reuses the saved-queries drawer/scrim styling (Prompt 2). Shows the recent
+// runs for this tab with a status indicator (accent check / red error), a
+// result badge (row count or "failed"), and a full highlighted SQL preview.
+function HistoryDrawer({
+  open,
+  history,
+  onClose,
+  onLoad,
+}: {
+  open: boolean;
+  history: SqlHistoryEntry[];
+  onClose: () => void;
+  onLoad: (h: SqlHistoryEntry) => void;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  return (
+    <>
+      <div className={"drawer-scrim" + (open ? " show" : "")} onClick={onClose} />
+      <aside className={"sq-drawer" + (open ? " open" : "")} aria-hidden={!open}>
+        <div className="sq-drawer-head">
+          <span className="sq-drawer-title">
+            <Icon name="history" size={16} style={{ color: "var(--accent)" }} /> Query history
+          </span>
+          <IconBtn icon="close" onClick={onClose} title="Close" />
+        </div>
+        <div className="sq-drawer-sub">Recent queries · this tab</div>
+        <div className="sq-list">
+          {history.length === 0 ? (
+            <div className="sq-empty">Nothing yet — run a query and it shows up here.</div>
+          ) : (
+            history.map((h, i) => (
+              <div key={i} className="sq-item" onClick={() => onLoad(h)}>
+                <div className="sq-item-head">
+                  <Icon
+                    name={h.ok ? "check_circle" : "error"}
+                    size={14}
+                    style={{ color: h.ok ? "var(--accent)" : "#e06c75" }}
+                  />
+                  <span className="sq-item-name">
+                    {h.ok
+                      ? h.rowCount !== undefined
+                        ? `${h.rowCount} row${h.rowCount === 1 ? "" : "s"}`
+                        : "Query OK"
+                      : "failed"}
+                  </span>
+                </div>
+                <pre
+                  className="sq-item-sql"
+                  dangerouslySetInnerHTML={{ __html: previewHtml(h.sql) }}
+                />
+              </div>
+            ))
+          )}
+        </div>
+      </aside>
+    </>
   );
 }

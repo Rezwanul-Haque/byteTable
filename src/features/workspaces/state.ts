@@ -177,6 +177,8 @@ interface WorkspacesFeatureState {
   setSqlResult: (tabId: string, result: QueryResult) => void;
   /** Record a failed run: store the §5 message, clear any prior result. */
   setSqlError: (tabId: string, error: string) => void;
+  /** Dismiss the results pane: clear both result and error (the × button). */
+  clearSqlResults: (tabId: string) => void;
   /**
    * Push a run onto the tab's history (newest-first, deduped by sql, capped
    * at SQL_HISTORY_MAX). Re-running an identical statement moves it to the
@@ -520,6 +522,9 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
 
   setSqlError: (tabId, error) =>
     set((state) => ({ workspaces: patchSqlTab(state, tabId, () => ({ error, result: null })) })),
+
+  clearSqlResults: (tabId) =>
+    set((state) => ({ workspaces: patchSqlTab(state, tabId, () => ({ result: null, error: null })) })),
 
   pushSqlHistory: (tabId, entry) =>
     set((state) => ({

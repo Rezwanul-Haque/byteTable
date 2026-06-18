@@ -35,8 +35,8 @@ import {
   indentUnit,
   syntaxHighlighting,
 } from "@codemirror/language";
-import { EditorState } from "@codemirror/state";
-import { EditorView, keymap, drawSelection } from "@codemirror/view";
+import { Compartment, EditorState } from "@codemirror/state";
+import { EditorView, keymap, drawSelection, lineNumbers } from "@codemirror/view";
 import { tags as t } from "@lezer/highlight";
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef } from "react";
 
@@ -101,7 +101,6 @@ const sqlTheme = EditorView.theme(
       height: "100%",
       backgroundColor: "var(--bg0)",
       color: "var(--text)",
-      fontSize: "13px",
     },
     ".cm-scroller": {
       fontFamily: "var(--mono)",
@@ -118,10 +117,35 @@ const sqlTheme = EditorView.theme(
     "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {
       backgroundColor: "color-mix(in oklab, var(--accent) 24%, transparent)",
     },
-    ".cm-gutters": { display: "none" },
+    // Line-number gutter: blends into the editor bg, faint digits, no border,
+    // right-aligned with a small gap before the code.
+    ".cm-gutters": {
+      backgroundColor: "var(--bg0)",
+      color: "var(--text-faint)",
+      border: "none",
+    },
+    ".cm-lineNumbers .cm-gutterElement": { padding: "0 8px 0 12px" },
+    ".cm-activeLineGutter": { backgroundColor: "transparent", color: "var(--text)" },
   },
   { dark: true },
 );
+
+// Editor font zoom (Mod-+/Mod-=/Mod--/Mod-0). The size lives in a compartment
+// so the keymap can reconfigure it live, and is persisted so it survives tab
+// switches and restarts. Owns `fontSize` (removed from sqlTheme above).
+const FONT_MIN = 9;
+const FONT_MAX = 28;
+const FONT_DEFAULT = 13;
+const FONT_STORE_KEY = "bytetable.sqlEditorFontPx";
+
+function readStoredFontPx(): number {
+  const raw = Number(localStorage.getItem(FONT_STORE_KEY));
+  return Number.isFinite(raw) && raw >= FONT_MIN && raw <= FONT_MAX ? raw : FONT_DEFAULT;
+}
+
+function fontSizeTheme(px: number) {
+  return EditorView.theme({ "&": { fontSize: px + "px" } });
+}
 
 interface SqlCodeEditorProps {
   value: string;
@@ -150,6 +174,10 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
   function SqlCodeEditor({ value, onChange, onRun, onFormat, onCaret, schema }, ref) {
     const hostRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<EditorView | null>(null);
+    // Live editor font size (px) + the compartment that applies it, so Mod-+/-
+    // can reconfigure the font without re-mounting the view.
+    const fontCompartmentRef = useRef(new Compartment());
+    const fontPxRef = useRef(readStoredFontPx());
     // Keep the latest callbacks reachable from the (mount-once) CM extensions
     // without re-creating the EditorView on every parent render.
     const onChangeRef = useRef(onChange);
@@ -180,7 +208,45 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
     }));
 
     useLayoutEffect(() => {
+      // Apply a new font size: clamp, persist, and live-reconfigure the
+      // compartment. Returns true so the binding swallows the native zoom.
+      const setFontPx = (view: EditorView, px: number) => {
+        const next = Math.max(FONT_MIN, Math.min(FONT_MAX, px));
+        fontPxRef.current = next;
+        try {
+          localStorage.setItem(FONT_STORE_KEY, String(next));
+        } catch {
+          // Private mode / blocked storage — zoom still works for this session.
+        }
+        view.dispatch({
+          effects: fontCompartmentRef.current.reconfigure(fontSizeTheme(next)),
+        });
+        return true;
+      };
       const runKeymap = keymap.of([
+        // Editor font zoom. Both "Mod-=" (unshifted +) and "Mod-+" (shifted)
+        // grow; "Mod--" shrinks; "Mod-0" resets. preventDefault stops the
+        // webview's own Ctrl/Cmd +/- page zoom from firing too.
+        {
+          key: "Mod-=",
+          preventDefault: true,
+          run: (view) => setFontPx(view, fontPxRef.current + 1),
+        },
+        {
+          key: "Mod-+",
+          preventDefault: true,
+          run: (view) => setFontPx(view, fontPxRef.current + 1),
+        },
+        {
+          key: "Mod--",
+          preventDefault: true,
+          run: (view) => setFontPx(view, fontPxRef.current - 1),
+        },
+        {
+          key: "Mod-0",
+          preventDefault: true,
+          run: (view) => setFontPx(view, FONT_DEFAULT),
+        },
         {
           key: "Mod-Enter",
           preventDefault: true,
@@ -210,6 +276,7 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
         state: EditorState.create({
           doc: value,
           extensions: [
+            lineNumbers(),
             history(),
             drawSelection(),
             bracketMatching(),
@@ -235,6 +302,10 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
             sql({ dialect: SQLite }),
             syntaxHighlighting(sqlHighlight),
             sqlTheme,
+            // Font size lives in a compartment so Mod-+/- can reconfigure it
+            // live; seeded from the persisted value. Placed after sqlTheme so
+            // its `&` fontSize wins.
+            fontCompartmentRef.current.of(fontSizeTheme(fontPxRef.current)),
             EditorState.tabSize.of(2),
             // Tab inserts two spaces (spec §3.7), via indentWithTab + a 2-space
             // indent unit (so Tab/Shift-Tab indent in two-space steps).

@@ -163,6 +163,9 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   // buttons; `explainSql` is the statement captured when Explain was opened.
   const editorRef = useRef<SqlCodeEditorHandle>(null);
   const [explainSql, setExplainSql] = useState("");
+  // Which statement of a multi-statement Explain selection is focused (one
+  // explain tab per statement, mirroring the result tabs). Reset to 0 on open.
+  const [explainActiveIdx, setExplainActiveIdx] = useState(0);
   // Caret offset, reported by the editor; drives the cursor-aware clause minimap.
   const [caret, setCaret] = useState(0);
   // True when the editor's whole buffer is selected (Mod-A) — flips Run to
@@ -269,7 +272,15 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   // surface its column count on the FROM step. Falls back to null otherwise —
   // the panel works from clause detection alone.
   const columnsCache = useIntrospectionStore((s) => s.columns);
-  const explainTable = view === "explain" ? detectedTable(explainSql) : null;
+  // Explain runs per statement, same as a multi-statement Run: split the
+  // captured SQL and explain the focused one (each statement is a tab).
+  const explainStatements = useMemo(
+    () => (view === "explain" ? splitStatements(explainSql) : []),
+    [view, explainSql],
+  );
+  const activeExplainSql =
+    explainStatements[explainActiveIdx] ?? explainStatements[0] ?? explainSql;
+  const explainTable = view === "explain" ? detectedTable(activeExplainSql) : null;
   const columnCount =
     explainTable != null
       ? (columnsCache[columnsKey(workspace.handleId, schemaName, explainTable)]?.columns.length ??
@@ -468,15 +479,18 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
             if (view === "explain") {
               setView("result");
             } else {
-              // Capture the statement at the caret so Explain analyzes only the
-              // query under the cursor, matching Run / ⌘↩.
+              // Capture the statement at the caret — or, when text spanning
+              // several statements is selected, that whole selection (matching
+              // Run / ⌘↩). A multi-statement capture becomes one explain tab per
+              // statement; focus the first.
               setExplainSql(editorRef.current?.pickStatement() ?? text);
+              setExplainActiveIdx(0);
               setView("explain");
             }
           }}
           title="Explain & analyze the execution plan"
         >
-          Explain
+          {allSelected ? "Explain All" : "Explain"}
         </Btn>
         <span className="sql-hint">⌘↩ / Ctrl+Enter</span>
         <div className="sql-snippets">
@@ -651,8 +665,36 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
                 <div style={{ flex: 1 }} />
                 <span className="dim">{schemaName}</span>
               </div>
+              {/* One explain tab per statement (only for a multi-statement
+                  selection), mirroring the result tabs. No close — they're a
+                  view of the captured selection, not independent runs. */}
+              {explainStatements.length > 1 && !resultsMin ? (
+                <div className="sqlres-tabs">
+                  {explainStatements.map((stmt, i) => (
+                    <div
+                      key={i}
+                      className={"sqlres-tab" + (i === explainActiveIdx ? " active" : "")}
+                      onClick={() => setExplainActiveIdx(i)}
+                      title={stmt}
+                    >
+                      <Icon
+                        name="account_tree"
+                        size={13}
+                        style={{
+                          color: i === explainActiveIdx ? "var(--accent)" : "var(--text-faint)",
+                        }}
+                      />
+                      <span className="sqlres-tab-title">Query {i + 1}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               {resultsMin ? null : (
-                <ExplainPanel sql={explainSql} schemaName={schemaName} columnCount={columnCount} />
+                <ExplainPanel
+                  sql={activeExplainSql}
+                  schemaName={schemaName}
+                  columnCount={columnCount}
+                />
               )}
             </>
           ) : error ? (

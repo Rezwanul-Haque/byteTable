@@ -13,9 +13,10 @@ import { connectionClose } from "../connections/api";
 import { useIntrospectionStore } from "../introspection/state";
 import { newCondition } from "../browse/filter";
 import type { CellValue } from "../../shared/api/engine";
-import type { AlterOp, QueryResult } from "../../shared/api/engine";
+import type { AlterOp } from "../../shared/api/engine";
 import type {
   SqlHistoryEntry,
+  SqlRun,
   Tab,
   TableTabMode,
   TabFilterState,
@@ -26,11 +27,6 @@ import type {
 
 /** Per-tab SQL run-history cap (spec §3.7: "20 dedup"). */
 export const SQL_HISTORY_MAX = 20;
-
-/** Starter SQL a fresh SQL tab opens with — SQLite-appropriate (prototype
- *  seeds an orders rollup; we keep a portable SELECT that runs against any DB
- *  with a `sqlite_master`-style catalog without assuming user tables). */
-const SQL_STARTER = "SELECT name, type\nFROM sqlite_master\nWHERE type = 'table'\nORDER BY name;";
 
 /**
  * The 8-color workspace palette — prototype data.js `workspaceColors`,
@@ -173,12 +169,18 @@ interface WorkspacesFeatureState {
   // workspace switches (the WorkspaceUiState rule).
   /** Set a SQL tab's editor buffer (committed on change — see SqlEditorTab). */
   setSqlText: (tabId: string, text: string) => void;
-  /** Record a successful run: store the result, clear any prior error. */
-  setSqlResult: (tabId: string, result: QueryResult) => void;
-  /** Record a failed run: store the §5 message, clear any prior result. */
-  setSqlError: (tabId: string, error: string) => void;
-  /** Dismiss the results pane: clear both result and error (the × button). */
-  clearSqlResults: (tabId: string) => void;
+  /** Replace a SQL tab's result set with one run-outcome per executed
+   *  statement, focusing the first (the × dismiss clears them). */
+  setSqlRuns: (tabId: string, runs: SqlRun[]) => void;
+  /** Focus a result tab by id. */
+  setActiveRun: (tabId: string, runId: string) => void;
+  /** Close one result tab; if it was focused, focus a neighbour. */
+  closeRun: (tabId: string, runId: string) => void;
+  /** Dismiss the results pane: clear all runs (the × button). */
+  clearSqlRuns: (tabId: string) => void;
+  /** Set the editor-pane height (px) from the editor/results splitter; null
+   *  resets to the CSS default. */
+  setSqlEditorHeight: (tabId: string, height: number | null) => void;
   /**
    * Push a run onto the tab's history (newest-first, deduped by sql, capped
    * at SQL_HISTORY_MAX). Re-running an identical statement moves it to the
@@ -411,10 +413,12 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
             id: newTabId("sql"),
             kind: "sql",
             title,
-            text: SQL_STARTER,
-            result: null,
-            error: null,
+            // A fresh tab opens empty — no starter SQL.
+            text: "",
+            runs: [],
+            activeRunId: null,
             history: [],
+            editorHeight: null,
           };
           return { tabs: [...(ui.tabs ?? []), tab], activeTabId: tab.id };
         }),
@@ -433,9 +437,10 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
             kind: "sql",
             title,
             text: sql,
-            result: null,
-            error: null,
+            runs: [],
+            activeRunId: null,
             history: [],
+            editorHeight: null,
           };
           return { tabs: [...(ui.tabs ?? []), tab], activeTabId: tab.id };
         }),
@@ -517,15 +522,38 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
   setSqlText: (tabId, text) =>
     set((state) => ({ workspaces: patchSqlTab(state, tabId, () => ({ text })) })),
 
-  setSqlResult: (tabId, result) =>
-    set((state) => ({ workspaces: patchSqlTab(state, tabId, () => ({ result, error: null })) })),
-
-  setSqlError: (tabId, error) =>
-    set((state) => ({ workspaces: patchSqlTab(state, tabId, () => ({ error, result: null })) })),
-
-  clearSqlResults: (tabId) =>
+  setSqlRuns: (tabId, runs) =>
     set((state) => ({
-      workspaces: patchSqlTab(state, tabId, () => ({ result: null, error: null })),
+      workspaces: patchSqlTab(state, tabId, () => ({ runs, activeRunId: runs[0]?.id ?? null })),
+    })),
+
+  setActiveRun: (tabId, runId) =>
+    set((state) => ({ workspaces: patchSqlTab(state, tabId, () => ({ activeRunId: runId })) })),
+
+  closeRun: (tabId, runId) =>
+    set((state) => ({
+      workspaces: patchSqlTab(state, tabId, (t) => {
+        const idx = t.runs.findIndex((r) => r.id === runId);
+        if (idx === -1) return {};
+        const runs = t.runs.filter((r) => r.id !== runId);
+        // If the closed tab was focused, fall to the next tab (or the previous
+        // when it was the last); null when none remain (pane closes).
+        const activeRunId =
+          t.activeRunId === runId
+            ? ((runs[idx] ?? runs[idx - 1] ?? null)?.id ?? null)
+            : t.activeRunId;
+        return { runs, activeRunId };
+      }),
+    })),
+
+  clearSqlRuns: (tabId) =>
+    set((state) => ({
+      workspaces: patchSqlTab(state, tabId, () => ({ runs: [], activeRunId: null })),
+    })),
+
+  setSqlEditorHeight: (tabId, height) =>
+    set((state) => ({
+      workspaces: patchSqlTab(state, tabId, () => ({ editorHeight: height })),
     })),
 
   pushSqlHistory: (tabId, entry) =>

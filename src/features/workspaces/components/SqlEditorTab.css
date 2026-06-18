@@ -233,6 +233,75 @@
 }
 
 /* ---------- explain & analyze panel (ported byte-exact from ByteTable.html) ---------- */
+/* Result-set tab strip: one tab per executed statement in a multi-statement
+   run. Mirrors the terminal's session tabs (.term-tabs / .term-tab). */
+.sqlres-tabs {
+  display: flex;
+  align-items: stretch;
+  height: 32px;
+  flex: none;
+  overflow-x: auto;
+  scrollbar-width: none;
+  background: var(--bg1);
+  border-bottom: 1px solid var(--border);
+}
+.sqlres-tabs::-webkit-scrollbar {
+  display: none;
+}
+.sqlres-tab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px 0 12px;
+  cursor: pointer;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  border-right: 1px solid var(--border);
+  white-space: nowrap;
+  position: relative;
+  user-select: none;
+  transition: background 0.1s;
+}
+.sqlres-tab:hover {
+  background: var(--bg2);
+}
+.sqlres-tab.active {
+  background: var(--bg0);
+  color: var(--text);
+}
+.sqlres-tab.active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--accent);
+}
+.sqlres-tab-title {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.sqlres-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  color: var(--text-faint);
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.sqlres-tab:hover .sqlres-tab-close,
+.sqlres-tab.active .sqlres-tab-close {
+  opacity: 1;
+}
+.sqlres-tab-close:hover {
+  background: var(--bg3);
+  color: var(--text);
+}
+
 .result-tab {
   display: inline-flex;
   align-items: center;
@@ -242,6 +311,7 @@
   color: var(--text-dim);
   padding: 2px 8px;
   border-radius: 6px;
+  white-space: nowrap;
 }
 
 .result-tab:hover {
@@ -410,6 +480,20 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+/* Drag handle between the editor and results panes (mirrors .term-resize).
+   Sits on the editor's bottom border; widens its hit area beyond the 1px line. */
+.sql-vsplit {
+  flex: none;
+  height: 6px;
+  margin-top: -3px;
+  cursor: ns-resize;
+  z-index: 5;
+}
+.sql-vsplit:hover,
+.sql-vsplit.dragging {
+  background: color-mix(in oklab, var(--accent) 40%, transparent);
 }
 
 /* Prompt 4/5: when no results are shown, or the pane is minimized, the editor

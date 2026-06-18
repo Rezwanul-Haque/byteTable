@@ -122,23 +122,42 @@ export interface SqlHistoryEntry {
 }
 
 /**
+ * One executed statement's outcome, shown as a result tab. A multi-statement
+ * run produces one `SqlRun` per statement, in order; `result` xor `error` is
+ * set (success vs the §5 failure message).
+ */
+export interface SqlRun {
+  /** Stable id within the tab's current run set (used as the result-tab key). */
+  id: string;
+  /** The statement that produced this outcome (also the tab's tooltip). */
+  sql: string;
+  /** The result set on success, or null when this statement failed. */
+  result: QueryResult | null;
+  /** The §5 driver message on failure, or null on success. */
+  error: string | null;
+}
+
+/**
  * The editor state carried by one SQL tab (M6, spec §3.7). Lives on the tab
  * object (in the workspace's `ui`) so it survives workspace switches per the
  * WorkspaceUiState rule. `text` is the editor buffer (committed on change —
- * controlled at editor scale; see SqlEditorTab). `result`/`error` are the
- * last run's outcome (mutually exclusive — a fresh run clears the other).
- * `running` is transient and NOT persisted here — it is local to the
- * component, since an in-flight query cannot survive a switch anyway.
+ * controlled at editor scale; see SqlEditorTab). `runs` holds one outcome per
+ * executed statement (each rendered as a result tab); `activeRunId` is the
+ * focused tab. `running` is transient and NOT persisted here — it is local to
+ * the component, since an in-flight query cannot survive a switch anyway.
  */
 export interface SqlTabState {
   /** Editor buffer. */
   text: string;
-  /** Last successful result, or null (error / not yet run). */
-  result: QueryResult | null;
-  /** Last failure's §5 message, or null. */
-  error: string | null;
+  /** One result tab per executed statement, in run order. Empty until a run. */
+  runs: SqlRun[];
+  /** The focused result tab's id (defaults to the first after each run). */
+  activeRunId: string | null;
   /** Per-tab run history, newest-first, deduped, capped at 20. */
   history: SqlHistoryEntry[];
+  /** Editor-pane height (px) from the editor/results splitter; null = CSS
+   *  default (38%). Per-tab so each query keeps its own split. */
+  editorHeight: number | null;
 }
 
 /**

@@ -4,10 +4,12 @@
 // SqlCodeEditor), and a results area (status row + virtualized grid, the §5
 // error card, and the empty state).
 //
-// STATE: the editor buffer, last result, last error, and per-tab history live
-// on the tab object in the workspace's `ui` (store actions setSqlText /
-// setSqlResult / setSqlError / pushSqlHistory) so they survive workspace
-// switches per the WorkspaceUiState rule. `running` is transient local state
+// STATE: the editor buffer, the run results (one tab per executed statement),
+// and per-tab history live on the tab object in the workspace's `ui` (store
+// actions setSqlText / setSqlRuns / setActiveRun / pushSqlHistory) so they
+// survive workspace switches per the WorkspaceUiState rule. A multi-statement
+// run produces one result tab per statement; the first is focused. `running`
+// is transient local state
 // (an in-flight query cannot outlive a switch — the tab unmounts). Editor text
 // is committed to the store on every change; that is low-frequency enough at
 // editor scale and is the simplest way to guarantee text survives a switch.
@@ -33,10 +35,11 @@ import { columnsKey, tablesKey, useIntrospectionStore } from "../../introspectio
 import { type SavedQuery } from "../../saved_queries/api";
 import { selectQueriesForConnection, useSavedQueriesStore } from "../../saved_queries/state";
 import { useWorkspacesStore } from "../state";
-import type { SqlHistoryEntry, Tab, Workspace } from "../types";
+import type { SqlHistoryEntry, SqlRun, Tab, Workspace } from "../types";
 import { ExecutionMinimap, ExplainPanel } from "./explain";
 import { detectedTable } from "./explainClauses";
 import { formatSql } from "./formatSql";
+import { splitStatements } from "./sqlStatement";
 import { type EditorSchema } from "./sqlCompletion";
 import { SqlCodeEditor, type SqlCodeEditorHandle } from "./SqlCodeEditor";
 import { SqlResultGrid } from "./SqlResultGrid";
@@ -46,6 +49,12 @@ type SqlTab = Extract<Tab, { kind: "sql" }>;
 
 /** Cap on the SQL shown in a drawer preview (full multi-line, but bounded). */
 const PREVIEW_MAX = 240;
+
+// Resizable editor/results split floor: below this the editor is too small to
+// use. The dragged height lives on the SQL tab in the workspace store
+// (setSqlEditorHeight), so it survives workspace switches like the rest of the
+// tab's state; null = fall back to the CSS default (38%).
+const EDITOR_H_MIN = 110;
 
 /** Truncate (with ellipsis) then syntax-highlight SQL for a drawer preview. */
 function previewHtml(sql: string): string {
@@ -129,11 +138,13 @@ type Popover = "save" | null;
 export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: SqlTab }) {
   const toast = useToast();
   const setSqlText = useWorkspacesStore((s) => s.setSqlText);
-  const setSqlResult = useWorkspacesStore((s) => s.setSqlResult);
-  const setSqlError = useWorkspacesStore((s) => s.setSqlError);
+  const setSqlRuns = useWorkspacesStore((s) => s.setSqlRuns);
+  const setActiveRun = useWorkspacesStore((s) => s.setActiveRun);
+  const closeRun = useWorkspacesStore((s) => s.closeRun);
   const pushSqlHistory = useWorkspacesStore((s) => s.pushSqlHistory);
 
-  const clearSqlResults = useWorkspacesStore((s) => s.clearSqlResults);
+  const clearSqlRuns = useWorkspacesStore((s) => s.clearSqlRuns);
+  const setSqlEditorHeight = useWorkspacesStore((s) => s.setSqlEditorHeight);
 
   const savedQueries = useSavedQueriesStore((s) => s.savedQueries);
   const loadSaved = useSavedQueriesStore((s) => s.load);
@@ -154,10 +165,50 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   const [explainSql, setExplainSql] = useState("");
   // Caret offset, reported by the editor; drives the cursor-aware clause minimap.
   const [caret, setCaret] = useState(0);
+  // True when the editor's whole buffer is selected (Mod-A) — flips Run to
+  // "Run All" so it's clear the entire buffer (every statement) will run.
+  const [allSelected, setAllSelected] = useState(false);
   // Transient view toggle: the results area shows either the query result
   // ('result') or the execution-order teaching panel ('explain'). Local —
   // it's a view flip, not buffer/result state, so it need not survive a switch.
   const [view, setView] = useState<"result" | "explain">("result");
+
+  // Resizable editor/results split. `tab.editorHeight` (px, in the store)
+  // overrides the CSS default height of the editor pane; the results pane
+  // (flex:1) reclaims the rest. Updated live during the drag.
+  const tabRef = useRef<HTMLDivElement>(null);
+  const editorWrapRef = useRef<HTMLDivElement>(null);
+  const [dragging, setDragging] = useState(false);
+
+  // Pointer-drag the splitter: grow/shrink the editor pane between a usable
+  // floor and a ceiling that always leaves room for the results pane. Writes
+  // the height to the store live on each move (like TerminalPanel's setHeight),
+  // so it's already persisted on release. Pointer capture on the handle keeps
+  // the drag tracking even when the cursor outruns the 6px bar.
+  const startResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const wrap = editorWrapRef.current;
+    const tabEl = tabRef.current;
+    if (!wrap || !tabEl) return;
+    const startY = e.clientY;
+    const startH = wrap.getBoundingClientRect().height;
+    const handle = e.currentTarget;
+    handle.setPointerCapture(e.pointerId);
+    setDragging(true);
+    const onMove = (ev: PointerEvent) => {
+      const maxH = Math.max(EDITOR_H_MIN, tabEl.getBoundingClientRect().height - 140);
+      const next = Math.max(EDITOR_H_MIN, Math.min(maxH, startH + (ev.clientY - startY)));
+      setSqlEditorHeight(tab.id, next);
+    };
+    const onUp = (ev: PointerEvent) => {
+      handle.releasePointerCapture(ev.pointerId);
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", onUp);
+      setDragging(false);
+    };
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", onUp);
+  };
 
   // The active schema this tab runs against (sidebar switcher; falls back to
   // the connection's first schema — SQLite: "main").
@@ -272,34 +323,47 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
     [tableEntries, columnsCache, workspace.handleId, schemaName],
   );
 
-  // Run a statement. With no override the whole buffer runs; the toolbar Run
-  // button and ⌘/Ctrl+Enter pass the statement at the caret (selection wins),
-  // so a multi-statement buffer runs only the one under the cursor. Latest
-  // `running` is read off state so double-fires are ignored; result / error /
-  // history all go to the store (survive switches).
+  // Run SQL. With no override the whole buffer runs; the toolbar Run button and
+  // ⌘/Ctrl+Enter pass the statement at the caret, OR — when the user has
+  // selected text spanning several statements — that whole selection. The
+  // source is split into top-level statements and run IN ORDER, one at a time,
+  // because the engines' prepared-query path accepts only a single statement
+  // (a multi-statement string would error). EVERY statement's outcome becomes a
+  // result tab (success or its §5 error), so a failing statement doesn't hide
+  // the others; the run continues through all of them and the first tab is
+  // focused. Latest `running` is read off state so double-fires are ignored;
+  // runs / history go to the store (survive switches).
   const run = (override?: string) => {
-    const sql = (override ?? text).trim();
-    if (running || sql === "") return;
+    const source = (override ?? text).trim();
+    if (running || source === "") return;
+    const statements = splitStatements(source);
+    if (statements.length === 0) return;
     setRunning(true);
     setPop(null);
     // A new run always re-expands the results pane (Prompt 5).
     setResultsMin(false);
-    queryRun(workspace.handleId, sql, { schema: schemaName })
-      .then((result) => {
-        setSqlResult(tab.id, result);
-        pushSqlHistory(tab.id, {
-          sql,
-          ok: true,
-          rowCount: result.rowCount,
-          ranAt: Date.now(),
-        });
-      })
-      .catch((err: unknown) => {
-        const message = appErrorMessage(err, "Query failed.");
-        setSqlError(tab.id, message);
-        pushSqlHistory(tab.id, { sql, ok: false, error: message, ranAt: Date.now() });
-      })
-      .finally(() => setRunning(false));
+    void (async () => {
+      const runs: SqlRun[] = [];
+      for (let i = 0; i < statements.length; i++) {
+        const stmt = statements[i]!;
+        try {
+          const result = await queryRun(workspace.handleId, stmt, { schema: schemaName });
+          runs.push({ id: `r${i}`, sql: stmt, result, error: null });
+          pushSqlHistory(tab.id, {
+            sql: stmt,
+            ok: true,
+            rowCount: result.rowCount,
+            ranAt: Date.now(),
+          });
+        } catch (err: unknown) {
+          const message = appErrorMessage(err, "Query failed.");
+          runs.push({ id: `r${i}`, sql: stmt, result: null, error: message });
+          pushSqlHistory(tab.id, { sql: stmt, ok: false, error: message, ranAt: Date.now() });
+        }
+      }
+      setSqlRuns(tab.id, runs); // focuses the first tab
+      setRunning(false);
+    })();
   };
 
   const load = (sql: string) => {
@@ -357,14 +421,20 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   };
 
   const visibleSaved = selectQueriesForConnection(savedQueries, workspace.saved.id);
-  const { result, error, history } = tab;
+  const { runs, activeRunId, history } = tab;
   const runDisabled = running || text.trim() === "";
 
+  // The focused result tab; its result/error drive the body below (falls back
+  // to the first run if the active id is stale).
+  const activeRun = runs.find((r) => r.id === activeRunId) ?? runs[0] ?? null;
+  const result = activeRun?.result ?? null;
+  const error = activeRun?.error ?? null;
+
   // Prompt 4: the results pane only exists once there's something to show —
-  // a result, an error, or the Explain view. Otherwise the editor grows to
-  // fill the tab (no placeholder pane). Prompt 5: a minimized pane also lets
-  // the editor reclaim the space.
-  const resultsShown = view === "explain" || result != null || error != null;
+  // at least one run, or the Explain view. Otherwise the editor grows to fill
+  // the tab (no placeholder pane). Prompt 5: a minimized pane also lets the
+  // editor reclaim the space.
+  const resultsShown = view === "explain" || runs.length > 0;
   const editorGrows = !resultsShown || resultsMin;
   const minBtn = (
     <button
@@ -379,7 +449,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   );
 
   return (
-    <div className="sql-tab">
+    <div className="sql-tab" ref={tabRef}>
       <div className="sql-toolbar">
         <Btn
           icon="play_arrow"
@@ -388,7 +458,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
           disabled={runDisabled}
           small
         >
-          {running ? "Running…" : "Run"}
+          {running ? "Running…" : allSelected ? "Run All" : "Run"}
         </Btn>
         <Btn
           icon="account_tree"
@@ -483,7 +553,13 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
         />
       </div>
 
-      <div className={"sql-editor-wrap" + (editorGrows ? " grow" : "")}>
+      <div
+        className={"sql-editor-wrap" + (editorGrows ? " grow" : "")}
+        ref={editorWrapRef}
+        // Inline height only when the editor is NOT in grow mode (no results /
+        // minimized), so it never overrides the `.grow` rule's flex fill.
+        style={!editorGrows && tab.editorHeight != null ? { height: tab.editorHeight } : undefined}
+      >
         <div className="sql-editor-main">
           <button
             type="button"
@@ -501,14 +577,67 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
             onRun={run}
             onFormat={format}
             onCaret={setCaret}
+            onAllSelected={setAllSelected}
             schema={editorSchema}
           />
         </div>
         <ExecutionMinimap sql={text} caret={caret} />
       </div>
 
+      {/* Drag handle between editor and results. Only meaningful when the
+          results pane is actually shown (and not minimized); otherwise the
+          editor is in grow mode and there's nothing to resize against. */}
+      {resultsShown && !resultsMin ? (
+        <div
+          className={"sql-vsplit" + (dragging ? " dragging" : "")}
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize results"
+          title="Drag to resize"
+          onPointerDown={startResize}
+        />
+      ) : null}
+
       {resultsShown ? (
         <div className={"sql-results" + (resultsMin ? " minimized" : "")}>
+          {/* One result tab per executed statement (only worth showing for a
+              multi-statement run). Same design as the terminal's session tabs:
+              click focuses that statement's outcome, the × closes it. The first
+              is focused after each run. */}
+          {view !== "explain" && runs.length > 1 && !resultsMin ? (
+            <div className="sqlres-tabs">
+              {runs.map((r, i) => {
+                const active = r.id === activeRun?.id;
+                return (
+                  <div
+                    key={r.id}
+                    className={"sqlres-tab" + (active ? " active" : "")}
+                    onClick={() => setActiveRun(tab.id, r.id)}
+                    title={r.sql}
+                  >
+                    <Icon
+                      name={r.error ? "error" : "check_circle"}
+                      size={13}
+                      style={{ color: r.error ? "#e06c75" : "var(--accent)" }}
+                    />
+                    <span className="sqlres-tab-title">Result {i + 1}</span>
+                    <button
+                      type="button"
+                      className="sqlres-tab-close"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        closeRun(tab.id, r.id);
+                      }}
+                      title="Close result"
+                      aria-label={`Close result ${i + 1}`}
+                    >
+                      <Icon name="close" size={11} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
           {view === "explain" ? (
             <>
               <div className="sql-result-bar explain-bar">
@@ -537,7 +666,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
                   icon="close"
                   size={14}
                   title="Dismiss results"
-                  onClick={() => clearSqlResults(tab.id)}
+                  onClick={() => clearSqlRuns(tab.id)}
                 />
               </div>
               {resultsMin ? null : (
@@ -581,7 +710,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
                   icon="close"
                   size={14}
                   title="Close results"
-                  onClick={() => clearSqlResults(tab.id)}
+                  onClick={() => clearSqlRuns(tab.id)}
                 />
               </div>
               {resultsMin || result.columns.length === 0 ? null : (

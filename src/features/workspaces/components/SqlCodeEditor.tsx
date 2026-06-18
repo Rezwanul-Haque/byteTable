@@ -162,6 +162,9 @@ interface SqlCodeEditorProps {
   /** Caret offset, reported on every selection / document change (for the
    *  cursor-aware clause minimap). */
   onCaret?: (pos: number) => void;
+  /** Reports whether the WHOLE buffer is selected (Mod-A / drag-select-all),
+   *  so the toolbar can show "Run All". Fires on every selection change. */
+  onAllSelected?: (all: boolean) => void;
   /**
    * Schema metadata (tables + each table's cached columns) for the
    * context-aware autocomplete. Read live on every keystroke via a ref, so the
@@ -171,7 +174,10 @@ interface SqlCodeEditorProps {
 }
 
 export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>(
-  function SqlCodeEditor({ value, onChange, onRun, onFormat, onCaret, schema }, ref) {
+  function SqlCodeEditor(
+    { value, onChange, onRun, onFormat, onCaret, onAllSelected, schema },
+    ref,
+  ) {
     const hostRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<EditorView | null>(null);
     // Live editor font size (px) + the compartment that applies it, so Mod-+/-
@@ -184,6 +190,7 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
     const onRunRef = useRef(onRun);
     const onFormatRef = useRef(onFormat);
     const onCaretRef = useRef(onCaret);
+    const onAllSelectedRef = useRef(onAllSelected);
     // Latest schema, read by the completion source on each keystroke (so columns
     // streaming into the cache appear without re-mounting the editor).
     const schemaRef = useRef<EditorSchema>(schema ?? { tables: [] });
@@ -191,6 +198,7 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
     onRunRef.current = onRun;
     onFormatRef.current = onFormat;
     onCaretRef.current = onCaret;
+    onAllSelectedRef.current = onAllSelected;
     schemaRef.current = schema ?? { tables: [] };
 
     // The Run/Explain buttons resolve the statement at the caret through this
@@ -317,9 +325,14 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
                 onChangeRef.current(update.state.doc.toString());
               }
               // Report caret moves (click / key / select / typing) so the
-              // clause minimap can follow the cursor across statements.
+              // clause minimap can follow the cursor across statements, and
+              // whether the whole buffer is selected (Mod-A) so the toolbar can
+              // show "Run All".
               if (update.docChanged || update.selectionSet) {
-                onCaretRef.current?.(update.state.selection.main.head);
+                const sel = update.state.selection.main;
+                const len = update.state.doc.length;
+                onCaretRef.current?.(sel.head);
+                onAllSelectedRef.current?.(len > 0 && sel.from === 0 && sel.to === len);
               }
             }),
           ],

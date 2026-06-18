@@ -110,6 +110,30 @@ export function statementRangeAt(doc: string, pos: number): StatementRange | nul
   return null;
 }
 
+/**
+ * Split a buffer into its top-level statements, in order. Lexically aware (a
+ * `;` inside a string, quoted identifier, or comment does NOT split), and each
+ * returned string is trimmed of surrounding whitespace and its trailing `;`.
+ * Empty segments (blank runs, a lone trailing `;`) are dropped.
+ *
+ * Used to run a multi-statement selection one statement at a time: the engines'
+ * prepared-query path (`run_query`) accepts only a SINGLE statement, so a
+ * multi-statement string would otherwise error.
+ */
+export function splitStatements(doc: string): string[] {
+  const semis = topLevelSemicolons(doc);
+  const out: string[] = [];
+  let start = 0;
+  for (const s of semis) {
+    const r = trim(doc, start, s + 1);
+    if (r.to > r.from) out.push(doc.slice(r.from, r.to));
+    start = s + 1;
+  }
+  const tail = trim(doc, start, doc.length);
+  if (tail.to > tail.from) out.push(doc.slice(tail.from, tail.to));
+  return out;
+}
+
 export interface StatementContext {
   /** The text of the statement the caret is in (trimmed). */
   text: string;

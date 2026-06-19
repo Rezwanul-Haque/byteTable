@@ -101,7 +101,27 @@ export type ConnectionParams =
       user?: string;
       tlsMode: TlsMode;
       ssh?: SshConfig;
+    }
+  | {
+      // DynamoDB (M17). No relational `database`, no SSH tunnel, no TLS knob
+      // (the AWS SDK manages HTTPS). `region` is the AWS region; `endpoint` is
+      // set only for DynamoDB Local / LocalStack (absent → real AWS). `auth`
+      // picks the credential mode; the secret access key (for `keys` auth) lives
+      // in the OS keychain like the SQL server password.
+      engine: "dynamodb";
+      region: string;
+      endpoint?: string;
+      auth: DynamoAuth;
     };
+
+/**
+ * DynamoDB credential mode (M17) — mirrors Rust's `DynamoAuth`, tagged with
+ * `mode`. The `keys` variant carries only the NON-secret access-key id; the
+ * secret access key is sent transiently and stored in the keychain.
+ */
+export type DynamoAuth =
+  | { mode: "profile"; profile: string }
+  | { mode: "keys"; accessKeyId: string };
 
 /**
  * A connection the user has saved in the registry. Mirrors Rust's
@@ -134,7 +154,7 @@ export interface SavedConnection {
  * renderer routes on: `"sql"` → the relational workspace, `"kv"` → the Redis
  * workspace. Lowercase on the wire, mirroring Rust's `ConnectionKind`.
  */
-export type ConnectionKind = "sql" | "kv";
+export type ConnectionKind = "sql" | "kv" | "document";
 
 /**
  * Server identity for the Redis dashboard header — mirrors Rust's
@@ -279,6 +299,10 @@ export function connectionDetail(params: ConnectionParams): string {
   if (params.engine === "redis") {
     return params.host + ":" + params.port + " · db" + params.dbIndex;
   }
+  // DynamoDB: "<region> · Local" for a custom endpoint, else "<region> · AWS".
+  if (params.engine === "dynamodb") {
+    return params.region + (params.endpoint ? " · Local" : " · AWS");
+  }
   // database is optional now; omit the " · db" suffix when absent.
   return params.database
     ? params.host + ":" + params.port + " · " + params.database
@@ -291,7 +315,10 @@ export function connectionDetail(params: ConnectionParams): string {
  * for SQLite (it never tunnels) and for direct server connections.
  */
 export function connectionIsTunneled(params: ConnectionParams): boolean {
-  return params.engine !== "sqlite" && params.ssh !== undefined;
+  // Only the server engines carry an `ssh` field; SQLite (local file) and
+  // DynamoDB (HTTPS to AWS) never tunnel.
+  if (params.engine === "sqlite" || params.engine === "dynamodb") return false;
+  return params.ssh !== undefined;
 }
 
 /**
@@ -300,7 +327,8 @@ export function connectionIsTunneled(params: ConnectionParams): boolean {
  * Returns "" when the connection is not tunnelled.
  */
 export function tunnelTitle(params: ConnectionParams): string {
-  if (params.engine === "sqlite" || params.ssh === undefined) return "";
+  if (params.engine === "sqlite" || params.engine === "dynamodb") return "";
+  if (params.ssh === undefined) return "";
   const { user, host, port } = params.ssh;
   return "Tunnelled through " + user + "@" + host + ":" + port;
 }

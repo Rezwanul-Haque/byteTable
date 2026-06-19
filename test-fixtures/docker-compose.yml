@@ -1,13 +1,17 @@
-# ByteTable test databases — Postgres, MySQL, Redis.
-# Ports are non-standard (offset) so they don't clash with any local installs.
+# ByteTable test databases — Postgres, MySQL, Redis, DynamoDB Local.
+# Ports are non-standard (offset) so they don't clash with any local installs,
+# EXCEPT DynamoDB Local, which keeps the standard 8000 so the connect modal's
+# default "Local endpoint" (http://localhost:8000) works out of the box.
 #
 #   cd test-fixtures
-#   docker compose up -d          # start all three
-#   ./seed/seed-redis.sh          # seed Redis (Postgres/MySQL auto-seed on first init)
+#   docker compose up -d          # start all four
+#   ./seed/seed-redis.sh          # seed Redis
+#   ./seed/seed-dynamo.sh         # seed DynamoDB (creates tables + items)
 #   docker compose down -v        # stop + wipe (so a later `up` re-seeds)
 #
 # Credentials are in README.md. SQL seed files auto-run only on FIRST init of an
 # empty data volume; `down -v` clears the volume so the next `up` re-seeds.
+# Redis + DynamoDB have no auto-init dir, so their seed scripts are run manually.
 
 services:
   postgres:
@@ -43,7 +47,25 @@ services:
     volumes:
       - bt-redis-data:/data
 
+  # DynamoDB Local (M17). `-sharedDb` makes ONE shared database regardless of the
+  # access keys / region the client sends, matching the connect form's "region is
+  # just a label; any access keys work". `-dbPath ./data` + the named volume
+  # persist tables across restarts; `user: root` sidesteps the image's
+  # named-volume permission issue (the test data is throwaway anyway). Port 8000
+  # is the DynamoDB Local standard and the connect modal's default endpoint.
+  dynamodb:
+    image: amazon/dynamodb-local:latest
+    container_name: bt-dynamo
+    user: root
+    working_dir: /home/dynamodblocal
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "./data"]
+    ports:
+      - "8000:8000"
+    volumes:
+      - bt-dynamo-data:/home/dynamodblocal/data
+
 volumes:
   bt-pg-data:
   bt-mysql-data:
   bt-redis-data:
+  bt-dynamo-data:

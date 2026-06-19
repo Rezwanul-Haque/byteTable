@@ -3,6 +3,7 @@
 //! Slices must never reach into each other's internals — anything reused
 //! between slices lives here.
 
+pub mod document;
 pub mod engine;
 pub mod error;
 pub mod keyvalue;

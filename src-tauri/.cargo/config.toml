@@ -1,0 +1,8 @@
+# MSRV-aware dependency resolution (M17). Edition 2021 selects resolver v2,
+# whose default ignores `package.rust-version`; `fallback` turns on the
+# MSRV-aware behavior so cargo prefers dependency versions compatible with this
+# crate's `rust-version` (1.89) and only falls back to newer (higher-MSRV)
+# versions when nothing else satisfies the constraints. Without this the AWS SDK
+# resolves to its 1.91-MSRV latest and fails to build on the 1.89 toolchain.
+[resolver]
+incompatible-rust-versions = "fallback"

@@ -20,6 +20,7 @@ import { useRef } from "react";
 import { Icon } from "../../shared/ui/Icon";
 import { IconBtn } from "../../shared/ui/IconBtn";
 import type { Workspace } from "../workspaces/types";
+import { DynamoPartiqlSession } from "./DynamoPartiqlSession";
 import { RedisTerminalSession } from "./RedisTerminalSession";
 import { SqlTerminalTab } from "./SqlTerminalTab";
 import {
@@ -80,6 +81,9 @@ export function TerminalPanel({ workspace }: { workspace: Workspace }) {
   const renderSession = (s: TermSession) => {
     if (workspace.saved.engine === "redis") {
       return <RedisTerminalSession workspace={workspace} session={s} embedded />;
+    }
+    if (workspace.saved.engine === "dynamodb") {
+      return <DynamoPartiqlSession workspace={workspace} session={s} />;
     }
     return (
       <SqlTerminalTab

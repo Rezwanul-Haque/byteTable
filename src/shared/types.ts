@@ -1,11 +1,11 @@
 // Shared domain types used across slices and shared UI primitives.
 
 /**
- * Database engine. The three relational engines (SQLite, MySQL, PostgreSQL)
- * plus `redis`, the key-value engine added in M13. Lowercase on the wire,
- * matching Rust's `Engine`.
+ * Database engine. The three relational engines (SQLite, MySQL, PostgreSQL),
+ * `redis` (the key-value engine, M13), and `dynamodb` (the NoSQL document
+ * store, M17). Lowercase on the wire, matching Rust's `Engine`.
  */
-export type Engine = "sqlite" | "mysql" | "postgres" | "redis";
+export type Engine = "sqlite" | "mysql" | "postgres" | "redis" | "dynamodb";
 
 /**
  * Deployment environment a connection points at (drives the EnvTag tint).

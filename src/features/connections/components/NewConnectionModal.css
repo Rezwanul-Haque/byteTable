@@ -8,8 +8,9 @@
 
 .engine-picker {
   display: grid;
-  /* 4-up since M13 added Redis as the 4th engine (REDIS_SPEC §1). */
-  grid-template-columns: repeat(4, 1fr);
+  /* 5-up since M17 added DynamoDB as the 5th engine — all engines on one row
+     (SQLite / MySQL / PostgreSQL / Redis / DynamoDB), matching the design. */
+  grid-template-columns: repeat(5, 1fr);
   gap: 7px;
 }
 
@@ -195,6 +196,13 @@
   grid-column: span 2;
 }
 
+/* Non-label grid items that must span both columns (M17: the DynamoDB AWS/Local
+   toggle, region select, endpoint field, and the form note divs). The original
+   rule only matched <label>, leaving these <div>s stuck in column 1. */
+.form-grid > .span-2 {
+  grid-column: span 2;
+}
+
 .form-grid input {
   background: var(--bg0);
   border: 1px solid var(--border);
@@ -295,6 +303,22 @@
   background: var(--bg2);
   border-radius: 8px;
   padding: 9px 11px;
+}
+
+/* DynamoDB (M17) AWS / Local-endpoint segmented toggle — full-width, the two
+   segments split 50/50 (the shared .seg is `flex:none` with left-packed pills;
+   here it must fill the row and stretch its buttons, matching the design). The
+   Dynamo workspace's own ddb-* styles live in dynamo_browse/Dynamo.css, which is
+   not loaded by this modal, so the connect-form copy lives here. */
+.ddb-mode-seg {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 4px;
+}
+.ddb-mode-seg .seg-btn {
+  flex: 1;
+  justify-content: center;
+  padding: 8px 11px;
 }
 
 .ssh-toggle-row {

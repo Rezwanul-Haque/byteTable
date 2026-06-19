@@ -1,0 +1,1300 @@
+/* DynamoDB workspace styles (M17). Mirrors the prototype's `ddb-*` rules in
+   ByteTable.html, scoped to the document-store workspace. Reuses the shared
+   chrome (.workspace, .sidebar, .main-col, .seg, .ws-chip, .env-tag). */
+
+.ddb-workspace {
+  --ddb-pk: #5aa7f5;
+  --ddb-sk: #b08cff;
+}
+
+/* ---- key badges ---- */
+.ddb-key-badge {
+  display: inline-flex;
+  align-items: center;
+  font: 600 9px/1 var(--mono, ui-monospace, monospace);
+  padding: 2px 4px;
+  border-radius: 4px;
+  letter-spacing: 0.04em;
+}
+.ddb-key-badge.pk {
+  color: var(--ddb-pk);
+  background: color-mix(in srgb, var(--ddb-pk) 16%, transparent);
+}
+.ddb-key-badge.sk {
+  color: var(--ddb-sk);
+  background: color-mix(in srgb, var(--ddb-sk) 16%, transparent);
+}
+.ddb-key-badge.gsi {
+  color: #e2b340;
+  background: color-mix(in srgb, #e2b340 16%, transparent);
+}
+
+/* ---- sidebar ---- */
+.ddb-schema-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.ddb-schema-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 6px 9px;
+  color: var(--text);
+  font-size: 12.5px;
+  cursor: default;
+  min-width: 0;
+}
+.ddb-schema-btn-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ddb-sidebar-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 10px;
+  padding: 6px 9px;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+.ddb-sidebar-search input {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 12.5px;
+  outline: none;
+  min-width: 0;
+}
+.ddb-sidebar-section-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px 4px;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+.ddb-sidebar-count,
+.ddb-rail-count {
+  background: var(--bg2);
+  border-radius: 9px;
+  padding: 1px 7px;
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+.ddb-sidebar-tables {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 6px;
+}
+.ddb-sidebar-empty,
+.ddb-dash-empty {
+  padding: 14px 12px;
+  color: var(--text-faint);
+  font-size: 12.5px;
+}
+.ddb-table-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+}
+.ddb-table-item:hover {
+  background: var(--bg1);
+}
+.ddb-table-item.active {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.ddb-table-expand {
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  display: inline-flex;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.12s;
+}
+.ddb-table-expand.open {
+  transform: rotate(90deg);
+}
+.ddb-table-item-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ddb-table-cols {
+  padding: 2px 8px 6px 28px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.ddb-key-line,
+.ddb-idx-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  flex-wrap: wrap;
+}
+.ddb-idx-keys {
+  color: var(--text-faint);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 10.5px;
+}
+.ddb-sidebar-footer {
+  padding: 10px;
+  border-top: 1px solid var(--border);
+}
+
+/* ---- tab bar ---- */
+.ddb-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.ddb-tabbar {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg0);
+  min-height: 36px;
+}
+.ddb-tabbar-tabs {
+  display: flex;
+  flex: 1;
+  overflow-x: auto;
+}
+.ddb-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border-right: 1px solid var(--border);
+  font-size: 12.5px;
+  color: var(--text-dim);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ddb-tab.active {
+  background: var(--bg2);
+  color: var(--text);
+}
+.ddb-tab-title {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ddb-tab-close {
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.ddb-tab-close:hover {
+  background: var(--bg3);
+  color: var(--text);
+}
+.ddb-tabbar-tools {
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+}
+.ddb-tabbar-tool {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ddb-tabbar-tool:hover {
+  background: var(--bg1);
+  color: var(--text);
+}
+.ddb-tab-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+
+/* ---- table tab ---- */
+.ddb-table-tab {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+.ddb-table-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.ddb-scan-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.ddb-rowcount {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  font-family: var(--mono, ui-monospace, monospace);
+}
+.ddb-pagesize {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.ddb-pagesize-select {
+  min-width: 64px;
+}
+.ddb-table-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 12px;
+  border-top: 1px solid var(--border);
+}
+.ddb-table-hint {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.ddb-pager {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ddb-pager-label {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  min-width: 54px;
+  text-align: center;
+}
+.ddb-tab-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: color-mix(in srgb, #e06c75 12%, transparent);
+  color: #e06c75;
+  font-size: 12.5px;
+}
+
+/* ---- query bar ---- */
+.ddb-query-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.ddb-q-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.ddb-q-field > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.ddb-sk-row {
+  display: flex;
+  gap: 6px;
+}
+.ddb-where-input,
+.ddb-filter-select {
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: var(--text);
+  font-size: 12.5px;
+  outline: none;
+}
+.ddb-where-input:focus,
+.ddb-filter-select:focus {
+  border-color: var(--accent);
+}
+.ddb-sk-op {
+  min-width: 70px;
+}
+
+/* ---- item grid ---- */
+.ddb-datagrid-wrap {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+.ddb-grid-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-faint);
+}
+.ddb-datagrid {
+  border-collapse: collapse;
+  font-size: 12.5px;
+  width: max-content;
+  min-width: 100%;
+}
+.ddb-datagrid th,
+.ddb-datagrid td {
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  padding: 5px 10px;
+  text-align: left;
+  white-space: nowrap;
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ddb-datagrid thead th {
+  position: sticky;
+  top: 0;
+  background: var(--bg2);
+  color: var(--text-dim);
+  font-weight: 600;
+  z-index: 1;
+}
+.ddb-dg-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.ddb-dg-rownum-h,
+.ddb-dg-rownum {
+  color: var(--text-faint);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  background: var(--bg1);
+}
+.ddb-row {
+  cursor: pointer;
+}
+.ddb-row:hover td {
+  background: var(--bg1);
+}
+.ddb-cell-null {
+  color: var(--text-faint);
+}
+.ddb-cell-num {
+  color: #d19a66;
+  font-variant-numeric: tabular-nums;
+}
+.ddb-cell-true {
+  color: #98c379;
+}
+.ddb-cell-false {
+  color: #e06c75;
+}
+.ddb-json-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--bg2);
+  border-radius: 5px;
+  padding: 1px 6px;
+  color: var(--text-dim);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11px;
+}
+
+/* ---- structure / indexes view ---- */
+.ddb-structure-view {
+  padding: 16px 18px;
+  overflow-y: auto;
+}
+.ddb-h {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text);
+  margin: 0 0 8px;
+}
+.ddb-structure-card {
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+}
+.ddb-structure-card-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+.ddb-structure-card-detail {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.ddb-structure-none {
+  color: var(--text-faint);
+  font-size: 12.5px;
+  margin-bottom: 8px;
+}
+.ddb-tag {
+  background: var(--bg2);
+  border-radius: 5px;
+  padding: 1px 6px;
+  font-size: 10.5px;
+  color: var(--text-dim);
+  font-family: var(--mono, ui-monospace, monospace);
+}
+.ddb-meta {
+  display: grid;
+  gap: 2px;
+  max-width: 360px;
+}
+.ddb-meta-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.ddb-meta-row b {
+  color: var(--text);
+}
+
+/* ---- dashboard ---- */
+.ddb-dash {
+  padding: 22px 26px;
+  overflow-y: auto;
+}
+.ddb-dash-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.ddb-dash-head h2 {
+  margin: 0;
+  font-size: 17px;
+}
+.ddb-dash-sub {
+  color: var(--text-faint);
+  font-size: 12.5px;
+}
+.ddb-dash-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 22px;
+}
+.ddb-dash-stat {
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+.ddb-dash-stat-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+}
+.ddb-dash-stat-value {
+  font-size: 22px;
+  font-weight: 600;
+  margin-top: 4px;
+}
+.ddb-dash-panel {
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+.ddb-dash-panel h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+.ddb-structure-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.ddb-structure-table th,
+.ddb-structure-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 7px 10px;
+  text-align: left;
+}
+.ddb-structure-table th {
+  color: var(--text-faint);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+.ddb-st-name {
+  font-weight: 600;
+}
+.ddb-st-type {
+  font-family: var(--mono, ui-monospace, monospace);
+  color: var(--text-dim);
+  font-size: 11.5px;
+}
+/* numbers left-aligned (do NOT use a block display — it breaks <td> layout) */
+.ddb-dash-num {
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  color: var(--text-dim);
+}
+
+/* ---- context menu ---- */
+.ddb-ctx-menu {
+  position: fixed;
+  z-index: 200;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  min-width: 180px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+}
+.ddb-table-actions-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+}
+.ddb-ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text);
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  cursor: pointer;
+  text-align: left;
+}
+.ddb-ctx-item:hover {
+  background: var(--bg3);
+}
+.ddb-ctx-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+/* ---- item editor modal ---- */
+.ddb-json-modal {
+  width: min(640px, 92vw);
+}
+.ddb-json-type-tag {
+  background: var(--bg2);
+  border-radius: 5px;
+  padding: 1px 7px;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-family: var(--mono, ui-monospace, monospace);
+}
+.ddb-edit-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: inline-block;
+}
+.ddb-item-attrs {
+  max-height: 46vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0;
+}
+.ddb-attr-row {
+  display: grid;
+  grid-template-columns: 58px 150px 1fr 26px;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+.ddb-attr-row.invalid .ddb-val-input {
+  border-color: #e06c75;
+}
+.ddb-attr-type {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--text-faint);
+  text-align: center;
+}
+.ddb-type-sel,
+.ddb-val-input {
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: var(--text);
+  font-size: 12.5px;
+  outline: none;
+  width: 100%;
+}
+.ddb-type-sel:focus,
+.ddb-val-input:focus {
+  border-color: var(--accent);
+}
+.ddb-val-input.locked {
+  opacity: 0.7;
+  font-family: var(--mono, ui-monospace, monospace);
+}
+.ddb-val-json {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11.5px;
+  resize: vertical;
+}
+.ddb-attr-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+}
+.ddb-attr-nametext {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+}
+.ddb-lock {
+  color: var(--text-faint);
+}
+.ddb-attr-del {
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  display: inline-flex;
+  padding: 4px;
+  border-radius: 5px;
+}
+.ddb-attr-del:hover {
+  color: #e06c75;
+  background: var(--bg2);
+}
+.ddb-add-attr {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0;
+}
+.ddb-add-attr .ddb-val-input {
+  flex: 1;
+}
+.ddb-ddl-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+  margin: 6px 0 4px;
+}
+.ddb-json-err {
+  color: #e06c75;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.ddb-ddl-block {
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11.5px;
+  color: var(--text-dim);
+  overflow: auto;
+  margin: 0;
+}
+.ddb-ddl-block.invalid {
+  border-color: #e06c75;
+}
+.ddb-keys-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+/* ---- PartiQL tab ---- */
+.ddb-pq-tab {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+.ddb-pq-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.ddb-pq-hint {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.ddb-pq-snippets {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.ddb-snippet-chip {
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: var(--mono, ui-monospace, monospace);
+}
+.ddb-snippet-chip:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.ddb-pq-editor-wrap {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+}
+.ddb-pq-input {
+  flex: 1;
+  min-height: 90px;
+  background: var(--bg0);
+  border: none;
+  outline: none;
+  resize: vertical;
+  color: var(--text);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 13px;
+  padding: 12px;
+}
+.ddb-pq-history {
+  width: 220px;
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+  max-height: 160px;
+  padding: 6px;
+}
+.ddb-pq-history-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  padding: 2px 4px;
+}
+.ddb-pq-history-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11px;
+  padding: 4px 6px;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ddb-pq-history-item:hover {
+  background: var(--bg1);
+  color: var(--text);
+}
+.ddb-pq-results {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+.ddb-pq-grid {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.ddb-sql-result-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.ddb-op-tag {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 5px;
+}
+.ddb-op-tag.q {
+  color: #98c379;
+  background: color-mix(in srgb, #98c379 16%, transparent);
+}
+.ddb-op-tag.s {
+  color: #e2b340;
+  background: color-mix(in srgb, #e2b340 16%, transparent);
+}
+.ddb-sql-error {
+  display: flex;
+  gap: 10px;
+  padding: 16px;
+  color: #e06c75;
+}
+.ddb-sql-error-title {
+  font-weight: 600;
+}
+.ddb-sql-error-msg {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 12px;
+  margin-top: 4px;
+}
+.ddb-sql-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 40px;
+  color: var(--text-faint);
+}
+
+/* ---- schema map ---- */
+.ddb-schema-map {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.ddb-map-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+}
+.ddb-map-title {
+  font-weight: 600;
+}
+.ddb-map-sub,
+.ddb-map-hint {
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+.ddb-map-zoom {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  width: 38px;
+  text-align: center;
+}
+.ddb-map-canvas-wrap {
+  flex: 1;
+  overflow: auto;
+  background: var(--bg0);
+  position: relative;
+}
+.ddb-map-canvas {
+  position: relative;
+}
+.ddb-map-inner {
+  position: relative;
+  transform-origin: 0 0;
+}
+.ddb-map-edges {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+.ddb-map-edge-path {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  opacity: 0.7;
+}
+.ddb-map-edge-path.ref {
+  stroke: var(--text-faint);
+  stroke-dasharray: 4 3;
+}
+.ddb-map-edge-dot,
+.ddb-map-edge-arrow {
+  fill: var(--accent);
+}
+.ddb-map-edge-dot.ref,
+.ddb-map-edge-arrow.ref {
+  fill: var(--text-faint);
+}
+.ddb-map-card {
+  position: absolute;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+.ddb-map-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 10px;
+  background: var(--bg2);
+  cursor: grab;
+  height: 36px;
+}
+.ddb-map-card-name {
+  font-weight: 600;
+  font-size: 13px;
+}
+.ddb-map-card-sub {
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+.ddb-map-card-count {
+  margin-left: auto;
+  background: var(--bg3);
+  border-radius: 9px;
+  padding: 1px 7px;
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+.ddb-map-card-open {
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  display: inline-flex;
+  padding: 2px;
+}
+.ddb-map-card-open:hover {
+  color: var(--accent);
+}
+.ddb-map-card-cols {
+  padding: 4px 0;
+}
+.ddb-map-card-col {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  font-size: 11.5px;
+}
+.ddb-map-col-icon {
+  width: 12px;
+  display: inline-flex;
+  justify-content: center;
+}
+.ddb-map-col-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ddb-map-col-name.dim {
+  color: var(--text-faint);
+}
+.ddb-map-col-name.is-fk {
+  color: var(--text);
+}
+.ddb-map-col-tag {
+  font-size: 8.5px;
+  font-weight: 600;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.ddb-map-col-tag.pk {
+  color: var(--ddb-pk);
+  background: color-mix(in srgb, var(--ddb-pk) 16%, transparent);
+}
+.ddb-map-col-tag.sk {
+  color: var(--ddb-sk);
+  background: color-mix(in srgb, var(--ddb-sk) 16%, transparent);
+}
+.ddb-map-col-tag.gsi {
+  color: #e2b340;
+  background: color-mix(in srgb, #e2b340 16%, transparent);
+}
+.ddb-map-col-type {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+.ddb-map-col-type.accent {
+  color: var(--accent);
+}
+.ddb-map-col-more .ddb-map-col-name {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+/* ---- export / import modals ---- */
+.ddb-export-modal,
+.ddb-import-modal {
+  width: min(560px, 92vw);
+}
+.ddb-io-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+  margin: 10px 0 6px;
+}
+.ddb-io-seg,
+.ddb-io-hint {
+  margin-bottom: 4px;
+}
+.ddb-io-hint {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.ddb-export-choose {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ddb-export-opt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 12px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--text);
+}
+.ddb-export-opt.on {
+  border-color: var(--accent);
+}
+.ddb-export-opt-radio {
+  color: var(--text-faint);
+  display: inline-flex;
+}
+.ddb-export-opt.on .ddb-export-opt-radio {
+  color: var(--accent);
+}
+.ddb-export-opt-text {
+  display: flex;
+  flex-direction: column;
+}
+.ddb-export-opt-text span {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.ddb-export-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
+  padding: 8px 12px;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12.5px;
+}
+.ddb-export-file-name {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 12px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ddb-export-cur {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.ddb-export-bar {
+  height: 8px;
+  background: var(--bg2);
+  border-radius: 5px;
+  overflow: hidden;
+  margin: 10px 0 6px;
+}
+.ddb-export-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s;
+}
+.ddb-export-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.ddb-import-format {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.ddb-import-textarea {
+  width: 100%;
+  min-height: 120px;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--text);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 12px;
+  outline: none;
+  resize: vertical;
+}
+.ddb-import-textarea:focus {
+  border-color: var(--accent);
+}
+.ddb-import-err {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  color: #e06c75;
+  font-size: 12px;
+}
+.ddb-import-preview {
+  margin-top: 10px;
+}
+.ddb-import-preview-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.ddb-import-ready {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.ddb-import-match {
+  color: var(--text-dim);
+}
+.ddb-import-unknown {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #e2b340;
+}
+.ddb-import-preview-grid {
+  max-height: 200px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.ddb-import-busy {
+  margin-top: 10px;
+}
+.ddb-import-note {
+  flex: 1;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+/* ---- status bar ---- */
+.ddb-statusbar {
+  /* Span the full bottom row of the .workspace grid (areas: sidebar/main +
+     status across both columns). Without this the bar auto-places into the
+     sidebar cell and its contents wrap — the broken bottom bar. */
+  grid-area: status;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 28px;
+  padding: 0 12px;
+  border-top: 1px solid var(--border);
+  background: var(--bg0);
+  font-size: 11.5px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.ddb-status-strong {
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.ddb-status-dim {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* ---- connect modal: AWS/Local toggle ---- */
+.ddb-mode-seg {
+  margin-bottom: 8px;
+}
+
+/* ---- custom Select in inline slots (query bar, item editor) ----
+   These classes land on the Select's `.sel-wrap` div; the trigger carries its
+   own border/background, so neutralize the legacy native-<select> border rule
+   here and just constrain the width. */
+.ddb-q-select {
+  min-width: 200px;
+}
+.ddb-sk-op {
+  min-width: 128px;
+}
+.ddb-type-sel.sel-wrap {
+  width: 56px;
+  background: none;
+  border: none;
+  padding: 0;
+}
+.ddb-val-select.sel-wrap {
+  display: flex;
+  width: 100%;
+}

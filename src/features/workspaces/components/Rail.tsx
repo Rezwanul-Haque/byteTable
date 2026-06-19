@@ -21,6 +21,7 @@ const ENGINE_META = {
   mysql: { label: "MySQL", short: "My" },
   postgres: { label: "PostgreSQL", short: "Pg" },
   redis: { label: "Redis", short: "Rd" },
+  dynamodb: { label: "DynamoDB", short: "Dy" },
 } as const;
 
 // Ported from rail.jsx wsInitials: two characters from the workspace name —

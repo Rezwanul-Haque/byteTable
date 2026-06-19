@@ -8,6 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
+use crate::shared::document::DocumentStoreConnection;
 use crate::shared::engine::{
     ConnectSecret, ConnectionParams, Connector, Engine, EngineConnection, EngineInfo,
     OpenConnection, QueryOptions, QueryResult, SchemaInfo, TableInfo,
@@ -98,7 +99,9 @@ impl ConnectionManager {
     ) -> Result<Arc<dyn EngineConnection>, AppError> {
         match self.open.read().await.get(handle) {
             Some(OpenConnection::Sql(conn)) => Ok(Arc::clone(conn)),
-            Some(OpenConnection::Kv(_)) => Err(kind_mismatch("SQL")),
+            Some(OpenConnection::Kv(_)) | Some(OpenConnection::Document(_)) => {
+                Err(kind_mismatch("SQL"))
+            }
             None => Err(not_open(handle)),
         }
     }
@@ -111,7 +114,24 @@ impl ConnectionManager {
     ) -> Result<Arc<dyn KeyValueConnection>, AppError> {
         match self.open.read().await.get(handle) {
             Some(OpenConnection::Kv(conn)) => Ok(Arc::clone(conn)),
-            Some(OpenConnection::Sql(_)) => Err(kind_mismatch("key-value")),
+            Some(OpenConnection::Sql(_)) | Some(OpenConnection::Document(_)) => {
+                Err(kind_mismatch("key-value"))
+            }
+            None => Err(not_open(handle)),
+        }
+    }
+
+    /// The document-store connection behind a handle (M17 DynamoDB). A handle
+    /// of any other family is the symmetric §5 error.
+    pub async fn get_document(
+        &self,
+        handle: &ConnectionHandleId,
+    ) -> Result<Arc<dyn DocumentStoreConnection>, AppError> {
+        match self.open.read().await.get(handle) {
+            Some(OpenConnection::Document(conn)) => Ok(Arc::clone(conn)),
+            Some(OpenConnection::Sql(_)) | Some(OpenConnection::Kv(_)) => {
+                Err(kind_mismatch("document-store"))
+            }
             None => Err(not_open(handle)),
         }
     }
@@ -137,6 +157,9 @@ impl ConnectionManager {
                     let _ = c.close().await;
                 }
                 OpenConnection::Kv(c) => {
+                    let _ = c.close().await;
+                }
+                OpenConnection::Document(c) => {
                     let _ = c.close().await;
                 }
             }
@@ -409,6 +432,10 @@ pub async fn open_connection<R: ConnectionRepository + ?Sized, S: SecretStore + 
                 }),
             )
         }
+        // DynamoDB (M17): no schemas, no keyspace. The DynamoDB workspace
+        // fetches its table list on mount via `dynamo_list_tables` — the open
+        // result only carries the `kind` the renderer routes on.
+        OpenConnection::Document(_) => (Vec::new(), None),
     };
 
     let handle_id = manager.insert(connection).await;
@@ -464,6 +491,7 @@ pub async fn close_connection(
     match manager.remove(handle).await {
         Some(OpenConnection::Sql(connection)) => connection.close().await,
         Some(OpenConnection::Kv(connection)) => connection.close().await,
+        Some(OpenConnection::Document(connection)) => connection.close().await,
         None => Ok(()),
     }
 }

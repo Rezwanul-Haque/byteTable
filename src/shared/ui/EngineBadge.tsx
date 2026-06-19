@@ -17,6 +17,8 @@ const ENGINE_META: Record<Engine, { label: string; short: string; color: string 
   // Redis (M13, REDIS_SPEC §1): vermilion, deliberately distinct from the
   // pinkish production/error red.
   redis: { label: "Redis", short: "Rd", color: "#e8533d" },
+  // DynamoDB (M17): AWS-blue, distinct from Postgres's lighter blue.
+  dynamodb: { label: "DynamoDB", short: "Dy", color: "#4d77ff" },
 };
 
 interface EngineBadgeProps {

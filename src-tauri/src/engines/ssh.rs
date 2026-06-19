@@ -68,7 +68,9 @@ pub async fn open_tunnel_if_needed(
         ConnectionParams::Mysql { host, port, .. }
         | ConnectionParams::Postgres { host, port, .. }
         | ConnectionParams::Redis { host, port, .. } => (host.as_str(), *port),
-        ConnectionParams::Sqlite { .. } => return Ok(None),
+        // SQLite (local file) and DynamoDB (HTTPS to AWS, no bastion) never
+        // tunnel; `params.ssh()` already returned None above for both.
+        ConnectionParams::Sqlite { .. } | ConnectionParams::Dynamodb { .. } => return Ok(None),
     };
     let ssh_secret = secret.and_then(ConnectSecret::ssh);
     let tunnel = SshTunnel::open(ssh, target_host, target_port, ssh_secret).await?;

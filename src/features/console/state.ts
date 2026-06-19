@@ -39,6 +39,8 @@ export function shellLabel(engine: Engine): string {
       return "sqlite3";
     case "redis":
       return "redis-cli";
+    case "dynamodb":
+      return "partiql";
     case "postgres":
     default:
       return "psql";

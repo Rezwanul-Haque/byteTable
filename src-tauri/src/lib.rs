@@ -8,6 +8,7 @@ use tauri::menu::{CheckMenuItemBuilder, Menu, MenuBuilder, MenuItemBuilder, Subm
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, Runtime, WindowEvent};
 
+use engines::dynamo::DynamoConnector;
 use engines::mysql::MysqlConnector;
 use engines::postgres::PostgresConnector;
 use engines::redis::RedisConnector;
@@ -155,6 +156,10 @@ pub fn run() {
             // `OpenConnection::Kv`, kept apart from the SQL connections by the
             // manager's `get_sql` / `get_kv` kind seam.
             registry.register(Engine::Redis, Arc::new(RedisConnector));
+            // DynamoDB (M17): a document-store engine. Its connector returns an
+            // `OpenConnection::Document`, kept apart from SQL and Redis by the
+            // manager's `get_document` kind seam.
+            registry.register(Engine::Dynamodb, Arc::new(DynamoConnector));
             app.manage(ConnectionsState::new(
                 Box::new(repository),
                 registry,
@@ -285,6 +290,15 @@ pub fn run() {
             features::keyvalue::commands::kv_persist,
             features::keyvalue::commands::kv_create_key,
             features::keyvalue::commands::kv_command,
+            features::dynamo::commands::dynamo_list_tables,
+            features::dynamo::commands::dynamo_describe_table,
+            features::dynamo::commands::dynamo_scan,
+            features::dynamo::commands::dynamo_query,
+            features::dynamo::commands::dynamo_get_item,
+            features::dynamo::commands::dynamo_put_item,
+            features::dynamo::commands::dynamo_delete_item,
+            features::dynamo::commands::dynamo_batch_write,
+            features::dynamo::commands::dynamo_execute_statement,
             features::generate::commands::generate_preview,
             features::generate::commands::generate_run,
             features::generate::commands::generate_cancel,

@@ -3,6 +3,7 @@
 
 pub mod browse;
 pub mod connections;
+pub mod dynamo;
 pub mod export;
 pub mod generate;
 pub mod insights;

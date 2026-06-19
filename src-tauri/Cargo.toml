@@ -4,7 +4,12 @@ version = "0.0.1"
 description = "A free open-source local-first desktop database client"
 authors = ["ByteTable contributors"]
 edition = "2021"
-rust-version = "1.77.2"
+# Bumped from 1.77.2 in M17: the AWS SDK (DynamoDB engine) raises the effective
+# MSRV. Paired with `.cargo/config.toml`'s `resolver.incompatible-rust-versions
+# = "fallback"`, this makes cargo pick the newest aws-sdk/​smithy crates that
+# still support 1.89 (rather than the 1.91-MSRV latest), keeping the build green
+# on the installed toolchain.
+rust-version = "1.89"
 license = "Apache-2.0"
 
 [lib]
@@ -107,6 +112,17 @@ redis = { version = "0.27", default-features = false, features = [
     "tls-rustls-webpki-roots",
     "keep-alive",
 ] }
+# DynamoDB engine (M17). `aws-config` resolves credentials (shared profile or
+# static access keys) + region and builds the SDK config; `aws-sdk-dynamodb` is
+# the typed client (ListTables/DescribeTable/Scan/Query/GetItem/PutItem/
+# DeleteItem/BatchWriteItem/ExecuteStatement). `behavior-version-latest` pins the
+# SDK's default behaviors so the build is reproducible. The v1 SDK defaults to a
+# pure-Rust rustls TLS stack (no OpenSSL system dep), consistent with the
+# sqlx/redis driver picks, so we keep default features. `aws-credential-types`
+# provides the static `Credentials` for the access-key auth mode.
+aws-config = { version = "1", features = ["behavior-version-latest"] }
+aws-sdk-dynamodb = { version = "1", features = ["behavior-version-latest"] }
+aws-credential-types = { version = "1", features = ["hardcoded-credentials"] }
 
 [dev-dependencies]
 tempfile = "3"

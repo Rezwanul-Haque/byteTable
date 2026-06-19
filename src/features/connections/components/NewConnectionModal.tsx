@@ -54,6 +54,25 @@ const ENGINES: { engine: Engine; label: string }[] = [
   { engine: "mysql", label: "MySQL" },
   { engine: "postgres", label: "PostgreSQL" },
   { engine: "redis", label: "Redis" },
+  { engine: "dynamodb", label: "DynamoDB" },
+];
+
+/** AWS regions offered in the DynamoDB connect form (prototype `AWS_REGIONS`). */
+const AWS_REGIONS = [
+  "us-east-1",
+  "us-east-2",
+  "us-west-1",
+  "us-west-2",
+  "eu-central-1",
+  "eu-west-1",
+  "eu-west-2",
+  "eu-north-1",
+  "ap-south-1",
+  "ap-southeast-1",
+  "ap-southeast-2",
+  "ap-northeast-1",
+  "sa-east-1",
+  "ca-central-1",
 ];
 
 const DEFAULT_PORTS: Partial<Record<Engine, string>> = {
@@ -116,6 +135,16 @@ interface FormState {
   userTouched: boolean;
   file: string;
   tls: TlsMode;
+  // DynamoDB (M17). `ddbMode` toggles AWS vs a Local endpoint; `region` is the
+  // AWS region (a label only in Local mode); `ddbEndpoint` is the DynamoDB Local
+  // URL; `awsAuth` picks the credential mode; `awsProfile` / `awsAccessKeyId` are
+  // its non-secret inputs (the secret access key reuses the `password` field).
+  ddbMode: "aws" | "local";
+  region: string;
+  ddbEndpoint: string;
+  awsAuth: "profile" | "keys";
+  awsProfile: string;
+  awsAccessKeyId: string;
   // Transient secrets — sent to the backend, never part of saved params.
   password: string;
   // SSH tunnel.
@@ -150,6 +179,12 @@ const INITIAL: FormState = {
   userTouched: false,
   file: "",
   tls: "disable",
+  ddbMode: "aws",
+  region: "eu-central-1",
+  ddbEndpoint: "http://localhost:8000",
+  awsAuth: "profile",
+  awsProfile: "default",
+  awsAccessKeyId: "",
   password: "",
   useSsh: false,
   sshHost: "",
@@ -232,6 +267,17 @@ function formStateFromConnection(c: SavedConnection): FormState {
   };
   if (p.engine === "sqlite") {
     return { ...base, file: p.path };
+  }
+  if (p.engine === "dynamodb") {
+    return {
+      ...base,
+      ddbMode: p.endpoint ? "local" : "aws",
+      region: p.region,
+      ddbEndpoint: p.endpoint ?? INITIAL.ddbEndpoint,
+      awsAuth: p.auth.mode,
+      awsProfile: p.auth.mode === "profile" ? p.auth.profile : INITIAL.awsProfile,
+      awsAccessKeyId: p.auth.mode === "keys" ? p.auth.accessKeyId : "",
+    };
   }
   const sshFields = p.ssh
     ? {
@@ -408,6 +454,12 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
     user,
     file,
     tls,
+    ddbMode,
+    region,
+    ddbEndpoint,
+    awsAuth,
+    awsProfile,
+    awsAccessKeyId,
     password,
     useSsh,
     sshHost,
@@ -466,6 +518,8 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
   // Redis (REDIS_SPEC §1): a numbered logical db (0–15) in place of a relational
   // database name, and an optional ACL user (the Redis `default` user otherwise).
   const isRedis = engine === "redis";
+  // DynamoDB (M17): its own AWS/Local + region + credential form; no SSH tab.
+  const isDynamo = engine === "dynamodb";
 
   const pickEngine = (next: Engine) => dispatch({ type: "engine", engine: next });
 
@@ -503,6 +557,30 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
     if (engine === "sqlite") {
       if (!file.trim()) return { error: "Database file is required" };
       return { params: { engine: "sqlite", path: file.trim() } };
+    }
+    // DynamoDB (M17): region + credential mode + an optional Local endpoint. No
+    // host/port/database/TLS/SSH. The secret access key (keys auth) is a secret
+    // and travels via `secrets()`, never in params.
+    if (engine === "dynamodb") {
+      if (!region.trim()) return { error: "Region is required" };
+      if (ddbMode === "local" && !ddbEndpoint.trim()) {
+        return { error: "Endpoint URL is required for a Local connection" };
+      }
+      const auth =
+        awsAuth === "profile"
+          ? { mode: "profile" as const, profile: awsProfile.trim() || "default" }
+          : { mode: "keys" as const, accessKeyId: awsAccessKeyId.trim() };
+      if (auth.mode === "keys" && !auth.accessKeyId) {
+        return { error: "Access key ID is required" };
+      }
+      return {
+        params: {
+          engine: "dynamodb",
+          region: region.trim(),
+          ...(ddbMode === "local" ? { endpoint: ddbEndpoint.trim() } : {}),
+          auth,
+        },
+      };
     }
     if (!host.trim()) return { error: "Host is required" };
     const portNumber = Number(port.trim());
@@ -763,7 +841,7 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
         ) : null}
       </div>
 
-      {!isFileBased ? (
+      {!isFileBased && !isDynamo ? (
         <div
           className="modal-tabs"
           role="tablist"
@@ -799,7 +877,132 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
         </div>
       ) : null}
 
-      {isFileBased ? (
+      {isDynamo ? (
+        <div className="form-grid">
+          <div className="span-2 seg ddb-mode-seg">
+            <button
+              type="button"
+              className={"seg-btn" + (ddbMode === "aws" ? " active" : "")}
+              onClick={() => field({ ddbMode: "aws" })}
+            >
+              <Icon name="cloud" size={14} /> AWS
+            </button>
+            <button
+              type="button"
+              className={"seg-btn" + (ddbMode === "local" ? " active" : "")}
+              onClick={() => field({ ddbMode: "local" })}
+            >
+              <Icon name="hard_drive" size={14} /> Local endpoint
+            </button>
+          </div>
+          {ddbMode === "aws" ? (
+            <>
+              {/* Select fields use a div + span, NOT a <label>: a <label>
+                  natively forwards an inner click to its first control (the
+                  trigger), reopening the just-closed popover — React's synthetic
+                  stopPropagation can't prevent that native behavior. Mirrors
+                  ProjectField. */}
+              <div className="form-field span-2">
+                <span className="form-field-label">Region</span>
+                <Select
+                  className="sel-block"
+                  aria-label="AWS region"
+                  value={region}
+                  options={AWS_REGIONS.map((r) => ({ value: r, label: r }))}
+                  onChange={(v) => field({ region: v })}
+                />
+              </div>
+              <div className="form-field">
+                <span className="form-field-label">Credentials</span>
+                <Select
+                  className="sel-block"
+                  aria-label="Credential mode"
+                  value={awsAuth}
+                  options={[
+                    { value: "profile", label: "Shared profile" },
+                    { value: "keys", label: "Access keys" },
+                  ]}
+                  onChange={(v) => field({ awsAuth: v as "profile" | "keys" })}
+                />
+              </div>
+              {awsAuth === "profile" ? (
+                <label>
+                  Profile
+                  <input
+                    value={awsProfile}
+                    onChange={(e) => field({ awsProfile: e.target.value })}
+                    placeholder="default"
+                    spellCheck={false}
+                  />
+                </label>
+              ) : (
+                <label>
+                  Access key ID
+                  <input
+                    value={awsAccessKeyId}
+                    onChange={(e) => field({ awsAccessKeyId: e.target.value })}
+                    placeholder="AKIA…"
+                    spellCheck={false}
+                  />
+                </label>
+              )}
+              {awsAuth === "keys" ? (
+                // The secret access key is sent transiently and stored in the OS
+                // keychain on Save (like the SQL password) — never in params.
+                <label className="span-2">
+                  Secret access key
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => field({ password: e.target.value })}
+                    placeholder="••••••••••••"
+                  />
+                </label>
+              ) : null}
+              <div className="span-2 form-note">
+                <Icon name="cloud" size={14} />{" "}
+                <span>
+                  Connects to DynamoDB in {region}. Credentials are resolved from your{" "}
+                  {awsAuth === "profile" ? "~/.aws/credentials profile" : "access keys"} and never
+                  leave this machine.
+                </span>
+              </div>
+            </>
+          ) : (
+            <>
+              <label className="span-2">
+                Endpoint URL
+                <input
+                  value={ddbEndpoint}
+                  onChange={(e) => field({ ddbEndpoint: e.target.value })}
+                  placeholder="http://localhost:8000"
+                  spellCheck={false}
+                />
+              </label>
+              <div className="form-field span-2">
+                <span className="form-field-label">
+                  <span className="lbl-row">
+                    Region <span className="opt-tag">label only</span>
+                  </span>
+                </span>
+                <Select
+                  className="sel-block"
+                  aria-label="Region label"
+                  value={region}
+                  options={AWS_REGIONS.map((r) => ({ value: r, label: r }))}
+                  onChange={(v) => field({ region: v })}
+                />
+              </div>
+              <div className="span-2 form-note">
+                <Icon name="hard_drive" size={14} />{" "}
+                <span>
+                  DynamoDB Local / LocalStack — region is just a label; any access keys work.
+                </span>
+              </div>
+            </>
+          )}
+        </div>
+      ) : isFileBased ? (
         <div className="form-grid">
           <label className="span-2">
             Database file
@@ -840,8 +1043,8 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
                 spellCheck={false}
               />
             </label>
-            <label>
-              TLS mode
+            <div className="form-field">
+              <span className="form-field-label">TLS mode</span>
               <Select
                 className="sel-block"
                 aria-label="TLS mode"
@@ -849,7 +1052,7 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
                 options={TLS_MODES.map((mode) => ({ value: mode, label: mode }))}
                 onChange={(v) => field({ tls: v })}
               />
-            </label>
+            </div>
             <label>
               Port
               <input
@@ -954,8 +1157,8 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
                     spellCheck={false}
                   />
                 </label>
-                <label>
-                  Auth method
+                <div className="form-field">
+                  <span className="form-field-label">Auth method</span>
                   <Select
                     className="sel-block"
                     aria-label="Auth method"
@@ -967,7 +1170,7 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
                     ]}
                     onChange={(v) => field({ sshAuth: v as SshAuthMethod })}
                   />
-                </label>
+                </div>
                 {sshAuth === "key" ? (
                   <label className="span-2">
                     Private key

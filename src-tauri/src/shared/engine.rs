@@ -34,6 +34,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 use crate::features::structure::domain::AlterOp;
+use crate::shared::document::DocumentStoreConnection;
 use crate::shared::error::AppError;
 use crate::shared::keyvalue::KeyValueConnection;
 
@@ -50,6 +51,11 @@ pub enum Engine {
     /// key-value port family in [`crate::shared::keyvalue`]. See the
     /// [`OpenConnection`] kind seam for how the manager keeps the two apart.
     Redis,
+    /// DynamoDB (M17) — a NoSQL key/value + single-table-design store, NOT
+    /// relational and NOT the Redis keyspace. It implements its own document
+    /// port family in [`crate::shared::document`]; the [`OpenConnection`] kind
+    /// seam keeps SQL / key-value / document connections apart.
+    Dynamodb,
 }
 
 impl Engine {
@@ -60,6 +66,7 @@ impl Engine {
             Self::Mysql => "MySQL",
             Self::Postgres => "PostgreSQL",
             Self::Redis => "Redis",
+            Self::Dynamodb => "DynamoDB",
         }
     }
 }
@@ -157,6 +164,29 @@ pub struct SshConfig {
     pub auth: SshAuth,
 }
 
+/// How to authenticate to AWS DynamoDB (M17). Tagged with `mode` (lowercase)
+/// on the wire, mirroring the connect modal's credential picker:
+/// `{ "mode": "profile", "profile": "default" }` or
+/// `{ "mode": "keys", "accessKeyId": "AKIA…" }`.
+///
+/// Security: the `Keys` variant carries only the NON-secret access-key id. The
+/// secret access key is a secret and lives in the OS keychain (account `{id}`),
+/// threaded transiently exactly like a database password — never here, never in
+/// the JSON registry. `Profile` resolves credentials from `~/.aws/credentials`
+/// at connect time; nothing secret is stored by ByteTable.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "mode",
+    rename_all = "lowercase",
+    rename_all_fields = "camelCase"
+)]
+pub enum DynamoAuth {
+    /// A named profile from the shared AWS credentials file.
+    Profile { profile: String },
+    /// Static access keys — the secret access key is a keychain secret.
+    Keys { access_key_id: String },
+}
+
 /// Everything needed to reach a database, per engine.
 ///
 /// Internally tagged with `engine` (lowercase) so the wire shape is
@@ -233,6 +263,17 @@ pub enum ConnectionParams {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         ssh: Option<SshConfig>,
     },
+    /// AWS DynamoDB (M17) — a NoSQL document store. No relational `database`,
+    /// no SSH tunnel, no TLS knob (the AWS SDK manages HTTPS). Carries the AWS
+    /// `region`, an optional custom `endpoint` (set for DynamoDB Local /
+    /// LocalStack; `None` = real AWS), and the credential mode ([`DynamoAuth`]).
+    /// The secret access key (for `Keys` auth) lives in the OS keychain.
+    Dynamodb {
+        region: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        endpoint: Option<String>,
+        auth: DynamoAuth,
+    },
 }
 
 impl ConnectionParams {
@@ -243,6 +284,7 @@ impl ConnectionParams {
             Self::Mysql { .. } => Engine::Mysql,
             Self::Postgres { .. } => Engine::Postgres,
             Self::Redis { .. } => Engine::Redis,
+            Self::Dynamodb { .. } => Engine::Dynamodb,
         }
     }
 
@@ -250,18 +292,24 @@ impl ConnectionParams {
     /// a bastion. `None` for SQLite and for direct server connections.
     pub fn ssh(&self) -> Option<&SshConfig> {
         match self {
-            Self::Sqlite { .. } => None,
+            Self::Sqlite { .. } | Self::Dynamodb { .. } => None,
             Self::Mysql { ssh, .. } | Self::Postgres { ssh, .. } | Self::Redis { ssh, .. } => {
                 ssh.as_ref()
             }
         }
     }
 
-    /// Whether this engine authenticates with a password kept in the OS
-    /// keychain (server engines do; SQLite does not). Used to skip a needless
-    /// keychain read — and the OS access prompt it triggers — for SQLite.
+    /// Whether this engine authenticates with a password/secret kept in the OS
+    /// keychain. Server engines do; SQLite does not. DynamoDB only does for
+    /// `Keys` auth (the secret access key) — `Profile` auth resolves from the
+    /// shared credentials file, so it must NOT read the keychain (skipping the
+    /// needless OS access prompt, exactly like SQLite).
     pub fn uses_password(&self) -> bool {
-        !matches!(self, Self::Sqlite { .. })
+        match self {
+            Self::Sqlite { .. } => false,
+            Self::Dynamodb { auth, .. } => matches!(auth, DynamoAuth::Keys { .. }),
+            _ => true,
+        }
     }
 }
 
@@ -398,6 +446,31 @@ impl<'de> Deserialize<'de> for ConnectionParams {
                     user,
                     tls_mode,
                     ssh,
+                })
+            }
+            "dynamodb" => {
+                // DynamoDB carries a `region`, an optional custom `endpoint`
+                // (DynamoDB Local), and a tagged `auth` ({mode:"profile"|"keys"}).
+                // No TLS/SSH/database fields. The serde-derived `DynamoAuth`
+                // deserializer reads the tagged auth object directly.
+                let region = value
+                    .get("region")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string)
+                    .ok_or_else(|| D::Error::custom("dynamodb params missing 'region'"))?;
+                let endpoint = value
+                    .get("endpoint")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string);
+                let auth = value
+                    .get("auth")
+                    .ok_or_else(|| D::Error::custom("dynamodb params missing 'auth'"))?;
+                let auth = DynamoAuth::deserialize(auth.clone()).map_err(D::Error::custom)?;
+                Ok(ConnectionParams::Dynamodb {
+                    region,
+                    endpoint,
+                    auth,
                 })
             }
             other => Err(D::Error::custom(format!("unknown engine tag '{other}'"))),
@@ -1142,15 +1215,19 @@ pub enum OpenConnection {
     Sql(Arc<dyn EngineConnection>),
     /// A key-value connection (`Redis`, M13).
     Kv(Arc<dyn KeyValueConnection>),
+    /// A document-store connection (`Dynamodb`, M17).
+    Document(Arc<dyn DocumentStoreConnection>),
 }
 
 impl OpenConnection {
-    /// The engine family discriminator (`"sql"` or `"kv"`) — surfaced to the
-    /// renderer in the open-result so it can route to the right workspace.
+    /// The engine family discriminator (`"sql"` / `"kv"` / `"document"`) —
+    /// surfaced to the renderer in the open-result so it can route to the right
+    /// workspace.
     pub fn kind(&self) -> ConnectionKind {
         match self {
             Self::Sql(_) => ConnectionKind::Sql,
             Self::Kv(_) => ConnectionKind::Kv,
+            Self::Document(_) => ConnectionKind::Document,
         }
     }
 
@@ -1159,6 +1236,7 @@ impl OpenConnection {
         match self {
             Self::Sql(c) => c.engine_info(),
             Self::Kv(c) => c.engine_info(),
+            Self::Document(c) => c.engine_info(),
         }
     }
 
@@ -1173,22 +1251,36 @@ impl OpenConnection {
         Self::Kv(Arc::new(connection))
     }
 
+    /// Wrap a document-store connection (the `engines::dynamo` adapter).
+    pub fn document(connection: impl DocumentStoreConnection + 'static) -> Self {
+        Self::Document(Arc::new(connection))
+    }
+
     /// The SQL connection, consuming the enum, or `None` for a key-value one.
     /// Used by the SQL adapters' own tests, which open a connector and then
     /// exercise the [`EngineConnection`] surface directly.
     pub fn into_sql(self) -> Option<Arc<dyn EngineConnection>> {
         match self {
             Self::Sql(c) => Some(c),
-            Self::Kv(_) => None,
+            Self::Kv(_) | Self::Document(_) => None,
         }
     }
 
-    /// The key-value connection, consuming the enum, or `None` for SQL. Used
+    /// The key-value connection, consuming the enum, or `None` otherwise. Used
     /// by the `engines::redis` integration tests.
     pub fn into_kv(self) -> Option<Arc<dyn KeyValueConnection>> {
         match self {
             Self::Kv(c) => Some(c),
-            Self::Sql(_) => None,
+            Self::Sql(_) | Self::Document(_) => None,
+        }
+    }
+
+    /// The document-store connection, consuming the enum, or `None` otherwise.
+    /// Used by the `engines::dynamo` integration tests.
+    pub fn into_document(self) -> Option<Arc<dyn DocumentStoreConnection>> {
+        match self {
+            Self::Document(c) => Some(c),
+            Self::Sql(_) | Self::Kv(_) => None,
         }
     }
 }
@@ -1201,6 +1293,8 @@ impl OpenConnection {
 pub enum ConnectionKind {
     Sql,
     Kv,
+    /// A document store (`Dynamodb`, M17) → the DynamoDB workspace.
+    Document,
 }
 
 /// Opens and tests connections for one engine. One implementation per

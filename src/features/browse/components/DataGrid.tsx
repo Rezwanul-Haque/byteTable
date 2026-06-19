@@ -383,6 +383,19 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   const closeFkPeek = useCallback(() => setFkPeek(null), []);
   const closeInsights = useCallback(() => setInsights(null), []);
 
+  // Copy a cell's raw value to the clipboard — handy for read-only cells
+  // (primary keys can't be selected/edited) when pasting an id into a query.
+  const copyCell = useCallback(
+    (value: CellValue) => {
+      if (value === null) return;
+      void navigator.clipboard.writeText(String(value)).then(
+        () => toast("Copied", "ok"),
+        () => toast("Couldn't copy to clipboard", "err"),
+      );
+    },
+    [toast],
+  );
+
   // The current page's rows, keyed by ABSOLUTE row index (`offset + i`).
   const rowCacheRef = useRef<Map<number, CellValue[]>>(new Map());
   const [pageRowCount, setPageRowCount] = useState(0);
@@ -1353,6 +1366,23 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
                             }
                           />
                         )}
+                        {/* Hover copy button — copies the raw value. Especially
+                            useful for read-only cells (primary keys) that can't
+                            be selected/edited to grab the value for a query. */}
+                        {!isEditing && cellVal !== null ? (
+                          <button
+                            type="button"
+                            className="dg-copy"
+                            title="Copy value"
+                            aria-label={"Copy " + c.name + " value"}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              copyCell(cellVal);
+                            }}
+                          >
+                            <Icon name="content_copy" size={12} />
+                          </button>
+                        ) : null}
                       </div>
                     );
                   })}

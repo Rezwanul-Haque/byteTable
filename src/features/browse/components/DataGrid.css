@@ -123,6 +123,7 @@
 }
 
 .dg-td {
+  position: relative;
   padding: 0 12px;
   height: var(--grid-row-h);
   display: flex;
@@ -135,6 +136,36 @@
      it. */
   min-width: 0;
   overflow: hidden;
+}
+
+/* Hover copy button, pinned to the cell's right edge. Hidden until the cell is
+   hovered; a small backing keeps it readable over long values. */
+.dg-copy {
+  position: absolute;
+  right: 3px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  color: var(--text-faint);
+  background: var(--bg2);
+  box-shadow: -6px 0 6px -2px var(--bg2);
+  opacity: 0;
+  transition:
+    opacity 0.1s,
+    color 0.1s;
+}
+.dg-td:hover .dg-copy {
+  opacity: 1;
+}
+.dg-copy:hover {
+  color: var(--text);
+  background: var(--bg3);
+  box-shadow: -6px 0 6px -2px var(--bg3);
 }
 
 .dg-tr:hover .dg-td {
@@ -167,7 +198,9 @@
   color: var(--number);
   display: block;
   width: 100%;
-  text-align: right;
+  /* All columns left-aligned globally (numbers included), so the grid reads
+     consistently regardless of type. */
+  text-align: left;
 }
 
 .cell-true {

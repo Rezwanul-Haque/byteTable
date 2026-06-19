@@ -1523,6 +1523,49 @@ pub trait EngineConnection: Send + Sync {
         ))
     }
 
+    /// Insert many pre-generated rows into one table (M16 generate). **Mutates
+    /// user data — append only.** `columns` names the inserted columns; each row
+    /// in `rows` is parallel to `columns` (`serde_json::Value`; `Null` → SQL
+    /// NULL). `binary` is parallel to `columns`: a `true` entry marks a binary
+    /// column whose values arrive as `0x`-hex strings and MUST be bound as raw
+    /// bytes (BLOB / bytea / BINARY), so a `binary(n)` value round-trips instead
+    /// of being stored as its hex text. The adapter quotes identifiers per
+    /// engine, binds every value as a parameter, and runs the batch inside a
+    /// transaction (multi-row `INSERT … VALUES (…),(…)` on Postgres/MySQL; a
+    /// batched prepared insert in a transaction on SQLite). Returns rows inserted.
+    ///
+    /// Default impl: `Unsupported` — only the SQL engines override it.
+    async fn bulk_insert(
+        &self,
+        _schema: &str,
+        _table: &str,
+        _columns: &[String],
+        _binary: &[bool],
+        _rows: &[Vec<serde_json::Value>],
+    ) -> Result<u64, AppError> {
+        Err(AppError::Unsupported(
+            "Bulk insert is not supported for this engine yet.".into(),
+        ))
+    }
+
+    /// Read up to `cap` existing key tuples from a table for FK sourcing and
+    /// append-uniqueness baselining (M16 generate). Returns each row as the
+    /// values of `columns`, in arbitrary order, capped to bound memory on large
+    /// parent tables.
+    ///
+    /// Default impl: `Unsupported` — only the SQL engines override it.
+    async fn fetch_pk_pool(
+        &self,
+        _schema: &str,
+        _table: &str,
+        _columns: &[String],
+        _cap: u64,
+    ) -> Result<Vec<Vec<serde_json::Value>>, AppError> {
+        Err(AppError::Unsupported(
+            "Reading a key pool is not supported for this engine yet.".into(),
+        ))
+    }
+
     /// Release the underlying driver resources. For drop-managed drivers
     /// (rusqlite) this may be a no-op; server engines use it for an orderly
     /// goodbye.

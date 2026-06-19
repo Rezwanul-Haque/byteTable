@@ -4,6 +4,7 @@
 pub mod browse;
 pub mod connections;
 pub mod export;
+pub mod generate;
 pub mod insights;
 pub mod introspection;
 pub mod keyvalue;

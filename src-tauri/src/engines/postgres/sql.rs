@@ -496,12 +496,54 @@ pub fn is_numeric_type(udt_name: &str) -> bool {
     )
 }
 
+/// Build a multi-row `INSERT` with numbered (`$N`) placeholders for M16 bulk
+/// generate: `INSERT INTO "schema"."table" ("a", "b") VALUES ($1, $2), ($3, $4)`.
+/// `n_rows` value groups are emitted; the caller binds `n_rows * columns.len()`
+/// values in row-major order. Pure — unit-tested without a live connection.
+pub fn build_multi_insert_sql(
+    schema: &str,
+    table: &str,
+    columns: &[String],
+    n_rows: usize,
+) -> String {
+    let cols_sql = columns
+        .iter()
+        .map(|c| quote_ident(c))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let width = columns.len();
+    let groups = (0..n_rows)
+        .map(|r| {
+            let ph = (0..width)
+                .map(|c| format!("${}", r * width + c + 1))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("({ph})")
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "INSERT INTO {}.{} ({cols_sql}) VALUES {groups}",
+        quote_ident(schema),
+        quote_ident(table)
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::shared::engine::{
         Combinator, Condition, FilterOp, FilterSpec, FilterValue, SortDirection,
     };
+
+    #[test]
+    fn pg_multi_insert_sql_uses_numbered_params() {
+        let sql = build_multi_insert_sql("public", "t", &["a".into(), "b".into()], 2);
+        assert_eq!(
+            sql,
+            "INSERT INTO \"public\".\"t\" (\"a\", \"b\") VALUES ($1, $2), ($3, $4)"
+        );
+    }
 
     fn cols() -> Vec<String> {
         vec![

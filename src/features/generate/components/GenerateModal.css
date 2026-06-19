@@ -1,0 +1,161 @@
+/* Generate-data modal (M16). Size picker → preview → progress → summary. Uses
+ * the M0 design tokens (--bg1 / --border / --accent / --muted). */
+
+.gen-modal .gen-schema {
+  color: var(--muted);
+  font-weight: 400;
+  margin-left: 6px;
+}
+
+.gen-modal .gen-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.gen-modal .gen-sizes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.gen-modal .gen-size-row {
+  display: flex;
+  gap: 8px;
+}
+
+.gen-modal .gen-size-row .btn {
+  flex: 1;
+}
+
+.gen-modal .gen-hint,
+.gen-modal .gen-muted {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.gen-modal .gen-summary-line {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 8px 0;
+}
+
+.gen-modal .gen-warnings {
+  list-style: none;
+  padding: 8px 10px;
+  margin: 0 0 10px;
+  border-radius: 8px;
+  background: color-mix(in oklab, #e0a000 12%, var(--bg1));
+  border: 1px solid color-mix(in oklab, #e0a000 40%, var(--border));
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.gen-modal .gen-table-list,
+.gen-modal .gen-progress,
+.gen-modal .gen-done {
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gen-modal .gen-table {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg1);
+}
+
+.gen-modal .gen-table > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.gen-modal .gen-table-name {
+  font-weight: 600;
+}
+
+.gen-modal .gen-role {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.gen-modal .gen-count {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.gen-modal .gen-cols {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.gen-modal .gen-cols td {
+  padding: 3px 10px;
+  border-top: 1px solid var(--border);
+}
+
+.gen-modal .gen-cols td:last-child {
+  color: var(--muted);
+  text-align: right;
+}
+
+.gen-modal .gen-cols tr.gen-omit td {
+  opacity: 0.55;
+}
+
+.gen-modal .gen-prow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.gen-modal .gen-prow-name {
+  width: 120px;
+  flex: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gen-modal .gen-bar {
+  flex: 1;
+  height: 8px;
+  border-radius: 5px;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.gen-modal .gen-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.15s ease;
+}
+
+.gen-modal .gen-prow-pct {
+  width: 110px;
+  flex: none;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.gen-modal .gen-error {
+  color: var(--danger, #d23);
+  font-size: 13px;
+}

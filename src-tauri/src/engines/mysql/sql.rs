@@ -510,12 +510,50 @@ pub fn is_numeric_type(data_type: &str) -> bool {
     )
 }
 
+/// Build a multi-row `INSERT` with `?` placeholders for M16 bulk generate:
+/// `` INSERT INTO `db`.`t` (`a`, `b`) VALUES (?, ?), (?, ?) ``. `n_rows` value
+/// groups are emitted; the caller binds `n_rows * columns.len()` values in
+/// row-major order. Pure — unit-tested without a live connection.
+pub fn build_multi_insert_sql(
+    schema: &str,
+    table: &str,
+    columns: &[String],
+    n_rows: usize,
+) -> String {
+    let cols_sql = columns
+        .iter()
+        .map(|c| quote_ident(c))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let group = format!(
+        "({})",
+        std::iter::repeat("?")
+            .take(columns.len())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    let groups = std::iter::repeat(group)
+        .take(n_rows)
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "INSERT INTO {} ({cols_sql}) VALUES {groups}",
+        qualified(schema, table)
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::shared::engine::{
         Combinator, Condition, FilterOp, FilterSpec, FilterValue, SortDirection,
     };
+
+    #[test]
+    fn mysql_multi_insert_sql_uses_backticks_and_qmarks() {
+        let sql = build_multi_insert_sql("db", "t", &["a".into(), "b".into()], 2);
+        assert_eq!(sql, "INSERT INTO `db`.`t` (`a`, `b`) VALUES (?, ?), (?, ?)");
+    }
 
     fn cols() -> Vec<String> {
         vec![

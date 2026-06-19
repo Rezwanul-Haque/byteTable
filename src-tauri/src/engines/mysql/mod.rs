@@ -496,6 +496,27 @@ impl EngineConnection for MysqlEngineConnection {
         alter_table(&self.pool, schema, table, ops, apply).await
     }
 
+    async fn bulk_insert(
+        &self,
+        schema: &str,
+        table: &str,
+        columns: &[String],
+        binary: &[bool],
+        rows: &[Vec<serde_json::Value>],
+    ) -> Result<u64, AppError> {
+        bulk_insert(&self.pool, schema, table, columns, binary, rows).await
+    }
+
+    async fn fetch_pk_pool(
+        &self,
+        schema: &str,
+        table: &str,
+        columns: &[String],
+        cap: u64,
+    ) -> Result<Vec<Vec<serde_json::Value>>, AppError> {
+        fetch_pk_pool(&self.pool, schema, table, columns, cap).await
+    }
+
     async fn close(&self) -> Result<(), AppError> {
         // Drain the pool for an orderly goodbye. Tolerant of concurrent
         // operations (the manager hands out Arc clones): close() waits for the
@@ -503,6 +524,80 @@ impl EngineConnection for MysqlEngineConnection {
         self.pool.close().await;
         Ok(())
     }
+}
+
+/// Append pre-generated rows to a table (M16 generate). All rows go in one
+/// transaction; within it, rows are split into statements that stay under
+/// MySQL's 65535 bind-parameter ceiling. Any error rolls the whole call back.
+/// NULL JSON binds as SQL NULL (`BoundValue::from_json_set`).
+async fn bulk_insert(
+    pool: &MySqlPool,
+    schema: &str,
+    table: &str,
+    columns: &[String],
+    binary: &[bool],
+    rows: &[Vec<serde_json::Value>],
+) -> Result<u64, AppError> {
+    if rows.is_empty() || columns.is_empty() {
+        return Ok(0);
+    }
+    let width = columns.len();
+    let max_rows_per_stmt = (60_000 / width).max(1);
+    let bind_one = |i: usize, v: &serde_json::Value| -> Result<BoundValue, AppError> {
+        if binary.get(i).copied().unwrap_or(false) {
+            BoundValue::from_binary_set(v)
+        } else {
+            Ok(BoundValue::from_json_set(v))
+        }
+    };
+
+    let mut tx = pool.begin().await.map_err(map_query_error)?;
+    let mut affected = 0u64;
+    for chunk in rows.chunks(max_rows_per_stmt) {
+        let stmt = sql::build_multi_insert_sql(schema, table, columns, chunk.len());
+        let bounds: Vec<BoundValue> = chunk
+            .iter()
+            .flat_map(|row| row.iter().enumerate().map(|(i, v)| bind_one(i, v)))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut query = sqlx::query(&stmt);
+        for b in &bounds {
+            query = bind_value(query, b);
+        }
+        let res = query.execute(&mut *tx).await.map_err(map_query_error)?;
+        affected += res.rows_affected();
+    }
+    tx.commit().await.map_err(map_query_error)?;
+    Ok(affected)
+}
+
+/// Read up to `cap` tuples of `columns` for FK sourcing / append baselining.
+async fn fetch_pk_pool(
+    pool: &MySqlPool,
+    schema: &str,
+    table: &str,
+    columns: &[String],
+    cap: u64,
+) -> Result<Vec<Vec<serde_json::Value>>, AppError> {
+    if columns.is_empty() {
+        return Ok(Vec::new());
+    }
+    let cols_sql = columns
+        .iter()
+        .map(|c| quote_ident(c))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let stmt = format!(
+        "SELECT {cols_sql} FROM {} LIMIT {cap}",
+        qualified(schema, table)
+    );
+    let rows = sqlx::query(&stmt)
+        .fetch_all(pool)
+        .await
+        .map_err(map_query_error)?;
+    Ok(rows
+        .iter()
+        .map(|r| (0..columns.len()).map(|i| decode_value(r, i)).collect())
+        .collect())
 }
 
 // ---------------------------------------------------------------------------
@@ -2446,6 +2541,105 @@ mod integration {
             .test_with_secret(&params, Some(&ConnectSecret::new("definitely-wrong")))
             .await;
         assert!(matches!(bad, Err(AppError::Database(_))));
+    }
+
+    /// M16: generate fake data across a schema with the type/constraint shapes
+    /// that broke on MySQL (datetime format, varchar length, tinyint range,
+    /// decimal, a non-FK sized-string id) and FK ordering. Every table must
+    /// succeed (no per-table error) and FK rows must be valid.
+    #[tokio::test]
+    async fn generate_data_respects_mysql_types_and_constraints() {
+        use crate::features::connections::application::ConnectionManager;
+        use crate::features::generate::application::{run_generation, GenProgress, RunCtx};
+        use crate::features::generate::domain::GenerateSize;
+
+        let Some((params, secret)) = gate("generate_data_respects_mysql_types_and_constraints")
+        else {
+            return;
+        };
+        let pool = raw_pool(&params, &secret).await;
+        let schema = "bt_it_generate";
+        for stmt in [
+            format!("DROP DATABASE IF EXISTS `{schema}`"),
+            format!("CREATE DATABASE `{schema}`"),
+            // Binary(16) UUID pk + binary FK — the byteshop shape that broke.
+            format!(
+                "CREATE TABLE `{schema}`.`accounts` (\
+                   id binary(16) NOT NULL PRIMARY KEY, name varchar(50) NOT NULL)"
+            ),
+            format!(
+                "CREATE TABLE `{schema}`.`documents` (\
+                   id binary(16) NOT NULL PRIMARY KEY, \
+                   account_id binary(16) NOT NULL, \
+                   country varchar(2) NOT NULL, \
+                   created_at datetime NOT NULL, \
+                   CONSTRAINT fk_docs_account FOREIGN KEY (account_id) \
+                     REFERENCES `{schema}`.`accounts`(id))"
+            ),
+            format!(
+                "CREATE TABLE `{schema}`.`users` (\
+                   id bigint NOT NULL AUTO_INCREMENT PRIMARY KEY, \
+                   country varchar(2) NOT NULL, \
+                   created_at datetime NOT NULL)"
+            ),
+            format!(
+                "CREATE TABLE `{schema}`.`orders` (\
+                   id bigint NOT NULL AUTO_INCREMENT PRIMARY KEY, \
+                   user_id bigint NOT NULL, \
+                   paid tinyint NOT NULL, \
+                   amount decimal(6,2) NOT NULL, \
+                   CONSTRAINT fk_orders_user FOREIGN KEY (user_id) \
+                     REFERENCES `{schema}`.`users`(id))"
+            ),
+        ] {
+            sqlx::query(&stmt).execute(&pool).await.expect("ddl");
+        }
+
+        let open = MysqlConnector
+            .open_with_secret(&params, secret.as_ref())
+            .await
+            .expect("open mysql");
+        let manager = ConnectionManager::new();
+        let handle = manager.insert(open).await;
+
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let noop = |_p: GenProgress| {};
+        let summary = run_generation(
+            &manager,
+            &handle,
+            schema,
+            GenerateSize::OneK,
+            RunCtx {
+                cancel: &cancel,
+                on_progress: &noop,
+                seed: 1,
+            },
+        )
+        .await
+        .expect("run");
+
+        for r in &summary.tables {
+            assert!(r.error.is_none(), "table {} failed: {:?}", r.table, r.error);
+        }
+        assert!(summary.total_inserted > 0, "rows inserted");
+
+        let conn = manager.get_sql(&handle).await.expect("sql");
+        let orphans = conn
+            .run_query(
+                &format!(
+                    "SELECT count(*) FROM `{schema}`.`orders` o \
+                     LEFT JOIN `{schema}`.`users` u ON o.user_id = u.id WHERE u.id IS NULL"
+                ),
+                QueryOptions::default(),
+            )
+            .await
+            .expect("orphan query");
+        assert_eq!(orphans.rows[0][0].as_i64().unwrap(), 0, "no orphan FKs");
+
+        sqlx::query(&format!("DROP DATABASE IF EXISTS `{schema}`"))
+            .execute(&pool)
+            .await
+            .expect("drop db");
     }
 
     #[tokio::test]

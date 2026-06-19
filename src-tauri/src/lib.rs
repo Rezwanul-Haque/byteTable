@@ -177,6 +177,10 @@ pub fn run() {
             let map_layouts = JsonFileMapLayoutRepository::new(config_dir.join("map_layouts.json"));
             app.manage(SchemaMapState::new(Box::new(map_layouts)));
 
+            // Generate slice (M16): per-run cancellation flags for fake-data
+            // generation, keyed by the renderer's run id.
+            app.manage(features::generate::commands::GenerateState::default());
+
             // System tray: persistent ByteTable icon. Left-click toggles the
             // window; right-click opens the menu (Show / Quit). The app keeps
             // running in the tray when the window is closed (see CloseRequested
@@ -281,6 +285,9 @@ pub fn run() {
             features::keyvalue::commands::kv_persist,
             features::keyvalue::commands::kv_create_key,
             features::keyvalue::commands::kv_command,
+            features::generate::commands::generate_preview,
+            features::generate::commands::generate_run,
+            features::generate::commands::generate_cancel,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

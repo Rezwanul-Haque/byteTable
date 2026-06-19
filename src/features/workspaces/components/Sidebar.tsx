@@ -38,6 +38,8 @@ import { CreateTableModal } from "../../export/components/CreateTableModal";
 import { DropSchemaModal } from "../../export/components/DropSchemaModal";
 import { ExportProgressModal } from "../../export/components/ExportProgressModal";
 import { TruncateModal } from "../../export/components/TruncateModal";
+import { GenerateModal } from "../../generate/components/GenerateModal";
+import { useGenerateStore } from "../../generate/state";
 import { type ExportKind } from "../../export/exportFlow";
 import { ImportModal } from "../../import/components/ImportModal";
 import { SchemaImportModal } from "../../import/components/SchemaImportModal";
@@ -153,6 +155,8 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   const [schemaImportOpen, setSchemaImportOpen] = useState(false);
   // M15 SQL enhancements: the destructive drop-schema confirm (null when closed).
   const [dropSchemaOpen, setDropSchemaOpen] = useState(false);
+  // M16: open the Generate-data modal for this (handle, schema).
+  const openGenerate = useGenerateStore((s) => s.openModal);
   // Create-schema modal (from the schema switcher's "Create schema" item).
   const [createSchemaOpen, setCreateSchemaOpen] = useState(false);
   // Create-table modal (from the schema-actions menu's "Create table…" item).
@@ -534,6 +538,17 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
               >
                 <Icon name="download" size={15} /> Export schema (.sql)
               </button>
+              <button
+                type="button"
+                className="ctx-item"
+                role="menuitem"
+                onClick={() => {
+                  setSchemaMenu(false);
+                  openGenerate(handleId, schemaName);
+                }}
+              >
+                <Icon name="auto_awesome" size={15} /> Generate data…
+              </button>
               <div className="ctx-sep" />
               <button
                 type="button"
@@ -824,6 +839,10 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
           onClose={() => setDropSchemaOpen(false)}
         />
       ) : null}
+
+      {/* Generate data (M16): append realistic fake data across the schema.
+          The store gates its own visibility (renders only when opened). */}
+      <GenerateModal />
 
       {createSchemaOpen ? (
         <CreateSchemaModal

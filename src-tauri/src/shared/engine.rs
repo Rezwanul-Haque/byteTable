@@ -1893,7 +1893,7 @@ fn is_uuid_str(s: &str) -> bool {
 /// Decode an even-length hex string to bytes; `None` on odd length or a non-hex
 /// digit.
 fn decode_hex(hex: &str) -> Option<Vec<u8>> {
-    if hex.len() % 2 != 0 {
+    if !hex.len().is_multiple_of(2) {
         return None;
     }
     let bytes = hex.as_bytes();

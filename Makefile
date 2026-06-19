@@ -12,7 +12,7 @@ MANIFEST    := src-tauri/Cargo.toml
 export PATH := $(HOME)/.cargo/bin:$(PATH)
 
 .DEFAULT_GOAL := help
-.PHONY: help install hooks ensure-cargo dev dev-cert test lint fmt build build-debug run tag db-up db-down tunnel-up tunnel-down clean
+.PHONY: help install hooks ensure-cargo dev dev-cert test lint clippy fmt build build-debug run tag db-up db-down tunnel-up tunnel-down clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -47,6 +47,9 @@ lint: install ensure-cargo ## Lint everything (ESLint + clippy + rustfmt/prettie
 	$(PNPM) lint
 	$(PNPM) format:check
 	$(CARGO) fmt --manifest-path $(MANIFEST) -- --check
+	$(CARGO) clippy --manifest-path $(MANIFEST) --all-targets --all-features -- -D warnings
+
+clippy: ensure-cargo ## Run clippy exactly as CI does (all targets/features, deny warnings)
 	$(CARGO) clippy --manifest-path $(MANIFEST) --all-targets --all-features -- -D warnings
 
 fmt: install ensure-cargo ## Auto-format everything (prettier + rustfmt)

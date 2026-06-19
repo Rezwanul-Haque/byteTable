@@ -319,8 +319,7 @@ fn bulk_insert_blocking(
         .map(|c| quote_ident(c))
         .collect::<Vec<_>>()
         .join(", ");
-    let placeholders = std::iter::repeat("?")
-        .take(columns.len())
+    let placeholders = std::iter::repeat_n("?", columns.len())
         .collect::<Vec<_>>()
         .join(", ");
     let sql = format!(

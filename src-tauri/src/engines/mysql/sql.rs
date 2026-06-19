@@ -527,13 +527,11 @@ pub fn build_multi_insert_sql(
         .join(", ");
     let group = format!(
         "({})",
-        std::iter::repeat("?")
-            .take(columns.len())
+        std::iter::repeat_n("?", columns.len())
             .collect::<Vec<_>>()
             .join(", ")
     );
-    let groups = std::iter::repeat(group)
-        .take(n_rows)
+    let groups = std::iter::repeat_n(group, n_rows)
         .collect::<Vec<_>>()
         .join(", ");
     format!(

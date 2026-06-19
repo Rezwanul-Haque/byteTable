@@ -29,6 +29,8 @@ interface GenerateModalState {
   open: boolean;
   handleId: string | null;
   schema: string | null;
+  /** Connection deployment env; `production` triggers the type-to-confirm gate. */
+  env: string;
   size: GenerateSize | null;
   plan: GeneratePlan | null;
   status: Status;
@@ -38,8 +40,8 @@ interface GenerateModalState {
   error: string | null;
   runId: string | null;
 
-  /** Open the modal for a (connection handle, schema); resets prior state. */
-  openModal: (handleId: string, schema: string) => void;
+  /** Open the modal for a (connection handle, schema, env); resets prior state. */
+  openModal: (handleId: string, schema: string, env: string) => void;
   /** Pick a size and load its preview plan. */
   setSize: (size: GenerateSize) => Promise<void>;
   /** Run generation; streams progress and stores the summary. */
@@ -54,6 +56,7 @@ const INITIAL = {
   open: false,
   handleId: null,
   schema: null,
+  env: "dev",
   size: null,
   plan: null,
   status: "idle" as Status,
@@ -66,7 +69,7 @@ const INITIAL = {
 export const useGenerateStore = create<GenerateModalState>((set, get) => ({
   ...INITIAL,
 
-  openModal: (handleId, schema) => set({ ...INITIAL, open: true, handleId, schema }),
+  openModal: (handleId, schema, env) => set({ ...INITIAL, open: true, handleId, schema, env }),
 
   setSize: async (size) => {
     const { handleId, schema } = get();

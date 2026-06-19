@@ -33,3 +33,6 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+
+# Docs
+superpowers

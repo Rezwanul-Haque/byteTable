@@ -544,7 +544,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                 role="menuitem"
                 onClick={() => {
                   setSchemaMenu(false);
-                  openGenerate(handleId, schemaName);
+                  openGenerate(handleId, schemaName, workspace.saved.env);
                 }}
               >
                 <Icon name="auto_awesome" size={15} /> Generate data…

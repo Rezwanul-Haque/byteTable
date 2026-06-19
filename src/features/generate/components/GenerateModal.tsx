@@ -6,11 +6,13 @@
 // figures out table structure + relationships, and APPENDS realistic fake data
 // (parents before children, FKs wired, uniques honored). Non-destructive.
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
 import { Modal, ModalActions, ModalTitle } from "../../../shared/ui/Modal";
+import { ENV_COLOR } from "../../../shared/ui/envColors";
+import { normalizeEnv } from "../../../shared/types";
 import { type GenerateSize, type TableRole } from "../api";
 import { useGenerateStore } from "../state";
 import "./GenerateModal.css";
@@ -37,6 +39,7 @@ export function GenerateModal() {
   const {
     open,
     schema,
+    env,
     size,
     plan,
     status,
@@ -48,6 +51,14 @@ export function GenerateModal() {
     cancel,
     close,
   } = useGenerateStore();
+
+  const [typed, setTyped] = useState("");
+
+  const normEnv = normalizeEnv(env);
+  const isProd = normEnv === "production";
+  const envColor = ENV_COLOR[normEnv];
+  // Production gate: must type the schema name to arm "Generate". Else armed.
+  const armed = !isProd || typed.trim() === schema;
 
   const totals = useMemo(() => {
     if (!plan) return { tables: 0, rows: 0 };
@@ -126,6 +137,37 @@ export function GenerateModal() {
               </details>
             ))}
           </div>
+
+          {/* Production gate: writing fake data to a prod DB needs the same
+              type-to-confirm rigor as truncate/drop. */}
+          {isProd ? (
+            <div className="gen-prod">
+              <div
+                className="gen-prod-tag"
+                style={{
+                  color: envColor,
+                  borderColor: envColor + "66",
+                  background: envColor + "14",
+                }}
+              >
+                <Icon name="public" size={13} /> production
+              </div>
+              <label>
+                <span className="gen-prod-text">
+                  This appends data to a <b>production</b> database. Type <b>{schema}</b> to
+                  confirm.
+                </span>
+                <input
+                  value={typed}
+                  onChange={(e) => setTyped(e.target.value)}
+                  placeholder={schema ?? ""}
+                  spellCheck="false"
+                  autoFocus
+                  aria-label={"Type " + (schema ?? "") + " to confirm"}
+                />
+              </label>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -184,7 +226,13 @@ export function GenerateModal() {
           </Btn>
         )}
         {plan && (status === "idle" || status === "error") ? (
-          <Btn variant="filled" icon="bolt" onClick={() => void run()}>
+          <Btn
+            variant="filled"
+            icon="bolt"
+            onClick={() => void run()}
+            disabled={!armed}
+            title={armed ? undefined : "Type the schema name to confirm"}
+          >
             Generate
           </Btn>
         ) : null}

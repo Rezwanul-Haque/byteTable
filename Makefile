@@ -70,12 +70,17 @@ run: build-debug ## Build (debug) then launch the binary
 dev-cert: ## macOS: create the stable self-signed identity used to sign dev builds (one-time)
 	bash scripts/codesign-dev.sh setup
 
-tag: ## Create + push a release tag (usage: make tag VERSION=0.0.2)
+tag: ## Bump the version in source, commit, then create + push a release tag (usage: make tag VERSION=0.0.2)
 	@test -n "$(VERSION)" || { echo "usage: make tag VERSION=0.0.2"; exit 1; }
 	@v=$$(echo "$(VERSION)" | sed 's/^v//'); \
+	bash scripts/bump-version.sh "$$v" && \
+	git add src-tauri/tauri.conf.json src-tauri/Cargo.toml package.json index.html \
+	        src/features/updater/api.ts src/features/workspaces/components/Rail.tsx && \
+	git commit -m "Release v$$v" && \
 	git tag -a "v$$v" -m "ByteTable v$$v" && \
+	git push origin HEAD && \
 	git push origin "v$$v" && \
-	echo "Pushed tag v$$v — the release workflow will build + publish it."
+	echo "Bumped to v$$v, committed, tagged + pushed — the release workflow will build + publish it."
 
 db-up: ## Start the test databases (Postgres/MySQL/Redis/DynamoDB/MongoDB) + seed them
 	cd test-fixtures && docker compose up -d && ./seed/seed-redis.sh && ./seed/seed-dynamo.sh

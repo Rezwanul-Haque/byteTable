@@ -607,7 +607,10 @@ fn infer_schema_rows(docs: &[Value]) -> Vec<SchemaField> {
         .map(|path| {
             let (types, present) = &table[&path];
             let mut type_list: Vec<(&str, u32)> = types.iter().map(|(t, c)| (*t, *c)).collect();
-            type_list.sort_by(|a, b| b.1.cmp(&a.1));
+            // Most-common type first. `sort_by_key(Reverse(..))` rather than a
+            // `sort_by` closure to satisfy clippy::unnecessary_sort_by (newer
+            // toolchains, e.g. CI's Rust 1.96).
+            type_list.sort_by_key(|b| std::cmp::Reverse(b.1));
             let depth = path.matches('.').count() + path.matches("[]").count();
             SchemaField {
                 presence: ((*present as f64 / n) * 100.0).round() as u32,

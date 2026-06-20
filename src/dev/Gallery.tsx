@@ -116,7 +116,8 @@ export function Gallery() {
       <Section label="Kbd">
         <div className="gallery-row">
           <span className="gallery-note">
-            Press <Kbd>⌘K</Kbd> to jump, <Kbd>⌘T</Kbd> for a SQL query, <Kbd>esc</Kbd> to close.
+            Press <Kbd>⌘K</Kbd> / <Kbd>Ctrl+K</Kbd> to jump, <Kbd>⌘T</Kbd> / <Kbd>Ctrl+T</Kbd> for a
+            SQL query, <Kbd>esc</Kbd> to close.
           </span>
         </div>
       </Section>

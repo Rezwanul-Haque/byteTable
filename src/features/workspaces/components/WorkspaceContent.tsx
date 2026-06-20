@@ -27,8 +27,8 @@ function NoTabs() {
       <BTLogo size={40} accent="var(--text-faint)" fg="var(--text-faint)" />
       <p>No open tabs</p>
       <span>
-        Pick a table from the sidebar, press <Kbd>⌘K</Kbd> to jump, or <Kbd>⌘T</Kbd> for a SQL
-        query.
+        Pick a table from the sidebar, press <Kbd>⌘K</Kbd> / <Kbd>Ctrl+K</Kbd> to jump, or{" "}
+        <Kbd>⌘T</Kbd> / <Kbd>Ctrl+T</Kbd> for a SQL query.
       </span>
     </div>
   );

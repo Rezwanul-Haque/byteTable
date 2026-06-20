@@ -75,11 +75,11 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
     [openPanel, workspace.id, termLabel],
   );
 
-  // Ctrl+` toggles the PartiQL panel (the VS Code convention, mirroring the
-  // SQL/Redis workspaces).
+  // Ctrl+` (and ⌘+` on macOS) toggles the PartiQL panel — the VS Code
+  // convention, plus the Mac modifier users expect.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key === "`") {
+      if ((e.ctrlKey || e.metaKey) && e.key === "`") {
         e.preventDefault();
         togglePanel(workspace.id, termLabel);
       }
@@ -209,7 +209,7 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
               type="button"
               className="ddb-tabbar-tool"
               onClick={openPartiql}
-              title="PartiQL editor (Ctrl+`)"
+              title="PartiQL editor (⌘` / Ctrl+`)"
             >
               <Icon name="terminal" size={15} />
               <span>PartiQL</span>

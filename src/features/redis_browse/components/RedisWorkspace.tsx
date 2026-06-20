@@ -68,8 +68,8 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
   // mirrors WorkspaceShell.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      // ⌃` is its own binding (Ctrl, not the ⌘/Ctrl `mod`) — handle it first.
-      if (event.ctrlKey && event.key === "`") {
+      // ⌃` (and ⌘` on macOS) toggles the console — handle it first.
+      if ((event.ctrlKey || event.metaKey) && event.key === "`") {
         event.preventDefault();
         togglePanel(wsId, termLabel);
         return;

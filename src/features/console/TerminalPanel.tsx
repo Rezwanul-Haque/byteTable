@@ -161,7 +161,7 @@ export function TerminalPanel({ workspace }: { workspace: Workspace }) {
           <IconBtn
             icon="keyboard_arrow_down"
             size={17}
-            title="Hide panel (Ctrl+`)"
+            title="Hide panel (⌘` / Ctrl+`)"
             onClick={() => closePanel(wsId)}
           />
         </div>

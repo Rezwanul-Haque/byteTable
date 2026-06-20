@@ -1,6 +1,6 @@
 [package]
 name = "bytetable"
-version = "0.0.9"
+version = "0.0.10"
 description = "A free open-source local-first desktop database client"
 authors = ["ByteTable contributors"]
 edition = "2021"

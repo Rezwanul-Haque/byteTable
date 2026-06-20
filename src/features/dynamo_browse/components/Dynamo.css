@@ -202,7 +202,7 @@
   display: flex;
   align-items: stretch;
   border-bottom: 1px solid var(--border);
-  background: var(--bg0);
+  background: var(--bg1);
   min-height: 36px;
 }
 .ddb-tabbar-tabs {
@@ -211,6 +211,7 @@
   overflow-x: auto;
 }
 .ddb-tab {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -222,8 +223,18 @@
   white-space: nowrap;
 }
 .ddb-tab.active {
-  background: var(--bg2);
+  background: var(--bg0);
   color: var(--text);
+}
+.ddb-tab.active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 0 0 2px 2px;
 }
 .ddb-tab-title {
   max-width: 160px;
@@ -278,6 +289,62 @@
   flex-direction: column;
   min-height: 0;
   flex: 1;
+}
+
+/* Visual query-builder tab (the "+" tab). */
+.ddb-qb {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+.ddb-qb-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.ddb-qb-select {
+  min-width: 220px;
+}
+.ddb-qb-keys {
+  display: inline-flex;
+  gap: 6px;
+}
+.ddb-qb > .ddb-table-tab {
+  flex: 1;
+  min-height: 0;
+}
+.ddb-qb-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-faint);
+}
+/* New-query "+" — mirrors the SQL workspace's `.tab-new` (full-height strip
+   button, accent on hover). */
+.ddb-tab-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  align-self: stretch;
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  flex: none;
+  transition:
+    color 0.1s,
+    background 0.1s;
+}
+.ddb-tab-add:hover {
+  color: var(--accent);
+  background: var(--bg2);
 }
 .ddb-table-toolbar {
   display: flex;
@@ -344,18 +411,175 @@
 }
 
 /* ---- query bar ---- */
+/* Projection picker — lives inline in the Scan/Query/Indexes toolbar. */
+.ddb-tb-proj {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.ddb-proj-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  flex: none;
+}
+.ddb-proj {
+  position: relative;
+}
+.ddb-proj-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  box-sizing: border-box;
+  padding: 3px 8px 3px 10px;
+  min-width: 160px;
+  max-width: 520px;
+  justify-content: space-between;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg2);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.ddb-proj-all {
+  color: var(--text-faint);
+}
+.ddb-proj-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  overflow: hidden;
+}
+.ddb-proj-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 4px 1px 7px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.ddb-proj-chip-x {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 3px;
+  opacity: 0.7;
+  cursor: pointer;
+}
+.ddb-proj-chip-x:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.ddb-proj-trigger:hover:not(:disabled) {
+  border-color: var(--border-strong, var(--accent));
+}
+.ddb-proj-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.ddb-proj-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 200;
+  min-width: 220px;
+  max-width: 320px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+.ddb-proj-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+}
+.ddb-proj-pop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+.ddb-proj-clear {
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.ddb-proj-list {
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px;
+}
+.ddb-proj-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-family: var(--mono, ui-monospace, monospace);
+  color: var(--text);
+  cursor: pointer;
+}
+.ddb-proj-opt:hover {
+  background: var(--bg-hover, rgba(127, 127, 127, 0.12));
+}
+.ddb-proj-hint {
+  font-size: 11px;
+  color: var(--text-faint);
+  font-style: italic;
+}
+.ddb-projection-bar .btn {
+  height: 32px;
+  box-sizing: border-box;
+}
+
+/* Query bar — one key filter per line. The label sits left at a fixed width and
+   the control fills the rest, so long key/attribute names never force a
+   horizontal scroll (they stack vertically instead). */
 .ddb-query-bar {
   display: flex;
-  align-items: flex-end;
-  gap: 12px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
   padding: 10px 12px;
   border-bottom: 1px solid var(--border);
-  flex-wrap: wrap;
+}
+.ddb-query-bar .ddb-where-input,
+.ddb-query-bar .sel-trigger,
+.ddb-query-bar .btn {
+  height: 32px;
+  box-sizing: border-box;
 }
 .ddb-q-field {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
   font-size: 11px;
   color: var(--text-dim);
 }
@@ -363,10 +587,30 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  min-width: 150px;
+  flex: none;
+}
+/* The field's control (input / select / sort-key row) fills the line. */
+.ddb-q-field > .ddb-where-input,
+.ddb-q-field > .ddb-q-select,
+.ddb-q-field > .ddb-sk-row {
+  flex: 1;
+  min-width: 0;
+}
+.ddb-q-field .sel-trigger {
+  width: 100%;
+}
+.ddb-query-bar > .btn {
+  align-self: flex-start;
+  margin-left: 160px;
 }
 .ddb-sk-row {
   display: flex;
   gap: 6px;
+}
+.ddb-sk-row .ddb-where-input {
+  flex: 1;
+  min-width: 0;
 }
 .ddb-where-input,
 .ddb-filter-select {
@@ -393,6 +637,13 @@
   min-height: 0;
 }
 .ddb-grid-empty {
+  /* Fill the grid area so the foot bar stays pinned to the bottom when a table
+     has no items (otherwise it rises up under the empty text). */
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 24px;
   text-align: center;
   color: var(--text-faint);
@@ -1329,4 +1580,116 @@
 .ddb-val-select.sel-wrap {
   display: flex;
   width: 100%;
+}
+
+/* ---- grid multi-select (M17: select rows → delete / export CSV) ---- */
+.ddb-selbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg1));
+  flex: none;
+}
+.ddb-selbar-count {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.ddb-selbar-del:not(:disabled) {
+  color: #e06c75;
+}
+.ddb-selbar-del:not(:disabled):hover {
+  background: color-mix(in srgb, #e06c75 14%, transparent);
+  border-color: color-mix(in srgb, #e06c75 45%, var(--border));
+}
+/* td/th element + class beats `.ddb-datagrid td { text-align:left }`. */
+.ddb-datagrid th.ddb-dg-check-h,
+.ddb-datagrid td.ddb-dg-check-c {
+  width: 34px;
+  text-align: center;
+  vertical-align: middle;
+  padding: 0;
+}
+/* Custom small square checkbox — the native control renders oversized/round in
+   the webview, so reset appearance and draw our own. */
+.ddb-dg-check {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  flex: none;
+  vertical-align: middle;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg1);
+  cursor: pointer;
+  position: relative;
+}
+.ddb-dg-check:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+.ddb-dg-check:checked,
+.ddb-dg-check:indeterminate {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.ddb-dg-check:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--bg0);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.ddb-dg-check:indeterminate::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  top: 6px;
+  height: 2px;
+  background: var(--bg0);
+}
+.ddb-datagrid tr.ddb-row.selected td {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* Per-cell hover copy button (mirrors the SQL grid's .dg-copy). */
+.ddb-datagrid tbody td {
+  position: relative;
+}
+.ddb-cell-copy {
+  position: absolute;
+  right: 3px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-faint);
+  background: var(--bg2);
+  box-shadow: -6px 0 6px -2px var(--bg2);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 0.1s,
+    color 0.1s;
+}
+.ddb-datagrid tbody td:hover .ddb-cell-copy {
+  opacity: 1;
+}
+.ddb-cell-copy:hover {
+  color: var(--text);
+  background: var(--bg3);
+  box-shadow: -6px 0 6px -2px var(--bg3);
 }

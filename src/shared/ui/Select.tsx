@@ -8,7 +8,8 @@
 // popover inside a relative wrapper) and is keyboard- + a11y-complete
 // (listbox/option roles, arrow/Home/End/Enter/Escape, focus return).
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { Icon } from "./Icon";
 import "./Select.css";
@@ -55,8 +56,18 @@ export function Select<T extends string>({
 }: SelectProps<T>) {
   const [open, setOpen] = useState(autoOpen);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const popRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const optRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  // The popover is portaled to <body> with fixed positioning so it escapes any
+  // ancestor `overflow:hidden/auto` (scroll containers, modals). `pos` is the
+  // measured trigger rect; recomputed on open + on scroll/resize.
+  const [pos, setPos] = useState<{
+    left: number;
+    top: number;
+    bottom: number;
+    width: number;
+  } | null>(null);
   // Keep the latest onClose without making the close effect depend on it.
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -73,12 +84,32 @@ export function Select<T extends string>({
     onCloseRef.current?.();
   };
 
+  // Measure the trigger so the portaled popover can be placed against it; keep
+  // it aligned as the page scrolls/resizes while open.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const measure = () => {
+      const el = triggerRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setPos({ left: r.left, top: r.bottom, bottom: r.top, width: r.width });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure, true);
+    };
+  }, [open]);
+
   // Outside mousedown / Escape / window blur close the popover (schema-switcher
   // pattern). Active only while open.
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (!wrapRef.current?.contains(e.target as Node)) close(false);
+      const t = e.target as Node;
+      if (!wrapRef.current?.contains(t) && !popRef.current?.contains(t)) close(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -150,31 +181,42 @@ export function Select<T extends string>({
         <span className="sel-label">{current?.label ?? value}</span>
         <Icon name="expand_more" size={15} className="sel-chevron" />
       </button>
-      {open ? (
-        <div
-          className={"sel-pop" + (placement === "up" ? " up" : "")}
-          role="listbox"
-          aria-label={ariaLabel}
-          aria-labelledby={ariaLabelledBy}
-        >
-          {options.map((o, i) => (
-            <button
-              key={o.value}
-              ref={(el) => {
-                optRefs.current[i] = el;
+      {open && pos
+        ? createPortal(
+            <div
+              ref={popRef}
+              className={"sel-pop sel-pop-fixed" + (placement === "up" ? " up" : "")}
+              role="listbox"
+              aria-label={ariaLabel}
+              aria-labelledby={ariaLabelledBy}
+              style={{
+                left: pos.left,
+                minWidth: pos.width,
+                ...(placement === "up"
+                  ? { bottom: window.innerHeight - pos.bottom + 4 }
+                  : { top: pos.top + 4 }),
               }}
-              type="button"
-              role="option"
-              aria-selected={o.value === value}
-              className={"sel-opt" + (o.value === value ? " active" : "")}
-              onClick={() => choose(o.value)}
-              onKeyDown={(e) => onOptKeyDown(e, i)}
             >
-              {o.label}
-            </button>
-          ))}
-        </div>
-      ) : null}
+              {options.map((o, i) => (
+                <button
+                  key={o.value}
+                  ref={(el) => {
+                    optRefs.current[i] = el;
+                  }}
+                  type="button"
+                  role="option"
+                  aria-selected={o.value === value}
+                  className={"sel-opt" + (o.value === value ? " active" : "")}
+                  onClick={() => choose(o.value)}
+                  onKeyDown={(e) => onOptKeyDown(e, i)}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

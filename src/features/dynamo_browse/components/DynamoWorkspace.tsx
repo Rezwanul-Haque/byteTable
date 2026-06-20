@@ -19,18 +19,20 @@ import { dynamoListTables, type TableDescriptor } from "../api";
 import { useDynamoTabsStore, type DynamoWorkspaceTab } from "../workspaceTabs";
 import { DynamoDashboard } from "./DynamoDashboard";
 import { DynamoExportModal, DynamoImportModal } from "./DynamoIoModals";
+import { DynamoQueryTab } from "./DynamoQueryTab";
 import { DynamoSchemaMap } from "./DynamoSchemaMap";
 import { DynamoSidebar } from "./DynamoSidebar";
 import { DynamoTableTab } from "./DynamoTableTab";
 import "./Dynamo.css";
 
-type TabKind = "dashboard" | "table" | "map";
+type TabKind = "dashboard" | "table" | "map" | "query";
 type Tab = DynamoWorkspaceTab;
 
 const TAB_ICON: Record<TabKind, string> = {
   table: "table_chart",
   dashboard: "monitoring",
   map: "hub",
+  query: "search",
 };
 
 let seq = 0;
@@ -134,6 +136,12 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
     setTabs((ts) => [...ts, tab]);
     setActiveId(tab.id);
   };
+  const openQuery = () => {
+    const n = peekTabs().filter((t) => t.kind === "query").length + 1;
+    const tab: Tab = { id: nextId(), kind: "query", title: `Query ${n}`, mode: "query" };
+    setTabs((ts) => [...ts, tab]);
+    setActiveId(tab.id);
+  };
   const openSingleton = (kind: "dashboard" | "map", title: string) => {
     const ex = tabs.find((t) => t.kind === kind);
     if (ex) {
@@ -218,6 +226,14 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
                 ) : null}
               </div>
             ))}
+            <button
+              type="button"
+              className="ddb-tab-add"
+              onClick={openQuery}
+              title="New query (pick a table, build a Scan/Query)"
+            >
+              <Icon name="add" size={16} />
+            </button>
           </div>
           <div className="ddb-tabbar-tools">
             <button
@@ -244,6 +260,19 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
                 />
               ) : t.kind === "map" ? (
                 <DynamoSchemaMap handleId={handleId} tables={tables} onOpenTable={openTable} />
+              ) : t.kind === "query" ? (
+                <DynamoQueryTab
+                  tables={tables}
+                  handleId={handleId}
+                  isProduction={isProduction}
+                  version={dataVersion}
+                  table={t.table ?? ""}
+                  onTableChange={(name) => updateTab(t.id, { table: name })}
+                  mode={t.mode ?? "query"}
+                  onModeChange={(mode) => updateTab(t.id, { mode })}
+                  onExport={(tbl) => setExportJob({ scope: "table", table: tbl })}
+                  onImport={(tbl) => setImportTarget(tbl)}
+                />
               ) : t.table && descOf(t.table) ? (
                 <DynamoTableTab
                   table={descOf(t.table) as TableDescriptor}

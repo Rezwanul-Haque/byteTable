@@ -37,7 +37,7 @@ use aws_config::Region;
 use aws_credential_types::Credentials;
 use aws_sdk_dynamodb::primitives::DateTimeFormat;
 use aws_sdk_dynamodb::types::{
-    AttributeValue, KeyType, PutRequest, ReturnConsumedCapacity, WriteRequest,
+    AttributeValue, DeleteRequest, KeyType, PutRequest, ReturnConsumedCapacity, WriteRequest,
 };
 use aws_sdk_dynamodb::Client;
 use serde_json::Value;
@@ -365,6 +365,28 @@ fn operand(
     }
 }
 
+/// Build a `ProjectionExpression` + its `#p{i}` name aliases from a
+/// comma-separated attribute list. Aliasing every name dodges DynamoDB reserved
+/// words (e.g. `name`, `status`). Returns `None` for an empty/blank spec.
+fn build_projection(spec: Option<&str>) -> Option<(String, HashMap<String, String>)> {
+    let names: Vec<&str> = spec?
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
+    if names.is_empty() {
+        return None;
+    }
+    let mut aliases = HashMap::new();
+    let mut parts = Vec::with_capacity(names.len());
+    for (i, name) in names.iter().enumerate() {
+        let alias = format!("#p{i}");
+        aliases.insert(alias.clone(), (*name).to_string());
+        parts.push(alias);
+    }
+    Some((parts.join(", "), aliases))
+}
+
 #[async_trait]
 impl DocumentStoreReader for DynamoConnection {
     async fn list_tables(&self) -> Result<Vec<TableDescriptor>, AppError> {
@@ -395,6 +417,11 @@ impl DocumentStoreReader for DynamoConnection {
             .return_consumed_capacity(ReturnConsumedCapacity::Total);
         if let Some(token) = &req.next_token {
             builder = builder.set_exclusive_start_key(Some(decode_token(token)?));
+        }
+        if let Some((expr, names)) = build_projection(req.projection.as_deref()) {
+            builder = builder
+                .projection_expression(expr)
+                .set_expression_attribute_names(Some(names));
         }
         let out = builder
             .send()
@@ -478,6 +505,15 @@ impl DocumentStoreReader for DynamoConnection {
             }
         }
 
+        // Projection: merge its `#p{i}` aliases into the shared names map (one
+        // ExpressionAttributeNames per request) and add the expression.
+        let projection = build_projection(req.projection.as_deref());
+        if let Some((_, proj_names)) = &projection {
+            for (alias, attr) in proj_names {
+                names.insert(alias.clone(), attr.clone());
+            }
+        }
+
         let mut builder = self
             .client
             .query()
@@ -487,6 +523,9 @@ impl DocumentStoreReader for DynamoConnection {
             .set_expression_attribute_values(Some(values))
             .limit(req.limit.min(1000) as i32)
             .return_consumed_capacity(ReturnConsumedCapacity::Total);
+        if let Some((expr, _)) = projection {
+            builder = builder.projection_expression(expr);
+        }
         if let Some(name) = &req.index {
             builder = builder.index_name(name);
         }
@@ -630,6 +669,68 @@ impl DocumentStoreWriter for DynamoConnection {
                     .send()
                     .await
                     .map_err(|e| db_err(&format!("BatchWriteItem '{table}'"), e))?;
+                let leftover = out
+                    .unprocessed_items()
+                    .and_then(|m| m.get(table))
+                    .cloned()
+                    .unwrap_or_default();
+                tries += 1;
+                if leftover.is_empty() || tries >= 5 {
+                    let leftover_count = leftover.len() as u64;
+                    written += attempted - leftover_count;
+                    unprocessed_total += leftover_count;
+                    break;
+                }
+                pending.clear();
+                pending.insert(table.to_string(), leftover);
+            }
+        }
+        Ok(BatchWriteResult {
+            written,
+            unprocessed: unprocessed_total,
+        })
+    }
+
+    async fn batch_delete(
+        &self,
+        table: &str,
+        keys: Vec<Value>,
+    ) -> Result<BatchWriteResult, AppError> {
+        const CHUNK: usize = 25; // DynamoDB BatchWriteItem hard limit.
+        let mut written = 0u64;
+        let mut unprocessed_total = 0u64;
+        for chunk in keys.chunks(CHUNK) {
+            let requests: Vec<WriteRequest> = chunk
+                .iter()
+                .filter(|v| v.is_object())
+                .map(|v| {
+                    WriteRequest::builder()
+                        .delete_request(
+                            DeleteRequest::builder()
+                                .set_key(Some(json_to_item(v)))
+                                .build()
+                                .expect("delete request key set"),
+                        )
+                        .build()
+                })
+                .collect();
+            let attempted = requests.len() as u64;
+            if attempted == 0 {
+                continue;
+            }
+            let mut pending: HashMap<String, Vec<WriteRequest>> = HashMap::new();
+            pending.insert(table.to_string(), requests);
+
+            // Retry unprocessed keys a bounded number of times.
+            let mut tries = 0;
+            loop {
+                let out = self
+                    .client
+                    .batch_write_item()
+                    .set_request_items(Some(pending.clone()))
+                    .send()
+                    .await
+                    .map_err(|e| db_err(&format!("BatchWriteItem (delete) '{table}'"), e))?;
                 let leftover = out
                     .unprocessed_items()
                     .and_then(|m| m.get(table))

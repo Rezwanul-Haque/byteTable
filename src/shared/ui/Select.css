@@ -76,6 +76,14 @@
   overflow-y: auto;
 }
 
+/* Portaled to <body> with fixed positioning (inline left/top/bottom/min-width)
+   so it escapes ancestor overflow clipping (scroll containers, modals). */
+.sel-pop-fixed {
+  position: fixed;
+  left: auto;
+  top: auto;
+}
+
 /* Opens above the trigger (near the window's bottom edge — e.g. the pager). */
 .sel-pop.up {
   top: auto;

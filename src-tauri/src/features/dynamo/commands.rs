@@ -100,6 +100,16 @@ pub async fn dynamo_batch_write(
 }
 
 #[tauri::command]
+pub async fn dynamo_batch_delete(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+    table: String,
+    keys: Vec<Value>,
+) -> Result<BatchWriteResult, AppError> {
+    application::batch_delete(state.manager(), &handle_id, &table, keys).await
+}
+
+#[tauri::command]
 pub async fn dynamo_execute_statement(
     state: State<'_, ConnectionsState>,
     handle_id: ConnectionHandleId,

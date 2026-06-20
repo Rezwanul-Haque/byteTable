@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { exportSave } from "../../../shared/api/engine";
 import { isAppErrorPayload } from "../../../shared/api/error";
 import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
@@ -21,6 +22,8 @@ import {
   type SortKeyOp,
   type TableDescriptor,
 } from "../api";
+import { attributeUnion } from "../helpers";
+import { DynamoDeleteModal } from "./DynamoDeleteModal";
 import { DynamoItemGrid } from "./DynamoItemGrid";
 import { DynamoItemModal } from "./DynamoItemModal";
 
@@ -52,6 +55,15 @@ export function DynamoTableTab({
   onImport,
 }: DynamoTableTabProps) {
   const t = table;
+  // Projection — chosen via a checkbox picker of the attributes seen so far
+  // (DynamoDB is schemaless, so the column list is discovered from scanned data
+  // and accumulated). `projSel` is the chosen subset (empty = all attributes);
+  // `projectionRef` shadows the resolved comma-string so `fetchAt` (scan paging)
+  // reads the latest without re-creating its callback.
+  const [projSel, setProjSel] = useState<Set<string>>(new Set());
+  const [projOpen, setProjOpen] = useState(false);
+  const [knownCols, setKnownCols] = useState<string[]>([]);
+  const projectionRef = useRef("");
   const [pkVal, setPkVal] = useState("");
   const [skVal, setSkVal] = useState("");
   const [skVal2, setSkVal2] = useState("");
@@ -61,7 +73,11 @@ export function DynamoTableTab({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [itemView, setItemView] = useState<DynamoItem | null>(null);
+  const [creating, setCreating] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
+  // Multi-select (by current-page row index); cleared on any (re)fetch.
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const toast = useToast();
 
   // Cursor paging. DynamoDB is cursor-only (LastEvaluatedKey) — there is no
@@ -102,12 +118,14 @@ export function DynamoTableTab({
     ) => {
       setLoading(true);
       setError(null);
+      setSelected(new Set());
       try {
         const page =
           src.kind === "scan"
             ? await dynamoScan(handleId, t.name, {
                 limit: limitRef.current,
                 nextToken: startToken,
+                projection: projectionRef.current.trim() || undefined,
               })
             : await dynamoQuery(handleId, t.name, {
                 ...(src.query as QueryRequest),
@@ -115,6 +133,13 @@ export function DynamoTableTab({
               });
         setResult(page);
         setPageIndex(idx);
+        // Accumulate every attribute seen so a later (projected) page doesn't
+        // shrink the picker's choices.
+        setKnownCols((prev) => {
+          const s = new Set(prev);
+          for (const it of page.items) for (const k of Object.keys(it)) s.add(k);
+          return s.size === prev.length ? prev : [...s];
+        });
       } catch (e) {
         const verb = src.kind === "scan" ? "Scan" : "Query";
         setError(isAppErrorPayload(e) ? e.message : `${verb} requires the desktop app`);
@@ -151,6 +176,7 @@ export function DynamoTableTab({
       skValue: skVal.trim() || undefined,
       skValue2: skVal2.trim() || undefined,
       limit: limitRef.current,
+      projection: projectionRef.current.trim() || undefined,
     };
     sourceRef.current = { kind: "query", query };
     setTokens([undefined]);
@@ -171,6 +197,46 @@ export function DynamoTableTab({
     void fetchAt(0, undefined, sourceRef.current);
   };
 
+  // Columns offered in the picker — keys first, then the rest, over every
+  // attribute seen so far.
+  const projCols = [t.keySchema.pk, t.keySchema.sk]
+    .filter((c): c is string => Boolean(c))
+    .concat(knownCols.filter((c) => c !== t.keySchema.pk && c !== t.keySchema.sk));
+  const toggleProj = (col: string) =>
+    setProjSel((s) => {
+      const n = new Set(s);
+      if (n.has(col)) n.delete(col);
+      else n.add(col);
+      return n;
+    });
+
+  // Apply the picked projection to the current source from page 0 (scan reads
+  // the ref; a frozen query's projection is refreshed here).
+  const applyProjection = () => {
+    const str = [...projSel].join(", ");
+    projectionRef.current = str;
+    if (sourceRef.current.kind === "query" && sourceRef.current.query) {
+      sourceRef.current = {
+        kind: "query",
+        query: { ...sourceRef.current.query, projection: str || undefined },
+      };
+    }
+    setProjOpen(false);
+    setTokens([undefined]);
+    void fetchAt(0, undefined, sourceRef.current);
+  };
+
+  useEffect(() => {
+    if (!projOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const el = e.target as HTMLElement;
+      if (el.closest && el.closest(".ddb-proj")) return;
+      setProjOpen(false);
+    };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [projOpen]);
+
   const canPrev = pageIndex > 0 && !loading;
   const canNext = !!result?.nextToken && !loading;
 
@@ -188,6 +254,71 @@ export function DynamoTableTab({
       return next;
     });
     void fetchAt(pageIndex + 1, tok, sourceRef.current);
+  };
+
+  const items = result?.items ?? [];
+  const clearSelection = () => setSelected(new Set());
+  const toggleRow = (i: number) =>
+    setSelected((s) => {
+      const n = new Set(s);
+      if (n.has(i)) n.delete(i);
+      else n.add(i);
+      return n;
+    });
+  const toggleAll = () =>
+    setSelected((s) => (s.size === items.length ? new Set() : new Set(items.map((_, i) => i))));
+  const refetchCurrent = () => {
+    setTokens([undefined]);
+    void fetchAt(0, undefined, sourceRef.current);
+  };
+
+  // Primary key (PK + optional SK) of a row — what BatchWriteItem delete needs.
+  const keyOf = (it: DynamoItem): DynamoItem => {
+    const k: DynamoItem = { [t.keySchema.pk]: it[t.keySchema.pk] };
+    if (t.keySchema.sk) k[t.keySchema.sk] = it[t.keySchema.sk];
+    return k;
+  };
+  const selectedItems = () => [...selected].map((i) => items[i]).filter(Boolean) as DynamoItem[];
+
+  // The actual delete + production gate live in DynamoDeleteModal; the bar just
+  // opens it with the selected rows' primary keys.
+
+  const exportSelectedCsv = async () => {
+    const rows = selectedItems();
+    if (!rows.length) return;
+    const cols = [t.keySchema.pk, t.keySchema.sk]
+      .filter((c): c is string => Boolean(c))
+      .concat(attributeUnion(rows).filter((c) => c !== t.keySchema.pk && c !== t.keySchema.sk));
+    const esc = (v: unknown) => {
+      if (v === null || v === undefined) return "";
+      const s = typeof v === "object" ? JSON.stringify(v) : String(v);
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    const csv = [cols.join(",")]
+      .concat(rows.map((r) => cols.map((c) => esc(r[c])).join(",")))
+      .join("\n");
+
+    // Real save: prompt for a path (the user's consent) and write via the
+    // backend, like the rest of the app's exports — not a silent blob download.
+    let path: string | null;
+    try {
+      const { save } = await import("@tauri-apps/plugin-dialog");
+      path = await save({
+        defaultPath: `${t.name}-selected.csv`,
+        filters: [{ name: "CSV", extensions: ["csv"] }],
+      });
+    } catch {
+      toast("Exporting requires the ByteTable desktop app.", "info");
+      return;
+    }
+    if (!path) return; // cancelled
+    try {
+      await exportSave(path, csv);
+      const file = path.split(/[\\/]/).pop() ?? "export.csv";
+      toast(`Exported ${rows.length} item${rows.length === 1 ? "" : "s"} to ${file}`, "ok");
+    } catch (e) {
+      toast(isAppErrorPayload(e) ? e.message : "Could not write the CSV file", "err");
+    }
   };
 
   const idx = useIndex ? t.gsis.concat(t.lsis).find((g) => g.name === useIndex) : undefined;
@@ -235,6 +366,79 @@ export function DynamoTableTab({
             <Icon name="account_tree" size={14} /> Indexes
           </button>
         </div>
+        {mode !== "structure" ? (
+          <div className="ddb-tb-proj">
+            <span className="ddb-proj-label">
+              <Icon name="filter_list" size={13} /> Projection
+            </span>
+            <div className="ddb-proj">
+              <button
+                type="button"
+                className="ddb-proj-trigger"
+                onClick={() => setProjOpen((o) => !o)}
+                disabled={projCols.length === 0}
+              >
+                {projSel.size === 0 ? (
+                  <span className="ddb-proj-all">All attributes</span>
+                ) : (
+                  <span className="ddb-proj-chips">
+                    {projCols
+                      .filter((c) => projSel.has(c))
+                      .map((c) => (
+                        <span key={c} className="ddb-proj-chip">
+                          {c}
+                          <span
+                            className="ddb-proj-chip-x"
+                            role="button"
+                            tabIndex={-1}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleProj(c);
+                            }}
+                          >
+                            <Icon name="close" size={11} />
+                          </span>
+                        </span>
+                      ))}
+                  </span>
+                )}
+                <Icon name="expand_more" size={16} />
+              </button>
+              {projOpen ? (
+                <div className="ddb-proj-pop">
+                  <div className="ddb-proj-pop-head">
+                    <span>Return attributes</span>
+                    <button
+                      type="button"
+                      className="ddb-proj-clear"
+                      onClick={() => setProjSel(new Set())}
+                    >
+                      All
+                    </button>
+                  </div>
+                  <div className="ddb-proj-list">
+                    {projCols.map((c) => (
+                      <label key={c} className="ddb-proj-opt">
+                        <input
+                          type="checkbox"
+                          className="ddb-dg-check"
+                          checked={projSel.has(c)}
+                          onChange={() => toggleProj(c)}
+                        />
+                        <span>{c}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="ddb-proj-foot">
+                    <Btn variant="filled" small icon="bolt" onClick={applyProjection}>
+                      Apply
+                    </Btn>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
         {mode === "scan" ? (
           <>
             <span className="ddb-scan-note">
@@ -247,23 +451,8 @@ export function DynamoTableTab({
         ) : (
           <div style={{ flex: 1 }} />
         )}
-        {result && mode !== "structure" ? (
-          <span className="ddb-rowcount">
-            {result.count} items · {result.scannedCount} scanned · {result.capacity.toFixed(1)} RCU
-          </span>
-        ) : null}
         {mode !== "structure" ? (
-          <div className="ddb-pagesize">
-            <span>Page size</span>
-            <Select
-              className="ddb-pagesize-select"
-              aria-label="Page size"
-              mono={false}
-              value={String(pageLimit)}
-              options={PAGE_SIZES.map((n) => ({ value: String(n), label: String(n) }))}
-              onChange={(v) => changeLimit(Number(v))}
-            />
-          </div>
+          <IconBtn icon="add_box" title="New item" onClick={() => setCreating(true)} />
         ) : null}
         <div className="ddb-table-actions" style={{ position: "relative", marginLeft: "auto" }}>
           <IconBtn
@@ -309,7 +498,14 @@ export function DynamoTableTab({
               mono={false}
               value={useIndex}
               options={indexOptions}
-              onChange={setUseIndex}
+              onChange={(v) => {
+                setUseIndex(v);
+                // A different index has a different key schema — the old PK/SK
+                // values no longer apply.
+                setPkVal("");
+                setSkVal("");
+                setSkVal2("");
+              }}
             />
           </div>
           <label className="ddb-q-field">
@@ -376,15 +572,40 @@ export function DynamoTableTab({
         <DynamoStructure t={t} />
       ) : (
         <>
+          {selected.size > 0 ? (
+            <div className="ddb-selbar">
+              <span className="ddb-selbar-count">
+                {selected.size} selected
+                {result?.nextToken ? " (this page)" : ""}
+              </span>
+              <div style={{ flex: 1 }} />
+              <Btn icon="download" variant="tonal" small onClick={() => void exportSelectedCsv()}>
+                Export CSV
+              </Btn>
+              <Btn
+                icon="delete"
+                variant="tonal"
+                small
+                className="ddb-selbar-del"
+                onClick={() => setDeleteOpen(true)}
+              >
+                Delete selected
+              </Btn>
+              <IconBtn icon="close" title="Clear selection" size={16} onClick={clearSelection} />
+            </div>
+          ) : null}
           {error ? (
             <div className="ddb-tab-error">
               <Icon name="error" size={16} /> {error}
             </div>
           ) : (
             <DynamoItemGrid
-              items={result ? result.items : []}
+              items={items}
               keySchema={t.keySchema}
               onOpenItem={setItemView}
+              selected={selected}
+              onToggleRow={toggleRow}
+              onToggleAll={toggleAll}
             />
           )}
           <div className="ddb-table-foot">
@@ -393,6 +614,24 @@ export function DynamoTableTab({
               any item to view &amp; edit · keys are immutable
             </span>
             <div style={{ flex: 1 }} />
+            {result ? (
+              <span className="ddb-rowcount">
+                {result.count} items · {result.scannedCount} scanned · {result.capacity.toFixed(1)}{" "}
+                RCU
+              </span>
+            ) : null}
+            <div className="ddb-pagesize">
+              <span>Page size</span>
+              <Select
+                className="ddb-pagesize-select"
+                aria-label="Page size"
+                mono={false}
+                placement="up"
+                value={String(pageLimit)}
+                options={PAGE_SIZES.map((n) => ({ value: String(n), label: String(n) }))}
+                onChange={(v) => changeLimit(Number(v))}
+              />
+            </div>
             {result ? (
               <div className="ddb-pager">
                 <IconBtn
@@ -424,6 +663,35 @@ export function DynamoTableTab({
           isProduction={isProduction}
           onClose={() => setItemView(null)}
           onSaved={() => void runScan()}
+        />
+      ) : null}
+
+      {creating ? (
+        <DynamoItemModal
+          item={{}}
+          table={t}
+          handleId={handleId}
+          isProduction={isProduction}
+          create
+          onClose={() => setCreating(false)}
+          onSaved={() => {
+            setCreating(false);
+            refetchCurrent();
+          }}
+        />
+      ) : null}
+
+      {deleteOpen && selected.size > 0 ? (
+        <DynamoDeleteModal
+          handleId={handleId}
+          table={t.name}
+          isProduction={isProduction}
+          keys={selectedItems().map(keyOf)}
+          onClose={() => setDeleteOpen(false)}
+          onDone={() => {
+            clearSelection();
+            refetchCurrent();
+          }}
         />
       ) : null}
     </div>

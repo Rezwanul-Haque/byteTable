@@ -59,6 +59,8 @@ export type SortKeyOp = "eq" | "lt" | "lte" | "gt" | "gte" | "begins_with" | "be
 export interface ScanRequest {
   limit: number;
   nextToken?: string;
+  /** Comma-separated attribute names to return (ProjectionExpression); omit for all. */
+  projection?: string;
 }
 
 /** A query request — mirrors Rust's `QueryRequest`. */
@@ -70,6 +72,8 @@ export interface QueryRequest {
   index?: string;
   limit: number;
   nextToken?: string;
+  /** Comma-separated attribute names to return (ProjectionExpression); omit for all. */
+  projection?: string;
 }
 
 /** One page of a scan/query — mirrors Rust's `ItemPage`. */
@@ -153,6 +157,16 @@ export function dynamoBatchWrite(
   items: DynamoItem[],
 ): Promise<BatchWriteResult> {
   return invoke<BatchWriteResult>("dynamo_batch_write", { handleId, table, items });
+}
+
+/** Chunked `BatchWriteItem` delete-by-key (grid multi-select). Each key holds
+ *  the table's PK (and SK for a composite-key table). */
+export function dynamoBatchDelete(
+  handleId: string,
+  table: string,
+  keys: DynamoItem[],
+): Promise<BatchWriteResult> {
+  return invoke<BatchWriteResult>("dynamo_batch_delete", { handleId, table, keys });
 }
 
 /** `ExecuteStatement` (PartiQL). `nextToken` paginates a prior statement. */

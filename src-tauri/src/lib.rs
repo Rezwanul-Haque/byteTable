@@ -303,6 +303,7 @@ pub fn run() {
             features::dynamo::commands::dynamo_put_item,
             features::dynamo::commands::dynamo_delete_item,
             features::dynamo::commands::dynamo_batch_write,
+            features::dynamo::commands::dynamo_batch_delete,
             features::dynamo::commands::dynamo_execute_statement,
             features::mongo::commands::mongo_list_databases,
             features::mongo::commands::mongo_list_collections,

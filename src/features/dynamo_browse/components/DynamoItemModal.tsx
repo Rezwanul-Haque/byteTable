@@ -28,6 +28,8 @@ interface DynamoItemModalProps {
   table: TableDescriptor;
   handleId: string;
   isProduction: boolean;
+  /** Create a brand-new item (PK/SK editable) vs. edit an existing one (locked). */
+  create?: boolean;
   onClose: () => void;
   /** Called after a successful PutItem so the grid can refetch. */
   onSaved: () => void;
@@ -38,6 +40,7 @@ export function DynamoItemModal({
   table,
   handleId,
   isProduction,
+  create = false,
   onClose,
   onSaved,
 }: DynamoItemModalProps) {
@@ -45,7 +48,11 @@ export function DynamoItemModal({
   const isKey = (k: string) => keyAttrs.includes(k);
 
   const [rows, setRows] = useState<AttrRow[]>(() =>
-    Object.keys(item).map((k) => ({ name: k, type: ddbType(item[k]), raw: ddbRawOf(item[k]) })),
+    create
+      ? // New item: seed the key attributes (empty values) using their declared
+        // DynamoDB types, so identity is always present and typed correctly.
+        keyAttrs.map((k) => ({ name: k, type: table.attrTypes[k] ?? "S", raw: "" }))
+      : Object.keys(item).map((k) => ({ name: k, type: ddbType(item[k]), raw: ddbRawOf(item[k]) })),
   );
   const [dirty, setDirty] = useState(false);
   const [newName, setNewName] = useState("");
@@ -109,14 +116,23 @@ export function DynamoItemModal({
     return { draft: d, invalid: invalidName, json: JSON.stringify(d, null, 2) };
   }, [rows]);
 
+  // Create mode requires every key attribute to have a value (identity).
+  const keysFilled =
+    !create || keyAttrs.every((k) => (rows.find((r) => r.name === k)?.raw.trim() ?? "") !== "");
+
   const save = async () => {
     if (invalid) {
       toast("Invalid JSON in attribute “" + invalid + "”", "err");
       return;
     }
+    if (create && !keysFilled) {
+      toast("Fill in the primary key value(s)", "err");
+      return;
+    }
     if (isProduction) {
       const ok = window.confirm(
-        "This connection is a PRODUCTION environment.\n\nPutItem will overwrite this item in " +
+        "This connection is a PRODUCTION environment.\n\nPutItem will write " +
+          (create ? "a new item to " : "and overwrite this item in ") +
           table.name +
           ". Continue?",
       );
@@ -132,7 +148,11 @@ export function DynamoItemModal({
       return;
     }
     toast(
-      "PutItem on " + table.name + " — " + Object.keys(draft).length + " attributes saved",
+      (create ? "Item created in " : "PutItem on ") +
+        table.name +
+        " — " +
+        Object.keys(draft).length +
+        " attributes saved",
       "ok",
     );
     setSaving(false);
@@ -141,11 +161,13 @@ export function DynamoItemModal({
     onClose();
   };
 
+  const verb = create ? "New item" : "Edit item";
+
   return (
-    <Modal label={"Edit item"} onClose={onClose} className="ddb-json-modal">
+    <Modal label={verb} onClose={onClose} className="ddb-json-modal">
       <ModalTitle>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-          <Icon name="data_object" size={17} style={{ color: "var(--accent)" }} /> Edit item
+          <Icon name="data_object" size={17} style={{ color: "var(--accent)" }} /> {verb}
           <span className="ddb-json-type-tag">{table.name}</span>
           {dirty ? <span className="ddb-edit-dot" title="Unsaved changes" /> : null}
         </span>
@@ -154,7 +176,11 @@ export function DynamoItemModal({
 
       <div className="ddb-item-attrs ddb-item-edit">
         {rows.map((r, i) => {
-          const locked = isKey(r.name);
+          const keyRow = isKey(r.name);
+          // Edit mode: keys fully locked. Create mode: key value is editable
+          // (the user is choosing the new item's identity) but its name/type stay
+          // fixed.
+          const locked = keyRow && !create;
           const badge =
             r.name === table.keySchema.pk ? "pk" : r.name === table.keySchema.sk ? "sk" : null;
           const isJson = r.type === "M" || r.type === "L";
@@ -166,7 +192,7 @@ export function DynamoItemModal({
               }
               key={r.name}
             >
-              {locked ? (
+              {keyRow ? (
                 <span className="ddb-attr-type" title={r.type}>
                   {r.type}
                 </span>
@@ -194,6 +220,15 @@ export function DynamoItemModal({
                     value={r.raw}
                     readOnly
                     title="Primary key — immutable. Delete & recreate the item to change it."
+                  />
+                ) : keyRow ? (
+                  <input
+                    className="ddb-val-input"
+                    value={r.raw}
+                    onChange={(e) => setRow(i, { raw: e.target.value })}
+                    placeholder={badge ? badge.toUpperCase() + " value" : "key value"}
+                    spellCheck={false}
+                    inputMode={r.type === "N" ? "decimal" : "text"}
                   />
                 ) : r.type === "NULL" ? (
                   <input className="ddb-val-input" value="null" readOnly disabled />
@@ -227,7 +262,7 @@ export function DynamoItemModal({
                   />
                 )}
               </span>
-              {locked ? (
+              {keyRow ? (
                 <span className="ddb-attr-act" />
               ) : (
                 <button
@@ -270,20 +305,21 @@ export function DynamoItemModal({
 
       <ModalActions>
         <span className="ddb-keys-hint">
-          <Icon name="lock" size={12} /> PK / SK are immutable
+          <Icon name={create ? "vpn_key" : "lock"} size={12} />{" "}
+          {create ? "Set the PK / SK to identify the item" : "PK / SK are immutable"}
         </span>
         <div style={{ flex: 1 }} />
         <Btn variant="text" small onClick={onClose}>
           Cancel
         </Btn>
         <Btn
-          icon="save"
+          icon={create ? "add" : "save"}
           variant="filled"
           small
-          disabled={!dirty || !!invalid || saving}
+          disabled={(!create && !dirty) || !!invalid || saving || !keysFilled}
           onClick={() => void save()}
         >
-          Save changes
+          {create ? "Create item" : "Save changes"}
         </Btn>
       </ModalActions>
     </Modal>

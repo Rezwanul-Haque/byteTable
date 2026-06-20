@@ -117,6 +117,20 @@ pub async fn batch_write(
         .await
 }
 
+/// Chunked `BatchWriteItem` delete-by-key (grid multi-select "delete selected").
+pub async fn batch_delete(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    table: &str,
+    keys: Vec<Value>,
+) -> Result<BatchWriteResult, AppError> {
+    manager
+        .get_document(handle)
+        .await?
+        .batch_delete(table, keys)
+        .await
+}
+
 /// `ExecuteStatement` (PartiQL) (MILESTONE_17 §17.4).
 pub async fn execute_statement(
     manager: &ConnectionManager,

@@ -121,6 +121,11 @@ pub struct ScanRequest {
     pub limit: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next_token: Option<String>,
+    /// Comma-separated attribute names to return (DynamoDB `ProjectionExpression`).
+    /// `None`/empty = all attributes. The adapter aliases each name to dodge
+    /// reserved words.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projection: Option<String>,
 }
 
 fn default_limit() -> u32 {
@@ -132,6 +137,7 @@ impl Default for ScanRequest {
         Self {
             limit: default_limit(),
             next_token: None,
+            projection: None,
         }
     }
 }
@@ -159,6 +165,9 @@ pub struct QueryRequest {
     pub limit: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next_token: Option<String>,
+    /// Comma-separated attribute names to return (`ProjectionExpression`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projection: Option<String>,
 }
 
 /// One page of a scan/query: the unmarshalled items plus the capacity accounting
@@ -257,6 +266,16 @@ pub trait DocumentStoreWriter: Send + Sync {
         &self,
         table: &str,
         items: Vec<Value>,
+    ) -> Result<BatchWriteResult, AppError>;
+
+    /// Chunked `BatchWriteItem` of `DeleteRequest`s — delete many items by their
+    /// primary keys (grid multi-select "delete selected"). Each `key` is a plain
+    /// JSON object holding the PK (and SK for a composite-key table). The adapter
+    /// splits into 25-key batches and retries unprocessed keys.
+    async fn batch_delete(
+        &self,
+        table: &str,
+        keys: Vec<Value>,
     ) -> Result<BatchWriteResult, AppError>;
 }
 

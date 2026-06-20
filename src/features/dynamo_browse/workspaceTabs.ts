@@ -9,7 +9,7 @@ import { create } from "zustand";
 
 export interface DynamoWorkspaceTab {
   id: string;
-  kind: "dashboard" | "table" | "map";
+  kind: "dashboard" | "table" | "map" | "query";
   title: string;
   table?: string;
   mode?: "scan" | "query" | "structure";

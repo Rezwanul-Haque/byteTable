@@ -1,7 +1,7 @@
 # Contributing to ByteTable
 
 Thanks for your interest in ByteTable — a free, local-first desktop database
-client for SQLite, MySQL, PostgreSQL and Redis. Contributions of all kinds are
+client for SQLite, MySQL, PostgreSQL, Redis, DynamoDB and MangoDB. Contributions of all kinds are
 welcome: bug reports, fixes, features, docs, and design feedback.
 
 By contributing you agree that your work is licensed under the project's

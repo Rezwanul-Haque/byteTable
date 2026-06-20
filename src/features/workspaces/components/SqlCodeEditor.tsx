@@ -263,14 +263,9 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
             return true;
           },
         },
-        {
-          key: "Shift-Alt-f",
-          preventDefault: true,
-          run: () => {
-            onFormatRef.current?.();
-            return true;
-          },
-        },
+        // Format (⇧⌥F) is handled via a physical-key dom handler below, NOT a
+        // keymap binding: on macOS Option+F yields a special char as event.key,
+        // so a key-based binding never matches and the char gets inserted.
         // Tab accepts the highlighted completion when the popup is open;
         // acceptCompletion returns false otherwise, so Tab falls through to
         // indentWithTab (two-space indent) below.
@@ -291,6 +286,19 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
             // Mod-Enter must win over any default binding; indentWithTab makes
             // Tab insert indentation (configured to two spaces below).
             runKeymap,
+            // Format shortcut (⇧⌥F) by PHYSICAL key — event.code is layout- and
+            // Option-char-independent, so it fires on macOS where Option+F would
+            // otherwise insert a special char instead of triggering the keymap.
+            EditorView.domEventHandlers({
+              keydown: (e) => {
+                if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === "KeyF") {
+                  e.preventDefault();
+                  onFormatRef.current?.();
+                  return true;
+                }
+                return false;
+              },
+            }),
             // Context-aware SQL autocomplete. The source reads the live schema
             // ref; CM owns caret-positioning, ↑/↓, hover/click, and blur-dismiss.
             // closeOnBlur (default) dismisses on blur; activateOnTyping pops it as

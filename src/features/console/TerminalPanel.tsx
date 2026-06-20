@@ -21,6 +21,7 @@ import { Icon } from "../../shared/ui/Icon";
 import { IconBtn } from "../../shared/ui/IconBtn";
 import type { Workspace } from "../workspaces/types";
 import { DynamoPartiqlSession } from "./DynamoPartiqlSession";
+import { MongoShellSession } from "./MongoShellSession";
 import { RedisTerminalSession } from "./RedisTerminalSession";
 import { SqlTerminalTab } from "./SqlTerminalTab";
 import {
@@ -84,6 +85,9 @@ export function TerminalPanel({ workspace }: { workspace: Workspace }) {
     }
     if (workspace.saved.engine === "dynamodb") {
       return <DynamoPartiqlSession workspace={workspace} session={s} />;
+    }
+    if (workspace.saved.engine === "mongodb") {
+      return <MongoShellSession workspace={workspace} session={s} />;
     }
     return (
       <SqlTerminalTab

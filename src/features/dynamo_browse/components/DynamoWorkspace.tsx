@@ -16,6 +16,7 @@ import { Icon } from "../../../shared/ui/Icon";
 import { useWorkspacesStore } from "../../workspaces/state";
 import type { Workspace } from "../../workspaces/types";
 import { dynamoListTables, type TableDescriptor } from "../api";
+import { useDynamoTabsStore, type DynamoWorkspaceTab } from "../workspaceTabs";
 import { DynamoDashboard } from "./DynamoDashboard";
 import { DynamoExportModal, DynamoImportModal } from "./DynamoIoModals";
 import { DynamoSchemaMap } from "./DynamoSchemaMap";
@@ -24,14 +25,7 @@ import { DynamoTableTab } from "./DynamoTableTab";
 import "./Dynamo.css";
 
 type TabKind = "dashboard" | "table" | "map";
-
-interface Tab {
-  id: string;
-  kind: TabKind;
-  title: string;
-  table?: string;
-  mode?: "scan" | "query" | "structure";
-}
+type Tab = DynamoWorkspaceTab;
 
 const TAB_ICON: Record<TabKind, string> = {
   table: "table_chart",
@@ -56,10 +50,31 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
   const [tablesError, setTablesError] = useState<string | null>(null);
   const [dataVersion, setDataVersion] = useState(0);
 
-  const [tabs, setTabs] = useState<Tab[]>([
-    { id: "ddb-dash", kind: "dashboard", title: "Dashboard" },
-  ]);
-  const [activeId, setActiveId] = useState("ddb-dash");
+  // Tabs / active tab persist per-workspace (survive switching away and back);
+  // the table list is transient and refetched on mount.
+  const ensureTabs = useDynamoTabsStore((s) => s.ensure);
+  const patchTabs = useDynamoTabsStore((s) => s.patch);
+  const tabState = useDynamoTabsStore((s) => s.byWorkspace[workspace.id]);
+  const tabs: Tab[] = tabState?.tabs ?? [{ id: "ddb-dash", kind: "dashboard", title: "Dashboard" }];
+  const activeId = tabState?.activeId ?? "ddb-dash";
+  const peekTabs = () => useDynamoTabsStore.getState().byWorkspace[workspace.id]?.tabs ?? tabs;
+  const setTabs = (next: Tab[] | ((ts: Tab[]) => Tab[])) =>
+    patchTabs(workspace.id, { tabs: typeof next === "function" ? next(peekTabs()) : next });
+  const setActiveId = (id: string) => patchTabs(workspace.id, { activeId: id });
+
+  useEffect(() => {
+    ensureTabs(workspace.id);
+  }, [ensureTabs, workspace.id]);
+
+  // Drop this workspace's persisted tabs when it is CLOSED (not on a mere
+  // switch): on unmount, prune only if the workspace is gone from the store.
+  useEffect(() => {
+    const wsId = workspace.id;
+    return () => {
+      const stillOpen = useWorkspacesStore.getState().workspaces.some((w) => w.id === wsId);
+      if (!stillOpen) useDynamoTabsStore.getState().prune(wsId);
+    };
+  }, [workspace.id]);
 
   const [exportJob, setExportJob] = useState<{ scope: "table" | "all"; table?: string } | null>(
     null,

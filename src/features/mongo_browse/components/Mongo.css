@@ -1,0 +1,815 @@
+/* MongoDB workspace styles (M18) — the mg-* family, ported verbatim from the
+   prototype's ByteTable.html. Shared chrome (sidebar, tabbar, statusbar,
+   rdash, schema-map, terminal, modal, .seg, .filter-select) is reused from the
+   SQL/Redis/Dynamo builds and is NOT restyled here. */
+
+.mg-mono,
+.mg-mono input,
+input.mg-mono,
+textarea.mg-mono {
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+/* value chips */
+.mg-oid {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #b08cff;
+}
+.mg-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #e2b340;
+}
+.mg-arr {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #56b6c2;
+}
+.mg-obj {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #61afef;
+}
+.cell-absent {
+  color: var(--text-faint);
+}
+/* sidebar index lines */
+.mg-idx-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px 2px 30px;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-family: var(--mono);
+}
+.mg-idx-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mg-idx-flag {
+  font-size: 9px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--bg3);
+  color: var(--text-faint);
+  font-family: var(--ui);
+  letter-spacing: 0.03em;
+}
+.sec-more-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 18px;
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.sec-more-btn:hover {
+  background: var(--bg3);
+  color: var(--text);
+}
+.schema-pop-count {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+}
+
+/* Native <select> chrome (prototype .filter-select) — for the remaining
+     native selects (import target, etc.); appearance reset + a single chevron so
+     they match the app's custom Select instead of the OS stepper arrows. */
+select.filter-select {
+  /* Match .where-input exactly (bg/border/radius/font/padding) so the Limit
+       select lines up in height + baseline with the Filter/Projection/Sort
+       inputs; extra right padding leaves room for the chevron. */
+  box-sizing: border-box;
+  background-color: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.4;
+  padding: 6px 28px 6px 10px;
+  outline: none;
+  color: var(--text);
+  max-width: 170px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237a8290' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+}
+select.filter-select:focus {
+  border-color: var(--accent);
+}
+
+/* find bar */
+.mg-find-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg1);
+  flex-wrap: wrap;
+}
+.mg-find-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.mg-find-filter {
+  flex: 1;
+  min-width: 220px;
+}
+.mg-find-limit {
+  width: 96px;
+}
+.mg-find-label {
+  font-size: 10px;
+  color: var(--text-faint);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.mg-find-field .where-input {
+  width: 100%;
+}
+.mg-find-field .filter-select {
+  width: 100%;
+  max-width: none;
+}
+/* One uniform control height across the find bar so the inputs, the Limit
+     select, and the Find button line up (Btn-small is otherwise shorter than
+     .where-input, leaving Find sitting low against the flex-end baseline). */
+.mg-find-bar .where-input,
+.mg-find-bar select.filter-select,
+.mg-find-bar .btn {
+  height: 32px;
+  box-sizing: border-box;
+  flex: none;
+}
+.mg-view-seg .seg-btn {
+  padding: 4px 9px;
+}
+
+/* tree view */
+.mg-tree-wrap {
+  flex: 1;
+  overflow: auto;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mg-tree-doc {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg1);
+  overflow: hidden;
+  flex: none;
+}
+.mg-tree-doc-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+}
+.mg-tree-idx {
+  font-size: 10px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  min-width: 18px;
+}
+.mg-tree-doc-fields {
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+.mg-tree-edit {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--text-faint);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.mg-tree-edit:hover {
+  background: var(--bg3);
+  color: var(--accent);
+  border-color: var(--border);
+}
+.mg-tree-del {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--text-faint);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.mg-tree-del:hover {
+  background: color-mix(in srgb, #e06c75 14%, transparent);
+  color: #e06c75;
+  border-color: color-mix(in srgb, #e06c75 45%, var(--border));
+}
+.mg-tree-del.armed {
+  background: #e06c75;
+  color: #fff;
+  border-color: #e06c75;
+}
+.mg-tree-doc-body {
+  padding: 5px 8px 7px;
+}
+.mg-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 21px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.mg-tree-parent {
+  cursor: pointer;
+  border-radius: 4px;
+}
+.mg-tree-parent:hover {
+  background: var(--bg2);
+}
+.mg-tree-caret {
+  color: var(--text-faint);
+  transition: transform 0.12s;
+  flex-shrink: 0;
+}
+.mg-tree-caret.open {
+  transform: rotate(90deg);
+}
+.mg-tree-key {
+  color: #61afef;
+}
+.mg-tree-colon {
+  color: var(--text-faint);
+  margin: 0 1px;
+}
+.mg-tree-preview {
+  color: var(--text-faint);
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mg-tree-type {
+  margin-left: auto;
+  font-size: 9.5px;
+  font-family: var(--ui);
+  opacity: 0.7;
+  padding-left: 8px;
+}
+
+/* document JSON editor modal */
+.mg-doc-modal {
+  width: 600px;
+  max-width: 94vw;
+}
+.mg-doc-editor {
+  width: 100%;
+  min-height: 320px;
+  max-height: 50vh;
+  resize: vertical;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.55;
+  spellcheck: false;
+}
+.mg-doc-editor:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.mg-doc-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 11px;
+}
+.mg-doc-err {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #e06c75;
+  font-family: var(--mono);
+}
+.mg-doc-ok {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--accent);
+}
+.mg-doc-hint {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+.mg-validated {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: var(--accent);
+  padding: 1px 6px;
+  border: 1px solid color-mix(in oklab, var(--accent) 40%, transparent);
+  border-radius: 10px;
+}
+.mg-del-btn {
+  color: #e06c75 !important;
+}
+
+/* structure */
+.mg-structure {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.mg-struct-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg1);
+}
+.mg-struct-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: none;
+  color: var(--text-dim);
+  font-size: 12px;
+  cursor: pointer;
+}
+.mg-struct-tab:hover {
+  background: var(--bg2);
+  color: var(--text);
+}
+.mg-struct-tab.active {
+  background: color-mix(in oklab, var(--accent) 12%, var(--bg2));
+  color: var(--text);
+  border-color: color-mix(in oklab, var(--accent) 35%, transparent);
+}
+.mg-dot-on {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-left: 2px;
+}
+.mg-struct-body {
+  flex: 1;
+  overflow: auto;
+  padding: 14px 16px;
+}
+.mg-schema-table td {
+  vertical-align: middle;
+}
+.mg-field-dot {
+  color: var(--text-faint);
+  margin-right: 4px;
+}
+.mg-arr-tag {
+  color: #56b6c2;
+  font-family: var(--mono);
+  font-size: 10px;
+  margin-left: 3px;
+}
+.mg-type-chip {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 1px 6px;
+  border: 1px solid;
+  border-radius: 9px;
+  margin-right: 4px;
+}
+.mg-presence {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.mg-presence-bar {
+  width: 90px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg3);
+  overflow: hidden;
+}
+.mg-presence-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+}
+.mg-presence-num {
+  font-size: 10.5px;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  min-width: 32px;
+}
+.mg-indexes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 640px;
+}
+.mg-idx-keys-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.mg-idx-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.mg-idx-field {
+  color: var(--text);
+}
+.mg-add-index {
+  margin-top: 4px;
+}
+.mg-validation {
+  max-width: 640px;
+}
+.mg-val-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+.mg-val-level {
+  font-size: 10px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+.mg-no-validation {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 40px;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+/* aggregation pipeline */
+.mg-pipeline {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg1);
+  max-height: 320px;
+  display: flex;
+  flex-direction: column;
+}
+.mg-pipeline-rail {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  align-items: stretch;
+}
+.mg-stage {
+  min-width: 220px;
+  max-width: 280px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg2);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.mg-stage-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 7px;
+  background: var(--bg3);
+}
+.mg-stage-num {
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--bg1);
+  color: var(--text-faint);
+  font-size: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+}
+.mg-stage-op {
+  background: var(--bg0);
+  color: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  padding: 2px 4px;
+}
+.mg-stage-btn {
+  width: 20px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.mg-stage-btn:hover:not(:disabled) {
+  background: var(--bg1);
+  color: var(--text);
+}
+.mg-stage-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.mg-stage-del:hover {
+  color: #e06c75 !important;
+}
+.mg-stage-body {
+  border: none;
+  background: var(--bg0);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 8px;
+  resize: vertical;
+  min-height: 44px;
+  line-height: 1.5;
+}
+.mg-stage-body:focus {
+  outline: none;
+}
+.mg-add-stage {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 86px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.mg-add-stage:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 6%, transparent);
+}
+.mg-pipeline-run {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px 10px;
+}
+.mg-pipe-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.mg-pipe-coll {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-faint);
+}
+.mg-pipe-coll select {
+  background: var(--bg0);
+  color: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 3px 6px;
+}
+.mg-pipe-coll select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.mg-pipe-empty {
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* explain */
+.mg-explain {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg1);
+  padding: 12px 14px;
+}
+.mg-explain-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+.mg-explain-head .mg-ns {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.mg-explain-grid {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.mg-plan-stage {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  min-width: 220px;
+}
+.mg-plan-stage.ix {
+  background: color-mix(in oklab, var(--accent) 12%, var(--bg2));
+  border: 1px solid color-mix(in oklab, var(--accent) 35%, transparent);
+  color: var(--accent);
+}
+.mg-plan-stage.coll {
+  background: color-mix(in oklab, #e2b340 14%, var(--bg2));
+  border: 1px solid color-mix(in oklab, #e2b340 40%, transparent);
+  color: #e2b340;
+}
+.mg-plan-stage-name {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 600;
+}
+.mg-plan-stage-sub {
+  font-size: 10.5px;
+  color: var(--text-dim);
+  font-family: var(--ui);
+}
+.mg-explain-stats {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.mg-estat {
+  display: flex;
+  flex-direction: column;
+}
+.mg-estat span {
+  font-size: 10px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.mg-estat b {
+  font-size: 16px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-weight: 500;
+}
+.mg-explain-tip {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #e2b340;
+}
+
+/* terminal result table */
+.term-table-wrap {
+  overflow-x: auto;
+  margin: 4px 0 8px;
+}
+.term-result-table {
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.term-result-table th {
+  text-align: left;
+  padding: 3px 12px 3px 0;
+  color: var(--text-faint);
+  border-bottom: 1px solid var(--border);
+  font-weight: 500;
+}
+.term-result-table td {
+  padding: 2px 12px 2px 0;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.term-result-table .mg-oid {
+  color: #b08cff;
+}
+pre.term-json {
+  color: #98c379;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  margin: 2px 0 6px;
+  white-space: pre-wrap;
+}
+.term-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border-top: 1px solid var(--border);
+  flex: none;
+  background: var(--bg1);
+  flex-wrap: wrap;
+}
+
+/* dashboard yes/no */
+.mg-yes {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent);
+  font-size: 11.5px;
+}
+.mg-no {
+  color: var(--text-faint);
+}
+.mg-import-target {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.mg-import-target select {
+  font-family: var(--mono);
+}
+/* IO-modal bits the SQL export/import CSS doesn't define. */
+.export-progress-modal .export-cur {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+}
+.import-busy {
+  margin-top: 12px;
+}

@@ -41,6 +41,8 @@ export function shellLabel(engine: Engine): string {
       return "redis-cli";
     case "dynamodb":
       return "partiql";
+    case "mongodb":
+      return "mongosh";
     case "postgres":
     default:
       return "psql";

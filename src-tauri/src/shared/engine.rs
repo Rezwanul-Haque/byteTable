@@ -56,6 +56,12 @@ pub enum Engine {
     /// port family in [`crate::shared::document`]; the [`OpenConnection`] kind
     /// seam keeps SQL / key-value / document connections apart.
     Dynamodb,
+    /// MongoDB (M18) — a document database (databases → collections → BSON
+    /// documents, an aggregation pipeline). NOT relational, NOT the Redis
+    /// keyspace, and distinct from DynamoDB's single-table document model. It
+    /// implements its own MongoDB port family in [`crate::shared::mongo`]; the
+    /// [`OpenConnection`] kind seam keeps it apart from every other family.
+    Mongodb,
 }
 
 impl Engine {
@@ -67,6 +73,7 @@ impl Engine {
             Self::Postgres => "PostgreSQL",
             Self::Redis => "Redis",
             Self::Dynamodb => "DynamoDB",
+            Self::Mongodb => "MongoDB",
         }
     }
 }
@@ -274,6 +281,24 @@ pub enum ConnectionParams {
         endpoint: Option<String>,
         auth: DynamoAuth,
     },
+    /// MongoDB (M18) — a document database. Two connect shapes (the modal's
+    /// Host/port ⇄ Connection string toggle): when `uri` is `Some` it is a full
+    /// `mongodb://` / `mongodb+srv://` (Atlas SRV) connection string and the
+    /// host/port/database/user fields are ignored; otherwise the connector
+    /// assembles a URI from `host`/`port`/`database`/`user`/`tls_mode`. The
+    /// password (either mode) lives in the OS keychain, never here.
+    Mongodb {
+        /// A full `mongodb://` / `mongodb+srv://` URI (connection-string mode).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        uri: Option<String>,
+        host: String,
+        port: u16,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        database: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        user: Option<String>,
+        tls_mode: TlsMode,
+    },
 }
 
 impl ConnectionParams {
@@ -285,6 +310,7 @@ impl ConnectionParams {
             Self::Postgres { .. } => Engine::Postgres,
             Self::Redis { .. } => Engine::Redis,
             Self::Dynamodb { .. } => Engine::Dynamodb,
+            Self::Mongodb { .. } => Engine::Mongodb,
         }
     }
 
@@ -292,7 +318,7 @@ impl ConnectionParams {
     /// a bastion. `None` for SQLite and for direct server connections.
     pub fn ssh(&self) -> Option<&SshConfig> {
         match self {
-            Self::Sqlite { .. } | Self::Dynamodb { .. } => None,
+            Self::Sqlite { .. } | Self::Dynamodb { .. } | Self::Mongodb { .. } => None,
             Self::Mysql { ssh, .. } | Self::Postgres { ssh, .. } | Self::Redis { ssh, .. } => {
                 ssh.as_ref()
             }
@@ -471,6 +497,51 @@ impl<'de> Deserialize<'de> for ConnectionParams {
                     region,
                     endpoint,
                     auth,
+                })
+            }
+            "mongodb" => {
+                // MongoDB carries either a full `uri` (connection-string mode)
+                // or host/port/database/user (+ tlsMode) fields. `port` defaults
+                // to 27017, host to "localhost". TLS reads like the SQL engines
+                // (granular `tlsMode`, legacy `tls` bool tolerated). No SSH.
+                let uri = value
+                    .get("uri")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string);
+                let host = value
+                    .get("host")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or("localhost")
+                    .to_string();
+                let port = value
+                    .get("port")
+                    .and_then(serde_json::Value::as_u64)
+                    .and_then(|p| u16::try_from(p).ok())
+                    .unwrap_or(27017);
+                let opt_str = |k: &str| {
+                    value
+                        .get(k)
+                        .and_then(|v| v.as_str())
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_string)
+                };
+                let tls_mode = match value.get("tlsMode") {
+                    Some(m) => TlsMode::deserialize(m.clone()).map_err(D::Error::custom)?,
+                    None => match value.get("tls").and_then(serde_json::Value::as_bool) {
+                        Some(true) => TlsMode::Prefer,
+                        Some(false) => TlsMode::Disable,
+                        None => TlsMode::default(),
+                    },
+                };
+                Ok(ConnectionParams::Mongodb {
+                    uri,
+                    host,
+                    port,
+                    database: opt_str("database"),
+                    user: opt_str("user"),
+                    tls_mode,
                 })
             }
             other => Err(D::Error::custom(format!("unknown engine tag '{other}'"))),
@@ -1217,6 +1288,8 @@ pub enum OpenConnection {
     Kv(Arc<dyn KeyValueConnection>),
     /// A document-store connection (`Dynamodb`, M17).
     Document(Arc<dyn DocumentStoreConnection>),
+    /// A MongoDB connection (`Mongodb`, M18).
+    Mongo(Arc<dyn crate::shared::mongo::MongoConnection>),
 }
 
 impl OpenConnection {
@@ -1228,6 +1301,7 @@ impl OpenConnection {
             Self::Sql(_) => ConnectionKind::Sql,
             Self::Kv(_) => ConnectionKind::Kv,
             Self::Document(_) => ConnectionKind::Document,
+            Self::Mongo(_) => ConnectionKind::Mongo,
         }
     }
 
@@ -1237,6 +1311,7 @@ impl OpenConnection {
             Self::Sql(c) => c.engine_info(),
             Self::Kv(c) => c.engine_info(),
             Self::Document(c) => c.engine_info(),
+            Self::Mongo(c) => c.engine_info(),
         }
     }
 
@@ -1256,13 +1331,18 @@ impl OpenConnection {
         Self::Document(Arc::new(connection))
     }
 
+    /// Wrap a MongoDB connection (the `engines::mongo` adapter).
+    pub fn mongo(connection: impl crate::shared::mongo::MongoConnection + 'static) -> Self {
+        Self::Mongo(Arc::new(connection))
+    }
+
     /// The SQL connection, consuming the enum, or `None` for a key-value one.
     /// Used by the SQL adapters' own tests, which open a connector and then
     /// exercise the [`EngineConnection`] surface directly.
     pub fn into_sql(self) -> Option<Arc<dyn EngineConnection>> {
         match self {
             Self::Sql(c) => Some(c),
-            Self::Kv(_) | Self::Document(_) => None,
+            Self::Kv(_) | Self::Document(_) | Self::Mongo(_) => None,
         }
     }
 
@@ -1271,7 +1351,7 @@ impl OpenConnection {
     pub fn into_kv(self) -> Option<Arc<dyn KeyValueConnection>> {
         match self {
             Self::Kv(c) => Some(c),
-            Self::Sql(_) | Self::Document(_) => None,
+            Self::Sql(_) | Self::Document(_) | Self::Mongo(_) => None,
         }
     }
 
@@ -1280,7 +1360,16 @@ impl OpenConnection {
     pub fn into_document(self) -> Option<Arc<dyn DocumentStoreConnection>> {
         match self {
             Self::Document(c) => Some(c),
-            Self::Sql(_) | Self::Kv(_) => None,
+            Self::Sql(_) | Self::Kv(_) | Self::Mongo(_) => None,
+        }
+    }
+
+    /// The MongoDB connection, consuming the enum, or `None` otherwise. Used by
+    /// the `engines::mongo` integration tests.
+    pub fn into_mongo(self) -> Option<Arc<dyn crate::shared::mongo::MongoConnection>> {
+        match self {
+            Self::Mongo(c) => Some(c),
+            Self::Sql(_) | Self::Kv(_) | Self::Document(_) => None,
         }
     }
 }
@@ -1295,6 +1384,8 @@ pub enum ConnectionKind {
     Kv,
     /// A document store (`Dynamodb`, M17) → the DynamoDB workspace.
     Document,
+    /// A MongoDB connection (M18) → the MongoDB workspace.
+    Mongo,
 }
 
 /// Opens and tests connections for one engine. One implementation per

@@ -99,9 +99,9 @@ impl ConnectionManager {
     ) -> Result<Arc<dyn EngineConnection>, AppError> {
         match self.open.read().await.get(handle) {
             Some(OpenConnection::Sql(conn)) => Ok(Arc::clone(conn)),
-            Some(OpenConnection::Kv(_)) | Some(OpenConnection::Document(_)) => {
-                Err(kind_mismatch("SQL"))
-            }
+            Some(OpenConnection::Kv(_))
+            | Some(OpenConnection::Document(_))
+            | Some(OpenConnection::Mongo(_)) => Err(kind_mismatch("SQL")),
             None => Err(not_open(handle)),
         }
     }
@@ -114,9 +114,9 @@ impl ConnectionManager {
     ) -> Result<Arc<dyn KeyValueConnection>, AppError> {
         match self.open.read().await.get(handle) {
             Some(OpenConnection::Kv(conn)) => Ok(Arc::clone(conn)),
-            Some(OpenConnection::Sql(_)) | Some(OpenConnection::Document(_)) => {
-                Err(kind_mismatch("key-value"))
-            }
+            Some(OpenConnection::Sql(_))
+            | Some(OpenConnection::Document(_))
+            | Some(OpenConnection::Mongo(_)) => Err(kind_mismatch("key-value")),
             None => Err(not_open(handle)),
         }
     }
@@ -129,9 +129,24 @@ impl ConnectionManager {
     ) -> Result<Arc<dyn DocumentStoreConnection>, AppError> {
         match self.open.read().await.get(handle) {
             Some(OpenConnection::Document(conn)) => Ok(Arc::clone(conn)),
-            Some(OpenConnection::Sql(_)) | Some(OpenConnection::Kv(_)) => {
-                Err(kind_mismatch("document-store"))
-            }
+            Some(OpenConnection::Sql(_))
+            | Some(OpenConnection::Kv(_))
+            | Some(OpenConnection::Mongo(_)) => Err(kind_mismatch("document-store")),
+            None => Err(not_open(handle)),
+        }
+    }
+
+    /// The MongoDB connection behind a handle (M18). A handle of any other
+    /// family is the symmetric §5 error.
+    pub async fn get_mongo(
+        &self,
+        handle: &ConnectionHandleId,
+    ) -> Result<Arc<dyn crate::shared::mongo::MongoConnection>, AppError> {
+        match self.open.read().await.get(handle) {
+            Some(OpenConnection::Mongo(conn)) => Ok(Arc::clone(conn)),
+            Some(OpenConnection::Sql(_))
+            | Some(OpenConnection::Kv(_))
+            | Some(OpenConnection::Document(_)) => Err(kind_mismatch("MongoDB")),
             None => Err(not_open(handle)),
         }
     }
@@ -160,6 +175,9 @@ impl ConnectionManager {
                     let _ = c.close().await;
                 }
                 OpenConnection::Document(c) => {
+                    let _ = c.close().await;
+                }
+                OpenConnection::Mongo(c) => {
                     let _ = c.close().await;
                 }
             }
@@ -436,6 +454,11 @@ pub async fn open_connection<R: ConnectionRepository + ?Sized, S: SecretStore + 
         // fetches its table list on mount via `dynamo_list_tables` — the open
         // result only carries the `kind` the renderer routes on.
         OpenConnection::Document(_) => (Vec::new(), None),
+        // MongoDB (M18): no SQL schemas, no Redis keyspace. The MongoDB
+        // workspace fetches its database + collection list on mount via
+        // `mongo_list_databases` / `mongo_list_collections`; the open result
+        // only carries the `kind` the renderer routes on.
+        OpenConnection::Mongo(_) => (Vec::new(), None),
     };
 
     let handle_id = manager.insert(connection).await;
@@ -492,6 +515,7 @@ pub async fn close_connection(
         Some(OpenConnection::Sql(connection)) => connection.close().await,
         Some(OpenConnection::Kv(connection)) => connection.close().await,
         Some(OpenConnection::Document(connection)) => connection.close().await,
+        Some(OpenConnection::Mongo(connection)) => connection.close().await,
         None => Ok(()),
     }
 }

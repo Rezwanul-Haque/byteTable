@@ -19,6 +19,8 @@ const ENGINE_META: Record<Engine, { label: string; short: string; color: string 
   redis: { label: "Redis", short: "Rd", color: "#e8533d" },
   // DynamoDB (M17): AWS-blue, distinct from Postgres's lighter blue.
   dynamodb: { label: "DynamoDB", short: "Dy", color: "#4d77ff" },
+  // MongoDB (M18): MongoDB-green, distinct from every other engine tint.
+  mongodb: { label: "MongoDB", short: "Mg", color: "#13aa52" },
 };
 
 interface EngineBadgeProps {

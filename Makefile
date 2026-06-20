@@ -77,8 +77,8 @@ tag: ## Create + push a release tag (usage: make tag VERSION=0.0.2)
 	git push origin "v$$v" && \
 	echo "Pushed tag v$$v — the release workflow will build + publish it."
 
-db-up: ## Start the test databases (Postgres/MySQL/Redis) + seed them
-	cd test-fixtures && docker compose up -d && ./seed/seed-redis.sh
+db-up: ## Start the test databases (Postgres/MySQL/Redis/DynamoDB/MongoDB) + seed them
+	cd test-fixtures && docker compose up -d && ./seed/seed-redis.sh && ./seed/seed-dynamo.sh
 
 db-down: ## Stop and wipe the test databases
 	cd test-fixtures && docker compose down -v

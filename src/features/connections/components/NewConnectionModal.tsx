@@ -55,6 +55,7 @@ const ENGINES: { engine: Engine; label: string }[] = [
   { engine: "postgres", label: "PostgreSQL" },
   { engine: "redis", label: "Redis" },
   { engine: "dynamodb", label: "DynamoDB" },
+  { engine: "mongodb", label: "MongoDB" },
 ];
 
 /** AWS regions offered in the DynamoDB connect form (prototype `AWS_REGIONS`). */
@@ -79,6 +80,7 @@ const DEFAULT_PORTS: Partial<Record<Engine, string>> = {
   postgres: "5432",
   mysql: "3306",
   redis: "6379",
+  mongodb: "27017",
 };
 
 // The conventional superuser each engine ships with — prefilled into the User
@@ -145,6 +147,11 @@ interface FormState {
   awsAuth: "profile" | "keys";
   awsProfile: string;
   awsAccessKeyId: string;
+  // MongoDB (M18). `mongoConnMode` toggles the Host/port form vs a single
+  // connection-string field; `mongoUri` is the `mongodb://` / `mongodb+srv://`
+  // string used in URI mode.
+  mongoConnMode: "fields" | "uri";
+  mongoUri: string;
   // Transient secrets — sent to the backend, never part of saved params.
   password: string;
   // SSH tunnel.
@@ -185,6 +192,8 @@ const INITIAL: FormState = {
   awsAuth: "profile",
   awsProfile: "default",
   awsAccessKeyId: "",
+  mongoConnMode: "fields",
+  mongoUri: "mongodb://localhost:27017",
   password: "",
   useSsh: false,
   sshHost: "",
@@ -277,6 +286,18 @@ function formStateFromConnection(c: SavedConnection): FormState {
       awsAuth: p.auth.mode,
       awsProfile: p.auth.mode === "profile" ? p.auth.profile : INITIAL.awsProfile,
       awsAccessKeyId: p.auth.mode === "keys" ? p.auth.accessKeyId : "",
+    };
+  }
+  if (p.engine === "mongodb") {
+    return {
+      ...base,
+      mongoConnMode: p.uri ? "uri" : "fields",
+      mongoUri: p.uri ?? INITIAL.mongoUri,
+      host: p.host,
+      port: String(p.port),
+      db: p.database ?? "",
+      user: p.user ?? "",
+      tls: p.tlsMode,
     };
   }
   const sshFields = p.ssh
@@ -460,6 +481,8 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
     awsAuth,
     awsProfile,
     awsAccessKeyId,
+    mongoConnMode,
+    mongoUri,
     password,
     useSsh,
     sshHost,
@@ -520,6 +543,8 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
   const isRedis = engine === "redis";
   // DynamoDB (M17): its own AWS/Local + region + credential form; no SSH tab.
   const isDynamo = engine === "dynamodb";
+  // MongoDB (M18): its own Host/port ⇄ Connection string form; no SSH tab.
+  const isMongo = engine === "mongodb";
 
   const pickEngine = (next: Engine) => dispatch({ type: "engine", engine: next });
 
@@ -582,6 +607,43 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
         },
       };
     }
+    // MongoDB (M18): connection-string mode validates only the URI; host/port
+    // mode validates host + port and carries the discrete fields. The password
+    // (either mode) is a secret and travels via `secrets()`, never in params.
+    if (engine === "mongodb") {
+      if (mongoConnMode === "uri") {
+        const uri = mongoUri.trim();
+        if (!uri) return { error: "Connection string is required" };
+        if (!uri.startsWith("mongodb://") && !uri.startsWith("mongodb+srv://")) {
+          return { error: "Connection string must start with mongodb:// or mongodb+srv://" };
+        }
+        return {
+          params: {
+            engine: "mongodb",
+            uri,
+            host: host.trim() || "localhost",
+            port: Number(port.trim()) || 27017,
+            tlsMode: tls,
+          },
+        };
+      }
+      if (!host.trim()) return { error: "Host is required" };
+      const mongoPort = Number(port.trim());
+      if (!Number.isInteger(mongoPort) || mongoPort < 1 || mongoPort > 65535) {
+        return { error: "Port must be a number between 1 and 65535" };
+      }
+      return {
+        params: {
+          engine: "mongodb",
+          host: host.trim(),
+          port: mongoPort,
+          ...(db.trim() ? { database: db.trim() } : {}),
+          ...(user.trim() ? { user: user.trim() } : {}),
+          tlsMode: tls,
+        },
+      };
+    }
+
     if (!host.trim()) return { error: "Host is required" };
     const portNumber = Number(port.trim());
     if (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535) {
@@ -841,7 +903,7 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
         ) : null}
       </div>
 
-      {!isFileBased && !isDynamo ? (
+      {!isFileBased && !isDynamo && !isMongo ? (
         <div
           className="modal-tabs"
           role="tablist"
@@ -999,6 +1061,107 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
                   DynamoDB Local / LocalStack — region is just a label; any access keys work.
                 </span>
               </div>
+            </>
+          )}
+        </div>
+      ) : isMongo ? (
+        <div className="form-grid">
+          <div className="span-2 seg ddb-mode-seg">
+            <button
+              type="button"
+              className={"seg-btn" + (mongoConnMode === "fields" ? " active" : "")}
+              onClick={() => field({ mongoConnMode: "fields" })}
+            >
+              <Icon name="dns" size={14} /> Host / port
+            </button>
+            <button
+              type="button"
+              className={"seg-btn" + (mongoConnMode === "uri" ? " active" : "")}
+              onClick={() => field({ mongoConnMode: "uri" })}
+            >
+              <Icon name="link" size={14} /> Connection string
+            </button>
+          </div>
+          {mongoConnMode === "uri" ? (
+            <>
+              <label className="span-2">
+                Connection string
+                <input
+                  value={mongoUri}
+                  onChange={(e) => field({ mongoUri: e.target.value })}
+                  placeholder="mongodb+srv://user:pass@cluster.mongodb.net/byteshop"
+                  spellCheck={false}
+                />
+              </label>
+              <div className="span-2 form-note">
+                <Icon name="link" size={14} />{" "}
+                <span>
+                  Both <code>mongodb://</code> and <code>mongodb+srv://</code> (Atlas SRV) URIs are
+                  supported. Credentials are parsed locally and never leave this machine.
+                </span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="form-field">
+                <span className="form-field-label">TLS mode</span>
+                <Select
+                  className="sel-block"
+                  aria-label="TLS mode"
+                  value={tls}
+                  options={TLS_MODES.map((mode) => ({ value: mode, label: mode }))}
+                  onChange={(v) => field({ tls: v })}
+                />
+              </div>
+              <label>
+                Host
+                <input
+                  value={host}
+                  onChange={(e) => field({ host: e.target.value })}
+                  spellCheck={false}
+                />
+              </label>
+              <label>
+                Port
+                <input
+                  value={port}
+                  onChange={(e) => field({ port: e.target.value, portTouched: true })}
+                  spellCheck={false}
+                />
+              </label>
+              <label>
+                <span className="lbl-row">
+                  Database <span className="opt-tag">optional</span>
+                </span>
+                <input
+                  value={db}
+                  onChange={(e) => field({ db: e.target.value })}
+                  placeholder="byteshop"
+                  spellCheck={false}
+                />
+              </label>
+              <label>
+                <span className="lbl-row">
+                  User <span className="opt-tag">optional</span>
+                </span>
+                <input
+                  value={user}
+                  onChange={(e) => field({ user: e.target.value, userTouched: true })}
+                  placeholder="admin"
+                  spellCheck={false}
+                />
+              </label>
+              <label>
+                <span className="lbl-row">
+                  Password <span className="opt-tag">optional</span>
+                </span>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => field({ password: e.target.value })}
+                  placeholder="••••••••"
+                />
+              </label>
             </>
           )}
         </div>

@@ -68,9 +68,11 @@ pub async fn open_tunnel_if_needed(
         ConnectionParams::Mysql { host, port, .. }
         | ConnectionParams::Postgres { host, port, .. }
         | ConnectionParams::Redis { host, port, .. } => (host.as_str(), *port),
-        // SQLite (local file) and DynamoDB (HTTPS to AWS, no bastion) never
-        // tunnel; `params.ssh()` already returned None above for both.
-        ConnectionParams::Sqlite { .. } | ConnectionParams::Dynamodb { .. } => return Ok(None),
+        // SQLite (local file), DynamoDB (HTTPS to AWS), and MongoDB (no bastion
+        // in M18) never tunnel; `params.ssh()` already returned None above.
+        ConnectionParams::Sqlite { .. }
+        | ConnectionParams::Dynamodb { .. }
+        | ConnectionParams::Mongodb { .. } => return Ok(None),
     };
     let ssh_secret = secret.and_then(ConnectSecret::ssh);
     let tunnel = SshTunnel::open(ssh, target_host, target_port, ssh_secret).await?;

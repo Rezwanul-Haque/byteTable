@@ -64,8 +64,28 @@ services:
     volumes:
       - bt-dynamo-data:/home/dynamodblocal/data
 
+  # MongoDB (M18). No auth (no MONGO_INITDB_ROOT_USERNAME) so the connect modal's
+  # default `mongodb://localhost:27017` / host:port form works as-is — like
+  # DynamoDB Local, the standard port 27017 is kept rather than offset.
+  # `seed/mongo.js` is mounted into the image's init dir and auto-runs (via
+  # mongosh) on FIRST init of an empty data volume, exactly like the SQL seeds;
+  # `MONGO_INITDB_DATABASE` is the db mongosh connects to (the script also seeds
+  # `analytics` via getSiblingDB). `down -v` clears the volume so the next `up`
+  # re-seeds.
+  mongodb:
+    image: mongo:7
+    container_name: bt-mongo
+    environment:
+      MONGO_INITDB_DATABASE: byteshop
+    ports:
+      - "27017:27017"
+    volumes:
+      - ./seed/mongo.js:/docker-entrypoint-initdb.d/seed.js:ro
+      - bt-mongo-data:/data/db
+
 volumes:
   bt-pg-data:
   bt-mysql-data:
   bt-redis-data:
   bt-dynamo-data:
+  bt-mongo-data:

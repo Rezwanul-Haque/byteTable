@@ -5,7 +5,7 @@
  * `redis` (the key-value engine, M13), and `dynamodb` (the NoSQL document
  * store, M17). Lowercase on the wire, matching Rust's `Engine`.
  */
-export type Engine = "sqlite" | "mysql" | "postgres" | "redis" | "dynamodb";
+export type Engine = "sqlite" | "mysql" | "postgres" | "redis" | "dynamodb" | "mongodb";
 
 /**
  * Deployment environment a connection points at (drives the EnvTag tint).

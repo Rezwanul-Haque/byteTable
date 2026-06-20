@@ -112,6 +112,20 @@ export type ConnectionParams =
       region: string;
       endpoint?: string;
       auth: DynamoAuth;
+    }
+  | {
+      // MongoDB (M18). Two connect shapes (the modal's Host/port ⇄ Connection
+      // string toggle): when `uri` is present it is a full `mongodb://` /
+      // `mongodb+srv://` (Atlas SRV) string and host/port/database/user are
+      // ignored; otherwise the connector assembles a URI from the fields. The
+      // password (either mode) lives in the OS keychain, never in params.
+      engine: "mongodb";
+      uri?: string;
+      host: string;
+      port: number;
+      database?: string;
+      user?: string;
+      tlsMode: TlsMode;
     };
 
 /**
@@ -154,7 +168,7 @@ export interface SavedConnection {
  * renderer routes on: `"sql"` → the relational workspace, `"kv"` → the Redis
  * workspace. Lowercase on the wire, mirroring Rust's `ConnectionKind`.
  */
-export type ConnectionKind = "sql" | "kv" | "document";
+export type ConnectionKind = "sql" | "kv" | "document" | "mongo";
 
 /**
  * Server identity for the Redis dashboard header — mirrors Rust's
@@ -303,6 +317,13 @@ export function connectionDetail(params: ConnectionParams): string {
   if (params.engine === "dynamodb") {
     return params.region + (params.endpoint ? " · Local" : " · AWS");
   }
+  // MongoDB: the connection string itself when in URI mode, else "host:port · db".
+  if (params.engine === "mongodb") {
+    if (params.uri) return params.uri;
+    return params.database
+      ? params.host + ":" + params.port + " · " + params.database
+      : params.host + ":" + params.port;
+  }
   // database is optional now; omit the " · db" suffix when absent.
   return params.database
     ? params.host + ":" + params.port + " · " + params.database
@@ -317,7 +338,8 @@ export function connectionDetail(params: ConnectionParams): string {
 export function connectionIsTunneled(params: ConnectionParams): boolean {
   // Only the server engines carry an `ssh` field; SQLite (local file) and
   // DynamoDB (HTTPS to AWS) never tunnel.
-  if (params.engine === "sqlite" || params.engine === "dynamodb") return false;
+  if (params.engine === "sqlite" || params.engine === "dynamodb" || params.engine === "mongodb")
+    return false;
   return params.ssh !== undefined;
 }
 
@@ -327,7 +349,8 @@ export function connectionIsTunneled(params: ConnectionParams): boolean {
  * Returns "" when the connection is not tunnelled.
  */
 export function tunnelTitle(params: ConnectionParams): string {
-  if (params.engine === "sqlite" || params.engine === "dynamodb") return "";
+  if (params.engine === "sqlite" || params.engine === "dynamodb" || params.engine === "mongodb")
+    return "";
   if (params.ssh === undefined) return "";
   const { user, host, port } = params.ssh;
   return "Tunnelled through " + user + "@" + host + ":" + port;

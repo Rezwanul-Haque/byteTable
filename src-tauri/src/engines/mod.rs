@@ -13,6 +13,7 @@
 //! original `engines::sqlite`.
 
 pub mod dynamo;
+pub mod mongo;
 pub mod mysql;
 pub mod postgres;
 pub mod redis;

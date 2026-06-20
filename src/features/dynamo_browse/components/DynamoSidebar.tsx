@@ -34,7 +34,10 @@ interface DynamoSidebarProps {
 interface CtxMenu {
   x: number;
   y: number;
-  table: string;
+  /** Set for a per-table menu (right-click a table row). */
+  table?: string;
+  /** Set for the database-actions menu (the section-label ⋯ button). */
+  db?: boolean;
 }
 
 export function DynamoSidebar({
@@ -119,7 +122,29 @@ export function DynamoSidebar({
 
       <div className="ddb-sidebar-section-label">
         <span>Tables</span>
-        <span className="ddb-sidebar-count">{tables.length}</span>
+        <div
+          className="sec-actions"
+          style={{ display: "flex", alignItems: "center", gap: 6, position: "relative" }}
+        >
+          <span className="ddb-sidebar-count">{tables.length}</span>
+          <button
+            type="button"
+            className="sec-actions-btn"
+            title="Database actions"
+            onClick={(e) => {
+              e.stopPropagation();
+              // Toggle: a second press on the open db-actions menu closes it.
+              if (ctxMenu?.db) {
+                setCtxMenu(null);
+                return;
+              }
+              const r = e.currentTarget.getBoundingClientRect();
+              setCtxMenu({ x: r.right - 196, y: r.bottom + 4, db: true });
+            }}
+          >
+            <Icon name="more_horiz" size={15} />
+          </button>
+        </div>
       </div>
 
       <div className="ddb-sidebar-tables">
@@ -198,49 +223,87 @@ export function DynamoSidebar({
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
           onClick={(e) => e.stopPropagation()}
         >
-          <button
-            type="button"
-            className="ddb-ctx-item"
-            onClick={() => {
-              onOpenTable(ctxMenu.table);
-              setCtxMenu(null);
-            }}
-          >
-            <Icon name="table_chart" size={15} /> Open data
-          </button>
-          <button
-            type="button"
-            className="ddb-ctx-item"
-            onClick={() => {
-              onOpenMap();
-              setCtxMenu(null);
-            }}
-          >
-            <Icon name="hub" size={15} /> Show in schema map
-          </button>
-          <div className="ddb-ctx-sep" />
-          <button
-            type="button"
-            className="ddb-ctx-item"
-            onClick={() => {
-              const tbl = ctxMenu.table;
-              setCtxMenu(null);
-              onExportTable(tbl);
-            }}
-          >
-            <Icon name="download" size={15} /> Export table…
-          </button>
-          <button
-            type="button"
-            className="ddb-ctx-item"
-            onClick={() => {
-              const tbl = ctxMenu.table;
-              setCtxMenu(null);
-              onImportTable(tbl);
-            }}
-          >
-            <Icon name="upload" size={15} /> Import items…
-          </button>
+          {ctxMenu.db ? (
+            <>
+              <button
+                type="button"
+                className="ddb-ctx-item"
+                onClick={() => {
+                  setCtxMenu(null);
+                  onExportAll();
+                }}
+              >
+                <Icon name="download" size={15} /> Export all tables…
+              </button>
+              <button
+                type="button"
+                className="ddb-ctx-item"
+                onClick={() => {
+                  setCtxMenu(null);
+                  onOpenPartiql();
+                }}
+              >
+                <Icon name="terminal" size={15} /> PartiQL editor
+              </button>
+              <div className="ddb-ctx-sep" />
+              <button
+                type="button"
+                className="ddb-ctx-item"
+                onClick={() => {
+                  setCtxMenu(null);
+                  onRefresh();
+                }}
+              >
+                <Icon name="refresh" size={15} /> Refresh
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="ddb-ctx-item"
+                onClick={() => {
+                  if (ctxMenu.table) onOpenTable(ctxMenu.table);
+                  setCtxMenu(null);
+                }}
+              >
+                <Icon name="table_chart" size={15} /> Open data
+              </button>
+              <button
+                type="button"
+                className="ddb-ctx-item"
+                onClick={() => {
+                  onOpenMap();
+                  setCtxMenu(null);
+                }}
+              >
+                <Icon name="hub" size={15} /> Show in schema map
+              </button>
+              <div className="ddb-ctx-sep" />
+              <button
+                type="button"
+                className="ddb-ctx-item"
+                onClick={() => {
+                  const tbl = ctxMenu.table;
+                  setCtxMenu(null);
+                  if (tbl) onExportTable(tbl);
+                }}
+              >
+                <Icon name="download" size={15} /> Export table…
+              </button>
+              <button
+                type="button"
+                className="ddb-ctx-item"
+                onClick={() => {
+                  const tbl = ctxMenu.table;
+                  setCtxMenu(null);
+                  if (tbl) onImportTable(tbl);
+                }}
+              >
+                <Icon name="upload" size={15} /> Import items…
+              </button>
+            </>
+          )}
         </div>
       ) : null}
     </aside>

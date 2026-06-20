@@ -9,6 +9,7 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Emitter, Manager, Runtime, WindowEvent};
 
 use engines::dynamo::DynamoConnector;
+use engines::mongo::MongoConnector;
 use engines::mysql::MysqlConnector;
 use engines::postgres::PostgresConnector;
 use engines::redis::RedisConnector;
@@ -160,6 +161,10 @@ pub fn run() {
             // `OpenConnection::Document`, kept apart from SQL and Redis by the
             // manager's `get_document` kind seam.
             registry.register(Engine::Dynamodb, Arc::new(DynamoConnector));
+            // MongoDB (M18): a document database. Its connector returns an
+            // `OpenConnection::Mongo`, kept apart from SQL / Redis / DynamoDB by
+            // the manager's `get_mongo` kind seam.
+            registry.register(Engine::Mongodb, Arc::new(MongoConnector));
             app.manage(ConnectionsState::new(
                 Box::new(repository),
                 registry,
@@ -299,6 +304,20 @@ pub fn run() {
             features::dynamo::commands::dynamo_delete_item,
             features::dynamo::commands::dynamo_batch_write,
             features::dynamo::commands::dynamo_execute_statement,
+            features::mongo::commands::mongo_list_databases,
+            features::mongo::commands::mongo_list_collections,
+            features::mongo::commands::mongo_find,
+            features::mongo::commands::mongo_count,
+            features::mongo::commands::mongo_aggregate,
+            features::mongo::commands::mongo_explain,
+            features::mongo::commands::mongo_infer_schema,
+            features::mongo::commands::mongo_list_indexes,
+            features::mongo::commands::mongo_insert_one,
+            features::mongo::commands::mongo_replace_one,
+            features::mongo::commands::mongo_delete_one,
+            features::mongo::commands::mongo_insert_many,
+            features::mongo::commands::mongo_create_index,
+            features::mongo::commands::mongo_set_validator,
             features::generate::commands::generate_preview,
             features::generate::commands::generate_run,
             features::generate::commands::generate_cancel,

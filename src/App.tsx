@@ -11,6 +11,7 @@ import { Rail } from "./features/workspaces/components/Rail";
 import { WorkspaceShell } from "./features/workspaces/components/WorkspaceShell";
 import { RedisWorkspace } from "./features/redis_browse/components/RedisWorkspace";
 import { DynamoWorkspace } from "./features/dynamo_browse/components/DynamoWorkspace";
+import { MongoWorkspace } from "./features/mongo_browse/components/MongoWorkspace";
 import { selectShowConnect, useWorkspacesStore } from "./features/workspaces/state";
 import { useTrayWorkspaces } from "./features/workspaces/trayMenu";
 import {
@@ -148,6 +149,10 @@ export function App() {
               <RedisWorkspace key={activeWorkspace.id} workspace={activeWorkspace} />
             ) : activeWorkspace.kind === "document" ? (
               <DynamoWorkspace key={activeWorkspace.id} workspace={activeWorkspace} />
+            ) : activeWorkspace.kind === "mongo" ? (
+              // M18: a MongoDB connection renders the MongoDB workspace (a fourth
+              // sibling shell). Document → DynamoDB; key-value → Redis; the rest → SQL.
+              <MongoWorkspace key={activeWorkspace.id} workspace={activeWorkspace} />
             ) : (
               <WorkspaceShell key={activeWorkspace.id} workspace={activeWorkspace} />
             )

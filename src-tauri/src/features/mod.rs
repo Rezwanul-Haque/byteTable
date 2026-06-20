@@ -9,6 +9,7 @@ pub mod generate;
 pub mod insights;
 pub mod introspection;
 pub mod keyvalue;
+pub mod mongo;
 pub mod mutate;
 pub mod preferences;
 pub mod saved_queries;

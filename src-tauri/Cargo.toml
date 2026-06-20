@@ -123,6 +123,14 @@ redis = { version = "0.27", default-features = false, features = [
 aws-config = { version = "1", features = ["behavior-version-latest"] }
 aws-sdk-dynamodb = { version = "1", features = ["behavior-version-latest"] }
 aws-credential-types = { version = "1", features = ["hardcoded-credentials"] }
+# MongoDB engine (M18). The official async driver runs on the tokio runtime
+# already in the tree (Tauri's runtime), so the async `MongoConnection` methods
+# await the driver directly — no spawn_blocking, mirroring the sqlx/redis/dynamo
+# adapters. Default features give a pure-Rust rustls TLS stack (no OpenSSL system
+# dep) and the SRV resolver (Atlas `mongodb+srv://`), consistent with the rest of
+# the tree's rustls driver picks. `bson` (re-exported as `mongodb::bson`) is the
+# BSON ⇄ value layer the document marshalling uses.
+mongodb = "3"
 
 [dev-dependencies]
 tempfile = "3"

@@ -6,9 +6,15 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { isAppErrorPayload } from "../../../shared/api/error";
+import { appErrorMessage, isAppErrorPayload } from "../../../shared/api/error";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
+import { useToast } from "../../../shared/ui/toastContext";
+import {
+  exportCardMap,
+  type ExportFormat,
+  type ExportMapRow,
+} from "../../schema_map/cardMapExport";
 import { dynamoScan, type DynamoItem, type TableDescriptor } from "../api";
 import { buildDynamoModel, type DynamoEntity, type DynamoModel } from "../helpers";
 
@@ -36,10 +42,20 @@ export function DynamoSchemaMap({ handleId, tables, onOpenTable }: DynamoSchemaM
   const [error, setError] = useState<string | null>(null);
   const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({});
   const [zoom, setZoom] = useState(1);
+  const toast = useToast();
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const dragRef = useRef<{
     id: string;
     start: { x: number; y: number; ox: number; oy: number };
   } | null>(null);
+
+  useEffect(() => {
+    if (!exportMenuOpen) return;
+    const close = () => setExportMenuOpen(false);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [exportMenuOpen]);
 
   // Sample items per table (bounded), then build the model once.
   useEffect(() => {
@@ -166,6 +182,49 @@ export function DynamoSchemaMap({ handleId, tables, onOpenTable }: DynamoSchemaM
     setZoom(1);
   };
 
+  const runExport = async (format: ExportFormat) => {
+    setExportMenuOpen(false);
+    setExporting(true);
+    try {
+      const cards = entities.map((e) => {
+        const p = positions[e.id] ?? { x: 0, y: 0 };
+        const extra = e.attrs.length - MAX_ATTRS;
+        const rows: ExportMapRow[] = [{ name: e.pkN, type: e.pkPattern ?? undefined }];
+        rows.push(
+          e.skN
+            ? { name: e.skN, type: e.skPattern ?? undefined }
+            : { name: "partition-only", muted: true },
+        );
+        e.attrs.slice(0, MAX_ATTRS).forEach((a) => rows.push({ name: a, type: e.attrTypes[a] }));
+        if (extra > 0) {
+          rows.push({ name: `+ ${extra} more attribute${extra > 1 ? "s" : ""}…`, muted: true });
+        }
+        e.gsis.forEach((g) =>
+          rows.push({ name: g.name, type: g.pkPattern + (g.skPattern ? " / " + g.skPattern : "") }),
+        );
+        return { x: p.x, y: p.y, w: CARD_W, name: e.name, count: String(e.count), rows };
+      });
+      const toEdge = (from: string, to: string, dashed: boolean) => {
+        const pth = edgePath(from, to);
+        return pth ? { d: pth.d, dashed } : null;
+      };
+      const edges = [
+        ...refs.map((r) => toEdge(r.from, r.to, true)),
+        ...rels.map((r) => toEdge(r.from, r.to, false)),
+      ].filter((e): e is { d: string; dashed: boolean } => e !== null);
+
+      const res = await exportCardMap({ cards, edges, fileBase: "dynamodb-schema-map", format });
+      if (res.status === "ok") toast(`Exported schema map to ${res.file}`, "ok");
+      else if (res.status === "empty") toast("Nothing to export yet.", "info");
+      else if (res.status === "no-dialog")
+        toast("Exporting requires the ByteTable desktop app.", "info");
+    } catch (e) {
+      toast(appErrorMessage(e, "Could not export the schema map."), "err");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="ddb-schema-map">
       <div className="ddb-map-toolbar">
@@ -174,8 +233,18 @@ export function DynamoSchemaMap({ handleId, tables, onOpenTable }: DynamoSchemaM
         <span className="ddb-map-sub">
           {entities.length} entities · {rels.length} item collections · {refs.length} references
         </span>
-        <div style={{ flex: 1 }} />
-        <span className="ddb-map-hint">drag entities to rearrange</span>
+        <span
+          className="ddb-map-hint"
+          style={{
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            minWidth: 0,
+          }}
+        >
+          drag entities to rearrange
+        </span>
+        <div style={{ flex: 1, minWidth: 8 }} />
         <IconBtn
           icon="zoom_out"
           title="Zoom out"
@@ -188,6 +257,32 @@ export function DynamoSchemaMap({ handleId, tables, onOpenTable }: DynamoSchemaM
           onClick={() => setZoom((z) => Math.min(1.5, Math.round((z + 0.1) * 10) / 10))}
         />
         <IconBtn icon="fit_screen" title="Reset layout" onClick={resetLayout} />
+        <div style={{ position: "relative" }}>
+          <IconBtn
+            icon="download"
+            title="Export schema map"
+            active={exportMenuOpen}
+            disabled={exporting}
+            onClick={(e) => {
+              e.stopPropagation();
+              setExportMenuOpen((o) => !o);
+            }}
+          />
+          {exportMenuOpen ? (
+            <div
+              className="ctx-menu"
+              style={{ position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 1000 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="ctx-item" onClick={() => void runExport("png")}>
+                <Icon name="image" size={15} /> PNG image
+              </div>
+              <div className="ctx-item" onClick={() => void runExport("svg")}>
+                <Icon name="shape_line" size={15} /> SVG vector
+              </div>
+            </div>
+          ) : null}
+        </div>
       </div>
       <div className="ddb-map-canvas-wrap">
         <div

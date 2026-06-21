@@ -19,10 +19,20 @@
 }
 
 .rail-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 4px 0 2px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: 8px;
+}
+.rail-logo:hover {
+  background: var(--bg2);
 }
 
-/* Let mousedown on the logo hit the drag-region wrapper, not the svg. */
+/* Clicks land on the button, not the svg. */
 .rail-logo svg {
   pointer-events: none;
 }

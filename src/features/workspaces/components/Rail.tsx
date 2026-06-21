@@ -149,9 +149,14 @@ export function Rail({
     // when the mousedown target itself carries the attribute, so the tiles
     // and buttons stay interactive.
     <nav className="rail" data-tauri-drag-region>
-      <div className="rail-logo" title="ByteTable" data-tauri-drag-region>
+      <button
+        type="button"
+        className="rail-logo"
+        title="ByteTable — open a connection"
+        onClick={startAdding}
+      >
         <BTLogo size={22} accent="var(--accent)" fg="var(--text)" />
-      </div>
+      </button>
       <div className="rail-sep" />
 
       <div className="rail-list" ref={listRef}>

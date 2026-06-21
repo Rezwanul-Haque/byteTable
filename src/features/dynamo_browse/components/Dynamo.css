@@ -684,6 +684,8 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
   background: var(--bg1);
+  width: 34px;
+  padding: 0 6px;
 }
 .ddb-row {
   cursor: pointer;
@@ -1612,6 +1614,10 @@
   vertical-align: middle;
   padding: 0;
 }
+/* Match the row-number gutter shade so the checkbox cell isn't a darker patch. */
+.ddb-datagrid td.ddb-dg-check-c {
+  background: var(--bg1);
+}
 /* Custom small square checkbox — the native control renders oversized/round in
    the webview, so reset appearance and draw our own. */
 .ddb-dg-check {
@@ -1624,7 +1630,7 @@
   vertical-align: middle;
   border: 1px solid var(--border);
   border-radius: 4px;
-  background: var(--bg1);
+  background: var(--bg2);
   cursor: pointer;
   position: relative;
 }

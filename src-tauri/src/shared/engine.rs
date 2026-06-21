@@ -1172,6 +1172,29 @@ pub struct UpdateResult {
     pub statement: String,
 }
 
+/// A request to delete a set of whole rows by primary key (grid multi-select
+/// bulk delete). Each entry in `rows` is the FULL primary key of one target row
+/// (one [`PkPredicate`] per pk column), so every DELETE targets at most one row.
+/// Same safety contract as [`UpdateCellRequest`]: pk columns are validated, every
+/// value is bound (never interpolated), and the whole batch runs in one
+/// transaction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteRowsRequest {
+    pub schema: String,
+    pub table: String,
+    /// One full primary key per row to delete.
+    pub rows: Vec<Vec<PkPredicate>>,
+}
+
+/// The outcome of a [`EngineConnection::delete_rows`] call: the number of rows
+/// actually removed (rows that had already vanished count as 0, not an error).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteRowsResult {
+    pub deleted: u64,
+}
+
 /// The outcome of an `alter_table` call (M8 structure editor). Carries the
 /// SQL statements the batch implies (for the "Review SQL" panel) and whether
 /// they were actually executed.
@@ -1576,6 +1599,19 @@ pub trait EngineConnection: Send + Sync {
     async fn update_cell(&self, _req: UpdateCellRequest) -> Result<UpdateResult, AppError> {
         Err(AppError::Unsupported(
             "Editing cells is not supported for this engine yet.".into(),
+        ))
+    }
+
+    /// Delete a set of whole rows by primary key (grid multi-select bulk delete).
+    /// Same safety contract as [`Self::update_cell`]: pk columns are validated,
+    /// every value is bound, each row's `DELETE` is guarded to affect at most one
+    /// row, and the whole batch runs in one transaction. Rows that already
+    /// vanished count as 0, not an error. Returns the number actually deleted.
+    ///
+    /// Default impl: `Unsupported`.
+    async fn delete_rows(&self, _req: DeleteRowsRequest) -> Result<DeleteRowsResult, AppError> {
+        Err(AppError::Unsupported(
+            "Deleting rows is not supported for this engine yet.".into(),
         ))
     }
 

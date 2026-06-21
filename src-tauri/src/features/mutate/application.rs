@@ -4,7 +4,7 @@
 //! No Tauri, no drivers.
 
 use crate::features::connections::application::{ConnectionHandleId, ConnectionManager};
-use crate::shared::engine::{UpdateCellRequest, UpdateResult};
+use crate::shared::engine::{DeleteRowsRequest, DeleteRowsResult, UpdateCellRequest, UpdateResult};
 use crate::shared::error::AppError;
 
 /// Update a single cell on an open connection (M11 inline edit). The adapter
@@ -20,6 +20,18 @@ pub async fn update_cell(
     req: UpdateCellRequest,
 ) -> Result<UpdateResult, AppError> {
     manager.get_sql(handle).await?.update_cell(req).await
+}
+
+/// Delete a set of whole rows by primary key (grid multi-select bulk delete).
+/// **Mutates user data.** The adapter enforces the same safety contract as
+/// `update_cell` (validated pk columns, bound values, per-row at-most-one guard,
+/// single transaction). The production-confirm dialog is renderer-side.
+pub async fn delete_rows(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    req: DeleteRowsRequest,
+) -> Result<DeleteRowsResult, AppError> {
+    manager.get_sql(handle).await?.delete_rows(req).await
 }
 
 /// Empty a table of all rows, keeping its structure (M15 truncate). **Mutates

@@ -165,6 +165,21 @@ pub async fn delete_one(
         .await
 }
 
+/// `deleteMany` by a set of `_id`s (grid multi-select bulk delete).
+pub async fn delete_many(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    db: &str,
+    coll: &str,
+    ids: Vec<Value>,
+) -> Result<DeleteResult, AppError> {
+    manager
+        .get_mongo(handle)
+        .await?
+        .delete_many(db, coll, ids)
+        .await
+}
+
 /// Chunked `insertMany` import (MILESTONE_18 §18.8).
 pub async fn insert_many(
     manager: &ConnectionManager,

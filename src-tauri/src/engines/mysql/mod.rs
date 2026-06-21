@@ -77,10 +77,10 @@ use sqlx::{Column, Row, TypeInfo};
 use crate::features::structure::domain::AlterOp;
 use crate::shared::engine::{
     split_statements, AlterResult, ColumnInfo, ColumnMeta, ColumnStats, ColumnStatsRequest,
-    ConnectSecret, ConnectionParams, Connector, Engine, EngineConnection, EngineInfo,
-    FetchRowsRequest, FkRef, ForeignKeyInfo, FreqEntry, ImportResult, InboundFkInfo, IndexInfo,
-    OpenConnection, PkPredicate, QueryOptions, QueryResult, RowLookup, RowLookupRequest, RowsPage,
-    SchemaInfo, TableInfo, TableMeta, UpdateCellRequest, UpdateResult,
+    ConnectSecret, ConnectionParams, Connector, DeleteRowsRequest, DeleteRowsResult, Engine,
+    EngineConnection, EngineInfo, FetchRowsRequest, FkRef, ForeignKeyInfo, FreqEntry, ImportResult,
+    InboundFkInfo, IndexInfo, OpenConnection, PkPredicate, QueryOptions, QueryResult, RowLookup,
+    RowLookupRequest, RowsPage, SchemaInfo, TableInfo, TableMeta, UpdateCellRequest, UpdateResult,
 };
 use crate::shared::error::AppError;
 
@@ -452,6 +452,10 @@ impl EngineConnection for MysqlEngineConnection {
 
     async fn update_cell(&self, req: UpdateCellRequest) -> Result<UpdateResult, AppError> {
         update_cell(&self.pool, &req).await
+    }
+
+    async fn delete_rows(&self, req: DeleteRowsRequest) -> Result<DeleteRowsResult, AppError> {
+        delete_rows(&self.pool, &req).await
     }
 
     fn quote_identifier(&self, ident: &str) -> String {
@@ -1513,6 +1517,72 @@ async fn update_cell(pool: &MySqlPool, req: &UpdateCellRequest) -> Result<Update
         affected,
         statement: display_update_statement(&qualified, &req.column, &req.value, &req.pk),
     })
+}
+
+/// Delete a set of whole rows by primary key (grid multi-select bulk delete).
+/// Validates the pk columns once, then runs one guarded `DELETE` per row in a
+/// single transaction. A vanished row (affected 0) is skipped; a DELETE hitting
+/// more than one row aborts the batch. Returns the count deleted.
+async fn delete_rows(
+    pool: &MySqlPool,
+    req: &DeleteRowsRequest,
+) -> Result<DeleteRowsResult, AppError> {
+    if req.rows.is_empty() {
+        return Ok(DeleteRowsResult { deleted: 0 });
+    }
+    let meta = table_meta(pool, &req.schema, &req.table).await?;
+    let column_names: Vec<String> = meta.columns.iter().map(|c| c.name.clone()).collect();
+    let pk_columns: Vec<&str> = meta
+        .columns
+        .iter()
+        .filter(|c| c.pk)
+        .map(|c| c.name.as_str())
+        .collect();
+    let qualified = qualified(&req.schema, &req.table);
+
+    let mut tx = pool.begin().await.map_err(map_query_error)?;
+    let mut deleted: u64 = 0;
+    for pk in &req.rows {
+        validate_pk_predicates(&pk_columns, &column_names, &req.table, pk)?;
+        let mut params: Vec<BoundValue> = Vec::with_capacity(pk.len());
+        let mut where_fragments: Vec<String> = Vec::with_capacity(pk.len());
+        for predicate in pk {
+            if predicate.value.is_null() {
+                let _ = tx.rollback().await;
+                return Err(no_row_matched_error());
+            }
+            params.push(if predicate.binary {
+                BoundValue::from_binary_operand(&predicate.value)?
+            } else {
+                BoundValue::from_json_operand(&predicate.value)?
+            });
+            where_fragments.push(format!("{} = ?", quote_ident(&predicate.column)));
+        }
+        let where_sql = where_fragments.join(" AND ");
+        let delete_sql = format!("DELETE FROM {qualified} WHERE {where_sql}");
+        let result = bind_all(sqlx::query(&delete_sql), &params)
+            .execute(&mut *tx)
+            .await;
+        match result {
+            Ok(done) => {
+                let affected = done.rows_affected();
+                if affected > 1 {
+                    let _ = tx.rollback().await;
+                    return Err(AppError::Database(format!(
+                        "A delete would affect {affected} rows; expected at most one. \
+                         No rows were deleted."
+                    )));
+                }
+                deleted += affected;
+            }
+            Err(err) => {
+                let _ = tx.rollback().await;
+                return Err(map_query_error(err));
+            }
+        }
+    }
+    tx.commit().await.map_err(map_query_error)?;
+    Ok(DeleteRowsResult { deleted })
 }
 
 fn no_row_matched_error() -> AppError {

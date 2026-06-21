@@ -212,6 +212,16 @@ export function mongoDeleteOne(
   return invoke<DeleteResult>("mongo_delete_one", { handleId, db, coll, id });
 }
 
+/** `deleteMany` by a set of `_id`s (grid multi-select bulk delete). */
+export function mongoDeleteMany(
+  handleId: string,
+  db: string,
+  coll: string,
+  ids: unknown[],
+): Promise<DeleteResult> {
+  return invoke<DeleteResult>("mongo_delete_many", { handleId, db, coll, ids });
+}
+
 /** Chunked `insertMany` import. */
 export function mongoInsertMany(
   handleId: string,

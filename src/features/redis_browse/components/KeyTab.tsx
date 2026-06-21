@@ -708,10 +708,10 @@ function SetGrid({
   if (rows.length === 0) return <div className="grid-empty">empty set</div>;
 
   return (
-    <div className="datagrid-wrap">
+    <div className="datagrid-wrap rkey-grid">
       <div
         className="dg-canvas"
-        style={{ "--grid-cols": "38px minmax(90px, max-content) 36px" } as React.CSSProperties}
+        style={{ "--grid-cols": "38px minmax(90px, 1fr) 36px" } as React.CSSProperties}
       >
         <div className="dg-header dg-row">
           <div className="dg-rownum-h">#</div>

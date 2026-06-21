@@ -141,6 +141,17 @@ pub async fn mongo_delete_one(
 }
 
 #[tauri::command]
+pub async fn mongo_delete_many(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+    db: String,
+    coll: String,
+    ids: Vec<Value>,
+) -> Result<DeleteResult, AppError> {
+    application::delete_many(state.manager(), &handle_id, &db, &coll, ids).await
+}
+
+#[tauri::command]
 pub async fn mongo_insert_many(
     state: State<'_, ConnectionsState>,
     handle_id: ConnectionHandleId,

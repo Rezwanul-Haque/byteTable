@@ -474,6 +474,32 @@ export function rowUpdate(handleId: string, req: UpdateCellRequest): Promise<Upd
   return invoke<UpdateResult>("row_update", { handleId, req });
 }
 
+/**
+ * A request to delete a set of whole rows by primary key (grid multi-select bulk
+ * delete) — mirrors Rust's `DeleteRowsRequest`. Each entry in `rows` is the full
+ * primary key of one target row, so every DELETE matches at most one row.
+ */
+export interface DeleteRowsRequest {
+  schema: string;
+  table: string;
+  rows: PkPredicate[][];
+}
+
+/** Outcome of `rowsDelete` — the number of rows actually removed. */
+export interface DeleteRowsResult {
+  deleted: number;
+}
+
+/**
+ * Delete a set of whole rows by primary key (grid multi-select bulk delete, the
+ * `rows_delete` command). **Mutates user data.** The backend enforces the same
+ * safety contract as `rowUpdate` (full-pk targeting, bound values, per-row
+ * at-most-one guard, single transaction). Returns the number deleted.
+ */
+export function rowsDelete(handleId: string, req: DeleteRowsRequest): Promise<DeleteRowsResult> {
+  return invoke<DeleteRowsResult>("rows_delete", { handleId, req });
+}
+
 // ---------------------------------------------------------------------------
 // Export + truncate (M15, DESIGN_SPEC §3.5/§3.6).
 //

@@ -666,6 +666,23 @@ impl MongoWriter for MongoDbConnection {
         })
     }
 
+    async fn delete_many(
+        &self,
+        db: &str,
+        coll: &str,
+        ids: Vec<Value>,
+    ) -> Result<DeleteResult, AppError> {
+        let id_bsons: Vec<_> = ids.iter().map(json_to_bson).collect();
+        let res = self
+            .coll(db, coll)
+            .delete_many(doc! { "_id": { "$in": id_bsons } })
+            .await
+            .map_err(|e| db_err(&format!("Delete from '{coll}'"), e))?;
+        Ok(DeleteResult {
+            deleted: res.deleted_count,
+        })
+    }
+
     async fn insert_many(
         &self,
         db: &str,

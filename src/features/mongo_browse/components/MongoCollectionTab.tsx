@@ -5,13 +5,18 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { save } from "@tauri-apps/plugin-dialog";
+
+import { exportSave } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
+import { BulkDeleteModal } from "../../../shared/ui/BulkDeleteModal";
 import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { useToast } from "../../../shared/ui/toastContext";
 import {
   mongoAggregate,
+  mongoDeleteMany,
   mongoDeleteOne,
   mongoFind,
   type CollectionDescriptor,
@@ -95,6 +100,9 @@ export function MongoCollectionTab({
   const [newDoc, setNewDoc] = useState(false);
   const [showExplain, setShowExplain] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
+  // Grid multi-select (by row index into the current result); cleared on re-run.
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const persisted = useRef({ filter, proj, sort, limit, stages, view, mode });
 
   const runFind = useCallback(async () => {
@@ -191,6 +199,60 @@ export function MongoCollectionTab({
   };
 
   const docs = result ? result.docs : [];
+
+  // Reset selection whenever a fresh result lands.
+  useEffect(() => {
+    setSelected(new Set());
+  }, [result]);
+
+  const toggleRow = (i: number) =>
+    setSelected((s) => {
+      const n = new Set(s);
+      if (n.has(i)) n.delete(i);
+      else n.add(i);
+      return n;
+    });
+  const toggleAll = () =>
+    setSelected((s) => (s.size === docs.length ? new Set() : new Set(docs.map((_, i) => i))));
+  const selectedDocs = (): MongoDoc[] =>
+    [...selected].map((i) => docs[i]).filter((d): d is MongoDoc => Boolean(d));
+
+  const deleteSelected = async () => {
+    const ids = selectedDocs().map((d) => d._id);
+    const res = await mongoDeleteMany(handleId, db, coll, ids);
+    toast(`Deleted ${res.deleted} document${res.deleted === 1 ? "" : "s"} · ${db}.${coll}`, "ok");
+    void runFind();
+    onDataChanged();
+  };
+
+  // Export only the checked documents to CSV (field-union columns, _id first;
+  // objects/arrays serialized as JSON).
+  const exportSelectedCsv = async () => {
+    const rows = selectedDocs();
+    if (!rows.length) return;
+    const colset = new Set<string>(["_id"]);
+    for (const d of rows) for (const k of Object.keys(d)) colset.add(k);
+    const cols = [...colset];
+    const esc = (v: unknown) => {
+      if (v === null || v === undefined) return "";
+      const s = typeof v === "object" ? JSON.stringify(v) : String(v);
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    const csv = [cols.join(",")]
+      .concat(rows.map((d) => cols.map((c) => esc((d as MongoDoc)[c])).join(",")))
+      .join("\n");
+    try {
+      const path = await save({
+        defaultPath: `${coll}-selection.csv`,
+        filters: [{ name: "CSV", extensions: ["csv"] }],
+      });
+      if (!path) return;
+      await exportSave(path, csv);
+      toast(`Exported ${rows.length} document${rows.length === 1 ? "" : "s"} to CSV`, "ok");
+    } catch (e) {
+      toast(appErrorMessage(e, "Could not export CSV"), "err");
+    }
+  };
   const limitOptions = FIND_LIMITS.includes(Number(limit) as never)
     ? [...FIND_LIMITS]
     : ([Number(limit), ...FIND_LIMITS].filter((n) => n > 0).sort((a, b) => a - b) as number[]);
@@ -400,6 +462,24 @@ export function MongoCollectionTab({
         />
       ) : (
         <>
+          {view === "grid" && selected.size > 0 ? (
+            <div className="ddb-selbar">
+              <span className="ddb-selbar-count">{selected.size} selected</span>
+              <div style={{ flex: 1 }} />
+              <Btn icon="download" variant="tonal" small onClick={() => void exportSelectedCsv()}>
+                Export CSV
+              </Btn>
+              <Btn
+                icon="delete"
+                variant="tonal"
+                small
+                className="ddb-selbar-del"
+                onClick={() => setDeleteOpen(true)}
+              >
+                Delete selected
+              </Btn>
+            </div>
+          ) : null}
           {view === "tree" ? (
             <MongoDocTree
               docs={docs}
@@ -407,7 +487,13 @@ export function MongoCollectionTab({
               onDeleteDoc={mode === "find" ? (d) => void deleteDoc(d) : undefined}
             />
           ) : (
-            <MongoDocGrid docs={docs} onOpenDoc={setDocView} />
+            <MongoDocGrid
+              docs={docs}
+              onOpenDoc={setDocView}
+              selected={selected}
+              onToggleRow={toggleRow}
+              onToggleAll={toggleAll}
+            />
           )}
           <div className="table-hint">
             {mode === "aggregate"
@@ -451,6 +537,17 @@ export function MongoCollectionTab({
             void runFind();
             onDataChanged();
           }}
+        />
+      ) : null}
+      {deleteOpen && selected.size > 0 ? (
+        <BulkDeleteModal
+          count={selected.size}
+          target={coll}
+          noun="document"
+          isProduction={isProduction}
+          onConfirm={deleteSelected}
+          onClose={() => setDeleteOpen(false)}
+          onDone={() => setSelected(new Set())}
         />
       ) : null}
     </div>

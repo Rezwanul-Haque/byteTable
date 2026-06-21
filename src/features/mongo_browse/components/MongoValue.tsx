@@ -44,18 +44,43 @@ export function MongoValue({ v }: { v: unknown }) {
 export function MongoDocGrid({
   docs,
   onOpenDoc,
+  selected,
+  onToggleRow,
+  onToggleAll,
 }: {
   docs: MongoDoc[];
   onOpenDoc: (d: MongoDoc) => void;
+  /** Multi-select (by row index). When omitted, the checkbox column is hidden. */
+  selected?: Set<number>;
+  onToggleRow?: (i: number) => void;
+  onToggleAll?: () => void;
 }) {
   if (!docs.length) return <div className="ddb-grid-empty">No documents</div>;
   const cols = fieldUnion(docs);
   const ordered = ["_id"].concat(cols.filter((c) => c !== "_id"));
+  const selectable = !!onToggleRow;
+  const sel = selected ?? new Set<number>();
+  const allOn = selectable && docs.length > 0 && sel.size === docs.length;
+  const someOn = selectable && sel.size > 0 && !allOn;
   return (
     <div className="ddb-datagrid-wrap">
       <table className="ddb-datagrid">
         <thead>
           <tr>
+            {selectable ? (
+              <th className="ddb-dg-check-c">
+                <input
+                  type="checkbox"
+                  className="ddb-dg-check"
+                  checked={allOn}
+                  ref={(el) => {
+                    if (el) el.indeterminate = someOn;
+                  }}
+                  onChange={() => onToggleAll?.()}
+                  aria-label="Select all rows"
+                />
+              </th>
+            ) : null}
             <th className="ddb-dg-rownum-h">#</th>
             {ordered.map((c) => (
               <th key={c}>
@@ -68,7 +93,22 @@ export function MongoDocGrid({
         </thead>
         <tbody>
           {docs.map((d, ri) => (
-            <tr key={ri} className="ddb-row" onClick={() => onOpenDoc(d)}>
+            <tr
+              key={ri}
+              className={"ddb-row" + (sel.has(ri) ? " selected" : "")}
+              onClick={() => onOpenDoc(d)}
+            >
+              {selectable ? (
+                <td className="ddb-dg-check-c" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    className="ddb-dg-check"
+                    checked={sel.has(ri)}
+                    onChange={() => onToggleRow?.(ri)}
+                    aria-label={"Select row " + (ri + 1)}
+                  />
+                </td>
+              ) : null}
               <td className="ddb-dg-rownum">{ri + 1}</td>
               {ordered.map((c) => (
                 <td key={c} title={c in d ? "" : "missing"}>

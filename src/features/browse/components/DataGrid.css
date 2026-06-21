@@ -99,19 +99,114 @@
   z-index: 1;
   background: var(--bg1);
   color: var(--text-faint);
-  font-size: 10px;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
   text-align: right;
   justify-content: flex-end;
-  padding: 0 8px;
-  min-width: 38px;
+  padding: 0 6px;
+  min-width: 30px;
   display: flex;
   align-items: center;
   border-right: 1px solid var(--border);
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
   user-select: none;
 }
 
 .dg-rownum-h {
   z-index: 3;
+}
+
+/* When the multi-select checkbox gutter is present, the row-number column sticks
+   to the right of it (the checkbox column owns left:0). */
+.dg-check-c + .dg-rownum,
+.dg-check-c + .dg-rownum-h {
+  left: 34px;
+}
+
+/* ---------- multi-select checkbox gutter ---------- */
+.dg-check-c {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  background: var(--bg1);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+}
+.dg-check-h {
+  z-index: 4;
+}
+/* Custom checkbox — matches the Dynamo/Mongo grid (`.ddb-dg-check`). */
+.dg-check {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  flex: none;
+  vertical-align: middle;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg2);
+  cursor: pointer;
+  position: relative;
+}
+.dg-check:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+.dg-check:checked,
+.dg-check:indeterminate {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.dg-check:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--bg0);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.dg-check:indeterminate::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  top: 6px;
+  height: 2px;
+  background: var(--bg0);
+}
+
+/* Bulk-action bar above the grid when rows are selected. */
+.dg-selbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in oklab, var(--accent) 8%, var(--bg1));
+}
+.dg-selbar-count {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+.dg-selbar-del:hover {
+  color: #e06c75 !important;
+}
+/* The SQL result bar is always visible (also the download-all entry point), so
+   it uses a plain surface — the accent tint is reserved for active selection. */
+.dg-result-selbar {
+  background: var(--bg1);
+}
+.dg-result-selbar.dg-selbar {
+  background: var(--bg1);
 }
 
 /* ---------- body rows ---------- */

@@ -13,13 +13,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 
+import { save } from "@tauri-apps/plugin-dialog";
+
+import { exportSave } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
+import { BulkDeleteModal } from "../../../shared/ui/BulkDeleteModal";
 import { Btn } from "../../../shared/ui/Btn";
 import { EngineBadge } from "../../../shared/ui/EngineBadge";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
+import { useToast } from "../../../shared/ui/toastContext";
 import type { KvDbInfo } from "../../connections/api";
-import { kvScan, type KeyEntry, type KeyType } from "../api";
+import { kvCommand, kvGetKey, kvScan, type KeyType, type KeyEntry, type KvValue } from "../api";
 import {
   buildNamespaceTree,
   countLeaves,
@@ -103,6 +108,14 @@ export function RedisSidebar(props: RedisSidebarProps) {
   const [view, setView] = useState<"tree" | "flat">("tree");
   const [dbOpen, setDbOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+  // Multi-select for bulk delete / export. `selectMode` swaps key-row clicks
+  // from "open" to "toggle"; selection is by full key name.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const toast = useToast();
+  const isProduction = envLabel === "production";
 
   // SCAN paging state.
   const [keys, setKeys] = useState<KeyEntry[]>([]);
@@ -246,22 +259,34 @@ export function RedisSidebar(props: RedisSidebarProps) {
     const keyType = keyTypeByName.get(name) ?? "string";
     const ttl = ttlByName.get(name) ?? -1;
     const isActive = name === activeKey;
+    const checked = selectedKeys.has(name);
+    const activate = () => (selectMode ? toggleKey(name) : onOpenKey(dbIndex, name, keyType));
     return (
       <div
         key={name}
-        className={"rkey-item" + (isActive ? " active" : "")}
+        className={"rkey-item" + (isActive ? " active" : "") + (checked ? " selected" : "")}
         role="button"
         tabIndex={0}
         aria-current={isActive ? "true" : undefined}
-        onClick={() => onOpenKey(dbIndex, name, keyType)}
+        onClick={activate}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
-            onOpenKey(dbIndex, name, keyType);
+            activate();
           }
         }}
         title={name + "  ·  " + keyType}
       >
+        {selectMode ? (
+          <input
+            type="checkbox"
+            className="rkey-check"
+            checked={checked}
+            onClick={(e) => e.stopPropagation()}
+            onChange={() => toggleKey(name)}
+            aria-label={"Select " + name}
+          />
+        ) : null}
         <RedisTypeBadge type={keyType} size={16} />
         <span className="rkey-name">{display}</span>
         <span className={"rkey-ttl" + (ttl >= 0 ? " live" : "")}>{humanTTL(ttl)}</span>
@@ -320,6 +345,80 @@ export function RedisSidebar(props: RedisSidebarProps) {
   };
 
   const matchCount = sorted.length;
+
+  // Drop the selection whenever the query inputs change (the list is replaced).
+  useEffect(() => {
+    setSelectedKeys(new Set());
+  }, [dbIndex, pattern, typeFilter, version]);
+
+  const toggleKey = (name: string) =>
+    setSelectedKeys((s) => {
+      const n = new Set(s);
+      if (n.has(name)) n.delete(name);
+      else n.add(name);
+      return n;
+    });
+  const allLoadedSelected = matchCount > 0 && selectedKeys.size === matchCount;
+  const toggleSelectAll = () =>
+    setSelectedKeys(allLoadedSelected ? new Set() : new Set(sorted.map((k) => k.name)));
+  const exitSelect = () => {
+    setSelectMode(false);
+    setSelectedKeys(new Set());
+  };
+
+  const deleteSelected = async () => {
+    const names = [...selectedKeys];
+    const reply = await kvCommand(handleId, dbIndex, ["DEL", ...names]);
+    if (reply.kind === "error") throw new Error(reply.value);
+    const removed = reply.kind === "int" ? reply.value : names.length;
+    toast(`Deleted ${removed} key${removed === 1 ? "" : "s"} · db${dbIndex}`, "ok");
+    onRefresh();
+  };
+
+  // Serialize a typed Redis value to a single CSV cell.
+  const valueToText = (v: KvValue): string => {
+    switch (v.type) {
+      case "str":
+        return v.value;
+      case "list":
+        return JSON.stringify(v.items);
+      case "set":
+        return JSON.stringify(v.members);
+      case "hash":
+        return JSON.stringify(Object.fromEntries(v.fields.map((f) => [f.field, f.value])));
+      case "zset":
+        return JSON.stringify(v.entries.map((e) => [e.member, e.score]));
+      case "stream":
+        return JSON.stringify(v.entries);
+      case "missing":
+        return "";
+    }
+  };
+
+  const exportSelectedCsv = async () => {
+    const names = [...selectedKeys];
+    if (!names.length) return;
+    const esc = (s: string) => (/[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s);
+    try {
+      const views = await Promise.all(names.map((name) => kvGetKey(handleId, dbIndex, name)));
+      const csv = ["key,type,value"]
+        .concat(
+          views.map((view, i) =>
+            [esc(names[i] ?? ""), esc(view.keyType), esc(valueToText(view.value))].join(","),
+          ),
+        )
+        .join("\n");
+      const path = await save({
+        defaultPath: `redis-db${dbIndex}-selection.csv`,
+        filters: [{ name: "CSV", extensions: ["csv"] }],
+      });
+      if (!path) return;
+      await exportSave(path, csv);
+      toast(`Exported ${names.length} key${names.length === 1 ? "" : "s"} to CSV`, "ok");
+    } catch (e) {
+      toast(appErrorMessage(e, "Could not export CSV"), "err");
+    }
+  };
 
   return (
     <aside className="redis-sidebar" data-screen-label={"Redis workspace: " + workspaceName}>
@@ -451,6 +550,16 @@ export function RedisSidebar(props: RedisSidebarProps) {
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <button
             type="button"
+            className={"rview-toggle" + (selectMode ? " active" : "")}
+            title={selectMode ? "Exit selection" : "Select keys (bulk delete / export)"}
+            aria-label={selectMode ? "Exit selection" : "Select keys"}
+            aria-pressed={selectMode}
+            onClick={() => (selectMode ? exitSelect() : setSelectMode(true))}
+          >
+            <Icon name="checklist" size={14} />
+          </button>
+          <button
+            type="button"
             className="rview-toggle"
             title={view === "tree" ? "Switch to flat list" : "Switch to tree"}
             aria-label={view === "tree" ? "Switch to flat list" : "Switch to tree"}
@@ -461,6 +570,40 @@ export function RedisSidebar(props: RedisSidebarProps) {
           <span className="sidebar-count">{matchCount}</span>
         </div>
       </div>
+
+      {selectMode ? (
+        <div className="rkey-selbar">
+          <label className="rkey-selall">
+            <input
+              type="checkbox"
+              className="rkey-check"
+              checked={allLoadedSelected}
+              ref={(el) => {
+                if (el) el.indeterminate = selectedKeys.size > 0 && !allLoadedSelected;
+              }}
+              onChange={toggleSelectAll}
+              aria-label="Select all loaded keys"
+            />
+            <span>{selectedKeys.size} selected</span>
+          </label>
+          <div style={{ flex: 1 }} />
+          <IconBtn
+            icon="download"
+            size={15}
+            title="Export selected to CSV"
+            disabled={selectedKeys.size === 0}
+            onClick={() => void exportSelectedCsv()}
+          />
+          <IconBtn
+            icon="delete"
+            size={15}
+            title="Delete selected"
+            className="rkey-selbar-del"
+            disabled={selectedKeys.size === 0}
+            onClick={() => setDeleteOpen(true)}
+          />
+        </div>
+      ) : null}
 
       <div className="rkey-list" ref={listRef} onScroll={onScroll}>
         {error !== null && keys.length === 0 ? (
@@ -503,6 +646,18 @@ export function RedisSidebar(props: RedisSidebarProps) {
           New CLI console
         </Btn>
       </div>
+
+      {deleteOpen && selectedKeys.size > 0 ? (
+        <BulkDeleteModal
+          count={selectedKeys.size}
+          target={"db" + dbIndex}
+          noun="key"
+          isProduction={isProduction}
+          onConfirm={deleteSelected}
+          onClose={() => setDeleteOpen(false)}
+          onDone={exitSelect}
+        />
+      ) : null}
     </aside>
   );
 }

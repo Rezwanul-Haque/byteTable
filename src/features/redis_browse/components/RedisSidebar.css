@@ -272,6 +272,78 @@
   color: var(--accent);
   background: var(--bg2);
 }
+.rview-toggle.active {
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 16%, var(--bg2));
+}
+
+/* ---------- bulk selection ---------- */
+.rkey-selbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  margin: 0 6px 4px;
+  border-radius: 7px;
+  background: color-mix(in oklab, var(--accent) 10%, var(--bg2));
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.rkey-selall {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+}
+.rkey-selbar-del:hover {
+  color: #e06c75 !important;
+}
+/* Custom checkbox — matches the Dynamo/Mongo grid (`.ddb-dg-check`). */
+.rkey-check {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  flex: none;
+  vertical-align: middle;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg2);
+  cursor: pointer;
+  position: relative;
+}
+.rkey-check:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+.rkey-check:checked,
+.rkey-check:indeterminate {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.rkey-check:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--bg0);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.rkey-check:indeterminate::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  top: 6px;
+  height: 2px;
+  background: var(--bg0);
+}
+.rkey-item.selected {
+  background: color-mix(in oklab, var(--accent) 18%, var(--bg2));
+}
 
 /* ---------- key list ---------- */
 .rkey-list {

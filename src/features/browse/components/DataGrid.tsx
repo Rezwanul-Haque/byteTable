@@ -57,8 +57,11 @@ import type {
   PkPredicate,
   SortSpec,
 } from "../../../shared/api/engine";
-import { executeScriptText, rowsFetch } from "../../../shared/api/engine";
+import { save as saveDialog } from "@tauri-apps/plugin-dialog";
+
+import { executeScriptText, exportSave, rowsDelete, rowsFetch } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
+import { BulkDeleteModal } from "../../../shared/ui/BulkDeleteModal";
 import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
 import { Modal, ModalActions, ModalTitle } from "../../../shared/ui/Modal";
@@ -238,7 +241,9 @@ const FALLBACK_ROW_H = 26;
 const COL_MIN_PX = 90;
 const COL_MAX_PX = 400;
 /** Row-number gutter width (px) — matches `.dg-rownum` min-width. */
-const ROWNUM_PX = 38;
+const ROWNUM_PX = 30;
+/** Multi-select checkbox gutter width (px) — matches `.dg-check-c`. */
+const CHECK_PX = 34;
 /** Horizontal cell/header padding (px) — `.dg-td`/`.dg-th` are `0 12px`. */
 const CELL_PAD_PX = 24;
 const CELL_CHAR_PX = 7.3;
@@ -333,6 +338,10 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   const [totalRows, setTotalRows] = useState<number | null>(null);
   const [sort, setSort] = useState<SortSpec | null>(null);
   const [selected, setSelected] = useState<{ rowKey: string; col: number } | null>(null);
+  // Multi-select for bulk delete / export. Keyed by real-row key ("r"+absIndex);
+  // staged rows are never selectable. Cleared on any (re)fetch / page change.
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [initialError, setInitialError] = useState<string | null>(null);
   const [loadingInitial, setLoadingInitial] = useState(true);
 
@@ -1033,9 +1042,76 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       const w = Math.round(Math.min(COL_MAX_PX, Math.max(COL_MIN_PX, headerPx, cellPx)));
       widths.push(w + "px");
     }
-    return ROWNUM_PX + "px " + widths.join(" ");
+    const check = hasPk ? CHECK_PX + "px " : "";
+    return check + ROWNUM_PX + "px " + widths.join(" ");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [columns, isHidden, cacheVersion, pageRowCount, offset]);
+  }, [columns, isHidden, cacheVersion, pageRowCount, offset, hasPk]);
+
+  // --- multi-select bulk delete / export -------------------------------
+  // Selection drops on any (re)fetch or page change (the row cache is rebuilt).
+  useEffect(() => {
+    setSelectedRows(new Set());
+  }, [schema, table, filterKey, refetchNonce, offset]);
+
+  const toggleRowSel = useCallback((rowKey: string) => {
+    setSelectedRows((s) => {
+      const n = new Set(s);
+      if (n.has(rowKey)) n.delete(rowKey);
+      else n.add(rowKey);
+      return n;
+    });
+  }, []);
+  // Select-all toggles over the rows currently loaded in the cache.
+  const toggleSelectAllRows = useCallback(() => {
+    setSelectedRows((s) => {
+      const keys = [...rowCacheRef.current.keys()].map((i) => "r" + i);
+      return s.size >= keys.length && keys.length > 0 ? new Set() : new Set(keys);
+    });
+  }, []);
+
+  const deleteSelectedRows = useCallback(async () => {
+    const rows: PkPredicate[][] = [];
+    for (const key of selectedRows) {
+      const idx = Number(key.slice(1));
+      const row = rowCacheRef.current.get(idx);
+      const pk = row ? buildPk(row) : null;
+      if (pk) rows.push(pk);
+    }
+    if (!rows.length) return;
+    const res = await rowsDelete(handleId, { schema, table, rows });
+    toast(`Deleted ${res.deleted} row${res.deleted === 1 ? "" : "s"} from ${table}`, "ok");
+    useTabMetaStore.getState().requestRefetch(tabId);
+  }, [selectedRows, buildPk, handleId, schema, table, tabId, toast]);
+
+  const exportSelectedCsv = useCallback(async () => {
+    const idxs = [...selectedRows].map((k) => Number(k.slice(1))).sort((a, b) => a - b);
+    if (!idxs.length) return;
+    const visCols = columns.filter((c) => !isHidden(c.name));
+    const esc = (v: CellValue) => {
+      if (v === null || v === undefined) return "";
+      const s = typeof v === "object" ? JSON.stringify(v) : String(v);
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    const csv = [visCols.map((c) => c.name).join(",")]
+      .concat(
+        idxs.map((idx) => {
+          const row = rowCacheRef.current.get(idx);
+          return visCols.map((c) => esc(row ? (row[columns.indexOf(c)] ?? null) : null)).join(",");
+        }),
+      )
+      .join("\n");
+    try {
+      const path = await saveDialog({
+        defaultPath: `${table}-selection.csv`,
+        filters: [{ name: "CSV", extensions: ["csv"] }],
+      });
+      if (!path) return;
+      await exportSave(path, csv);
+      toast(`Exported ${idxs.length} row${idxs.length === 1 ? "" : "s"} to CSV`, "ok");
+    } catch (e) {
+      toast(appErrorMessage(e, "Could not export CSV"), "err");
+    }
+  }, [selectedRows, columns, isHidden, table, toast]);
 
   // The save bar + production-confirm modal, shared by the populated and the
   // (staged-rows-only) empty render branches.
@@ -1170,8 +1246,26 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   }
 
   // The sticky column header.
+  const loadedCount = rowCacheRef.current.size;
+  const allRowsSelected = hasPk && loadedCount > 0 && selectedRows.size >= loadedCount;
+  const someRowsSelected = selectedRows.size > 0 && !allRowsSelected;
+
   const headerRow = (
     <div className="dg-header dg-row">
+      {hasPk ? (
+        <div className="dg-check-c dg-check-h">
+          <input
+            type="checkbox"
+            className="dg-check"
+            checked={allRowsSelected}
+            ref={(el) => {
+              if (el) el.indeterminate = someRowsSelected;
+            }}
+            onChange={toggleSelectAllRows}
+            aria-label="Select all loaded rows"
+          />
+        </div>
+      ) : null}
       <div className="dg-rownum-h">#</div>
       {columns.map((c) => {
         if (isHidden(c.name)) return null;
@@ -1256,6 +1350,24 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
 
   return (
     <>
+      {selectedRows.size > 0 ? (
+        <div className="dg-selbar">
+          <span className="dg-selbar-count">{selectedRows.size} selected</span>
+          <div style={{ flex: 1 }} />
+          <Btn icon="download" variant="tonal" small onClick={() => void exportSelectedCsv()}>
+            Export CSV
+          </Btn>
+          <Btn
+            icon="delete"
+            variant="tonal"
+            small
+            className="dg-selbar-del"
+            onClick={() => setBulkDeleteOpen(true)}
+          >
+            Delete selected
+          </Btn>
+        </div>
+      ) : null}
       <div className="datagrid-wrap" ref={scrollRef}>
         <div className="dg-canvas" style={{ "--grid-cols": gridCols } as React.CSSProperties}>
           {headerRow}
@@ -1284,6 +1396,19 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
                   }
                   style={{ height: vr.size, transform: `translateY(${vr.start}px)` }}
                 >
+                  {hasPk ? (
+                    <div className="dg-check-c" onClick={(e) => e.stopPropagation()}>
+                      {isStaged ? null : (
+                        <input
+                          type="checkbox"
+                          className="dg-check"
+                          checked={selectedRows.has(rowKey)}
+                          onChange={() => toggleRowSel(rowKey)}
+                          aria-label={"Select row " + (rowIndex + 1)}
+                        />
+                      )}
+                    </div>
+                  ) : null}
                   <div className="dg-rownum">{isStaged ? "✱" : rowIndex + 1}</div>
                   {columns.map((c, ci) => {
                     if (isHidden(c.name)) return null;
@@ -1394,6 +1519,17 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       </div>
       {saveBar}
       {popovers}
+      {bulkDeleteOpen && selectedRows.size > 0 ? (
+        <BulkDeleteModal
+          count={selectedRows.size}
+          target={table}
+          noun="row"
+          isProduction={isProduction}
+          onConfirm={deleteSelectedRows}
+          onClose={() => setBulkDeleteOpen(false)}
+          onDone={() => setSelectedRows(new Set())}
+        />
+      ) : null}
     </>
   );
 });

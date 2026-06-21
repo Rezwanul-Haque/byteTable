@@ -106,11 +106,11 @@ use rusqlite::types::Value as SqlValue;
 use crate::features::structure::domain::AlterOp;
 use crate::shared::engine::{
     count_statements, AlterResult, ColumnInfo, ColumnMeta, ColumnStats, ColumnStatsRequest,
-    Condition, ConnectionParams, Connector, Engine, EngineConnection, EngineInfo, FetchRowsRequest,
-    FilterOp, FilterSpec, FilterValue, FkRef, ForeignKeyInfo, FreqEntry, ImportResult,
-    InboundFkInfo, IndexInfo, OpenConnection, PkPredicate, QueryOptions, QueryResult, RowLookup,
-    RowLookupRequest, RowsPage, SchemaInfo, SortSpec, TableInfo, TableMeta, UpdateCellRequest,
-    UpdateResult,
+    Condition, ConnectionParams, Connector, DeleteRowsRequest, DeleteRowsResult, Engine,
+    EngineConnection, EngineInfo, FetchRowsRequest, FilterOp, FilterSpec, FilterValue, FkRef,
+    ForeignKeyInfo, FreqEntry, ImportResult, InboundFkInfo, IndexInfo, OpenConnection, PkPredicate,
+    QueryOptions, QueryResult, RowLookup, RowLookupRequest, RowsPage, SchemaInfo, SortSpec,
+    TableInfo, TableMeta, UpdateCellRequest, UpdateResult,
 };
 use crate::shared::error::AppError;
 
@@ -217,6 +217,11 @@ impl EngineConnection for SqliteEngineConnection {
 
     async fn update_cell(&self, req: UpdateCellRequest) -> Result<UpdateResult, AppError> {
         self.with_conn(move |conn| update_cell_blocking(conn, &req))
+            .await
+    }
+
+    async fn delete_rows(&self, req: DeleteRowsRequest) -> Result<DeleteRowsResult, AppError> {
+        self.with_conn(move |conn| delete_rows_blocking(conn, &req))
             .await
     }
 
@@ -1476,6 +1481,82 @@ fn update_cell_blocking(
         affected,
         statement: display_update_statement(&qualified, &req.column, &req.value, &req.pk),
     })
+}
+
+/// Delete a set of whole rows by primary key (grid multi-select bulk delete).
+/// Validates the pk columns once, then runs one guarded `DELETE` per row inside
+/// a single transaction. A vanished row (affected 0) is skipped; a DELETE that
+/// would hit more than one row aborts the batch. Returns the count deleted.
+fn delete_rows_blocking(
+    conn: &Connection,
+    req: &DeleteRowsRequest,
+) -> Result<DeleteRowsResult, AppError> {
+    if req.rows.is_empty() {
+        return Ok(DeleteRowsResult { deleted: 0 });
+    }
+    let meta = table_meta_blocking(conn, &req.schema, &req.table)?;
+    let qualified = format!("{}.{}", quote_ident(&req.schema), quote_ident(&req.table));
+
+    let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
+    conn.execute_batch("BEGIN")
+        .map_err(|err| map_query_error(conn, err))?;
+
+    let mut deleted: u64 = 0;
+    for pk in &req.rows {
+        if let Err(e) = validate_pk_predicates(&meta, &req.table, pk) {
+            let _ = conn.execute_batch("ROLLBACK");
+            return Err(e);
+        }
+        let mut params: Vec<SqlValue> = Vec::with_capacity(pk.len());
+        let mut where_fragments: Vec<String> = Vec::with_capacity(pk.len());
+        let mut null_pk = false;
+        for predicate in pk {
+            if predicate.value.is_null() {
+                null_pk = true;
+                break;
+            }
+            let bound = if predicate.binary {
+                json_to_blob_operand(&predicate.value)
+            } else {
+                json_to_sql_value(&predicate.value)
+            };
+            match bound {
+                Ok(v) => params.push(v),
+                Err(e) => {
+                    let _ = conn.execute_batch("ROLLBACK");
+                    return Err(e);
+                }
+            }
+            where_fragments.push(format!("{} = ?", quote_ident(&predicate.column)));
+        }
+        if null_pk {
+            let _ = conn.execute_batch("ROLLBACK");
+            return Err(no_row_matched_error());
+        }
+        let where_sql = where_fragments.join(" AND ");
+        let delete_sql = format!("DELETE FROM {qualified} WHERE {where_sql}");
+        match conn.execute(&delete_sql, rusqlite::params_from_iter(params.iter())) {
+            Ok(affected) => {
+                let affected = affected as u64;
+                if affected > 1 {
+                    let _ = conn.execute_batch("ROLLBACK");
+                    return Err(AppError::Database(format!(
+                        "A delete would affect {affected} rows; expected at most one. \
+                         No rows were deleted."
+                    )));
+                }
+                deleted += affected;
+            }
+            Err(err) => {
+                let _ = conn.execute_batch("ROLLBACK");
+                return Err(map_query_error(conn, err));
+            }
+        }
+    }
+
+    conn.execute_batch("COMMIT")
+        .map_err(|err| map_query_error(conn, err))?;
+    Ok(DeleteRowsResult { deleted })
 }
 
 /// Empty a table, keeping its structure (M15 truncate). SQLite has no

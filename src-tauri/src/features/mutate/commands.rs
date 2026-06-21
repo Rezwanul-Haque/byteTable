@@ -14,7 +14,7 @@ use tauri::State;
 
 use crate::features::connections::application::ConnectionHandleId;
 use crate::features::connections::commands::ConnectionsState;
-use crate::shared::engine::{UpdateCellRequest, UpdateResult};
+use crate::shared::engine::{DeleteRowsRequest, DeleteRowsResult, UpdateCellRequest, UpdateResult};
 use crate::shared::error::AppError;
 
 use super::application;
@@ -33,6 +33,19 @@ pub async fn row_update(
     req: UpdateCellRequest,
 ) -> Result<UpdateResult, AppError> {
     application::update_cell(state.manager(), &handle_id, req).await
+}
+
+/// Delete a set of whole rows by primary key (grid multi-select bulk delete,
+/// `rows_delete` command). **Mutates user data.** The adapter enforces the
+/// full-pk, parameter-bound, transactional safety contract. Returns the number
+/// of rows actually deleted. The production-confirm dialog is renderer-side.
+#[tauri::command]
+pub async fn rows_delete(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+    req: DeleteRowsRequest,
+) -> Result<DeleteRowsResult, AppError> {
+    application::delete_rows(state.manager(), &handle_id, req).await
 }
 
 /// Empty a table of all rows, keeping its structure (M15 `truncate_table`

@@ -291,6 +291,14 @@ pub trait MongoWriter: Send + Sync {
     /// `deleteOne` by `_id` (MILESTONE_18 §18.3, inline tree-card delete).
     async fn delete_one(&self, db: &str, coll: &str, id: Value) -> Result<DeleteResult, AppError>;
 
+    /// `deleteMany` by a set of `_id`s (grid multi-select bulk delete).
+    async fn delete_many(
+        &self,
+        db: &str,
+        coll: &str,
+        ids: Vec<Value>,
+    ) -> Result<DeleteResult, AppError>;
+
     /// Chunked `insertMany` of many documents (import, MILESTONE_18 §18.8).
     async fn insert_many(
         &self,

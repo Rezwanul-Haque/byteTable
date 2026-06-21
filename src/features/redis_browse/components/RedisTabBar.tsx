@@ -8,6 +8,7 @@
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 
 import { Icon } from "../../../shared/ui/Icon";
+import { useTabMenu } from "../../../shared/ui/useTabMenu";
 import type { RedisTab } from "../state";
 import { RedisTypeBadge } from "./RedisTypeBadge";
 import "./RedisTabBar.css";
@@ -41,6 +42,11 @@ export function RedisTabBar({
   consoleOpen,
   onToggleConsole,
 }: RedisTabBarProps) {
+  const menu = useTabMenu({
+    ids: tabs.map((t) => t.id),
+    close: (ids) => ids.forEach(onClose),
+    canClose: (id) => tabs.find((t) => t.id === id)?.kind !== "dashboard",
+  });
   return (
     <div className="tabbar" role="tablist" aria-label="Redis tabs">
       <div className="tabbar-tabs">
@@ -74,6 +80,7 @@ export function RedisTabBar({
               onClick={() => onSelect(tab.id)}
               onKeyDown={onKeyDown}
               onMouseDown={onMouseDown}
+              onContextMenu={(e) => menu.onContextMenu(e, tab.id)}
               title={title}
             >
               {tab.kind === "key" ? (
@@ -117,6 +124,7 @@ export function RedisTabBar({
           <span>Terminal</span>
         </button>
       </div>
+      {menu.element}
     </div>
   );
 }

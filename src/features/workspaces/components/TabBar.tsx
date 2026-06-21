@@ -11,6 +11,7 @@
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 
 import { Icon } from "../../../shared/ui/Icon";
+import { useTabMenu } from "../../../shared/ui/useTabMenu";
 import type { Tab } from "../types";
 import "./TabBar.css";
 
@@ -64,6 +65,10 @@ export function TabBar({
   consoleOpen,
   onToggleConsole,
 }: TabBarProps) {
+  const menu = useTabMenu({
+    ids: tabs.map((t) => t.id),
+    close: (ids) => ids.forEach(onClose),
+  });
   return (
     <div className="tabbar" role="tablist" aria-label="Open tabs">
       <div className="tabbar-tabs">
@@ -97,6 +102,7 @@ export function TabBar({
               onClick={() => onSelect(tab.id)}
               onKeyDown={onKeyDown}
               onMouseDown={onMouseDown}
+              onContextMenu={(e) => menu.onContextMenu(e, tab.id)}
               title={title}
             >
               <Icon
@@ -137,6 +143,7 @@ export function TabBar({
           <span>Terminal</span>
         </button>
       </div>
+      {menu.element}
     </div>
   );
 }

@@ -13,6 +13,7 @@ import { TerminalPanel } from "../../console/TerminalPanel";
 import { shellLabel, usePanelStore } from "../../console/state";
 import { ENV_COLOR } from "../../../shared/ui/envColors";
 import { Icon } from "../../../shared/ui/Icon";
+import { useTabMenu } from "../../../shared/ui/useTabMenu";
 import { useWorkspacesStore } from "../../workspaces/state";
 import type { Workspace } from "../../workspaces/types";
 import { dynamoListTables, type TableDescriptor } from "../api";
@@ -163,6 +164,12 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
       return next;
     });
 
+  const tabMenu = useTabMenu({
+    ids: tabs.map((t) => t.id),
+    close: (ids) => ids.forEach(closeTab),
+    canClose: (id) => tabs.find((t) => t.id === id)?.kind !== "dashboard",
+  });
+
   const detail = connectionDetail(params);
   const descOf = (name?: string) => tables.find((t) => t.name === name);
 
@@ -204,6 +211,7 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
                     closeTab(t.id);
                   }
                 }}
+                onContextMenu={(e) => tabMenu.onContextMenu(e, t.id)}
                 title={t.title}
               >
                 <Icon
@@ -246,6 +254,7 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
               <span>PartiQL</span>
             </button>
           </div>
+          {tabMenu.element}
         </div>
 
         <div className="ddb-tab-content">

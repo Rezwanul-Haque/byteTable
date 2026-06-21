@@ -19,6 +19,7 @@ import { useRef } from "react";
 
 import { Icon } from "../../shared/ui/Icon";
 import { IconBtn } from "../../shared/ui/IconBtn";
+import { useTabMenu } from "../../shared/ui/useTabMenu";
 import type { Workspace } from "../workspaces/types";
 import { DynamoPartiqlSession } from "./DynamoPartiqlSession";
 import { MongoShellSession } from "./MongoShellSession";
@@ -46,6 +47,11 @@ export function TerminalPanel({ workspace }: { workspace: Workspace }) {
   const selectSession = usePanelStore((s) => s.selectSession);
 
   const dragRef = useRef<HTMLDivElement>(null);
+
+  const tabMenu = useTabMenu({
+    ids: panel.sessions.map((s) => s.id),
+    close: (ids) => ids.forEach((id) => closeSession(wsId, id)),
+  });
 
   if (!panel.open) return null;
 
@@ -122,6 +128,7 @@ export function TerminalPanel({ workspace }: { workspace: Workspace }) {
                 key={s.id}
                 className={"term-tab" + (active ? " active" : "")}
                 onClick={() => selectSession(wsId, s.id)}
+                onContextMenu={(e) => tabMenu.onContextMenu(e, s.id)}
                 title={s.title}
               >
                 <Icon
@@ -170,6 +177,7 @@ export function TerminalPanel({ workspace }: { workspace: Workspace }) {
           />
         </div>
       </div>
+      {tabMenu.element}
       <div className="term-panel-body">
         {panel.sessions.map((s) => (
           <div

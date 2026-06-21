@@ -1,0 +1,42 @@
+/* Right-click tab context menu (useTabMenu). Portaled to <body>. */
+.tabmenu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+}
+.tabmenu {
+  position: fixed;
+  z-index: 301;
+  min-width: 196px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+}
+.tabmenu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-size: 12.5px;
+  border-radius: 5px;
+  cursor: pointer;
+  text-align: left;
+}
+.tabmenu-item:hover:not(:disabled) {
+  background: var(--bg3, rgba(127, 127, 127, 0.14));
+}
+.tabmenu-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.tabmenu-count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-faint);
+}

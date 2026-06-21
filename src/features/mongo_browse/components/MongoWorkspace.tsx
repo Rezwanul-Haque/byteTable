@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 import { isAppErrorPayload } from "../../../shared/api/error";
 import { ENV_COLOR } from "../../../shared/ui/envColors";
 import { Icon } from "../../../shared/ui/Icon";
+import { useTabMenu } from "../../../shared/ui/useTabMenu";
 import { connectionDetail } from "../../connections/api";
 import { TerminalPanel } from "../../console/TerminalPanel";
 import { shellLabel, usePanelStore } from "../../console/state";
@@ -231,6 +232,12 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
       return next;
     });
 
+  const tabMenu = useTabMenu({
+    ids: tabs.map((t) => t.id),
+    close: (ids) => ids.forEach(closeTab),
+    canClose: (id) => tabs.find((t) => t.id === id)?.kind !== "dashboard",
+  });
+
   const switchDb = (d: string) => {
     setDb(d);
     setTabs([{ id: "mg-dash", kind: "dashboard", title: "Dashboard" }]);
@@ -293,6 +300,7 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
                     closeTab(t.id);
                   }
                 }}
+                onContextMenu={(e) => tabMenu.onContextMenu(e, t.id)}
                 title={t.title}
               >
                 <Icon
@@ -324,6 +332,7 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
               <span>mongosh</span>
             </button>
           </div>
+          {tabMenu.element}
         </div>
 
         <div className="tab-content">

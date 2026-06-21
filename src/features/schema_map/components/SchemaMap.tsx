@@ -469,7 +469,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
     return (
       <div className="schema-map">
         <div className="dg-state">
-          <Icon name="hub" size={28} style={{ opacity: 0.5 }} />
+          <Icon name="schema" size={28} style={{ opacity: 0.5 }} />
           <span>Loading schema map for {schema}…</span>
         </div>
       </div>
@@ -496,7 +496,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
   return (
     <div className="schema-map">
       <div className="map-toolbar">
-        <Icon name="hub" size={16} style={{ color: "var(--accent)" }} />
+        <Icon name="schema" size={16} style={{ color: "var(--accent)" }} />
         <span className="map-title">{schema} · schema map</span>
         <span className="map-sub">
           {tables.length} {tables.length === 1 ? "table" : "tables"} · {edges.length}{" "}

@@ -146,7 +146,7 @@ export function MongoSidebar({
             </div>
           ) : null}
         </div>
-        <IconBtn icon="hub" title="Schema map" onClick={onOpenMap} />
+        <IconBtn icon="schema" title="Schema map" onClick={onOpenMap} />
         <IconBtn icon="refresh" title="Refresh collections" onClick={onRefresh} />
         <IconBtn icon="monitoring" title="Database dashboard" onClick={onOpenDashboard} />
       </div>
@@ -317,7 +317,7 @@ export function MongoSidebar({
                   setCtxMenu(null);
                 }}
               >
-                <Icon name="hub" size={15} /> Show in schema map
+                <Icon name="schema" size={15} /> Show in schema map
               </div>
               <div className="ctx-sep" />
               <div

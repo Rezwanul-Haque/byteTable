@@ -32,7 +32,7 @@ type Tab = DynamoWorkspaceTab;
 const TAB_ICON: Record<TabKind, string> = {
   table: "table_chart",
   dashboard: "monitoring",
-  map: "hub",
+  map: "schema",
   query: "search",
 };
 

@@ -20,7 +20,7 @@ import "./TabBar.css";
 const TAB_ICONS: Record<Tab["kind"], string> = {
   table: "table",
   sql: "terminal",
-  map: "hub",
+  map: "schema",
 };
 
 function tabIcon(tab: Tab): string {

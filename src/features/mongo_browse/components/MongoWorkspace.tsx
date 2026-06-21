@@ -53,7 +53,7 @@ const TAB_ICON: Record<string, string> = {
   dashboard: "monitoring",
   collection: "folder_special",
   pipeline: "account_tree",
-  map: "hub",
+  map: "schema",
 };
 
 let seq = 0;

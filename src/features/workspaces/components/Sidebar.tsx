@@ -450,7 +450,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
             </div>
           ) : null}
         </div>
-        <IconBtn icon="hub" title="Schema map (ER diagram)" onClick={openMap} />
+        <IconBtn icon="schema" title="Schema map (ER diagram)" onClick={openMap} />
         <IconBtn
           icon="download"
           title={"Export schema “" + schemaName + "” as .sql"}
@@ -722,7 +722,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
               closeCtxMenu(true);
             }}
           >
-            <Icon name="hub" size={15} /> Show in schema map
+            <Icon name="schema" size={15} /> Show in schema map
           </button>
           <div className="ctx-sep" />
           <button

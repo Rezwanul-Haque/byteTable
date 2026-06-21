@@ -269,7 +269,7 @@ export function MongoSchemaMap({
   return (
     <div className="schema-map mg-map" data-screen-label="MongoDB schema map">
       <div className="map-toolbar">
-        <Icon name="hub" size={16} style={{ color: "var(--accent)" }} />
+        <Icon name="schema" size={16} style={{ color: "var(--accent)" }} />
         <span className="map-title">{db} · collection map</span>
         <span className="map-sub">
           {colls.length} collections · {refs.length} references

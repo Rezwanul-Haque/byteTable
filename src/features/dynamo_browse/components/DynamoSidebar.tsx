@@ -104,7 +104,7 @@ export function DynamoSidebar({
           <Icon name="public" size={15} style={{ color: "var(--accent)" }} />
           <span className="ddb-schema-btn-name">{region}</span>
         </button>
-        <IconBtn icon="hub" title="Schema map (single-table design)" onClick={onOpenMap} />
+        <IconBtn icon="schema" title="Schema map (single-table design)" onClick={onOpenMap} />
         <IconBtn icon="download" title="Export all tables" onClick={onExportAll} />
         <IconBtn icon="monitoring" title="Tables dashboard" onClick={onOpenDashboard} />
         <IconBtn icon="refresh" title="Refresh tables" onClick={onRefresh} />
@@ -277,7 +277,7 @@ export function DynamoSidebar({
                   setCtxMenu(null);
                 }}
               >
-                <Icon name="hub" size={15} /> Show in schema map
+                <Icon name="schema" size={15} /> Show in schema map
               </button>
               <div className="ddb-ctx-sep" />
               <button

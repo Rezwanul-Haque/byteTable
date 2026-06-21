@@ -228,7 +228,7 @@ export function DynamoSchemaMap({ handleId, tables, onOpenTable }: DynamoSchemaM
   return (
     <div className="ddb-schema-map">
       <div className="ddb-map-toolbar">
-        <Icon name="hub" size={16} style={{ color: "var(--accent)" }} />
+        <Icon name="schema" size={16} style={{ color: "var(--accent)" }} />
         <span className="ddb-map-title">single-table design map</span>
         <span className="ddb-map-sub">
           {entities.length} entities · {rels.length} item collections · {refs.length} references

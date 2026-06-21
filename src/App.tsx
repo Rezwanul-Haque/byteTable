@@ -4,6 +4,7 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 
 import { ToastProvider } from "./shared/ui/ToastProvider";
+import { useRepaintOnRestore } from "./shared/ui/useRepaintOnRestore";
 import { usePreferencesStore } from "./features/preferences/state";
 import { ConnectScreen } from "./features/workspaces/components/ConnectScreen";
 import { DonateModal } from "./features/workspaces/components/DonateModal";
@@ -34,6 +35,7 @@ const Gallery = import.meta.env.DEV
   : null;
 
 export function App() {
+  useRepaintOnRestore();
   const loadPreferences = usePreferencesStore((state) => state.load);
   const workspaces = useWorkspacesStore((state) => state.workspaces);
   const activeWorkspaceId = useWorkspacesStore((state) => state.activeWorkspaceId);

@@ -49,8 +49,15 @@ lint: install ensure-cargo ## Lint everything (ESLint + clippy + rustfmt/prettie
 	$(CARGO) fmt --manifest-path $(MANIFEST) -- --check
 	$(CARGO) clippy --manifest-path $(MANIFEST) --all-targets --all-features -- -D warnings
 
-clippy: ensure-cargo ## Run clippy exactly as CI does (all targets/features, deny warnings)
-	$(CARGO) clippy --manifest-path $(MANIFEST) --all-targets --all-features -- -D warnings
+# CI (.github/workflows/ci.yml) runs clippy on the LATEST stable toolchain
+# (dtolnay/rust-toolchain@stable, components: clippy) from the src-tauri working
+# directory: `cargo clippy --all-targets --all-features -- -D warnings`. Mirror
+# that byte-for-byte. Pin to stable (overriding any RUSTUP_TOOLCHAIN the caller's
+# shell has set) so a locally-pinned older toolchain can't miss a newer lint that
+# CI will fail on.
+clippy: ensure-cargo ## Run clippy exactly as CI does (latest stable, all targets/features, deny warnings)
+	rustup toolchain install stable --profile minimal --component clippy 2>/dev/null || true
+	cd src-tauri && RUSTUP_TOOLCHAIN=stable $(CARGO) clippy --all-targets --all-features -- -D warnings
 
 fmt: install ensure-cargo ## Auto-format everything (prettier + rustfmt)
 	$(PNPM) format

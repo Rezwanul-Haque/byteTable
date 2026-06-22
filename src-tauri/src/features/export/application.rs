@@ -445,7 +445,10 @@ fn binary_sql_value(connection: &dyn EngineConnection, value: &serde_json::Value
         serde_json::Value::Null => "NULL".to_string(),
         serde_json::Value::String(s) => {
             match s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
-                Some(hex) if hex.len() % 2 == 0 && hex.bytes().all(|b| b.is_ascii_hexdigit()) => {
+                Some(hex)
+                    if hex.len().is_multiple_of(2)
+                        && hex.bytes().all(|b| b.is_ascii_hexdigit()) =>
+                {
                     connection.binary_literal(&hex.to_ascii_lowercase())
                 }
                 _ => "NULL".to_string(),

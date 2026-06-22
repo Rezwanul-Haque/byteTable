@@ -174,6 +174,17 @@
   background: color-mix(in oklab, var(--bg2) 60%, transparent);
 }
 
+.st-num-h,
+.st-num {
+  width: 30px;
+  text-align: left;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  user-select: none;
+  white-space: nowrap;
+}
+
 .st-icon {
   width: 20px;
   padding-right: 0 !important;

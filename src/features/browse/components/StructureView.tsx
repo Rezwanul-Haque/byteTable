@@ -510,6 +510,7 @@ export function StructureView({
             <table className="structure-table st-editable-table">
               <thead>
                 <tr>
+                  <th className="st-num-h">#</th>
                   <th />
                   <th>Name</th>
                   <th>Type</th>
@@ -521,15 +522,16 @@ export function StructureView({
               <tbody>
                 {filteredCols.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="grid-empty-cell">
+                    <td colSpan={7} className="grid-empty-cell">
                       No columns match “{colQuery}”
                     </td>
                   </tr>
                 ) : (
-                  filteredCols.map((c) => (
+                  filteredCols.map((c, i) => (
                     <ColumnRow
                       key={c.origin ?? "new:" + c.name}
                       col={c}
+                      num={i + 1}
                       autoEditName={autoEditName}
                       onAutoEditConsumed={() => setAutoEditName(null)}
                       editingCell={editingCell}
@@ -877,6 +879,8 @@ export function StructureView({
 
 interface ColumnRowProps {
   col: WorkingColumn;
+  /** 1-based position shown in the leading `#` gutter. */
+  num: number;
   autoEditName: string | null;
   onAutoEditConsumed: () => void;
   editingCell: string | null;
@@ -891,6 +895,7 @@ interface ColumnRowProps {
 
 function ColumnRow({
   col,
+  num,
   autoEditName,
   onAutoEditConsumed,
   editingCell,
@@ -910,6 +915,7 @@ function ColumnRow({
 
   return (
     <tr className={rowClass.trim() || undefined}>
+      <td className="st-num">{num}</td>
       <td className="st-icon">
         {col.pk ? (
           <Icon

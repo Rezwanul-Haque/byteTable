@@ -27,11 +27,65 @@ jobs:
     outputs:
       release_id: ${{ steps.create.outputs.result }}
     steps:
+      # Full history + tags so the changelog step can diff the previous tag.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # Build grouped release notes from the conventional-commit subjects between
+      # the previous tag and this one:
+      #   feat:                 → ✨ Added
+      #   improv: / refactor: / perf:  → ⚡ Improvements
+      #   fix:                  → 🐛 Fixes
+      #   anything else (minus chore/docs/test/ci/build/style noise) → Other
+      # A commit's `type(scope):` prefix is stripped; empty sections are dropped.
+      - name: Build release notes
+        id: notes
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          prev=$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)
+          if [ -n "$prev" ]; then range="${prev}..${TAG}"; else range="${TAG}"; fi
+          echo "Changelog range: ${range:-<all>}"
+
+          added=""; improved=""; fixed=""; other=""
+          while IFS= read -r subject; do
+            [ -z "$subject" ] && continue
+            # type token = leading letters before an optional (scope) and the colon
+            type=$(printf '%s' "$subject" | sed -nE 's/^([a-zA-Z]+)(\([^)]*\))?!?:.*/\1/p' | tr '[:upper:]' '[:lower:]')
+            msg=$(printf '%s' "$subject" | sed -E 's/^[a-zA-Z]+(\([^)]*\))?!?:[[:space:]]*//')
+            line="- ${msg}"$'\n'
+            case "$type" in
+              feat) added="${added}${line}" ;;
+              improv|improvement|refactor|perf) improved="${improved}${line}" ;;
+              fix|bugfix) fixed="${fixed}${line}" ;;
+              chore|docs|doc|test|tests|ci|build|style|release) : ;;
+              *) other="${other}${line}" ;;
+            esac
+          done < <(git log --no-merges --pretty=format:'%s' "$range")
+
+          body="## What's changed"$'\n'
+          [ -n "$added" ]    && body="${body}"$'\n'"### ✨ Added"$'\n'"${added}"
+          [ -n "$improved" ] && body="${body}"$'\n'"### ⚡ Improvements"$'\n'"${improved}"
+          [ -n "$fixed" ]    && body="${body}"$'\n'"### 🐛 Fixes"$'\n'"${fixed}"
+          [ -n "$other" ]    && body="${body}"$'\n'"### Other"$'\n'"${other}"
+          if [ -z "${added}${improved}${fixed}${other}" ]; then
+            body="${body}"$'\n'"_No notable changes._"$'\n'
+          fi
+          body="${body}"$'\n'"---"$'\n'"Download the installer for your OS below. The app also self-updates from this release."
+
+          {
+            echo "body<<__NOTES_EOF__"
+            printf '%s\n' "$body"
+            echo "__NOTES_EOF__"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Create the draft release
         id: create
         uses: actions/github-script@v8
         env:
           TAG: ${{ github.ref_name }}
+          NOTES: ${{ steps.notes.outputs.body }}
         with:
           script: |
             const tag = process.env.TAG;
@@ -40,7 +94,7 @@ jobs:
               repo: context.repo.repo,
               tag_name: tag,
               name: `ByteTable ${tag}`,
-              body: "Download the installer for your OS below. The app also self-updates from this release.",
+              body: process.env.NOTES,
               draft: true,
               prerelease: false,
             });

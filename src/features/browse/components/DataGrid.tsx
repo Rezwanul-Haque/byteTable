@@ -68,6 +68,7 @@ import { Modal, ModalActions, ModalTitle } from "../../../shared/ui/Modal";
 import { useToast } from "../../../shared/ui/toastContext";
 import { useIntrospectionStore } from "../../introspection/state";
 import { useWorkspacesStore } from "../../workspaces/state";
+import { useSettingsStore } from "../../settings/state";
 import { useTabMetaStore } from "../../workspaces/tabMeta";
 import { BinaryEditorModal } from "./BinaryEditorModal";
 import { isBinaryType, looksUuid, uuidToHex } from "./binaryCell";
@@ -370,6 +371,9 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   const isProduction = useWorkspacesStore(
     (s) => s.workspaces.find((ws) => ws.handleId === handleId)?.saved.env === "production",
   );
+  // M20: the typed production confirm is opt-out via Settings → Behavior
+  // ("Confirm writes on production"). When off, prod saves skip the gate.
+  const confirmProd = useSettingsStore((s) => s.settings.confirmProd);
   // The connection's engine — drives engine-aware identifier quoting + literal
   // escaping in the batch SQL (MySQL backticks vs. Postgres/SQLite double quotes).
   const engine = useWorkspacesStore(
@@ -923,7 +927,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     if (!sql) return;
     const nUpdated = [...edits.values()].filter((e) => e.cells.size > 0).length;
     const nNew = rows.length;
-    if (isProduction) {
+    if (isProduction && confirmProd) {
       setSaveConfirmSql(sql);
       // Stash the counts for the confirm path.
       saveCountsRef.current = { nNew, nUpdated };
@@ -940,6 +944,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     newRows,
     buildBatchSql,
     isProduction,
+    confirmProd,
     runSave,
   ]);
 

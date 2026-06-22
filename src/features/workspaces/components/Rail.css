@@ -282,6 +282,33 @@
   color: var(--accent);
 }
 
+/* Settings gear (M20) — bottom cluster, above the donate button. */
+.rail-settings {
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  flex: none;
+  margin-bottom: 8px;
+  color: var(--text-faint);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    color 0.15s,
+    background 0.15s,
+    transform 0.15s;
+}
+.rail-settings:hover {
+  color: var(--text);
+  background: var(--bg3);
+}
+.rail-settings .msym {
+  transition: transform 0.3s ease;
+}
+.rail-settings:hover .msym {
+  transform: rotate(40deg);
+}
+
 .rail-donate {
   width: 38px;
   height: 38px;

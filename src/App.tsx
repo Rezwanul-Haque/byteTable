@@ -6,6 +6,9 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { ToastProvider } from "./shared/ui/ToastProvider";
 import { useRepaintOnRestore } from "./shared/ui/useRepaintOnRestore";
 import { usePreferencesStore } from "./features/preferences/state";
+import { useSettingsStore } from "./features/settings/state";
+import { SettingsModal } from "./features/settings/components/SettingsModal";
+import { subscribeSettings } from "./features/settings/sync";
 import { ConnectScreen } from "./features/workspaces/components/ConnectScreen";
 import { DonateModal } from "./features/workspaces/components/DonateModal";
 import { Rail } from "./features/workspaces/components/Rail";
@@ -38,6 +41,11 @@ const Gallery = import.meta.env.DEV
 export function App() {
   useRepaintOnRestore();
   const loadPreferences = usePreferencesStore((state) => state.load);
+  // M20 settings: bootstrap.ts already applied the localStorage fast-path
+  // before mount; this reconciles it with the on-disk mirror (and seeds the
+  // cache from disk on a fresh profile / after a localStorage clear).
+  const loadSettings = useSettingsStore((state) => state.load);
+  const syncSettings = useSettingsStore((state) => state.syncExternal);
   const workspaces = useWorkspacesStore((state) => state.workspaces);
   const activeWorkspaceId = useWorkspacesStore((state) => state.activeWorkspaceId);
   const activeWorkspace = workspaces.find((ws) => ws.id === activeWorkspaceId) ?? null;
@@ -49,6 +57,9 @@ export function App() {
   const [donateOpen, setDonateOpen] = useState(false);
 
   const [galleryOpen, setGalleryOpen] = useState(false);
+
+  // M20 Settings modal: opened from the rail gear or the ⌘,/Ctrl+, shortcut.
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // In-app updater (M-updater): check GitHub releases once on launch; surface
   // the modal when a newer signed build exists and the user hasn't skipped it.
@@ -69,8 +80,13 @@ export function App() {
 
   useEffect(() => {
     void loadPreferences();
+    void loadSettings();
     void appVersion().then(setVersion);
-  }, [loadPreferences]);
+  }, [loadPreferences, loadSettings]);
+
+  // M20.6: re-apply settings broadcast by another window (desktop multi-window;
+  // no-op in plain browser dev).
+  useEffect(() => subscribeSettings(syncSettings), [syncSettings]);
 
   useEffect(() => {
     let alive = true;
@@ -118,6 +134,19 @@ export function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  // ⌘,/Ctrl+, opens (toggles) the Settings modal — the platform-standard
+  // preferences shortcut.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === ",") {
+        event.preventDefault();
+        setSettingsOpen((open) => !open);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   return (
     <ToastProvider>
       {/* Keeps the native tray "Workspaces" submenu in sync + handles its
@@ -131,6 +160,7 @@ export function App() {
           updateSkipped={updateSkipped}
           onUpdate={() => setUpdateModalOpen(true)}
           onAbout={() => setAboutOpen(true)}
+          onSettings={() => setSettingsOpen(true)}
           version={version}
         />
         <div className="app-body">
@@ -169,6 +199,8 @@ export function App() {
           )}
         </div>
       </div>
+
+      {settingsOpen ? <SettingsModal onClose={() => setSettingsOpen(false)} /> : null}
 
       {donateOpen ? <DonateModal onClose={() => setDonateOpen(false)} /> : null}
 

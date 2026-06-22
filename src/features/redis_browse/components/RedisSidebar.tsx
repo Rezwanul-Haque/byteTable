@@ -443,6 +443,7 @@ export function RedisSidebar(props: RedisSidebarProps) {
           icon="power_settings_new"
           title="Close workspace"
           size={16}
+          danger
           onClick={onCloseWorkspace}
         />
       </div>

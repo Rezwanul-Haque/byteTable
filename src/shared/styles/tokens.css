@@ -59,6 +59,10 @@
   --grid-row-h: 26px;
   --grid-fs: 12px;
 
+  /* Editor monospace base size (M20 settings; grid renders at --editor-fs - 1).
+     The settings store overrides these inline on :root at runtime. */
+  --editor-fs: 13px;
+
   /* Font stacks */
   --ui: "IBM Plex Sans", system-ui, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, monospace;

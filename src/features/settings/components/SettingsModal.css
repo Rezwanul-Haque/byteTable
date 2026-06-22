@@ -1,0 +1,531 @@
+/* Settings modal (M20) — ported from ByteTable.html (.set-* family). Base
+ * overrides are scoped as .modal.set-modal so they beat the shared .modal
+ * regardless of CSS import order (the prototype's gap:0 / padding:0). */
+
+.modal.set-modal {
+  width: 760px;
+  max-width: calc(100vw - 40px);
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 48px);
+}
+
+.set-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 15px 18px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.set-head .modal-title-text {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.set-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+}
+
+.set-nav {
+  width: 176px;
+  flex: none;
+  border-right: 1px solid var(--border);
+  padding: 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--bg1);
+}
+.set-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 11px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  text-align: left;
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+.set-nav-item:hover {
+  background: var(--bg2);
+  color: var(--text);
+}
+.set-nav-item.active {
+  background: color-mix(in oklab, var(--accent) 14%, var(--bg2));
+  color: var(--text);
+}
+.set-nav-item.active .msym {
+  color: var(--accent);
+}
+.set-nav-reset {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 11px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  text-align: left;
+}
+.set-nav-reset:hover {
+  color: var(--danger);
+  background: color-mix(in oklab, var(--danger) 12%, transparent);
+}
+
+.set-pane {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 18px 22px 24px;
+  background: var(--bg0);
+}
+.set-section-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-faint);
+  margin: 4px 0 11px;
+}
+.set-section-label:not(:first-child) {
+  margin-top: 24px;
+}
+
+.set-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 11px 0;
+  border-top: 1px solid var(--border);
+}
+.set-row:first-of-type {
+  border-top: none;
+}
+.set-row-label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.set-row-label > span:first-child {
+  font-size: 13px;
+  color: var(--text);
+}
+.set-row-hint {
+  font-size: 11px;
+  color: var(--text-faint);
+  line-height: 1.4;
+}
+.set-row-control {
+  flex: none;
+}
+
+/* theme swatches */
+.set-theme-group {
+  margin-bottom: 16px;
+}
+.set-theme-group-label {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  margin-bottom: 8px;
+}
+.set-theme-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+.set-theme {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+}
+.set-theme-prev {
+  border: 1.5px solid var(--border);
+  border-radius: 9px;
+  overflow: hidden;
+  height: 62px;
+  display: flex;
+  flex-direction: column;
+  transition:
+    border-color 0.12s,
+    transform 0.12s;
+}
+.set-theme:hover .set-theme-prev {
+  transform: translateY(-1px);
+}
+.set-theme.active .set-theme-prev {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 35%, transparent);
+}
+.set-theme-bar {
+  height: 15px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 6px;
+}
+.set-theme-bar span {
+  width: 14px;
+  height: 5px;
+  border-radius: 2px;
+}
+.set-theme-bar span:nth-child(2) {
+  width: 22px;
+}
+.set-theme-body {
+  flex: 1;
+  padding: 7px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  justify-content: center;
+}
+.set-theme-body i {
+  height: 4px;
+  border-radius: 2px;
+  display: block;
+}
+.set-theme-name {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.set-theme.active .set-theme-name {
+  color: var(--text);
+}
+
+/* accent swatches */
+.set-accents {
+  display: flex;
+  gap: 8px;
+}
+.set-accent {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1.5px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    transform 0.1s,
+    border-color 0.12s;
+}
+.set-accent:hover {
+  transform: scale(1.1);
+}
+.set-accent.active {
+  border-color: var(--text);
+}
+.set-accent.auto {
+  background: var(--bg2);
+  color: var(--text-dim);
+}
+.set-accent.auto.active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* toggle switch */
+.set-switch {
+  width: 38px;
+  height: 22px;
+  border-radius: 99px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  position: relative;
+  transition: background 0.15s;
+  flex: none;
+}
+.set-switch.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.set-switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.16s cubic-bezier(0.3, 1.4, 0.5, 1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+.set-switch.on .set-switch-knob {
+  transform: translateX(16px);
+}
+
+/* segmented */
+.set-seg {
+  display: inline-flex;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+}
+.set-seg-btn {
+  padding: 5px 13px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+.set-seg-btn:hover {
+  color: var(--text);
+}
+.set-seg-btn.active {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 500;
+}
+
+.set-select {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 12.5px;
+  padding: 7px 32px 7px 10px;
+  min-width: 150px;
+  cursor: pointer;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23808a99' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+}
+.set-select:hover {
+  border-color: var(--text-faint);
+}
+.set-select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 30%, transparent);
+}
+
+.set-liga-tag {
+  font-size: 8.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 15%, transparent);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.set-font-prev {
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 13px 15px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text);
+  margin: 0 0 6px;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* mono font dropdown */
+.mono-picker {
+  position: relative;
+  margin-bottom: 14px;
+}
+.mono-picker-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg1);
+  transition: border-color 0.12s;
+}
+.mono-picker-btn:hover,
+.mono-picker-btn.open {
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+}
+.mono-picker-val {
+  flex: none;
+  font-size: 13.5px;
+  color: var(--text);
+  white-space: nowrap;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mono-picker-tag {
+  flex: none;
+  font-size: 8.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  background: var(--bg3);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.mono-picker-tag.sys {
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 15%, transparent);
+}
+.mono-picker-sample {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: right;
+  font-size: 13px;
+  color: var(--text-dim);
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.mono-picker-btn .msym {
+  flex: none;
+}
+.mono-picker-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 5px);
+  z-index: 30;
+  max-height: 290px;
+  overflow-y: auto;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.42);
+  padding: 5px;
+}
+.mono-picker-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  padding: 9px 8px 4px;
+}
+.mono-picker-group-n {
+  font-family: var(--mono);
+  letter-spacing: 0;
+  text-transform: none;
+}
+.mono-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: 7px;
+  transition: background 0.1s;
+}
+.mono-picker-item:hover {
+  background: var(--bg3);
+}
+.mono-picker-item.on {
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+}
+.mono-picker-item-name {
+  flex: 1;
+  text-align: left;
+  font-size: 13.5px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mono-picker-empty {
+  font-size: 12px;
+  color: var(--text-faint);
+  padding: 6px 9px 9px;
+}
+.mono-picker-loadall {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px 9px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-dim);
+  border-radius: 0 0 7px 7px;
+}
+.mono-picker-loadall:hover {
+  color: var(--accent);
+}
+
+/* size stepper */
+.set-size {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.set-size-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.set-size-btn:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.set-range {
+  width: 130px;
+  accent-color: var(--accent);
+}
+.set-size-val {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  width: 34px;
+  text-align: right;
+}
+
+.set-foot-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-top: 22px;
+  padding: 11px 13px;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  line-height: 1.5;
+}
+.set-foot-note .msym {
+  margin-top: 1px;
+  color: var(--accent);
+}

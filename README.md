@@ -1,8 +1,8 @@
 # ByteTable
 
 A free, open-source, **local-first desktop database client** — a TablePlus / BeekeeperStudio
-like tool with first-class Linux, MacOS, Windows support, no pro tier, and no subscription. One window, Multiple workspace, six engines:
-**SQLite · MySQL · PostgreSQL · Redis · DynamoDB · MongoDB**. Many more engines to come.
+like tool with first-class Linux, MacOS, Windows support, no pro tier, and no subscription. One window, Multiple workspace, seven engines:
+**SQLite · MySQL · PostgreSQL · Redis · DynamoDB · MongoDB · Cassandra**. Many more engines to come.
 
 ![ByteTable](docs/byteTable.png)
 
@@ -44,7 +44,11 @@ each with its own tab set and sidebar state.
 
 **MongoDB** — a document/collection surface: database selector + collection list with index sub-rows, the Find tab (filter / projection / sort / limit) with Tree ⇄ Table views, a JSON document editor with `$jsonSchema` validation, an aggregation-pipeline builder (inline + standalone, incl. `$lookup`), a real `explain("executionStats")` panel, an inferred-schema / Indexes / Validation Structure tab, a `mongosh` console, a collection schema map (with PNG/SVG export), and JSON / mongosh-script / CSV export & import. BSON `ObjectId` / `ISODate` survive read → edit → write.
 
-**Shared** — a VS Code-style **docked terminal panel** (per-engine REPL: psql/mysql/sqlite3-style for SQL, redis-cli for Redis, mongosh for MongoDB; PartiQL for DynamoDB; `Ctrl+\``), command palette (`⌘K`), system tray, and live theming (accent / darkness / density).
+**Cassandra** — a query-first wide-column surface (not forced into a relational grid): keyspace selector + table list, a CQL-correct query builder (partition / clustering / non-key predicates with an explicit `ALLOW FILTERING` opt-in), per-query consistency level, hybrid inline editing (regular scalars inline, complex types in a row modal, key columns locked), a Structure tab with secondary indexes / materialized views, a standalone CQL query tab + `cqlsh` terminal (incl. `nodetool status`), a denormalization schema map (with PNG/SVG export), create-keyspace / create-table flows, and CQL / CSV / JSON export & import. CQL types (`uuid` / `timeuuid` / `timestamp` / collections) survive read → edit → write.
+
+**Settings** — a tabbed preferences modal (`⌘,`): 12 themes (incl. light), accent + font (editor mono + UI) + size + density, and behavior toggles (ligatures, reduce-motion, row-hover, default row limit, production-write confirm). Applied app-wide via CSS variables; persisted locally (localStorage + an editable on-disk mirror).
+
+**Shared** — a VS Code-style **docked terminal panel** (per-engine REPL: psql/mysql/sqlite3-style for SQL, redis-cli for Redis, mongosh for MongoDB, `cqlsh` for Cassandra; PartiQL for DynamoDB; `Ctrl+\``), command palette (`⌘K`), system tray, and live theming via the Settings modal.
 
 ## Tech stack
 
@@ -52,10 +56,11 @@ each with its own tab set and sidebar state.
 - **UI:** React + TypeScript + Vite in the Tauri webview.
 - **Architecture:** vertical-slice + clean architecture — one feature per capability
   (`connections`, `introspection`, `browse`, `query`, `structure`, `mutate`, `export`, `keyvalue`,
-  `dynamo`, `mongo`, `schema_map`, `insights`, `preferences`), each with domain / application / ports /
-  infrastructure / thin Tauri-command layers. Engine drivers (`rusqlite`, `sqlx`, `redis`,
-  `aws-sdk-dynamodb`, `mongodb`) are infrastructure adapters behind shared port traits (a separate
-  port family per data model: SQL, key-value, DynamoDB-document, and MongoDB).
+  `dynamo`, `mongo`, `cassandra`, `schema_map`, `insights`, `preferences`, `settings`), each with
+  domain / application / ports / infrastructure / thin Tauri-command layers. Engine drivers
+  (`rusqlite`, `sqlx`, `redis`, `aws-sdk-dynamodb`, `mongodb`, `scylla`) are infrastructure adapters
+  behind shared port traits (a separate port family per data model: SQL, key-value,
+  DynamoDB-document, MongoDB, and Cassandra wide-column).
 
 ## Prerequisites
 
@@ -106,7 +111,7 @@ compiles the Rust core, so it takes a few minutes; subsequent runs are fast.
 A ready-to-use set of throwaway databases lives in [`test-fixtures/`](test-fixtures/):
 
 ```sh
-make db-up          # Postgres + MySQL + Redis + DynamoDB + MongoDB (seeded) on offset ports
+make db-up          # Postgres + MySQL + Redis + DynamoDB + MongoDB + Cassandra (seeded) on offset ports
 ```
 
 Then in the app's **New connection** modal (TLS: disable), use the credentials in
@@ -125,9 +130,9 @@ src/                     Renderer (React/TS), one folder per feature
   features/<feature>/    components / state (Zustand) / api (typed invoke wrappers)
   shared/                design tokens, UI primitives, wire types
 src-tauri/               Rust core
-  src/engines/           engine adapters (sqlite, postgres, mysql, redis, dynamo, mongo, ssh tunnel)
+  src/engines/           engine adapters (sqlite, postgres, mysql, redis, dynamo, mongo, cassandra, ssh tunnel)
   src/features/<slice>/  domain / application / ports / infrastructure / commands
-  src/shared/            error type, engine + key-value + document + mongo port traits
+  src/shared/            error type, engine + key-value + document + mongo + wide-column port traits
 test-fixtures/           docker-compose + seeds + sample SQLite
 docs/                    design specs
 ```

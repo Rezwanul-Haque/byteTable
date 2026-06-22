@@ -25,6 +25,8 @@ use features::saved_queries::commands::SavedQueriesState;
 use features::saved_queries::infrastructure::JsonFileSavedQueryRepository;
 use features::schema_map::commands::SchemaMapState;
 use features::schema_map::infrastructure::JsonFileMapLayoutRepository;
+use features::settings::commands::SettingsState;
+use features::settings::infrastructure::JsonFileSettingsStore;
 use shared::engine::Engine;
 
 /// Bring the main window back to the foreground (from hidden/minimized tray state).
@@ -144,6 +146,13 @@ pub fn run() {
             let store = JsonFilePreferencesStore::new(config_dir.join("preferences.json"));
             app.manage(PreferencesState::new(Box::new(store)));
 
+            // Settings slice (M20): the full theme/font/size/behavior contract.
+            // localStorage in the renderer is the source of truth; this JSON
+            // file is a mirror so settings survive a localStorage clear and are
+            // editable as a file.
+            let settings_store = JsonFileSettingsStore::new(config_dir.join("settings.json"));
+            app.manage(SettingsState::new(Box::new(settings_store)));
+
             // Connections slice: JSON registry + per-engine connectors.
             // Every engine now has a registered connector: SQLite (rusqlite),
             // Postgres (M12 Task 1, sqlx) and MySQL (M12 Task 2, sqlx). An
@@ -250,6 +259,8 @@ pub fn run() {
             tray_update,
             features::preferences::commands::prefs_get,
             features::preferences::commands::prefs_set,
+            features::settings::commands::settings_load,
+            features::settings::commands::settings_save,
             features::connections::commands::connection_list,
             features::connections::commands::connection_save,
             features::connections::commands::connection_delete,

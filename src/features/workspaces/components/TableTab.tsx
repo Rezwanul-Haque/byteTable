@@ -25,6 +25,7 @@ import { ExportProgressModal } from "../../export/components/ExportProgressModal
 import { TruncateModal } from "../../export/components/TruncateModal";
 import { ImportModal } from "../../import/components/ImportModal";
 import { useIntrospectionStore, columnsKey } from "../../introspection/state";
+import { useSettingsStore } from "../../settings/state";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Icon } from "../../../shared/ui/Icon";
 import { Select } from "../../../shared/ui/Select";
@@ -103,7 +104,12 @@ export function TableTab({
   // (`rowsFetch(..., { offset, limit: pageSize })`). Default page 300, matching
   // the prototype. "All" maps to the backend's MAX_PAGE_ROWS ceiling — rows
   // beyond the cap aren't shown (documented; the backend clamps anyway).
-  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  // M20: a new table tab opens at the user's configured default row limit
+  // (Settings → Data grid). Read once via getState so changing the setting
+  // doesn't disturb already-open tabs, only newly-opened ones.
+  const [pageSize, setPageSize] = useState(
+    () => (useSettingsStore.getState().settings.defaultLimit as number) ?? DEFAULT_PAGE_SIZE,
+  );
   const [offset, setOffset] = useState(0);
   const colRef = useRef<HTMLDivElement | null>(null);
   const actionsRef = useRef<HTMLDivElement | null>(null);

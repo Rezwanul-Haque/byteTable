@@ -13,6 +13,12 @@ import "material-symbols/rounded.css";
 import "./shared/styles/tokens.css";
 import "./shared/styles/global.css";
 
+// Apply saved settings (theme/accent/fonts/sizes) synchronously off the
+// localStorage fast-path BEFORE React mounts, so the first painted frame is
+// already themed — no flash of the default palette. The Tauri disk mirror is
+// reconciled afterwards by the settings store (App).
+import "./features/settings/bootstrap";
+
 import { App } from "./App";
 
 const rootElement = document.getElementById("root");

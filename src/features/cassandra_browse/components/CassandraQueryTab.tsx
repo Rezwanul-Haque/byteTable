@@ -27,11 +27,6 @@ interface CassRun {
   error: string | null;
 }
 
-function defaultCql(tables: TableDescriptor[]): string {
-  const t = tables[0]?.name;
-  return t ? "SELECT * FROM " + t + "\n  LIMIT 50;" : "SELECT * FROM table_name LIMIT 50;";
-}
-
 interface CassandraQueryTabProps {
   handleId: string;
   ks: string;
@@ -39,7 +34,8 @@ interface CassandraQueryTabProps {
 }
 
 export function CassandraQueryTab({ handleId, ks, tables }: CassandraQueryTabProps) {
-  const [cqlText, setCqlText] = useState(() => defaultCql(tables));
+  // Open with an empty editor — no pre-seeded query.
+  const [cqlText, setCqlText] = useState("");
   const [runs, setRuns] = useState<CassRun[]>([]);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [running, setRunning] = useState(false);

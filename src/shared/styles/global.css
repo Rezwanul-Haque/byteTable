@@ -87,3 +87,35 @@ button {
 ::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/*
+ * Settings body-class hooks (M20). `apply()` toggles these on <body> from the
+ * settings store. `.bt-reduce-motion` is the cross-cutting one and lives here;
+ * `.bt-liga` (mono ligatures), `.bt-no-rowhover` (grid hover) and `.bt-light`
+ * (light-theme tweaks) are consumed by the editor/grid surfaces in their own
+ * subtasks (20.4 / 20.5).
+ */
+body.bt-reduce-motion *,
+body.bt-reduce-motion *::before,
+body.bt-reduce-motion *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* Mono ligatures (=> != <=) when enabled. Off by default so curated
+   non-ligature fonts render literally. */
+body.bt-liga {
+  font-feature-settings:
+    "calt" 1,
+    "liga" 1;
+}
+body:not(.bt-liga) {
+  font-feature-settings:
+    "calt" 0,
+    "liga" 0;
+}
+
+/* Row-hover tint in data grids is opt-out via .bt-no-rowhover; the grid
+   surfaces read this hook (20.5). */

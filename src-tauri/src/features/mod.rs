@@ -15,4 +15,5 @@ pub mod mutate;
 pub mod preferences;
 pub mod saved_queries;
 pub mod schema_map;
+pub mod settings;
 pub mod structure;

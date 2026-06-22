@@ -20,6 +20,7 @@ import { Icon } from "../../../shared/ui/Icon";
 import { Modal, ModalActions, ModalTitle } from "../../../shared/ui/Modal";
 import { useToast } from "../../../shared/ui/toastContext";
 import { useIntrospectionStore } from "../../introspection/state";
+import { useSettingsStore } from "../../settings/state";
 import "./TruncateModal.css";
 
 const DANGER = "#e06c75";
@@ -47,7 +48,11 @@ export function TruncateModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const isProd = env === "production";
+  // M20: the production type-to-confirm gate is opt-out via Settings →
+  // Behavior ("Confirm writes on production"). When off, even a prod
+  // connection gets the simple confirm.
+  const confirmProd = useSettingsStore((s) => s.settings.confirmProd);
+  const isProd = env === "production" && confirmProd;
   // Production gate: the typed name must match exactly. Else always armed.
   const armed = !isProd || typed.trim() === table;
 

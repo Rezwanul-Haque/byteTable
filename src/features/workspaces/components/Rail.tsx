@@ -53,6 +53,8 @@ interface RailProps {
   onUpdate?: () => void;
   /** Version label click — opens the About modal. */
   onAbout?: () => void;
+  /** Settings gear click — opens the Settings modal (⌘,/Ctrl+,). */
+  onSettings?: () => void;
   /** Running app version (no leading `v`), shown under the donate button. */
   version?: string;
 }
@@ -63,6 +65,7 @@ export function Rail({
   updateSkipped,
   onUpdate,
   onAbout,
+  onSettings,
   version,
 }: RailProps) {
   const workspaces = useWorkspacesStore((state) => state.workspaces);
@@ -208,6 +211,18 @@ export function Rail({
       </div>
 
       <div className="rail-spacer" data-tauri-drag-region />
+
+      {onSettings ? (
+        <button
+          type="button"
+          className="rail-settings"
+          onClick={onSettings}
+          title="Settings (⌘,)"
+          aria-label="Settings"
+        >
+          <Icon name="settings" size={20} />
+        </button>
+      ) : null}
 
       {updateAvailable ? (
         <button

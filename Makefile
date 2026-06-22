@@ -82,8 +82,8 @@ tag: ## Bump the version in source, commit, then create + push a release tag (us
 	git push origin "v$$v" && \
 	echo "Bumped to v$$v, committed, tagged + pushed — the release workflow will build + publish it."
 
-db-up: ## Start the test databases (Postgres/MySQL/Redis/DynamoDB/MongoDB) + seed them
-	cd test-fixtures && docker compose up -d && ./seed/seed-redis.sh && ./seed/seed-dynamo.sh
+db-up: ## Start the test databases (Postgres/MySQL/Redis/DynamoDB/MongoDB/Cassandra) + seed them
+	cd test-fixtures && docker compose up -d && ./seed/seed-redis.sh && ./seed/seed-dynamo.sh && ./seed/seed-cassandra.sh
 
 db-down: ## Stop and wipe the test databases
 	cd test-fixtures && docker compose down -v

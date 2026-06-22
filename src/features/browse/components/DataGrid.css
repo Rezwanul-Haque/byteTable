@@ -263,11 +263,13 @@
   box-shadow: -6px 0 6px -2px var(--bg3);
 }
 
-.dg-tr:hover .dg-td {
+/* Row-hover tint — opt-out via Settings → Data grid ("Highlight active row"),
+   which toggles body.bt-no-rowhover (M20). */
+body:not(.bt-no-rowhover) .dg-tr:hover .dg-td {
   background: color-mix(in oklab, var(--bg2) 70%, transparent);
 }
 
-.dg-tr:hover .dg-rownum {
+body:not(.bt-no-rowhover) .dg-tr:hover .dg-rownum {
   color: var(--text-dim);
 }
 

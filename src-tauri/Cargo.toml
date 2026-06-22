@@ -131,6 +131,13 @@ aws-credential-types = { version = "1", features = ["hardcoded-credentials"] }
 # the tree's rustls driver picks. `bson` (re-exported as `mongodb::bson`) is the
 # BSON ⇄ value layer the document marshalling uses.
 mongodb = "3"
+# Cassandra engine (M19). The DataStax / ScyllaDB Rust driver (`scylla`) is
+# async-native on the tokio runtime already in the tree (Tauri's runtime), so the
+# `WideColumnConnection` methods await the session directly — no spawn_blocking,
+# mirroring the sqlx/redis/dynamo/mongo adapters. Default features keep the driver
+# pure-Rust (no OpenSSL system dep); native-protocol TLS arrives with a later M19
+# subtask behind an explicit rustls feature.
+scylla = "1.7"
 
 [dev-dependencies]
 tempfile = "3"

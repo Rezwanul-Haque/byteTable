@@ -126,6 +126,22 @@ export type ConnectionParams =
       database?: string;
       user?: string;
       tlsMode: TlsMode;
+    }
+  | {
+      // Cassandra (M19). A wide-column store reached over the native (CQL)
+      // protocol. `contactPoints` is the host (or comma-separated list of hosts)
+      // the driver connects to and discovers the ring from; `port` is the native
+      // port (default 9042). `keyspace` (optional) is the initial keyspace;
+      // `localDatacenter` (optional, e.g. `dc1`) enables token-aware DC-local
+      // routing; `user` is the optional auth username. The password lives in the
+      // OS keychain, never in params. No SSH tunnel (mirrors DynamoDB / MongoDB).
+      engine: "cassandra";
+      contactPoints: string;
+      port: number;
+      keyspace?: string;
+      localDatacenter?: string;
+      user?: string;
+      tlsMode: TlsMode;
     };
 
 /**
@@ -168,7 +184,7 @@ export interface SavedConnection {
  * renderer routes on: `"sql"` → the relational workspace, `"kv"` → the Redis
  * workspace. Lowercase on the wire, mirroring Rust's `ConnectionKind`.
  */
-export type ConnectionKind = "sql" | "kv" | "document" | "mongo";
+export type ConnectionKind = "sql" | "kv" | "document" | "mongo" | "cassandra";
 
 /**
  * Server identity for the Redis dashboard header — mirrors Rust's
@@ -324,6 +340,15 @@ export function connectionDetail(params: ConnectionParams): string {
       ? params.host + ":" + params.port + " · " + params.database
       : params.host + ":" + params.port;
   }
+  // Cassandra: "<contactPoints>:<port> · <keyspace>" (prototype detail
+  // "127.0.0.1:9042 · byteshop"). The contact-points field may already carry a
+  // port per host; the modal stores a bare host, so append the native port.
+  if (params.engine === "cassandra") {
+    const points = params.contactPoints.includes(":")
+      ? params.contactPoints
+      : params.contactPoints + ":" + params.port;
+    return params.keyspace ? points + " · " + params.keyspace : points;
+  }
   // database is optional now; omit the " · db" suffix when absent.
   return params.database
     ? params.host + ":" + params.port + " · " + params.database
@@ -338,7 +363,12 @@ export function connectionDetail(params: ConnectionParams): string {
 export function connectionIsTunneled(params: ConnectionParams): boolean {
   // Only the server engines carry an `ssh` field; SQLite (local file) and
   // DynamoDB (HTTPS to AWS) never tunnel.
-  if (params.engine === "sqlite" || params.engine === "dynamodb" || params.engine === "mongodb")
+  if (
+    params.engine === "sqlite" ||
+    params.engine === "dynamodb" ||
+    params.engine === "mongodb" ||
+    params.engine === "cassandra"
+  )
     return false;
   return params.ssh !== undefined;
 }
@@ -349,7 +379,12 @@ export function connectionIsTunneled(params: ConnectionParams): boolean {
  * Returns "" when the connection is not tunnelled.
  */
 export function tunnelTitle(params: ConnectionParams): string {
-  if (params.engine === "sqlite" || params.engine === "dynamodb" || params.engine === "mongodb")
+  if (
+    params.engine === "sqlite" ||
+    params.engine === "dynamodb" ||
+    params.engine === "mongodb" ||
+    params.engine === "cassandra"
+  )
     return "";
   if (params.ssh === undefined) return "";
   const { user, host, port } = params.ssh;

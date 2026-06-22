@@ -43,6 +43,8 @@ export function shellLabel(engine: Engine): string {
       return "partiql";
     case "mongodb":
       return "mongosh";
+    case "cassandra":
+      return "cqlsh";
     case "postgres":
     default:
       return "psql";

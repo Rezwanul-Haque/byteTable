@@ -1,0 +1,176 @@
+/* Cassandra schema-map styles (M19) — a DEDICATED copy of the prototype's
+   `.map-*` vocabulary, scoped under `.cass-map` so it is fully independent of the
+   Mongo map (`.mg-map`), the SQL schema_map slice, and the Dynamo map. Changing
+   any of those cannot affect the Cassandra map, and vice-versa. The `.cass-map`
+   prefix also lifts specificity above any unscoped `.map-*` from another slice. */
+
+.cass-map {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.cass-map .map-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+  flex-wrap: wrap;
+}
+.cass-map .map-title {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.cass-map .map-sub,
+.cass-map .map-hint {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.cass-map .map-zoom {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  width: 38px;
+  text-align: center;
+}
+.cass-map .map-canvas-wrap {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+  background-image: radial-gradient(
+    color-mix(in oklab, var(--border) 70%, transparent) 1px,
+    transparent 1px
+  );
+  background-size: 22px 22px;
+}
+.cass-map .map-canvas {
+  position: relative;
+}
+.cass-map .map-inner {
+  position: relative;
+  transform-origin: 0 0;
+}
+.cass-map .map-edges {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.cass-map .map-edge-path {
+  fill: none;
+  stroke: color-mix(in oklab, var(--accent) 55%, var(--border));
+  stroke-width: 1.5;
+}
+.cass-map .map-edge-dot {
+  fill: var(--accent);
+}
+.cass-map .map-edge-arrow {
+  fill: color-mix(in oklab, var(--accent) 25%, var(--bg0));
+  stroke: var(--accent);
+  stroke-width: 1;
+}
+.cass-map .map-edge-path.ref {
+  stroke: color-mix(in oklab, var(--text-faint) 80%, transparent);
+  stroke-dasharray: 5 4;
+  stroke-width: 1.4;
+}
+.cass-map .map-edge-dot.ref {
+  fill: var(--text-faint);
+}
+.cass-map .map-edge-arrow.ref {
+  fill: var(--bg0);
+  stroke: var(--text-faint);
+}
+.cass-map .map-card {
+  position: absolute;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+.cass-map .map-card:hover {
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+}
+.cass-map .map-card-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  height: 36px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  cursor: grab;
+  user-select: none;
+}
+.cass-map .map-card-head:active {
+  cursor: grabbing;
+}
+.cass-map .map-card-name {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cass-map .map-card-count {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+.cass-map .map-card-open {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: none;
+  border-radius: 5px;
+  color: var(--text-faint);
+  flex: none;
+  cursor: pointer;
+}
+.cass-map .map-card-open:hover {
+  color: var(--accent);
+  background: var(--bg3);
+}
+.cass-map .map-card-cols {
+  padding: 4px 0;
+}
+.cass-map .map-card-col {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+}
+.cass-map .map-col-icon {
+  width: 13px;
+  display: inline-flex;
+  flex: none;
+}
+.cass-map .map-col-name {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cass-map .map-col-name.is-fk {
+  color: var(--text);
+}
+.cass-map .map-col-type {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--text-faint);
+}
+.cass-map .map-col-more .map-col-name {
+  color: var(--text-faint);
+  font-style: italic;
+}

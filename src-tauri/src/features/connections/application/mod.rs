@@ -101,7 +101,8 @@ impl ConnectionManager {
             Some(OpenConnection::Sql(conn)) => Ok(Arc::clone(conn)),
             Some(OpenConnection::Kv(_))
             | Some(OpenConnection::Document(_))
-            | Some(OpenConnection::Mongo(_)) => Err(kind_mismatch("SQL")),
+            | Some(OpenConnection::Mongo(_))
+            | Some(OpenConnection::WideColumn(_)) => Err(kind_mismatch("SQL")),
             None => Err(not_open(handle)),
         }
     }
@@ -116,7 +117,8 @@ impl ConnectionManager {
             Some(OpenConnection::Kv(conn)) => Ok(Arc::clone(conn)),
             Some(OpenConnection::Sql(_))
             | Some(OpenConnection::Document(_))
-            | Some(OpenConnection::Mongo(_)) => Err(kind_mismatch("key-value")),
+            | Some(OpenConnection::Mongo(_))
+            | Some(OpenConnection::WideColumn(_)) => Err(kind_mismatch("key-value")),
             None => Err(not_open(handle)),
         }
     }
@@ -131,7 +133,8 @@ impl ConnectionManager {
             Some(OpenConnection::Document(conn)) => Ok(Arc::clone(conn)),
             Some(OpenConnection::Sql(_))
             | Some(OpenConnection::Kv(_))
-            | Some(OpenConnection::Mongo(_)) => Err(kind_mismatch("document-store")),
+            | Some(OpenConnection::Mongo(_))
+            | Some(OpenConnection::WideColumn(_)) => Err(kind_mismatch("document-store")),
             None => Err(not_open(handle)),
         }
     }
@@ -146,7 +149,27 @@ impl ConnectionManager {
             Some(OpenConnection::Mongo(conn)) => Ok(Arc::clone(conn)),
             Some(OpenConnection::Sql(_))
             | Some(OpenConnection::Kv(_))
-            | Some(OpenConnection::Document(_)) => Err(kind_mismatch("MongoDB")),
+            | Some(OpenConnection::Document(_))
+            | Some(OpenConnection::WideColumn(_)) => Err(kind_mismatch("MongoDB")),
+            None => Err(not_open(handle)),
+        }
+    }
+
+    /// The Cassandra wide-column connection behind a handle (M19). A handle of
+    /// any other family is the symmetric §5 error. Unused until the M19 query /
+    /// CRUD subtasks add wide-column commands; the accessor lands with the
+    /// scaffold so those slices have the kind-checked seam ready.
+    #[allow(dead_code)]
+    pub async fn get_wide_column(
+        &self,
+        handle: &ConnectionHandleId,
+    ) -> Result<Arc<dyn crate::shared::widecolumn::WideColumnConnection>, AppError> {
+        match self.open.read().await.get(handle) {
+            Some(OpenConnection::WideColumn(conn)) => Ok(Arc::clone(conn)),
+            Some(OpenConnection::Sql(_))
+            | Some(OpenConnection::Kv(_))
+            | Some(OpenConnection::Document(_))
+            | Some(OpenConnection::Mongo(_)) => Err(kind_mismatch("Cassandra")),
             None => Err(not_open(handle)),
         }
     }
@@ -178,6 +201,9 @@ impl ConnectionManager {
                     let _ = c.close().await;
                 }
                 OpenConnection::Mongo(c) => {
+                    let _ = c.close().await;
+                }
+                OpenConnection::WideColumn(c) => {
                     let _ = c.close().await;
                 }
             }
@@ -459,6 +485,10 @@ pub async fn open_connection<R: ConnectionRepository + ?Sized, S: SecretStore + 
         // `mongo_list_databases` / `mongo_list_collections`; the open result
         // only carries the `kind` the renderer routes on.
         OpenConnection::Mongo(_) => (Vec::new(), None),
+        // Cassandra (M19): no SQL schemas, no Redis keyspace. The Cassandra
+        // workspace fetches its keyspace + table list on mount (M19 §19.1); the
+        // open result only carries the `kind` the renderer routes on.
+        OpenConnection::WideColumn(_) => (Vec::new(), None),
     };
 
     let handle_id = manager.insert(connection).await;
@@ -516,6 +546,7 @@ pub async fn close_connection(
         Some(OpenConnection::Kv(connection)) => connection.close().await,
         Some(OpenConnection::Document(connection)) => connection.close().await,
         Some(OpenConnection::Mongo(connection)) => connection.close().await,
+        Some(OpenConnection::WideColumn(connection)) => connection.close().await,
         None => Ok(()),
     }
 }

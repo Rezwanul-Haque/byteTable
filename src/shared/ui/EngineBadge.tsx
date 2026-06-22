@@ -21,6 +21,9 @@ const ENGINE_META: Record<Engine, { label: string; short: string; color: string 
   dynamodb: { label: "DynamoDB", short: "Dy", color: "#4d77ff" },
   // MongoDB (M18): MongoDB-green, distinct from every other engine tint.
   mongodb: { label: "MongoDB", short: "Mg", color: "#13aa52" },
+  // Cassandra (M19): the Cassandra accent (prototype ui.jsx ENGINE_META),
+  // a cyan-blue distinct from Postgres/Dynamo blues and SQLite's teal.
+  cassandra: { label: "Cassandra", short: "Cs", color: "#1798c1" },
 };
 
 interface EngineBadgeProps {

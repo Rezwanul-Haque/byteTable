@@ -8,3 +8,4 @@ pub mod engine;
 pub mod error;
 pub mod keyvalue;
 pub mod mongo;
+pub mod widecolumn;

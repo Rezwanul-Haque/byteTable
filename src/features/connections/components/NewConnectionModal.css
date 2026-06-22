@@ -85,6 +85,58 @@
   color: var(--text-faint);
 }
 
+/* Inline "i" info button on a field label, with a hover/focus tooltip carrying a
+   long note (keeps the form compact). The tooltip text comes from `data-tip`. */
+.lbl-info {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  color: var(--text-faint);
+  border-radius: 5px;
+  padding: 1px;
+  cursor: help;
+  transition: color 0.1s;
+}
+.lbl-info:hover,
+.lbl-info:focus-visible {
+  color: var(--accent);
+  outline: none;
+}
+.lbl-info::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 0;
+  top: calc(100% + 7px);
+  z-index: 20;
+  width: 250px;
+  white-space: normal;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 400;
+  font-style: normal;
+  line-height: 1.5;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-dim);
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  transform: translateY(-3px);
+  pointer-events: none;
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease;
+}
+.lbl-info:hover::after,
+.lbl-info:focus-visible::after {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 .env-seg {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

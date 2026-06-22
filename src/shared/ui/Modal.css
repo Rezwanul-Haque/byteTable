@@ -16,6 +16,11 @@
 .modal {
   width: 480px;
   max-width: calc(100vw - 48px);
+  /* Never exceed the window: a tall form (e.g. the Cassandra connect modal, the
+     most fields) is clipped off the bottom otherwise. Cap to the viewport and
+     scroll the overflow so the actions row stays reachable. */
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
   background: var(--bg1);
   border: 1px solid var(--border);
   border-radius: 14px;

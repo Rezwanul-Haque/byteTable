@@ -64,11 +64,13 @@ const TYPES_BY_ENGINE: Record<Engine, string[]> = {
     "TIMESTAMP",
     "DATE",
   ],
-  // Redis / DynamoDB / MongoDB have no relational tables; never reached for
-  // create-table, but the record must be total.
+  // Redis / DynamoDB / MongoDB / Cassandra have no relational create-table here
+  // (Cassandra has its own CQL create flow, M19 §19.6); never reached, but the
+  // record must be total.
   redis: ["TEXT"],
   dynamodb: ["S"],
   mongodb: ["string"],
+  cassandra: ["text"],
 };
 
 /** The type a fresh column row defaults to per engine (the second-ish text type

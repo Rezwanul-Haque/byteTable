@@ -2,6 +2,7 @@
 //! its domain, application, ports, infrastructure, and command layers.
 
 pub mod browse;
+pub mod cassandra;
 pub mod connections;
 pub mod dynamo;
 pub mod export;

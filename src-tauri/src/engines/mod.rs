@@ -12,6 +12,7 @@
 //! `engines::postgres` (M12 Task 1) and `engines::mysql` (M12 Task 2) join the
 //! original `engines::sqlite`.
 
+pub mod cassandra;
 pub mod dynamo;
 pub mod mongo;
 pub mod mysql;

@@ -1,17 +1,19 @@
-# ByteTable test databases — Postgres, MySQL, Redis, DynamoDB Local.
-# Ports are non-standard (offset) so they don't clash with any local installs,
-# EXCEPT DynamoDB Local, which keeps the standard 8000 so the connect modal's
-# default "Local endpoint" (http://localhost:8000) works out of the box.
+# ByteTable test databases — Postgres, MySQL, Redis, DynamoDB Local, MongoDB,
+# Cassandra. Ports are non-standard (offset) so they don't clash with any local
+# installs, EXCEPT DynamoDB Local (8000), MongoDB (27017) and Cassandra (9042),
+# which keep their standard ports so the connect modal's defaults work as-is.
 #
 #   cd test-fixtures
-#   docker compose up -d          # start all four
+#   docker compose up -d          # start all six
 #   ./seed/seed-redis.sh          # seed Redis
 #   ./seed/seed-dynamo.sh         # seed DynamoDB (creates tables + items)
+#   ./seed/seed-cassandra.sh      # seed Cassandra (after the node is ready)
 #   docker compose down -v        # stop + wipe (so a later `up` re-seeds)
 #
-# Credentials are in README.md. SQL seed files auto-run only on FIRST init of an
-# empty data volume; `down -v` clears the volume so the next `up` re-seeds.
-# Redis + DynamoDB have no auto-init dir, so their seed scripts are run manually.
+# Credentials are in README.md. SQL + Mongo seed files auto-run only on FIRST
+# init of an empty data volume; `down -v` clears the volume so the next `up`
+# re-seeds. Redis + DynamoDB + Cassandra have no auto-init dir, so their seed
+# scripts are run manually.
 
 services:
   postgres:
@@ -83,9 +85,60 @@ services:
       - ./seed/mongo.js:/docker-entrypoint-initdb.d/seed.js:ro
       - bt-mongo-data:/data/db
 
+  # Cassandra (M19). The standard port 9042 is kept (not offset) so the connect
+  # modal's default works as-is. The node is placed in datacenter `dc1` (via
+  # GossipingPropertyFileSnitch + CASSANDRA_DC) so the connect modal's default
+  # local datacenter `dc1` matches and `NetworkTopologyStrategy {'dc1': 1}`
+  # keyspaces work on this single node. The Cassandra image has NO auto-init dir,
+  # so the CQL seed is mounted at /seed.cql and run manually by
+  # `./seed/seed-cassandra.sh` after the node is ready (like Redis/DynamoDB).
+  # Cassandra is JVM-heavy and takes ~30–60s to accept CQL; the healthcheck
+  # reflects readiness. `down -v` clears the volume.
+  cassandra:
+    image: cassandra:5
+    container_name: bt-cassandra
+    environment:
+      CASSANDRA_CLUSTER_NAME: ByteShop Cluster
+      CASSANDRA_DC: dc1
+      CASSANDRA_RACK: rack1
+      CASSANDRA_ENDPOINT_SNITCH: GossipingPropertyFileSnitch
+      # Critical for a host client: the driver opens its control connection to the
+      # contact point, then discovers each node and opens its pool to the address
+      # the node ADVERTISES. By default that is the container's internal IP
+      # (172.x), which the host can't reach → "pool is broken / connect timeout".
+      # Listen on all interfaces inside the container but advertise 127.0.0.1 to
+      # clients, which the published 9042 maps back into the container.
+      CASSANDRA_RPC_ADDRESS: 0.0.0.0
+      CASSANDRA_BROADCAST_RPC_ADDRESS: 127.0.0.1
+      # Cap the heap so the container is friendly on a dev laptop.
+      MAX_HEAP_SIZE: 512M
+      HEAP_NEWSIZE: 128M
+    # Cassandra 5 ships materialized views disabled (materialized_views_enabled:
+    # false). Flip it on in cassandra.yaml before the normal startup so the seed's
+    # orders_by_status MV (and the create-MV flow) works. The wrapper still execs
+    # the image's docker-entrypoint.sh so the CASSANDRA_* env edits above apply.
+    entrypoint:
+      - bash
+      - -c
+      - "grep -q '^materialized_views_enabled' /etc/cassandra/cassandra.yaml && sed -i 's/^materialized_views_enabled:.*/materialized_views_enabled: true/' /etc/cassandra/cassandra.yaml || echo 'materialized_views_enabled: true' >> /etc/cassandra/cassandra.yaml; exec docker-entrypoint.sh \"$@\""
+      - --
+    command: ["cassandra", "-f"]
+    ports:
+      - "9042:9042"
+    volumes:
+      - ./seed/cassandra.cql:/seed.cql:ro
+      - bt-cassandra-data:/var/lib/cassandra
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'DESCRIBE KEYSPACES' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 60s
+
 volumes:
   bt-pg-data:
   bt-mysql-data:
   bt-redis-data:
   bt-dynamo-data:
   bt-mongo-data:
+  bt-cassandra-data:

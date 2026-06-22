@@ -56,6 +56,7 @@ const ENGINES: { engine: Engine; label: string }[] = [
   { engine: "redis", label: "Redis" },
   { engine: "dynamodb", label: "DynamoDB" },
   { engine: "mongodb", label: "MongoDB" },
+  { engine: "cassandra", label: "Cassandra" },
 ];
 
 /** AWS regions offered in the DynamoDB connect form (prototype `AWS_REGIONS`). */
@@ -81,6 +82,7 @@ const DEFAULT_PORTS: Partial<Record<Engine, string>> = {
   mysql: "3306",
   redis: "6379",
   mongodb: "27017",
+  cassandra: "9042",
 };
 
 // The conventional superuser each engine ships with — prefilled into the User
@@ -152,6 +154,11 @@ interface FormState {
   // string used in URI mode.
   mongoConnMode: "fields" | "uri";
   mongoUri: string;
+  // Cassandra (M19). `datacenter` is the optional local datacenter for
+  // token-aware routing (`dc1`); the contact points reuse `host`, the keyspace
+  // reuses `db`, and the user/password/TLS fields are shared with the server
+  // engines.
+  datacenter: string;
   // Transient secrets — sent to the backend, never part of saved params.
   password: string;
   // SSH tunnel.
@@ -194,6 +201,7 @@ const INITIAL: FormState = {
   awsAccessKeyId: "",
   mongoConnMode: "fields",
   mongoUri: "mongodb://localhost:27017",
+  datacenter: "dc1",
   password: "",
   useSsh: false,
   sshHost: "",
@@ -296,6 +304,17 @@ function formStateFromConnection(c: SavedConnection): FormState {
       host: p.host,
       port: String(p.port),
       db: p.database ?? "",
+      user: p.user ?? "",
+      tls: p.tlsMode,
+    };
+  }
+  if (p.engine === "cassandra") {
+    return {
+      ...base,
+      host: p.contactPoints,
+      port: String(p.port),
+      db: p.keyspace ?? "",
+      datacenter: p.localDatacenter ?? "",
       user: p.user ?? "",
       tls: p.tlsMode,
     };
@@ -483,6 +502,7 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
     awsAccessKeyId,
     mongoConnMode,
     mongoUri,
+    datacenter,
     password,
     useSsh,
     sshHost,
@@ -545,6 +565,9 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
   const isDynamo = engine === "dynamodb";
   // MongoDB (M18): its own Host/port ⇄ Connection string form; no SSH tab.
   const isMongo = engine === "mongodb";
+  // Cassandra (M19): contact points + native port + optional keyspace + local
+  // datacenter; no SSH tab (the driver discovers the ring).
+  const isCassandra = engine === "cassandra";
 
   const pickEngine = (next: Engine) => dispatch({ type: "engine", engine: next });
 
@@ -638,6 +661,27 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
           host: host.trim(),
           port: mongoPort,
           ...(db.trim() ? { database: db.trim() } : {}),
+          ...(user.trim() ? { user: user.trim() } : {}),
+          tlsMode: tls,
+        },
+      };
+    }
+    // Cassandra (M19): contact points (host or comma-separated hosts) + native
+    // port, an optional keyspace + local datacenter, and an optional auth user.
+    // The password is a secret and travels via `secrets()`, never in params.
+    if (engine === "cassandra") {
+      if (!host.trim()) return { error: "Contact points are required" };
+      const cassPort = Number(port.trim());
+      if (!Number.isInteger(cassPort) || cassPort < 1 || cassPort > 65535) {
+        return { error: "Port must be a number between 1 and 65535" };
+      }
+      return {
+        params: {
+          engine: "cassandra",
+          contactPoints: host.trim(),
+          port: cassPort,
+          ...(db.trim() ? { keyspace: db.trim() } : {}),
+          ...(datacenter.trim() ? { localDatacenter: datacenter.trim() } : {}),
           ...(user.trim() ? { user: user.trim() } : {}),
           tlsMode: tls,
         },
@@ -903,7 +947,7 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
         ) : null}
       </div>
 
-      {!isFileBased && !isDynamo && !isMongo ? (
+      {!isFileBased && !isDynamo && !isMongo && !isCassandra ? (
         <div
           className="modal-tabs"
           role="tablist"
@@ -1164,6 +1208,91 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
               </label>
             </>
           )}
+        </div>
+      ) : isCassandra ? (
+        <div className="form-grid">
+          <div className="form-field">
+            <span className="form-field-label">TLS mode</span>
+            <Select
+              className="sel-block"
+              aria-label="TLS mode"
+              value={tls}
+              options={TLS_MODES.map((mode) => ({ value: mode, label: mode }))}
+              onChange={(v) => field({ tls: v })}
+            />
+          </div>
+          <label>
+            <span className="lbl-row">
+              Host
+              <span
+                className="lbl-info"
+                tabIndex={0}
+                role="img"
+                aria-label="Cassandra connects to contact points and discovers the rest of the ring. Set the host(s), the native-protocol port (9042), and the local datacenter for token-aware routing."
+                data-tip="Cassandra connects to contact points and discovers the rest of the ring. Set the host(s), the native-protocol port (9042), and the local datacenter for token-aware routing."
+              >
+                <Icon name="info" size={13} />
+              </span>
+            </span>
+            <input
+              value={host}
+              onChange={(e) => field({ host: e.target.value })}
+              placeholder="127.0.0.1"
+              spellCheck={false}
+            />
+          </label>
+          <label>
+            Port
+            <input
+              value={port}
+              onChange={(e) => field({ port: e.target.value, portTouched: true })}
+              spellCheck={false}
+            />
+          </label>
+          <label>
+            <span className="lbl-row">
+              Keyspace <span className="opt-tag">optional</span>
+            </span>
+            <input
+              value={db}
+              onChange={(e) => field({ db: e.target.value })}
+              placeholder="byteshop"
+              spellCheck={false}
+            />
+          </label>
+          <label>
+            <span className="lbl-row">
+              Local datacenter <span className="opt-tag">optional</span>
+            </span>
+            <input
+              value={datacenter}
+              onChange={(e) => field({ datacenter: e.target.value })}
+              placeholder="dc1"
+              spellCheck={false}
+            />
+          </label>
+          <label>
+            <span className="lbl-row">
+              User <span className="opt-tag">optional</span>
+            </span>
+            <input
+              value={user}
+              onChange={(e) => field({ user: e.target.value, userTouched: true })}
+              placeholder="cassandra"
+              spellCheck={false}
+            />
+          </label>
+          <label>
+            <span className="lbl-row">
+              Password <span className="opt-tag">optional</span>
+            </span>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => field({ password: e.target.value })}
+              placeholder="••••••••"
+            />
+          </label>
         </div>
       ) : isFileBased ? (
         <div className="form-grid">

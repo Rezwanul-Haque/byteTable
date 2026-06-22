@@ -21,6 +21,7 @@ import { Icon } from "../../shared/ui/Icon";
 import { IconBtn } from "../../shared/ui/IconBtn";
 import { useTabMenu } from "../../shared/ui/useTabMenu";
 import type { Workspace } from "../workspaces/types";
+import { CassandraShellSession } from "./CassandraShellSession";
 import { DynamoPartiqlSession } from "./DynamoPartiqlSession";
 import { MongoShellSession } from "./MongoShellSession";
 import { RedisTerminalSession } from "./RedisTerminalSession";
@@ -94,6 +95,9 @@ export function TerminalPanel({ workspace }: { workspace: Workspace }) {
     }
     if (workspace.saved.engine === "mongodb") {
       return <MongoShellSession workspace={workspace} session={s} />;
+    }
+    if (workspace.saved.engine === "cassandra") {
+      return <CassandraShellSession workspace={workspace} session={s} />;
     }
     return (
       <SqlTerminalTab

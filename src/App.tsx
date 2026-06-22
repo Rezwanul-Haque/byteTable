@@ -13,6 +13,7 @@ import { WorkspaceShell } from "./features/workspaces/components/WorkspaceShell"
 import { RedisWorkspace } from "./features/redis_browse/components/RedisWorkspace";
 import { DynamoWorkspace } from "./features/dynamo_browse/components/DynamoWorkspace";
 import { MongoWorkspace } from "./features/mongo_browse/components/MongoWorkspace";
+import { CassandraWorkspace } from "./features/cassandra_browse/components/CassandraWorkspace";
 import { selectShowConnect, useWorkspacesStore } from "./features/workspaces/state";
 import { useTrayWorkspaces } from "./features/workspaces/trayMenu";
 import {
@@ -155,6 +156,11 @@ export function App() {
               // M18: a MongoDB connection renders the MongoDB workspace (a fourth
               // sibling shell). Document → DynamoDB; key-value → Redis; the rest → SQL.
               <MongoWorkspace key={activeWorkspace.id} workspace={activeWorkspace} />
+            ) : activeWorkspace.kind === "cassandra" ? (
+              // M19: a Cassandra connection renders the Cassandra workspace (a
+              // fifth sibling shell, the wide-column vertical slice). Mongo →
+              // MongoDB; document → DynamoDB; key-value → Redis; the rest → SQL.
+              <CassandraWorkspace key={activeWorkspace.id} workspace={activeWorkspace} />
             ) : (
               <WorkspaceShell key={activeWorkspace.id} workspace={activeWorkspace} />
             )

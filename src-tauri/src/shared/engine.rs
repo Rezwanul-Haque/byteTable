@@ -62,6 +62,13 @@ pub enum Engine {
     /// implements its own MongoDB port family in [`crate::shared::mongo`]; the
     /// [`OpenConnection`] kind seam keeps it apart from every other family.
     Mongodb,
+    /// Cassandra (M19) — a wide-column store (cluster → keyspaces → tables with
+    /// partition/clustering keys, denormalized `*_by_*` query tables, CQL). NOT
+    /// relational and distinct from every NoSQL family above: CQL's
+    /// partition-key / clustering / `ALLOW FILTERING` semantics warrant their own
+    /// port family in [`crate::shared::widecolumn`]; the [`OpenConnection`] kind
+    /// seam keeps it apart from SQL / key-value / document / MongoDB.
+    Cassandra,
 }
 
 impl Engine {
@@ -74,6 +81,7 @@ impl Engine {
             Self::Redis => "Redis",
             Self::Dynamodb => "DynamoDB",
             Self::Mongodb => "MongoDB",
+            Self::Cassandra => "Cassandra",
         }
     }
 }
@@ -299,6 +307,25 @@ pub enum ConnectionParams {
         user: Option<String>,
         tls_mode: TlsMode,
     },
+    /// Cassandra (M19) — a wide-column store reached over the native (CQL)
+    /// protocol. `contact_points` is the host (or comma-separated list of hosts)
+    /// the driver connects to and discovers the rest of the ring from; `port` is
+    /// the native-protocol port (default 9042). `keyspace` (optional) is the
+    /// initial keyspace; `local_datacenter` (optional, e.g. `dc1`) enables
+    /// token-aware, DC-local routing. `user` is the optional auth username; the
+    /// password (PasswordAuthenticator) lives in the OS keychain, never here. No
+    /// SSH tunnel (mirrors DynamoDB / MongoDB).
+    Cassandra {
+        contact_points: String,
+        port: u16,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        keyspace: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        local_datacenter: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        user: Option<String>,
+        tls_mode: TlsMode,
+    },
 }
 
 impl ConnectionParams {
@@ -311,6 +338,7 @@ impl ConnectionParams {
             Self::Redis { .. } => Engine::Redis,
             Self::Dynamodb { .. } => Engine::Dynamodb,
             Self::Mongodb { .. } => Engine::Mongodb,
+            Self::Cassandra { .. } => Engine::Cassandra,
         }
     }
 
@@ -318,7 +346,10 @@ impl ConnectionParams {
     /// a bastion. `None` for SQLite and for direct server connections.
     pub fn ssh(&self) -> Option<&SshConfig> {
         match self {
-            Self::Sqlite { .. } | Self::Dynamodb { .. } | Self::Mongodb { .. } => None,
+            Self::Sqlite { .. }
+            | Self::Dynamodb { .. }
+            | Self::Mongodb { .. }
+            | Self::Cassandra { .. } => None,
             Self::Mysql { ssh, .. } | Self::Postgres { ssh, .. } | Self::Redis { ssh, .. } => {
                 ssh.as_ref()
             }
@@ -540,6 +571,45 @@ impl<'de> Deserialize<'de> for ConnectionParams {
                     host,
                     port,
                     database: opt_str("database"),
+                    user: opt_str("user"),
+                    tls_mode,
+                })
+            }
+            "cassandra" => {
+                // Cassandra carries the contact points (host or comma-separated
+                // hosts), the native port (default 9042), an optional initial
+                // keyspace + local datacenter, an optional auth user, and the
+                // granular `tlsMode` (legacy `tls` bool tolerated). No SSH.
+                let contact_points = value
+                    .get("contactPoints")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string)
+                    .ok_or_else(|| D::Error::custom("cassandra params missing 'contactPoints'"))?;
+                let port = value
+                    .get("port")
+                    .and_then(serde_json::Value::as_u64)
+                    .and_then(|p| u16::try_from(p).ok())
+                    .unwrap_or(9042);
+                let opt_str = |k: &str| {
+                    value
+                        .get(k)
+                        .and_then(|v| v.as_str())
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_string)
+                };
+                let tls_mode = match value.get("tlsMode") {
+                    Some(m) => TlsMode::deserialize(m.clone()).map_err(D::Error::custom)?,
+                    None => match value.get("tls").and_then(serde_json::Value::as_bool) {
+                        Some(true) => TlsMode::Prefer,
+                        Some(false) => TlsMode::Disable,
+                        None => TlsMode::default(),
+                    },
+                };
+                Ok(ConnectionParams::Cassandra {
+                    contact_points,
+                    port,
+                    keyspace: opt_str("keyspace"),
+                    local_datacenter: opt_str("localDatacenter"),
                     user: opt_str("user"),
                     tls_mode,
                 })
@@ -1313,6 +1383,8 @@ pub enum OpenConnection {
     Document(Arc<dyn DocumentStoreConnection>),
     /// A MongoDB connection (`Mongodb`, M18).
     Mongo(Arc<dyn crate::shared::mongo::MongoConnection>),
+    /// A Cassandra wide-column connection (`Cassandra`, M19).
+    WideColumn(Arc<dyn crate::shared::widecolumn::WideColumnConnection>),
 }
 
 impl OpenConnection {
@@ -1325,6 +1397,7 @@ impl OpenConnection {
             Self::Kv(_) => ConnectionKind::Kv,
             Self::Document(_) => ConnectionKind::Document,
             Self::Mongo(_) => ConnectionKind::Mongo,
+            Self::WideColumn(_) => ConnectionKind::WideColumn,
         }
     }
 
@@ -1335,6 +1408,7 @@ impl OpenConnection {
             Self::Kv(c) => c.engine_info(),
             Self::Document(c) => c.engine_info(),
             Self::Mongo(c) => c.engine_info(),
+            Self::WideColumn(c) => c.engine_info(),
         }
     }
 
@@ -1359,13 +1433,20 @@ impl OpenConnection {
         Self::Mongo(Arc::new(connection))
     }
 
+    /// Wrap a Cassandra wide-column connection (the `engines::cassandra` adapter).
+    pub fn wide_column(
+        connection: impl crate::shared::widecolumn::WideColumnConnection + 'static,
+    ) -> Self {
+        Self::WideColumn(Arc::new(connection))
+    }
+
     /// The SQL connection, consuming the enum, or `None` for a key-value one.
     /// Used by the SQL adapters' own tests, which open a connector and then
     /// exercise the [`EngineConnection`] surface directly.
     pub fn into_sql(self) -> Option<Arc<dyn EngineConnection>> {
         match self {
             Self::Sql(c) => Some(c),
-            Self::Kv(_) | Self::Document(_) | Self::Mongo(_) => None,
+            Self::Kv(_) | Self::Document(_) | Self::Mongo(_) | Self::WideColumn(_) => None,
         }
     }
 
@@ -1374,7 +1455,7 @@ impl OpenConnection {
     pub fn into_kv(self) -> Option<Arc<dyn KeyValueConnection>> {
         match self {
             Self::Kv(c) => Some(c),
-            Self::Sql(_) | Self::Document(_) | Self::Mongo(_) => None,
+            Self::Sql(_) | Self::Document(_) | Self::Mongo(_) | Self::WideColumn(_) => None,
         }
     }
 
@@ -1383,7 +1464,7 @@ impl OpenConnection {
     pub fn into_document(self) -> Option<Arc<dyn DocumentStoreConnection>> {
         match self {
             Self::Document(c) => Some(c),
-            Self::Sql(_) | Self::Kv(_) | Self::Mongo(_) => None,
+            Self::Sql(_) | Self::Kv(_) | Self::Mongo(_) | Self::WideColumn(_) => None,
         }
     }
 
@@ -1392,7 +1473,18 @@ impl OpenConnection {
     pub fn into_mongo(self) -> Option<Arc<dyn crate::shared::mongo::MongoConnection>> {
         match self {
             Self::Mongo(c) => Some(c),
-            Self::Sql(_) | Self::Kv(_) | Self::Document(_) => None,
+            Self::Sql(_) | Self::Kv(_) | Self::Document(_) | Self::WideColumn(_) => None,
+        }
+    }
+
+    /// The Cassandra wide-column connection, consuming the enum, or `None`
+    /// otherwise. Used by the `engines::cassandra` integration tests.
+    pub fn into_wide_column(
+        self,
+    ) -> Option<Arc<dyn crate::shared::widecolumn::WideColumnConnection>> {
+        match self {
+            Self::WideColumn(c) => Some(c),
+            Self::Sql(_) | Self::Kv(_) | Self::Document(_) | Self::Mongo(_) => None,
         }
     }
 }
@@ -1409,6 +1501,11 @@ pub enum ConnectionKind {
     Document,
     /// A MongoDB connection (M18) → the MongoDB workspace.
     Mongo,
+    /// A Cassandra wide-column connection (M19) → the Cassandra workspace. The
+    /// wire token is `"cassandra"` (not the family name) so the renderer routes
+    /// on the engine the user recognises, matching MILESTONE_19 §19.0.
+    #[serde(rename = "cassandra")]
+    WideColumn,
 }
 
 /// Opens and tests connections for one engine. One implementation per
@@ -2409,6 +2506,81 @@ mod tests {
     fn connection_kind_serializes_lowercase() {
         assert_eq!(serde_json::to_value(ConnectionKind::Sql).unwrap(), "sql");
         assert_eq!(serde_json::to_value(ConnectionKind::Kv).unwrap(), "kv");
+        // M19: the Cassandra family's wire token is "cassandra" (the engine the
+        // renderer routes on), not the internal `WideColumn` family name.
+        assert_eq!(
+            serde_json::to_value(ConnectionKind::WideColumn).unwrap(),
+            "cassandra"
+        );
+    }
+
+    #[test]
+    fn cassandra_params_wire_shape_is_camel_case_and_round_trips() {
+        let params = ConnectionParams::Cassandra {
+            contact_points: "127.0.0.1".into(),
+            port: 9042,
+            keyspace: Some("byteshop".into()),
+            local_datacenter: Some("dc1".into()),
+            user: None,
+            tls_mode: TlsMode::Disable,
+        };
+        assert_eq!(params.engine(), Engine::Cassandra);
+        assert!(params.ssh().is_none());
+        let json = serde_json::to_value(&params).unwrap();
+        assert_eq!(json["engine"], serde_json::json!("cassandra"));
+        assert_eq!(json["contactPoints"], serde_json::json!("127.0.0.1"));
+        assert_eq!(json["keyspace"], serde_json::json!("byteshop"));
+        assert_eq!(json["localDatacenter"], serde_json::json!("dc1"));
+        assert_eq!(json["tlsMode"], serde_json::json!("disable"));
+        // `user` is omitted when None; no relational `database` field exists.
+        assert!(json.get("user").is_none());
+        assert!(json.get("database").is_none());
+        let back: ConnectionParams = serde_json::from_value(json).unwrap();
+        assert_eq!(back, params);
+    }
+
+    #[test]
+    fn cassandra_params_default_port_optional_fields_and_legacy_tls() {
+        // Minimal payload: engine + contactPoints. port→9042; keyspace / dc /
+        // user → None; missing tlsMode defaults to Prefer.
+        let params: ConnectionParams = serde_json::from_value(
+            serde_json::json!({ "engine": "cassandra", "contactPoints": "h" }),
+        )
+        .unwrap();
+        assert_eq!(
+            params,
+            ConnectionParams::Cassandra {
+                contact_points: "h".into(),
+                port: 9042,
+                keyspace: None,
+                local_datacenter: None,
+                user: None,
+                tls_mode: TlsMode::Prefer,
+            }
+        );
+        // Full payload with the legacy `tls` bool tolerated.
+        let params: ConnectionParams = serde_json::from_value(serde_json::json!({
+            "engine": "cassandra", "contactPoints": "10.0.0.1,10.0.0.2", "port": 9043,
+            "keyspace": "ks", "localDatacenter": "dc2", "user": "cassandra", "tls": true
+        }))
+        .unwrap();
+        assert!(matches!(
+            params,
+            ConnectionParams::Cassandra {
+                port: 9043,
+                tls_mode: TlsMode::Prefer,
+                ..
+            }
+        ));
+        if let ConnectionParams::Cassandra {
+            user,
+            local_datacenter,
+            ..
+        } = &params
+        {
+            assert_eq!(user.as_deref(), Some("cassandra"));
+            assert_eq!(local_datacenter.as_deref(), Some("dc2"));
+        }
     }
 
     #[test]

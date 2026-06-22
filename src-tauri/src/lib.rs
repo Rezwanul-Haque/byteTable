@@ -8,6 +8,7 @@ use tauri::menu::{CheckMenuItemBuilder, Menu, MenuBuilder, MenuItemBuilder, Subm
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, Runtime, WindowEvent};
 
+use engines::cassandra::CassandraConnector;
 use engines::dynamo::DynamoConnector;
 use engines::mongo::MongoConnector;
 use engines::mysql::MysqlConnector;
@@ -165,6 +166,10 @@ pub fn run() {
             // `OpenConnection::Mongo`, kept apart from SQL / Redis / DynamoDB by
             // the manager's `get_mongo` kind seam.
             registry.register(Engine::Mongodb, Arc::new(MongoConnector));
+            // Cassandra (M19): a wide-column engine. Its connector returns an
+            // `OpenConnection::WideColumn`, kept apart from SQL / Redis /
+            // DynamoDB / MongoDB by the manager's `get_wide_column` kind seam.
+            registry.register(Engine::Cassandra, Arc::new(CassandraConnector));
             app.manage(ConnectionsState::new(
                 Box::new(repository),
                 registry,
@@ -321,6 +326,23 @@ pub fn run() {
             features::mongo::commands::mongo_insert_many,
             features::mongo::commands::mongo_create_index,
             features::mongo::commands::mongo_set_validator,
+            features::cassandra::commands::cassandra_list_keyspaces,
+            features::cassandra::commands::cassandra_list_tables,
+            features::cassandra::commands::cassandra_table_meta,
+            features::cassandra::commands::cassandra_cluster_status,
+            features::cassandra::commands::cassandra_query,
+            features::cassandra::commands::cassandra_insert_row,
+            features::cassandra::commands::cassandra_update_row,
+            features::cassandra::commands::cassandra_delete_row,
+            features::cassandra::commands::cassandra_delete_rows,
+            features::cassandra::commands::cassandra_run_cql,
+            features::cassandra::commands::cassandra_describe_table,
+            features::cassandra::commands::cassandra_create_index,
+            features::cassandra::commands::cassandra_drop_index,
+            features::cassandra::commands::cassandra_create_mv,
+            features::cassandra::commands::cassandra_drop_mv,
+            features::cassandra::commands::cassandra_create_keyspace,
+            features::cassandra::commands::cassandra_create_table,
             features::generate::commands::generate_preview,
             features::generate::commands::generate_run,
             features::generate::commands::generate_cancel,

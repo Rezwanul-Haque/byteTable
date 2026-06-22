@@ -6,13 +6,14 @@ Throwaway databases for exercising all engines. **Test data only — never produ
 
 ```sh
 cd test-fixtures
-docker compose up -d        # Postgres + MySQL + Redis + DynamoDB + MongoDB (Postgres/MySQL/MongoDB auto-seed on first init)
+docker compose up -d        # Postgres + MySQL + Redis + DynamoDB + MongoDB + Cassandra (Postgres/MySQL/MongoDB auto-seed on first init)
 ./seed/seed-redis.sh        # seed Redis (no auto-init dir for Redis)
 ./seed/seed-dynamo.sh       # seed DynamoDB (creates tables + items)
+./seed/seed-cassandra.sh    # seed Cassandra (waits for the node, ~30–60s)
 docker compose down -v      # stop + wipe volumes (next `up` re-seeds)
 ```
 
-Ports are offset (5**5432**/3**3306**/6**3790**) so they won't collide with any local Postgres/MySQL/Redis. DynamoDB Local keeps the standard **8000** and MongoDB the standard **27017** so the connect modal's defaults work as-is.
+Ports are offset (5**5432**/3**3306**/6**3790**) so they won't collide with any local Postgres/MySQL/Redis. DynamoDB Local keeps the standard **8000**, MongoDB the standard **27017**, and Cassandra the standard **9042** so the connect modal's defaults work as-is.
 
 ## Credentials — add these in ByteTable's "New connection" modal (TLS: disable)
 
@@ -76,6 +77,21 @@ No auth — use either connect mode (no password):
 
 Auto-seeds on first init (like the SQL engines) — no manual step.
 
+### Cassandra
+
+New connection → **Cassandra**:
+
+| field            | value         |
+| ---------------- | ------------- |
+| Contact points   | `127.0.0.1`   |
+| Port             | `9042`        |
+| Keyspace         | `byteshop` _(optional)_ |
+| Local datacenter | `dc1` _(optional — matches the container's DC)_ |
+| User / Password  | _(blank — no auth)_ |
+| TLS              | `disable`     |
+
+Run `./seed/seed-cassandra.sh` once after `up` (the node takes ~30–60s to accept CQL; re-running drops + recreates the keyspaces).
+
 ### SQLite
 
 Use **"Open SQLite file…"** → `test-fixtures/byteshop.db` (committed in this folder).
@@ -86,15 +102,17 @@ Use **"Open SQLite file…"** → `test-fixtures/byteshop.db` (committed in this
 - **Redis** (db0, 8 keys, one of every type): `user:1:name` (string), `config:json` (JSON string), `user:1` (hash), `queue:emails` (list), `tags:user:1` (set), `leaderboard:sales` (zset), `events:log` (stream), `session:abc` (string with a 3600s TTL).
 - **DynamoDB** (M17): `ShopApp` — the **single-table design** (PK + SK + `GSI1`, on-demand): heterogeneous `USER` profiles, `ORDER`s sharing each user's partition (item collections), and `PRODUCT`s with `L`/`N`/`M` attributes. Plus `Sessions` (partition-only, a `byUser` GSI, provisioned 5/5, a `ttl` TimeToLive attr) and `EventLog` (PK + SK with a `byType` GSI). Exercises the dashboard, scan/query (base table + GSI sort-key ops), item editor, schema map, and export/import.
 - **MongoDB** (M18): two databases — `byteshop` (`users` 24, `products` 12, `orders` 30, `reviews` 26) and `analytics` (`events` 40, `sessions` 18). Real `ObjectId`/`ISODate` values with referential integrity (`orders.userId`/`items.productId`, `reviews`/`events`/`sessions` → users/products) for the schema-map edges; secondary + unique + sparse indexes; a `$jsonSchema` validator on `byteshop.products`. Exercises the dashboard, Find (filter/projection/sort, IXSCAN vs COLLSCAN explain), aggregation pipeline (incl. `$lookup`), document editor + validation, inferred-schema/Structure, mongosh, schema map, and export/import.
+- **Cassandra** (M19): the **query-first wide-column** ByteShop model across two keyspaces — `byteshop` (`users_by_id` + a 2i on `email`, `orders_by_user` + the `orders_by_status` materialized view, `order_items_by_order`, `products_by_category`) and `analytics` (`events_by_user`, `sessions_by_day`, TimeWindowCompaction). Denormalized `*_by_*` tables with consistent `uuid`/`timeuuid` keys (so the schema map's shared-key edges line up) and CQL types throughout (`uuid`/`timeuuid`/`decimal`/`timestamp`/`date`/`inet`/`set`/`map`). `byteshop` uses `NetworkTopologyStrategy {dc1:1}`, `analytics` `SimpleStrategy RF 1`. Exercises the keyspace dashboard (tables/indexes/views + replication + cluster ring), the query builder (partition key, clustering order, ALLOW FILTERING), hybrid inline editing + row modal, the structure view (Kind badges, indexes/MVs), the standalone CQL tab + cqlsh, the schema map, the create flows, and export/import.
 
 ## Files
 
-- `docker-compose.yml` — the five services.
+- `docker-compose.yml` — the six services.
 - `seed/postgres.sql`, `seed/mysql.sql`, `seed/mongo.js` — auto-run on first container init.
-- `seed/seed-redis.sh`, `seed/seed-dynamo.sh` — run manually after `up`.
+- `seed/seed-redis.sh`, `seed/seed-dynamo.sh`, `seed/seed-cassandra.sh` — run manually after `up`.
+- `seed/cassandra.cql` — the CQL seed run by `seed-cassandra.sh` (mounted at `/seed.cql`).
 - `seed/sqlite.sql` — rebuilds `byteshop.db` (`rm -f byteshop.db && sqlite3 byteshop.db < seed/sqlite.sql`).
 - `byteshop.db` — ready-to-open SQLite sample.
 
 ## Note: containers may already be running
 
-The same containers (`bt-pg`/`bt-mysql`/`bt-redis`/`bt-dynamo`/`bt-mongo`) may already be up from an ad-hoc launch with identical credentials. If `docker compose up` reports a port/name conflict, remove the ad-hoc ones first: `docker rm -f bt-pg bt-mysql bt-redis bt-dynamo bt-mongo`, then `docker compose up -d`.
+The same containers (`bt-pg`/`bt-mysql`/`bt-redis`/`bt-dynamo`/`bt-mongo`/`bt-cassandra`) may already be up from an ad-hoc launch with identical credentials. If `docker compose up` reports a port/name conflict, remove the ad-hoc ones first: `docker rm -f bt-pg bt-mysql bt-redis bt-dynamo bt-mongo bt-cassandra`, then `docker compose up -d`.

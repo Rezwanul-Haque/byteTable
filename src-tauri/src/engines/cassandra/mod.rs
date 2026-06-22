@@ -242,10 +242,10 @@ async fn read_version(session: &Session) -> Result<Option<String>, AppError> {
         .into_rows_result()
         .map_err(|e| db_err("Cassandra version query failed", e))?;
 
-    for row in rows
+    let mut iter = rows
         .rows::<(String,)>()
-        .map_err(|e| db_err("Cassandra version query failed", e))?
-    {
+        .map_err(|e| db_err("Cassandra version query failed", e))?;
+    if let Some(row) = iter.next() {
         let (version,) = row.map_err(|e| db_err("Cassandra version query failed", e))?;
         return Ok(Some(version));
     }
@@ -776,9 +776,8 @@ impl WideColumnReader for CassandraConnection {
         } else {
             req.limit.min(ROW_CAP)
         };
-        let page_size = (page_rows as i32)
-            .try_into()
-            .map_err(|_| AppError::Invalid("Invalid page size".into()))?;
+        let page_size =
+            i32::try_from(page_rows).map_err(|_| AppError::Invalid("Invalid page size".into()))?;
         let mut statement = Statement::new(cql).with_page_size(page_size);
         statement.set_consistency(consistency_from(req.consistency.as_deref()));
 
@@ -880,8 +879,8 @@ impl WideColumnReader for CassandraConnection {
         }
         if low.starts_with("describe ") || low.starts_with("desc ") {
             let after = raw
-                .splitn(2, char::is_whitespace)
-                .nth(1)
+                .split_once(char::is_whitespace)
+                .map(|(_, rest)| rest)
                 .unwrap_or("")
                 .trim();
             let after = after

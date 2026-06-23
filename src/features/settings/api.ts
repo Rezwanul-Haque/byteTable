@@ -9,6 +9,8 @@ import type { MonoFontId, ThemeId, UiFontId } from "./catalogs";
 
 /** Rows fetched before paging. */
 export type DefaultLimit = 100 | 300 | 1000;
+/** Auto-refresh cadence in seconds. */
+export type AutoRefreshSec = 5 | 10 | 30;
 export type Density = "compact" | "comfortable";
 /** `"auto"` (theme's own accent) or a `#rrggbb` hex string. */
 export type Accent = "auto" | string;
@@ -30,6 +32,9 @@ export interface Settings {
   confirmProd: boolean;
   defaultLimit: DefaultLimit;
   restoreTabs: boolean;
+  /** Periodically refresh the sidebar object list (+ Redis keyspace). */
+  autoRefresh: boolean;
+  autoRefreshSec: AutoRefreshSec;
 }
 
 /** The single source of truth for the contract shape and default values. */
@@ -47,6 +52,8 @@ export const DEFAULTS: Settings = {
   confirmProd: true,
   defaultLimit: 300,
   restoreTabs: true,
+  autoRefresh: true,
+  autoRefreshSec: 10,
 };
 
 /**

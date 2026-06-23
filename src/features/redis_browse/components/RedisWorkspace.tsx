@@ -24,6 +24,7 @@ import { ENV_COLOR } from "../../../shared/ui/envColors";
 import { RedisCommandPalette } from "./RedisCommandPalette";
 import { RedisSidebar } from "./RedisSidebar";
 import { SidebarResizer } from "../../../shared/ui/SidebarResizer";
+import { useAutoRefresh } from "../../settings/useAutoRefresh";
 import { RedisStatusBar } from "./RedisStatusBar";
 import { RedisTabBar } from "./RedisTabBar";
 import { RedisTabContent } from "./RedisTabContent";
@@ -31,10 +32,6 @@ import "./RedisTabContent.css";
 
 /** Empty per-db overview when a workspace somehow opened without a keyspace. */
 const NO_DATABASES: KvDbInfo[] = [];
-
-/** Auto-refresh cadence for the keyspace (left tree + counts + dashboard) so
- *  TTL-expired keys drop out without a manual refresh. */
-const AUTO_REFRESH_MS = 5000;
 
 export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
   const closeWorkspace = useWorkspacesStore((state) => state.closeWorkspace);
@@ -131,12 +128,9 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
     };
   }, [handleId, rs.version]);
 
-  // Auto-refresh the keyspace on a timer so TTL-expired keys leave the left
-  // tree (and the counts + dashboard update) without a manual refresh.
-  useEffect(() => {
-    const id = setInterval(() => bumpVersion(wsId, initialDb), AUTO_REFRESH_MS);
-    return () => clearInterval(id);
-  }, [bumpVersion, wsId, initialDb]);
+  // Settings-driven auto-refresh of the keyspace (TTL-expired keys leave the
+  // tree; counts + dashboard update) — controlled by the shared toggle/interval.
+  useAutoRefresh(() => bumpVersion(wsId, initialDb));
 
   // Stable callbacks for the tab content (so the CLI persist effect + dashboard
   // fetch effect don't see a fresh identity every render).

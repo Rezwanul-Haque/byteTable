@@ -28,6 +28,8 @@ interface DynamoSidebarProps {
   onImportTable: (name: string) => void;
   onExportAll: () => void;
   onRefresh: () => void;
+  /** Spin the refresh icon while an auto-refresh tick is in flight. */
+  refreshing?: boolean;
   onCloseWorkspace: () => void;
 }
 
@@ -57,6 +59,7 @@ export function DynamoSidebar({
   onImportTable,
   onExportAll,
   onRefresh,
+  refreshing,
   onCloseWorkspace,
 }: DynamoSidebarProps) {
   const [q, setQ] = useState("");
@@ -107,7 +110,12 @@ export function DynamoSidebar({
         <IconBtn icon="schema" title="Schema map (single-table design)" onClick={onOpenMap} />
         <IconBtn icon="download" title="Export all tables" onClick={onExportAll} />
         <IconBtn icon="monitoring" title="Tables dashboard" onClick={onOpenDashboard} />
-        <IconBtn icon="refresh" title="Refresh tables" onClick={onRefresh} />
+        <IconBtn
+          icon="refresh"
+          title="Refresh tables"
+          onClick={onRefresh}
+          className={refreshing ? "sidebar-sync-spinning" : undefined}
+        />
       </div>
 
       <div className="ddb-sidebar-search">

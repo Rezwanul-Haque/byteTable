@@ -25,6 +25,7 @@ import { MongoPipelineTab, type MongoPipelineTabState } from "./MongoPipelineTab
 import { MongoSchemaMap } from "./MongoSchemaMap";
 import { MongoSidebar } from "./MongoSidebar";
 import { SidebarResizer } from "../../../shared/ui/SidebarResizer";
+import { useAutoRefresh } from "../../settings/useAutoRefresh";
 import { useMongoActiveDbStore, useMongoShellStore } from "../shellState";
 import { useMongoTabsStore, type MongoWorkspaceTab as Tab } from "../workspaceTabs";
 // Shared chrome the Mongo slice REUSES (per MILESTONE_18: "do not re-style it").
@@ -250,6 +251,11 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
     void loadCollections(db);
   };
 
+  // Settings-driven auto-refresh: reload only the sidebar collection list (not
+  // the version bump — that would re-run the active query/grid). The returned
+  // flag spins the sidebar's refresh icon once per tick.
+  const refreshSpinning = useAutoRefresh(() => void loadCollections(db));
+
   // Ctrl/⌘+` toggles the docked mongosh panel (VS Code convention, like the
   // other engines' consoles).
   useEffect(() => {
@@ -292,6 +298,7 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
         onImportColl={(c) => setImportTarget({ coll: c })}
         onExportAll={() => setExportJob({ scope: "all" })}
         onRefresh={refresh}
+        refreshing={refreshSpinning}
         onCloseWorkspace={() => closeWorkspace(workspace.id)}
       />
       <SidebarResizer />

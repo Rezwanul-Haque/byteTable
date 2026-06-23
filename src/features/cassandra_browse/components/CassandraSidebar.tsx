@@ -42,6 +42,8 @@ interface CassandraSidebarProps {
   onCreateTable: () => void;
   onAddIndex: (table: string) => void;
   onRefresh: () => void;
+  /** Spin the refresh icon while an auto-refresh tick is in flight. */
+  refreshing?: boolean;
   onCloseWorkspace: () => void;
 }
 
@@ -67,6 +69,7 @@ export function CassandraSidebar({
   onCreateTable,
   onAddIndex,
   onRefresh,
+  refreshing,
   onCloseWorkspace,
 }: CassandraSidebarProps) {
   const [q, setQ] = useState("");
@@ -162,7 +165,12 @@ export function CassandraSidebar({
           ) : null}
         </div>
         <IconBtn icon="schema" title="Schema map" onClick={onOpenMap} />
-        <IconBtn icon="refresh" title="Refresh tables" onClick={onRefresh} />
+        <IconBtn
+          icon="refresh"
+          title="Refresh tables"
+          onClick={onRefresh}
+          className={refreshing ? "sidebar-sync-spinning" : undefined}
+        />
         <IconBtn icon="monitoring" title="Keyspace dashboard" onClick={onOpenDashboard} />
       </div>
 

@@ -44,6 +44,7 @@ import { type ExportKind } from "../../export/exportFlow";
 import { ImportModal } from "../../import/components/ImportModal";
 import { SchemaImportModal } from "../../import/components/SchemaImportModal";
 import { tablesKey, columnsKey, useIntrospectionStore } from "../../introspection/state";
+import { useAutoRefresh } from "../../settings/useAutoRefresh";
 import { useWorkspacesStore } from "../state";
 import { useTabMetaStore } from "../tabMeta";
 import type { Workspace } from "../types";
@@ -176,6 +177,11 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   useEffect(() => {
     void loadTables(handleId, schemaName);
   }, [handleId, schemaName, loadTables]);
+
+  // Settings-driven auto-refresh: force-reintrospect the table list so new /
+  // dropped tables show up. Sidebar list only — the active grid stays manual.
+  // The returned flag spins the refresh icon once per tick.
+  const autoSpinning = useAutoRefresh(() => void loadTables(handleId, schemaName, { force: true }));
 
   // Lazily fetch columns for expanded tables that exist in the current
   // list. Re-runs when refresh rewrites the entry (fetchedAt bump dropped
@@ -460,7 +466,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
           icon="sync"
           title="Refresh schema"
           onClick={refresh}
-          className={refreshing ? "sidebar-sync-spinning" : undefined}
+          className={refreshing || autoSpinning ? "sidebar-sync-spinning" : undefined}
         />
       </div>
 

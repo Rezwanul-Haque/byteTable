@@ -15,6 +15,7 @@ import { ENV_COLOR } from "../../../shared/ui/envColors";
 import { Icon } from "../../../shared/ui/Icon";
 import { useTabMenu } from "../../../shared/ui/useTabMenu";
 import { useWorkspacesStore } from "../../workspaces/state";
+import { useAutoRefresh } from "../../settings/useAutoRefresh";
 import type { Workspace } from "../../workspaces/types";
 import { dynamoListTables, type TableDescriptor } from "../api";
 import { useDynamoTabsStore, type DynamoWorkspaceTab } from "../workspaceTabs";
@@ -126,6 +127,10 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
     void refreshTables();
   }, [refreshTables]);
 
+  // Settings-driven auto-refresh of the sidebar table list. The returned flag
+  // spins the sidebar's refresh icon once per tick.
+  const refreshSpinning = useAutoRefresh(() => void refreshTables());
+
   const activeTab = tabs.find((t) => t.id === activeId);
 
   const openTable = (name: string) => {
@@ -203,6 +208,7 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
         onImportTable={(t) => setImportTarget(t)}
         onExportAll={() => setExportJob({ scope: "all" })}
         onRefresh={() => void refreshTables()}
+        refreshing={refreshSpinning}
         onCloseWorkspace={() => closeWorkspace(workspace.id)}
       />
       <SidebarResizer />

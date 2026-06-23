@@ -41,6 +41,7 @@ export function MongoSidebar({
   onImportColl,
   onExportAll,
   onRefresh,
+  refreshing,
   onCloseWorkspace,
 }: {
   workspaceName: string;
@@ -62,6 +63,8 @@ export function MongoSidebar({
   onImportColl: (coll: string | null) => void;
   onExportAll: () => void;
   onRefresh: () => void;
+  /** Spin the refresh icon while an auto-refresh tick is in flight. */
+  refreshing?: boolean;
   onCloseWorkspace: () => void;
 }) {
   const [q, setQ] = useState("");
@@ -147,7 +150,12 @@ export function MongoSidebar({
           ) : null}
         </div>
         <IconBtn icon="schema" title="Schema map" onClick={onOpenMap} />
-        <IconBtn icon="refresh" title="Refresh collections" onClick={onRefresh} />
+        <IconBtn
+          icon="refresh"
+          title="Refresh collections"
+          onClick={onRefresh}
+          className={refreshing ? "sidebar-sync-spinning" : undefined}
+        />
         <IconBtn icon="monitoring" title="Database dashboard" onClick={onOpenDashboard} />
       </div>
 

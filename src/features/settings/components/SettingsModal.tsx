@@ -9,7 +9,7 @@ import { Modal } from "../../../shared/ui/Modal";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { useToast } from "../../../shared/ui/toastContext";
-import type { DefaultLimit, Density, Settings } from "../api";
+import type { AutoRefreshSec, DefaultLimit, Density, Settings } from "../api";
 import {
   ACCENTS,
   monoMetaFor,
@@ -506,6 +506,30 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
                   onChange={(v) => setSetting("relativeTime", v)}
                 />
               </SetRow>
+
+              <div className="set-section-label">Live data</div>
+              <SetRow
+                label="Auto-refresh"
+                hint="Periodically refresh the sidebar object list (and the Redis keyspace)"
+              >
+                <SetToggle
+                  on={settings.autoRefresh}
+                  onChange={(v) => setSetting("autoRefresh", v)}
+                />
+              </SetRow>
+              {settings.autoRefresh ? (
+                <SetRow label="Refresh every" hint="How often the lists re-check the server">
+                  <SetSeg<AutoRefreshSec>
+                    value={settings.autoRefreshSec}
+                    onChange={(v) => setSetting("autoRefreshSec", v)}
+                    options={[
+                      { value: 5, label: "5s" },
+                      { value: 10, label: "10s" },
+                      { value: 30, label: "30s" },
+                    ]}
+                  />
+                </SetRow>
+              ) : null}
             </>
           ) : null}
 

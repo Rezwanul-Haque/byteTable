@@ -81,6 +81,9 @@ fn default_density() -> Density {
 fn default_default_limit() -> u32 {
     300
 }
+fn default_auto_refresh_sec() -> u32 {
+    10
+}
 fn default_true() -> bool {
     true
 }
@@ -121,6 +124,13 @@ pub struct Settings {
     pub default_limit: u32,
     #[serde(default = "default_true")]
     pub restore_tabs: bool,
+    /// Periodically refresh the sidebar object list (all engines) + the Redis
+    /// keyspace. On by default.
+    #[serde(default = "default_true")]
+    pub auto_refresh: bool,
+    /// Auto-refresh cadence in seconds — 5, 10, or 30 in the UI.
+    #[serde(default = "default_auto_refresh_sec")]
+    pub auto_refresh_sec: u32,
 }
 
 impl Default for Settings {
@@ -139,6 +149,8 @@ impl Default for Settings {
             confirm_prod: true,
             default_limit: default_default_limit(),
             restore_tabs: true,
+            auto_refresh: true,
+            auto_refresh_sec: default_auto_refresh_sec(),
         }
     }
 }
@@ -163,6 +175,8 @@ mod tests {
         assert!(s.confirm_prod);
         assert_eq!(s.default_limit, 300);
         assert!(s.restore_tabs);
+        assert!(s.auto_refresh);
+        assert_eq!(s.auto_refresh_sec, 10);
     }
 
     #[test]
@@ -197,6 +211,8 @@ mod tests {
             confirm_prod: false,
             default_limit: 1000,
             restore_tabs: false,
+            auto_refresh: false,
+            auto_refresh_sec: 30,
         };
         let json = serde_json::to_string(&s).expect("serialize");
         let back: Settings = serde_json::from_str(&json).expect("deserialize");

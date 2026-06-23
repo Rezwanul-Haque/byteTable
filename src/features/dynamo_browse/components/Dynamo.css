@@ -2,6 +2,18 @@
    ByteTable.html, scoped to the document-store workspace. Reuses the shared
    chrome (.workspace, .sidebar, .main-col, .seg, .ws-chip, .env-tag). */
 
+/* Refresh icon spin (auto-refresh tick / manual). Dynamo doesn't import the
+   SQL Sidebar.css, so the keyframe + class live here too. */
+@keyframes ddb-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.ddb-sidebar .sidebar-sync-spinning {
+  animation: ddb-spin 0.7s linear infinite;
+  color: var(--accent);
+}
+
 .ddb-workspace {
   --ddb-pk: #5aa7f5;
   --ddb-sk: #b08cff;

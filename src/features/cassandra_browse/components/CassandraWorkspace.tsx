@@ -38,6 +38,7 @@ import { CassandraQueryTab } from "./CassandraQueryTab";
 import { CassandraSchemaMap } from "./CassandraSchemaMap";
 import { CassandraSidebar } from "./CassandraSidebar";
 import { SidebarResizer } from "../../../shared/ui/SidebarResizer";
+import { useAutoRefresh } from "../../settings/useAutoRefresh";
 import { CassandraTableTab } from "./CassandraTableTab";
 import { useCassTabsStore } from "../workspaceTabs";
 // Shared chrome the Cassandra slice REUSES (importing the owning components' CSS
@@ -250,6 +251,12 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
     toast("Schema refreshed", "ok");
   };
 
+  // Settings-driven auto-refresh of the sidebar table list (silent — no toast).
+  // The returned flag spins the sidebar's refresh icon once per tick.
+  const refreshSpinning = useAutoRefresh(() => {
+    if (ks) void loadTables(ks);
+  });
+
   const openShell = () => openPanel(workspace.id, termLabel);
   const toggleShell = () => togglePanel(workspace.id, termLabel);
 
@@ -307,6 +314,7 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
         onCreateTable={() => setCreateTbl(true)}
         onAddIndex={(table) => setAddIdxTable(table)}
         onRefresh={refresh}
+        refreshing={refreshSpinning}
         onCloseWorkspace={() => closeWorkspace(workspace.id)}
       />
       <SidebarResizer />

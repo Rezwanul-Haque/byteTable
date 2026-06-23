@@ -7,7 +7,7 @@
 // Schema (keyspaces, table descriptors) + cluster status are fetched from the
 // backend on mount and on keyspace switch / refresh. No COUNT(*) is ever issued.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { isAppErrorPayload } from "../../../shared/api/error";
 import { ENV_COLOR } from "../../../shared/ui/envColors";
@@ -276,6 +276,13 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabs]);
 
+  // Scroll the active tab into view when it changes so a newly-opened tab past
+  // the scrolled edge isn't left hidden.
+  const activeTabRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    activeTabRef.current?.scrollIntoView({ inline: "nearest", block: "nearest" });
+  }, [activeId]);
+
   return (
     <div className="workspace" data-screen-label={"Cassandra workspace: " + workspace.name}>
       <CassandraSidebar
@@ -309,6 +316,7 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
             {tabs.map((t) => (
               <div
                 key={t.id}
+                ref={t.id === activeId ? activeTabRef : undefined}
                 className={"tab" + (t.id === activeId ? " active" : "")}
                 onClick={() => setActiveId(t.id)}
                 onMouseDown={(e) => {

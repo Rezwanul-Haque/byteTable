@@ -5,7 +5,7 @@
 // dashboard / table / map. PartiQL is NOT a tab — it docks as the shared bottom
 // TerminalPanel (like the SQL/Redis console), per dynamo-shell.jsx.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { isAppErrorPayload } from "../../../shared/api/error";
 import { connectionDetail } from "../../connections/api";
@@ -174,6 +174,13 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
   const detail = connectionDetail(params);
   const descOf = (name?: string) => tables.find((t) => t.name === name);
 
+  // Scroll the active tab into view when it changes so a newly-opened tab past
+  // the scrolled edge isn't left hidden.
+  const activeTabRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    activeTabRef.current?.scrollIntoView({ inline: "nearest", block: "nearest" });
+  }, [activeId]);
+
   return (
     <div
       className="workspace ddb-workspace"
@@ -205,6 +212,7 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
             {tabs.map((t) => (
               <div
                 key={t.id}
+                ref={t.id === activeId ? activeTabRef : undefined}
                 className={"ddb-tab" + (t.id === activeId ? " active" : "")}
                 onClick={() => setActiveId(t.id)}
                 onMouseDown={(e) => {

@@ -16,6 +16,10 @@
 
 .redis-main .tabbar-tabs {
   display: flex;
+  /* Shrink + scroll within the tabs area so the pinned Terminal control stays
+     reachable when many key tabs are open. */
+  flex: 1;
+  min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
 }

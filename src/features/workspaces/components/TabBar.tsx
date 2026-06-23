@@ -8,7 +8,12 @@
 // we keep that but make them keyboard-operable (Enter/Space select, Delete
 // closes) and label the strip for a11y.
 
-import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 
 import { Icon } from "../../../shared/ui/Icon";
 import { useTabMenu } from "../../../shared/ui/useTabMenu";
@@ -69,6 +74,12 @@ export function TabBar({
     ids: tabs.map((t) => t.id),
     close: (ids) => ids.forEach(onClose),
   });
+  // Scroll the active tab into view when it changes — so a tab opened (and made
+  // active) while the bar is scrolled past the edge isn't left hidden.
+  const activeTabRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    activeTabRef.current?.scrollIntoView({ inline: "nearest", block: "nearest" });
+  }, [activeTabId]);
   return (
     <div className="tabbar" role="tablist" aria-label="Open tabs">
       <div className="tabbar-tabs">
@@ -95,6 +106,7 @@ export function TabBar({
           return (
             <div
               key={tab.id}
+              ref={active ? activeTabRef : undefined}
               className={"tab" + (active ? " active" : "")}
               role="tab"
               aria-selected={active}

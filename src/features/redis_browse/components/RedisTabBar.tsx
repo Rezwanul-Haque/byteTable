@@ -5,7 +5,12 @@
 // docked console panel). The right-aligned terminal IconBtn toggles that panel
 // (mirrors the SQL TabBar). The dashboard tab is non-closable.
 
-import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 
 import { Icon } from "../../../shared/ui/Icon";
 import { useTabMenu } from "../../../shared/ui/useTabMenu";
@@ -47,6 +52,12 @@ export function RedisTabBar({
     close: (ids) => ids.forEach(onClose),
     canClose: (id) => tabs.find((t) => t.id === id)?.kind !== "dashboard",
   });
+  // Bring the active tab into view when it changes (a newly-opened tab that
+  // landed past the scrolled edge would otherwise stay hidden).
+  const activeTabRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    activeTabRef.current?.scrollIntoView({ inline: "nearest", block: "nearest" });
+  }, [activeTabId]);
   return (
     <div className="tabbar" role="tablist" aria-label="Redis tabs">
       <div className="tabbar-tabs">
@@ -73,6 +84,7 @@ export function RedisTabBar({
           return (
             <div
               key={tab.id}
+              ref={active ? activeTabRef : undefined}
               className={"tab" + (active ? " active" : "")}
               role="tab"
               aria-selected={active}

@@ -208,6 +208,9 @@
 .ddb-tabbar-tabs {
   display: flex;
   flex: 1;
+  /* min-width:0 is required alongside flex:1 — otherwise the item's auto
+     min-width keeps it from shrinking and the tools get pushed off. */
+  min-width: 0;
   overflow-x: auto;
 }
 .ddb-tab {
@@ -258,6 +261,7 @@
   display: flex;
   align-items: center;
   padding: 0 6px;
+  flex: none;
 }
 .ddb-tabbar-tool {
   display: flex;

@@ -32,6 +32,18 @@ createRoot(rootElement).render(
   </StrictMode>,
 );
 
+// Suppress the webview's native right-click menu (Reload / Inspect Element) in
+// production builds — it can reload the whole renderer and exposes devtools,
+// neither of which belongs in a shipped app. Editable fields keep their native
+// menu so copy/paste still works there. Left enabled in dev for devtools.
+if (import.meta.env.PROD) {
+  document.addEventListener("contextmenu", (event) => {
+    const target = event.target as HTMLElement | null;
+    const editable = target?.closest?.("input, textarea, [contenteditable='true']");
+    if (!editable) event.preventDefault();
+  });
+}
+
 // Dismiss the index.html splash once React has painted, keeping it up long
 // enough to read (matches the prototype's ~1.4s min). Two rAFs ⇒ after the
 // first committed frame; then fade out (.hide) and remove.

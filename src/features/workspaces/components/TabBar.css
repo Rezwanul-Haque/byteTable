@@ -12,6 +12,13 @@
 
 .tabbar-tabs {
   display: flex;
+  /* Shrink-only (don't grow): the tabs area stays content-sized so the "+"
+     hugs the last tab, but min-width:0 lets it shrink + scroll WITHIN itself
+     when there are too many tabs — instead of growing and shoving the "+" /
+     Terminal off the right edge. `.tabbar-tools` margin-left:auto keeps the
+     Terminal pinned far-right when there is spare room. */
+  flex: 0 1 auto;
+  min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -109,6 +116,8 @@
   display: flex;
   align-items: center;
   padding-right: 6px;
+  /* Never scroll away or shrink — stays pinned at the right while tabs scroll. */
+  flex: none;
 }
 .tabbar-tool {
   display: inline-flex;

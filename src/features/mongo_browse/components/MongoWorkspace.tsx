@@ -6,7 +6,7 @@
 // and Ctrl/⌘+` toggle the shell tab. Ported from the prototype's MongoWorkspace,
 // with all data fetched from the backend.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { isAppErrorPayload } from "../../../shared/api/error";
 import { ENV_COLOR } from "../../../shared/ui/envColors";
@@ -263,6 +263,13 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [togglePanel, workspace.id, termLabel]);
 
+  // Scroll the active tab into view when it changes (newly-opened tabs past the
+  // scrolled edge stay hidden otherwise).
+  const activeTabRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    activeTabRef.current?.scrollIntoView({ inline: "nearest", block: "nearest" });
+  }, [activeId]);
+
   return (
     <div className="workspace" data-screen-label={"MongoDB workspace: " + workspace.name}>
       <MongoSidebar
@@ -294,6 +301,7 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
             {tabs.map((t) => (
               <div
                 key={t.id}
+                ref={t.id === activeId ? activeTabRef : undefined}
                 className={"tab" + (t.id === activeId ? " active" : "")}
                 onClick={() => setActiveId(t.id)}
                 onMouseDown={(e) => {

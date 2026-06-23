@@ -12,6 +12,13 @@
   z-index: 6;
 }
 
+/* Sidebar on the right: the seam is at the window-width minus the sidebar. */
+body.bt-sidebar-right .sidebar-resizer {
+  left: auto;
+  right: var(--sidebar-w, 248px);
+  transform: translateX(4px);
+}
+
 /* The visible 2px line, only tinted on hover / while dragging. */
 .sidebar-resizer::after {
   content: "";

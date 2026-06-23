@@ -33,6 +33,19 @@
   grid-template-areas: "sidebar main" "status status";
 }
 
+/* Sidebar-on-right (Settings → Appearance → Sidebar position). Flips the grid
+   columns + areas, and moves the divider border to the sidebar's inner edge. */
+body.bt-sidebar-right .workspace {
+  grid-template-columns: 1fr var(--sidebar-w, 248px);
+  grid-template-areas: "main sidebar" "status status";
+}
+body.bt-sidebar-right .sidebar,
+body.bt-sidebar-right .redis-sidebar,
+body.bt-sidebar-right .ddb-sidebar {
+  border-right: none;
+  border-left: 1px solid var(--border);
+}
+
 .main-col {
   grid-area: main;
   display: flex;

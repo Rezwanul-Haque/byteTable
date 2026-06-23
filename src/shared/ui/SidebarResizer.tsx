@@ -32,9 +32,13 @@ export function SidebarResizer() {
     const root = document.documentElement;
     const startX = e.clientX;
     const startW = parseFloat(getComputedStyle(root).getPropertyValue("--sidebar-w")) || 248;
+    // When the sidebar is on the right, dragging left (negative dx) widens it,
+    // so the delta sign flips.
+    const rightSide = document.body.classList.contains("bt-sidebar-right");
 
     const onMove = (ev: globalThis.MouseEvent) => {
-      const w = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, startW + (ev.clientX - startX)));
+      const dx = (ev.clientX - startX) * (rightSide ? -1 : 1);
+      const w = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, startW + dx));
       root.style.setProperty("--sidebar-w", w + "px");
     };
     const onUp = () => {

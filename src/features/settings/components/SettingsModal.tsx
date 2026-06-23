@@ -9,7 +9,7 @@ import { Modal } from "../../../shared/ui/Modal";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { useToast } from "../../../shared/ui/toastContext";
-import type { AutoRefreshSec, DefaultLimit, Density, Settings } from "../api";
+import type { AutoRefreshSec, DefaultLimit, Density, Settings, SidebarSide } from "../api";
 import {
   ACCENTS,
   monoMetaFor,
@@ -393,6 +393,18 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
                 <SetToggle
                   on={settings.reduceMotion}
                   onChange={(v) => setSetting("reduceMotion", v)}
+                />
+              </SetRow>
+
+              <div className="set-section-label">Layout</div>
+              <SetRow label="Sidebar position" hint="Which side the table / object list sits on">
+                <SetSeg<SidebarSide>
+                  value={settings.sidebarSide}
+                  onChange={(v) => setSetting("sidebarSide", v)}
+                  options={[
+                    { value: "left", label: "Left" },
+                    { value: "right", label: "Right" },
+                  ]}
                 />
               </SetRow>
             </>

@@ -67,5 +67,6 @@ export function applySettings(input: Partial<Settings> | null | undefined): void
     body.classList.toggle("bt-reduce-motion", s.reduceMotion);
     body.classList.toggle("bt-no-rowhover", !s.highlightRow);
     body.classList.toggle("bt-light", !!theme.light);
+    body.classList.toggle("bt-sidebar-right", s.sidebarSide === "right");
   }
 }

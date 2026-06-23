@@ -60,6 +60,15 @@ pub enum Density {
     Comfortable,
 }
 
+/// Which side of the workspace the object-list sidebar sits on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SidebarSide {
+    #[default]
+    Left,
+    Right,
+}
+
 fn default_theme() -> Theme {
     Theme::default()
 }
@@ -77,6 +86,9 @@ fn default_font_size() -> u8 {
 }
 fn default_density() -> Density {
     Density::default()
+}
+fn default_sidebar_side() -> SidebarSide {
+    SidebarSide::default()
 }
 fn default_default_limit() -> u32 {
     300
@@ -131,6 +143,9 @@ pub struct Settings {
     /// Auto-refresh cadence in seconds — 5, 10, or 30 in the UI.
     #[serde(default = "default_auto_refresh_sec")]
     pub auto_refresh_sec: u32,
+    /// Which side the object-list sidebar renders on. Left by default.
+    #[serde(default = "default_sidebar_side")]
+    pub sidebar_side: SidebarSide,
 }
 
 impl Default for Settings {
@@ -151,6 +166,7 @@ impl Default for Settings {
             restore_tabs: true,
             auto_refresh: true,
             auto_refresh_sec: default_auto_refresh_sec(),
+            sidebar_side: default_sidebar_side(),
         }
     }
 }
@@ -177,6 +193,7 @@ mod tests {
         assert!(s.restore_tabs);
         assert!(s.auto_refresh);
         assert_eq!(s.auto_refresh_sec, 10);
+        assert_eq!(s.sidebar_side, SidebarSide::Left);
     }
 
     #[test]
@@ -213,6 +230,7 @@ mod tests {
             restore_tabs: false,
             auto_refresh: false,
             auto_refresh_sec: 30,
+            sidebar_side: SidebarSide::Right,
         };
         let json = serde_json::to_string(&s).expect("serialize");
         let back: Settings = serde_json::from_str(&json).expect("deserialize");

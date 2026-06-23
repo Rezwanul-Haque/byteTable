@@ -13,12 +13,6 @@ import { DEFAULTS, type Settings } from "./api";
 import { monoMetaFor, THEMES, UI_FONTS } from "./catalogs";
 import { ensureFont } from "./fonts";
 
-/** Clamp the editor font size to the contract's 10–18px range. */
-function clampFontSize(n: number): number {
-  if (!Number.isFinite(n)) return DEFAULTS.fontSize;
-  return Math.max(10, Math.min(18, Math.round(n)));
-}
-
 export function applySettings(input: Partial<Settings> | null | undefined): void {
   const s: Settings = { ...DEFAULTS, ...(input ?? {}) };
   const theme = THEMES[s.theme] ?? THEMES.charcoal;
@@ -53,10 +47,12 @@ export function applySettings(input: Partial<Settings> | null | undefined): void
   root.setProperty("--mono", mono.stack);
   root.setProperty("--ui", ui.stack);
 
-  // Sizes. Editor uses the base size; the grid renders one px smaller.
-  const fs = clampFontSize(s.fontSize);
-  root.setProperty("--editor-fs", `${fs}px`);
-  root.setProperty("--grid-fs", `${fs - 1}px`);
+  // Sizes. The editor/grid keep a FIXED base (13 / 12 px); the font-size
+  // setting now scales the WHOLE app via the webview zoom (see zoom.ts), so all
+  // text — chrome included — grows/shrinks together. Keeping a fixed base here
+  // means the zoom doesn't double-scale these surfaces.
+  root.setProperty("--editor-fs", "13px");
+  root.setProperty("--grid-fs", "12px");
   root.setProperty("--grid-row-h", `${s.density === "comfortable" ? 32 : 26}px`);
 
   // Body-class hooks. Guarded: bootstrap may apply before <body> exists, in

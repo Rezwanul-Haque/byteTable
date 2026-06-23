@@ -12,6 +12,7 @@ import { DEFAULTS, settingsLoad, settingsSave, type Settings } from "./api";
 import { applySettings } from "./apply";
 import { readCachedSettings, writeCachedSettings } from "./cache";
 import { broadcastSettings } from "./sync";
+import { applyZoom } from "./zoom";
 
 interface SettingsFeatureState {
   settings: Settings;
@@ -31,6 +32,7 @@ interface SettingsFeatureState {
  *  and broadcast it to other windows. */
 function persist(settings: Settings): void {
   applySettings(settings);
+  applyZoom(settings.fontSize);
   writeCachedSettings(settings);
   // Best-effort disk mirror. Swallows "not running inside Tauri" (plain browser
   // dev) and real write errors alike; the in-memory state + cache stay valid.
@@ -72,6 +74,7 @@ export const useSettingsStore = create<SettingsFeatureState>((set, get) => ({
     });
     if (applied) {
       applySettings(fromDisk);
+      applyZoom(fromDisk.fontSize);
       writeCachedSettings(fromDisk); // seed the fast-path for next launch.
     }
   },
@@ -91,6 +94,7 @@ export const useSettingsStore = create<SettingsFeatureState>((set, get) => ({
   syncExternal: (settings) => {
     set({ settings, loaded: true });
     applySettings(settings);
+    applyZoom(settings.fontSize);
     writeCachedSettings(settings);
     // Deliberately no settingsSave / broadcast — the originating window
     // already did both; echoing would loop.

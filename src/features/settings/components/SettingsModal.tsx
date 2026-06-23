@@ -440,10 +440,10 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
                 </select>
               </SetRow>
 
-              <div className="set-section-label">Editor &amp; grid text size</div>
+              <div className="set-section-label">Text size</div>
               <SetRow
-                label="Monospace size"
-                hint={`${settings.fontSize} px · grid uses ${settings.fontSize - 1} px`}
+                label="App text size"
+                hint={`Scales all text — chrome, editor, and grid (${Math.round((settings.fontSize / 13) * 100)}%)`}
               >
                 <div className="set-size">
                   <button

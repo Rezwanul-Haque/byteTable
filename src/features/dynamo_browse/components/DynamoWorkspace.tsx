@@ -23,6 +23,7 @@ import { DynamoExportModal, DynamoImportModal } from "./DynamoIoModals";
 import { DynamoQueryTab } from "./DynamoQueryTab";
 import { DynamoSchemaMap } from "./DynamoSchemaMap";
 import { DynamoSidebar } from "./DynamoSidebar";
+import { SidebarResizer } from "../../../shared/ui/SidebarResizer";
 import { DynamoTableTab } from "./DynamoTableTab";
 import "./Dynamo.css";
 
@@ -197,6 +198,7 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
         onRefresh={() => void refreshTables()}
         onCloseWorkspace={() => closeWorkspace(workspace.id)}
       />
+      <SidebarResizer />
       <main className="main-col ddb-main">
         <div className="ddb-tabbar">
           <div className="ddb-tabbar-tabs">

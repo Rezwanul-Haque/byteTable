@@ -197,8 +197,15 @@
   color: var(--text-dim);
   font-weight: 600;
 }
+/* The bulk-delete button reads as danger: red glyph + label + red-tinted
+   surface at rest, deepening on hover. --error tracks the active theme. */
+.dg-selbar-del {
+  color: var(--error) !important;
+  background: color-mix(in oklab, var(--error) 12%, transparent) !important;
+}
 .dg-selbar-del:hover {
-  color: #e06c75 !important;
+  color: var(--error) !important;
+  background: color-mix(in oklab, var(--error) 20%, transparent) !important;
 }
 /* The SQL result bar is always visible (also the download-all entry point), so
    it uses a plain surface — the accent tint is reserved for active selection. */

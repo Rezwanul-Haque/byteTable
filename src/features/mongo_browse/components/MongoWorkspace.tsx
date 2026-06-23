@@ -24,6 +24,7 @@ import { MongoExportModal, MongoImportModal } from "./MongoIoModals";
 import { MongoPipelineTab, type MongoPipelineTabState } from "./MongoPipelineTab";
 import { MongoSchemaMap } from "./MongoSchemaMap";
 import { MongoSidebar } from "./MongoSidebar";
+import { SidebarResizer } from "../../../shared/ui/SidebarResizer";
 import { useMongoActiveDbStore, useMongoShellStore } from "../shellState";
 import { useMongoTabsStore, type MongoWorkspaceTab as Tab } from "../workspaceTabs";
 // Shared chrome the Mongo slice REUSES (per MILESTONE_18: "do not re-style it").
@@ -286,6 +287,7 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
         onRefresh={refresh}
         onCloseWorkspace={() => closeWorkspace(workspace.id)}
       />
+      <SidebarResizer />
       <div className="main-col">
         <div className="tabbar" data-screen-label="MongoDB tab bar">
           <div className="tabbar-tabs">

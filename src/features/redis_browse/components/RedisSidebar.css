@@ -385,6 +385,22 @@
   color: var(--text);
 }
 
+/* Per-key copy + delete buttons — hidden until the row is hovered/focused. */
+.rkey-copy,
+.rkey-del {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.rkey-item:hover .rkey-copy,
+.rkey-item:focus-within .rkey-copy,
+.rkey-item:hover .rkey-del,
+.rkey-item:focus-within .rkey-del {
+  opacity: 1;
+}
+
 .rkey-ttl {
   font-family: var(--mono);
   font-size: 9.5px;

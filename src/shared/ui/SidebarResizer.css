@@ -1,0 +1,35 @@
+/* Sidebar resize handle — a thin strip on the sidebar/main seam. Absolutely
+   positioned at the sidebar's right edge (x = --sidebar-w) within the relative
+   .workspace grid, spanning the content rows but not the 28px status bar. */
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  left: var(--sidebar-w, 248px);
+  width: 8px;
+  height: calc(100% - 28px);
+  transform: translateX(-4px);
+  cursor: col-resize;
+  z-index: 6;
+}
+
+/* The visible 2px line, only tinted on hover / while dragging. */
+.sidebar-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 2px;
+  background: transparent;
+  transition: background 0.12s;
+}
+.sidebar-resizer:hover::after,
+body.col-resizing .sidebar-resizer::after {
+  background: color-mix(in oklab, var(--accent) 55%, transparent);
+}
+
+/* While dragging: force the resize cursor everywhere + kill text selection. */
+body.col-resizing {
+  cursor: col-resize;
+  user-select: none;
+}

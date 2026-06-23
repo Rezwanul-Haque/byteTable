@@ -1,5 +1,5 @@
 // Redis status bar (REDIS_SPEC §9) — workspace color chip · name · env tag ·
-// "Redis {version}" · tunnel lock (when tunneled) · "db{N} · {count} keys" ·
+// "Redis {version}" · tunnel lock (when tunneled) · "db{N}" ·
 // spacer · active-key `type · memory` (when a key tab is active — humanBytes) ·
 // "RESP{N}". The active-key info is reported up by the active KeyTab and passed
 // in here. (The prototype's "mock engine" tag is dropped in production.)
@@ -35,7 +35,6 @@ interface RedisStatusBarProps {
   isTunneled: boolean;
   tunnelHint: string;
   dbIndex: number;
-  keyCount: number;
   /** The active key tab's type (null when no key tab is active). */
   activeKeyType: KeyType | null;
   /** The active key's `MEMORY USAGE` bytes (null when unknown / no key tab). */
@@ -52,7 +51,6 @@ export function RedisStatusBar(props: RedisStatusBarProps) {
     isTunneled,
     tunnelHint,
     dbIndex,
-    keyCount,
     activeKeyType,
     activeKeyMemory,
   } = props;
@@ -72,9 +70,7 @@ export function RedisStatusBar(props: RedisStatusBarProps) {
           <Icon name="vpn_lock" size={13} style={{ color: "var(--accent)" }} />
         </span>
       ) : null}
-      <span className="status-dim">
-        db{dbIndex} · {keyCount} keys
-      </span>
+      <span className="status-dim">db{dbIndex}</span>
       <div style={{ flex: 1 }} />
       {keyMeta ? (
         <span

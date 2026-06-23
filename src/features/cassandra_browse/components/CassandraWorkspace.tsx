@@ -37,6 +37,7 @@ import { CassExportModal, CassImportModal } from "./CassIoModals";
 import { CassandraQueryTab } from "./CassandraQueryTab";
 import { CassandraSchemaMap } from "./CassandraSchemaMap";
 import { CassandraSidebar } from "./CassandraSidebar";
+import { SidebarResizer } from "../../../shared/ui/SidebarResizer";
 import { CassandraTableTab } from "./CassandraTableTab";
 import { useCassTabsStore } from "../workspaceTabs";
 // Shared chrome the Cassandra slice REUSES (importing the owning components' CSS
@@ -301,6 +302,7 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
         onRefresh={refresh}
         onCloseWorkspace={() => closeWorkspace(workspace.id)}
       />
+      <SidebarResizer />
       <div className="main-col">
         <div className="tabbar" data-screen-label="Cassandra tab bar">
           <div className="tabbar-tabs">

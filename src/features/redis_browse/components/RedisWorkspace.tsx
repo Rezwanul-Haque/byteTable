@@ -18,11 +18,12 @@ import { TerminalPanel } from "../../console/TerminalPanel";
 import { shellLabel, usePanelStore } from "../../console/state";
 import { useWorkspacesStore } from "../../workspaces/state";
 import type { Workspace } from "../../workspaces/types";
-import type { KeyType } from "../api";
+import { kvKeyspace, type KeyType } from "../api";
 import { useRedisBrowseStore } from "../state";
 import { ENV_COLOR } from "../../../shared/ui/envColors";
 import { RedisCommandPalette } from "./RedisCommandPalette";
 import { RedisSidebar } from "./RedisSidebar";
+import { SidebarResizer } from "../../../shared/ui/SidebarResizer";
 import { RedisStatusBar } from "./RedisStatusBar";
 import { RedisTabBar } from "./RedisTabBar";
 import { RedisTabContent } from "./RedisTabContent";
@@ -31,12 +32,21 @@ import "./RedisTabContent.css";
 /** Empty per-db overview when a workspace somehow opened without a keyspace. */
 const NO_DATABASES: KvDbInfo[] = [];
 
+/** Auto-refresh cadence for the keyspace (left tree + counts + dashboard) so
+ *  TTL-expired keys drop out without a manual refresh. */
+const AUTO_REFRESH_MS = 5000;
+
 export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
   const closeWorkspace = useWorkspacesStore((state) => state.closeWorkspace);
 
-  // Per-db key counts + server identity from the open-result overview.
-  const databases = workspace.keyspace?.databases ?? NO_DATABASES;
+  // Per-db key counts: seeded from the open-result overview, then kept live by
+  // re-fetching on every `version` bump (manual refresh, a write, or the
+  // auto-refresh timer below) so counts + the dashboard reflect expired keys.
+  const [databases, setDatabases] = useState<KvDbInfo[]>(
+    workspace.keyspace?.databases ?? NO_DATABASES,
+  );
   const serverInfo = workspace.keyspace?.serverInfo;
+  const handleId = workspace.handleId;
 
   // Initial db = the connection's configured dbIndex (params), else 0.
   const params = workspace.saved.params;
@@ -104,6 +114,30 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
   const activeKeyMeta =
     activeTab?.kind === "key" && keyMeta?.tabId === activeTab.id ? keyMeta : null;
 
+  // Keep the per-db counts live: re-fetch the keyspace overview whenever the
+  // version nonce bumps (manual refresh / a write / the auto-refresh timer).
+  useEffect(() => {
+    let alive = true;
+    void kvKeyspace(handleId).then(
+      (dbs) => {
+        if (alive) setDatabases(dbs);
+      },
+      () => {
+        /* transient scan/INFO error — keep the last good counts */
+      },
+    );
+    return () => {
+      alive = false;
+    };
+  }, [handleId, rs.version]);
+
+  // Auto-refresh the keyspace on a timer so TTL-expired keys leave the left
+  // tree (and the counts + dashboard update) without a manual refresh.
+  useEffect(() => {
+    const id = setInterval(() => bumpVersion(wsId, initialDb), AUTO_REFRESH_MS);
+    return () => clearInterval(id);
+  }, [bumpVersion, wsId, initialDb]);
+
   // Stable callbacks for the tab content (so the CLI persist effect + dashboard
   // fetch effect don't see a fresh identity every render).
   const onMutated = useCallback(() => bumpVersion(wsId, initialDb), [bumpVersion, wsId, initialDb]);
@@ -122,7 +156,6 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
   const isTunneled = connectionIsTunneled(params);
   const tunnelHint = tunnelTitle(params);
   const detail = connectionDetail(params);
-  const keyCount = databases.find((d) => d.index === rs.dbIndex)?.keyCount ?? 0;
 
   return (
     <div className="workspace" data-screen-label={"Redis workspace: " + workspace.name}>
@@ -146,6 +179,7 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
         onOpenDashboard={() => openDashboardTab(wsId, initialDb)}
         onCloseWorkspace={() => closeWorkspace(wsId)}
       />
+      <SidebarResizer />
       <main className="main-col redis-main">
         <RedisTabBar
           tabs={rs.tabs}
@@ -187,7 +221,6 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
         isTunneled={isTunneled}
         tunnelHint={tunnelHint}
         dbIndex={rs.dbIndex}
-        keyCount={keyCount}
         activeKeyType={activeKeyMeta?.keyType ?? null}
         activeKeyMemory={activeKeyMeta?.memory ?? null}
       />

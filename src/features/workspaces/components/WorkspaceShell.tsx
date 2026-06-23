@@ -10,6 +10,7 @@
 import { useEffect, useState } from "react";
 
 import { Sidebar } from "./Sidebar";
+import { SidebarResizer } from "../../../shared/ui/SidebarResizer";
 import { CommandPalette } from "./CommandPalette";
 import { StatusBar } from "./StatusBar";
 import { WorkspaceContent } from "./WorkspaceContent";
@@ -70,6 +71,7 @@ export function WorkspaceShell({ workspace }: { workspace: Workspace }) {
   return (
     <div className="workspace">
       <Sidebar workspace={workspace} />
+      <SidebarResizer />
       <main className="main-col">
         <WorkspaceContent workspace={workspace} />
         {/* Docks at the bottom of the content column, above the status bar.

@@ -24,6 +24,36 @@
 .rkey-grid .dg-td {
   height: 32px;
 }
+/* A staged (unsaved) cell edit is tinted until Save/Discard. */
+.rkey-grid .dg-td.cell-edited {
+  background: color-mix(in oklab, var(--warn, #e2b340) 16%, transparent);
+}
+
+/* Wraps the grid + its staged-edit save bar so the bar pins to the bottom. */
+.rkey-gridwrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.rkey-gridwrap > .datagrid-wrap {
+  flex: 1;
+  min-height: 0;
+}
+.rkey-savebar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in oklab, var(--warn, #e2b340) 8%, var(--bg1));
+}
+.rkey-savebar-msg {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--warn, #e2b340);
+}
 /* Rows + canvas fill the width (DataGrid sizes them to max-content for the
    virtualized SQL grid); with full-width rows the `1fr` tracks resolve equally,
    so every row's columns line up. */
@@ -143,6 +173,30 @@
   color: var(--text);
 }
 
+/* JSON token colors for a JSON string value (highlightJSON output). Mirrors
+   the browse CellEditors .jx-* palette; scoped to .rstr-value so Redis is
+   self-contained and doesn't depend on the SQL grid's stylesheet loading. */
+.rstr-value .jx-key {
+  color: #61afef;
+}
+.rstr-value .jx-str {
+  color: #98c379;
+}
+.rstr-value .jx-num {
+  color: #d19a66;
+}
+.rstr-value .jx-bool {
+  color: #c678dd;
+}
+.rstr-value .jx-null {
+  color: #e06c75;
+}
+
+.rstr-unsaved {
+  color: var(--warn, #e2b340);
+  font-weight: 600;
+}
+
 .rstr-edit {
   flex: 1;
   margin: 0;
@@ -155,6 +209,35 @@
   font-size: 12.5px;
   line-height: 1.6;
   color: var(--text);
+}
+
+/* Highlight-overlay editor for JSON string values: a transparent textarea
+   stacked on the highlighted <pre>. Both must share identical box metrics
+   (padding / font / line-height / wrapping) so the caret lines up with the
+   colored glyphs underneath. */
+.rstr-editwrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+.rstr-edit-hl {
+  position: absolute;
+  inset: 0;
+  flex: none;
+  pointer-events: none;
+  background: var(--bg0);
+}
+.rstr-edit-overlay {
+  position: absolute;
+  inset: 0;
+  flex: none;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--accent);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: auto;
 }
 
 /* ---------------- set add row + remove cell ---------------- */

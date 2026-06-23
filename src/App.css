@@ -24,8 +24,11 @@
   flex: 1;
   min-height: 0;
   min-width: 0;
+  position: relative;
   display: grid;
-  grid-template-columns: 248px 1fr;
+  /* Sidebar width is user-resizable (SidebarResizer) via --sidebar-w; 248px is
+     the prototype default. Shared by every engine workspace. */
+  grid-template-columns: var(--sidebar-w, 248px) 1fr;
   grid-template-rows: 1fr 28px;
   grid-template-areas: "sidebar main" "status status";
 }

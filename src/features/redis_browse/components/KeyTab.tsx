@@ -21,6 +21,7 @@ import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Modal, ModalActions, ModalTitle } from "../../../shared/ui/Modal";
 import { useToast } from "../../../shared/ui/toastContext";
 import { CellContent } from "../../browse/components/GridCell";
+import { highlightJSON } from "../../browse/components/jsonCell";
 import {
   kvDeleteKey,
   kvExpire,
@@ -189,6 +190,17 @@ export function KeyTab({
           </button>
         </div>
         <code className="rkey-tab-name">{keyName}</code>
+        <IconBtn
+          icon="content_copy"
+          size={13}
+          title="Copy key name"
+          onClick={() => {
+            void navigator.clipboard.writeText(keyName).then(
+              () => toast("Key name copied", "ok"),
+              () => toast("Couldn't copy to clipboard", "err"),
+            );
+          }}
+        />
         <span className={"rkey-ttl" + (view.ttl >= 0 ? " live" : "")} title="TTL">
           {humanTTL(view.ttl)}
         </span>
@@ -329,15 +341,38 @@ function StringViewer({
   toast: ToastFn;
   onMutated: () => void;
 }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
   const json = isJsonish(value);
   const pretty = json ? JSON.stringify(JSON.parse(value), null, 2) : value;
+  // Always editable: `draft` is the working copy (pretty-printed for JSON). A
+  // Save/Discard bar appears only when it diverges from the stored value — the
+  // SQL-grid staged-edit pattern, no Edit button.
+  const [draft, setDraft] = useState(pretty);
+  // Keep the highlight overlay scrolled in lock-step with the textarea.
+  const hlRef = useRef<HTMLPreElement | null>(null);
+  // Adopt the stored value when it changes externally (a refresh / another
+  // writer) — but only while there is no unsaved edit, so the auto-refresh
+  // timer can never clobber in-progress typing.
+  const lastPrettyRef = useRef(pretty);
+  useEffect(() => {
+    setDraft((d) => (d === lastPrettyRef.current ? pretty : d));
+    lastPrettyRef.current = pretty;
+  }, [pretty]);
+
+  const dirty = draft !== pretty;
 
   const save = async () => {
     try {
-      await kvSetString(handleId, db, keyName, draft);
-      setEditing(false);
+      // The editor shows pretty-printed JSON; store it compact (minified) again.
+      // If the draft no longer parses as JSON, save it verbatim.
+      let toStore = draft;
+      if (isJsonish(draft)) {
+        try {
+          toStore = JSON.stringify(JSON.parse(draft));
+        } catch {
+          /* invalid mid-edit — store the raw draft */
+        }
+      }
+      await kvSetString(handleId, db, keyName, toStore);
       toast("SET " + keyName + " — OK", "ok");
       onMutated();
     } catch (err) {
@@ -350,49 +385,65 @@ function StringViewer({
       <div className="rstr-bar">
         <span className="rstr-meta">
           {json ? "JSON" : "string"} · {value.length} bytes
+          {dirty ? <span className="rstr-unsaved"> · unsaved</span> : null}
         </span>
         <div className="rstr-bar-spacer" />
-        {editing ? (
+        <IconBtn
+          icon="content_copy"
+          size={14}
+          title="Copy value"
+          onClick={() => {
+            void navigator.clipboard.writeText(draft).then(
+              () => toast("Value copied", "ok"),
+              () => toast("Couldn't copy to clipboard", "err"),
+            );
+          }}
+        />
+        {dirty ? (
           <>
-            <Btn
-              variant="text"
-              small
-              onClick={() => {
-                setDraft(value);
-                setEditing(false);
-              }}
-            >
-              Cancel
+            <Btn variant="text" small onClick={() => setDraft(pretty)}>
+              Discard
             </Btn>
             <Btn variant="filled" icon="check" small onClick={save}>
               Save (SET)
             </Btn>
           </>
-        ) : (
-          <Btn
-            variant="tonal"
-            icon="edit"
-            small
-            onClick={() => {
-              setDraft(value);
-              setEditing(true);
-            }}
-          >
-            Edit
-          </Btn>
-        )}
+        ) : null}
       </div>
-      {editing ? (
+      {json ? (
+        // Highlight-overlay editor (always on): a transparent textarea over a
+        // highlighted <pre>, scroll-synced. Trailing newline keeps the last
+        // line's height. highlightJSON HTML-escapes its input, so it is safe to
+        // inject; .rstr-value .jx-* colors live in KeyTab.css.
+        <div className="rstr-editwrap">
+          <pre
+            ref={hlRef}
+            className="rstr-value rstr-edit-hl"
+            aria-hidden="true"
+            dangerouslySetInnerHTML={{ __html: highlightJSON(draft) + "\n" }}
+          />
+          <textarea
+            className="rstr-edit rstr-edit-overlay"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onScroll={(e) => {
+              if (hlRef.current) {
+                hlRef.current.scrollTop = e.currentTarget.scrollTop;
+                hlRef.current.scrollLeft = e.currentTarget.scrollLeft;
+              }
+            }}
+            spellCheck={false}
+            aria-label={"Edit value of " + keyName}
+          />
+        </div>
+      ) : (
         <textarea
           className="rstr-edit"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           spellCheck={false}
           aria-label={"Edit value of " + keyName}
-          autoFocus
         />
-      ) : (
-        <pre className="rstr-value">{pretty}</pre>
       )}
     </div>
   );
@@ -415,34 +466,72 @@ interface KeyGridProps {
   columns: GridColumn[];
   /** Row values, parallel to `columns`. */
   rows: (string | number)[][];
-  /** Commit an inline edit: (rowIndex, columnIndex, draftText). */
-  onEdit?: (rowIndex: number, colIndex: number, draft: string) => void;
+  /** Apply one staged edit: (rowIndex, columnIndex, draftText). May be async. */
+  onEdit?: (rowIndex: number, colIndex: number, draft: string) => void | Promise<void>;
   empty: string;
 }
 
 function KeyGrid({ columns, rows, onEdit, empty }: KeyGridProps) {
   const [editing, setEditing] = useState<{ row: number; col: number; draft: string } | null>(null);
+  // Staged edits keyed "row,col" — nothing is written until Save (the SQL-grid
+  // pattern). Survives the auto-refresh re-fetch because it's local state.
+  const [staged, setStaged] = useState<Map<string, string>>(new Map());
+  const [saving, setSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Focus + select only when the *edited cell* changes (edit start). Depending
+  // on the whole `editing` object would re-run on every keystroke and re-select
+  // all text, so each new character would replace the selection.
+  const editCell = editing ? editing.row + "," + editing.col : null;
   useEffect(() => {
-    if (editing && inputRef.current) {
+    if (editCell !== null && inputRef.current) {
       inputRef.current.focus();
       inputRef.current.select();
     }
-  }, [editing]);
+  }, [editCell]);
 
   // Equal flexible tracks (fixed 90px min, no content-based sizing) so every
   // row shares identical column widths and the grid aligns — KeyGrid isn't
   // virtualized, so it can't use the SQL grid's measured fixed px tracks.
   const gridCols = "38px " + columns.map(() => "minmax(90px, 1fr)").join(" ");
 
+  const cellKey = (r: number, c: number) => r + "," + c;
+  const stagedOf = (r: number, c: number) => staged.get(cellKey(r, c));
+  // The value to show: the staged edit when present, else the stored value.
+  const shownValue = (r: number, c: number): string | number | null => {
+    const s = stagedOf(r, c);
+    return s !== undefined ? s : (rows[r]?.[c] ?? null);
+  };
+
   const commit = () => {
     if (!editing) return;
-    const cur = rows[editing.row]?.[editing.col];
-    const next = editing.draft;
+    const { row, col, draft } = editing;
     setEditing(null);
-    // Only fire the write when the value actually changed.
-    if (onEdit && String(cur ?? "") !== next) onEdit(editing.row, editing.col, next);
+    const orig = String(rows[row]?.[col] ?? "");
+    setStaged((m) => {
+      const n = new Map(m);
+      if (draft === orig)
+        n.delete(cellKey(row, col)); // back to original → un-stage
+      else n.set(cellKey(row, col), draft);
+      return n;
+    });
+  };
+
+  const discard = () => setStaged(new Map());
+
+  const saveAll = async () => {
+    if (!onEdit || saving || staged.size === 0) return;
+    setSaving(true);
+    try {
+      // Replay each staged cell through the per-type writer (HSET / LSET / …).
+      for (const [k, v] of staged) {
+        const parts = k.split(",");
+        await onEdit(Number(parts[0]), Number(parts[1]), v);
+      }
+      setStaged(new Map());
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (rows.length === 0) {
@@ -450,66 +539,87 @@ function KeyGrid({ columns, rows, onEdit, empty }: KeyGridProps) {
   }
 
   return (
-    <div className="datagrid-wrap rkey-grid">
-      <div className="dg-canvas" style={{ "--grid-cols": gridCols } as React.CSSProperties}>
-        <div className="dg-header dg-row">
-          <div className="dg-rownum-h">#</div>
-          {columns.map((c) => (
-            <div key={c.name} className="dg-th" title={c.name}>
-              <span className="dg-head">
-                <span className="dg-colname">{c.name}</span>
-              </span>
-            </div>
-          ))}
-        </div>
-        <div>
-          {rows.map((row, ri) => (
-            <div key={ri} className="dg-tr dg-row">
-              <div className="dg-rownum">{ri + 1}</div>
-              {columns.map((c, ci) => {
-                const isEditing = editing?.row === ri && editing?.col === ci;
-                const cellValue = row[ci] ?? null;
-                return (
-                  <div
-                    key={c.name}
-                    className={"dg-td" + (isEditing ? " cell-editing" : "")}
-                    onDoubleClick={
-                      c.editable && onEdit
-                        ? () => setEditing({ row: ri, col: ci, draft: String(cellValue ?? "") })
-                        : undefined
-                    }
-                    title={c.editable && onEdit ? "Double-click to edit" : undefined}
-                  >
-                    {isEditing ? (
-                      <input
-                        ref={inputRef}
-                        className="cell-input"
-                        aria-label={"Edit " + c.name}
-                        value={editing.draft}
-                        onChange={(e) =>
-                          setEditing((prev) => (prev ? { ...prev, draft: e.target.value } : prev))
-                        }
-                        onBlur={commit}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            commit();
-                          } else if (e.key === "Escape") {
-                            e.preventDefault();
-                            setEditing(null);
+    <div className="rkey-gridwrap">
+      <div className="datagrid-wrap rkey-grid">
+        <div className="dg-canvas" style={{ "--grid-cols": gridCols } as React.CSSProperties}>
+          <div className="dg-header dg-row">
+            <div className="dg-rownum-h">#</div>
+            {columns.map((c) => (
+              <div key={c.name} className="dg-th" title={c.name}>
+                <span className="dg-head">
+                  <span className="dg-colname">{c.name}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+          <div>
+            {rows.map((_row, ri) => (
+              <div key={ri} className="dg-tr dg-row">
+                <div className="dg-rownum">{ri + 1}</div>
+                {columns.map((c, ci) => {
+                  const isEditing = editing?.row === ri && editing?.col === ci;
+                  const cellValue = shownValue(ri, ci);
+                  const isEdited = stagedOf(ri, ci) !== undefined;
+                  return (
+                    <div
+                      key={c.name}
+                      className={
+                        "dg-td" +
+                        (isEditing ? " cell-editing" : "") +
+                        (isEdited ? " cell-edited" : "")
+                      }
+                      onDoubleClick={
+                        c.editable && onEdit
+                          ? () => setEditing({ row: ri, col: ci, draft: String(cellValue ?? "") })
+                          : undefined
+                      }
+                      title={c.editable && onEdit ? "Double-click to edit" : undefined}
+                    >
+                      {isEditing ? (
+                        <input
+                          ref={inputRef}
+                          className="cell-input"
+                          aria-label={"Edit " + c.name}
+                          value={editing.draft}
+                          onChange={(e) =>
+                            setEditing((prev) => (prev ? { ...prev, draft: e.target.value } : prev))
                           }
-                        }}
-                      />
-                    ) : (
-                      <CellContent value={cellValue} column={c.name} />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
+                          onBlur={commit}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              commit();
+                            } else if (e.key === "Escape") {
+                              e.preventDefault();
+                              setEditing(null);
+                            }
+                          }}
+                        />
+                      ) : (
+                        <CellContent value={cellValue} column={c.name} />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
+      {staged.size > 0 ? (
+        <div className="rkey-savebar">
+          <span className="rkey-savebar-msg">
+            {staged.size} cell{staged.size === 1 ? "" : "s"} edited · unsaved
+          </span>
+          <div style={{ flex: 1 }} />
+          <Btn variant="text" small disabled={saving} onClick={discard}>
+            Discard
+          </Btn>
+          <Btn variant="filled" icon="check" small disabled={saving} onClick={() => void saveAll()}>
+            Save
+          </Btn>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -684,92 +794,139 @@ function SetGrid({
 }: {
   members: string[];
   rows: (string | number)[][];
-  onEdit: (ri: number, ci: number, draft: string) => void;
+  onEdit: (ri: number, ci: number, draft: string) => void | Promise<void>;
   onRemove: (member: string) => void;
 }) {
   const [editing, setEditing] = useState<{ row: number; draft: string } | null>(null);
+  // Staged member edits keyed by row index — nothing written until Save.
+  const [staged, setStaged] = useState<Map<number, string>>(new Map());
+  const [saving, setSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Focus + select on edit start only (see KeyGrid) — not on every keystroke.
+  const editRow = editing ? editing.row : null;
   useEffect(() => {
-    if (editing && inputRef.current) {
+    if (editRow !== null && inputRef.current) {
       inputRef.current.focus();
       inputRef.current.select();
     }
-  }, [editing]);
+  }, [editRow]);
+
+  const shownMember = (ri: number) => staged.get(ri) ?? members[ri] ?? "";
 
   const commit = () => {
     if (!editing) return;
-    const cur = members[editing.row];
-    const next = editing.draft;
+    const { row, draft } = editing;
     setEditing(null);
-    if (String(cur ?? "") !== next) onEdit(editing.row, 0, next);
+    const orig = String(members[row] ?? "");
+    setStaged((m) => {
+      const n = new Map(m);
+      if (draft === orig) n.delete(row);
+      else n.set(row, draft);
+      return n;
+    });
+  };
+
+  const discard = () => setStaged(new Map());
+
+  const saveAll = async () => {
+    if (saving || staged.size === 0) return;
+    setSaving(true);
+    try {
+      for (const [ri, v] of staged) await onEdit(ri, 0, v);
+      setStaged(new Map());
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (rows.length === 0) return <div className="grid-empty">empty set</div>;
 
   return (
-    <div className="datagrid-wrap rkey-grid">
-      <div
-        className="dg-canvas"
-        style={{ "--grid-cols": "38px minmax(90px, 1fr) 36px" } as React.CSSProperties}
-      >
-        <div className="dg-header dg-row">
-          <div className="dg-rownum-h">#</div>
-          <div className="dg-th" title="member">
-            <span className="dg-head">
-              <span className="dg-colname">member</span>
-            </span>
+    <div className="rkey-gridwrap">
+      <div className="datagrid-wrap rkey-grid">
+        <div
+          className="dg-canvas"
+          style={{ "--grid-cols": "38px minmax(90px, 1fr) 36px" } as React.CSSProperties}
+        >
+          <div className="dg-header dg-row">
+            <div className="dg-rownum-h">#</div>
+            <div className="dg-th" title="member">
+              <span className="dg-head">
+                <span className="dg-colname">member</span>
+              </span>
+            </div>
+            <div className="dg-th" />
           </div>
-          <div className="dg-th" />
-        </div>
-        <div>
-          {members.map((m, ri) => {
-            const isEditing = editing?.row === ri;
-            return (
-              <div key={ri} className="dg-tr dg-row">
-                <div className="dg-rownum">{ri + 1}</div>
-                <div
-                  className={"dg-td" + (isEditing ? " cell-editing" : "")}
-                  onDoubleClick={() => setEditing({ row: ri, draft: m })}
-                  title="Double-click to edit"
-                >
-                  {isEditing ? (
-                    <input
-                      ref={inputRef}
-                      className="cell-input"
-                      aria-label="Edit member"
-                      value={editing.draft}
-                      onChange={(e) =>
-                        setEditing((prev) => (prev ? { ...prev, draft: e.target.value } : prev))
-                      }
-                      onBlur={commit}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          commit();
-                        } else if (e.key === "Escape") {
-                          e.preventDefault();
-                          setEditing(null);
+          <div>
+            {members.map((m, ri) => {
+              const isEditing = editing?.row === ri;
+              const shown = shownMember(ri);
+              const isEdited = staged.has(ri);
+              return (
+                <div key={ri} className="dg-tr dg-row">
+                  <div className="dg-rownum">{ri + 1}</div>
+                  <div
+                    className={
+                      "dg-td" +
+                      (isEditing ? " cell-editing" : "") +
+                      (isEdited ? " cell-edited" : "")
+                    }
+                    onDoubleClick={() => setEditing({ row: ri, draft: shown })}
+                    title="Double-click to edit"
+                  >
+                    {isEditing ? (
+                      <input
+                        ref={inputRef}
+                        className="cell-input"
+                        aria-label="Edit member"
+                        value={editing.draft}
+                        onChange={(e) =>
+                          setEditing((prev) => (prev ? { ...prev, draft: e.target.value } : prev))
                         }
-                      }}
+                        onBlur={commit}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            commit();
+                          } else if (e.key === "Escape") {
+                            e.preventDefault();
+                            setEditing(null);
+                          }
+                        }}
+                      />
+                    ) : (
+                      <CellContent value={shown} column="member" />
+                    )}
+                  </div>
+                  <div className="dg-td rset-remove-cell">
+                    <IconBtn
+                      icon="close"
+                      size={14}
+                      title={"Remove " + m}
+                      onClick={() => onRemove(m)}
                     />
-                  ) : (
-                    <CellContent value={m} column="member" />
-                  )}
+                  </div>
                 </div>
-                <div className="dg-td rset-remove-cell">
-                  <IconBtn
-                    icon="close"
-                    size={14}
-                    title={"Remove " + m}
-                    onClick={() => onRemove(m)}
-                  />
-                </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       </div>
+      {staged.size > 0 ? (
+        <div className="rkey-savebar">
+          <span className="rkey-savebar-msg">
+            {staged.size} member{staged.size === 1 ? "" : "s"} edited · unsaved
+          </span>
+          <div style={{ flex: 1 }} />
+          <Btn variant="text" small disabled={saving} onClick={discard}>
+            Discard
+          </Btn>
+          <Btn variant="filled" icon="check" small disabled={saving} onClick={() => void saveAll()}>
+            Save
+          </Btn>
+        </div>
+      ) : null}
     </div>
   );
 }

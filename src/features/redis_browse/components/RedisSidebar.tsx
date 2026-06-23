@@ -24,7 +24,15 @@ import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { useToast } from "../../../shared/ui/toastContext";
 import type { KvDbInfo } from "../../connections/api";
-import { kvCommand, kvGetKey, kvScan, type KeyType, type KeyEntry, type KvValue } from "../api";
+import {
+  kvCommand,
+  kvDeleteKey,
+  kvGetKey,
+  kvScan,
+  type KeyType,
+  type KeyEntry,
+  type KvValue,
+} from "../api";
 import {
   buildNamespaceTree,
   countLeaves,
@@ -125,6 +133,16 @@ export function RedisSidebar(props: RedisSidebarProps) {
   // True once the cursor has returned "0" for the current query (no more pages).
   const done = cursor === "0";
 
+  // Spin the refresh icon for one rotation on every keyspace refresh (manual,
+  // a write, a db switch, or the auto-refresh timer) so the periodic refresh is
+  // visible — the scan itself is usually too fast to see otherwise.
+  const [refreshSpin, setRefreshSpin] = useState(false);
+  useEffect(() => {
+    setRefreshSpin(true);
+    const id = setTimeout(() => setRefreshSpin(false), 700);
+    return () => clearTimeout(id);
+  }, [version]);
+
   const dbBtnRef = useRef<HTMLButtonElement | null>(null);
   const dbPopRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -164,14 +182,24 @@ export function RedisSidebar(props: RedisSidebarProps) {
   );
 
   // Reset + load the first page whenever the query inputs change. `version`
-  // is the refresh / write-invalidation nonce.
+  // is the refresh / write-invalidation nonce (manual refresh, a write, or the
+  // auto-refresh timer). On a query change we hard-reset (clear → show
+  // loading); on a version-only bump we soft-refresh — re-scan page 0 and
+  // replace in place so the auto-refresh timer doesn't blank the tree every
+  // tick (which would also drop the user's scroll position).
+  const queryKey = handleId + "|" + dbIndex + "|" + pattern + "|" + typeFilter;
+  const lastQueryKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    // fetchPage closes over db/pattern/type (its identity changes with them);
-    // `version` is the refresh / write-invalidation nonce, so re-run on it too.
-    setKeys([]);
+    if (lastQueryKeyRef.current !== queryKey) {
+      lastQueryKeyRef.current = queryKey;
+      setKeys([]); // hard reset only when the query itself changed
+    }
     setCursor("0");
     void fetchPage("0", false);
-  }, [fetchPage, version]);
+    // fetchPage's identity already encodes the query inputs; `version` adds the
+    // refresh nonce. queryKey is derived from the same inputs (lint-listed for
+    // completeness).
+  }, [fetchPage, version, queryKey]);
 
   const loadMore = useCallback(() => {
     if (loading || done) return;
@@ -253,6 +281,30 @@ export function RedisSidebar(props: RedisSidebarProps) {
     dbBtnRef.current?.focus();
   };
 
+  // Copy a key + its value to the clipboard as a tab-separated pair (pastes
+  // cleanly into a sheet or as plain text). Fetches the value on demand.
+  const copyKeyValue = async (name: string) => {
+    try {
+      const view = await kvGetKey(handleId, dbIndex, name);
+      await navigator.clipboard.writeText(name + "\t" + valueToText(view.value));
+      toast("Key + value copied", "ok");
+    } catch (err) {
+      toast(appErrorMessage(err, "Couldn't copy this key's value."), "err");
+    }
+  };
+
+  // Delete a single key (DEL) straight from the tree — matches the direct,
+  // no-modal delete the set-member remove buttons use.
+  const deleteKey = async (name: string) => {
+    try {
+      await kvDeleteKey(handleId, dbIndex, name);
+      toast("DEL " + name + " — OK", "ok");
+      onRefresh();
+    } catch (err) {
+      toast(appErrorMessage(err, "Couldn't delete this key."), "err");
+    }
+  };
+
   // One key row (flat + tree leaves share it). `display` is the visible label
   // (last segment in tree mode, full name flat).
   const keyRow = (name: string, display: string) => {
@@ -289,6 +341,31 @@ export function RedisSidebar(props: RedisSidebarProps) {
         ) : null}
         <RedisTypeBadge type={keyType} size={16} />
         <span className="rkey-name">{display}</span>
+        {!selectMode ? (
+          <>
+            <IconBtn
+              icon="content_copy"
+              size={12}
+              className="rkey-copy"
+              title="Copy key + value"
+              onClick={(e) => {
+                e.stopPropagation();
+                void copyKeyValue(name);
+              }}
+            />
+            <IconBtn
+              icon="delete"
+              size={12}
+              danger
+              className="rkey-del"
+              title="Delete key (DEL)"
+              onClick={(e) => {
+                e.stopPropagation();
+                void deleteKey(name);
+              }}
+            />
+          </>
+        ) : null}
         <span className={"rkey-ttl" + (ttl >= 0 ? " live" : "")}>{humanTTL(ttl)}</span>
       </div>
     );
@@ -498,7 +575,7 @@ export function RedisSidebar(props: RedisSidebarProps) {
           icon="sync"
           title="Refresh keyspace"
           onClick={onRefresh}
-          className={loading ? "sidebar-sync-spinning" : undefined}
+          className={refreshSpin || loading ? "sidebar-sync-spinning" : undefined}
         />
       </div>
 

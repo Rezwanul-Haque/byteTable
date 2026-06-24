@@ -225,6 +225,9 @@ pub struct BatchWriteResult {
 /// are §5 human sentences (the adapter maps SDK errors).
 #[async_trait]
 pub trait DocumentStoreReader: Send + Sync {
+    /// `ListTables` — returns only table names (no `DescribeTable` per table).
+    async fn list_table_names(&self) -> Result<Vec<String>, AppError>;
+
     /// `ListTables` → per-table descriptors (each via `DescribeTable`).
     async fn list_tables(&self) -> Result<Vec<TableDescriptor>, AppError>;
 

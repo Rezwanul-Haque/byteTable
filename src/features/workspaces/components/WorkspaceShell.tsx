@@ -47,12 +47,11 @@ export function WorkspaceShell({ workspace }: { workspace: Workspace }) {
         event.preventDefault();
         openSqlTab();
       } else if (key === "w") {
-        // Close the active tab, never the window. Always preventDefault so the
-        // key can't leak to the OS (where close-to-tray would hide the app);
-        // when there's no tab open it's simply a no-op.
-        event.preventDefault();
+        // Close the active tab. When there's no tab, let the OS handle it
+        // (hide the app on macOS) instead of blocking the close-to-tray path.
         const activeTabId = workspace.ui.activeTabId;
         if (activeTabId != null) {
+          event.preventDefault();
           closeTab(activeTabId);
         }
       }

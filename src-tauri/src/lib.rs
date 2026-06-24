@@ -312,6 +312,7 @@ pub fn run() {
             features::keyvalue::commands::kv_persist,
             features::keyvalue::commands::kv_create_key,
             features::keyvalue::commands::kv_command,
+            features::dynamo::commands::dynamo_list_table_names,
             features::dynamo::commands::dynamo_list_tables,
             features::dynamo::commands::dynamo_describe_table,
             features::dynamo::commands::dynamo_scan,

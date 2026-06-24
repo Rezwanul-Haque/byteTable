@@ -267,6 +267,7 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
   });
 
   // ⌘T opens a new CQL query tab; Ctrl/⌘+` toggles the docked cqlsh terminal.
+  // ⌘W on macOS: close the active tab; if no tabs, let the OS handle it.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key.toLowerCase() === "t" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
@@ -276,6 +277,18 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
       if (e.key === "`" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         toggleShell();
+      }
+      if (e.metaKey && e.key.toLowerCase() === "w") {
+        const st = useCassTabsStore.getState().byWorkspace[workspace.id];
+        if (st?.tabs.length && st.activeId) {
+          e.preventDefault();
+          const idx = st.tabs.findIndex((t) => t.id === st.activeId);
+          const next = st.tabs.filter((t) => t.id !== st.activeId);
+          const fallback = next[Math.max(0, idx - 1)];
+          const activeId = fallback?.id ?? next[0]?.id ?? "";
+          useCassTabsStore.getState().patch(workspace.id, { tabs: next, activeId });
+        }
+        // No tabs → let the OS handle it (hide app on macOS).
       }
     };
     window.addEventListener("keydown", onKey);

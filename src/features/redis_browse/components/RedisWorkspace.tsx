@@ -73,6 +73,7 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
   // ⌘K palette toggle; ⌘T opens the console panel (M14: was "new CLI tab", now
   // the docked panel); ⌃` (Ctrl+backtick, the VS Code convention) toggles it —
   // mirrors WorkspaceShell.
+  // ⌘W on macOS: close the active tab; if no tabs, let the OS handle it.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       // ⌃` (and ⌘` on macOS) toggles the console — handle it first.
@@ -90,11 +91,18 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
       } else if (key === "t") {
         event.preventDefault();
         openPanel(wsId, termLabel);
+      } else if (key === "w") {
+        const st = useRedisBrowseStore.getState().byWorkspace[wsId];
+        if (st?.tabs.length && st.activeTabId) {
+          event.preventDefault();
+          closeTab(wsId, initialDb, st.activeTabId);
+        }
+        // No tabs → let the OS handle it (hide app on macOS).
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [openPanel, togglePanel, wsId, termLabel]);
+  }, [openPanel, togglePanel, wsId, termLabel, closeTab, initialDb]);
 
   const activeTab = rs.tabs.find((t) => t.id === rs.activeTabId) ?? rs.tabs[0];
   const activeKey = activeTab?.kind === "key" && activeTab.db === rs.dbIndex ? activeTab.key : null;

@@ -389,6 +389,16 @@ fn build_projection(spec: Option<&str>) -> Option<(String, HashMap<String, Strin
 
 #[async_trait]
 impl DocumentStoreReader for DynamoConnection {
+    async fn list_table_names(&self) -> Result<Vec<String>, AppError> {
+        let out = self
+            .client
+            .list_tables()
+            .send()
+            .await
+            .map_err(|e| db_err("List tables", e))?;
+        Ok(out.table_names().to_vec())
+    }
+
     async fn list_tables(&self) -> Result<Vec<TableDescriptor>, AppError> {
         let out = self
             .client

@@ -48,8 +48,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { TableMeta } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
+import { highlightSql } from "../../browse/highlightSql";
+import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
+import { ENV_COLOR } from "../../../shared/ui/envColors";
 import { useToast } from "../../../shared/ui/toastContext";
 import { useIntrospectionStore } from "../../introspection/state";
 import { useWorkspacesStore } from "../../workspaces/state";
@@ -75,7 +78,15 @@ import {
   rasterizeToPngBase64,
   readExportColors,
 } from "../export";
+import { isDestructive } from "../editModel";
+import { useSchemaEditor } from "../useSchemaEditor";
+import { SchemaCommitModal } from "./SchemaCommitModal";
+import { SchemaEditCanvas } from "./SchemaEditCanvas";
 import "./SchemaMap.css";
+
+/** Engines whose schema map is editable (staged DDL). Mongo/Dynamo/Redis ship
+ *  read-only maps; the edit toggle is gated to relational engines only. */
+const EDITABLE_ENGINES = new Set(["sqlite", "mysql", "postgres"]);
 
 // Lazily import the dialog plugin so plain-browser dev (no Tauri) doesn't crash
 // at module load; the dynamic import rejects there and we show an info toast.
@@ -94,6 +105,16 @@ const clampZoom = (z: number): number =>
   Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(z * 10) / 10));
 
 type Positions = Record<string, { x: number; y: number }>;
+
+/** Spread a read-mode layout apart for edit mode, where cards are 340px wide
+ *  (vs 224px) and show every column, so the read spacing would overlap. */
+const SPREAD_X = 1.5;
+const SPREAD_Y = 1.4;
+function spreadPositions(p: Positions): Positions {
+  const np: Positions = {};
+  for (const [k, v] of Object.entries(p)) np[k] = { x: v.x * SPREAD_X, y: v.y * SPREAD_Y };
+  return np;
+}
 
 /** A drag in progress — a card move, an edge bend, or a canvas pan. */
 type Drag =
@@ -188,6 +209,62 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+
+  // --- edit mode (visual schema designer) -----------------------------
+  const [editing, setEditing] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [commitOpen, setCommitOpen] = useState(false);
+  const editable = EDITABLE_ENGINES.has(workspace.saved.engine);
+  // Edit mode keeps its OWN positions, seeded (spread apart so the wider 340px
+  // cards don't overlap) from the read-mode layout when editing starts and
+  // discarded on exit. The read-mode `positions` are never touched, so leaving
+  // edit mode restores the exact arrangement with no un-spread arithmetic.
+  const [editPositions, setEditPositions] = useState<Positions | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+
+  // World-space top-left for a newly added table — derived from the current
+  // scroll so the card lands in view.
+  const newTablePos = useCallback(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return { x: 40, y: 40 };
+    return { x: wrap.scrollLeft / zoom + 40, y: wrap.scrollTop / zoom + 40 };
+  }, [zoom]);
+
+  const onCommitted = useCallback(() => {
+    // Drop back to read mode and re-introspect: the map then reflects the
+    // committed schema as live truth (read-mode positions were never touched).
+    setCommitOpen(false);
+    setReviewOpen(false);
+    setEditing(false);
+    setEditPositions(null);
+    setReloadKey((k) => k + 1);
+  }, []);
+
+  const editor = useSchemaEditor({
+    workspace,
+    schemaName: schema,
+    metas,
+    // Table add/rename/drop mutate the edit-mode positions, never the read ones.
+    setPositions: setEditPositions,
+    newTablePos,
+    onCommitted,
+    toast,
+  });
+
+  const toggleEditing = () => {
+    if (editing) {
+      if (editor.pending.length) {
+        toast("Commit or discard pending changes first", "err");
+        return;
+      }
+      setEditing(false);
+      setEditPositions(null);
+    } else {
+      // Seed edit positions spread apart from the current read-mode layout.
+      setEditPositions(positions ? spreadPositions(positions) : {});
+      setEditing(true);
+    }
+  };
 
   // Resolve positions once metas are in: saved layout wins, else auto-layout.
   useEffect(() => {
@@ -383,6 +460,8 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
   const applyZoom = (z: number) => {
     const next = clampZoom(z);
     setZoom(next);
+    // Read-mode positions are untouched in edit mode, so persisting the (read)
+    // layout + zoom is safe either way.
     if (positions) persist(positions, next);
   };
   const onWheel = (e: React.WheelEvent) => {
@@ -394,6 +473,13 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
   const resetView = () => {
     if (!metas) return;
     const auto = autoLayout(tables, metas);
+    // In edit mode, reset only the (separate) edit-mode positions — re-spread so
+    // the wider cards don't overlap — and leave the saved read layout untouched.
+    if (editing) {
+      setEditPositions(spreadPositions(auto));
+      setZoom(1);
+      return;
+    }
     setPositions(auto);
     setZoom(1);
     setPan({ x: 0, y: 0 });
@@ -497,13 +583,33 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
     <div className="schema-map">
       <div className="map-toolbar">
         <Icon name="schema" size={16} style={{ color: "var(--accent)" }} />
-        <span className="map-title">{schema} · schema map</span>
+        <span className="map-title">
+          {schema} · schema {editing ? "designer" : "map"}
+        </span>
         <span className="map-sub">
           {tables.length} {tables.length === 1 ? "table" : "tables"} · {edges.length}{" "}
           {edges.length === 1 ? "relationship" : "relationships"}
         </span>
         <div style={{ flex: 1 }} />
-        <span className="map-hint">drag tables to rearrange</span>
+        {editing ? (
+          <button type="button" className="map-addtable" onClick={editor.addTable}>
+            <Icon name="add" size={15} />
+            Add table
+          </button>
+        ) : (
+          <span className="map-hint">drag tables to rearrange</span>
+        )}
+        {editable ? (
+          <button
+            type="button"
+            className={"map-edit-toggle" + (editing ? " on" : "")}
+            onClick={toggleEditing}
+            title="Toggle schema editing"
+          >
+            <Icon name={editing ? "edit_off" : "edit"} size={15} />
+            {editing ? "Editing" : "Edit schema"}
+          </button>
+        ) : null}
         <IconBtn
           icon="zoom_out"
           title="Zoom out"
@@ -535,8 +641,9 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
           aria-label="Reset view, re-run auto-layout, and straighten edges"
           onClick={resetView}
         />
-        {/* Export (PNG / SVG) — a small popover anchored to this button. */}
-        <div className="map-export">
+        {/* Export (PNG / SVG) — a small popover anchored to this button.
+            Hidden in edit mode (export targets the read-mode SVG diagram). */}
+        <div className="map-export" hidden={editing}>
           <IconBtn
             icon={exporting ? "hourglass_top" : "download"}
             title="Export diagram"
@@ -574,74 +681,150 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
 
       <div
         className="map-canvas-wrap"
+        ref={wrapRef}
         // Dot-grid now PANS+ZOOMS with the content: the CSS background's tile
         // size scales with zoom and its origin tracks pan, so the grid moves
         // under the cards instead of staying fixed (Task 2 left this as a TODO).
         style={
           {
             backgroundSize: `${22 * zoom}px ${22 * zoom}px`,
-            backgroundPosition: `${pan.x}px ${pan.y}px`,
+            backgroundPosition: editing ? "0 0" : `${pan.x}px ${pan.y}px`,
           } as React.CSSProperties
         }
       >
-        <svg
-          ref={svgRef}
-          className="map-svg"
-          // Size the SVG to the SCALED content extent (not the viewport) so cards
-          // laid out beyond the visible area aren't clipped by the SVG's own box
-          // — the wrap then scrolls to reach them. min-width/height:100% (CSS)
-          // keeps it filling the viewport when the schema is small.
-          width={extent.width * zoom}
-          height={extent.height * zoom}
-          onPointerDown={onCanvasPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={endDrag}
-          onPointerCancel={endDrag}
-          onWheel={onWheel}
-        >
-          <defs>
-            {/* Soft layered drop shadow for cards (lighter than a CSS filter,
+        {editing ? (
+          <SchemaEditCanvas
+            editor={editor}
+            positions={editPositions ?? {}}
+            setPositions={setEditPositions}
+            zoom={zoom}
+            wrapRef={wrapRef}
+          />
+        ) : (
+          <>
+            <svg
+              ref={svgRef}
+              className="map-svg"
+              // Size the SVG to the SCALED content extent (not the viewport) so cards
+              // laid out beyond the visible area aren't clipped by the SVG's own box
+              // — the wrap then scrolls to reach them. min-width/height:100% (CSS)
+              // keeps it filling the viewport when the schema is small.
+              width={extent.width * zoom}
+              height={extent.height * zoom}
+              onPointerDown={onCanvasPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={endDrag}
+              onPointerCancel={endDrag}
+              onWheel={onWheel}
+            >
+              <defs>
+                {/* Soft layered drop shadow for cards (lighter than a CSS filter,
                 and serialises into the export filter too). */}
-            <filter id="mapCardShadow" x="-20%" y="-20%" width="140%" height="160%">
-              <feDropShadow dx="0" dy="6" stdDeviation="9" floodColor="#000" floodOpacity="0.4" />
-            </filter>
-          </defs>
-          <g
-            transform={`translate(${pan.x},${pan.y}) scale(${zoom})`}
-            className={dragRef.current ? "" : "map-eased"}
-          >
-            {/* Edges first so cards paint over their endpoints. */}
-            <g className="map-edges-layer">
-              {edges.map((edge) => (
-                <Edge
-                  key={edge.id}
-                  edge={edge}
-                  selected={selectedEdge === edge.id}
-                  bent={Boolean(waypoints[edge.id])}
-                  onSelectPointerDown={(e) => onEdgePointerDown(e, edge.id)}
-                  onHandlePointerDown={(e) => onHandlePointerDown(e, edge.id)}
-                  onResetEdge={() => resetEdge(edge.id)}
+                <filter id="mapCardShadow" x="-20%" y="-20%" width="140%" height="160%">
+                  <feDropShadow
+                    dx="0"
+                    dy="6"
+                    stdDeviation="9"
+                    floodColor="#000"
+                    floodOpacity="0.4"
+                  />
+                </filter>
+              </defs>
+              <g
+                transform={`translate(${pan.x},${pan.y}) scale(${zoom})`}
+                className={dragRef.current ? "" : "map-eased"}
+              >
+                {/* Edges first so cards paint over their endpoints. */}
+                <g className="map-edges-layer">
+                  {edges.map((edge) => (
+                    <Edge
+                      key={edge.id}
+                      edge={edge}
+                      selected={selectedEdge === edge.id}
+                      bent={Boolean(waypoints[edge.id])}
+                      onSelectPointerDown={(e) => onEdgePointerDown(e, edge.id)}
+                      onHandlePointerDown={(e) => onHandlePointerDown(e, edge.id)}
+                      onResetEdge={() => resetEdge(edge.id)}
+                    />
+                  ))}
+                </g>
+
+                {cards.map((card) => (
+                  <Card
+                    key={card.table}
+                    card={card}
+                    onHeaderPointerDown={(e) => onCardPointerDown(e, card.table)}
+                    onOpen={() => openTableTab(schema, card.table)}
+                  />
+                ))}
+              </g>
+            </svg>
+            {/* Off-screen spacer matching the scaled SVG, so the wrap reserves the
+            same scroll room at any zoom level. */}
+            <div
+              className="map-extent"
+              style={{ width: extent.width * zoom, height: extent.height * zoom }}
+            />
+          </>
+        )}
+      </div>
+
+      {/* Pending-migration bar — floats over the canvas bottom when ≥1 change
+          is staged in edit mode. */}
+      {editing && editor.pending.length > 0 ? (
+        <div className="map-pending">
+          {reviewOpen ? (
+            <div className="pending-list">
+              <div className="pending-list-title">Pending migration</div>
+              {editor.pending.map((sql, i) => (
+                <pre
+                  key={i}
+                  className={"pending-sql" + (isDestructive(sql) ? " destructive" : "")}
+                  dangerouslySetInnerHTML={{ __html: highlightSql(sql) }}
                 />
               ))}
-            </g>
+            </div>
+          ) : null}
+          <div className="pending-bar-row">
+            <Icon name="pending_actions" size={16} style={{ color: "var(--accent)" }} />
+            <span className="pending-count">
+              {editor.pending.length} pending change{editor.pending.length === 1 ? "" : "s"}
+            </span>
+            <button
+              type="button"
+              className="pending-review"
+              onClick={() => setReviewOpen((v) => !v)}
+            >
+              <Icon name={reviewOpen ? "expand_more" : "expand_less"} size={14} />
+              {reviewOpen ? "Hide SQL" : "Review SQL"}
+            </button>
+            <div style={{ flex: 1 }} />
+            <Btn variant="text" small onClick={editor.discard}>
+              Discard
+            </Btn>
+            <Btn
+              variant="filled"
+              icon="published_with_changes"
+              small
+              onClick={() => setCommitOpen(true)}
+            >
+              Commit changes
+            </Btn>
+          </div>
+        </div>
+      ) : null}
 
-            {cards.map((card) => (
-              <Card
-                key={card.table}
-                card={card}
-                onHeaderPointerDown={(e) => onCardPointerDown(e, card.table)}
-                onOpen={() => openTableTab(schema, card.table)}
-              />
-            ))}
-          </g>
-        </svg>
-        {/* Off-screen spacer matching the scaled SVG, so the wrap reserves the
-            same scroll room at any zoom level. */}
-        <div
-          className="map-extent"
-          style={{ width: extent.width * zoom, height: extent.height * zoom }}
+      {commitOpen ? (
+        <SchemaCommitModal
+          schemaName={schema}
+          env={workspace.saved.env}
+          envColor={workspace.saved.color ?? ENV_COLOR[workspace.saved.env]}
+          statements={editor.pending}
+          busy={editor.busy}
+          onConfirm={() => void editor.commit()}
+          onClose={() => setCommitOpen(false)}
         />
-      </div>
+      ) : null}
     </div>
   );
 }

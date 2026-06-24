@@ -2,9 +2,17 @@
 // keys first, nested maps/lists shown compactly (click any row to open the item
 // editor). Ported from the prototype's `DynamoItemGrid` in `dynamo.jsx`.
 //
-// Optional multi-select: when `onToggleRow` is supplied a checkbox column is
-// shown (header = select-all, tri-state) so the parent can offer bulk actions
-// (delete selected, export selected to CSV).
+// PERFORMANCE: a Dynamo partition can return 100+ items each with ~100
+// attributes, i.e. ~10k cells. A plain <table> rendering every cell froze the
+// UI (huge DOM, blank paint regions, and a full re-reconcile on every parent
+// state change). So this is a div-based CSS-grid with ROW VIRTUALISATION
+// (TanStack) — only the visible rows mount — mirroring the SQL DataGrid. That
+// also keeps re-renders cheap (only ~20 rows reconcile), so button clicks stay
+// responsive while a large result is on screen.
+
+import { useMemo, useRef } from "react";
+
+import { useVirtualizer } from "@tanstack/react-virtual";
 
 import { Icon } from "../../../shared/ui/Icon";
 import { useToast } from "../../../shared/ui/toastContext";
@@ -16,6 +24,21 @@ function copyText(v: unknown): string {
   if (v === null || v === undefined) return "";
   return typeof v === "object" ? JSON.stringify(v) : String(v);
 }
+
+/** Fixed row height (px) handed to the virtualizer — single-line ellipsised
+ *  cells, matching the prototype's row metrics. */
+const ROW_H = 30;
+/** DOM rows kept beyond the viewport (smooth fast-scroll). */
+const ROW_OVERSCAN = 12;
+
+// Column-width estimate (no per-cell measuring: sample a few rows and clamp).
+const CHAR_PX = 7;
+const PAD_PX = 26;
+const COL_MIN_PX = 90;
+const COL_MAX_PX = 360;
+const ROWNUM_PX = 40;
+const CHECK_PX = 34;
+const WIDTH_SAMPLE_ROWS = 40;
 
 interface DynamoItemGridProps {
   items: DynamoItem[];
@@ -37,119 +60,162 @@ export function DynamoItemGrid({
   onToggleAll,
 }: DynamoItemGridProps) {
   const toast = useToast();
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
   const copy = (v: unknown) =>
     void navigator.clipboard.writeText(copyText(v)).then(
       () => toast("Copied to clipboard", "ok"),
       () => toast("Couldn't copy to clipboard", "err"),
     );
 
-  const cols = attributeUnion(items);
   // Keys first, then the remaining attributes in first-seen order. Keys are only
   // shown when actually present in the returned items — a projection that omits
   // PK/SK must not render empty key columns.
-  const ordered = [keySchema.pk, keySchema.sk]
-    .filter((c): c is string => !!c && cols.includes(c as string))
-    .concat(cols.filter((c) => c !== keySchema.pk && c !== keySchema.sk));
+  const ordered = useMemo(() => {
+    const cols = attributeUnion(items);
+    return [keySchema.pk, keySchema.sk]
+      .filter((c): c is string => !!c && cols.includes(c))
+      .concat(cols.filter((c) => c !== keySchema.pk && c !== keySchema.sk));
+  }, [items, keySchema.pk, keySchema.sk]);
+
+  const selectable = !!onToggleRow;
+
+  // Grid track template: optional checkbox + row-number gutter + one fixed px
+  // track per column (estimated from the header + a sample of cell lengths).
+  const gridCols = useMemo(() => {
+    const widths = ordered.map((c) => {
+      let maxLen = c.length;
+      for (let i = 0; i < items.length && i < WIDTH_SAMPLE_ROWS; i++) {
+        const len = copyText(items[i]?.[c]).length;
+        if (len > maxLen) maxLen = len;
+      }
+      const px = Math.min(COL_MAX_PX, Math.max(COL_MIN_PX, maxLen * CHAR_PX + PAD_PX));
+      return px + "px";
+    });
+    return (selectable ? CHECK_PX + "px " : "") + ROWNUM_PX + "px " + widths.join(" ");
+  }, [ordered, items, selectable]);
+
+  // The virtualizer's results are consumed inline in render only (never passed
+  // to a memoized child), so the compiler's "cannot memoize" caution is moot.
+  // eslint-disable-next-line react-hooks/incompatible-library
+  const rowVirtualizer = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => ROW_H,
+    overscan: ROW_OVERSCAN,
+  });
 
   if (!items.length) return <div className="ddb-grid-empty">No items</div>;
 
-  const selectable = !!onToggleRow;
   const sel = selected ?? new Set<number>();
   const allSelected = selectable && items.length > 0 && sel.size === items.length;
   const someSelected = selectable && sel.size > 0 && !allSelected;
+  const totalHeight = rowVirtualizer.getTotalSize();
 
   return (
-    <div className="ddb-datagrid-wrap">
-      <table className="ddb-datagrid">
-        <thead>
-          <tr>
-            {selectable ? (
-              <th className="ddb-dg-check-h">
-                <input
-                  type="checkbox"
-                  className="ddb-dg-check"
-                  checked={allSelected}
-                  ref={(el) => {
-                    if (el) el.indeterminate = someSelected;
-                  }}
-                  onChange={onToggleAll}
-                  aria-label="Select all rows"
-                />
-              </th>
-            ) : null}
-            <th className="ddb-dg-rownum-h">#</th>
-            {ordered.map((c) => (
-              <th key={c}>
-                <span className="ddb-dg-head">
-                  {c === keySchema.pk ? (
-                    <span className="ddb-key-badge pk">PK</span>
-                  ) : c === keySchema.sk ? (
-                    <span className="ddb-key-badge sk">SK</span>
-                  ) : null}
-                  <span className="ddb-dg-colname">{c}</span>
-                </span>
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((it, ri) => (
-            <tr
-              key={ri}
-              className={"ddb-row" + (sel.has(ri) ? " selected" : "")}
-              onClick={() => onOpenItem?.(it)}
-              style={onOpenItem ? undefined : { cursor: "default" }}
-            >
-              {selectable ? (
-                <td className="ddb-dg-check-c" onClick={(e) => e.stopPropagation()}>
-                  <input
-                    type="checkbox"
-                    className="ddb-dg-check"
-                    checked={sel.has(ri)}
-                    onChange={() => onToggleRow?.(ri)}
-                    aria-label={`Select row ${ri + 1}`}
-                  />
-                </td>
+    <div className="ddb-vg-wrap" ref={scrollRef}>
+      <div className="ddb-vg-canvas" style={{ "--ddb-vg-cols": gridCols } as React.CSSProperties}>
+        {/* Sticky header row. */}
+        <div className="ddb-vg-row ddb-vg-header">
+          {selectable ? (
+            <div className="ddb-vg-check-c">
+              <input
+                type="checkbox"
+                className="ddb-dg-check"
+                checked={allSelected}
+                ref={(el) => {
+                  if (el) el.indeterminate = someSelected;
+                }}
+                onChange={onToggleAll}
+                aria-label="Select all rows"
+              />
+            </div>
+          ) : null}
+          <div className="ddb-vg-rownum ddb-vg-rownum-h">#</div>
+          {ordered.map((c) => (
+            <div key={c} className="ddb-vg-th" title={c}>
+              {c === keySchema.pk ? (
+                <span className="ddb-key-badge pk">PK</span>
+              ) : c === keySchema.sk ? (
+                <span className="ddb-key-badge sk">SK</span>
               ) : null}
-              <td className="ddb-dg-rownum">{ri + 1}</td>
-              {ordered.map((c) => {
-                const v = it[c];
-                const disp = dynamoFmt(v);
-                return (
-                  <td key={c} title={typeof v === "object" && v !== null ? JSON.stringify(v) : ""}>
-                    {disp === null ? (
-                      <span className="ddb-cell-null">—</span>
-                    ) : typeof v === "object" ? (
-                      <span className="ddb-json-chip">
-                        <Icon name="data_object" size={10} /> {disp}
-                      </span>
-                    ) : typeof v === "number" ? (
-                      <span className="ddb-cell-num">{disp}</span>
-                    ) : typeof v === "boolean" ? (
-                      <span className={v ? "ddb-cell-true" : "ddb-cell-false"}>{disp}</span>
-                    ) : (
-                      <span className="ddb-cell-text">{disp}</span>
-                    )}
-                    {/* Hover copy — copies the raw value (off the row-open click). */}
-                    <button
-                      type="button"
-                      className="ddb-cell-copy"
-                      title="Copy value"
-                      aria-label={"Copy " + c + " value"}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        copy(v);
-                      }}
-                    >
-                      <Icon name="content_copy" size={12} />
-                    </button>
-                  </td>
-                );
-              })}
-            </tr>
+              <span className="ddb-vg-colname">{c}</span>
+            </div>
           ))}
-        </tbody>
-      </table>
+        </div>
+
+        {/* Virtualised body: only visible rows mount. */}
+        <div style={{ height: totalHeight, position: "relative" }}>
+          {rowVirtualizer.getVirtualItems().map((vr) => {
+            const ri = vr.index;
+            const it = items[ri];
+            if (!it) return null;
+            return (
+              <div
+                key={ri}
+                className={"ddb-vg-row ddb-vg-body-row" + (sel.has(ri) ? " selected" : "")}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  height: vr.size,
+                  transform: `translateY(${vr.start}px)`,
+                }}
+                onClick={() => onOpenItem?.(it)}
+                role={onOpenItem ? "button" : undefined}
+              >
+                {selectable ? (
+                  <div className="ddb-vg-check-c" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      className="ddb-dg-check"
+                      checked={sel.has(ri)}
+                      onChange={() => onToggleRow?.(ri)}
+                      aria-label={`Select row ${ri + 1}`}
+                    />
+                  </div>
+                ) : null}
+                <div className="ddb-vg-rownum">{ri + 1}</div>
+                {ordered.map((c) => {
+                  const v = it[c];
+                  const disp = dynamoFmt(v);
+                  const isObj = typeof v === "object" && v !== null;
+                  return (
+                    <div key={c} className="ddb-vg-cell" title={isObj ? JSON.stringify(v) : ""}>
+                      {disp === null ? (
+                        <span className="ddb-cell-null">—</span>
+                      ) : isObj ? (
+                        <span className="ddb-json-chip">
+                          <Icon name="data_object" size={10} /> {disp}
+                        </span>
+                      ) : typeof v === "number" ? (
+                        <span className="ddb-cell-num">{disp}</span>
+                      ) : typeof v === "boolean" ? (
+                        <span className={v ? "ddb-cell-true" : "ddb-cell-false"}>{disp}</span>
+                      ) : (
+                        <span className="ddb-cell-text">{disp}</span>
+                      )}
+                      {/* Hover copy — copies the raw value (off the row-open click). */}
+                      <button
+                        type="button"
+                        className="ddb-cell-copy"
+                        title="Copy value"
+                        aria-label={"Copy " + c + " value"}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          copy(v);
+                        }}
+                      >
+                        <Icon name="content_copy" size={12} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

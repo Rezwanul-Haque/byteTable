@@ -258,15 +258,26 @@ export function DynamoTableTab({
 
   const items = result?.items ?? [];
   const clearSelection = () => setSelected(new Set());
-  const toggleRow = (i: number) =>
-    setSelected((s) => {
-      const n = new Set(s);
-      if (n.has(i)) n.delete(i);
-      else n.add(i);
-      return n;
-    });
-  const toggleAll = () =>
-    setSelected((s) => (s.size === items.length ? new Set() : new Set(items.map((_, i) => i))));
+  // Stable identities so the memoised DynamoItemGrid doesn't re-render (and
+  // re-reconcile its many cells) on unrelated parent state changes.
+  const toggleRow = useCallback(
+    (i: number) =>
+      setSelected((s) => {
+        const n = new Set(s);
+        if (n.has(i)) n.delete(i);
+        else n.add(i);
+        return n;
+      }),
+    [],
+  );
+  const itemCount = items.length;
+  const toggleAll = useCallback(
+    () =>
+      setSelected((s) =>
+        s.size === itemCount ? new Set() : new Set(Array.from({ length: itemCount }, (_, i) => i)),
+      ),
+    [itemCount],
+  );
   const refetchCurrent = () => {
     setTokens([undefined]);
     void fetchAt(0, undefined, sourceRef.current);

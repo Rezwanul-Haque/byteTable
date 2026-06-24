@@ -8,6 +8,10 @@
 #   Sessions  — partition-only (sessionId), a `byUser` GSI, PROVISIONED 5/5,
 #               and a `ttl` TimeToLive attribute.
 #   EventLog  — PK + SK (aggregateId / timestamp) with a `byType` GSI.
+#   WideDemo  — PK + SK with ONE big partition: 120 items, each ~100 attributes
+#               of mixed types (S/N/BOOL/M/L). Reproduces the wide-result grid
+#               (Query PK = the one game partition → 100+ very wide items) used
+#               to exercise the item-grid's row virtualisation.
 #
 # This exercises every surface: the dashboard (items/GSIs/billing/size), the
 # scan/query tab (PK + sort-key conditions on base table AND a GSI), the item
@@ -53,7 +57,7 @@ for _ in $(seq 1 30); do
 done
 
 # Idempotent: drop the tables we manage so a re-run is clean (like FLUSHDB).
-for t in ShopApp Sessions EventLog; do
+for t in ShopApp Sessions EventLog WideDemo; do
   DDB delete-table --table-name "$t" >/dev/null 2>&1 || true
 done
 
@@ -171,9 +175,51 @@ for i in $(seq 0 11); do
   PUT EventLog "{\"aggregateId\":{\"S\":\"$agg\"},\"timestamp\":{\"S\":\"$ts\"},\"eventType\":{\"S\":\"$et\"},\"source\":{\"S\":\"$src\"},\"payload\":{\"M\":{\"v\":{\"N\":\"$((1 + i % 5))\"},\"ok\":{\"BOOL\":$ok}}}}"
 done
 
+# ---------------- WideDemo — one big, very wide partition (grid perf) ----------------
+echo "Creating WideDemo (one partition: 120 items × ~100 attributes)…"
+DDB create-table \
+  --table-name WideDemo \
+  --attribute-definitions \
+    AttributeName=PK,AttributeType=S \
+    AttributeName=SK,AttributeType=S \
+  --key-schema AttributeName=PK,KeyType=HASH AttributeName=SK,KeyType=RANGE \
+  --billing-mode PAY_PER_REQUEST >/dev/null
+
+# Every item lives in the SAME partition, so a single Query PK=<this> returns the
+# whole wide collection — the scenario that stressed the item grid.
+WIDE_PK="GAME#23710fdd-4a1f-44d0-9ea9-73b48a5592b9"
+
+# Build ~93 mixed-type attributes for item `i` (60 strings, 20 numbers, 10
+# booleans, a map, a list, a timestamp) — no trailing comma.
+wide_attrs() {
+  local i=$1 out="" f b
+  for f in $(seq 1 60); do
+    out+="\"attr_str_$(printf '%02d' "$f")\":{\"S\":\"val-${i}-${f}-$(printf '%04x' $(((i * 131 + f * 17) & 0xffff)))\"},"
+  done
+  for f in $(seq 1 20); do
+    out+="\"attr_num_$(printf '%02d' "$f")\":{\"N\":\"$(((i * 7 + f * 13) % 100000))\"},"
+  done
+  for f in $(seq 1 10); do
+    b=$([ $(((i + f) % 2)) -eq 0 ] && echo true || echo false)
+    out+="\"attr_flag_$(printf '%02d' "$f")\":{\"BOOL\":$b},"
+  done
+  out+="\"meta\":{\"M\":{\"region\":{\"S\":\"eu-west-1\"},\"score\":{\"N\":\"$((i % 100))\"},\"nested\":{\"M\":{\"k\":{\"S\":\"v$i\"}}}}},"
+  out+="\"tags\":{\"L\":[{\"S\":\"t$((i % 5))\"},{\"S\":\"t$((i % 7))\"},{\"N\":\"$i\"}]},"
+  out+="\"updatedAt\":{\"S\":\"2026-06-$(printf '%02d' $(((i % 28) + 1)))T1$((i % 9)):0$((i % 6)):00Z\"}"
+  printf '%s' "$out"
+}
+
+# 120 items → exceeds a 100-item page, so paging is exercised too. Sequential
+# put-item calls (DynamoDB Local is fast locally); takes a few seconds.
+for i in $(seq 1 120); do
+  sk="ITEM#$(printf '%04d' "$i")"
+  PUT WideDemo "{\"PK\":{\"S\":\"$WIDE_PK\"},\"SK\":{\"S\":\"$sk\"},\"seq\":{\"N\":\"$i\"},\"label\":{\"S\":\"asset-$i\"},$(wide_attrs "$i")}"
+done
+
 echo "DynamoDB seeded:"
-for t in ShopApp Sessions EventLog; do
+for t in ShopApp Sessions EventLog WideDemo; do
   count=$(DDB scan --table-name "$t" --select COUNT --query 'Count' --output text 2>/dev/null || echo "?")
   echo "  $t: $count items"
 done
 echo "Single-table design: ShopApp (PK/SK + GSI1) with USER / ORDER / PRODUCT items."
+echo "Wide-result test: WideDemo — Query PK = $WIDE_PK (120 items × ~100 attributes)."

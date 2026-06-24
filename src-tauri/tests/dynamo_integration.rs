@@ -15,7 +15,9 @@
 
 use bytetable_lib::engines::dynamo::DynamoConnector;
 
-use bytetable_lib::shared::engine::{ConnectSecret, ConnectionParams, Connector, DynamoAuth, Engine};
+use bytetable_lib::shared::engine::{
+    ConnectSecret, ConnectionParams, Connector, DynamoAuth, Engine,
+};
 
 /// Parse `dynamodb://host:port` into `(ConnectionParams, secret)`. The URL
 /// may carry an optional `/region` suffix (defaults to `us-east-1`).
@@ -77,10 +79,7 @@ async fn dynamo_list_tables_against_local_server() {
     let conn = open_doc(&params, &secret).await;
 
     // ---- list_table_names (lightweight, names only) ----
-    let names = conn
-        .list_table_names()
-        .await
-        .expect("list_table_names");
+    let names = conn.list_table_names().await.expect("list_table_names");
     for expected in SEEDED_TABLES {
         assert!(
             names.iter().any(|n| n == expected),

@@ -4,10 +4,10 @@
 
 Tauri 2 desktop database client (TablePlus alternative). Rust core with React 19 + TypeScript + Vite renderer.
 
-| Layer | Stack |
-|-------|-------|
+| Layer | Stack                                                                     |
+| ----- | ------------------------------------------------------------------------- |
 | Shell | Rust + Tauri 2 (rusqlite, sqlx, redis, aws-sdk-dynamodb, mongodb, scylla) |
-| UI | React 19, TypeScript, Vite 6, Zustand, CodeMirror, TanStack Virtual |
+| UI    | React 19, TypeScript, Vite 6, Zustand, CodeMirror, TanStack Virtual       |
 
 Architecture: vertical-slice + clean architecture. One Rust feature folder per capability, engine adapters in `src-tauri/src/engines/`.
 
@@ -33,6 +33,7 @@ make hooks        # install git pre-commit hook (husky + lint-staged)
 ```
 
 Underlying commands:
+
 ```sh
 pnpm dev          # pnpm tauri dev
 pnpm build        # tsc -b && vite build (NOT tauri build)

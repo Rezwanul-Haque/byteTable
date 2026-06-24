@@ -17,7 +17,12 @@ import { useTabMenu } from "../../../shared/ui/useTabMenu";
 import { useWorkspacesStore } from "../../workspaces/state";
 import { useAutoRefresh } from "../../settings/useAutoRefresh";
 import type { Workspace } from "../../workspaces/types";
-import { dynamoDescribeTable, dynamoListTableNames, dynamoListTables, type TableDescriptor } from "../api";
+import {
+  dynamoDescribeTable,
+  dynamoListTableNames,
+  dynamoListTables,
+  type TableDescriptor,
+} from "../api";
 import { useDynamoTabsStore, type DynamoWorkspaceTab } from "../workspaceTabs";
 import { DynamoDashboard } from "./DynamoDashboard";
 import { DynamoExportModal, DynamoImportModal } from "./DynamoIoModals";
@@ -61,7 +66,8 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
   const ensureTabs = useDynamoTabsStore((s) => s.ensure);
   const patchTabs = useDynamoTabsStore((s) => s.patch);
   const tabState = useDynamoTabsStore((s) => s.byWorkspace[workspace.id]);
-  const tabs: Tab[] = tabState?.tabs ?? (isLocal ? [{ id: "ddb-dash", kind: "dashboard", title: "Dashboard" }] : []);
+  const tabs: Tab[] =
+    tabState?.tabs ?? (isLocal ? [{ id: "ddb-dash", kind: "dashboard", title: "Dashboard" }] : []);
   const activeId = tabState?.activeId ?? (isLocal ? "ddb-dash" : "");
   const peekTabs = () => useDynamoTabsStore.getState().byWorkspace[workspace.id]?.tabs ?? tabs;
   const setTabs = (next: Tab[] | ((ts: Tab[]) => Tab[])) =>
@@ -99,19 +105,6 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
     () => openPanel(workspace.id, termLabel),
     [openPanel, workspace.id, termLabel],
   );
-
-  // Ctrl+` (and ⌘+` on macOS) toggles the PartiQL panel — the VS Code
-  // convention, plus the Mac modifier users expect.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "`") {
-        e.preventDefault();
-        togglePanel(workspace.id, termLabel);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [togglePanel, workspace.id, termLabel]);
 
   const refreshTables = useCallback(async () => {
     setTablesLoading(true);
@@ -200,6 +193,34 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
       if (id === activeId && fallback) setActiveId(fallback.id);
       return next;
     });
+
+  // Ctrl+` (and ⌘+` on macOS) toggles the PartiQL panel — the VS Code
+  // convention, plus the Mac modifier users expect.
+  // ⌘W on macOS: close the active tab; if no tabs, let the OS handle it (hide
+  // the app) instead of the window-leaking-close-to-tray bug.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "`") {
+        e.preventDefault();
+        togglePanel(workspace.id, termLabel);
+        return;
+      }
+      if (e.metaKey && e.key.toLowerCase() === "w") {
+        const st = useDynamoTabsStore.getState().byWorkspace[workspace.id];
+        if (st?.tabs.length && st.activeId) {
+          e.preventDefault();
+          const idx = st.tabs.findIndex((t) => t.id === st.activeId);
+          const next = st.tabs.filter((t) => t.id !== st.activeId);
+          const fallback = next[Math.max(0, idx - 1)];
+          const activeId = fallback?.id ?? next[0]?.id ?? "";
+          patchTabs(workspace.id, { tabs: next, activeId });
+        }
+        // No tabs → let the OS handle it (hide app on macOS).
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [togglePanel, workspace.id, termLabel, patchTabs]);
 
   const tabMenu = useTabMenu({
     ids: tabs.map((t) => t.id),

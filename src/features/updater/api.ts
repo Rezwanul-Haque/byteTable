@@ -12,7 +12,7 @@ import { check, type Update } from "@tauri-apps/plugin-updater";
 export const UPDATE_REPO = "rezwanul-Haque/byteTable";
 
 /** Fallback shown before the real version resolves / in plain-browser dev. */
-export const FALLBACK_VERSION = "0.0.11";
+export const FALLBACK_VERSION = "0.0.12";
 
 /** The running app version (from Cargo/tauri.conf), without a leading `v`.
  *  Falls back to {@link FALLBACK_VERSION} outside the Tauri shell. */

@@ -23,6 +23,7 @@ interface DynamoSidebarProps {
   onOpenTable: (name: string) => void;
   onOpenPartiql: () => void;
   onOpenDashboard: () => void;
+  showDashboard?: boolean;
   onOpenMap: () => void;
   onExportTable: (name: string) => void;
   onImportTable: (name: string) => void;
@@ -61,6 +62,7 @@ export function DynamoSidebar({
   onRefresh,
   refreshing,
   onCloseWorkspace,
+  showDashboard = true,
 }: DynamoSidebarProps) {
   const [q, setQ] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -109,7 +111,9 @@ export function DynamoSidebar({
         </button>
         <IconBtn icon="schema" title="Schema map (single-table design)" onClick={onOpenMap} />
         <IconBtn icon="download" title="Export all tables" onClick={onExportAll} />
-        <IconBtn icon="monitoring" title="Tables dashboard" onClick={onOpenDashboard} />
+        {showDashboard ? (
+          <IconBtn icon="monitoring" title="Tables dashboard" onClick={onOpenDashboard} />
+        ) : null}
         <IconBtn
           icon="refresh"
           title="Refresh tables"

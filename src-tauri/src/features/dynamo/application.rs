@@ -12,6 +12,14 @@ use crate::shared::document::{
 };
 use crate::shared::error::AppError;
 
+/// `ListTables` — returns only table names (no `DescribeTable` per table).
+pub async fn list_table_names(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+) -> Result<Vec<String>, AppError> {
+    manager.get_document(handle).await?.list_table_names().await
+}
+
 /// `ListTables` + per-table `DescribeTable` (MILESTONE_17 §17.1).
 pub async fn list_tables(
     manager: &ConnectionManager,

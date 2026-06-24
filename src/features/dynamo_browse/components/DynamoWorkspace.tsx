@@ -17,7 +17,7 @@ import { useTabMenu } from "../../../shared/ui/useTabMenu";
 import { useWorkspacesStore } from "../../workspaces/state";
 import { useAutoRefresh } from "../../settings/useAutoRefresh";
 import type { Workspace } from "../../workspaces/types";
-import { dynamoListTables, type TableDescriptor } from "../api";
+import { dynamoDescribeTable, dynamoListTableNames, dynamoListTables, type TableDescriptor } from "../api";
 import { useDynamoTabsStore, type DynamoWorkspaceTab } from "../workspaceTabs";
 import { DynamoDashboard } from "./DynamoDashboard";
 import { DynamoExportModal, DynamoImportModal } from "./DynamoIoModals";
@@ -49,6 +49,7 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
   const env = workspace.saved.env;
   const envColor = ENV_COLOR[env];
   const isProduction = env === "production";
+  const isLocal = params.engine === "dynamodb" && "endpoint" in params;
 
   const [tables, setTables] = useState<TableDescriptor[]>([]);
   const [tablesLoading, setTablesLoading] = useState(true);
@@ -60,16 +61,20 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
   const ensureTabs = useDynamoTabsStore((s) => s.ensure);
   const patchTabs = useDynamoTabsStore((s) => s.patch);
   const tabState = useDynamoTabsStore((s) => s.byWorkspace[workspace.id]);
-  const tabs: Tab[] = tabState?.tabs ?? [{ id: "ddb-dash", kind: "dashboard", title: "Dashboard" }];
-  const activeId = tabState?.activeId ?? "ddb-dash";
+  const tabs: Tab[] = tabState?.tabs ?? (isLocal ? [{ id: "ddb-dash", kind: "dashboard", title: "Dashboard" }] : []);
+  const activeId = tabState?.activeId ?? (isLocal ? "ddb-dash" : "");
   const peekTabs = () => useDynamoTabsStore.getState().byWorkspace[workspace.id]?.tabs ?? tabs;
   const setTabs = (next: Tab[] | ((ts: Tab[]) => Tab[])) =>
     patchTabs(workspace.id, { tabs: typeof next === "function" ? next(peekTabs()) : next });
   const setActiveId = (id: string) => patchTabs(workspace.id, { activeId: id });
 
   useEffect(() => {
-    ensureTabs(workspace.id);
-  }, [ensureTabs, workspace.id]);
+    if (isLocal) {
+      ensureTabs(workspace.id);
+    } else {
+      patchTabs(workspace.id, { tabs: [], activeId: "" });
+    }
+  }, [ensureTabs, workspace.id, patchTabs, isLocal]);
 
   // Drop this workspace's persisted tabs when it is CLOSED (not on a mere
   // switch): on unmount, prune only if the workspace is gone from the store.
@@ -112,8 +117,25 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
     setTablesLoading(true);
     setTablesError(null);
     try {
-      const list = await dynamoListTables(handleId);
-      setTables(list);
+      if (isLocal) {
+        const list = await dynamoListTables(handleId);
+        setTables(list);
+      } else {
+        const names = await dynamoListTableNames(handleId);
+        setTables(
+          names.map((n) => ({
+            name: n,
+            keySchema: { pk: "" },
+            attrTypes: {},
+            gsis: [],
+            lsis: [],
+            billing: "",
+            itemCount: 0,
+            sizeBytes: 0,
+            status: "",
+          })),
+        );
+      }
     } catch (e) {
       setTablesError(
         isAppErrorPayload(e) ? e.message : "Could not list tables (desktop app required)",
@@ -121,7 +143,7 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
     } finally {
       setTablesLoading(false);
     }
-  }, [handleId]);
+  }, [handleId, isLocal]);
 
   useEffect(() => {
     void refreshTables();
@@ -133,7 +155,16 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
 
   const activeTab = tabs.find((t) => t.id === activeId);
 
-  const openTable = (name: string) => {
+  const openTable = async (name: string) => {
+    const existing = tables.find((t) => t.name === name);
+    if (!isLocal && existing && !existing.keySchema.pk) {
+      try {
+        const full = await dynamoDescribeTable(handleId, name);
+        setTables((prev) => prev.map((t) => (t.name === name ? full : t)));
+      } catch {
+        // stay with the partial descriptor
+      }
+    }
     const ex = tabs.find((t) => t.kind === "table" && t.table === name);
     if (ex) {
       setActiveId(ex.id);
@@ -202,6 +233,7 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
         activeTable={activeTab?.kind === "table" ? (activeTab.table ?? null) : null}
         onOpenTable={openTable}
         onOpenPartiql={openPartiql}
+        showDashboard={isLocal}
         onOpenDashboard={() => openSingleton("dashboard", "Dashboard")}
         onOpenMap={() => openSingleton("map", "Schema map")}
         onExportTable={(t) => setExportJob({ scope: "table", table: t })}

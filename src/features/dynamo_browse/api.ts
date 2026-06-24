@@ -103,6 +103,11 @@ export interface BatchWriteResult {
 
 // -- invoke wrappers --------------------------------------------------------
 
+/** `ListTables` — returns only table names (no `DescribeTable` per table). */
+export function dynamoListTableNames(handleId: string): Promise<string[]> {
+  return invoke<string[]>("dynamo_list_table_names", { handleId });
+}
+
 /** `ListTables` + per-table `DescribeTable`. */
 export function dynamoListTables(handleId: string): Promise<TableDescriptor[]> {
   return invoke<TableDescriptor[]>("dynamo_list_tables", { handleId });

@@ -23,6 +23,14 @@ use crate::shared::error::AppError;
 use super::application;
 
 #[tauri::command]
+pub async fn dynamo_list_table_names(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+) -> Result<Vec<String>, AppError> {
+    application::list_table_names(state.manager(), &handle_id).await
+}
+
+#[tauri::command]
 pub async fn dynamo_list_tables(
     state: State<'_, ConnectionsState>,
     handle_id: ConnectionHandleId,

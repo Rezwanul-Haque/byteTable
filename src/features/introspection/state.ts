@@ -84,12 +84,22 @@ interface IntrospectionFeatureState {
    * Resolves with the table list, or null when the fetch failed — the error
    * text is in `errors` under the same key; this never rejects. A successful
    * forced refetch also drops the schema's cached column lists (stale for
-   * the same reason the table list was).
+   * the same reason the table list was) UNLESS `keepColumnCaches` is set.
    */
   loadTables: (
     handleId: string,
     schema: string,
-    opts?: { force?: boolean },
+    opts?: {
+      force?: boolean;
+      /**
+       * Refetch the table list but KEEP the schema's cached column/meta caches.
+       * The settings-driven auto-refresh tick uses this so it picks up new /
+       * dropped tables without evicting an open Structure view's meta — which
+       * would blank-then-refetch it on every tick. A manual refresh omits this
+       * (full reintrospect, to catch out-of-band column DDL too).
+       */
+      keepColumnCaches?: boolean;
+    },
   ) => Promise<TableInfo[] | null>;
   /** Fetch one table's columns (cache-first). Same error contract. */
   loadColumns: (handleId: string, schema: string, table: string) => Promise<ColumnInfo[] | null>;
@@ -153,8 +163,14 @@ export const useIntrospectionStore = create<IntrospectionFeatureState>((set, get
           // A fresh table list invalidates the schema's column caches —
           // refresh exists to pick up out-of-band DDL, which affects
           // columns as much as tables. Expanded rows refetch lazily.
-          columns: opts?.force ? omitPrefixed(state.columns, key + SEP) : state.columns,
-          tableMetas: opts?.force ? omitPrefixed(state.tableMetas, key + SEP) : state.tableMetas,
+          columns:
+            opts?.force && !opts?.keepColumnCaches
+              ? omitPrefixed(state.columns, key + SEP)
+              : state.columns,
+          tableMetas:
+            opts?.force && !opts?.keepColumnCaches
+              ? omitPrefixed(state.tableMetas, key + SEP)
+              : state.tableMetas,
           loading: omit(state.loading, key),
           errors: omit(state.errors, key),
         }));

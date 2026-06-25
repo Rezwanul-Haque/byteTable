@@ -178,10 +178,13 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
     void loadTables(handleId, schemaName);
   }, [handleId, schemaName, loadTables]);
 
-  // Settings-driven auto-refresh: force-reintrospect the table list so new /
-  // dropped tables show up. Sidebar list only — the active grid stays manual.
-  // The returned flag spins the refresh icon once per tick.
-  const autoSpinning = useAutoRefresh(() => void loadTables(handleId, schemaName, { force: true }));
+  // Settings-driven auto-refresh: refetch the table list so new / dropped
+  // tables show up, but KEEP column/meta caches (keepColumnCaches) so an open
+  // Structure view isn't evicted + reloaded on every tick. Sidebar list only —
+  // the active grid stays manual. The returned flag spins the refresh icon.
+  const autoSpinning = useAutoRefresh(
+    () => void loadTables(handleId, schemaName, { force: true, keepColumnCaches: true }),
+  );
 
   // Lazily fetch columns for expanded tables that exist in the current
   // list. Re-runs when refresh rewrites the entry (fetchedAt bump dropped

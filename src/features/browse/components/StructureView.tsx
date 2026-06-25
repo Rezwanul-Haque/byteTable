@@ -122,9 +122,15 @@ export function StructureView({
   const [editingCell, setEditingCell] = useState<string | null>(null);
   const [autoEditName, setAutoEditName] = useState<string | null>(null);
 
+  // Fetch on mount/table change, AND re-fetch if the cached meta gets evicted
+  // out from under an open view. A force table-list refresh (the settings-driven
+  // auto-refresh tick) drops the schema's tableMetas to pick up out-of-band DDL;
+  // without repopulating here, `entry` goes undefined and the Structure view
+  // would blank and never recover. The `!loading && !error` guard prevents a
+  // refetch loop (loadTableMeta also de-dupes in-flight requests).
   useEffect(() => {
-    void loadTableMeta(handleId, schema, table);
-  }, [loadTableMeta, handleId, schema, table]);
+    if (!entry && !loading && !error) void loadTableMeta(handleId, schema, table);
+  }, [entry, loading, error, loadTableMeta, handleId, schema, table]);
 
   const meta = entry?.meta ?? null;
   const columns = meta?.columns;

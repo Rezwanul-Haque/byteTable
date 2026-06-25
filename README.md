@@ -147,9 +147,12 @@ curl -fsSL https://raw.githubusercontent.com/rezwanul-Haque/byteTable/main/insta
 
 - **macOS** mounts the `.dmg` and copies `ByteTable.app` to `/Applications` (and clears the
   Gatekeeper quarantine flag, since the build isn't notarized yet).
-- **Linux** drops the `.AppImage` into `~/.local/bin/bytetable` (no `sudo`). Prefer the `.deb`?
-  Grab it from the [releases page](https://github.com/rezwanul-Haque/byteTable/releases/latest)
-  and `sudo apt install ./bytetable_*_amd64.deb`.
+- **Linux**
+  - **Debian / Ubuntu** → installs the `.deb` via `apt` (app-menu entry + dependency resolution;
+    needs `sudo`). This is preferred because AppImages need `libfuse2`, which Ubuntu 22.04+ no
+    longer ships, so they often won't launch.
+  - **Other distros** (or no matching `.deb` in the release) → drops the `.AppImage` into
+    `~/.local/bin/bytetable` (no `sudo`); if it won't run, `sudo apt install libfuse2`.
 
 **Windows** — in PowerShell:
 

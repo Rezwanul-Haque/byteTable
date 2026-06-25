@@ -5,7 +5,8 @@
 #   curl -fsSL https://raw.githubusercontent.com/rezwanul-Haque/byteTable/main/install.sh | sh
 #
 # macOS  → mounts the .dmg and copies ByteTable.app to /Applications.
-# Linux  → drops the .AppImage into ~/.local/bin/bytetable (chmod +x; no sudo).
+# Linux  → Debian/Ubuntu: installs the .deb via apt (needs sudo). Other distros
+#          (or no .deb): drops the .AppImage into ~/.local/bin/bytetable.
 # Windows is not supported here — use the .exe / PowerShell line in the README.
 set -eu
 
@@ -91,10 +92,54 @@ Linux)
   aarch64 | arm64) APAT='aarch64|arm64' ;;
   *) APAT="$ARCH" ;;
   esac
-  # Prefer an AppImage for this arch; fall back to any AppImage.
+
+  # On Debian/Ubuntu, prefer the .deb: it installs properly (app-menu entry +
+  # dependency resolution). The AppImage needs libfuse2, which Ubuntu 22.04+ no
+  # longer ships, so it often won't launch. Other distros use the AppImage, and
+  # we fall back to it if the release has no matching .deb.
+  is_debian=0
+  if [ -f /etc/debian_version ] || command -v dpkg >/dev/null 2>&1; then
+    is_debian=1
+  fi
+
+  DEB_URL=""
+  if [ "$is_debian" -eq 1 ]; then
+    DEB_URL="$(printf '%s\n' "$ASSETS" | grep -iE '\.deb$' | grep -iE "$APAT" | head -1)"
+    [ -n "$DEB_URL" ] || DEB_URL="$(match '\.deb$')"
+  fi
+
+  if [ -n "$DEB_URL" ]; then
+    # .deb install needs root.
+    SUDO=""
+    if [ "$(id -u)" -ne 0 ]; then
+      if command -v sudo >/dev/null 2>&1; then
+        SUDO="sudo"
+      else
+        err "Installing the .deb needs root — re-run as root or install sudo. (Or grab the .AppImage from https://github.com/${REPO}/releases/latest)"
+      fi
+    fi
+    TMP="$(mktemp -d)"
+    trap 'rm -rf "$TMP"' EXIT
+    FILE="${TMP}/$(basename "$DEB_URL")"
+    say "Downloading $(basename "$DEB_URL")…"
+    curl -fSL# "$DEB_URL" -o "$FILE"
+    verify_checksum "$FILE" "$(basename "$DEB_URL")"
+    say "Installing the .deb (needs sudo)…"
+    if $SUDO apt-get install -y "$FILE"; then
+      :
+    else
+      # Older apt without local-file support: install, then fix dependencies.
+      $SUDO dpkg -i "$FILE" || true
+      $SUDO apt-get -f install -y
+    fi
+    say "Installed. Launch ByteTable from your app menu, or run: bytetable"
+    exit 0
+  fi
+
+  # AppImage (non-Debian distro, or no matching .deb in the release).
   URL="$(printf '%s\n' "$ASSETS" | grep -iE '\.AppImage$' | grep -iE "$APAT" | head -1)"
   [ -n "$URL" ] || URL="$(match '\.AppImage$')"
-  [ -n "$URL" ] || err "No Linux .AppImage in the latest release. (For .deb, download it from the releases page.)"
+  [ -n "$URL" ] || err "No Linux .deb or .AppImage in the latest release."
   DEST="${HOME}/.local/bin"
   mkdir -p "$DEST"
   say "Downloading $(basename "$URL")…"
@@ -102,6 +147,9 @@ Linux)
   verify_checksum "$DEST/bytetable" "$(basename "$URL")"
   chmod +x "$DEST/bytetable"
   say "Installed to $DEST/bytetable."
+  if [ "$is_debian" -eq 1 ] && ! { command -v ldconfig >/dev/null 2>&1 && ldconfig -p 2>/dev/null | grep -q 'libfuse\.so\.2'; }; then
+    say "Note: AppImages need libfuse2 — if it won't launch, run: sudo apt install libfuse2"
+  fi
   case ":${PATH}:" in
   *":${DEST}:"*) say "Run: bytetable" ;;
   *) say "Add $DEST to your PATH, then run: bytetable" ;;

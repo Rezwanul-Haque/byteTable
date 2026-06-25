@@ -24,6 +24,7 @@ import { EngineBadge } from "../../../shared/ui/EngineBadge";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { ENV_COLOR } from "../../../shared/ui/envColors";
+import { SidebarObjectGroups } from "../../db_objects/components/SidebarObjectGroups";
 import { useToast } from "../../../shared/ui/toastContext";
 import { normalizeEnv } from "../../../shared/types";
 import {
@@ -135,6 +136,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   const errorsMap = useIntrospectionStore((state) => state.errors);
   const loadTables = useIntrospectionStore((state) => state.loadTables);
   const loadColumns = useIntrospectionStore((state) => state.loadColumns);
+  const invalidateObjects = useIntrospectionStore((state) => state.invalidateObjects);
 
   // Transient local state (prototype sidebar.jsx keeps the same set local).
   const [query, setQuery] = useState("");
@@ -178,10 +180,13 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
     void loadTables(handleId, schemaName);
   }, [handleId, schemaName, loadTables]);
 
-  // Settings-driven auto-refresh: force-reintrospect the table list so new /
-  // dropped tables show up. Sidebar list only — the active grid stays manual.
-  // The returned flag spins the refresh icon once per tick.
-  const autoSpinning = useAutoRefresh(() => void loadTables(handleId, schemaName, { force: true }));
+  // Settings-driven auto-refresh: refetch the table list so new / dropped
+  // tables show up, but KEEP column/meta caches (keepColumnCaches) so an open
+  // Structure view isn't evicted + reloaded on every tick. Sidebar list only —
+  // the active grid stays manual. The returned flag spins the refresh icon.
+  const autoSpinning = useAutoRefresh(
+    () => void loadTables(handleId, schemaName, { force: true, keepColumnCaches: true }),
+  );
 
   // Lazily fetch columns for expanded tables that exist in the current
   // list. Re-runs when refresh rewrites the entry (fetchedAt bump dropped
@@ -290,6 +295,11 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
     if (refreshing) return;
     setRefreshing(true);
     const started = Date.now();
+    // Full object re-introspect (lists + cached definitions) so a manual
+    // refresh picks up objects AND edited definitions made out-of-band (e.g. a
+    // CREATE OR REPLACE VIEW in the SQL editor) — an open viewer refetches its
+    // DDL. (Auto-refresh stays lists-only to avoid viewer flicker per tick.)
+    invalidateObjects(handleId, schemaName);
     void (async () => {
       let refreshed: number | null = null;
       let failure: string | null = null;
@@ -665,6 +675,16 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
           </>
         )}
       </div>
+
+      {/* Bottom region: views / matviews / routines / triggers as a one-open-at-
+          a-time accordion under the Tables list (SQL engines). */}
+      <SidebarObjectGroups
+        handleId={handleId}
+        schema={schemaName}
+        engine={engine}
+        env={workspace.saved.env}
+        envColor={workspace.saved.color ?? ENV_COLOR[workspace.saved.env]}
+      />
 
       <div className="sidebar-footer">
         <Btn

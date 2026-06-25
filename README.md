@@ -147,9 +147,12 @@ curl -fsSL https://raw.githubusercontent.com/rezwanul-Haque/byteTable/main/insta
 
 - **macOS** mounts the `.dmg` and copies `ByteTable.app` to `/Applications` (and clears the
   Gatekeeper quarantine flag, since the build isn't notarized yet).
-- **Linux** drops the `.AppImage` into `~/.local/bin/bytetable` (no `sudo`). Prefer the `.deb`?
-  Grab it from the [releases page](https://github.com/rezwanul-Haque/byteTable/releases/latest)
-  and `sudo apt install ./bytetable_*_amd64.deb`.
+- **Linux**
+  - **Debian / Ubuntu** → installs the `.deb` via `apt` (app-menu entry + dependency resolution;
+    needs `sudo`). This is preferred because AppImages need `libfuse2`, which Ubuntu 22.04+ no
+    longer ships, so they often won't launch.
+  - **Other distros** (or no matching `.deb` in the release) → drops the `.AppImage` into
+    `~/.local/bin/bytetable` (no `sudo`); if it won't run, `sudo apt install libfuse2`.
 
 **Windows** — in PowerShell:
 
@@ -231,33 +234,51 @@ docks resolve an icon by matching the running **window** — its `app_id` (Wayla
   so the icon appears in the dock and app menu), or integrate the AppImage with
   [AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher) / **Gear Lever** ("Add to
   menu"), which creates the `.desktop` + extracts the icon.
-- **GNOME on Wayland** maps a window to its icon by matching the window's `app_id` to the
-  `.desktop` **file name** (it largely ignores `StartupWMClass`). ByteTable's app id is its bundle
-  identifier, `com.bytetable.app`, while the bundler names the entry `ByteTable.desktop` — so on a
-  pure-Wayland session the icon can still be missing even after installing the `.deb`. The bundled
-  desktop entry sets `StartupWMClass` (which fixes X11 and GNOME-on-Xorg), but if you're on Wayland
-  and still see a generic icon, drop a matching entry into your user applications:
+- **GNOME on Wayland** maps a window to its launcher — for both the icon **and the running-window
+  dot** — by matching the window's `app_id` to a `.desktop` **file name** (it largely ignores
+  `StartupWMClass`). The catch: GNOME **lowercases** the `app_id` before looking up
+  `<app_id>.desktop`. The window's class is the **binary name**, not the bundle identifier
+  (`com.bytetable.app` is macOS/updater-only) — so a capitalized binary like `ByteTable` reports
+  `ByteTable`, GNOME searches `bytetable.desktop`, and a `ByteTable.desktop` entry never matches →
+  generic icon **and no running dot**. ByteTable fixes this at the source: `mainBinaryName` is set to
+  the lowercase `bytetable`, so the binary, `Exec=`, the installed `.desktop` file name, the window
+  `app_id`, and `StartupWMClass=` are all the single lowercase token `bytetable`. On a current build
+  there's nothing to do. If you're on an **older build** (capitalized binary) and still see a generic
+  icon / missing dot on Wayland, drop a matching lowercase entry into your user applications:
 
   ```sh
   # confirm the class/app-id the window actually reports:
   xprop WM_CLASS            # X11 — click the ByteTable window
   # (Wayland: Alt+F2 → "lg" → Windows tab shows each window's app_id)
 
-  # then install a user .desktop whose FILE NAME equals that app_id:
-  cat > ~/.local/share/applications/com.bytetable.app.desktop <<'EOF'
+  # install a user .desktop whose FILE NAME equals the lowercased app_id:
+  cat > ~/.local/share/applications/bytetable.desktop <<'EOF'
   [Desktop Entry]
   Type=Application
   Name=ByteTable
   Exec=bytetable
   Icon=bytetable
-  StartupWMClass=com.bytetable.app
+  StartupWMClass=bytetable
   Categories=Development;Database;
   Terminal=false
   EOF
   update-desktop-database ~/.local/share/applications 2>/dev/null || true
   ```
 
-  Adjust `StartupWMClass` / the file name to whatever `xprop`/Looking Glass reported if it differs.
+  Adjust the file name / `StartupWMClass` to whatever `xprop`/Looking Glass actually reported.
+
+- **Icon looks small / not aligned with neighbors?** macOS Dock icons carry a ~10% transparent
+  margin (the look Apple wants), but Linux/GNOME icons are **full-bleed** — they fill the canvas
+  edge-to-edge. The Linux hicolor PNGs (`src-tauri/icons/{32x32,128x128,128x128@2x}.png`) are
+  therefore rendered from `src-tauri/icon-source-linux.svg` (cropped to the brand tile, ~98% fill),
+  not the padded `icon-source.svg` used for `icon.icns`. To regenerate after editing the artwork:
+
+  ```sh
+  cd src-tauri
+  for s in "32 32x32" "64 64x64" "128 128x128" "256 128x128@2x" "512 icon"; do
+    set -- $s; rsvg-convert -w "$1" -h "$1" icon-source-linux.svg -o "icons/$2.png"
+  done
+  ```
 
 ### Windows
 

@@ -13,7 +13,7 @@ import { connectionClose } from "../connections/api";
 import { useIntrospectionStore } from "../introspection/state";
 import { newCondition } from "../browse/filter";
 import type { CellValue } from "../../shared/api/engine";
-import type { AlterOp } from "../../shared/api/engine";
+import type { AlterOp, DbObjectInfo } from "../../shared/api/engine";
 import type {
   SqlHistoryEntry,
   SqlRun,
@@ -116,6 +116,8 @@ interface WorkspacesFeatureState {
    * panel shows the same condition if opened).
    */
   openTableTabWithFilter: (schema: string, table: string, column: string, value: CellValue) => void;
+  /** Open (or focus) a schema object's read-only viewer tab. */
+  openObjectTab: (schema: string, object: DbObjectInfo) => void;
   /** Open a fresh SQL editor tab ("Query N") and focus it. */
   openSqlTab: () => void;
   /**
@@ -358,6 +360,30 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
           return { tabs: nextTabs, activeTabId: existing.id };
         }
         const tab: Tab = { id: newTabId("table"), kind: "table", schema, table, mode };
+        return { tabs: [...tabs, tab], activeTabId: tab.id };
+      }),
+    })),
+
+  openObjectTab: (schema, object) =>
+    set((state) => ({
+      workspaces: patchActiveUi(state, (ui) => {
+        const tabs = ui.tabs ?? [];
+        const existing = tabs.find(
+          (t) =>
+            t.kind === "object" &&
+            t.schema === schema &&
+            t.objectKind === object.kind &&
+            t.name === object.name,
+        );
+        if (existing) return { tabs, activeTabId: existing.id };
+        const tab: Tab = {
+          id: newTabId("object"),
+          kind: "object",
+          schema,
+          objectKind: object.kind,
+          name: object.name,
+          detail: object.detail,
+        };
         return { tabs: [...tabs, tab], activeTabId: tab.id };
       }),
     })),

@@ -61,6 +61,7 @@
 //!   ALTER it will run. pk-protection (no drop/retype of a pk column) matches
 //!   the SQLite policy.
 
+mod objects;
 mod sql;
 
 use std::time::Instant;
@@ -72,10 +73,11 @@ use sqlx::{Column, Row, TypeInfo};
 use crate::features::structure::domain::AlterOp;
 use crate::shared::engine::{
     split_statements, AlterResult, ColumnInfo, ColumnMeta, ColumnStats, ColumnStatsRequest,
-    ConnectSecret, ConnectionParams, Connector, DeleteRowsRequest, DeleteRowsResult, Engine,
-    EngineConnection, EngineInfo, FetchRowsRequest, FkRef, ForeignKeyInfo, FreqEntry, ImportResult,
-    InboundFkInfo, IndexInfo, OpenConnection, PkPredicate, QueryOptions, QueryResult, RowLookup,
-    RowLookupRequest, RowsPage, SchemaInfo, TableInfo, TableMeta, UpdateCellRequest, UpdateResult,
+    ConnectSecret, ConnectionParams, Connector, DbObjectDefinition, DbObjectInfo, DbObjectKind,
+    DeleteRowsRequest, DeleteRowsResult, Engine, EngineConnection, EngineInfo, FetchRowsRequest,
+    FkRef, ForeignKeyInfo, FreqEntry, ImportResult, InboundFkInfo, IndexInfo, OpenConnection,
+    PkPredicate, QueryOptions, QueryResult, RowLookup, RowLookupRequest, RowsPage, SchemaInfo,
+    TableInfo, TableMeta, UpdateCellRequest, UpdateResult,
 };
 use crate::shared::error::AppError;
 
@@ -136,7 +138,14 @@ impl Connector for PostgresConnector {
         // the connection so the tunnel lives exactly as long as the pool does.
         let tunnel = open_tunnel_if_needed(params, secret).await?;
         let (host_over, port_over) = tunnel_override(&tunnel);
-        let options = sql::connect_options(params, db_password(secret), host_over, port_over)?;
+        let options = sql::connect_options(params, db_password(secret), host_over, port_over)?
+            // Disable sqlx's prepared-statement cache. Otherwise, after DDL that
+            // changes an object's result columns (CREATE/DROP/recreate a view,
+            // matview, table…), a reused pooled connection re-executes a cached
+            // plan whose result type no longer matches → Postgres errors
+            // "cached plan must not change result type" until a retry re-prepares.
+            // A data client runs ad-hoc DDL constantly, so we always re-prepare.
+            .statement_cache_capacity(0);
         let pool = PgPoolOptions::new()
             .max_connections(POOL_MAX_CONNECTIONS)
             .connect_with(options)
@@ -229,6 +238,38 @@ impl EngineConnection for PostgresEngineConnection {
                 }
             })
             .collect())
+    }
+
+    fn object_kinds(&self) -> &'static [DbObjectKind] {
+        objects::KINDS
+    }
+
+    async fn list_objects(
+        &self,
+        schema: &str,
+        kind: DbObjectKind,
+    ) -> Result<Vec<DbObjectInfo>, AppError> {
+        objects::list(&self.pool, schema, kind).await
+    }
+
+    async fn object_definition(
+        &self,
+        schema: &str,
+        kind: DbObjectKind,
+        name: &str,
+        detail: Option<&str>,
+    ) -> Result<DbObjectDefinition, AppError> {
+        objects::definition(&self.pool, schema, kind, name, detail).await
+    }
+
+    fn drop_object_sql(
+        &self,
+        schema: &str,
+        kind: DbObjectKind,
+        name: &str,
+        detail: Option<&str>,
+    ) -> Result<String, AppError> {
+        objects::drop_sql(schema, kind, name, detail)
     }
 
     async fn table_meta(&self, schema: &str, table: &str) -> Result<TableMeta, AppError> {

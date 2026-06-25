@@ -80,3 +80,19 @@ INSERT INTO documents (id, account_id, title, body) VALUES
     'Release Notes', '{"status":"draft","wordCount":340,"reviewers":[]}'),
   (UUID_TO_BIN('cccccccc-cccc-4ccc-8ccc-cccccccccccc'), UUID_TO_BIN('22222222-2222-4222-8222-222222222222'),
     'Design Spec', '{"status":"review","wordCount":2110,"reviewers":["ada"],"meta":{"pinned":false}}');
+
+-- ── Schema objects (views / routines / triggers — MySQL has no matviews) ──
+CREATE OR REPLACE VIEW active_users AS
+  SELECT id, name, email, country FROM users WHERE active = 1;
+
+DROP FUNCTION IF EXISTS user_order_count;
+CREATE FUNCTION user_order_count(uid INT) RETURNS BIGINT DETERMINISTIC
+  RETURN (SELECT count(*) FROM orders WHERE user_id = uid);
+
+DROP PROCEDURE IF EXISTS deactivate_user;
+CREATE PROCEDURE deactivate_user(IN uid INT)
+  UPDATE users SET active = 0 WHERE id = uid;
+
+DROP TRIGGER IF EXISTS orders_touch;
+CREATE TRIGGER orders_touch BEFORE UPDATE ON orders
+  FOR EACH ROW SET NEW.status = NEW.status;

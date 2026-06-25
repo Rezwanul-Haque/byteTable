@@ -89,3 +89,32 @@ INSERT INTO documents (id, account_id, title, body) VALUES
   (decode(replace('cccccccc-cccc-4ccc-8ccc-cccccccccccc','-',''),'hex'),
    decode(replace('22222222-2222-4222-8222-222222222222','-',''),'hex'),
     'Design Spec', '{"status":"review","wordCount":2110,"reviewers":["ada"],"meta":{"pinned":false}}');
+
+-- ── Schema objects (exercise the object browser: views / matviews / routines / triggers) ──
+CREATE OR REPLACE VIEW active_users AS
+  SELECT id, name, email, country FROM users WHERE active;
+
+DROP MATERIALIZED VIEW IF EXISTS order_totals;
+CREATE MATERIALIZED VIEW order_totals AS
+  SELECT user_id, count(*) AS orders, coalesce(sum(total), 0) AS spent
+  FROM orders GROUP BY user_id;
+
+CREATE OR REPLACE FUNCTION user_order_count(uid integer)
+  RETURNS bigint LANGUAGE sql AS $$
+  SELECT count(*) FROM orders WHERE user_id = uid;
+$$;
+
+CREATE OR REPLACE PROCEDURE deactivate_user(uid integer)
+  LANGUAGE sql AS $$
+  UPDATE users SET active = false WHERE id = uid;
+$$;
+
+CREATE OR REPLACE FUNCTION trg_orders_noop() RETURNS trigger
+  LANGUAGE plpgsql AS $$
+BEGIN
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS orders_touch ON orders;
+CREATE TRIGGER orders_touch BEFORE UPDATE ON orders
+  FOR EACH ROW EXECUTE FUNCTION trg_orders_noop();

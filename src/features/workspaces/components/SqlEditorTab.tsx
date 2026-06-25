@@ -71,6 +71,13 @@ function previewHtml(sql: string): string {
  */
 type Snippet = { label: string; sql: string };
 
+/** A statement that creates/drops/alters/refreshes a schema OBJECT (not a
+ *  table) — used to invalidate the object caches after an editor run so the
+ *  sidebar + viewer update immediately. Matches at the statement start so a
+ *  `view`/`function`/etc. word inside a table query never trips it. */
+const OBJECT_DDL_RE =
+  /^\s*(create(\s+or\s+replace)?|drop|alter|refresh)\s+(materialized\s+view|view|function|procedure|trigger)\b/i;
+
 function snippetsFor(engine: Engine, schemaName: string): Snippet[] {
   switch (engine) {
     case "mysql":
@@ -295,6 +302,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   const tablesCache = useIntrospectionStore((s) => s.tables);
   const loadTables = useIntrospectionStore((s) => s.loadTables);
   const loadColumns = useIntrospectionStore((s) => s.loadColumns);
+  const invalidateObjects = useIntrospectionStore((s) => s.invalidateObjects);
   const tableEntries = tablesCache[tablesKey(workspace.handleId, schemaName)]?.tables;
 
   // Ensure the table list exists even if the sidebar hasn't fetched it yet
@@ -355,11 +363,13 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
     setResultsMin(false);
     void (async () => {
       const runs: SqlRun[] = [];
+      let touchedObjects = false;
       for (let i = 0; i < statements.length; i++) {
         const stmt = statements[i]!;
         try {
           const result = await queryRun(workspace.handleId, stmt, { schema: schemaName });
           runs.push({ id: `r${i}`, sql: stmt, result, error: null });
+          if (OBJECT_DDL_RE.test(stmt)) touchedObjects = true;
           pushSqlHistory(tab.id, {
             sql: stmt,
             ok: true,
@@ -374,6 +384,10 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
       }
       setSqlRuns(tab.id, runs); // focuses the first tab
       setRunning(false);
+      // A successful CREATE/DROP/ALTER/REFRESH of a schema object invalidates
+      // the introspection object caches so the sidebar + any open viewer pick up
+      // the change immediately (matches running the same DDL via the object UI).
+      if (touchedObjects) invalidateObjects(workspace.handleId, schemaName);
     })();
   };
 

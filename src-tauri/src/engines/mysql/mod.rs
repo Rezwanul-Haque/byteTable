@@ -66,6 +66,7 @@
 //!   (MySQL's `MODIFY COLUMN` couples type + nullability), read from `table_meta`.
 //!   pk-protection (no drop/retype of a pk column) matches the other adapters.
 
+mod objects;
 mod sql;
 
 use std::time::Instant;
@@ -77,10 +78,11 @@ use sqlx::{Column, Row, TypeInfo};
 use crate::features::structure::domain::AlterOp;
 use crate::shared::engine::{
     split_statements, AlterResult, ColumnInfo, ColumnMeta, ColumnStats, ColumnStatsRequest,
-    ConnectSecret, ConnectionParams, Connector, DeleteRowsRequest, DeleteRowsResult, Engine,
-    EngineConnection, EngineInfo, FetchRowsRequest, FkRef, ForeignKeyInfo, FreqEntry, ImportResult,
-    InboundFkInfo, IndexInfo, OpenConnection, PkPredicate, QueryOptions, QueryResult, RowLookup,
-    RowLookupRequest, RowsPage, SchemaInfo, TableInfo, TableMeta, UpdateCellRequest, UpdateResult,
+    ConnectSecret, ConnectionParams, Connector, DbObjectDefinition, DbObjectInfo, DbObjectKind,
+    DeleteRowsRequest, DeleteRowsResult, Engine, EngineConnection, EngineInfo, FetchRowsRequest,
+    FkRef, ForeignKeyInfo, FreqEntry, ImportResult, InboundFkInfo, IndexInfo, OpenConnection,
+    PkPredicate, QueryOptions, QueryResult, RowLookup, RowLookupRequest, RowsPage, SchemaInfo,
+    TableInfo, TableMeta, UpdateCellRequest, UpdateResult,
 };
 use crate::shared::error::AppError;
 
@@ -244,6 +246,38 @@ impl EngineConnection for MysqlEngineConnection {
         table_meta(&self.pool, schema, table).await
     }
 
+    fn object_kinds(&self) -> &'static [DbObjectKind] {
+        objects::KINDS
+    }
+
+    async fn list_objects(
+        &self,
+        schema: &str,
+        kind: DbObjectKind,
+    ) -> Result<Vec<DbObjectInfo>, AppError> {
+        objects::list(&self.pool, schema, kind).await
+    }
+
+    async fn object_definition(
+        &self,
+        schema: &str,
+        kind: DbObjectKind,
+        name: &str,
+        detail: Option<&str>,
+    ) -> Result<DbObjectDefinition, AppError> {
+        objects::definition(&self.pool, schema, kind, name, detail).await
+    }
+
+    fn drop_object_sql(
+        &self,
+        schema: &str,
+        kind: DbObjectKind,
+        name: &str,
+        detail: Option<&str>,
+    ) -> Result<String, AppError> {
+        objects::drop_sql(schema, kind, name, detail)
+    }
+
     async fn run_query(&self, sql: &str, options: QueryOptions) -> Result<QueryResult, AppError> {
         let started = Instant::now();
 
@@ -265,10 +299,21 @@ impl EngineConnection for MysqlEngineConnection {
                 .await;
         }
 
-        let rows = sqlx::query(sql)
-            .fetch_all(&mut *conn)
-            .await
-            .map_err(map_query_error)?;
+        // MySQL refuses some commands in the prepared-statement protocol
+        // (error 1295) — notably CREATE/DROP FUNCTION/PROCEDURE/TRIGGER. On that
+        // error, re-run via the unprepared TEXT protocol (`raw_sql`), which
+        // accepts them; such DDL returns no result rows.
+        let rows = match sqlx::query(sql).fetch_all(&mut *conn).await {
+            Ok(rows) => rows,
+            Err(err) if is_unpreparable(&err) => {
+                use sqlx::Executor as _;
+                conn.execute(sqlx::raw_sql(sql))
+                    .await
+                    .map_err(map_query_error)?;
+                Vec::new()
+            }
+            Err(err) => return Err(map_query_error(err)),
+        };
 
         let columns = if let Some(first) = rows.first() {
             column_meta(first)
@@ -2061,6 +2106,13 @@ fn map_query_error(err: sqlx::Error) -> AppError {
         return AppError::Database(humanize(db.message()));
     }
     AppError::Database(humanize(&err.to_string()))
+}
+
+/// True for MySQL error 1295 — a command the prepared-statement protocol does
+/// not support (CREATE/DROP FUNCTION/PROCEDURE/TRIGGER, etc.). Such statements
+/// must run via the text protocol instead.
+fn is_unpreparable(err: &sqlx::Error) -> bool {
+    matches!(err, sqlx::Error::Database(db) if db.message().contains("prepared statement protocol"))
 }
 
 /// The bare driver message for an error (strip sqlx's wrapping).

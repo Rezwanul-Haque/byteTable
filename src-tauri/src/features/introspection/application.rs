@@ -4,7 +4,7 @@
 //! in the slice docs). No Tauri, no drivers.
 
 use crate::features::connections::application::{ConnectionHandleId, ConnectionManager};
-use crate::shared::engine::TableMeta;
+use crate::shared::engine::{DbObjectDefinition, DbObjectInfo, DbObjectKind, TableMeta};
 use crate::shared::error::AppError;
 
 /// Column-level metadata for one table on an open connection (M3 sidebar).
@@ -18,6 +18,63 @@ pub async fn get_table_meta(
         .get_sql(handle)
         .await?
         .table_meta(schema, table)
+        .await
+}
+
+/// Objects of one kind in a schema (views / matviews / routines / triggers).
+pub async fn list_objects(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    schema: &str,
+    kind: DbObjectKind,
+) -> Result<Vec<DbObjectInfo>, AppError> {
+    manager
+        .get_sql(handle)
+        .await?
+        .list_objects(schema, kind)
+        .await
+}
+
+/// The `CREATE …` DDL for one object.
+pub async fn object_definition(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    schema: &str,
+    kind: DbObjectKind,
+    name: &str,
+    detail: Option<&str>,
+) -> Result<DbObjectDefinition, AppError> {
+    manager
+        .get_sql(handle)
+        .await?
+        .object_definition(schema, kind, name, detail)
+        .await
+}
+
+/// Build the engine-precise `DROP …` and run it.
+pub async fn drop_object(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    schema: &str,
+    kind: DbObjectKind,
+    name: &str,
+    detail: Option<&str>,
+) -> Result<(), AppError> {
+    let conn = manager.get_sql(handle).await?;
+    let sql = conn.drop_object_sql(schema, kind, name, detail)?;
+    conn.run_statements(&[sql]).await
+}
+
+/// Run a list of WHOLE object-DDL statements verbatim (no `;`-splitting).
+pub async fn run_object_ddl(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    statements: &[String],
+) -> Result<(), AppError> {
+    manager
+        .get_sql(handle)
+        .await?
+        .run_statements(statements)
         .await
 }
 

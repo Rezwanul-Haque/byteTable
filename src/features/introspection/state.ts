@@ -17,8 +17,13 @@
 import { create } from "zustand";
 
 import {
+  listObjects,
+  objectDefinition,
   tableMeta,
   type ColumnInfo,
+  type DbObjectDefinition,
+  type DbObjectInfo,
+  type DbObjectKind,
   type TableInfo,
   type TableMeta,
 } from "../../shared/api/engine";
@@ -52,9 +57,35 @@ export function tableMetaKey(handleId: string, schema: string, table: string): s
   return handleId + SEP + schema + SEP + table + SEP + "\u0001meta";
 }
 
+/** Cache key for one schema's object list of a given kind. Starts with the
+ *  `tablesKey(handle, schema) + SEP` prefix so {@link invalidate} drops it too. */
+export function objectsKey(handleId: string, schema: string, kind: DbObjectKind): string {
+  return handleId + SEP + schema + SEP + "obj" + SEP + kind;
+}
+
+/** Cache key for one object's definition (DDL). Same schema prefix as above. */
+export function objectDefKey(
+  handleId: string,
+  schema: string,
+  kind: DbObjectKind,
+  name: string,
+): string {
+  return handleId + SEP + schema + SEP + "def" + SEP + kind + SEP + name;
+}
+
 export interface TablesEntry {
   tables: TableInfo[];
   /** Epoch ms of the fetch — bumped by force refetches (refresh). */
+  fetchedAt: number;
+}
+
+export interface ObjectsEntry {
+  objects: DbObjectInfo[];
+  fetchedAt: number;
+}
+
+export interface ObjectDefEntry {
+  def: DbObjectDefinition;
   fetchedAt: number;
 }
 
@@ -75,6 +106,10 @@ interface IntrospectionFeatureState {
   columns: Record<string, ColumnsEntry>;
   /** Full table metadata by `tableMetaKey` (M7 structure view §3.6). */
   tableMetas: Record<string, TableMetaEntry>;
+  /** Object lists (views/matviews/routines/triggers) by `objectsKey`. */
+  objects: Record<string, ObjectsEntry>;
+  /** Object definitions (DDL) by `objectDefKey`. */
+  objectDefs: Record<string, ObjectDefEntry>;
   /** True while a fetch for the key (either kind) is in flight. */
   loading: Record<string, boolean>;
   /** Human error message for the key's last failed fetch (§5 style). */
@@ -112,6 +147,31 @@ interface IntrospectionFeatureState {
    * column-list reader for the same table).
    */
   loadTableMeta: (handleId: string, schema: string, table: string) => Promise<TableMeta | null>;
+  /** Fetch one schema's objects of a kind (cache-first; `force` refetches).
+   *  Same error contract as `loadTables` (null on failure, error under the
+   *  objects key). */
+  loadObjects: (
+    handleId: string,
+    schema: string,
+    kind: DbObjectKind,
+    opts?: { force?: boolean },
+  ) => Promise<DbObjectInfo[] | null>;
+  /** Fetch one object's definition DDL (cache-first). Same error contract. */
+  loadObjectDefinition: (
+    handleId: string,
+    schema: string,
+    kind: DbObjectKind,
+    name: string,
+    detail?: string | null,
+  ) => Promise<DbObjectDefinition | null>;
+  /** Drop cached object list(s) + the schema's object definitions after a
+   *  create/alter/drop/refresh, so a refetch shows the new truth. With `kind`,
+   *  only that kind's list is dropped; without, every kind for the schema. */
+  invalidateObjects: (handleId: string, schema: string, kind?: DbObjectKind) => void;
+  /** Drop only the schema's object LISTS (not the cached definitions), so a
+   *  sidebar refresh picks up objects created/dropped out-of-band (e.g. in the
+   *  SQL editor) without evicting an open viewer's DDL. */
+  invalidateObjectLists: (handleId: string, schema: string) => void;
   /**
    * Drop everything cached for a handle (workspace closed), or for one of
    * its schemas when `schema` is given.
@@ -138,11 +198,15 @@ function omitPrefixed<V>(record: Record<string, V>, prefix: string): Record<stri
 const inflightTables = new Map<string, Promise<TableInfo[] | null>>();
 const inflightColumns = new Map<string, Promise<ColumnInfo[] | null>>();
 const inflightTableMetas = new Map<string, Promise<TableMeta | null>>();
+const inflightObjects = new Map<string, Promise<DbObjectInfo[] | null>>();
+const inflightObjectDefs = new Map<string, Promise<DbObjectDefinition | null>>();
 
 export const useIntrospectionStore = create<IntrospectionFeatureState>((set, get) => ({
   tables: {},
   columns: {},
   tableMetas: {},
+  objects: {},
+  objectDefs: {},
   loading: {},
   errors: {},
 
@@ -260,6 +324,90 @@ export const useIntrospectionStore = create<IntrospectionFeatureState>((set, get
     return promise;
   },
 
+  loadObjects: (handleId, schema, kind, opts) => {
+    const key = objectsKey(handleId, schema, kind);
+    if (!opts?.force) {
+      const cached = get().objects[key];
+      if (cached) return Promise.resolve(cached.objects);
+      const pending = inflightObjects.get(key);
+      if (pending) return pending;
+    }
+    const promise = (async (): Promise<DbObjectInfo[] | null> => {
+      set((state) => ({ loading: { ...state.loading, [key]: true } }));
+      try {
+        const objects = await listObjects(handleId, schema, kind);
+        set((state) => ({
+          objects: { ...state.objects, [key]: { objects, fetchedAt: Date.now() } },
+          loading: omit(state.loading, key),
+          errors: omit(state.errors, key),
+        }));
+        return objects;
+      } catch (err) {
+        set((state) => ({
+          loading: omit(state.loading, key),
+          errors: { ...state.errors, [key]: appErrorMessage(err, "Could not load objects.") },
+        }));
+        return null;
+      }
+    })();
+    inflightObjects.set(key, promise);
+    void promise.finally(() => {
+      if (inflightObjects.get(key) === promise) inflightObjects.delete(key);
+    });
+    return promise;
+  },
+
+  loadObjectDefinition: (handleId, schema, kind, name, detail) => {
+    const key = objectDefKey(handleId, schema, kind, name);
+    const cached = get().objectDefs[key];
+    if (cached) return Promise.resolve(cached.def);
+    const pending = inflightObjectDefs.get(key);
+    if (pending) return pending;
+    const promise = (async (): Promise<DbObjectDefinition | null> => {
+      set((state) => ({ loading: { ...state.loading, [key]: true } }));
+      try {
+        const def = await objectDefinition(handleId, schema, kind, name, detail);
+        set((state) => ({
+          objectDefs: { ...state.objectDefs, [key]: { def, fetchedAt: Date.now() } },
+          loading: omit(state.loading, key),
+          errors: omit(state.errors, key),
+        }));
+        return def;
+      } catch (err) {
+        set((state) => ({
+          loading: omit(state.loading, key),
+          errors: {
+            ...state.errors,
+            [key]: appErrorMessage(err, "Could not load the object definition."),
+          },
+        }));
+        return null;
+      }
+    })();
+    inflightObjectDefs.set(key, promise);
+    void promise.finally(() => {
+      if (inflightObjectDefs.get(key) === promise) inflightObjectDefs.delete(key);
+    });
+    return promise;
+  },
+
+  invalidateObjects: (handleId, schema, kind) =>
+    set((state) => {
+      const objects =
+        kind === undefined
+          ? omitPrefixed(state.objects, handleId + SEP + schema + SEP)
+          : omit(state.objects, objectsKey(handleId, schema, kind));
+      // Definitions are cheap to refetch — drop the schema's whole def cache on
+      // any object change so a re-opened viewer shows committed truth.
+      const objectDefs = omitPrefixed(state.objectDefs, handleId + SEP + schema + SEP);
+      return { objects, objectDefs };
+    }),
+
+  invalidateObjectLists: (handleId, schema) =>
+    set((state) => ({
+      objects: omitPrefixed(state.objects, handleId + SEP + schema + SEP),
+    })),
+
   invalidate: (handleId, schema) =>
     set((state) => {
       // tablesKey(handle, schema) is itself a prefix of that schema's
@@ -275,6 +423,8 @@ export const useIntrospectionStore = create<IntrospectionFeatureState>((set, get
         tables: drop(state.tables),
         columns: drop(state.columns),
         tableMetas: drop(state.tableMetas),
+        objects: drop(state.objects),
+        objectDefs: drop(state.objectDefs),
         errors: drop(state.errors),
       };
     }),

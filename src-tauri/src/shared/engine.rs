@@ -647,6 +647,112 @@ pub struct TableInfo {
     pub approx_row_count: Option<u64>,
 }
 
+/// A schema-level database object other than a base table — surfaced in the
+/// sidebar's object groups. Each engine exposes the kinds it supports (see
+/// [`EngineConnection::object_kinds`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DbObjectKind {
+    View,
+    MaterializedView,
+    Function,
+    Procedure,
+    Trigger,
+}
+
+/// One database object in a schema (sidebar row).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbObjectInfo {
+    pub name: String,
+    pub kind: DbObjectKind,
+    /// Identity detail an engine needs to resolve/drop the object precisely:
+    /// the owning table (triggers), or the identity arguments of an overloaded
+    /// routine (Postgres functions, e.g. `"integer, text"`). `None` otherwise.
+    pub detail: Option<String>,
+}
+
+/// One argument of a routine (function/procedure), for the viewer's args table.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoutineArg {
+    /// `IN` / `OUT` / `INOUT` (MySQL); `None` for Postgres (defaults to IN).
+    pub mode: Option<String>,
+    pub name: String,
+    pub data_type: String,
+}
+
+/// The `CREATE …` DDL for one object plus best-effort metadata for the viewer's
+/// chip row + arguments table. Metadata fields are optional and engine/kind
+/// dependent — each renders only when present, so partial introspection
+/// degrades cleanly.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbObjectDefinition {
+    pub name: String,
+    pub kind: DbObjectKind,
+    /// Engine-native `CREATE …` statement.
+    pub ddl: String,
+    #[serde(default)]
+    pub comment: Option<String>,
+    // routines
+    #[serde(default)]
+    pub returns: Option<String>,
+    #[serde(default)]
+    pub language: Option<String>,
+    #[serde(default)]
+    pub volatility: Option<String>,
+    #[serde(default)]
+    pub args: Vec<RoutineArg>,
+    // triggers
+    #[serde(default)]
+    pub table: Option<String>,
+    #[serde(default)]
+    pub timing: Option<String>,
+    #[serde(default)]
+    pub events: Vec<String>,
+    #[serde(default)]
+    pub level: Option<String>,
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    // materialized views
+    #[serde(default)]
+    pub populated: Option<bool>,
+    #[serde(default)]
+    pub approx_rows: Option<i64>,
+    #[serde(default)]
+    pub size: Option<String>,
+    // views / matviews
+    #[serde(default)]
+    pub depends_on: Vec<String>,
+}
+
+impl DbObjectDefinition {
+    /// A definition carrying just the DDL — all metadata empty. Adapters fill
+    /// the chip fields they can resolve after constructing this.
+    pub fn ddl_only(name: String, kind: DbObjectKind, ddl: String) -> Self {
+        Self {
+            name,
+            kind,
+            ddl,
+            comment: None,
+            returns: None,
+            language: None,
+            volatility: None,
+            args: Vec::new(),
+            table: None,
+            timing: None,
+            events: Vec::new(),
+            level: None,
+            enabled: None,
+            populated: None,
+            approx_rows: None,
+            size: None,
+            depends_on: Vec::new(),
+        }
+    }
+}
+
 /// Metadata for one table. Powers the M3 sidebar (`columns` with pk/fk icons
 /// and type labels) and, since M7, the structure view's 348px rail
 /// (DESIGN_SPEC §3.6): indexes, table-level and inbound foreign keys, plus the
@@ -1579,6 +1685,68 @@ pub trait EngineConnection: Send + Sync {
     /// Column-level metadata for one table (M3 sidebar). Unknown tables are
     /// a §5 human error ("Table 'x' does not exist. Available tables: …").
     async fn table_meta(&self, schema: &str, table: &str) -> Result<TableMeta, AppError>;
+
+    // ----- schema objects (views / matviews / routines / triggers) -----
+    // Default impls make an engine opt in: an engine that does not override
+    // these reports no object kinds and lists nothing, so the sidebar shows no
+    // object groups for it.
+
+    /// Object kinds this engine supports (drives sidebar gating).
+    fn object_kinds(&self) -> &'static [DbObjectKind] {
+        &[]
+    }
+
+    /// Objects of `kind` in `schema` (empty when the engine does not support it).
+    async fn list_objects(
+        &self,
+        _schema: &str,
+        _kind: DbObjectKind,
+    ) -> Result<Vec<DbObjectInfo>, AppError> {
+        Ok(Vec::new())
+    }
+
+    /// The `CREATE …` DDL for one object. `detail` is the matching
+    /// [`DbObjectInfo::detail`] echoed back so adapters that need the owning
+    /// table or routine arg-signature to resolve it can.
+    async fn object_definition(
+        &self,
+        _schema: &str,
+        _kind: DbObjectKind,
+        _name: &str,
+        _detail: Option<&str>,
+    ) -> Result<DbObjectDefinition, AppError> {
+        Err(AppError::Unsupported(
+            "This engine has no such object.".into(),
+        ))
+    }
+
+    /// A precise `DROP …` statement for one object (engine builds the exact
+    /// form — PG functions need arg types, triggers need `ON <table>`, matviews
+    /// differ). Pure (no I/O); the command layer runs the returned SQL.
+    fn drop_object_sql(
+        &self,
+        _schema: &str,
+        _kind: DbObjectKind,
+        _name: &str,
+        _detail: Option<&str>,
+    ) -> Result<String, AppError> {
+        Err(AppError::Unsupported(
+            "This engine cannot drop that object.".into(),
+        ))
+    }
+
+    /// Run object-DDL statements VERBATIM (no `;`-splitting — each string is one
+    /// whole statement; a routine/trigger body's inner `;` must never be
+    /// parsed). Wrapped in a transaction where the engine supports DDL
+    /// transactions (Postgres/SQLite); MySQL DDL auto-commits, so a mid-list
+    /// failure leaves earlier statements applied. The default runs each via
+    /// `run_query` sequentially with no transaction.
+    async fn run_statements(&self, statements: &[String]) -> Result<(), AppError> {
+        for stmt in statements {
+            self.run_query(stmt, QueryOptions::default()).await?;
+        }
+        Ok(())
+    }
 
     /// Execute SQL verbatim with a row limit and timing. Read/write context
     /// enforcement is a higher-level concern (M6); the adapter runs what it
@@ -2581,6 +2749,36 @@ mod tests {
             assert_eq!(user.as_deref(), Some("cassandra"));
             assert_eq!(local_datacenter.as_deref(), Some("dc2"));
         }
+    }
+
+    #[test]
+    fn db_object_wire_shapes_round_trip() {
+        let info = DbObjectInfo {
+            name: "active_users".into(),
+            kind: DbObjectKind::View,
+            detail: None,
+        };
+        let json = serde_json::to_value(&info).unwrap();
+        assert_eq!(json["kind"], "view");
+        assert_eq!(json["name"], "active_users");
+        let back: DbObjectInfo = serde_json::from_value(json).unwrap();
+        assert_eq!(back, info);
+
+        let mv = serde_json::to_value(DbObjectKind::MaterializedView).unwrap();
+        assert_eq!(mv, "materialized_view");
+
+        let def = DbObjectDefinition::ddl_only(
+            "f".into(),
+            DbObjectKind::Function,
+            "CREATE FUNCTION f() …".into(),
+        );
+        let dj = serde_json::to_value(&def).unwrap();
+        assert_eq!(dj["kind"], "function");
+        assert_eq!(dj["args"], serde_json::json!([]));
+        assert_eq!(
+            serde_json::from_value::<DbObjectDefinition>(dj).unwrap(),
+            def
+        );
     }
 
     #[test]

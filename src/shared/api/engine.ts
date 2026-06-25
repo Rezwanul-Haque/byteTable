@@ -425,6 +425,116 @@ export function tableMeta(handleId: string, schema: string, table: string): Prom
   return invoke<TableMeta>("table_meta", { handleId, schema, table });
 }
 
+// ---------------------------------------------------------------------------
+// Schema objects (views / materialized views / functions / procedures /
+// triggers). Mirrors the Rust `DbObject*` wire types + the introspection
+// slice's object commands. Each SQL engine exposes the kinds it supports
+// (see {@link OBJECT_CAPS}); CRUD runs whole DDL statements verbatim via
+// {@link runObjectDdl} (never the `;`-splitting script path).
+// ---------------------------------------------------------------------------
+
+/** A schema object's kind. Snake_case on the wire (Rust `DbObjectKind`). */
+export type DbObjectKind = "view" | "materialized_view" | "function" | "procedure" | "trigger";
+
+/** One object in a schema (sidebar row). */
+export interface DbObjectInfo {
+  name: string;
+  kind: DbObjectKind;
+  /** Owning table (triggers) / identity args (PG routines); else null. */
+  detail: string | null;
+}
+
+/** One routine argument (function/procedure) for the viewer's args table. */
+export interface RoutineArg {
+  /** `IN`/`OUT`/`INOUT` (MySQL); null for Postgres (defaults to IN). */
+  mode: string | null;
+  name: string;
+  dataType: string;
+}
+
+/** The `CREATE …` DDL for one object + best-effort viewer metadata. Metadata
+ *  fields are optional/engine-dependent; each chip renders only when present. */
+export interface DbObjectDefinition {
+  name: string;
+  kind: DbObjectKind;
+  ddl: string;
+  comment: string | null;
+  // routines
+  returns: string | null;
+  language: string | null;
+  volatility: string | null;
+  args: RoutineArg[];
+  // triggers
+  table: string | null;
+  timing: string | null;
+  events: string[];
+  level: string | null;
+  enabled: boolean | null;
+  // materialized views
+  populated: boolean | null;
+  approxRows: number | null;
+  size: string | null;
+  // views / matviews
+  dependsOn: string[];
+}
+
+/** Which object kinds each engine exposes — mirrors the Rust capability matrix.
+ *  Drives sidebar gating so unsupported groups never appear. */
+export const OBJECT_CAPS: Record<Engine, DbObjectKind[]> = {
+  postgres: ["view", "materialized_view", "function", "procedure", "trigger"],
+  mysql: ["view", "function", "procedure", "trigger"],
+  sqlite: ["view", "trigger"],
+  redis: [],
+  dynamodb: [],
+  mongodb: [],
+  cassandra: [],
+};
+
+/** Objects of one kind in a schema (the `list_objects` command). */
+export function listObjects(
+  handleId: string,
+  schema: string,
+  kind: DbObjectKind,
+): Promise<DbObjectInfo[]> {
+  return invoke<DbObjectInfo[]>("list_objects", { handleId, schema, kind });
+}
+
+/** The `CREATE …` DDL for one object (the `object_definition` command). */
+export function objectDefinition(
+  handleId: string,
+  schema: string,
+  kind: DbObjectKind,
+  name: string,
+  detail?: string | null,
+): Promise<DbObjectDefinition> {
+  return invoke<DbObjectDefinition>("object_definition", {
+    handleId,
+    schema,
+    kind,
+    name,
+    detail: detail ?? null,
+  });
+}
+
+/** Drop one object (the `drop_object` command). **Mutates the schema.** */
+export function dropObject(
+  handleId: string,
+  schema: string,
+  kind: DbObjectKind,
+  name: string,
+  detail?: string | null,
+): Promise<void> {
+  return invoke("drop_object", { handleId, schema, kind, name, detail: detail ?? null });
+}
+
+/** Run whole object-DDL statements verbatim, in order (the `run_object_ddl`
+ *  command). Each element is one complete statement — the caller separated DROP
+ *  from CREATE; the backend never `;`-splits. Statements are fully
+ *  schema-qualified, so no schema context is passed. **Mutates the schema.** */
+export function runObjectDdl(handleId: string, statements: string[]): Promise<void> {
+  return invoke("run_object_ddl", { handleId, statements });
+}
+
 /**
  * Single-row lookup by key for M10 "FK peek" (the `row_lookup` command): click
  * a foreign-key value to fetch the referenced row. Returns the first match

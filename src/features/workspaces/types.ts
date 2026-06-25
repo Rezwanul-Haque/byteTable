@@ -6,7 +6,13 @@
 // sanctioned direction (workspaces → connections public contract in api.ts);
 // nothing in connections imports workspaces back.
 
-import type { AlterOp, Combinator, FilterOp, QueryResult } from "../../shared/api/engine";
+import type {
+  AlterOp,
+  Combinator,
+  DbObjectKind,
+  FilterOp,
+  QueryResult,
+} from "../../shared/api/engine";
 import type {
   ConnectionKind,
   EngineInfo,
@@ -177,7 +183,17 @@ export interface SqlTabState {
 export type Tab =
   | { id: string; kind: "table"; schema: string; table: string; mode: TableTabMode }
   | ({ id: string; kind: "sql"; title: string } & SqlTabState)
-  | { id: string; kind: "map"; schema: string };
+  | { id: string; kind: "map"; schema: string }
+  // A schema object's read-only DDL viewer (+ browse-as-data for views).
+  // Create/edit reuse the SQL editor (`sql` tab), not a dedicated kind.
+  | {
+      id: string;
+      kind: "object";
+      schema: string;
+      objectKind: DbObjectKind;
+      name: string;
+      detail: string | null;
+    };
 
 /**
  * Per-workspace UI state, preserved across workspace switches (spec §2:

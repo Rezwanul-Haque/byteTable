@@ -17,6 +17,7 @@ import {
 
 import { Icon } from "../../../shared/ui/Icon";
 import { useTabMenu } from "../../../shared/ui/useTabMenu";
+import { OBJ_SECTIONS } from "../../db_objects/kinds";
 import type { Tab } from "../types";
 import "./TabBar.css";
 
@@ -26,16 +27,18 @@ const TAB_ICONS: Record<Tab["kind"], string> = {
   table: "table",
   sql: "terminal",
   map: "schema",
+  object: "visibility",
 };
 
 function tabIcon(tab: Tab): string {
   if (tab.kind === "table" && tab.mode === "structure") return "account_tree";
+  if (tab.kind === "object") return OBJ_SECTIONS[tab.objectKind].icon;
   return TAB_ICONS[tab.kind];
 }
 
 /** The visible label: `schema.table` for non-default schemas (the caller
  *  passes `defaultSchema` so we know when to drop it), the SQL "Query N"
- *  title, or "schema · map". */
+ *  title, "schema · map", or the object's name. */
 function tabTitle(tab: Tab, defaultSchema: string): string {
   switch (tab.kind) {
     case "table":
@@ -44,6 +47,8 @@ function tabTitle(tab: Tab, defaultSchema: string): string {
       return tab.title;
     case "map":
       return tab.schema + " · map";
+    case "object":
+      return tab.schema === defaultSchema ? tab.name : tab.schema + "." + tab.name;
   }
 }
 

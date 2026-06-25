@@ -73,3 +73,14 @@ INSERT INTO documents (id, account_id, title, body) VALUES
   (x'aaaaaaaaaaaa4aaa8aaaaaaaaaaaaaaa', x'11111111111141118111111111111111', 'Q3 Roadmap', '{"status":"published","wordCount":1280,"reviewers":["grace","alan"],"meta":{"pinned":true}}'),
   (x'bbbbbbbbbbbb4bbb8bbbbbbbbbbbbbbb', x'11111111111141118111111111111111', 'Release Notes', '{"status":"draft","wordCount":340,"reviewers":[]}'),
   (x'cccccccccccc4ccc8ccccccccccccccc', x'22222222222242228222222222222222', 'Design Spec', '{"status":"review","wordCount":2110,"reviewers":["ada"],"meta":{"pinned":false}}');
+
+-- ── Schema objects (SQLite supports views + triggers only) ──
+DROP VIEW IF EXISTS active_users;
+CREATE VIEW active_users AS
+  SELECT id, name, email, country FROM users WHERE active = 1;
+
+DROP TRIGGER IF EXISTS orders_touch;
+CREATE TRIGGER orders_touch AFTER UPDATE ON orders
+BEGIN
+  SELECT 1;
+END;

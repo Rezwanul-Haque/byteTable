@@ -34,9 +34,9 @@ jobs:
 
       # Build grouped release notes from the conventional-commit subjects between
       # the previous tag and this one:
-      #   feat:                 → ✨ Added
-      #   improv: / refactor: / perf:  → ⚡ Improvements
-      #   fix:                  → 🐛 Fixes
+      #   feat:                 → Added
+      #   improv: / refactor: / perf:  → Improvements
+      #   fix:                  → Fixes
       #   anything else (minus chore/docs/test/ci/build/style noise) → Other
       # A commit's `type(scope):` prefix is stripped; empty sections are dropped.
       - name: Build release notes
@@ -65,9 +65,9 @@ jobs:
           done < <(git log --no-merges --pretty=format:'%s' "$range")
 
           body="## What's changed"$'\n'
-          [ -n "$added" ]    && body="${body}"$'\n'"### ✨ Added"$'\n'"${added}"
-          [ -n "$improved" ] && body="${body}"$'\n'"### ⚡ Improvements"$'\n'"${improved}"
-          [ -n "$fixed" ]    && body="${body}"$'\n'"### 🐛 Fixes"$'\n'"${fixed}"
+          [ -n "$added" ]    && body="${body}"$'\n'"### Added"$'\n'"${added}"
+          [ -n "$improved" ] && body="${body}"$'\n'"### Improvements"$'\n'"${improved}"
+          [ -n "$fixed" ]    && body="${body}"$'\n'"### Fixes"$'\n'"${fixed}"
           [ -n "$other" ]    && body="${body}"$'\n'"### Other"$'\n'"${other}"
           if [ -z "${added}${improved}${fixed}${other}" ]; then
             body="${body}"$'\n'"_No notable changes._"$'\n'

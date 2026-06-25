@@ -90,6 +90,7 @@
 //! - `comment` is always `None` — SQLite has no table comments (the field is
 //!   modelled for §3.6 and server engines; see [`TableMeta::comment`]).
 
+mod objects;
 mod structure;
 
 use std::collections::HashMap;
@@ -106,11 +107,12 @@ use rusqlite::types::Value as SqlValue;
 use crate::features::structure::domain::AlterOp;
 use crate::shared::engine::{
     count_statements, AlterResult, ColumnInfo, ColumnMeta, ColumnStats, ColumnStatsRequest,
-    Condition, ConnectionParams, Connector, DeleteRowsRequest, DeleteRowsResult, Engine,
-    EngineConnection, EngineInfo, FetchRowsRequest, FilterOp, FilterSpec, FilterValue, FkRef,
-    ForeignKeyInfo, FreqEntry, ImportResult, InboundFkInfo, IndexInfo, OpenConnection, PkPredicate,
-    QueryOptions, QueryResult, RowLookup, RowLookupRequest, RowsPage, SchemaInfo, SortSpec,
-    TableInfo, TableMeta, UpdateCellRequest, UpdateResult,
+    Condition, ConnectionParams, Connector, DbObjectDefinition, DbObjectInfo, DbObjectKind,
+    DeleteRowsRequest, DeleteRowsResult, Engine, EngineConnection, EngineInfo, FetchRowsRequest,
+    FilterOp, FilterSpec, FilterValue, FkRef, ForeignKeyInfo, FreqEntry, ImportResult,
+    InboundFkInfo, IndexInfo, OpenConnection, PkPredicate, QueryOptions, QueryResult, RowLookup,
+    RowLookupRequest, RowsPage, SchemaInfo, SortSpec, TableInfo, TableMeta, UpdateCellRequest,
+    UpdateResult,
 };
 use crate::shared::error::AppError;
 
@@ -176,6 +178,43 @@ impl EngineConnection for SqliteEngineConnection {
         let table = table.to_string();
         self.with_conn(move |conn| table_meta_blocking(conn, &schema, &table))
             .await
+    }
+
+    fn object_kinds(&self) -> &'static [DbObjectKind] {
+        objects::KINDS
+    }
+
+    async fn list_objects(
+        &self,
+        schema: &str,
+        kind: DbObjectKind,
+    ) -> Result<Vec<DbObjectInfo>, AppError> {
+        let schema = schema.to_string();
+        self.with_conn(move |conn| objects::list_blocking(conn, &schema, kind))
+            .await
+    }
+
+    async fn object_definition(
+        &self,
+        schema: &str,
+        kind: DbObjectKind,
+        name: &str,
+        _detail: Option<&str>,
+    ) -> Result<DbObjectDefinition, AppError> {
+        let schema = schema.to_string();
+        let name = name.to_string();
+        self.with_conn(move |conn| objects::definition_blocking(conn, &schema, kind, &name))
+            .await
+    }
+
+    fn drop_object_sql(
+        &self,
+        schema: &str,
+        kind: DbObjectKind,
+        name: &str,
+        detail: Option<&str>,
+    ) -> Result<String, AppError> {
+        objects::drop_sql(schema, kind, name, detail)
     }
 
     async fn run_query(&self, sql: &str, options: QueryOptions) -> Result<QueryResult, AppError> {
@@ -607,10 +646,15 @@ fn table_meta_blocking(
     // `PRAGMA table_info` returns zero rows for an unknown table instead of
     // erroring, so prove existence first to get the §5 message (see module
     // docs).
+    // Accept views too (`type IN ('table','view')`): a view is queryable like a
+    // table — Browse data on a view runs SELECT through this path, and
+    // PRAGMA table_info returns a view's columns. (Indexes/FKs/DDL below are
+    // simply empty for a view.)
     let exists: i64 = conn
         .query_row(
             &format!(
-                "SELECT count(*) FROM {}.sqlite_schema WHERE type = 'table' AND name = ?1",
+                "SELECT count(*) FROM {}.sqlite_schema \
+                 WHERE type IN ('table', 'view') AND name = ?1",
                 quote_ident(schema)
             ),
             [table],
@@ -906,7 +950,7 @@ fn user_table_names(conn: &Connection, schema: &str) -> Result<Vec<String>, AppE
 fn table_ddl(conn: &Connection, schema: &str, table: &str) -> Result<Option<String>, AppError> {
     conn.query_row(
         &format!(
-            "SELECT sql FROM {}.sqlite_schema WHERE type = 'table' AND name = ?1",
+            "SELECT sql FROM {}.sqlite_schema WHERE type IN ('table', 'view') AND name = ?1",
             quote_ident(schema)
         ),
         [table],

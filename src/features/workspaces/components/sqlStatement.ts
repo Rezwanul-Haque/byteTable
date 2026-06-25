@@ -18,13 +18,49 @@ export interface StatementRange {
   to: number;
 }
 
-/** Offsets of every top-level `;` (those that actually terminate a statement). */
+/** A Postgres dollar-quote OPENING delimiter at the current position: `$$` or a
+ *  tagged `$tag$` (tag = letter/underscore then word chars). Sticky — only
+ *  matches at `lastIndex`. A bare `$1` positional parameter does NOT match (no
+ *  closing `$` after the digit). */
+const DOLLAR_QUOTE_OPEN = /\$([A-Za-z_][A-Za-z0-9_]*)?\$/y;
+
+const WORD_CHAR = /[A-Za-z0-9_]/;
+/** A transaction-control keyword right after `BEGIN` (so `BEGIN; …` /
+ *  `BEGIN TRANSACTION` is NOT treated as a compound block). */
+const TXN_AFTER_BEGIN = /^(transaction|deferred|immediate|exclusive|work)\b/i;
+
+/** Offsets of every top-level `;` (those that actually terminate a statement).
+ *  A `;` inside a `BEGIN … END` (trigger / routine body) or `CASE … END` block
+ *  does NOT terminate the statement — those blocks raise the nesting depth and
+ *  only a `;` at depth 0 splits. */
 function topLevelSemicolons(doc: string): number[] {
   const semis: number[] = [];
   const n = doc.length;
   let i = 0;
+  let depth = 0; // BEGIN/CASE block nesting
   while (i < n) {
     const c = doc[i];
+    // Identifier / keyword: consume the whole word and track BEGIN/CASE/END
+    // depth (skip it in one go so keywords inside words don't false-match).
+    if (c !== undefined && /[A-Za-z_]/.test(c) && !(i > 0 && WORD_CHAR.test(doc[i - 1]!))) {
+      let j = i + 1;
+      while (j < n && WORD_CHAR.test(doc[j]!)) j++;
+      const word = doc.slice(i, j).toUpperCase();
+      if (word === "CASE") {
+        depth++;
+      } else if (word === "END") {
+        if (depth > 0) depth--;
+      } else if (word === "BEGIN") {
+        // A compound-block BEGIN raises depth; a transaction BEGIN (`BEGIN;`,
+        // `BEGIN TRANSACTION`, …) does not — it's its own statement.
+        let k = j;
+        while (k < n && /\s/.test(doc[k]!)) k++;
+        const isTxn = k >= n || doc[k] === ";" || TXN_AFTER_BEGIN.test(doc.slice(k, k + 12));
+        if (!isTxn) depth++;
+      }
+      i = j;
+      continue;
+    }
     // String literal or quoted identifier: skip to the matching quote,
     // treating a doubled quote ('' or "") as an escaped quote, not a close.
     if (c === "'" || c === '"') {
@@ -56,8 +92,21 @@ function topLevelSemicolons(doc: string): number[] {
       i += 2;
       continue;
     }
+    // Dollar-quoted string (Postgres `$$ … $$` / `$tag$ … $tag$`): a `;` inside
+    // a function/procedure body must NOT terminate the statement. Skip to the
+    // matching closing delimiter.
+    if (c === "$") {
+      DOLLAR_QUOTE_OPEN.lastIndex = i;
+      const m = DOLLAR_QUOTE_OPEN.exec(doc);
+      if (m) {
+        const delim = m[0];
+        const end = doc.indexOf(delim, i + delim.length);
+        i = end === -1 ? n : end + delim.length;
+        continue;
+      }
+    }
     if (c === ";") {
-      semis.push(i);
+      if (depth === 0) semis.push(i);
     }
     i++;
   }

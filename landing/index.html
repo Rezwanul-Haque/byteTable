@@ -115,6 +115,24 @@
   .slide figcaption b { display:block; font-size:15px; font-weight:600; }
   .slide figcaption span { font-size:12px; color:var(--dim); }
   .slide:not(.is-active) { filter:brightness(.6) saturate(.7); }
+  .slide.is-active .slide-img { cursor:zoom-in; }
+  .lens { position:absolute; width:180px; height:180px; border-radius:50%; border:2px solid var(--accent);
+    box-shadow:0 8px 30px rgba(0,0,0,.5); pointer-events:none; z-index:6; display:none;
+    background-repeat:no-repeat; background-color:var(--bg2); }
+  /* ---------- image lightbox ---------- */
+  .lightbox { position:fixed; inset:0; z-index:100; background:rgba(0,0,0,.9); backdrop-filter:blur(6px);
+    display:flex; align-items:center; justify-content:center; padding:32px; opacity:0; pointer-events:none;
+    transition:opacity .25s; cursor:zoom-out; }
+  .lightbox.open { opacity:1; pointer-events:auto; }
+  .lightbox img { max-width:96vw; max-height:92vh; object-fit:contain; border-radius:12px;
+    box-shadow:0 30px 80px rgba(0,0,0,.6); transform:scale(.95); transition:transform .25s; }
+  .lightbox.open img { transform:scale(1); }
+  .lightbox-cap { position:absolute; bottom:22px; left:0; right:0; text-align:center; font-size:13px; color:var(--dim); pointer-events:none; }
+  .lightbox-close { position:absolute; top:18px; right:22px; width:42px; height:42px; border-radius:50%;
+    background:var(--bg2); border:1px solid var(--border); color:var(--text); display:flex; align-items:center;
+    justify-content:center; cursor:pointer; transition:border-color .15s, background .15s; }
+  .lightbox-close:hover { border-color:var(--accent); background:var(--bg3); }
+  @media (prefers-reduced-motion:reduce){ .lightbox img { transition:none; } }
   .carousel-nav { position:absolute; top:50%; transform:translateY(-50%); z-index:5; width:42px; height:42px; border-radius:50%;
     background:var(--bg2); border:1px solid var(--border); color:var(--text); display:flex; align-items:center; justify-content:center; cursor:pointer; transition:border-color .15s, background .15s; }
   .carousel-nav:hover { border-color:var(--accent); background:var(--bg3); }
@@ -280,6 +298,12 @@
   </div>
 </section>
 
+<div class="lightbox" id="lightbox" aria-hidden="true" role="dialog" aria-label="Screenshot preview">
+  <button class="lightbox-close" id="lbClose" aria-label="Close preview"><span class="msym">close</span></button>
+  <img id="lbImg" src="" alt="" />
+  <div class="lightbox-cap" id="lbCap"></div>
+</div>
+
 <section class="section-pad" id="features">
   <div class="wrap">
     <div class="sec-head">
@@ -434,11 +458,40 @@
     var radius = Math.round(290 / Math.tan(Math.PI / n)) + 60;
     var curr = 0, timer;
     var dotsWrap = document.getElementById('cDots');
+    var LENS = 180, ZOOM = 2.2;
+    var canHover = window.matchMedia('(hover:hover)').matches;
+    var lens = document.createElement('div');
+    lens.className = 'lens';
     slides.forEach(function (s, i) {
       s.style.transform = 'rotateY(' + (i * theta) + 'deg) translateZ(' + radius + 'px)';
       var d = document.createElement('button');
       d.addEventListener('click', function () { go(i); reset(); });
       dotsWrap.appendChild(d);
+      // click active slide -> open full image; click side slide -> rotate to it
+      var box = s.querySelector('.slide-img');
+      box.addEventListener('click', function () {
+        if (i === idx()) { openLb(box.querySelector('img')); }
+        else { go(i); reset(); }
+      });
+      // lens magnifier (desktop hover only)
+      box.addEventListener('mousemove', function (e) {
+        if (!canHover || !s.classList.contains('is-active')) return;
+        var img = box.querySelector('img');
+        var r = box.getBoundingClientRect();
+        var cx = e.clientX - r.left, cy = e.clientY - r.top;
+        var scale = Math.max(r.width / img.naturalWidth, r.height / img.naturalHeight);
+        var bgW = img.naturalWidth * scale * ZOOM, bgH = img.naturalHeight * scale * ZOOM;
+        var bx = Math.max(0, Math.min(cx * ZOOM - LENS / 2, bgW - LENS));
+        var by = Math.max(0, Math.min(cy * ZOOM - LENS / 2, bgH - LENS));
+        lens.style.backgroundImage = 'url("' + img.src + '")';
+        lens.style.backgroundSize = bgW + 'px ' + bgH + 'px';
+        lens.style.backgroundPosition = '-' + bx + 'px -' + by + 'px';
+        lens.style.left = Math.max(0, Math.min(cx - LENS / 2, r.width - LENS)) + 'px';
+        lens.style.top = Math.max(0, Math.min(cy - LENS / 2, r.height - LENS)) + 'px';
+        if (lens.parentElement !== box) box.appendChild(lens);
+        lens.style.display = 'block';
+      });
+      box.addEventListener('mouseleave', function () { lens.style.display = 'none'; });
     });
     var dots = Array.prototype.slice.call(dotsWrap.children);
     function idx() { return ((curr % n) + n) % n; }
@@ -455,7 +508,26 @@
     document.getElementById('cPrev').addEventListener('click', function () { prev(); reset(); });
     var c = document.getElementById('carousel');
     c.addEventListener('mouseenter', function () { clearInterval(timer); });
-    c.addEventListener('mouseleave', reset);
+    c.addEventListener('mouseleave', function () { if (!lbOpen) reset(); });
+
+    // lightbox: full-size image view (hover-zoom affordance on desktop, tap on mobile)
+    var lb = document.getElementById('lightbox');
+    var lbImg = document.getElementById('lbImg');
+    var lbCap = document.getElementById('lbCap');
+    var lbOpen = false;
+    function openLb(img) {
+      lbImg.src = img.src; lbImg.alt = img.alt; lbCap.textContent = img.alt;
+      lb.classList.add('open'); lb.setAttribute('aria-hidden', 'false');
+      lbOpen = true; clearInterval(timer);
+    }
+    function closeLb() {
+      lb.classList.remove('open'); lb.setAttribute('aria-hidden', 'true');
+      lbOpen = false; reset();
+    }
+    lb.addEventListener('click', function (e) { if (e.target !== lbImg) closeLb(); });
+    document.getElementById('lbClose').addEventListener('click', closeLb);
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && lbOpen) closeLb(); });
+
     render(); reset();
   })();
 </script>

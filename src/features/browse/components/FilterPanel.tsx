@@ -46,9 +46,11 @@ interface FilterPanelProps {
   error: string | null;
   /** Persist a new filter state (draft and/or applied) for the tab. */
   onChange: (next: TabFilterState) => void;
+  /** Close the panel (removing the last condition closes rather than resets). */
+  onClose?: () => void;
 }
 
-export function FilterPanel({ open, columns, state, error, onChange }: FilterPanelProps) {
+export function FilterPanel({ open, columns, state, error, onChange, onClose }: FilterPanelProps) {
   const { draft } = state;
   const firstColumn = columns[0]?.name ?? "";
 
@@ -70,9 +72,14 @@ export function FilterPanel({ open, columns, state, error, onChange }: FilterPan
 
   const removeCond = (id: string) => {
     const filtered = draft.conditions.filter((c) => c.id !== id);
-    const conditions = filtered.length ? filtered : [newCondition(firstColumn)];
+    if (filtered.length === 0) {
+      // Removing the last row clears the filter and closes the panel.
+      apply(emptyDraft(firstColumn));
+      onClose?.();
+      return;
+    }
     // Removing a row changes the effective filter — re-apply (prototype).
-    apply({ ...draft, conditions });
+    apply({ ...draft, conditions: filtered });
   };
 
   const addCond = () => {

@@ -75,7 +75,7 @@ export function DynamoItemGrid({
     const cols = attributeUnion(items);
     return [keySchema.pk, keySchema.sk]
       .filter((c): c is string => !!c && cols.includes(c))
-      .concat(cols.filter((c) => c !== keySchema.pk && c !== keySchema.sk));
+      .concat(cols.filter((c) => c !== keySchema.pk && c !== keySchema.sk).sort());
   }, [items, keySchema.pk, keySchema.sk]);
 
   const selectable = !!onToggleRow;

@@ -83,15 +83,64 @@ another feature's internals. Per-engine SQL/commands live only under
 
 ## Making a change
 
-1. **Branch** off `main` (don't commit directly to `main`).
-2. **Keep it focused** — one logical change per PR. Match the style and patterns
+1. **Branch** off `dev` — all work starts from `dev`, and **all PRs are raised
+   against `dev`**, not `main`. `main` is the release branch; never commit or
+   open PRs directly against it.
+2. **Name the branch** by its purpose (see the patterns below).
+3. **Keep it focused** — one logical change per PR. Match the style and patterns
    of the surrounding code; read a nearby file before adding a new one.
-3. **Add tests** for backend logic. SQLite is fully unit-testable in-process;
+4. **Add tests** for backend logic. SQLite is fully unit-testable in-process;
    MySQL/PostgreSQL/Redis paths have unit tests for SQL generation and gated
    integration tests against the Docker databases.
-4. **Run all the checks** (below) and make sure they pass.
-5. **Open a PR** with a clear description of what changed and why. Link any
-   related issue.
+5. **Run all the checks** (below) and make sure they pass.
+6. **Open a PR into `dev`** with a clear description of what changed and why.
+   Link any related issue.
+
+### Branch naming
+
+Prefix the branch by the kind of work, followed by a short kebab-case summary:
+
+| Kind     | Prefix      | Example                       |
+| -------- | ----------- | ----------------------------- |
+| Feature  | `feat/`     | `feature/carousel-lens-zoom`  |
+| Refactor | `refactor/` | `refactor/filter-panel-state` |
+| Bug fix  | `bugfix/`   | `bugfix/ctrl-f-toggle`        |
+| Hotfix   | `hotfix/`   | `hotfix/keychain-crash`       |
+
+- **feat/** — new functionality.
+- **refactor/** — restructuring with no behavior change.
+- **bugfix/** — fixes branched off and merged back into `dev`.
+- **hotfix/** — urgent production fixes; branched off `main`, then merged into
+  **both** `main` and `dev` so the fix isn't lost on the next release.
+
+### One branch, one concern
+
+- **One feature per branch.** A `feature/` branch contains _only_ that feature —
+  no drive-by bug fixes, refactors, or unrelated tweaks. Spun off a fix while
+  working? Put it on its own `bugfix/` branch and PR it separately.
+- Mixing concerns makes a PR hard to review and impossible to revert cleanly.
+
+### Keep history linear
+
+We keep `dev` and `main` a **linear history** — no merge commits from
+long-running branches.
+
+- **Rebase, don't merge.** Pull upstream changes with
+  `git pull --rebase origin dev` (or `git rebase dev`) rather than merging `dev`
+  into your branch. Resolve conflicts on your commits.
+- **Squash before you open the PR.** If your branch has grown a lot of WIP /
+  "fix typo" / "address review" commits, squash them into a small set of
+  meaningful commits first:
+
+  ```bash
+  git rebase -i dev        # mark noise commits as `squash`/`fixup`
+  git push --force-with-lease
+  ```
+
+  Aim for one commit per logical step (often just one for a small feature).
+
+- Never force-push a shared branch (`dev`, `main`) — only your own feature
+  branch.
 
 ## Checks (must pass before a PR)
 

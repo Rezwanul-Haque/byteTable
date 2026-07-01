@@ -1,0 +1,81 @@
+.bt-titlebar {
+  height: 32px;
+  background: var(--bg0);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  user-select: none;
+  flex-shrink: 0;
+  width: 100%;
+  cursor: grab;
+}
+
+.bt-titlebar:active {
+  cursor: grabbing;
+}
+
+.bt-titlebar-left {
+  display: flex;
+  align-items: center;
+  padding-left: 12px;
+  gap: 10px;
+  height: 100%;
+}
+
+.bt-titlebar-icon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+.bt-titlebar-title {
+  font-size: 13px;
+  color: var(--text-dim);
+  font-weight: 500;
+  letter-spacing: 0.2px;
+}
+
+.bt-titlebar-buttons {
+  display: flex;
+  height: 100%;
+  -webkit-app-region: no-drag;
+  cursor: default; /* overrides the grab cursor */
+}
+
+.bt-titlebar-btn {
+  width: 46px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  transition: background 0.1s;
+  outline: none;
+  cursor: default;
+}
+
+.bt-titlebar-btn:hover {
+  background: var(--bg2);
+  color: var(--text);
+}
+
+.bt-titlebar-btn.close:hover {
+  background: #e81123;
+  color: #fff;
+}
+
+.bt-titlebar-btn .msym {
+  font-size: 16px;
+}
+
+/* Layout overrides based on settings */
+body[data-titlebar-position^="bottom"] .bt-titlebar {
+  order: 2; /* Moves title bar below app-frame */
+}
+
+body[data-titlebar-position="topRightIcon"] .bt-titlebar-left,
+body[data-titlebar-position="bottomRightIcon"] .bt-titlebar-left {
+  order: 2;
+  padding-left: 0;
+  padding-right: 12px;
+}

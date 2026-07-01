@@ -28,6 +28,7 @@ import {
 } from "./features/updater/api";
 import { AboutModal } from "./features/updater/AboutModal";
 import { UpdateModal } from "./features/updater/UpdateModal";
+import { TitleBar } from "./shared/ui/TitleBar";
 import "./App.css";
 
 // Dev gallery (M0) is no longer the main screen: in dev builds it is toggled
@@ -153,50 +154,53 @@ export function App() {
           clicks. Renders nothing; must sit inside ToastProvider (it toasts on
           a failed open). */}
       <TrayWorkspacesBridge />
-      <div className="app-frame">
-        <Rail
-          onDonate={() => setDonateOpen(true)}
-          updateAvailable={update !== null}
-          updateSkipped={updateSkipped}
-          onUpdate={() => setUpdateModalOpen(true)}
-          onAbout={() => setAboutOpen(true)}
-          onSettings={() => setSettingsOpen(true)}
-          version={version}
-        />
-        <div className="app-body">
-          {!showConnect && activeWorkspace ? (
-            // §2 workspace layout: sidebar (248px) | tab bar + content,
-            // status bar across the bottom. Keying the shell by workspace id
-            // resets its transient local state (palette open, sidebar search,
-            // open popovers) per workspace; the structural state (tabs,
-            // active tab, schema, expanded rows) lives on workspace.ui and
-            // survives switches.
-            //
-            // M13 (REDIS_SPEC §11): route on the engine family. A key-value
-            // connection renders the Redis workspace (a sibling shell); every
-            // relational engine renders the SQL workspace. Neither imports the
-            // other — only the App, the shared host, knows both.
-            // M17: a document-store connection renders the DynamoDB workspace
-            // (a third sibling shell). Key-value → Redis; everything else → SQL.
-            activeWorkspace.kind === "kv" ? (
-              <RedisWorkspace key={activeWorkspace.id} workspace={activeWorkspace} />
-            ) : activeWorkspace.kind === "document" ? (
-              <DynamoWorkspace key={activeWorkspace.id} workspace={activeWorkspace} />
-            ) : activeWorkspace.kind === "mongo" ? (
-              // M18: a MongoDB connection renders the MongoDB workspace (a fourth
-              // sibling shell). Document → DynamoDB; key-value → Redis; the rest → SQL.
-              <MongoWorkspace key={activeWorkspace.id} workspace={activeWorkspace} />
-            ) : activeWorkspace.kind === "cassandra" ? (
-              // M19: a Cassandra connection renders the Cassandra workspace (a
-              // fifth sibling shell, the wide-column vertical slice). Mongo →
-              // MongoDB; document → DynamoDB; key-value → Redis; the rest → SQL.
-              <CassandraWorkspace key={activeWorkspace.id} workspace={activeWorkspace} />
+      <div className="bt-app-root">
+        <TitleBar />
+        <div className="app-frame">
+          <Rail
+            onDonate={() => setDonateOpen(true)}
+            updateAvailable={update !== null}
+            updateSkipped={updateSkipped}
+            onUpdate={() => setUpdateModalOpen(true)}
+            onAbout={() => setAboutOpen(true)}
+            onSettings={() => setSettingsOpen(true)}
+            version={version}
+          />
+          <div className="app-body">
+            {!showConnect && activeWorkspace ? (
+              // §2 workspace layout: sidebar (248px) | tab bar + content,
+              // status bar across the bottom. Keying the shell by workspace id
+              // resets its transient local state (palette open, sidebar search,
+              // open popovers) per workspace; the structural state (tabs,
+              // active tab, schema, expanded rows) lives on workspace.ui and
+              // survives switches.
+              //
+              // M13 (REDIS_SPEC §11): route on the engine family. A key-value
+              // connection renders the Redis workspace (a sibling shell); every
+              // relational engine renders the SQL workspace. Neither imports the
+              // other — only the App, the shared host, knows both.
+              // M17: a document-store connection renders the DynamoDB workspace
+              // (a third sibling shell). Key-value → Redis; everything else → SQL.
+              activeWorkspace.kind === "kv" ? (
+                <RedisWorkspace key={activeWorkspace.id} workspace={activeWorkspace} />
+              ) : activeWorkspace.kind === "document" ? (
+                <DynamoWorkspace key={activeWorkspace.id} workspace={activeWorkspace} />
+              ) : activeWorkspace.kind === "mongo" ? (
+                // M18: a MongoDB connection renders the MongoDB workspace (a fourth
+                // sibling shell). Document → DynamoDB; key-value → Redis; the rest → SQL.
+                <MongoWorkspace key={activeWorkspace.id} workspace={activeWorkspace} />
+              ) : activeWorkspace.kind === "cassandra" ? (
+                // M19: a Cassandra connection renders the Cassandra workspace (a
+                // fifth sibling shell, the wide-column vertical slice). Mongo →
+                // MongoDB; document → DynamoDB; key-value → Redis; the rest → SQL.
+                <CassandraWorkspace key={activeWorkspace.id} workspace={activeWorkspace} />
+              ) : (
+                <WorkspaceShell key={activeWorkspace.id} workspace={activeWorkspace} />
+              )
             ) : (
-              <WorkspaceShell key={activeWorkspace.id} workspace={activeWorkspace} />
-            )
-          ) : (
-            <ConnectScreen />
-          )}
+              <ConnectScreen />
+            )}
+          </div>
         </div>
       </div>
 

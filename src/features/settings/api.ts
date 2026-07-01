@@ -14,6 +14,11 @@ export type AutoRefreshSec = 5 | 10 | 30;
 export type Density = "compact" | "comfortable";
 /** Which side the object-list sidebar renders on. */
 export type SidebarSide = "left" | "right";
+export type TitlebarPosition =
+  | "topLeftIcon"
+  | "topRightIcon"
+  | "bottomLeftIcon"
+  | "bottomRightIcon";
 /** `"auto"` (theme's own accent) or a `#rrggbb` hex string. */
 export type Accent = "auto" | string;
 /** Curated mono key or a probed `"sys:<Family>"` id. */
@@ -38,6 +43,7 @@ export interface Settings {
   autoRefresh: boolean;
   autoRefreshSec: AutoRefreshSec;
   sidebarSide: SidebarSide;
+  titlebarPosition: TitlebarPosition;
 }
 
 /** The single source of truth for the contract shape and default values. */
@@ -58,6 +64,7 @@ export const DEFAULTS: Settings = {
   autoRefresh: true,
   autoRefreshSec: 10,
   sidebarSide: "left",
+  titlebarPosition: "topLeftIcon",
 };
 
 /**

@@ -3,8 +3,15 @@
  * The rail's CSS lives with its component (Rail.css).
  */
 
-.app-frame {
+.bt-app-root {
+  display: flex;
+  flex-direction: column;
   height: 100%;
+}
+
+.app-frame {
+  flex: 1;
+  min-height: 0;
   display: flex;
 }
 

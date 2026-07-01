@@ -10,14 +10,7 @@ import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Select } from "../../../shared/ui/Select";
 import { useToast } from "../../../shared/ui/toastContext";
-import type {
-  AutoRefreshSec,
-  DefaultLimit,
-  Density,
-  Settings,
-  SidebarSide,
-  TitlebarPosition,
-} from "../api";
+import type { AutoRefreshSec, DefaultLimit, Density, Settings, SidebarSide } from "../api";
 import {
   ACCENTS,
   monoMetaFor,

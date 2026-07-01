@@ -150,6 +150,34 @@ export function TableTab({
     };
   }, [colOpen, actionsOpen]);
 
+  // Cmd/Ctrl+F opens (and focuses) the filter panel while in data mode. Only
+  // the active tab mounts TableTab, so this listener is inherently tab-scoped.
+  useEffect(() => {
+    if (tab.mode !== "data") return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "f" && event.key !== "F") return;
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+      event.preventDefault();
+      // Toggle: close if already open.
+      if (panelOpen) {
+        setPanelOpen(false);
+        return;
+      }
+      if (!filterState) {
+        setTabFilter(tab.id, { draft: emptyDraft(columns[0]?.name ?? ""), applied: null });
+      }
+      setPanelOpen(true);
+      // Wait for the panel to un-hide before focusing its first control.
+      requestAnimationFrame(() => {
+        const panel = document.querySelector(".filter-panel:not(.hidden)");
+        const ctrl = panel?.querySelector("input, select") as HTMLElement | null;
+        ctrl?.focus();
+      });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [tab.mode, tab.id, panelOpen, filterState, columns, setTabFilter]);
+
   const doExport = (kind: "tableCsv" | "tableSql") => {
     setActionsOpen(false);
     // The progress modal owns the whole flow: SQL opens on the scope-choice
@@ -455,6 +483,7 @@ export function TableTab({
             state={ensuredState}
             error={filterError}
             onChange={onFilterChange}
+            onClose={() => setPanelOpen(false)}
           />
 
           {/* The virtualized data grid. Receives the applied filter + a stable

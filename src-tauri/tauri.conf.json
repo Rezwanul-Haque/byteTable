@@ -16,9 +16,9 @@
         "title": "ByteTable",
         "width": 1440,
         "height": 900,
-        "minWidth": 1024,
-        "minHeight": 640,
-        "decorations": true,
+        "minWidth": 800,
+        "minHeight": 400,
+        "decorations": false,
         "resizable": true
       }
     ],

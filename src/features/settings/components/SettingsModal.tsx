@@ -8,8 +8,16 @@ import { useEffect, useRef, useState } from "react";
 import { Modal } from "../../../shared/ui/Modal";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
+import { Select } from "../../../shared/ui/Select";
 import { useToast } from "../../../shared/ui/toastContext";
-import type { AutoRefreshSec, DefaultLimit, Density, Settings, SidebarSide } from "../api";
+import type {
+  AutoRefreshSec,
+  DefaultLimit,
+  Density,
+  Settings,
+  SidebarSide,
+  TitlebarPosition,
+} from "../api";
 import {
   ACCENTS,
   monoMetaFor,
@@ -407,6 +415,25 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
                   ]}
                 />
               </SetRow>
+              <div style={{ paddingBottom: "200px" }}>
+                <SetRow
+                  label="Title bar position"
+                  hint="Top or bottom edge, and which side the controls are on"
+                >
+                  <Select
+                    value={settings.titlebarPosition}
+                    onChange={(v) => setSetting("titlebarPosition", v)}
+                    className="set-select"
+                    mono={false}
+                    options={[
+                      { value: "topLeftIcon", label: "Top (Left icon)" },
+                      { value: "topRightIcon", label: "Top (Right icon)" },
+                      { value: "bottomLeftIcon", label: "Bottom (Left icon)" },
+                      { value: "bottomRightIcon", label: "Bottom (Right icon)" },
+                    ]}
+                  />
+                </SetRow>
+              </div>
             </>
           ) : null}
 
@@ -427,17 +454,16 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
 
               <div className="set-section-label">Interface font</div>
               <SetRow label="UI typeface">
-                <select
+                <Select
                   className="set-select"
                   value={settings.uiFont}
-                  onChange={(e) => setSetting("uiFont", e.target.value as UiFontId)}
-                >
-                  {Object.entries(UI_FONTS).map(([id, f]) => (
-                    <option key={id} value={id}>
-                      {f.label}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(id) => setSetting("uiFont", id)}
+                  mono={false}
+                  options={Object.entries(UI_FONTS).map(([id, f]) => ({
+                    value: id as UiFontId,
+                    label: f.label,
+                  }))}
+                />
               </SetRow>
 
               <div className="set-section-label">Text size</div>

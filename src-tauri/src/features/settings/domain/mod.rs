@@ -69,6 +69,17 @@ pub enum SidebarSide {
     Right,
 }
 
+/// Where the title bar renders, and which side its controls sit on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TitlebarPosition {
+    #[default]
+    TopLeftIcon,
+    TopRightIcon,
+    BottomLeftIcon,
+    BottomRightIcon,
+}
+
 fn default_theme() -> Theme {
     Theme::default()
 }
@@ -89,6 +100,9 @@ fn default_density() -> Density {
 }
 fn default_sidebar_side() -> SidebarSide {
     SidebarSide::default()
+}
+fn default_titlebar_position() -> TitlebarPosition {
+    TitlebarPosition::default()
 }
 fn default_default_limit() -> u32 {
     300
@@ -146,6 +160,9 @@ pub struct Settings {
     /// Which side the object-list sidebar renders on. Left by default.
     #[serde(default = "default_sidebar_side")]
     pub sidebar_side: SidebarSide,
+    /// Position of the custom title bar and its controls.
+    #[serde(default = "default_titlebar_position")]
+    pub titlebar_position: TitlebarPosition,
 }
 
 impl Default for Settings {
@@ -167,6 +184,7 @@ impl Default for Settings {
             auto_refresh: true,
             auto_refresh_sec: default_auto_refresh_sec(),
             sidebar_side: default_sidebar_side(),
+            titlebar_position: default_titlebar_position(),
         }
     }
 }
@@ -194,6 +212,7 @@ mod tests {
         assert!(s.auto_refresh);
         assert_eq!(s.auto_refresh_sec, 10);
         assert_eq!(s.sidebar_side, SidebarSide::Left);
+        assert_eq!(s.titlebar_position, TitlebarPosition::TopLeftIcon);
     }
 
     #[test]
@@ -231,6 +250,7 @@ mod tests {
             auto_refresh: false,
             auto_refresh_sec: 30,
             sidebar_side: SidebarSide::Right,
+            titlebar_position: TitlebarPosition::BottomRightIcon,
         };
         let json = serde_json::to_string(&s).expect("serialize");
         let back: Settings = serde_json::from_str(&json).expect("deserialize");

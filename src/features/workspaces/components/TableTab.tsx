@@ -79,9 +79,15 @@ export function TableTab({
     (state) => state.columns[columnsKey(handleId, tab.schema, tab.table)],
   );
   const columns: ColumnInfo[] = useMemo(() => columnsEntry?.columns ?? [], [columnsEntry]);
+  // Load columns, and RE-load whenever the cache entry disappears. A manual
+  // refresh full-reintrospects and drops the schema's column caches; without
+  // re-running here the filter panel's column dropdown would stay empty and the
+  // applied filter would compile against no columns (mis-typed → empty grid).
+  // `loadColumns` is cache-first, so this no-ops once the entry is back.
   useEffect(() => {
+    if (columnsEntry) return;
     void loadColumns(handleId, tab.schema, tab.table);
-  }, [loadColumns, handleId, tab.schema, tab.table]);
+  }, [columnsEntry, loadColumns, handleId, tab.schema, tab.table]);
 
   // Panel open/close (transient, local) and the inline raw-mode error.
   const [panelOpen, setPanelOpen] = useState(false);

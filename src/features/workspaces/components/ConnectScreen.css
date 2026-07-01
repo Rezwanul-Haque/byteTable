@@ -23,6 +23,8 @@
 .connect-panel {
   width: 460px;
   max-width: calc(100vw - 48px);
+  /* Never taller than the viewport; the list scrolls, header + actions stay put. */
+  max-height: calc(100vh - 48px);
   background: var(--bg1);
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -78,6 +80,15 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  /* Shrink + scroll inside the capped panel so the header and action row stay
+     pinned; don't grow when the list is short (flex-grow: 0). */
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  /* Room so card focus rings / shadows aren't clipped by the scroll edge. */
+  margin: 0 -4px;
+  padding: 0 4px;
 }
 
 .connect-card {
@@ -350,4 +361,11 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  /* Cap a project's card list so a large project scrolls inside itself instead
+     of stretching the panel past the viewport. ~4 cards tall; every project
+     header stays visible above/below the open one. */
+  max-height: 320px;
+  overflow-y: auto;
+  /* Keep cards clear of the scrollbar gutter. */
+  scrollbar-gutter: stable;
 }

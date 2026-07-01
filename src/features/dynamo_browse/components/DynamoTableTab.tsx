@@ -201,7 +201,7 @@ export function DynamoTableTab({
   // attribute seen so far.
   const projCols = [t.keySchema.pk, t.keySchema.sk]
     .filter((c): c is string => Boolean(c))
-    .concat(knownCols.filter((c) => c !== t.keySchema.pk && c !== t.keySchema.sk));
+    .concat(knownCols.filter((c) => c !== t.keySchema.pk && c !== t.keySchema.sk).sort());
   const toggleProj = (col: string) =>
     setProjSel((s) => {
       const n = new Set(s);
@@ -299,7 +299,11 @@ export function DynamoTableTab({
     if (!rows.length) return;
     const cols = [t.keySchema.pk, t.keySchema.sk]
       .filter((c): c is string => Boolean(c))
-      .concat(attributeUnion(rows).filter((c) => c !== t.keySchema.pk && c !== t.keySchema.sk));
+      .concat(
+        attributeUnion(rows)
+          .filter((c) => c !== t.keySchema.pk && c !== t.keySchema.sk)
+          .sort(),
+      );
     const esc = (v: unknown) => {
       if (v === null || v === undefined) return "";
       const s = typeof v === "object" ? JSON.stringify(v) : String(v);

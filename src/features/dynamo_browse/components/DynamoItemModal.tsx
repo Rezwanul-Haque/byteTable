@@ -45,6 +45,15 @@ export function DynamoItemModal({
   onSaved,
 }: DynamoItemModalProps) {
   const keyAttrs = [table.keySchema.pk, table.keySchema.sk].filter(Boolean) as string[];
+  const allKeyAttrs = new Set(keyAttrs);
+  for (const gsi of table.gsis) {
+    allKeyAttrs.add(gsi.pk);
+    if (gsi.sk) allKeyAttrs.add(gsi.sk);
+  }
+  for (const lsi of table.lsis) {
+    allKeyAttrs.add(lsi.pk);
+    if (lsi.sk) allKeyAttrs.add(lsi.sk);
+  }
   const isKey = (k: string) => keyAttrs.includes(k);
 
   const [rows, setRows] = useState<AttrRow[]>(() =>
@@ -52,7 +61,15 @@ export function DynamoItemModal({
       ? // New item: seed the key attributes (empty values) using their declared
         // DynamoDB types, so identity is always present and typed correctly.
         keyAttrs.map((k) => ({ name: k, type: table.attrTypes[k] ?? "S", raw: "" }))
-      : Object.keys(item).map((k) => ({ name: k, type: ddbType(item[k]), raw: ddbRawOf(item[k]) })),
+      : Object.keys(item)
+          .sort((a, b) => {
+            const aK = allKeyAttrs.has(a);
+            const bK = allKeyAttrs.has(b);
+            if (aK && !bK) return -1;
+            if (!aK && bK) return 1;
+            return a < b ? -1 : a > b ? 1 : 0;
+          })
+          .map((k) => ({ name: k, type: ddbType(item[k]), raw: ddbRawOf(item[k]) })),
   );
   const [dirty, setDirty] = useState(false);
   const [newName, setNewName] = useState("");

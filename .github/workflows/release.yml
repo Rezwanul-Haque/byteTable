@@ -3,6 +3,16 @@ name: Release
 # Builds signed installers + updater artifacts for all three desktop OSes and
 # publishes them (plus the `latest.json` the in-app updater reads) to a SINGLE
 # GitHub release, on every `v*` tag push.
+#
+# Why three jobs: a build matrix that each call tauri-action with only `tagName`
+# races to create its OWN release (duplicate drafts, split assets). Instead we
+# create ONE draft release up front, have every platform upload into it by
+# `releaseId`, then publish it once all builds finish.
+#
+# Required repo secrets (see docs/AUTO_UPDATE.md):
+#   TAURI_SIGNING_PRIVATE_KEY         — the updater private key
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  — its password
+# And tauri.conf.json → plugins.updater.pubkey must hold the matching public key.
 on:
   push:
     tags:
@@ -17,10 +27,18 @@ jobs:
     outputs:
       release_id: ${{ steps.create.outputs.result }}
     steps:
+      # Full history + tags so the changelog step can diff the previous tag.
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
+      # Build grouped release notes from the conventional-commit subjects between
+      # the previous tag and this one:
+      #    feat:                → Added
+      #    improv: / refactor: / perf:  → Improvements
+      #    fix:                  → Fixes
+      #    anything else (minus chore/docs/test/ci/build/style noise) → Other
+      # A commit's `type(scope):` prefix is stripped; empty sections are dropped.
       - name: Build release notes
         id: notes
         env:
@@ -33,6 +51,7 @@ jobs:
           added=""; improved=""; fixed=""; other=""
           while IFS= read -r subject; do
             [ -z "$subject" ] && continue
+            # type token = leading letters before an optional (scope) and the colon
             type=$(printf '%s' "$subject" | sed -nE 's/^([a-zA-Z]+)(\([^)]*\))?!?:.*/\1/p' | tr '[:upper:]' '[:lower:]')
             msg=$(printf '%s' "$subject" | sed -E 's/^[a-zA-Z]+(\([^)]*\))?!?:[[:space:]]*//')
             line="- ${msg}"$'\n'
@@ -93,7 +112,8 @@ jobs:
           - platform: ubuntu-22.04
             args: ""
             target: ""
-          # Corrected: Only packages into .deb to avoid executing ARM64 dependencies on an x86 host
+          # Corrected: Only packages into .deb and .rpm to avoid executing ARM64 dependencies on an x86 host
+          # ARM64 Linux: bundle deb/rpm only (skip AppImage) because AppImage cross-build requires executing target binaries on an x86 host
           - platform: ubuntu-22.04
             args: "--target aarch64-unknown-linux-gnu --bundles deb,rpm"
             target: "aarch64-unknown-linux-gnu"
@@ -107,6 +127,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # The git tag is the source of truth for the version. Stamp it into the
+      # manifests so the built app's getVersion() + bundle names + updater
+      # latest.json all match the tag (committed manifest values are only a dev
+      # baseline). Uses github-script for cross-platform file edits (no sed).
       - name: Stamp version from the tag
         uses: actions/github-script@v8
         with:
@@ -193,6 +217,9 @@ jobs:
     needs: [create-release, build]
     runs-on: ubuntu-22.04
     steps:
+      # Hash every uploaded asset into a single SHASUMS256.txt (sha256sum
+      # format: "<hash>  <filename>") and attach it. The install scripts verify
+      # their download against it.
       - name: Generate + attach SHA-256 checksums
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

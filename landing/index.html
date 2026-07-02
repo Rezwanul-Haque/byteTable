@@ -207,6 +207,12 @@
   .foot-in .brand { font-size:14px; color:var(--text); }
   .foot-links { margin-left:auto; display:flex; gap:18px; }
   .foot-links a:hover { color:var(--accent); }
+  /* On narrow screens the links wrap to their own line; drop the auto margin so
+     they left-align under the brand instead of hugging the right edge. */
+  @media (max-width:560px){
+    .foot-in { flex-direction:column; align-items:flex-start; gap:16px; }
+    .foot-links { margin-left:0; }
+  }
   @media (prefers-reduced-motion:reduce){ .coffee .smoke{ animation:none; } .btn:hover{ transform:none; } }
 </style>
 </head>

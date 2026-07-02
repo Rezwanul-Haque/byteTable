@@ -1,0 +1,15 @@
+{
+  "app": {
+    "windows": [
+      {
+        "title": "ByteTable",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 800,
+        "minHeight": 400,
+        "decorations": true,
+        "resizable": true
+      }
+    ]
+  }
+}

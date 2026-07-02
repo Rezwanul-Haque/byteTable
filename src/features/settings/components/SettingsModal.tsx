@@ -21,6 +21,7 @@ import {
   UI_FONTS,
   type UiFontId,
 } from "../catalogs";
+import { platform } from "@tauri-apps/plugin-os";
 import { detectSystemMonos } from "../fonts";
 import { renderSqlPreview } from "../sqlPreview";
 import { useSettingsStore } from "../state";
@@ -408,25 +409,27 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
                   ]}
                 />
               </SetRow>
-              <div style={{ paddingBottom: "200px" }}>
-                <SetRow
-                  label="Title bar position"
-                  hint="Top or bottom edge, and which side the controls are on"
-                >
-                  <Select
-                    value={settings.titlebarPosition}
-                    onChange={(v) => setSetting("titlebarPosition", v)}
-                    className="set-select"
-                    mono={false}
-                    options={[
-                      { value: "topLeftIcon", label: "Top (Left icon)" },
-                      { value: "topRightIcon", label: "Top (Right icon)" },
-                      { value: "bottomLeftIcon", label: "Bottom (Left icon)" },
-                      { value: "bottomRightIcon", label: "Bottom (Right icon)" },
-                    ]}
-                  />
-                </SetRow>
-              </div>
+              {platform() !== "macos" && (
+                <div style={{ paddingBottom: "200px" }}>
+                  <SetRow
+                    label="Title bar position"
+                    hint="Top or bottom edge, and which side the controls are on"
+                  >
+                    <Select
+                      value={settings.titlebarPosition}
+                      onChange={(v) => setSetting("titlebarPosition", v)}
+                      className="set-select"
+                      mono={false}
+                      options={[
+                        { value: "topLeftIcon", label: "Top (Left icon)" },
+                        { value: "topRightIcon", label: "Top (Right icon)" },
+                        { value: "bottomLeftIcon", label: "Bottom (Left icon)" },
+                        { value: "bottomRightIcon", label: "Bottom (Right icon)" },
+                      ]}
+                    />
+                  </SetRow>
+                </div>
+              )}
             </>
           ) : null}
 

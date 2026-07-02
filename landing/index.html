@@ -6,7 +6,7 @@
 <title>ByteTable — the free, local-first database client</title>
 <!-- Favicon: the ByteTable mark (matches the #bt nav logo) on a dark tile, inlined as an SVG data URI so the page stays self-contained. -->
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%230f1013'/%3E%3Crect x='3' y='4' width='8.5' height='4' rx='1.6' fill='%232dd4a7'/%3E%3Crect x='13.5' y='4' width='7.5' height='4' rx='1.6' fill='%232dd4a7' opacity='.45'/%3E%3Crect x='3' y='10' width='18' height='4' rx='1.6' fill='%23e7eaef' opacity='.55'/%3E%3Crect x='3' y='16' width='11' height='4' rx='1.6' fill='%23e7eaef' opacity='.35'/%3E%3Crect x='16.5' y='16' width='4.5' height='4' rx='1.2' fill='%232dd4a7'/%3E%3C/svg%3E" />
-<meta name="description" content="A free, open-source database client for SQLite, MySQL, PostgreSQL, Redis, DynamoDB, MongoDB and Cassandra. Local-first, cross-platform, no subscription. Forever." />
+<meta name="description" content="A free, open-source database client for SQLite, MySQL, PostgreSQL, SQL Server, Redis, DynamoDB, MongoDB and Cassandra. Local-first, cross-platform, no subscription. Forever." />
 <link rel="canonical" href="https://rezwanul-haque.github.io/byteTable/" />
 <!-- Social link previews (Open Graph + Twitter Card). The image MUST be an
      absolute URL — scrapers don't resolve relative paths. Uses a SMALL (256²)
@@ -18,7 +18,7 @@
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="ByteTable" />
 <meta property="og:title" content="ByteTable — the free, local-first database client" />
-<meta property="og:description" content="A free, open-source database client for SQLite, MySQL, PostgreSQL, Redis, DynamoDB, MongoDB and Cassandra. Local-first, cross-platform, no subscription. Forever." />
+<meta property="og:description" content="A free, open-source database client for SQLite, MySQL, PostgreSQL, SQL Server, Redis, DynamoDB, MongoDB and Cassandra. Local-first, cross-platform, no subscription. Forever." />
 <meta property="og:url" content="https://rezwanul-haque.github.io/byteTable/" />
 <meta property="og:image" content="https://rezwanul-haque.github.io/byteTable/brand/bytetable-icon-256.png" />
 <meta property="og:image:type" content="image/png" />
@@ -27,7 +27,7 @@
 <meta property="og:image:alt" content="ByteTable logo" />
 <meta name="twitter:card" content="summary" />
 <meta name="twitter:title" content="ByteTable — the free, local-first database client" />
-<meta name="twitter:description" content="A free, open-source database client for SQLite, MySQL, PostgreSQL, Redis, DynamoDB, MongoDB and Cassandra. Local-first, cross-platform, no subscription. Forever." />
+<meta name="twitter:description" content="A free, open-source database client for SQLite, MySQL, PostgreSQL, SQL Server, Redis, DynamoDB, MongoDB and Cassandra. Local-first, cross-platform, no subscription. Forever." />
 <meta name="twitter:image" content="https://rezwanul-haque.github.io/byteTable/brand/bytetable-icon-256.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
@@ -245,7 +245,7 @@
   <div class="wrap">
     <span class="badge"><b id="latestTag">v0.0.1</b> · free &amp; open source — forever</span>
     <h1>The database client<br>that never goes <span class="grad">behind a paywall</span></h1>
-    <p class="sub">A fast, local-first GUI for SQLite, MySQL, PostgreSQL, Redis, DynamoDB, MongoDB and Cassandra. Cross-platform and fully native on macOS, Windows and Linux — no account, no subscription.</p>
+    <p class="sub">A fast, local-first GUI for SQLite, MySQL, PostgreSQL, SQL Server, Redis, DynamoDB, MongoDB and Cassandra. Cross-platform and fully native on macOS, Windows and Linux — no account, no subscription.</p>
     <div class="hero-cta">
       <a class="btn btn-primary" href="#download"><span class="msym">download</span> Download free</a>
       <a class="btn btn-ghost" href="https://github.com/rezwanul-Haque/byteTable" target="_blank" rel="noreferrer"><span class="msym">code</span> View source</a>
@@ -254,6 +254,7 @@
       <span class="eng"><i style="background:#56b6c2"></i> SQLite</span>
       <span class="eng"><i style="background:#e2b340"></i> MySQL</span>
       <span class="eng"><i style="background:#61afef"></i> PostgreSQL</span>
+      <span class="eng"><i style="background:#d1495b"></i> SQL Server</span>
       <span class="eng"><i style="background:#e8533d"></i> Redis</span>
       <span class="eng"><i style="background:#4d77ff"></i> DynamoDB</span>
       <span class="eng"><i style="background:#13aa52"></i> MongoDB</span>
@@ -317,7 +318,7 @@
       <p>The features other clients charge for — free, in every build.</p>
     </div>
     <div class="grid3">
-      <div class="card"><div class="ic"><span class="msym">database</span></div><h3>Seven engines, one app</h3><p>SQLite, MySQL, PostgreSQL, Redis, DynamoDB, MongoDB and Cassandra — each opens as its own colored workspace, side by side in one window. More engines on the way.</p></div>
+      <div class="card"><div class="ic"><span class="msym">database</span></div><h3>Eight engines, one app</h3><p>SQLite, MySQL, PostgreSQL, SQL Server, Redis, DynamoDB, MongoDB and Cassandra — each opens as its own colored workspace, side by side in one window. More engines on the way.</p></div>
       <div class="card"><div class="ic"><span class="msym">hub</span></div><h3>Interactive schema map</h3><p>A draggable ER diagram of your tables and foreign keys. Click any value to hop across relationships.</p></div>
       <div class="card"><div class="ic"><span class="msym">terminal</span></div><h3>Built-in SQL terminal</h3><p>A real psql / mysql / sqlite shell in a VS Code-style panel — meta-commands and all — plus redis-cli, mongosh and cqlsh.</p></div>
       <div class="card"><div class="ic"><span class="msym">data_object</span></div><h3>Smart cell editors</h3><p>JSON / JSONB with live validation and a tree view, BINARY(16) rendered as canonical UUIDs — values you can't break.</p></div>

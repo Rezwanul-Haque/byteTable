@@ -37,6 +37,9 @@ export const ENGINE_OBJECTS: Record<Engine, ObjectClass[]> = {
   sqlite: ["table", "view", "trigger"],
   mysql: ["table", "view", "procedure", "function", "trigger"],
   postgres: ["table", "view", "materialized_view", "function", "procedure", "trigger"],
+  // SQL Server (M21) exposes the full object set (like Postgres); `matview`
+  // stands in for indexed views.
+  mssql: ["table", "view", "materialized_view", "function", "procedure", "trigger"],
   redis: [],
   dynamodb: [],
   mongodb: [],
@@ -64,6 +67,7 @@ export const ENGINE_DIALECT: Record<Engine, string> = {
   postgres: "PostgreSQL",
   mysql: "MySQL",
   sqlite: "SQLite",
+  mssql: "T-SQL",
   redis: "Redis",
   dynamodb: "DynamoDB",
   mongodb: "MongoDB",
@@ -74,6 +78,36 @@ export const ENGINE_DIALECT: Record<Engine, string> = {
  *  in the SQL editor for the user to fill in and run. */
 export function newObjectTemplate(engine: Engine, kind: DbObjectKind): string {
   const mysql = engine === "mysql";
+  // SQL Server (M21) uses T-SQL create templates: bracket/`dbo.`-qualified,
+  // `CREATE OR ALTER` for routines/triggers, and an indexed view (schemabound
+  // view + unique clustered index) in place of a materialized view.
+  if (engine === "mssql") {
+    switch (kind) {
+      case "view":
+        return "CREATE VIEW dbo.new_view AS\nSELECT *\nFROM dbo.table_name;";
+      case "materialized_view":
+        return (
+          "CREATE VIEW dbo.new_indexed_view\nWITH SCHEMABINDING AS\n" +
+          "SELECT col1, COUNT_BIG(*) AS cnt\nFROM dbo.table_name\nGROUP BY col1;\nGO\n" +
+          "CREATE UNIQUE CLUSTERED INDEX IX_new_indexed_view\nON dbo.new_indexed_view (col1);"
+        );
+      case "function":
+        return (
+          "CREATE OR ALTER FUNCTION dbo.new_function(@arg1 INT)\nRETURNS INT\nAS\n" +
+          "BEGIN\n  RETURN @arg1;\nEND;"
+        );
+      case "procedure":
+        return (
+          "CREATE OR ALTER PROCEDURE dbo.new_procedure\n  @arg1 INT\nAS\n" +
+          "BEGIN\n  -- statements\nEND;"
+        );
+      case "trigger":
+        return (
+          "CREATE OR ALTER TRIGGER dbo.new_trigger\nON dbo.table_name\nAFTER INSERT\nAS\n" +
+          "BEGIN\n  -- statements\nEND;"
+        );
+    }
+  }
   switch (kind) {
     case "view":
       return "CREATE VIEW new_view AS\nSELECT *\nFROM table_name;";

@@ -131,6 +131,30 @@ aws-credential-types = { version = "1", features = ["hardcoded-credentials"] }
 # the tree's rustls driver picks. `bson` (re-exported as `mongodb::bson`) is the
 # BSON ⇄ value layer the document marshalling uses.
 mongodb = "3"
+# SQL Server engine (M21). `tiberius` is the pure-Rust TDS driver (there is no
+# sqlx SQL Server backend on the 0.8 line). `default-features = false` drops the
+# `native-tls` default in favour of `rustls` — a pure-Rust TLS stack (no OpenSSL
+# system dependency), consistent with the sqlx/redis/mongo driver picks; cargo
+# unifies on the single rustls already in the tree. `tds73` is the modern TDS
+# protocol level; `chrono` gives `FromSql` conversions for the DATE/TIME/
+# DATETIME2/DATETIMEOFFSET temporal types; `bigdecimal` decodes DECIMAL/NUMERIC
+# to arbitrary precision (the CellValue precision contract). tiberius runs over
+# any async transport; we drive it over a tokio `TcpStream` adapted with
+# `tokio-util`'s compat shim (tiberius speaks futures-io, tokio speaks tokio-io).
+tiberius = { version = "0.12", default-features = false, features = [
+    "tds73",
+    "rustls",
+    "chrono",
+] }
+tokio-util = { version = "0.7", features = ["compat"] }
+# tiberius query results arrive as a `futures_util::Stream`; the collectors
+# (`into_first_result`/`into_results`) need the futures runtime glue.
+futures-util = "0.3"
+# Named directly so the mssql adapter can spell the `chrono` temporal types it
+# decodes DATE/TIME/DATETIME2/DATETIMEOFFSET into (tiberius provides the FromSql
+# impls behind its `chrono` feature). Already in the tree transitively via sqlx's
+# chrono feature; cargo unifies on one 0.4 line so tiberius's impls apply.
+chrono = "0.4"
 # Cassandra engine (M19). The DataStax / ScyllaDB Rust driver (`scylla`) is
 # async-native on the tokio runtime already in the tree (Tauri's runtime), so the
 # `WideColumnConnection` methods await the session directly — no spawn_blocking,

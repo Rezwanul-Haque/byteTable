@@ -37,7 +37,7 @@ import {
   generateForeignKeyName,
   generateIndexName,
   toWireBatch,
-  SQLITE_TYPES,
+  stTypesFor,
   type WorkingColumn,
   type WorkingForeignKey,
   type WorkingIndex,
@@ -110,6 +110,13 @@ export function StructureView({
   );
   const setTabStructureOps = useWorkspacesStore((state) => state.setTabStructureOps);
   const ops = useMemo(() => pendingOps ?? [], [pendingOps]);
+
+  // The connection's engine drives the Structure type menu (SQL Server offers
+  // its full 36-type family via `stTypesFor`; other engines keep their list).
+  const engine = useWorkspacesStore(
+    (state) => state.workspaces.find((ws) => ws.id === state.activeWorkspaceId)?.saved.engine,
+  );
+  const typeOptions = useMemo(() => [...stTypesFor(engine ?? "sqlite")], [engine]);
 
   // Local editing UI state (transient — not persisted).
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -538,6 +545,7 @@ export function StructureView({
                       key={c.origin ?? "new:" + c.name}
                       col={c}
                       num={i + 1}
+                      typeOptions={typeOptions}
                       autoEditName={autoEditName}
                       onAutoEditConsumed={() => setAutoEditName(null)}
                       editingCell={editingCell}
@@ -887,6 +895,8 @@ interface ColumnRowProps {
   col: WorkingColumn;
   /** 1-based position shown in the leading `#` gutter. */
   num: number;
+  /** Engine-specific type-menu options (`stTypesFor`). */
+  typeOptions: string[];
   autoEditName: string | null;
   onAutoEditConsumed: () => void;
   editingCell: string | null;
@@ -902,6 +912,7 @@ interface ColumnRowProps {
 function ColumnRow({
   col,
   num,
+  typeOptions,
   autoEditName,
   onAutoEditConsumed,
   editingCell,
@@ -959,6 +970,7 @@ function ColumnRow({
       <td>
         <TypeCell
           value={col.dataType}
+          typeOptions={typeOptions}
           pk={col.pk}
           editing={editingCell === cellId("type")}
           onEdit={() => setEditingCell(cellId("type"))}
@@ -1111,6 +1123,8 @@ function EditableText({
 
 interface TypeCellProps {
   value: string;
+  /** Engine-specific type-menu options (`stTypesFor`). */
+  typeOptions: string[];
   pk: boolean;
   editing: boolean;
   onEdit: () => void;
@@ -1118,13 +1132,13 @@ interface TypeCellProps {
   onCommit: (type: string) => void;
 }
 
-function TypeCell({ value, pk, editing, onEdit, onDone, onCommit }: TypeCellProps) {
+function TypeCell({ value, typeOptions, pk, editing, onEdit, onDone, onCommit }: TypeCellProps) {
   const options = useMemo(() => {
-    const base: string[] = [...SQLITE_TYPES];
+    const base: string[] = [...typeOptions];
     // Always include the column's current declared type so the select shows it
     // even when it isn't one of the offered common types.
     return base.includes(value) ? base : [value, ...base];
-  }, [value]);
+  }, [value, typeOptions]);
 
   if (pk) {
     // PK columns can't be retyped (backend rejects; disable the affordance).

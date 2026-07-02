@@ -1,7 +1,7 @@
 # Contributing to ByteTable
 
 Thanks for your interest in ByteTable — a free, local-first desktop database
-client for SQLite, MySQL, PostgreSQL, Redis, DynamoDB and MangoDB. Contributions of all kinds are
+client for SQLite, MySQL, PostgreSQL, SQL Server, Redis, DynamoDB, MongoDB and Cassandra. Contributions of all kinds are
 welcome: bug reports, fixes, features, docs, and design feedback.
 
 By contributing you agree that your work is licensed under the project's
@@ -19,13 +19,13 @@ By contributing you agree that your work is licensed under the project's
 
 - **Core:** Tauri 2 + Rust (engine adapters, commands, secrets).
 - **Renderer:** React 19 + TypeScript + Vite, Zustand for state.
-- **Engines:** rusqlite (SQLite), sqlx (MySQL/PostgreSQL), the `redis` crate (Redis).
+- **Engines:** rusqlite (SQLite), sqlx (MySQL/PostgreSQL), tiberius (SQL Server), the `redis` crate (Redis), aws-sdk-dynamodb (DynamoDB), mongodb (MongoDB), scylla (Cassandra).
 
 ## Prerequisites
 
 - **Node + pnpm** (renderer).
 - **Rust toolchain** (rustup) — `make` will install it via `ensure-cargo` if missing.
-- **Docker** (optional) — only to run the real MySQL/PostgreSQL/Redis test databases.
+- **Docker** (optional) — only to run the real MySQL/PostgreSQL/SQL Server/Redis/DynamoDB/MongoDB/Cassandra test databases.
 - See the README "Prerequisites" section for platform-specific system libraries.
 
 ## Getting started
@@ -39,7 +39,7 @@ make dev          # run the app with hot reload (Tauri + Vite)
 To exercise the app against real databases:
 
 ```bash
-make db-up        # start Postgres/MySQL/Redis in Docker + seed them
+make db-up        # start Postgres/MySQL/SQL Server/Redis/DynamoDB/MongoDB/Cassandra in Docker + seed them
 make db-down      # stop and wipe them
 ```
 
@@ -69,7 +69,7 @@ src/                     Renderer (React/TS), one folder per feature
   features/<feature>/    components / state (Zustand) / api (typed invoke wrappers)
   shared/                design tokens, UI primitives, wire types
 src-tauri/               Rust core
-  src/engines/           engine adapters (sqlite, postgres, mysql, redis, ssh tunnel)
+  src/engines/           engine adapters (sqlite, postgres, mysql, mssql, redis, dynamo, mongo, cassandra, ssh tunnel)
   src/features/<feature>/ domain / application / ports / infrastructure / commands
   src/shared/            error type, engine + key-value port traits
 test-fixtures/           docker-compose + seeds + sample SQLite
@@ -90,7 +90,7 @@ another feature's internals. Per-engine SQL/commands live only under
 3. **Keep it focused** — one logical change per PR. Match the style and patterns
    of the surrounding code; read a nearby file before adding a new one.
 4. **Add tests** for backend logic. SQLite is fully unit-testable in-process;
-   MySQL/PostgreSQL/Redis paths have unit tests for SQL generation and gated
+   MySQL/PostgreSQL/SQL Server/Redis paths have unit tests for SQL generation and gated
    integration tests against the Docker databases.
 5. **Run all the checks** (below) and make sure they pass.
 6. **Open a PR into `dev`** with a clear description of what changed and why.

@@ -64,6 +64,21 @@ const TYPES_BY_ENGINE: Record<Engine, string[]> = {
     "TIMESTAMP",
     "DATE",
   ],
+  // SQL Server (M21): the common T-SQL types (a curated subset of the full
+  // Structure type list); bracket-quoted identifiers are applied at emit time.
+  mssql: [
+    "INT",
+    "BIGINT",
+    "NVARCHAR(255)",
+    "VARCHAR(255)",
+    "NVARCHAR(MAX)",
+    "DECIMAL(18,2)",
+    "BIT",
+    "DATETIME2",
+    "DATE",
+    "UNIQUEIDENTIFIER",
+    "VARBINARY(MAX)",
+  ],
   // Redis / DynamoDB / MongoDB / Cassandra have no relational create-table here
   // (Cassandra has its own CQL create flow, M19 §19.6); never reached, but the
   // record must be total.

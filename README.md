@@ -1,8 +1,8 @@
 # ByteTable
 
 A free, open-source, **local-first desktop database client** — a TablePlus / BeekeeperStudio
-like tool with first-class Linux, MacOS, Windows support, no pro tier, and no subscription. One window, Multiple workspace, seven engines:
-**SQLite · MySQL · PostgreSQL · Redis · DynamoDB · MongoDB · Cassandra**. Many more engines to come.
+like tool with first-class Linux, MacOS, Windows support, no pro tier, and no subscription. One window, Multiple workspace, eight engines:
+**SQLite · MySQL · PostgreSQL · SQL Server · Redis · DynamoDB · MongoDB · Cassandra**. Many more engines to come.
 
 ![ByteTable](docs/byteTable.png)
 
@@ -28,7 +28,7 @@ in the OS keychain, and the renderer only ever sees opaque connection ids.
 **Workspaces** — multiple simultaneous connections as colored, renamable tiles in a left rail,
 each with its own tab set and sidebar state.
 
-**SQL engines (SQLite / MySQL / PostgreSQL)**
+**SQL engines (SQLite / MySQL / PostgreSQL / SQL Server)**
 
 - Virtualized data grid: type-aware cells, sort, server-side paging (rows-per-page footer), inline cell editing (parameterized `UPDATE`, production-confirm).
 - Stackable filter builder (13 operators, parameterized) + raw `WHERE` escape hatch.
@@ -37,6 +37,7 @@ each with its own tab set and sidebar state.
 - **FK hop** (peek a referenced row → open it filtered), **column insights** (distinct/nulls/min/max/avg + top-5 over the current filter).
 - **Schema map**: draggable ER diagram with movable FK edges, zoom, and PNG/SVG export.
 - **Export** a table or schema to CSV / SQL; **truncate** with a confirm dialog.
+- **SQL Server** plugs into the same relational surface as a fourth engine — T-SQL dialect throughout (bracket-quoted identifiers, `OFFSET…FETCH` paging, `IDENTITY`, the `sys.*` catalog, `dbo` default schema, indexed views in place of materialized views) and a `sqlcmd` terminal. Backed by the `tiberius` TDS driver.
 
 **Redis** — a purpose-built keyspace browser (not shoehorned into a grid): db0–db15 switcher, `SCAN`-based key list (tree + flat), type-aware viewers/editors for string/hash/list/set/zset/stream, key TTL/encoding/memory info, and a keyspace dashboard.
 
@@ -48,7 +49,7 @@ each with its own tab set and sidebar state.
 
 **Settings** — a tabbed preferences modal (`⌘,`): 12 themes (incl. light), accent + font (editor mono + UI) + size + density, and behavior toggles (ligatures, reduce-motion, row-hover, default row limit, production-write confirm). Applied app-wide via CSS variables; persisted locally (localStorage + an editable on-disk mirror).
 
-**Shared** — a VS Code-style **docked terminal panel** (per-engine REPL: psql/mysql/sqlite3-style for SQL, redis-cli for Redis, mongosh for MongoDB, `cqlsh` for Cassandra; PartiQL for DynamoDB; `Ctrl+\``), command palette (`⌘K`), system tray, and live theming via the Settings modal.
+**Shared** — a VS Code-style **docked terminal panel** (per-engine REPL: psql/mysql/sqlite3-style for SQL, `sqlcmd` for SQL Server, redis-cli for Redis, mongosh for MongoDB, `cqlsh` for Cassandra; PartiQL for DynamoDB; `Ctrl+\``), command palette (`⌘K`), system tray, and live theming via the Settings modal.
 
 ## Tech stack
 
@@ -58,7 +59,7 @@ each with its own tab set and sidebar state.
   (`connections`, `introspection`, `browse`, `query`, `structure`, `mutate`, `export`, `keyvalue`,
   `dynamo`, `mongo`, `cassandra`, `schema_map`, `insights`, `preferences`, `settings`), each with
   domain / application / ports / infrastructure / thin Tauri-command layers. Engine drivers
-  (`rusqlite`, `sqlx`, `redis`, `aws-sdk-dynamodb`, `mongodb`, `scylla`) are infrastructure adapters
+  (`rusqlite`, `sqlx`, `tiberius`, `redis`, `aws-sdk-dynamodb`, `mongodb`, `scylla`) are infrastructure adapters
   behind shared port traits (a separate port family per data model: SQL, key-value,
   DynamoDB-document, MongoDB, and Cassandra wide-column).
 
@@ -111,13 +112,15 @@ compiles the Rust core, so it takes a few minutes; subsequent runs are fast.
 A ready-to-use set of throwaway databases lives in [`test-fixtures/`](test-fixtures/):
 
 ```sh
-make db-up          # Postgres + MySQL + Redis + DynamoDB + MongoDB + Cassandra (seeded) on offset ports
+make db-up          # Postgres + MySQL + SQL Server + Redis + DynamoDB + MongoDB + Cassandra (seeded) on offset ports
 ```
 
 Then in the app's **New connection** modal (TLS: disable), use the credentials in
 [`test-fixtures/README.md`](test-fixtures/README.md) — e.g. Postgres `localhost:55432`,
-user `postgres`, password `bytetable`, database `byteshop`. For SQLite, choose
-**"Open SQLite file…"** → `test-fixtures/byteshop.db`. Stop them with `make db-down`.
+user `postgres`, password `bytetable`, database `byteshop`. SQL Server is
+`localhost:11433`, user `sa`, password `ByteTable1!`, database `byteshop`. For
+SQLite, choose **"Open SQLite file…"** → `test-fixtures/byteshop.db`. Stop them
+with `make db-down`.
 
 To exercise the **SSH tunnel** feature, `make tunnel-up` starts a bastion with
 MySQL/PostgreSQL/Redis reachable only through it — see
@@ -130,7 +133,7 @@ src/                     Renderer (React/TS), one folder per feature
   features/<feature>/    components / state (Zustand) / api (typed invoke wrappers)
   shared/                design tokens, UI primitives, wire types
 src-tauri/               Rust core
-  src/engines/           engine adapters (sqlite, postgres, mysql, redis, dynamo, mongo, cassandra, ssh tunnel)
+  src/engines/           engine adapters (sqlite, postgres, mysql, mssql, redis, dynamo, mongo, cassandra, ssh tunnel)
   src/features/<slice>/  domain / application / ports / infrastructure / commands
   src/shared/            error type, engine + key-value + document + mongo + wide-column port traits
 test-fixtures/           docker-compose + seeds + sample SQLite

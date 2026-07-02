@@ -138,6 +138,7 @@ mongodb = "3"
 # pure-Rust (no OpenSSL system dep); native-protocol TLS arrives with a later M19
 # subtask behind an explicit rustls feature.
 scylla = "1.7"
+tauri-plugin-os = "2"
 
 [dev-dependencies]
 tempfile = "3"

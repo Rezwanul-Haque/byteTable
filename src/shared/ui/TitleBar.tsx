@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { defaultWindowIcon } from "@tauri-apps/api/app";
+import { platform } from "@tauri-apps/plugin-os";
+import { invoke } from "@tauri-apps/api/core";
 import { useSettingsStore } from "../../features/settings/state";
 import "./TitleBar.css";
 
 export function TitleBar() {
+  const isMac = platform() === "macos";
   const appWindow = getCurrentWindow();
   const [iconUrl, setIconUrl] = useState<string | null>(null);
   const { settings, setSetting } = useSettingsStore();
@@ -50,6 +53,8 @@ export function TitleBar() {
     loadIcon();
   }, []);
 
+  if (isMac) return null;
+
   return (
     <div data-tauri-drag-region className="bt-titlebar">
       <div className="bt-titlebar-left" data-tauri-drag-region>
@@ -65,7 +70,11 @@ export function TitleBar() {
         <button className="bt-titlebar-btn" onClick={cyclePosition} title="Cycle Titlebar Position">
           <span className="msym">swap_vert</span>
         </button>
-        <button className="bt-titlebar-btn" onClick={() => appWindow.hide()} title="Hide to Tray">
+        <button
+          className="bt-titlebar-btn"
+          onClick={() => invoke("hide_to_tray")}
+          title="Hide to Tray"
+        >
           <span className="msym">visibility_off</span>
         </button>
         <button className="bt-titlebar-btn" onClick={() => appWindow.minimize()} title="Minimize">

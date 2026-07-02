@@ -32,6 +32,8 @@ use shared::engine::Engine;
 /// Bring the main window back to the foreground (from hidden/minimized tray state).
 fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
+        #[cfg(target_os = "macos")]
+        let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
@@ -45,7 +47,11 @@ fn toggle_main_window(app: &AppHandle) {
         let minimized = window.is_minimized().unwrap_or(false);
         if visible && !minimized {
             let _ = window.hide();
+            #[cfg(target_os = "macos")]
+            let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
         } else {
+            #[cfg(target_os = "macos")]
+            let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
             let _ = window.unminimize();
             let _ = window.show();
             let _ = window.set_focus();
@@ -115,9 +121,20 @@ fn tray_update(app: AppHandle, workspaces: Vec<TrayWorkspace>) -> Result<(), Str
     Ok(())
 }
 
+#[tauri::command]
+fn hide_to_tray(app: AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("main") {
+        window.hide().map_err(|e| e.to_string())?;
+        #[cfg(target_os = "macos")]
+        let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_os::init())
         // Single-instance guard (MUST be the first plugin registered): a second
         // launch — e.g. clicking the AppImage again — does not spawn another
         // process; instead this callback fires in the already-running instance
@@ -253,9 +270,14 @@ pub fn run() {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
+                #[cfg(target_os = "macos")]
+                let _ = window
+                    .app_handle()
+                    .set_activation_policy(tauri::ActivationPolicy::Accessory);
             }
         })
         .invoke_handler(tauri::generate_handler![
+            hide_to_tray,
             tray_update,
             features::preferences::commands::prefs_get,
             features::preferences::commands::prefs_set,

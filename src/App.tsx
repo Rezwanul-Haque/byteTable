@@ -29,6 +29,8 @@ import {
 import { AboutModal } from "./features/updater/AboutModal";
 import { UpdateModal } from "./features/updater/UpdateModal";
 import { TitleBar } from "./shared/ui/TitleBar";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { platform } from "@tauri-apps/plugin-os";
 import "./App.css";
 
 // Dev gallery (M0) is no longer the main screen: in dev builds it is toggled
@@ -41,6 +43,30 @@ const Gallery = import.meta.env.DEV
 
 export function App() {
   useRepaintOnRestore();
+
+  // Set platform and listen for maximized state to adjust window corners
+  useEffect(() => {
+    const os = platform();
+    document.documentElement.dataset.platform = os;
+    document.body.dataset.platform = os;
+
+    const appWindow = getCurrentWindow();
+    const updateMaximized = async () => {
+      const maximized = await appWindow.isMaximized();
+      document.documentElement.classList.toggle("window-maximized", maximized);
+      document.body.classList.toggle("window-maximized", maximized);
+    };
+
+    updateMaximized();
+
+    const unlistenPromise = appWindow.onResized(() => {
+      updateMaximized();
+    });
+
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, []);
   const loadPreferences = usePreferencesStore((state) => state.load);
   // M20 settings: bootstrap.ts already applied the localStorage fast-path
   // before mount; this reconciles it with the on-disk mirror (and seeds the

@@ -46,6 +46,14 @@ pub enum Engine {
     Sqlite,
     Mysql,
     Postgres,
+    /// Microsoft SQL Server (M21) — a **fourth relational engine** (T-SQL
+    /// dialect). It implements the same SQL [`EngineConnection`] surface as
+    /// SQLite/MySQL/Postgres and flows through the relational workspace; only
+    /// the dialect differs (bracket-quoted identifiers, `OFFSET…FETCH` paging,
+    /// `IDENTITY`, `sys.*` catalog, `dbo` default schema, indexed views for
+    /// materialized views, `sqlcmd` terminal). Backed by the `tiberius` TDS
+    /// driver in [`crate::engines::mssql`].
+    Mssql,
     /// Redis (M13) — a key-value store, NOT relational. It does not implement
     /// the SQL [`EngineConnection`] surface; instead it implements the separate
     /// key-value port family in [`crate::shared::keyvalue`]. See the
@@ -78,6 +86,7 @@ impl Engine {
             Self::Sqlite => "SQLite",
             Self::Mysql => "MySQL",
             Self::Postgres => "PostgreSQL",
+            Self::Mssql => "SQL Server",
             Self::Redis => "Redis",
             Self::Dynamodb => "DynamoDB",
             Self::Mongodb => "MongoDB",
@@ -257,6 +266,21 @@ pub enum ConnectionParams {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         ssh: Option<SshConfig>,
     },
+    /// A Microsoft SQL Server (M21). Same relational shape as MySQL/Postgres —
+    /// password + SSH secrets live in the OS keychain, never here. `database`
+    /// and `user` are optional: omitted, the driver connects to the login's
+    /// default database with the server's default user. Default port 1433.
+    Mssql {
+        host: String,
+        port: u16,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        database: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        user: Option<String>,
+        tls_mode: TlsMode,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ssh: Option<SshConfig>,
+    },
     /// A Redis server (M13). Like the SQL server engines, the password and any
     /// SSH secret live in the OS keychain — never here. Redis has no relational
     /// "database" name; instead it has 16 numbered logical databases (db0–db15),
@@ -335,6 +359,7 @@ impl ConnectionParams {
             Self::Sqlite { .. } => Engine::Sqlite,
             Self::Mysql { .. } => Engine::Mysql,
             Self::Postgres { .. } => Engine::Postgres,
+            Self::Mssql { .. } => Engine::Mssql,
             Self::Redis { .. } => Engine::Redis,
             Self::Dynamodb { .. } => Engine::Dynamodb,
             Self::Mongodb { .. } => Engine::Mongodb,
@@ -350,9 +375,10 @@ impl ConnectionParams {
             | Self::Dynamodb { .. }
             | Self::Mongodb { .. }
             | Self::Cassandra { .. } => None,
-            Self::Mysql { ssh, .. } | Self::Postgres { ssh, .. } | Self::Redis { ssh, .. } => {
-                ssh.as_ref()
-            }
+            Self::Mysql { ssh, .. }
+            | Self::Postgres { ssh, .. }
+            | Self::Mssql { ssh, .. }
+            | Self::Redis { ssh, .. } => ssh.as_ref(),
         }
     }
 
@@ -400,7 +426,7 @@ impl<'de> Deserialize<'de> for ConnectionParams {
                     .to_string();
                 Ok(ConnectionParams::Sqlite { path })
             }
-            "mysql" | "postgres" => {
+            "mysql" | "postgres" | "mssql" => {
                 let str_field = |k: &str| -> Result<String, D::Error> {
                     value
                         .get(k)
@@ -437,24 +463,31 @@ impl<'de> Deserialize<'de> for ConnectionParams {
                     Some(serde_json::Value::Null) | None => None,
                     Some(s) => Some(SshConfig::deserialize(s.clone()).map_err(D::Error::custom)?),
                 };
-                if engine == "mysql" {
-                    Ok(ConnectionParams::Mysql {
+                match engine {
+                    "mysql" => Ok(ConnectionParams::Mysql {
                         host,
                         port,
                         database,
                         user,
                         tls_mode,
                         ssh,
-                    })
-                } else {
-                    Ok(ConnectionParams::Postgres {
+                    }),
+                    "mssql" => Ok(ConnectionParams::Mssql {
                         host,
                         port,
                         database,
                         user,
                         tls_mode,
                         ssh,
-                    })
+                    }),
+                    _ => Ok(ConnectionParams::Postgres {
+                        host,
+                        port,
+                        database,
+                        user,
+                        tls_mode,
+                        ssh,
+                    }),
                 }
             }
             "redis" => {

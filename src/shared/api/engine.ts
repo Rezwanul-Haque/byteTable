@@ -484,6 +484,8 @@ export const OBJECT_CAPS: Record<Engine, DbObjectKind[]> = {
   postgres: ["view", "materialized_view", "function", "procedure", "trigger"],
   mysql: ["view", "function", "procedure", "trigger"],
   sqlite: ["view", "trigger"],
+  // SQL Server (M21): full set; `materialized_view` = indexed view.
+  mssql: ["view", "materialized_view", "function", "procedure", "trigger"],
   redis: [],
   dynamodb: [],
   mongodb: [],

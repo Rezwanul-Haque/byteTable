@@ -4,10 +4,10 @@
 
 Tauri 2 desktop database client (TablePlus alternative). Rust core with React 19 + TypeScript + Vite renderer.
 
-| Layer | Stack                                                                     |
-| ----- | ------------------------------------------------------------------------- |
-| Shell | Rust + Tauri 2 (rusqlite, sqlx, redis, aws-sdk-dynamodb, mongodb, scylla) |
-| UI    | React 19, TypeScript, Vite 6, Zustand, CodeMirror, TanStack Virtual       |
+| Layer | Stack                                                                               |
+| ----- | ----------------------------------------------------------------------------------- |
+| Shell | Rust + Tauri 2 (rusqlite, sqlx, tiberius, redis, aws-sdk-dynamodb, mongodb, scylla) |
+| UI    | React 19, TypeScript, Vite 6, Zustand, CodeMirror, TanStack Virtual                 |
 
 Architecture: vertical-slice + clean architecture. One Rust feature folder per capability, engine adapters in `src-tauri/src/engines/`.
 
@@ -27,7 +27,7 @@ make fmt          # prettier + rustfmt auto-format
 make build        # production Tauri bundle (pnpm tauri build)
 make dev-cert     # macOS: one-time self-signed cert for keychain prompt avoidance
 make tag VERSION=x.y.z  # bump, commit, tag, push (triggers release workflow)
-make db-up        # Docker: Postgres/MySQL/Redis/DynamoDB/MongoDB/Cassandra + seed
+make db-up        # Docker: Postgres/MySQL/SQL Server/Redis/DynamoDB/MongoDB/Cassandra + seed
 make db-down      # stop + wipe volumes
 make hooks        # install git pre-commit hook (husky + lint-staged)
 ```
@@ -61,7 +61,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 
 ## Testing
 
-- Rust tests run via `cargo test --all-features` from `src-tauri/`. SQLite is unit-testable in-process. MySQL/Postgres/Redis/DynamoDB/MongoDB/Cassandra integration tests need Docker databases (`make db-up`).
+- Rust tests run via `cargo test --all-features` from `src-tauri/`. SQLite is unit-testable in-process. MySQL/Postgres/SQL Server/Redis/DynamoDB/MongoDB/Cassandra integration tests need Docker databases (`make db-up`); each is gated behind a `BYTETABLE_TEST_*_URL` env var (SQL Server: `BYTETABLE_TEST_MSSQL_URL`).
 - No frontend test framework configured.
 - Test fixtures use offset Docker ports (e.g. Postgres on 55432).
 

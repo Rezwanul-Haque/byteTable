@@ -68,6 +68,18 @@ function termConfig(engine: Engine, connName: string): TermConfig {
       errPrefix: "Parse error: ",
     };
   }
+  if (engine === "mssql") {
+    // sqlcmd: numbered line prompts (`1>`/`2>`), `:`-prefixed meta commands, and
+    // a `GO` batch terminator. The error prefix mimics a T-SQL parse error.
+    return {
+      shell: "sqlcmd",
+      metaChar: ":",
+      prompt: "1> ",
+      cont: "2> ",
+      banner: "sqlcmd · type :help for usage. Batch ends with GO.",
+      errPrefix: "Msg 102, Level 15, State 1: ",
+    };
+  }
   // postgres
   return {
     shell: "psql",
@@ -275,6 +287,14 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
     if (engine === "sqlite") {
       return [{ cls: "term-row", text: names.join("  ") }];
     }
+    if (engine === "mssql") {
+      // `SELECT name FROM sys.tables` — a single `name` column + sqlcmd's
+      // "(N rows affected)" trailer.
+      return asciiObjTable(
+        ["name"],
+        names.map((n) => ({ name: n })),
+      ).concat([{ cls: "term-meta", text: "(" + names.length + " rows affected)" }]);
+    }
     // postgres \dt
     const rows = names.map((n) => ({
       Schema: schemaName,
@@ -298,6 +318,12 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
         ["Database"],
         names.map((s) => ({ Database: s })),
       );
+    }
+    if (engine === "mssql") {
+      return asciiObjTable(
+        ["name"],
+        names.map((s) => ({ name: s })),
+      ).concat([{ cls: "term-meta", text: "(" + names.length + " rows affected)" }]);
     }
     const rows = names.map((s) => ({ Name: s, Owner: connName }));
     return [{ cls: "term-meta", text: "List of schemas" }].concat(
@@ -414,6 +440,18 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
         "",
         "Any SQL ending in ; runs against the engine.",
       ];
+    } else if (engine === "mssql") {
+      rows = [
+        "SELECT name FROM sys.tables;    list tables",
+        "SELECT name FROM sys.schemas;   list schemas",
+        "sp_help name                    describe table",
+        "USE schema;                     switch schema",
+        "GO                              end/run the batch",
+        ":clear                          clear screen",
+        ":quit / exit / quit             close terminal",
+        "",
+        "Any T-SQL runs against the engine (GO ends a batch).",
+      ];
     } else {
       rows = [
         ".tables          list tables",
@@ -437,13 +475,19 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
     const low = t.toLowerCase().replace(/;$/, "");
     const arg = (t.replace(/;$/, "").split(/\s+/)[1] || "").trim();
 
-    // universal quit
-    if (["\\q", ".quit", ".exit", "exit", "quit", "\\quit"].includes(low)) {
+    // universal quit (`:quit`/`:exit` are the sqlcmd forms)
+    if (["\\q", ".quit", ".exit", "exit", "quit", "\\quit", ":quit", ":exit"].includes(low)) {
       onClose();
       return true;
     }
-    // clear (forgiving across flavors)
-    if (low === "clear" || low === ".clear" || low === "\\! clear" || low === "\\clear") {
+    // clear (forgiving across flavors; `:clear` for sqlcmd)
+    if (
+      low === "clear" ||
+      low === ".clear" ||
+      low === "\\! clear" ||
+      low === "\\clear" ||
+      low === ":clear"
+    ) {
       setLines([]);
       return true;
     }
@@ -451,10 +495,48 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
       setLines([]);
       return true;
     }
-    // help
-    if (["\\?", "\\h", ".help", "help", "\\help"].includes(low)) {
+    // help (`:help` is the sqlcmd form)
+    if (["\\?", "\\h", ".help", "help", "\\help", ":help"].includes(low)) {
       appendLines(helpText());
       return true;
+    }
+
+    // SQL Server (sqlcmd) T-SQL meta forms: `SELECT … FROM sys.tables` lists
+    // tables, `SELECT … FROM sys.schemas` lists schemas, `sp_help <name>` (or
+    // `EXEC sp_help <name>`) describes a table. These give the sqlcmd REPL the
+    // familiar catalog shortcuts (M21 §22.3). `USE <schema>` is handled by the
+    // shared switch-schema branch below.
+    if (engine === "mssql") {
+      if (/^select\b[\s\S]*\bfrom\s+sys\.tables\b/i.test(low)) {
+        void listTables()
+          .then(appendLines)
+          .catch((e: unknown) =>
+            appendLines([{ cls: "term-err", text: cfg.errPrefix + appErrorMessage(e, "failed") }]),
+          );
+        return true;
+      }
+      if (/^select\b[\s\S]*\bfrom\s+sys\.schemas\b/i.test(low)) {
+        void listSchemas()
+          .then(appendLines)
+          .catch((e: unknown) =>
+            appendLines([{ cls: "term-err", text: cfg.errPrefix + appErrorMessage(e, "failed") }]),
+          );
+        return true;
+      }
+      const spHelp = t.replace(/;$/, "").match(/^(?:exec\s+)?sp_help\s+(.+)$/i);
+      if (spHelp) {
+        // Tolerate `dbo.`-qualified, bracket-, and quote-wrapped names.
+        const name = spHelp[1]!
+          .trim()
+          .replace(/^dbo\./i, "")
+          .replace(/^[[\]"']+|[[\]"']+$/g, "");
+        void describe(name)
+          .then(appendLines)
+          .catch((e: unknown) =>
+            appendLines([{ cls: "term-err", text: cfg.errPrefix + appErrorMessage(e, "failed") }]),
+          );
+        return true;
+      }
     }
 
     // timing toggles
@@ -606,6 +688,20 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
     const buffer = session.buffer;
     const promptStr = buffer ? cfg.cont : cfg.prompt;
     const echo: TermLine = { cls: "term-prompt", text: promptStr + rawLine };
+
+    // SQL Server (sqlcmd): a lone `GO` runs the accumulated batch (M21 §22.3).
+    // `;`-terminated statements still run immediately below (a friendlier REPL
+    // than real sqlcmd); `GO` covers multi-statement / no-`;` batches.
+    if (engine === "mssql" && rawLine.trim().toUpperCase() === "GO") {
+      appendLines([echo]);
+      const batch = buffer.trim();
+      if (batch) runSql(batch);
+      setBuffer("");
+      pushHistory(rawLine);
+      setHi(-1);
+      setInput("");
+      return;
+    }
 
     // meta-commands only when the buffer is empty (a fresh statement).
     if (!buffer) {
@@ -774,7 +870,13 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
             "DESCRIBE orders;",
             "SELECT status, COUNT(*) FROM orders GROUP BY status;",
           ]
-        : ["\\dt", "\\d orders", "SELECT * FROM users WHERE country = 'DE';"];
+        : engine === "mssql"
+          ? [
+              "SELECT name FROM sys.tables;",
+              "sp_help users",
+              "SELECT * FROM users WHERE country = 'DE';",
+            ]
+          : ["\\dt", "\\d orders", "SELECT * FROM users WHERE country = 'DE';"];
 
   const promptStr = session.buffer ? cfg.cont : cfg.prompt;
 

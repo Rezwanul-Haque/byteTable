@@ -11,6 +11,7 @@ use tauri::{AppHandle, Emitter, Manager, Runtime, WindowEvent};
 use engines::cassandra::CassandraConnector;
 use engines::dynamo::DynamoConnector;
 use engines::mongo::MongoConnector;
+use engines::mssql::MssqlConnector;
 use engines::mysql::MysqlConnector;
 use engines::postgres::PostgresConnector;
 use engines::redis::RedisConnector;
@@ -180,6 +181,11 @@ pub fn run() {
             registry.register(Engine::Sqlite, Arc::new(SqliteConnector));
             registry.register(Engine::Postgres, Arc::new(PostgresConnector));
             registry.register(Engine::Mysql, Arc::new(MysqlConnector));
+            // SQL Server (M21): a fourth relational engine (T-SQL, `tiberius`
+            // TDS driver). Its connector returns an `OpenConnection::Sql`, so it
+            // flows through the same relational workspace host as Postgres/MySQL/
+            // SQLite — only the dialect differs.
+            registry.register(Engine::Mssql, Arc::new(MssqlConnector));
             // Redis (M13): a key-value engine. Its connector returns an
             // `OpenConnection::Kv`, kept apart from the SQL connections by the
             // manager's `get_sql` / `get_kv` kind seam.

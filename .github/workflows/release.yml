@@ -10,7 +10,7 @@ name: Release
 # `releaseId`, then publish it once all builds finish.
 #
 # Required repo secrets (see docs/AUTO_UPDATE.md):
-#   TAURI_SIGNING_PRIVATE_KEY           — the updater private key
+#   TAURI_SIGNING_PRIVATE_KEY         — the updater private key
 #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  — its password
 # And tauri.conf.json → plugins.updater.pubkey must hold the matching public key.
 on:
@@ -52,10 +52,10 @@ jobs:
 
       # Build grouped release notes from the conventional-commit subjects between
       # the previous tag and this one:
-      #   feat:                 → Added
-      #   improv: / refactor: / perf:  → Improvements
-      #   fix:                  → Fixes
-      #   anything else (minus chore/docs/test/ci/build/style noise) → Other
+      #    feat:                → Added
+      #    improv: / refactor: / perf:  → Improvements
+      #    fix:                  → Fixes
+      #    anything else (minus chore/docs/test/ci/build/style noise) → Other
       # A commit's `type(scope):` prefix is stripped; empty sections are dropped.
       - name: Build release notes
         id: notes
@@ -126,10 +126,21 @@ jobs:
         include:
           - platform: macos-latest
             args: "--target universal-apple-darwin"
+            target: ""
           - platform: ubuntu-22.04
             args: ""
+            target: ""
+          # Corrected: Only packages into .deb and .rpm to avoid executing ARM64 dependencies on an x86 host
+          # ARM64 Linux: bundle deb/rpm only (skip AppImage) because AppImage cross-build requires executing target binaries on an x86 host
+          - platform: ubuntu-22.04
+            args: "--target aarch64-unknown-linux-gnu --bundles deb,rpm"
+            target: "aarch64-unknown-linux-gnu"
           - platform: windows-latest
             args: ""
+            target: ""
+          - platform: windows-latest
+            args: "--target aarch64-pc-windows-msvc"
+            target: "aarch64-pc-windows-msvc"
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v5
@@ -159,6 +170,35 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+            # 1. Register ARM64 architecture on this x86_64 host
+            sudo dpkg --add-architecture arm64
+
+            # 2. Force existing standard repositories to ONLY look for amd64 binaries
+            sudo sed -i 's/deb http/deb [arch=amd64] http/g' /etc/apt/sources.list
+            sudo sed -i 's/deb mirror/deb [arch=amd64] mirror/g' /etc/apt/sources.list
+
+            # 3. Append the correct arm64 ubuntu-ports repositories
+            echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -cs) main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+            echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -cs)-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+            echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -cs)-security main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list
+
+            sudo apt-get update
+
+            # 4. Download the actual ARM64 libraries needed by Tauri
+            sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+              libwebkit2gtk-4.1-dev:arm64 \
+              libssl-dev:arm64 \
+              libayatana-appindicator3-dev:arm64 \
+              librsvg2-dev:arm64 \
+              libxdo-dev:arm64
+
+            # 5. Route environment variables to use the arm64 pkg-config files
+            echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+            echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
+            echo "PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig" >> $GITHUB_ENV
+          fi
+
       - name: Install pnpm
         uses: pnpm/action-setup@v6
 
@@ -171,7 +211,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || matrix.target }}
 
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2

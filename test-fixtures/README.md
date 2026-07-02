@@ -6,14 +6,15 @@ Throwaway databases for exercising all engines. **Test data only — never produ
 
 ```sh
 cd test-fixtures
-docker compose up -d        # Postgres + MySQL + Redis + DynamoDB + MongoDB + Cassandra (Postgres/MySQL/MongoDB auto-seed on first init)
+docker compose up -d        # Postgres + MySQL + SQL Server + Redis + DynamoDB + MongoDB + Cassandra (Postgres/MySQL/MongoDB auto-seed on first init)
 ./seed/seed-redis.sh        # seed Redis (no auto-init dir for Redis)
 ./seed/seed-dynamo.sh       # seed DynamoDB (creates tables + items)
 ./seed/seed-cassandra.sh    # seed Cassandra (waits for the node, ~30–60s)
+./seed/seed-mssql.sh        # seed SQL Server (waits for it, ~30–60s)
 docker compose down -v      # stop + wipe volumes (next `up` re-seeds)
 ```
 
-Ports are offset (5**5432**/3**3306**/6**3790**) so they won't collide with any local Postgres/MySQL/Redis. DynamoDB Local keeps the standard **8000**, MongoDB the standard **27017**, and Cassandra the standard **9042** so the connect modal's defaults work as-is.
+Ports are offset (5**5432**/3**3306**/1**1433**/6**3790**) so they won't collide with any local Postgres/MySQL/SQL Server/Redis. DynamoDB Local keeps the standard **8000**, MongoDB the standard **27017**, and Cassandra the standard **9042** so the connect modal's defaults work as-is.
 
 ## Credentials — add these in ByteTable's "New connection" modal (TLS: disable)
 
@@ -36,6 +37,20 @@ Ports are offset (5**5432**/3**3306**/6**3790**) so they won't collide with any 
 | Database | `byteshop`  |
 | User     | `root`      |
 | Password | `bytetable` |
+
+### MS SQL Server
+
+Run `./seed/seed-mssql.sh` once after `up` (SQL Server takes ~30–60s to accept connections; re-running drops + recreates everything).
+
+| field    | value          |
+| -------- | -------------- |
+| Host     | `localhost`    |
+| Port     | `11433`        |
+| Database | `byteshop`     |
+| User     | `sa`           |
+| Password | `ByteTable1!`  |
+
+> SQL Server enforces a strong SA password, so it isn't `bytetable` like the others. Uses the arm64-native `azure-sql-edge` image (`mssql/server:2022` segfaults under qemu on Apple Silicon).
 
 ### Redis
 
@@ -99,6 +114,7 @@ Use **"Open SQLite file…"** → `test-fixtures/byteshop.db` (committed in this
 ## What's seeded
 
 - **SQL engines** (Postgres/MySQL/SQLite): an e-commerce schema — `users` ← `orders` ← `order_items` → `products`, plus a unique index, FKs (for FK-hop + structure view), booleans, a `numeric`/`REAL` price column (for column insights). Postgres also has an `analytics` schema (for the schema switcher).
+- **SQL Server** (M21): the same e-commerce model across three schemas — `dbo` (`users` ← `orders` ← `order_items` → `products`), `sales` (`invoices` → `orders`), `audit` (`events` → `users`) — with `IDENTITY` pks, `BIT` booleans, `DECIMAL`/`MONEY`, `UNIQUEIDENTIFIER` + `VARBINARY` (`accounts`/`documents`, for binary cells + the JSON viewer), and the full object set: `active_users` (view), `order_totals` (**indexed view** = the "matview" section), `user_order_count` (function), `deactivate_user` (procedure), `orders_touch` (trigger). Exercises bracket-quoted T-SQL DDL, the schema switcher, cross-schema FK-hop, staged ALTER, insights, and the sqlcmd terminal.
 - **Redis** (db0, 8 keys, one of every type): `user:1:name` (string), `config:json` (JSON string), `user:1` (hash), `queue:emails` (list), `tags:user:1` (set), `leaderboard:sales` (zset), `events:log` (stream), `session:abc` (string with a 3600s TTL).
 - **DynamoDB** (M17): `ShopApp` — the **single-table design** (PK + SK + `GSI1`, on-demand): heterogeneous `USER` profiles, `ORDER`s sharing each user's partition (item collections), and `PRODUCT`s with `L`/`N`/`M` attributes. Plus `Sessions` (partition-only, a `byUser` GSI, provisioned 5/5, a `ttl` TimeToLive attr) and `EventLog` (PK + SK with a `byType` GSI). Exercises the dashboard, scan/query (base table + GSI sort-key ops), item editor, schema map, and export/import.
 - **MongoDB** (M18): two databases — `byteshop` (`users` 24, `products` 12, `orders` 30, `reviews` 26) and `analytics` (`events` 40, `sessions` 18). Real `ObjectId`/`ISODate` values with referential integrity (`orders.userId`/`items.productId`, `reviews`/`events`/`sessions` → users/products) for the schema-map edges; secondary + unique + sparse indexes; a `$jsonSchema` validator on `byteshop.products`. Exercises the dashboard, Find (filter/projection/sort, IXSCAN vs COLLSCAN explain), aggregation pipeline (incl. `$lookup`), document editor + validation, inferred-schema/Structure, mongosh, schema map, and export/import.
@@ -106,13 +122,14 @@ Use **"Open SQLite file…"** → `test-fixtures/byteshop.db` (committed in this
 
 ## Files
 
-- `docker-compose.yml` — the six services.
+- `docker-compose.yml` — the seven services.
 - `seed/postgres.sql`, `seed/mysql.sql`, `seed/mongo.js` — auto-run on first container init.
-- `seed/seed-redis.sh`, `seed/seed-dynamo.sh`, `seed/seed-cassandra.sh` — run manually after `up`.
+- `seed/seed-redis.sh`, `seed/seed-dynamo.sh`, `seed/seed-cassandra.sh`, `seed/seed-mssql.sh` — run manually after `up`.
 - `seed/cassandra.cql` — the CQL seed run by `seed-cassandra.sh` (mounted at `/seed.cql`).
+- `seed/mssql.sql` — the T-SQL seed run by `seed-mssql.sh` (mounted at `/seed.mssql.sql`; run via an ephemeral `mssql-tools` container since azure-sql-edge bundles no `sqlcmd`).
 - `seed/sqlite.sql` — rebuilds `byteshop.db` (`rm -f byteshop.db && sqlite3 byteshop.db < seed/sqlite.sql`).
 - `byteshop.db` — ready-to-open SQLite sample.
 
 ## Note: containers may already be running
 
-The same containers (`bt-pg`/`bt-mysql`/`bt-redis`/`bt-dynamo`/`bt-mongo`/`bt-cassandra`) may already be up from an ad-hoc launch with identical credentials. If `docker compose up` reports a port/name conflict, remove the ad-hoc ones first: `docker rm -f bt-pg bt-mysql bt-redis bt-dynamo bt-mongo bt-cassandra`, then `docker compose up -d`.
+The same containers (`bt-pg`/`bt-mysql`/`bt-mssql`/`bt-redis`/`bt-dynamo`/`bt-mongo`/`bt-cassandra`) may already be up from an ad-hoc launch with identical credentials. If `docker compose up` reports a port/name conflict, remove the ad-hoc ones first: `docker rm -f bt-pg bt-mysql bt-mssql bt-redis bt-dynamo bt-mongo bt-cassandra`, then `docker compose up -d`.

@@ -11,6 +11,7 @@ use tauri::{AppHandle, Emitter, Manager, Runtime, WindowEvent};
 use engines::cassandra::CassandraConnector;
 use engines::dynamo::DynamoConnector;
 use engines::mongo::MongoConnector;
+use engines::mssql::MssqlConnector;
 use engines::mysql::MysqlConnector;
 use engines::postgres::PostgresConnector;
 use engines::redis::RedisConnector;
@@ -32,6 +33,8 @@ use shared::engine::Engine;
 /// Bring the main window back to the foreground (from hidden/minimized tray state).
 fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
+        #[cfg(target_os = "macos")]
+        let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
@@ -45,7 +48,11 @@ fn toggle_main_window(app: &AppHandle) {
         let minimized = window.is_minimized().unwrap_or(false);
         if visible && !minimized {
             let _ = window.hide();
+            #[cfg(target_os = "macos")]
+            let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
         } else {
+            #[cfg(target_os = "macos")]
+            let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
             let _ = window.unminimize();
             let _ = window.show();
             let _ = window.set_focus();
@@ -115,9 +122,90 @@ fn tray_update(app: AppHandle, workspaces: Vec<TrayWorkspace>) -> Result<(), Str
     Ok(())
 }
 
+#[tauri::command]
+fn hide_to_tray(app: AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("main") {
+        window.hide().map_err(|e| e.to_string())?;
+        #[cfg(target_os = "macos")]
+        let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+    }
+    Ok(())
+}
+
+/// One-time migration of the local data directory after the bundle identifier
+/// changed from `com.bytetable.app` to `com.bytetable.desktop` — the `.app`
+/// suffix collides with the macOS application-bundle extension (signing /
+/// notarization). Tauri keys `app_config_dir()` on the identifier, so without
+/// this a user updating from an old build would land in a fresh, empty data dir
+/// and appear to "lose" their saved connections, settings, saved queries and
+/// schema-map layouts (the OS-keychain secrets survive untouched — their
+/// service name is the constant `"ByteTable"`, not the identifier).
+///
+/// The legacy dir is a sibling of the new one under the same platform base
+/// (`~/Library/Application Support/` on macOS, `~/.config/` on Linux,
+/// `%APPDATA%` on Windows), so it is resolved by name. Files are COPIED, not
+/// moved, so an old build keeps working if the user downgrades. A `.migrated`
+/// sentinel makes this idempotent: it never re-copies over data the user has
+/// since changed in the new build (e.g. after deleting every connection).
+///
+/// Migration failures are logged, never fatal — a data-carry-over hiccup must
+/// not stop the app from launching.
+fn migrate_legacy_config_dir(new_dir: &std::path::Path) {
+    const LEGACY_IDENTIFIER: &str = "com.bytetable.app";
+
+    let Some(old_dir) = new_dir.parent().map(|p| p.join(LEGACY_IDENTIFIER)) else {
+        return;
+    };
+    // Nothing to carry over: identifier unchanged, or the old build never ran.
+    if old_dir == new_dir || !old_dir.is_dir() {
+        return;
+    }
+    let sentinel = new_dir.join(".migrated");
+    if sentinel.exists() {
+        return;
+    }
+    if let Err(e) = std::fs::create_dir_all(new_dir) {
+        eprintln!("config migration: could not create {new_dir:?}: {e}");
+        return;
+    }
+
+    let entries = match std::fs::read_dir(&old_dir) {
+        Ok(entries) => entries,
+        Err(e) => {
+            eprintln!("config migration: could not read {old_dir:?}: {e}");
+            return;
+        }
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        // Skip hidden files and the JSON stores' atomic-write temp files.
+        if name.starts_with('.') || name.ends_with(".tmp") {
+            continue;
+        }
+        let dest = new_dir.join(name);
+        // Never clobber data the new build already owns.
+        if dest.exists() {
+            continue;
+        }
+        if let Err(e) = std::fs::copy(&path, &dest) {
+            eprintln!("config migration: failed to copy {name}: {e}");
+        }
+    }
+
+    // Best-effort: record completion so we never copy again.
+    let _ = std::fs::write(&sentinel, b"com.bytetable.app -> com.bytetable.desktop\n");
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_os::init())
         // Single-instance guard (MUST be the first plugin registered): a second
         // launch — e.g. clicking the AppImage again — does not spawn another
         // process; instead this callback fires in the already-running instance
@@ -143,6 +231,12 @@ pub fn run() {
             // Composition root: the only place concrete adapters are chosen.
             let config_dir = app.path().app_config_dir()?;
 
+            // One-time carry-over of local data after the bundle identifier
+            // changed (`com.bytetable.app` -> `com.bytetable.desktop`). Must run
+            // before any store below reads `config_dir`, so a user updating from
+            // an old build sees their existing connections/settings/queries.
+            migrate_legacy_config_dir(&config_dir);
+
             let store = JsonFilePreferencesStore::new(config_dir.join("preferences.json"));
             app.manage(PreferencesState::new(Box::new(store)));
 
@@ -163,6 +257,11 @@ pub fn run() {
             registry.register(Engine::Sqlite, Arc::new(SqliteConnector));
             registry.register(Engine::Postgres, Arc::new(PostgresConnector));
             registry.register(Engine::Mysql, Arc::new(MysqlConnector));
+            // SQL Server (M21): a fourth relational engine (T-SQL, `tiberius`
+            // TDS driver). Its connector returns an `OpenConnection::Sql`, so it
+            // flows through the same relational workspace host as Postgres/MySQL/
+            // SQLite — only the dialect differs.
+            registry.register(Engine::Mssql, Arc::new(MssqlConnector));
             // Redis (M13): a key-value engine. Its connector returns an
             // `OpenConnection::Kv`, kept apart from the SQL connections by the
             // manager's `get_sql` / `get_kv` kind seam.
@@ -253,9 +352,14 @@ pub fn run() {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
+                #[cfg(target_os = "macos")]
+                let _ = window
+                    .app_handle()
+                    .set_activation_policy(tauri::ActivationPolicy::Accessory);
             }
         })
         .invoke_handler(tauri::generate_handler![
+            hide_to_tray,
             tray_update,
             features::preferences::commands::prefs_get,
             features::preferences::commands::prefs_set,
@@ -390,4 +494,102 @@ pub fn run() {
             }
             _ => {}
         });
+}
+
+#[cfg(test)]
+mod migration_tests {
+    use super::migrate_legacy_config_dir;
+    use std::fs;
+
+    /// Lay out a fake platform base with the legacy `com.bytetable.app` dir
+    /// populated, returning `(base, old_dir, new_dir)`. `new_dir` is the sibling
+    /// the current build would resolve from its identifier.
+    fn scaffold(files: &[(&str, &str)]) -> (tempfile::TempDir, std::path::PathBuf) {
+        let base = tempfile::tempdir().expect("tempdir");
+        let old_dir = base.path().join("com.bytetable.app");
+        fs::create_dir_all(&old_dir).expect("old dir");
+        for (name, body) in files {
+            fs::write(old_dir.join(name), body).expect("seed file");
+        }
+        let new_dir = base.path().join("com.bytetable.desktop");
+        (base, new_dir)
+    }
+
+    #[test]
+    fn copies_user_files_and_writes_sentinel() {
+        let (_base, new_dir) = scaffold(&[
+            ("connections.json", "[conn]"),
+            ("settings.json", "{settings}"),
+            ("saved_queries.json", "[q]"),
+        ]);
+
+        migrate_legacy_config_dir(&new_dir);
+
+        assert_eq!(
+            fs::read_to_string(new_dir.join("connections.json")).unwrap(),
+            "[conn]"
+        );
+        assert_eq!(
+            fs::read_to_string(new_dir.join("settings.json")).unwrap(),
+            "{settings}"
+        );
+        assert_eq!(
+            fs::read_to_string(new_dir.join("saved_queries.json")).unwrap(),
+            "[q]"
+        );
+        assert!(new_dir.join(".migrated").exists());
+    }
+
+    #[test]
+    fn skips_temp_and_hidden_files() {
+        let (_base, new_dir) = scaffold(&[
+            ("connections.json", "[conn]"),
+            ("connections.json.tmp", "half-written"),
+            (".DS_Store", "junk"),
+        ]);
+
+        migrate_legacy_config_dir(&new_dir);
+
+        assert!(new_dir.join("connections.json").exists());
+        assert!(!new_dir.join("connections.json.tmp").exists());
+        assert!(!new_dir.join(".DS_Store").exists());
+    }
+
+    #[test]
+    fn never_clobbers_data_the_new_build_already_owns() {
+        let (_base, new_dir) = scaffold(&[("connections.json", "[legacy]")]);
+        fs::create_dir_all(&new_dir).unwrap();
+        fs::write(new_dir.join("connections.json"), "[fresh]").unwrap();
+
+        migrate_legacy_config_dir(&new_dir);
+
+        // The new build's own data wins; legacy never overwrites it.
+        assert_eq!(
+            fs::read_to_string(new_dir.join("connections.json")).unwrap(),
+            "[fresh]"
+        );
+    }
+
+    #[test]
+    fn is_idempotent_once_sentinel_exists() {
+        let (_base, new_dir) = scaffold(&[("connections.json", "[legacy]")]);
+        migrate_legacy_config_dir(&new_dir);
+
+        // User deletes a connection in the new build; the file must NOT come back.
+        fs::remove_file(new_dir.join("connections.json")).unwrap();
+        migrate_legacy_config_dir(&new_dir);
+
+        assert!(!new_dir.join("connections.json").exists());
+    }
+
+    #[test]
+    fn no_op_when_legacy_dir_absent() {
+        let base = tempfile::tempdir().expect("tempdir");
+        let new_dir = base.path().join("com.bytetable.desktop");
+
+        migrate_legacy_config_dir(&new_dir);
+
+        // Fresh install: nothing created, no sentinel.
+        assert!(!new_dir.exists());
+    }
 }

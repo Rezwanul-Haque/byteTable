@@ -299,27 +299,7 @@
 }
 
 .set-select {
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--text);
-  font-size: 12.5px;
-  padding: 7px 32px 7px 10px;
-  min-width: 150px;
-  cursor: pointer;
-  outline: none;
-  -webkit-appearance: none;
-  appearance: none;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23808a99' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
-  background-repeat: no-repeat;
-  background-position: right 9px center;
-}
-.set-select:hover {
-  border-color: var(--text-faint);
-}
-.set-select:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 30%, transparent);
+  min-width: 160px;
 }
 
 .set-liga-tag {

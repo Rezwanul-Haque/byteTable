@@ -53,6 +53,7 @@ const ENGINES: { engine: Engine; label: string }[] = [
   { engine: "sqlite", label: "SQLite" },
   { engine: "mysql", label: "MySQL" },
   { engine: "postgres", label: "PostgreSQL" },
+  { engine: "mssql", label: "MS SQL Server" },
   { engine: "redis", label: "Redis" },
   { engine: "dynamodb", label: "DynamoDB" },
   { engine: "mongodb", label: "MongoDB" },
@@ -80,6 +81,7 @@ const AWS_REGIONS = [
 const DEFAULT_PORTS: Partial<Record<Engine, string>> = {
   postgres: "5432",
   mysql: "3306",
+  mssql: "1433",
   redis: "6379",
   mongodb: "27017",
   cassandra: "9042",
@@ -91,6 +93,8 @@ const DEFAULT_PORTS: Partial<Record<Engine, string>> = {
 const DEFAULT_USERS: Partial<Record<Engine, string>> = {
   postgres: "postgres",
   mysql: "root",
+  // SQL Server's built-in sysadmin login.
+  mssql: "sa",
 };
 
 /**
@@ -723,12 +727,17 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
       };
     }
 
-    // Postgres binds a connection to ONE database with no in-session switch, so
-    // a blank database strands the user in the libpq username-default db (which
-    // can't reach the intended database's schemas). Require it. MySQL stays
-    // optional (schema == database there; the adapter qualifies every reference).
+    // Postgres and SQL Server each bind a connection to ONE database with no
+    // in-session switch, so a blank database strands the user in the login's
+    // default db (libpq's username-default for Postgres; `master` for SQL Server
+    // `sa`), which can't reach the intended database's schemas/tables. Require
+    // it. MySQL stays optional (schema == database there; the adapter qualifies
+    // every reference).
     if (engine === "postgres" && !db.trim()) {
       return { error: "Database is required for PostgreSQL" };
+    }
+    if (engine === "mssql" && !db.trim()) {
+      return { error: "Database is required for SQL Server" };
     }
 
     // database + user are optional (MySQL: no default schema / default user;
@@ -1359,13 +1368,23 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
               ) : (
                 <span className="lbl-row">
                   Database{" "}
-                  {engine === "postgres" ? null : <span className="opt-tag">optional</span>}
+                  {engine === "postgres" || engine === "mssql" ? null : (
+                    <span className="opt-tag">optional</span>
+                  )}
                 </span>
               )}
               <input
                 value={db}
                 onChange={(e) => field({ db: e.target.value })}
-                placeholder={isRedis ? "0" : engine === "postgres" ? "postgres" : "mysql"}
+                placeholder={
+                  isRedis
+                    ? "0"
+                    : engine === "postgres"
+                      ? "postgres"
+                      : engine === "mssql"
+                        ? "byteshop"
+                        : "mysql"
+                }
                 spellCheck={false}
               />
             </label>
@@ -1380,7 +1399,15 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
               <input
                 value={user}
                 onChange={(e) => field({ user: e.target.value, userTouched: true })}
-                placeholder={isRedis ? "default" : engine === "postgres" ? "postgres" : "root"}
+                placeholder={
+                  isRedis
+                    ? "default"
+                    : engine === "mssql"
+                      ? "sa"
+                      : engine === "postgres"
+                        ? "postgres"
+                        : "root"
+                }
                 spellCheck={false}
               />
             </label>

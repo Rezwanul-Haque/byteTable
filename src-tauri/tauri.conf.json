@@ -3,7 +3,7 @@
   "productName": "ByteTable",
   "mainBinaryName": "bytetable",
   "version": "0.0.13",
-  "identifier": "com.bytetable.app",
+  "identifier": "com.bytetable.desktop",
   "build": {
     "beforeDevCommand": "pnpm dev:vite",
     "devUrl": "http://localhost:1420",
@@ -16,9 +16,10 @@
         "title": "ByteTable",
         "width": 1440,
         "height": 900,
-        "minWidth": 1024,
-        "minHeight": 640,
-        "decorations": true,
+        "minWidth": 800,
+        "minHeight": 400,
+        "decorations": false,
+        "transparent": true,
         "resizable": true
       }
     ],

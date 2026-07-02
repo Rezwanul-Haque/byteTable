@@ -90,6 +90,19 @@ export type ConnectionParams =
       ssh?: SshConfig;
     }
   | {
+      // SQL Server (M21). Same relational shape as MySQL/Postgres — `database`
+      // + `user` optional (omitted, the driver connects to the login's default
+      // database with the server's default user). Default port 1433. Password +
+      // SSH secrets live in the OS keychain.
+      engine: "mssql";
+      host: string;
+      port: number;
+      database?: string;
+      user?: string;
+      tlsMode: TlsMode;
+      ssh?: SshConfig;
+    }
+  | {
       // Redis (M13). No relational `database`; instead a numbered logical db
       // (`dbIndex`, 0–15, default 0). `user` is the optional ACL username
       // (absent → the Redis `default` user). Password + SSH secrets live in the

@@ -15,6 +15,7 @@
 pub mod cassandra;
 pub mod dynamo;
 pub mod mongo;
+pub mod mssql;
 pub mod mysql;
 pub mod postgres;
 pub mod redis;

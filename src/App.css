@@ -3,8 +3,15 @@
  * The rail's CSS lives with its component (Rail.css).
  */
 
-.app-frame {
+.bt-app-root {
+  display: flex;
+  flex-direction: column;
   height: 100%;
+}
+
+.app-frame {
+  flex: 1;
+  min-height: 0;
   display: flex;
 }
 
@@ -61,4 +68,27 @@ body.bt-sidebar-right .ddb-sidebar {
   z-index: 100;
   overflow: auto;
   background: var(--bg0);
+}
+
+/* Rounded corners for frameless windows on Windows and Linux when not maximized */
+html[data-platform="windows"]:not(.window-maximized),
+html[data-platform="linux"]:not(.window-maximized),
+body[data-platform="windows"]:not(.window-maximized),
+body[data-platform="linux"]:not(.window-maximized) {
+  background: transparent !important;
+}
+
+body[data-platform="windows"]:not(.window-maximized) .bt-app-root,
+body[data-platform="linux"]:not(.window-maximized) .bt-app-root {
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--bg0);
+}
+
+body[data-platform="windows"]:not(.window-maximized) .modal-scrim,
+body[data-platform="linux"]:not(.window-maximized) .modal-scrim,
+body[data-platform="windows"]:not(.window-maximized) .dev-gallery-overlay,
+body[data-platform="linux"]:not(.window-maximized) .dev-gallery-overlay {
+  border-radius: 10px;
+  overflow: hidden;
 }

@@ -79,9 +79,15 @@ export function TableTab({
     (state) => state.columns[columnsKey(handleId, tab.schema, tab.table)],
   );
   const columns: ColumnInfo[] = useMemo(() => columnsEntry?.columns ?? [], [columnsEntry]);
+  // Load columns, and RE-load whenever the cache entry disappears. A manual
+  // refresh full-reintrospects and drops the schema's column caches; without
+  // re-running here the filter panel's column dropdown would stay empty and the
+  // applied filter would compile against no columns (mis-typed → empty grid).
+  // `loadColumns` is cache-first, so this no-ops once the entry is back.
   useEffect(() => {
+    if (columnsEntry) return;
     void loadColumns(handleId, tab.schema, tab.table);
-  }, [loadColumns, handleId, tab.schema, tab.table]);
+  }, [columnsEntry, loadColumns, handleId, tab.schema, tab.table]);
 
   // Panel open/close (transient, local) and the inline raw-mode error.
   const [panelOpen, setPanelOpen] = useState(false);
@@ -149,6 +155,34 @@ export function TableTab({
       window.removeEventListener("keydown", onKey);
     };
   }, [colOpen, actionsOpen]);
+
+  // Cmd/Ctrl+F opens (and focuses) the filter panel while in data mode. Only
+  // the active tab mounts TableTab, so this listener is inherently tab-scoped.
+  useEffect(() => {
+    if (tab.mode !== "data") return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "f" && event.key !== "F") return;
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+      event.preventDefault();
+      // Toggle: close if already open.
+      if (panelOpen) {
+        setPanelOpen(false);
+        return;
+      }
+      if (!filterState) {
+        setTabFilter(tab.id, { draft: emptyDraft(columns[0]?.name ?? ""), applied: null });
+      }
+      setPanelOpen(true);
+      // Wait for the panel to un-hide before focusing its first control.
+      requestAnimationFrame(() => {
+        const panel = document.querySelector(".filter-panel:not(.hidden)");
+        const ctrl = panel?.querySelector("input, select") as HTMLElement | null;
+        ctrl?.focus();
+      });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [tab.mode, tab.id, panelOpen, filterState, columns, setTabFilter]);
 
   const doExport = (kind: "tableCsv" | "tableSql") => {
     setActionsOpen(false);
@@ -455,6 +489,7 @@ export function TableTab({
             state={ensuredState}
             error={filterError}
             onChange={onFilterChange}
+            onClose={() => setPanelOpen(false)}
           />
 
           {/* The virtualized data grid. Receives the applied filter + a stable

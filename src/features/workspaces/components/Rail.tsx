@@ -20,6 +20,7 @@ const ENGINE_META = {
   sqlite: { label: "SQLite", short: "SQ" },
   mysql: { label: "MySQL", short: "My" },
   postgres: { label: "PostgreSQL", short: "Pg" },
+  mssql: { label: "MS SQL Server", short: "MSS" },
   redis: { label: "Redis", short: "Rd" },
   dynamodb: { label: "DynamoDB", short: "Dy" },
   mongodb: { label: "MongoDB", short: "Mg" },

@@ -193,8 +193,14 @@ export function Select<T extends string>({
                 left: pos.left,
                 minWidth: pos.width,
                 ...(placement === "up"
-                  ? { bottom: window.innerHeight - pos.bottom + 4 }
-                  : { top: pos.top + 4 }),
+                  ? {
+                      bottom: window.innerHeight - pos.bottom + 4,
+                      maxHeight: Math.max(100, pos.bottom - 16),
+                    }
+                  : {
+                      top: pos.top + 4,
+                      maxHeight: Math.max(100, window.innerHeight - pos.top - 16),
+                    }),
               }}
             >
               {options.map((o, i) => (

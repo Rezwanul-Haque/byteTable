@@ -107,6 +107,9 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 40%;
+  /* Italic text (empty state) slants past the content box; without this the
+     final glyph's overhang gets clipped by overflow:hidden. */
+  padding-right: 2px;
 }
 
 .applied-where.empty {

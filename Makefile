@@ -79,6 +79,10 @@ dev-cert: ## macOS: create the stable self-signed identity used to sign dev buil
 
 tag: ## Bump the version in source, commit, then create + push a release tag (usage: make tag VERSION=0.0.2)
 	@test -n "$(VERSION)" || { echo "usage: make tag VERSION=0.0.2"; exit 1; }
+	@test "$$(git rev-parse --abbrev-ref HEAD)" = "main" || \
+		{ echo "run 'make tag' on main — the release workflow only publishes tags reachable from main"; exit 1; }
+	@git fetch origin main -q && git merge-base --is-ancestor origin/main HEAD || \
+		{ echo "local main is behind origin/main — pull first"; exit 1; }
 	@v=$$(echo "$(VERSION)" | sed 's/^v//'); \
 	bash scripts/bump-version.sh "$$v" && \
 	git add src-tauri/tauri.conf.json src-tauri/Cargo.toml package.json index.html \

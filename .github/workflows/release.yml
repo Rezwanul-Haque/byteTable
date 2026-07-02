@@ -24,6 +24,10 @@ permissions:
 jobs:
   create-release:
     runs-on: ubuntu-22.04
+    # Gate 1 — never run on forks. Tags are branch-agnostic refs, so a fork that
+    # syncs upstream history (and its `v*` tags) would otherwise trigger the full
+    # matrix build. Restrict the whole release flow to the canonical repo.
+    if: github.repository == 'Rezwanul-Haque/byteTable'
     outputs:
       release_id: ${{ steps.create.outputs.result }}
     steps:
@@ -31,6 +35,20 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
+      # Gate 2 — the tagged commit must be reachable from `main`. `main` is the
+      # stable branch that takes production PRs from `dev`; a `v*` tag on a `dev`
+      # or feature commit must NOT publish a release. We verify ancestry directly
+      # instead of trusting `github.event.base_ref` (often null on tag pushes, so
+      # a real release could silently skip). Fail here → build/publish never run.
+      - name: Verify tag is on main
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag ${GITHUB_REF_NAME} (${GITHUB_SHA}) is not on main. Release skipped."
+            exit 1
+          fi
+          echo "Tag ${GITHUB_REF_NAME} is on main — proceeding."
 
       # Build grouped release notes from the conventional-commit subjects between
       # the previous tag and this one:

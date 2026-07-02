@@ -3,7 +3,7 @@
   "productName": "ByteTable",
   "mainBinaryName": "bytetable",
   "version": "0.0.13",
-  "identifier": "com.bytetable.app",
+  "identifier": "com.bytetable.desktop",
   "build": {
     "beforeDevCommand": "pnpm dev:vite",
     "devUrl": "http://localhost:1420",

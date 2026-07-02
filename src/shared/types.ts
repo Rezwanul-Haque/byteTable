@@ -9,6 +9,7 @@ export type Engine =
   | "sqlite"
   | "mysql"
   | "postgres"
+  | "mssql"
   | "redis"
   | "dynamodb"
   | "mongodb"

@@ -14,6 +14,9 @@ const ENGINE_META: Record<Engine, { label: string; short: string; color: string 
   sqlite: { label: "SQLite", short: "SQ", color: "#56b6c2" },
   mysql: { label: "MySQL", short: "My", color: "#e2b340" },
   postgres: { label: "PostgreSQL", short: "Pg", color: "#61afef" },
+  // SQL Server (M21): crimson `MSS` badge (prototype ui.jsx ENGINE_META),
+  // distinct from Redis's vermilion and the production/error reds.
+  mssql: { label: "MS SQL Server", short: "MSS", color: "#d1495b" },
   // Redis (M13, REDIS_SPEC §1): vermilion, deliberately distinct from the
   // pinkish production/error red.
   redis: { label: "Redis", short: "Rd", color: "#e8533d" },

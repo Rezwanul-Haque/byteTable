@@ -1,19 +1,21 @@
-# ByteTable test databases — Postgres, MySQL, Redis, DynamoDB Local, MongoDB,
-# Cassandra. Ports are non-standard (offset) so they don't clash with any local
-# installs, EXCEPT DynamoDB Local (8000), MongoDB (27017) and Cassandra (9042),
-# which keep their standard ports so the connect modal's defaults work as-is.
+# ByteTable test databases — Postgres, MySQL, SQL Server, Redis, DynamoDB Local,
+# MongoDB, Cassandra. Ports are non-standard (offset) so they don't clash with
+# any local installs, EXCEPT DynamoDB Local (8000), MongoDB (27017) and Cassandra
+# (9042), which keep their standard ports so the connect modal's defaults work
+# as-is.
 #
 #   cd test-fixtures
-#   docker compose up -d          # start all six
+#   docker compose up -d          # start all seven
 #   ./seed/seed-redis.sh          # seed Redis
 #   ./seed/seed-dynamo.sh         # seed DynamoDB (creates tables + items)
 #   ./seed/seed-cassandra.sh      # seed Cassandra (after the node is ready)
+#   ./seed/seed-mssql.sh          # seed SQL Server (after it is ready)
 #   docker compose down -v        # stop + wipe (so a later `up` re-seeds)
 #
-# Credentials are in README.md. SQL + Mongo seed files auto-run only on FIRST
-# init of an empty data volume; `down -v` clears the volume so the next `up`
-# re-seeds. Redis + DynamoDB + Cassandra have no auto-init dir, so their seed
-# scripts are run manually.
+# Credentials are in README.md. The Postgres + MySQL + Mongo seed files auto-run
+# only on FIRST init of an empty data volume; `down -v` clears the volume so the
+# next `up` re-seeds. Redis, DynamoDB, Cassandra and SQL Server have no auto-init
+# dir, so their seed scripts are run manually.
 
 services:
   postgres:
@@ -39,6 +41,26 @@ services:
     volumes:
       - ./seed/mysql.sql:/docker-entrypoint-initdb.d/seed.sql:ro
       - bt-mysql-data:/var/lib/mysql
+
+  # SQL Server (M21). Uses `azure-sql-edge` (the SQL Server engine core) because
+  # it is arm64-native — the `mssql/server:2022` image segfaults under qemu on
+  # Apple Silicon. Port 11433 is offset (like Postgres/MySQL) so it won't clash
+  # with a local install; the connect modal defaults to 1433, so type 11433.
+  # SQL Server enforces a strong SA password (8+ chars, 3 of upper/lower/digit/
+  # symbol), so it can't be `bytetable` like the others — it is `ByteTable1!`.
+  # SQL Server images have NO auto-init dir, so the seed is manual, via
+  # `./seed/seed-mssql.sh` (like Redis/Cassandra); the .sql is mounted for it.
+  mssql:
+    image: mcr.microsoft.com/azure-sql-edge:latest
+    container_name: bt-mssql
+    environment:
+      ACCEPT_EULA: "1"
+      MSSQL_SA_PASSWORD: "ByteTable1!"
+    ports:
+      - "11433:1433"
+    volumes:
+      - ./seed/mssql.sql:/seed.mssql.sql:ro
+      - bt-mssql-data:/var/opt/mssql
 
   redis:
     image: redis:7
@@ -138,6 +160,7 @@ services:
 volumes:
   bt-pg-data:
   bt-mysql-data:
+  bt-mssql-data:
   bt-redis-data:
   bt-dynamo-data:
   bt-mongo-data:

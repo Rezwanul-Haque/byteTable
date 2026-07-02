@@ -72,6 +72,62 @@ export const SQLITE_TYPES = [
   "TIMESTAMP",
 ] as const;
 
+/** The full SQL Server (T-SQL) type family (M21 §22.2, `ST_MSSQL_TYPES`) offered
+ *  in the Structure type menu — ~36 entries, which is why the menu is a capped,
+ *  scrollable popup rather than a native `<select>`. Order groups numerics,
+ *  strings, date/time, binary, then the specials. */
+export const MSSQL_TYPES = [
+  // numerics
+  "INT",
+  "BIGINT",
+  "SMALLINT",
+  "TINYINT",
+  "BIT",
+  "DECIMAL(18,2)",
+  "NUMERIC(18,2)",
+  "MONEY",
+  "SMALLMONEY",
+  "FLOAT",
+  "REAL",
+  // strings
+  "CHAR",
+  "VARCHAR",
+  "VARCHAR(MAX)",
+  "NCHAR",
+  "NVARCHAR",
+  "NVARCHAR(MAX)",
+  "TEXT",
+  "NTEXT",
+  // date / time
+  "DATE",
+  "TIME",
+  "DATETIME",
+  "DATETIME2",
+  "SMALLDATETIME",
+  "DATETIMEOFFSET",
+  // binary
+  "BINARY",
+  "VARBINARY",
+  "VARBINARY(MAX)",
+  "IMAGE",
+  // specials
+  "UNIQUEIDENTIFIER",
+  "XML",
+  "SQL_VARIANT",
+  "GEOGRAPHY",
+  "GEOMETRY",
+  "HIERARCHYID",
+  "ROWVERSION",
+] as const;
+
+/** The Structure type-menu options for an engine (`stTypesFor`). SQL Server gets
+ *  its full 36-type family; every other engine keeps the SQLite-affinity list
+ *  the structure editor has always offered (their shorter lists just don't
+ *  scroll). */
+export function stTypesFor(engine: string): readonly string[] {
+  return engine === "mssql" ? MSSQL_TYPES : SQLITE_TYPES;
+}
+
 /** A column in the working (post-edit) set the structure view renders. Carries
  *  the original introspected name (`origin`) so edit handlers can key ops by it
  *  even after a rename, plus flags for the new/dropped row styling. */

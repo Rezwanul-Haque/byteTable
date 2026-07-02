@@ -69,3 +69,26 @@ body.bt-sidebar-right .ddb-sidebar {
   overflow: auto;
   background: var(--bg0);
 }
+
+/* Rounded corners for frameless windows on Windows and Linux when not maximized */
+html[data-platform="windows"]:not(.window-maximized),
+html[data-platform="linux"]:not(.window-maximized),
+body[data-platform="windows"]:not(.window-maximized),
+body[data-platform="linux"]:not(.window-maximized) {
+  background: transparent !important;
+}
+
+body[data-platform="windows"]:not(.window-maximized) .bt-app-root,
+body[data-platform="linux"]:not(.window-maximized) .bt-app-root {
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--bg0);
+}
+
+body[data-platform="windows"]:not(.window-maximized) .modal-scrim,
+body[data-platform="linux"]:not(.window-maximized) .modal-scrim,
+body[data-platform="windows"]:not(.window-maximized) .dev-gallery-overlay,
+body[data-platform="linux"]:not(.window-maximized) .dev-gallery-overlay {
+  border-radius: 10px;
+  overflow: hidden;
+}

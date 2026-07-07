@@ -222,6 +222,13 @@
   top: 0;
   left: 0;
   /* width/transform set inline by the virtualizer */
+  /* Opaque surface (matches the canvas' --bg0). Virtualized rows are absolutely
+     positioned and moved by `transform: translateY`; on WebKitGTK (Linux Tauri
+     webview) a transparent transformed layer is not repainted on scroll, so the
+     previous row's text bleeds through — the "ghost rows / overlapping columns"
+     seen when scrolling up and down. An opaque background forces each row to
+     paint over what was there. (WKWebView/macOS repaints correctly regardless.) */
+  background: var(--bg0);
 }
 
 .dg-td {

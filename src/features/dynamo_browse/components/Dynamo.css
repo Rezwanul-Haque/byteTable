@@ -1773,6 +1773,10 @@
 }
 .ddb-vg-body-row {
   cursor: pointer;
+  /* Opaque surface — see DataGrid.css .dg-tr: absolutely-positioned rows moved by
+     transform aren't repainted on scroll under WebKitGTK (Linux), so transparent
+     rows ghost. An opaque background forces a repaint over the prior row. */
+  background: var(--bg0);
 }
 .ddb-vg-body-row:hover .ddb-vg-cell,
 .ddb-vg-body-row:hover .ddb-vg-rownum {

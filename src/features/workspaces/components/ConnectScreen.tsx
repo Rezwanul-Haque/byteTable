@@ -150,7 +150,9 @@ export function ConnectScreen() {
         <div className="connect-brand">
           <BrandMark size={28} blink />
           <div>
-            <h1>ByteTable</h1>
+            <h1>
+              Byte<span className="connect-brand-accent">Table</span>
+            </h1>
             <p>Local-first database client · free forever</p>
           </div>
         </div>

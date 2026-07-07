@@ -17,13 +17,26 @@ import { WorkspaceContent } from "./WorkspaceContent";
 import { TerminalPanel } from "../../console/TerminalPanel";
 import { shellLabel, usePanelStore } from "../../console/state";
 import { useWorkspacesStore } from "../state";
+import { useBtCmd } from "../../../shared/ui/btCmd";
 import type { Workspace } from "../types";
 
 export function WorkspaceShell({ workspace }: { workspace: Workspace }) {
   const openSqlTab = useWorkspacesStore((state) => state.openSqlTab);
   const closeTab = useWorkspacesStore((state) => state.closeTab);
+  const openMapTab = useWorkspacesStore((state) => state.openMapTab);
   const togglePanel = usePanelStore((state) => state.togglePanel);
   const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // Title-bar app-menu commands (bt:cmd bus). The SQL workspace owns the
+  // palette, console toggle, new-query, and schema-map actions; the query-tab
+  // commands (run/format/explain/save) are claimed by the active SQL editor.
+  useBtCmd("palette", () => setPaletteOpen(true));
+  useBtCmd("new-query", () => openSqlTab());
+  useBtCmd("toggle-terminal", () => togglePanel(workspace.id, shellLabel(workspace.saved.engine)));
+  useBtCmd("schema-map", () => {
+    const schema = workspace.schemas[0]?.name;
+    if (schema) openMapTab(schema);
+  });
 
   // §3.12: ⌘/Ctrl+K toggles the palette, ⌘/Ctrl+T opens a new SQL tab.
   // M14: ⌃` (Ctrl+backtick, the VS Code convention) toggles the docked console

@@ -30,6 +30,10 @@
   letter-spacing: -0.01em;
 }
 
+.about-name-accent {
+  color: var(--accent);
+}
+
 .about-ver {
   font-family: var(--mono);
   font-size: 12px;
@@ -101,4 +105,8 @@
 .about-credit {
   font-size: 11px;
   color: var(--text-faint);
+}
+
+.about-credit-name {
+  color: var(--accent);
 }

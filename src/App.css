@@ -70,7 +70,10 @@ body.bt-sidebar-right .ddb-sidebar {
   background: var(--bg0);
 }
 
-/* Rounded corners for frameless windows on Windows and Linux when not maximized */
+/* Rounded corners for frameless windows on Windows and Linux when not
+   maximized. macOS rounds its own corners natively (opaque, decorations:true
+   with an Overlay title bar), so it must NOT be forced transparent here — a
+   transparent macOS window loses the OS-drawn rounded corners. */
 html[data-platform="windows"]:not(.window-maximized),
 html[data-platform="linux"]:not(.window-maximized),
 body[data-platform="windows"]:not(.window-maximized),

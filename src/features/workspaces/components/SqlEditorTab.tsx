@@ -35,6 +35,7 @@ import { columnsKey, tablesKey, useIntrospectionStore } from "../../introspectio
 import { type SavedQuery } from "../../saved_queries/api";
 import { selectQueriesForConnection, useSavedQueriesStore } from "../../saved_queries/state";
 import { useWorkspacesStore } from "../state";
+import { useBtCmd } from "../../../shared/ui/btCmd";
 import type { SqlHistoryEntry, SqlRun, Tab, Workspace } from "../types";
 import { ExecutionMinimap, ExplainPanel } from "./explain";
 import { detectedTable } from "./explainClauses";
@@ -444,6 +445,28 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
         toast(appErrorMessage(err, "Could not save query."), "err");
       });
   };
+
+  // Toggle the execution-plan view — mirrors the Explain button (capture the
+  // statement at the caret, one explain tab per statement).
+  const runExplain = () => {
+    if (view === "explain") {
+      setView("result");
+      return;
+    }
+    setExplainSql(editorRef.current?.pickStatement() ?? text);
+    setExplainActiveIdx(0);
+    setView("explain");
+  };
+
+  // Title-bar Query/File/View menu commands (bt:cmd bus). Only the ACTIVE SQL
+  // tab is mounted (WorkspaceContent renders just the active tab), so exactly
+  // one editor claims these at a time.
+  useBtCmd("run", () => run());
+  useBtCmd("format", format);
+  useBtCmd("explain", runExplain);
+  useBtCmd("save-query", () => setPop("save"));
+  useBtCmd("open-sql-file", openFile);
+  useBtCmd("query-history", () => setHistoryOpen(true));
 
   const visibleSaved = selectQueriesForConnection(savedQueries, workspace.saved.id);
   const { runs, activeRunId, history } = tab;

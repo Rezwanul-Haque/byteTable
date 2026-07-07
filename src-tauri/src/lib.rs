@@ -132,6 +132,17 @@ fn hide_to_tray(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// macOS window-chrome hook for the custom title bar (spec §1). The macOS window
+/// is configured statically (`tauri.macos.conf.json`) as an opaque, natively
+/// decorated window with a hiddenInset ("Overlay") title bar — the OS draws the
+/// traffic lights and rounds the corners, our custom bar overlays the inset
+/// area. There is no runtime chrome switch, so this is a no-op kept only so the
+/// renderer's settings-apply call has a stable target. No-op off macOS too.
+#[tauri::command]
+fn set_mac_chrome(_app: AppHandle, _mode: String) -> Result<(), String> {
+    Ok(())
+}
+
 /// One-time migration of the local data directory after the bundle identifier
 /// changed from `com.bytetable.app` to `com.bytetable.desktop` — the `.app`
 /// suffix collides with the macOS application-bundle extension (signing /
@@ -360,6 +371,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             hide_to_tray,
+            set_mac_chrome,
             tray_update,
             features::preferences::commands::prefs_get,
             features::preferences::commands::prefs_set,

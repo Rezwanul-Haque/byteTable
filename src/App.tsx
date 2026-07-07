@@ -10,6 +10,7 @@ import { useSettingsStore } from "./features/settings/state";
 import { SettingsModal } from "./features/settings/components/SettingsModal";
 import { subscribeSettings } from "./features/settings/sync";
 import { ConnectScreen } from "./features/workspaces/components/ConnectScreen";
+import { NewConnectionModal } from "./features/connections/components/NewConnectionModal";
 import { DonateModal } from "./features/workspaces/components/DonateModal";
 import { Rail } from "./features/workspaces/components/Rail";
 import { WorkspaceShell } from "./features/workspaces/components/WorkspaceShell";
@@ -29,6 +30,8 @@ import {
 import { AboutModal } from "./features/updater/AboutModal";
 import { UpdateModal } from "./features/updater/UpdateModal";
 import { TitleBar } from "./shared/ui/TitleBar";
+import { KeyboardShortcutsModal } from "./shared/ui/KeyboardShortcutsModal";
+import type { TitleBarCtx } from "./shared/ui/titlebarMenus";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { platform } from "@tauri-apps/plugin-os";
 import "./App.css";
@@ -44,23 +47,30 @@ const Gallery = import.meta.env.DEV
 export function App() {
   useRepaintOnRestore();
 
-  // Set platform and listen for maximized state to adjust window corners
+  // Set platform and track maximized/fullscreen state: maximized drives the
+  // rounded-corner CSS, and fullscreen (macOS) hides the OS traffic lights, so
+  // the title bar must drop the gap it reserves for them.
   useEffect(() => {
     const os = platform();
     document.documentElement.dataset.platform = os;
     document.body.dataset.platform = os;
 
     const appWindow = getCurrentWindow();
-    const updateMaximized = async () => {
-      const maximized = await appWindow.isMaximized();
+    const updateWindowState = async () => {
+      const [maximized, fullscreen] = await Promise.all([
+        appWindow.isMaximized(),
+        appWindow.isFullscreen(),
+      ]);
       document.documentElement.classList.toggle("window-maximized", maximized);
       document.body.classList.toggle("window-maximized", maximized);
+      document.documentElement.classList.toggle("window-fullscreen", fullscreen);
+      document.body.classList.toggle("window-fullscreen", fullscreen);
     };
 
-    updateMaximized();
+    void updateWindowState();
 
     const unlistenPromise = appWindow.onResized(() => {
-      updateMaximized();
+      void updateWindowState();
     });
 
     return () => {
@@ -76,6 +86,10 @@ export function App() {
   const workspaces = useWorkspacesStore((state) => state.workspaces);
   const activeWorkspaceId = useWorkspacesStore((state) => state.activeWorkspaceId);
   const activeWorkspace = workspaces.find((ws) => ws.id === activeWorkspaceId) ?? null;
+  // Title-bar menu dispatch targets that act on global app state.
+  const closeWorkspace = useWorkspacesStore((state) => state.closeWorkspace);
+  const settings = useSettingsStore((state) => state.settings);
+  const setSetting = useSettingsStore((state) => state.setSetting);
   // Prototype app.jsx `showConnect`: the rail's "+" tile shows the connect
   // screen without dropping the (still-open) active workspace.
   const showConnect = useWorkspacesStore(selectShowConnect);
@@ -104,6 +118,13 @@ export function App() {
   // About modal (rail version label) + the running app version it shows.
   const [aboutOpen, setAboutOpen] = useState(false);
   const [version, setVersion] = useState(FALLBACK_VERSION);
+
+  // Keyboard-shortcuts reference (title-bar Help → Keyboard Shortcuts).
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+
+  // New-connection modal, opened app-level from the title-bar File menu (the
+  // connect screen has its own copy for its "New connection" button).
+  const [newConnOpen, setNewConnOpen] = useState(false);
 
   useEffect(() => {
     void loadPreferences();
@@ -174,6 +195,42 @@ export function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  // App-level handlers the title-bar app menu dispatches to (spec §2, path 1).
+  // Workspace/query-tab commands don't go here — they ride the bt:cmd bus.
+  const titleBarCtx: TitleBarCtx = {
+    onNewConnection: () => setNewConnOpen(true),
+    onCloseWorkspace: () => {
+      if (activeWorkspaceId) closeWorkspace(activeWorkspaceId);
+    },
+    onCheckUpdates: () => {
+      void (async () => {
+        try {
+          const found = await checkForUpdate();
+          if (found) {
+            setUpdate(found);
+            setUpdateModalOpen(true);
+            return;
+          }
+        } catch {
+          /* offline / no shell — fall through to the About sheet */
+        }
+        // No newer build (or the check failed): show About, which displays the
+        // running version and its own re-check affordance.
+        setAboutOpen(true);
+      })();
+    },
+    onAbout: () => setAboutOpen(true),
+    onShortcuts: () => setShortcutsOpen(true),
+    onZoom: (dir) => {
+      const cur = settings.fontSize;
+      // The font-size setting drives the whole-app webview zoom (zoom.ts),
+      // clamped 10..18; "reset" returns to the 13px base (100%).
+      const next =
+        dir === "reset" ? 13 : dir === "in" ? Math.min(18, cur + 1) : Math.max(10, cur - 1);
+      setSetting("fontSize", next);
+    },
+  };
+
   return (
     <ToastProvider>
       {/* Keeps the native tray "Workspaces" submenu in sync + handles its
@@ -181,7 +238,7 @@ export function App() {
           a failed open). */}
       <TrayWorkspacesBridge />
       <div className="bt-app-root">
-        <TitleBar />
+        <TitleBar ctx={titleBarCtx} />
         <div className="app-frame">
           <Rail
             onDonate={() => setDonateOpen(true)}
@@ -231,6 +288,10 @@ export function App() {
       </div>
 
       {settingsOpen ? <SettingsModal onClose={() => setSettingsOpen(false)} /> : null}
+
+      {shortcutsOpen ? <KeyboardShortcutsModal onClose={() => setShortcutsOpen(false)} /> : null}
+
+      {newConnOpen ? <NewConnectionModal onClose={() => setNewConnOpen(false)} /> : null}
 
       {donateOpen ? <DonateModal onClose={() => setDonateOpen(false)} /> : null}
 

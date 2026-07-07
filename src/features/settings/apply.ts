@@ -9,9 +9,15 @@
 // twelve arbitrary palettes + a free-form hex accent work without a CSS block
 // per theme.
 
+import { invoke } from "@tauri-apps/api/core";
+
 import { DEFAULTS, type Settings } from "./api";
 import { monoMetaFor, THEMES, UI_FONTS } from "./catalogs";
 import { ensureFont } from "./fonts";
+
+/** localStorage key holding the resolved accent hex for the pre-JS splash
+ *  (read by the inline bootstrap script in index.html). */
+const SPLASH_ACCENT_KEY = "bytetable.splash-accent.v1";
 
 export function applySettings(input: Partial<Settings> | null | undefined): void {
   const s: Settings = { ...DEFAULTS, ...(input ?? {}) };
@@ -34,8 +40,18 @@ export function applySettings(input: Partial<Settings> | null | undefined): void
 
   // Accent: a custom hex overrides the theme's own; "auto" uses the theme's.
   const custom = s.accent && s.accent !== "auto";
-  root.setProperty("--accent", custom ? s.accent : theme.accent);
+  const accent = custom ? s.accent : theme.accent;
+  root.setProperty("--accent", accent);
   root.setProperty("--on-accent", custom ? (theme.light ? "#ffffff" : "#0c1512") : theme.onAccent);
+
+  // Persist the RESOLVED accent so the next launch's inline splash (painted
+  // before any JS/CSS loads, see index.html) can tint its logo + wordmark to
+  // the user's accent instead of the hardcoded default.
+  try {
+    localStorage.setItem(SPLASH_ACCENT_KEY, accent);
+  } catch {
+    // Storage disabled/full — the splash just falls back to its default accent.
+  }
 
   // Fonts. Bundled families (JetBrains Mono, IBM Plex Sans) and system faces
   // load with no network; a non-bundled curated pick injects its Google Fonts
@@ -65,5 +81,11 @@ export function applySettings(input: Partial<Settings> | null | undefined): void
     body.classList.toggle("bt-light", !!theme.light);
     body.classList.toggle("bt-sidebar-right", s.sidebarSide === "right");
     body.dataset.titlebarPosition = s.titlebarPosition;
+    body.dataset.macChrome = s.macChrome;
   }
+
+  // macOS chrome: ask the backend to (re)apply window decorations for the
+  // selected mode. Idempotent and macOS-gated in Rust; best-effort so it
+  // no-ops in plain browser dev / before the shell is ready.
+  void invoke("set_mac_chrome", { mode: s.macChrome }).catch(() => {});
 }

@@ -65,7 +65,9 @@ export function AboutModal({
         <div className="about-mark">
           <BrandMark size={30} blink />
         </div>
-        <div className="about-name">ByteTable</div>
+        <div className="about-name">
+          Byte<span className="about-name-accent">Table</span>
+        </div>
         <div className="about-ver">v{version}</div>
         <div className="about-tag">Local-first database client · free &amp; open source</div>
         <IconBtn icon="close" onClick={onClose} title="Close" className="about-close" />
@@ -104,7 +106,9 @@ export function AboutModal({
       ) : null}
 
       <ModalActions>
-        <span className="about-credit">Built by Rezwanul-Haque</span>
+        <span className="about-credit">
+          Built by <span className="about-credit-name">Rezwanul-Haque</span>
+        </span>
         <div style={{ flex: 1 }} />
         <Btn
           variant="tonal"

@@ -80,6 +80,17 @@ pub enum TitlebarPosition {
     BottomRightIcon,
 }
 
+/// macOS-only custom-titlebar chrome: `Native` = hiddenInset (OS-drawn traffic
+/// lights, our inset bar, system-bar menu); `Frameless` = decorations:false (we
+/// draw the lights + in-window menu). Ignored on Windows/Linux.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MacChrome {
+    #[default]
+    Native,
+    Frameless,
+}
+
 fn default_theme() -> Theme {
     Theme::default()
 }
@@ -103,6 +114,9 @@ fn default_sidebar_side() -> SidebarSide {
 }
 fn default_titlebar_position() -> TitlebarPosition {
     TitlebarPosition::default()
+}
+fn default_mac_chrome() -> MacChrome {
+    MacChrome::default()
 }
 fn default_default_limit() -> u32 {
     300
@@ -163,6 +177,9 @@ pub struct Settings {
     /// Position of the custom title bar and its controls.
     #[serde(default = "default_titlebar_position")]
     pub titlebar_position: TitlebarPosition,
+    /// macOS-only custom-titlebar chrome (hiddenInset vs frameless).
+    #[serde(default = "default_mac_chrome")]
+    pub mac_chrome: MacChrome,
 }
 
 impl Default for Settings {
@@ -185,6 +202,7 @@ impl Default for Settings {
             auto_refresh_sec: default_auto_refresh_sec(),
             sidebar_side: default_sidebar_side(),
             titlebar_position: default_titlebar_position(),
+            mac_chrome: default_mac_chrome(),
         }
     }
 }
@@ -213,6 +231,7 @@ mod tests {
         assert_eq!(s.auto_refresh_sec, 10);
         assert_eq!(s.sidebar_side, SidebarSide::Left);
         assert_eq!(s.titlebar_position, TitlebarPosition::TopLeftIcon);
+        assert_eq!(s.mac_chrome, MacChrome::Native);
     }
 
     #[test]
@@ -251,6 +270,7 @@ mod tests {
             auto_refresh_sec: 30,
             sidebar_side: SidebarSide::Right,
             titlebar_position: TitlebarPosition::BottomRightIcon,
+            mac_chrome: MacChrome::Frameless,
         };
         let json = serde_json::to_string(&s).expect("serialize");
         let back: Settings = serde_json::from_str(&json).expect("deserialize");

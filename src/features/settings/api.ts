@@ -19,6 +19,13 @@ export type TitlebarPosition =
   | "topRightIcon"
   | "bottomLeftIcon"
   | "bottomRightIcon";
+/**
+ * macOS window chrome for the custom title bar (ignored on Windows/Linux):
+ * `"native"` = hiddenInset (OS-drawn traffic lights, our bar sits inset, the
+ * app menu lives in the system bar); `"frameless"` = decorations:false (we draw
+ * the traffic lights and the in-window menu bar).
+ */
+export type MacChrome = "native" | "frameless";
 /** `"auto"` (theme's own accent) or a `#rrggbb` hex string. */
 export type Accent = "auto" | string;
 /** Curated mono key or a probed `"sys:<Family>"` id. */
@@ -44,6 +51,8 @@ export interface Settings {
   autoRefreshSec: AutoRefreshSec;
   sidebarSide: SidebarSide;
   titlebarPosition: TitlebarPosition;
+  /** macOS-only: which custom-titlebar chrome to use. */
+  macChrome: MacChrome;
 }
 
 /** The single source of truth for the contract shape and default values. */
@@ -65,6 +74,7 @@ export const DEFAULTS: Settings = {
   autoRefreshSec: 10,
   sidebarSide: "left",
   titlebarPosition: "topLeftIcon",
+  macChrome: "native",
 };
 
 /**

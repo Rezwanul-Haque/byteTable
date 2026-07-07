@@ -1,8 +1,12 @@
+/* Custom window title bar (spec §1–4). A 36px flex header with three regions:
+   .bt-titlebar-left (brand + menu, or mac lights), .bt-titlebar-center (live
+   workspace context), .bt-titlebar-buttons (Windows/Linux controls). */
+
 .bt-titlebar {
-  height: 32px;
-  background: var(--bg0);
+  position: relative;
+  height: 36px;
+  background: var(--bg1);
   display: flex;
-  justify-content: space-between;
   align-items: center;
   user-select: none;
   flex-shrink: 0;
@@ -14,6 +18,8 @@
   cursor: grabbing;
 }
 
+/* ---- Left region: mac lights / brand / menu ------------------------------ */
+
 .bt-titlebar-left {
   display: flex;
   align-items: center;
@@ -22,24 +28,248 @@
   height: 100%;
 }
 
-.bt-titlebar-icon {
-  width: 16px;
-  height: 16px;
-  object-fit: contain;
+/* macOS: window controls sit on the left, so the right region collapses. */
+.tb-side-left ~ .bt-titlebar-buttons {
+  display: none;
 }
 
-.bt-titlebar-title {
-  font-size: 13px;
-  color: var(--text-dim);
-  font-weight: 500;
-  letter-spacing: 0.2px;
+.tb-brand {
+  display: flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 4px;
+  border-radius: 6px;
+  background: none;
+  cursor: default;
+  transition: background 0.1s;
 }
+
+.tb-brand:hover {
+  background: var(--bg2);
+}
+
+.tb-word {
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.tb-word-accent {
+  color: var(--accent);
+}
+
+/* mac-native: reserve the horizontal gap the OS draws its traffic lights into. */
+.tb-lights-native {
+  display: inline-block;
+  width: 56px;
+  height: 1px;
+}
+
+/* macOS: the OS draws the traffic lights vertically centered in its standard
+   ~28px title-bar zone, independent of our bar. Match that height so our
+   overlaid brand/menu/context share the same vertical center as the lights
+   (a taller bar would push our content off-center from them). */
+body[data-platform="macos"] .bt-titlebar {
+  height: 28px;
+}
+
+/* Nudge the whole left cluster clear of the OS lights' left inset. */
+body[data-platform="macos"] .bt-titlebar-left {
+  padding-left: 16px;
+}
+
+/* Fullscreen hides the macOS traffic lights, so reclaim their reserved gap and
+   send the brand + menu to the far left. */
+body[data-platform="macos"].window-fullscreen .tb-lights-native {
+  display: none;
+}
+body[data-platform="macos"].window-fullscreen .bt-titlebar-left {
+  padding-left: 12px;
+}
+
+.tb-menu-hint {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-left: 4px;
+}
+
+/* ---- App menu bar -------------------------------------------------------- */
+
+.tb-menubar {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  -webkit-app-region: no-drag;
+}
+
+.tb-menu {
+  position: relative;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  /* Keep the buttons + popover above the dismiss backdrop. */
+  z-index: 79;
+}
+
+/* Catches the outside click that dismisses an open menu (see TitleMenuBar).
+   Sits above the title-bar drag region but below the menu buttons/popover. */
+.tb-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+}
+
+.tb-menu-btn {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  padding: 4px 9px;
+  border-radius: 6px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  cursor: default;
+  transition: background 0.1s;
+}
+
+.tb-menu-btn:hover,
+.tb-menu-btn.on {
+  background: var(--bg2);
+  color: var(--text);
+}
+
+.tb-menu-pop {
+  position: absolute;
+  top: calc(100% - 2px);
+  left: 0;
+  min-width: 208px;
+  z-index: 80;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 5px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  animation: tb-menu-in 0.12s ease;
+}
+
+@keyframes tb-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tb-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text);
+  text-align: left;
+  cursor: default;
+}
+
+.tb-menu-item:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.tb-menu-item:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+
+.tb-menu-label {
+  flex: 1;
+  white-space: nowrap;
+}
+
+.tb-menu-hint-key {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.tb-menu-item:hover:not(:disabled) .tb-menu-hint-key {
+  color: var(--on-accent);
+}
+
+.tb-menu-sep {
+  height: 1px;
+  margin: 5px 8px;
+  background: var(--border);
+}
+
+/* ---- Center region: live workspace context ------------------------------ */
+
+/* Absolutely centered against the whole bar so the context reads as
+   window-centered — not centered in the leftover flex space between the
+   (wide) brand+menu cluster and the controls, which would bias it sideways.
+   pointer-events:none lets drags and menu/control clicks pass through to the
+   bar beneath it. */
+.bt-titlebar-center {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translateX(-50%);
+  max-width: 48%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+  padding: 0 12px;
+  pointer-events: none;
+}
+
+.tb-ws-name {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.tb-env {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.tb-detail {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  max-width: 340px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tb-context-empty {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+/* ---- Right region: Windows/Linux window controls ------------------------- */
 
 .bt-titlebar-buttons {
   display: flex;
   height: 100%;
+  margin-left: auto;
   -webkit-app-region: no-drag;
-  cursor: default; /* overrides the grab cursor */
+  cursor: default;
 }
 
 .bt-titlebar-btn {
@@ -60,7 +290,7 @@
 }
 
 .bt-titlebar-btn.close:hover {
-  background: #e81123;
+  background: #e0483f;
   color: #fff;
 }
 
@@ -68,14 +298,70 @@
   font-size: 16px;
 }
 
-/* Layout overrides based on settings */
+/* ---- macOS custom traffic lights (mac-frameless) ------------------------- */
+
+.tb-winctl-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  -webkit-app-region: no-drag;
+  padding-right: 2px;
+}
+
+.tb-wc {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+}
+
+.tb-wc-close {
+  background: #ff5f57;
+}
+.tb-wc-min {
+  background: #febc2e;
+}
+.tb-wc-zoom {
+  background: #28c840;
+}
+
+.tb-wc-glyph {
+  font-size: 9px;
+  line-height: 1;
+  color: rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+/* Glyphs reveal only when hovering the light group (macOS convention). */
+.tb-winctl-left:hover .tb-wc-glyph {
+  opacity: 1;
+}
+
+/* ---- Title-bar position overrides (Windows/Linux only) ------------------- */
+
 body[data-titlebar-position^="bottom"] .bt-titlebar {
-  order: 2; /* Moves title bar below app-frame */
+  order: 2; /* Moves the title bar below the app frame. */
 }
 
 body[data-titlebar-position="topRightIcon"] .bt-titlebar-left,
 body[data-titlebar-position="bottomRightIcon"] .bt-titlebar-left {
-  order: 2;
+  order: 3;
   padding-left: 0;
   padding-right: 12px;
+}
+
+body[data-titlebar-position="topRightIcon"] .bt-titlebar-center,
+body[data-titlebar-position="bottomRightIcon"] .bt-titlebar-center {
+  order: 2;
+}
+
+body[data-titlebar-position="topRightIcon"] .bt-titlebar-buttons,
+body[data-titlebar-position="bottomRightIcon"] .bt-titlebar-buttons {
+  order: 1;
+  margin-left: 0;
+  margin-right: auto;
 }

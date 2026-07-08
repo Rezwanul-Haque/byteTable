@@ -247,6 +247,14 @@
   overflow: hidden;
 }
 
+/* Column-virtualization spacer track: occupies the summed width of the
+   off-screen columns (left/right of the rendered window) so the canvas width and
+   every row's grid tracks match the full-table layout. No border/background —
+   the row's own opaque surface shows through. */
+.dg-pad {
+  min-width: 0;
+}
+
 /* Hover copy button, pinned to the cell's right edge. Hidden until the cell is
    hovered; a small backing keeps it readable over long values. */
 .dg-copy {

@@ -10,7 +10,7 @@
 // also keeps re-renders cheap (only ~20 rows reconcile), so button clicks stay
 // responsive while a large result is on screen.
 
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import { useVirtualizer } from "@tanstack/react-virtual";
 
@@ -36,7 +36,16 @@ const CHAR_PX = 7;
 const PAD_PX = 26;
 const COL_MIN_PX = 90;
 const COL_MAX_PX = 360;
+/** Column overscan for the horizontal virtualizer; above the threshold the
+ *  column axis is windowed too (a wide item no longer renders every attribute). */
+const COL_OVERSCAN = 3;
+const COL_VIRT_THRESHOLD = 30;
+/** Minimum row-number gutter width (px). Grows with the digit count below so a
+ *  large row number isn't clipped. */
 const ROWNUM_PX = 40;
+/** Per-digit width of the row number + gutter padding — used to size the gutter. */
+const ROWNUM_DIGIT_PX = 7.5;
+const ROWNUM_PAD_PX = 14;
 const CHECK_PX = 34;
 const WIDTH_SAMPLE_ROWS = 40;
 
@@ -80,24 +89,67 @@ export function DynamoItemGrid({
 
   const selectable = !!onToggleRow;
 
-  // Grid track template: optional checkbox + row-number gutter + one fixed px
-  // track per column (estimated from the header + a sample of cell lengths).
+  // Per-column fixed px width (estimated from the header + a sample of cell
+  // lengths). Shared by the CSS grid tracks and the horizontal virtualizer.
+  const colWidths = useMemo(
+    () =>
+      ordered.map((c) => {
+        let maxLen = c.length;
+        for (let i = 0; i < items.length && i < WIDTH_SAMPLE_ROWS; i++) {
+          const len = copyText(items[i]?.[c]).length;
+          if (len > maxLen) maxLen = len;
+        }
+        return Math.round(Math.min(COL_MAX_PX, Math.max(COL_MIN_PX, maxLen * CHAR_PX + PAD_PX)));
+      }),
+    [ordered, items],
+  );
+
+  // Row-number gutter sized to the largest row number (see the browse DataGrid).
+  const rownumPx = useMemo(() => {
+    const digits = Math.max(2, String(Math.max(1, items.length)).length);
+    return Math.max(ROWNUM_PX, Math.ceil(digits * ROWNUM_DIGIT_PX + ROWNUM_PAD_PX));
+  }, [items.length]);
+
+  // Column (horizontal) virtualization: a wide item (100+ attributes) renders
+  // only the columns in view, bracketed by pad tracks summing the off-screen
+  // columns' widths so the canvas width and row tracks stay identical. Below the
+  // threshold every column renders (windowing gains nothing).
+  const virtualizeCols = ordered.length > COL_VIRT_THRESHOLD;
+  const colVirtualizer = useVirtualizer({
+    horizontal: true,
+    count: ordered.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: (i) => colWidths[i] ?? COL_MIN_PX,
+    overscan: COL_OVERSCAN,
+  });
+  const colWidthSig = colWidths.join(",");
+  useEffect(() => {
+    colVirtualizer.measure();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [colWidthSig]);
+
+  const colItems = colVirtualizer.getVirtualItems();
+  let padL = 0;
+  let padR = 0;
+  let winIdx = ordered.map((_, i) => i);
+  if (virtualizeCols && colItems.length > 0) {
+    const last = colItems[colItems.length - 1]!;
+    padL = colItems[0]!.start;
+    padR = colVirtualizer.getTotalSize() - (last.start + last.size);
+    winIdx = colItems.map((vi) => vi.index);
+  }
+
+  // Grid track template: [checkbox] + row-number gutter + [pad] + visible tracks
+  // + [pad].
   const gridCols = useMemo(() => {
-    const widths = ordered.map((c) => {
-      let maxLen = c.length;
-      for (let i = 0; i < items.length && i < WIDTH_SAMPLE_ROWS; i++) {
-        const len = copyText(items[i]?.[c]).length;
-        if (len > maxLen) maxLen = len;
-      }
-      const px = Math.min(COL_MAX_PX, Math.max(COL_MIN_PX, maxLen * CHAR_PX + PAD_PX));
-      return px + "px";
-    });
-    return (selectable ? CHECK_PX + "px " : "") + ROWNUM_PX + "px " + widths.join(" ");
-  }, [ordered, items, selectable]);
+    const lead = (selectable ? CHECK_PX + "px " : "") + rownumPx + "px";
+    const tracks = winIdx.map((i) => colWidths[i] + "px").join(" ");
+    if (!virtualizeCols) return lead + " " + tracks;
+    return lead + " " + padL + "px " + tracks + " " + padR + "px";
+  }, [selectable, rownumPx, colWidths, winIdx, virtualizeCols, padL, padR]);
 
   // The virtualizer's results are consumed inline in render only (never passed
   // to a memoized child), so the compiler's "cannot memoize" caution is moot.
-  // eslint-disable-next-line react-hooks/incompatible-library
   const rowVirtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => scrollRef.current,
@@ -132,16 +184,21 @@ export function DynamoItemGrid({
             </div>
           ) : null}
           <div className="ddb-vg-rownum ddb-vg-rownum-h">#</div>
-          {ordered.map((c) => (
-            <div key={c} className="ddb-vg-th" title={c}>
-              {c === keySchema.pk ? (
-                <span className="ddb-key-badge pk">PK</span>
-              ) : c === keySchema.sk ? (
-                <span className="ddb-key-badge sk">SK</span>
-              ) : null}
-              <span className="ddb-vg-colname">{c}</span>
-            </div>
-          ))}
+          {virtualizeCols ? <div className="ddb-vg-pad" aria-hidden /> : null}
+          {winIdx.map((ci) => {
+            const c = ordered[ci]!;
+            return (
+              <div key={c} className="ddb-vg-th" title={c}>
+                {c === keySchema.pk ? (
+                  <span className="ddb-key-badge pk">PK</span>
+                ) : c === keySchema.sk ? (
+                  <span className="ddb-key-badge sk">SK</span>
+                ) : null}
+                <span className="ddb-vg-colname">{c}</span>
+              </div>
+            );
+          })}
+          {virtualizeCols ? <div className="ddb-vg-pad" aria-hidden /> : null}
         </div>
 
         {/* Virtualised body: only visible rows mount. */}
@@ -176,7 +233,9 @@ export function DynamoItemGrid({
                   </div>
                 ) : null}
                 <div className="ddb-vg-rownum">{ri + 1}</div>
-                {ordered.map((c) => {
+                {virtualizeCols ? <div className="ddb-vg-pad" aria-hidden /> : null}
+                {winIdx.map((ci) => {
+                  const c = ordered[ci]!;
                   const v = it[c];
                   const disp = dynamoFmt(v);
                   const isObj = typeof v === "object" && v !== null;
@@ -211,6 +270,7 @@ export function DynamoItemGrid({
                     </div>
                   );
                 })}
+                {virtualizeCols ? <div className="ddb-vg-pad" aria-hidden /> : null}
               </div>
             );
           })}

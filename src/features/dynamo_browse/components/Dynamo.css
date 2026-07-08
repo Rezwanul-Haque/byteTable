@@ -1771,6 +1771,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Column-virtualization spacer track: occupies the summed width of the
+   off-screen columns so the canvas width + row tracks match the full layout. */
+.ddb-vg-pad {
+  min-width: 0;
+}
 .ddb-vg-body-row {
   cursor: pointer;
   /* Opaque surface — see DataGrid.css .dg-tr: absolutely-positioned rows moved by

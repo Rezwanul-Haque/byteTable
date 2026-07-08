@@ -35,8 +35,16 @@ const FALLBACK_ROW_H = 26;
  *  the layout — the cell ellipsizes/scrolls within it. */
 const COL_MIN_PX = 90;
 const COL_MAX_PX = 400;
-/** Row-number gutter width (px) — matches `.dg-rownum` min-width. */
+/** Column overscan for the horizontal virtualizer; above the threshold columns
+ *  are windowed too (a wide result no longer renders every column per row). */
+const COL_OVERSCAN = 3;
+const COL_VIRT_THRESHOLD = 30;
+/** Minimum row-number gutter width (px) — matches `.dg-rownum` min-width. The
+ *  track grows with the digit count so large row numbers aren't clipped. */
 const ROWNUM_PX = 30;
+/** Per-digit width of the row number (12.5px tabular-nums) + gutter padding. */
+const ROWNUM_DIGIT_PX = 7.5;
+const ROWNUM_PAD_PX = 14;
 /** Multi-select checkbox gutter width (px) — matches `.dg-check-c`. */
 const CHECK_PX = 34;
 /** Horizontal cell/header padding (px) — `.dg-td`/`.dg-th` are `0 12px`. */
@@ -130,7 +138,6 @@ export function SqlResultGrid({ result }: { result: QueryResult }) {
   // `useVirtualizer()` returns non-memoizable functions. Safe here: its outputs
   // (`virtualRows`/`totalHeight`) are consumed in this component's own render
   // and never passed to a memoized child, so there's no stale-UI risk.
-  // eslint-disable-next-line react-hooks/incompatible-library
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
@@ -138,25 +145,73 @@ export function SqlResultGrid({ result }: { result: QueryResult }) {
     overscan: ROW_OVERSCAN,
   });
 
-  // Grid column template: row-number gutter + one EXPLICIT pixel track per
-  // column, shared by the header and every body row so columns line up exactly.
-  // Each track = clamp(max(header intrinsic, widest sampled cell), MIN, MAX).
+  // Measured px width per column (shared by the CSS grid tracks and the
+  // horizontal virtualizer). Each = clamp(max(header intrinsic, widest sampled
+  // cell), MIN, MAX).
+  const colWidths = useMemo(
+    () =>
+      columns.map((c, ci) => {
+        const typeLen = c.typeHint ? c.typeHint.length : 0;
+        const headerPx =
+          c.name.length * HEAD_NAME_CHAR_PX +
+          typeLen * HEAD_TYPE_CHAR_PX +
+          HEAD_GAP_PX +
+          CELL_PAD_PX;
+        let maxCellLen = 0;
+        const sampleN = Math.min(rows.length, WIDTH_SAMPLE_ROWS);
+        for (let r = 0; r < sampleN; r++) {
+          const len = cellTextLength(rows[r]![ci] ?? null);
+          if (len > maxCellLen) maxCellLen = len;
+        }
+        const cellPx = maxCellLen * CELL_CHAR_PX + CELL_PAD_PX;
+        return Math.round(Math.min(COL_MAX_PX, Math.max(COL_MIN_PX, headerPx, cellPx)));
+      }),
+    [columns, rows],
+  );
+
+  // Row-number gutter sized to the largest row number (see the browse DataGrid).
+  const rownumPx = useMemo(() => {
+    const digits = Math.max(2, String(Math.max(1, rows.length)).length);
+    return Math.max(ROWNUM_PX, Math.ceil(digits * ROWNUM_DIGIT_PX + ROWNUM_PAD_PX));
+  }, [rows.length]);
+
+  // Column (horizontal) virtualization: a wide result renders only the columns in
+  // view, bracketed by two pad tracks summing the off-screen columns' widths so
+  // the canvas width and every row's tracks stay identical to the full layout.
+  // Below the threshold every column renders (windowing gains nothing).
+  const virtualizeCols = columns.length > COL_VIRT_THRESHOLD;
+
+  const colVirtualizer = useVirtualizer({
+    horizontal: true,
+    count: columns.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: (i) => colWidths[i] ?? COL_MIN_PX,
+    overscan: COL_OVERSCAN,
+  });
+  const colWidthSig = colWidths.join(",");
+  useEffect(() => {
+    colVirtualizer.measure();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [colWidthSig]);
+
+  const colItems = colVirtualizer.getVirtualItems();
+  let padL = 0;
+  let padR = 0;
+  let winIdx = columns.map((_, i) => i);
+  if (virtualizeCols && colItems.length > 0) {
+    const last = colItems[colItems.length - 1]!;
+    padL = colItems[0]!.start;
+    padR = colVirtualizer.getTotalSize() - (last.start + last.size);
+    winIdx = colItems.map((vi) => vi.index);
+  }
+
+  // Grid column template: gutters + [pad] + visible tracks + [pad].
   const gridCols = useMemo(() => {
-    const widths = columns.map((c, ci) => {
-      const typeLen = c.typeHint ? c.typeHint.length : 0;
-      const headerPx =
-        c.name.length * HEAD_NAME_CHAR_PX + typeLen * HEAD_TYPE_CHAR_PX + HEAD_GAP_PX + CELL_PAD_PX;
-      let maxCellLen = 0;
-      const sampleN = Math.min(rows.length, WIDTH_SAMPLE_ROWS);
-      for (let r = 0; r < sampleN; r++) {
-        const len = cellTextLength(rows[r]![ci] ?? null);
-        if (len > maxCellLen) maxCellLen = len;
-      }
-      const cellPx = maxCellLen * CELL_CHAR_PX + CELL_PAD_PX;
-      return Math.round(Math.min(COL_MAX_PX, Math.max(COL_MIN_PX, headerPx, cellPx))) + "px";
-    });
-    return CHECK_PX + "px " + ROWNUM_PX + "px " + widths.join(" ");
-  }, [columns, rows]);
+    const lead = CHECK_PX + "px " + rownumPx + "px";
+    const tracks = winIdx.map((i) => colWidths[i] + "px").join(" ");
+    if (!virtualizeCols) return lead + " " + tracks;
+    return lead + " " + padL + "px " + tracks + " " + padR + "px";
+  }, [rownumPx, colWidths, winIdx, virtualizeCols, padL, padR]);
 
   const virtualRows = rowVirtualizer.getVirtualItems();
   const totalHeight = rowVirtualizer.getTotalSize();
@@ -190,20 +245,25 @@ export function SqlResultGrid({ result }: { result: QueryResult }) {
               />
             </div>
             <div className="dg-rownum-h">#</div>
-            {columns.map((c, ci) => (
-              <div
-                key={c.name + ":" + ci}
-                className="dg-th"
-                title={c.typeHint ? c.name + " · " + c.typeHint : c.name}
-              >
-                <span className="dg-head">
-                  <span className="dg-colname">{c.name}</span>
-                  {c.typeHint ? (
-                    <span className="dg-coltype">{c.typeHint.toLowerCase()}</span>
-                  ) : null}
-                </span>
-              </div>
-            ))}
+            {virtualizeCols ? <div className="dg-pad" aria-hidden /> : null}
+            {winIdx.map((ci) => {
+              const c = columns[ci]!;
+              return (
+                <div
+                  key={c.name + ":" + ci}
+                  className="dg-th"
+                  title={c.typeHint ? c.name + " · " + c.typeHint : c.name}
+                >
+                  <span className="dg-head">
+                    <span className="dg-colname">{c.name}</span>
+                    {c.typeHint ? (
+                      <span className="dg-coltype">{c.typeHint.toLowerCase()}</span>
+                    ) : null}
+                  </span>
+                </div>
+              );
+            })}
+            {virtualizeCols ? <div className="dg-pad" aria-hidden /> : null}
           </div>
 
           <div style={{ height: totalHeight, position: "relative" }}>
@@ -225,11 +285,16 @@ export function SqlResultGrid({ result }: { result: QueryResult }) {
                     />
                   </div>
                   <div className="dg-rownum">{vr.index + 1}</div>
-                  {columns.map((c, ci) => (
-                    <div key={c.name + ":" + ci} className="dg-td">
-                      <CellContent value={row[ci] ?? null} column={c.name} type={c.typeHint} />
-                    </div>
-                  ))}
+                  {virtualizeCols ? <div className="dg-pad" aria-hidden /> : null}
+                  {winIdx.map((ci) => {
+                    const c = columns[ci]!;
+                    return (
+                      <div key={c.name + ":" + ci} className="dg-td">
+                        <CellContent value={row[ci] ?? null} column={c.name} type={c.typeHint} />
+                      </div>
+                    );
+                  })}
+                  {virtualizeCols ? <div className="dg-pad" aria-hidden /> : null}
                 </div>
               );
             })}

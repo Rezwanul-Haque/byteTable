@@ -234,6 +234,11 @@ function binaryLiteral(value: CellValue, engine: Engine | undefined): string {
 
 /** Row overscan handed to the virtualizer (DOM rows beyond the viewport). */
 const ROW_OVERSCAN = 12;
+/** Column overscan handed to the horizontal virtualizer (columns beyond view). */
+const COL_OVERSCAN = 3;
+/** Above this many visible columns, virtualize the column axis too. Narrow
+ *  tables render every column (windowing buys nothing and adds pad-track cost). */
+const COL_VIRT_THRESHOLD = 30;
 /** Fallback row height before the CSS var is measured (compact default). */
 const FALLBACK_ROW_H = 26;
 
@@ -241,8 +246,14 @@ const FALLBACK_ROW_H = 26;
 /** Min/max column track width (px). */
 const COL_MIN_PX = 90;
 const COL_MAX_PX = 400;
-/** Row-number gutter width (px) — matches `.dg-rownum` min-width. */
+/** Minimum row-number gutter width (px) — matches `.dg-rownum` min-width. The
+ *  actual track grows with the digit count so a 3+ digit number (page 2+) isn't
+ *  clipped (see `rownumPx`). */
 const ROWNUM_PX = 30;
+/** Per-digit width of the row number (12.5px tabular-nums) + the gutter's 12px
+ *  horizontal padding plus a little slack — used to size the gutter to fit. */
+const ROWNUM_DIGIT_PX = 7.5;
+const ROWNUM_PAD_PX = 14;
 /** Multi-select checkbox gutter width (px) — matches `.dg-check-c`. */
 const CHECK_PX = 34;
 /** Horizontal cell/header padding (px) — `.dg-td`/`.dg-th` are `0 12px`. */
@@ -1024,11 +1035,13 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     [hiddenColumns],
   );
 
-  // Grid column template (Bug 1).
-  const gridCols = useMemo(() => {
-    const widths: string[] = [];
-    for (const c of columns) {
-      if (isHidden(c.name)) continue;
+  // Visible (non-hidden) columns paired with their original index into
+  // `columns`, plus the measured px width per column (Bug 1 sizing). Drives both
+  // the CSS grid tracks and the horizontal (column) virtualizer.
+  const visibleCols = useMemo(() => {
+    const out: { col: ColumnMeta; ci: number; width: number }[] = [];
+    columns.forEach((c, ci) => {
+      if (isHidden(c.name)) return;
       const typeLen = c.typeHint ? c.typeHint.length : 0;
       const headerPx =
         c.name.length * HEAD_NAME_CHAR_PX +
@@ -1037,20 +1050,71 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         CELL_PAD_PX;
       let maxCellLen = 0;
       let sampled = 0;
-      const ci = columns.indexOf(c);
       for (const row of rowCacheRef.current.values()) {
         const len = cellTextLength(row[ci] ?? null);
         if (len > maxCellLen) maxCellLen = len;
         if (++sampled >= WIDTH_SAMPLE_ROWS) break;
       }
       const cellPx = maxCellLen * CELL_CHAR_PX + CELL_PAD_PX;
-      const w = Math.round(Math.min(COL_MAX_PX, Math.max(COL_MIN_PX, headerPx, cellPx)));
-      widths.push(w + "px");
-    }
-    const check = hasPk ? CHECK_PX + "px " : "";
-    return check + ROWNUM_PX + "px " + widths.join(" ");
+      const width = Math.round(Math.min(COL_MAX_PX, Math.max(COL_MIN_PX, headerPx, cellPx)));
+      out.push({ col: c, ci, width });
+    });
+    return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [columns, isHidden, cacheVersion, pageRowCount, offset, hasPk]);
+  }, [columns, isHidden, cacheVersion, pageRowCount, offset]);
+
+  // Column (horizontal) virtualization: a wide table renders only the columns in
+  // view. Below the threshold every column renders (windowing gains nothing on a
+  // narrow table and pays the pad-track cost). The virtualizer is ALWAYS created
+  // (hook rules); its output is only consumed when `virtualizeCols` is true.
+  const virtualizeCols = visibleCols.length > COL_VIRT_THRESHOLD;
+  const colVirtualizer = useVirtualizer({
+    horizontal: true,
+    count: visibleCols.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: (i) => visibleCols[i]?.width ?? COL_MIN_PX,
+    overscan: COL_OVERSCAN,
+  });
+  // Re-measure when the measured widths change (page load / density / columns).
+  const colWidthSig = visibleCols.map((v) => v.width).join(",");
+  useEffect(() => {
+    colVirtualizer.measure();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [colWidthSig]);
+
+  // The windowed column set to render this frame + the left/right pad-track
+  // widths (summed widths of the off-screen columns). The pads keep the canvas
+  // width and every row's tracks identical to the full-table layout, so the
+  // horizontal scrollbar still spans all columns and the sticky gutter lines up.
+  const colItems = colVirtualizer.getVirtualItems();
+  let padL = 0;
+  let padR = 0;
+  let windowCols = visibleCols;
+  if (virtualizeCols && colItems.length > 0) {
+    const last = colItems[colItems.length - 1]!;
+    padL = colItems[0]!.start;
+    padR = colVirtualizer.getTotalSize() - (last.start + last.size);
+    windowCols = colItems.map((vi) => visibleCols[vi.index]!);
+  }
+
+  // Row-number gutter width: sized to the largest row number visible on the page
+  // (`offset + pageRowCount`, 1-based) so a 3+ digit number isn't clipped. Never
+  // below ROWNUM_PX.
+  const rownumPx = useMemo(() => {
+    const maxRowNum = Math.max(1, offset + pageRowCount);
+    const digits = Math.max(2, String(maxRowNum).length);
+    return Math.max(ROWNUM_PX, Math.ceil(digits * ROWNUM_DIGIT_PX + ROWNUM_PAD_PX));
+  }, [offset, pageRowCount]);
+
+  // Grid column template (Bug 1): leading gutters + [pad] + visible tracks +
+  // [pad]. The pad tracks are omitted entirely when not virtualizing.
+  const gridCols = useMemo(() => {
+    const check = hasPk ? CHECK_PX + "px " : "";
+    const lead = check + rownumPx + "px";
+    const tracks = windowCols.map((v) => v.width + "px").join(" ");
+    if (!virtualizeCols) return lead + " " + tracks;
+    return lead + " " + padL + "px " + tracks + " " + padR + "px";
+  }, [hasPk, rownumPx, windowCols, virtualizeCols, padL, padR]);
 
   // --- multi-select bulk delete / export -------------------------------
   // Selection drops on any (re)fetch or page change (the row cache is rebuilt).
@@ -1272,8 +1336,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         </div>
       ) : null}
       <div className="dg-rownum-h">#</div>
-      {columns.map((c) => {
-        if (isHidden(c.name)) return null;
+      {virtualizeCols ? <div className="dg-pad" aria-hidden /> : null}
+      {windowCols.map(({ col: c }) => {
         const m = colMeta.get(c.name);
         const active = sort?.column === c.name;
         return (
@@ -1313,6 +1377,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           </div>
         );
       })}
+      {virtualizeCols ? <div className="dg-pad" aria-hidden /> : null}
     </div>
   );
 
@@ -1415,8 +1480,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
                     </div>
                   ) : null}
                   <div className="dg-rownum">{isStaged ? "✱" : rowIndex + 1}</div>
-                  {columns.map((c, ci) => {
-                    if (isHidden(c.name)) return null;
+                  {virtualizeCols ? <div className="dg-pad" aria-hidden /> : null}
+                  {windowCols.map(({ col: c, ci }) => {
                     if (!row) {
                       return (
                         <div key={c.name} className="dg-td cell-loading">
@@ -1516,6 +1581,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
                       </div>
                     );
                   })}
+                  {virtualizeCols ? <div className="dg-pad" aria-hidden /> : null}
                 </div>
               );
             })}

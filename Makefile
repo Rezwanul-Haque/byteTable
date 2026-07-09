@@ -98,7 +98,7 @@ tag: ## Bump the version on dev, merge dev → main, then tag + push the release
 	git push origin dev && \
 	git checkout main && \
 	git merge --ff-only origin/main && \
-	git merge --no-ff dev -m "Release v$$v" && \
+	git merge --ff-only dev && \
 	git tag -a "v$$v" -m "ByteTable v$$v" && \
 	git push origin main && \
 	git push origin "v$$v" && \

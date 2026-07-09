@@ -77,21 +77,33 @@ run: build-debug ## Build (debug) then launch the binary
 dev-cert: ## macOS: create the stable self-signed identity used to sign dev builds (one-time)
 	bash scripts/codesign-dev.sh setup
 
-tag: ## Bump the version in source, commit, then create + push a release tag (usage: make tag VERSION=0.0.2)
+tag: ## Bump the version on dev, merge dev → main, then tag + push the release (usage: make tag VERSION=0.0.2)
 	@test -n "$(VERSION)" || { echo "usage: make tag VERSION=0.0.2"; exit 1; }
-	@test "$$(git rev-parse --abbrev-ref HEAD)" = "main" || \
-		{ echo "run 'make tag' on main — the release workflow only publishes tags reachable from main"; exit 1; }
-	@git fetch origin main -q && git merge-base --is-ancestor origin/main HEAD || \
-		{ echo "local main is behind origin/main — pull first"; exit 1; }
+	@# git-flow variant A: the version bump originates on dev and flows to
+	@# main via merge, so dev is never left behind main. Run this on dev.
+	@test "$$(git rev-parse --abbrev-ref HEAD)" = "dev" || \
+		{ echo "run 'make tag' on dev — the release flows dev → main"; exit 1; }
+	@test -z "$$(git status --porcelain)" || \
+		{ echo "working tree not clean — commit or stash first"; exit 1; }
+	@git fetch origin -q
+	@git merge-base --is-ancestor origin/dev HEAD || \
+		{ echo "local dev is behind origin/dev — pull first"; exit 1; }
+	@git merge-base --is-ancestor origin/main origin/dev || \
+		{ echo "origin/main has commits not on dev — merge main → dev first"; exit 1; }
 	@v=$$(echo "$(VERSION)" | sed 's/^v//'); \
 	bash scripts/bump-version.sh "$$v" && \
 	git add src-tauri/tauri.conf.json src-tauri/Cargo.toml package.json index.html \
 	        src/features/updater/api.ts src/features/workspaces/components/Rail.tsx && \
 	git commit -m "Release v$$v" && \
+	git push origin dev && \
+	git checkout main && \
+	git merge --ff-only origin/main && \
+	git merge --no-ff dev -m "Release v$$v" && \
 	git tag -a "v$$v" -m "ByteTable v$$v" && \
-	git push origin HEAD && \
+	git push origin main && \
 	git push origin "v$$v" && \
-	echo "Bumped to v$$v, committed, tagged + pushed — the release workflow will build + publish it."
+	git checkout dev && \
+	echo "Released v$$v: dev → main merged, tagged + pushed — the release workflow will build + publish it."
 
 db-up: ## Start the test databases (Postgres/MySQL/SQL Server/Redis/DynamoDB/MongoDB/Cassandra) + seed them
 	cd test-fixtures && docker compose up -d && ./seed/seed-redis.sh && ./seed/seed-dynamo.sh && ./seed/seed-cassandra.sh && ./seed/seed-mssql.sh

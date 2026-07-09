@@ -92,7 +92,7 @@ tag: ## Bump the version on dev, merge dev → main, then tag + push the release
 		{ echo "origin/main has commits not on dev — merge main → dev first"; exit 1; }
 	@v=$$(echo "$(VERSION)" | sed 's/^v//'); \
 	bash scripts/bump-version.sh "$$v" && \
-	git add src-tauri/tauri.conf.json src-tauri/Cargo.toml package.json index.html \
+	git add src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock package.json index.html \
 	        src/features/updater/api.ts src/features/workspaces/components/Rail.tsx && \
 	git commit -m "Release v$$v" && \
 	git push origin dev && \

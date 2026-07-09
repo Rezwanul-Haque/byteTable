@@ -5,10 +5,7 @@ like tool with first-class Linux, MacOS, Windows support, no pro tier, and no su
 **SQLite · MySQL · PostgreSQL · SQL Server · Redis · DynamoDB · MongoDB · Cassandra**. Many more engines to come.
 
 ![ByteTable](docs/byteTable.png)
-
-<p align="center">
-  <img src="docs/home_page.png" width="49%"> <img src="docs/database_workspace.png" width="49%">
-</p>
+![Data Explorer](docs/data_explorer.png)
 
 Your credentials never leave your machine: all database I/O happens in the Rust core, secrets live
 in the OS keychain, and the renderer only ever sees opaque connection ids.

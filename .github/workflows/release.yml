@@ -69,6 +69,12 @@ jobs:
           added=""; improved=""; fixed=""; other=""
           while IFS= read -r subject; do
             [ -z "$subject" ] && continue
+            # Drop release version-bump commits — including legacy/hand-formatted
+            # subjects like "Release v0.1.2" that carry no conventional type: prefix
+            # (those would otherwise fall through to the "Other" bucket).
+            case "$subject" in
+              [Rr]elease\ v[0-9]*) continue ;;
+            esac
             # type token = leading letters before an optional (scope) and the colon
             type=$(printf '%s' "$subject" | sed -nE 's/^([a-zA-Z]+)(\([^)]*\))?!?:.*/\1/p' | tr '[:upper:]' '[:lower:]')
             msg=$(printf '%s' "$subject" | sed -E 's/^[a-zA-Z]+(\([^)]*\))?!?:[[:space:]]*//')

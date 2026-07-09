@@ -28,6 +28,12 @@ done
 # Cargo.toml — the [package] version (first line-anchored `version = "…"`).
 perl -i -pe 'if(!$d && /^version = "/){s/"[^"]*"/"$ENV{V}"/;$d=1}' src-tauri/Cargo.toml
 
+# Cargo.lock — the `bytetable` package's own entry mirrors Cargo.toml, so cargo
+# rewrites it on the next build. Sync it here (scoped to the bytetable block) so
+# the release commit doesn't leave a stale lock behind.
+[ -f src-tauri/Cargo.lock ] && \
+  perl -0777 -i -pe 's/(name = "bytetable"\nversion = ")[^"]*(")/${1}$ENV{V}${2}/' src-tauri/Cargo.lock
+
 # JS fallbacks (shown only before the real version resolves / in browser dev).
 perl -i -pe 's/(FALLBACK_VERSION = ")[^"]*(")/${1}$ENV{V}${2}/' src/features/updater/api.ts
 perl -i -pe 's/(version \?\? ")[^"]*(")/${1}$ENV{V}${2}/' src/features/workspaces/components/Rail.tsx

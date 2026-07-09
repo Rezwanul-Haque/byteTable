@@ -436,12 +436,27 @@ export function tableMeta(handleId: string, schema: string, table: string): Prom
 /** A schema object's kind. Snake_case on the wire (Rust `DbObjectKind`). */
 export type DbObjectKind = "view" | "materialized_view" | "function" | "procedure" | "trigger";
 
-/** One object in a schema (sidebar row). */
+/** One object in a schema (sidebar row + Object Explorer grid row). */
 export interface DbObjectInfo {
   name: string;
   kind: DbObjectKind;
   /** Owning table (triggers) / identity args (PG routines); else null. */
   detail: string | null;
+  // Object Explorer grid metadata (M22). Best-effort per engine — null/[] when
+  // the engine can't source it cheaply; the sidebar ignores these fields.
+  owner: string | null;
+  modified: string | null;
+  returns: string | null;
+  language: string | null;
+  volatility: string | null;
+  argCount: number | null;
+  table: string | null;
+  timing: string | null;
+  events: string[];
+  enabled: boolean | null;
+  approxRows: number | null;
+  size: string | null;
+  dependsOn: string[];
 }
 
 /** One routine argument (function/procedure) for the viewer's args table. */

@@ -34,30 +34,42 @@ pub(super) async fn list(
     // — a unique clustered index is what materializes it).
     let indexed_pred =
         "EXISTS (SELECT 1 FROM sys.indexes i WHERE i.object_id = v.object_id AND i.index_id > 0)";
+    // `modify_date` (→ modified) is available on every object; kind-specific
+    // columns (rows, arg count, trigger flags/events) ride along per branch.
     let sql = match kind {
         DbObjectKind::View => format!(
-            "SELECT v.name AS name FROM sys.views v \
-             JOIN sys.schemas s ON s.schema_id = v.schema_id \
+            "SELECT v.name AS name, CONVERT(varchar(10), v.modify_date, 23) AS modified \
+             FROM sys.views v JOIN sys.schemas s ON s.schema_id = v.schema_id \
              WHERE s.name = @P1 AND v.is_ms_shipped = 0 AND NOT {indexed_pred} ORDER BY v.name"
         ),
         DbObjectKind::MaterializedView => format!(
-            "SELECT v.name AS name FROM sys.views v \
-             JOIN sys.schemas s ON s.schema_id = v.schema_id \
+            "SELECT v.name AS name, CONVERT(varchar(10), v.modify_date, 23) AS modified, \
+                    (SELECT SUM(ps.row_count) FROM sys.dm_db_partition_stats ps \
+                      WHERE ps.object_id = v.object_id AND ps.index_id IN (0, 1)) AS approx_rows \
+             FROM sys.views v JOIN sys.schemas s ON s.schema_id = v.schema_id \
              WHERE s.name = @P1 AND v.is_ms_shipped = 0 AND {indexed_pred} ORDER BY v.name"
         ),
         DbObjectKind::Function =>
-            "SELECT o.name AS name FROM sys.objects o \
-             JOIN sys.schemas s ON s.schema_id = o.schema_id \
+            "SELECT o.name AS name, CONVERT(varchar(10), o.modify_date, 23) AS modified, \
+                    (SELECT COUNT(*) FROM sys.parameters p \
+                      WHERE p.object_id = o.object_id AND p.parameter_id > 0) AS arg_count \
+             FROM sys.objects o JOIN sys.schemas s ON s.schema_id = o.schema_id \
              WHERE s.name = @P1 AND o.is_ms_shipped = 0 AND o.type IN ('FN','IF','TF','FS','FT') ORDER BY o.name"
                 .to_string(),
         DbObjectKind::Procedure =>
-            "SELECT o.name AS name FROM sys.objects o \
-             JOIN sys.schemas s ON s.schema_id = o.schema_id \
+            "SELECT o.name AS name, CONVERT(varchar(10), o.modify_date, 23) AS modified, \
+                    (SELECT COUNT(*) FROM sys.parameters p \
+                      WHERE p.object_id = o.object_id AND p.parameter_id > 0) AS arg_count \
+             FROM sys.objects o JOIN sys.schemas s ON s.schema_id = o.schema_id \
              WHERE s.name = @P1 AND o.is_ms_shipped = 0 AND o.type IN ('P','PC') ORDER BY o.name"
                 .to_string(),
         DbObjectKind::Trigger =>
-            "SELECT tr.name AS name, t.name AS parent FROM sys.triggers tr \
-             JOIN sys.tables t ON t.object_id = tr.parent_id \
+            "SELECT tr.name AS name, t.name AS parent, tr.is_disabled AS disabled, \
+                    tr.is_instead_of_trigger AS instead_of, \
+                    CONVERT(varchar(10), tr.modify_date, 23) AS modified, \
+                    (SELECT STRING_AGG(te.type_desc, ',') FROM sys.trigger_events te \
+                      WHERE te.object_id = tr.object_id) AS events \
+             FROM sys.triggers tr JOIN sys.tables t ON t.object_id = tr.parent_id \
              JOIN sys.schemas s ON s.schema_id = t.schema_id \
              WHERE s.name = @P1 AND tr.is_ms_shipped = 0 ORDER BY tr.name"
                 .to_string(),
@@ -83,7 +95,47 @@ pub(super) async fn list(
             } else {
                 None
             };
-            DbObjectInfo { name, kind, detail }
+            let mut info = DbObjectInfo::bare(name, kind, detail.clone());
+            let modified = get_str(row, "modified");
+            if !modified.is_empty() {
+                info.modified = Some(modified);
+            }
+            match kind {
+                DbObjectKind::Trigger => {
+                    info.table = detail;
+                    info.enabled = row
+                        .try_get::<bool, _>("disabled")
+                        .ok()
+                        .flatten()
+                        .map(|disabled| !disabled);
+                    let instead = row
+                        .try_get::<bool, _>("instead_of")
+                        .ok()
+                        .flatten()
+                        .unwrap_or(false);
+                    info.timing = Some(if instead { "INSTEAD OF" } else { "AFTER" }.to_string());
+                    let events = get_str(row, "events");
+                    if !events.is_empty() {
+                        info.events = events
+                            .split(',')
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty())
+                            .collect();
+                    }
+                }
+                DbObjectKind::MaterializedView => {
+                    info.approx_rows = row.try_get::<i64, _>("approx_rows").ok().flatten();
+                }
+                DbObjectKind::Function | DbObjectKind::Procedure => {
+                    info.arg_count = row
+                        .try_get::<i32, _>("arg_count")
+                        .ok()
+                        .flatten()
+                        .map(|n| n as i64);
+                }
+                DbObjectKind::View => {}
+            }
+            info
         })
         .collect())
 }

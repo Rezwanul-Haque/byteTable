@@ -31,6 +31,44 @@ fn ensure_semi(s: &str) -> String {
     }
 }
 
+/// Map a `pg_proc.provolatile` char to its label. `None` for anything else.
+fn volatility_label(provolatile: char) -> Option<String> {
+    match provolatile {
+        'i' => Some("IMMUTABLE".into()),
+        's' => Some("STABLE".into()),
+        'v' => Some("VOLATILE".into()),
+        _ => None,
+    }
+}
+
+/// Decode a `pg_trigger.tgtype` bitmask into (timing, events). Bit 2 = BEFORE,
+/// bit 64 = INSTEAD OF (else AFTER); bits 4/8/16/32 = INSERT/DELETE/UPDATE/
+/// TRUNCATE. (Bit 1 = ROW vs STATEMENT — level, decoded separately.)
+fn trigger_bits(tgtype: i32) -> (String, Vec<String>) {
+    let timing = if tgtype & 64 != 0 {
+        "INSTEAD OF"
+    } else if tgtype & 2 != 0 {
+        "BEFORE"
+    } else {
+        "AFTER"
+    }
+    .to_string();
+    let mut events = Vec::new();
+    if tgtype & 4 != 0 {
+        events.push("INSERT".to_string());
+    }
+    if tgtype & 8 != 0 {
+        events.push("DELETE".to_string());
+    }
+    if tgtype & 16 != 0 {
+        events.push("UPDATE".to_string());
+    }
+    if tgtype & 32 != 0 {
+        events.push("TRUNCATE".to_string());
+    }
+    (timing, events)
+}
+
 pub(super) async fn list(
     pool: &PgPool,
     schema: &str,
@@ -38,14 +76,18 @@ pub(super) async fn list(
 ) -> Result<Vec<DbObjectInfo>, AppError> {
     match kind {
         DbObjectKind::View | DbObjectKind::MaterializedView => {
-            let relkind = if matches!(kind, DbObjectKind::View) {
-                'v'
+            let is_mat = matches!(kind, DbObjectKind::MaterializedView);
+            let relkind = if is_mat { 'm' } else { 'v' };
+            // Matviews carry approx rows + on-disk size; plain views don't.
+            let extra = if is_mat {
+                ", c.reltuples::bigint AS rows, pg_size_pretty(pg_total_relation_size(c.oid)) AS size"
             } else {
-                'm'
+                ", NULL::bigint AS rows, NULL::text AS size"
             };
             let rows = sqlx::query(&format!(
-                "SELECT c.relname AS name FROM pg_class c \
-                 JOIN pg_namespace n ON n.oid = c.relnamespace \
+                "SELECT c.relname AS name, r.rolname AS owner{extra} \
+                 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace \
+                 LEFT JOIN pg_roles r ON r.oid = c.relowner \
                  WHERE n.nspname = $1 AND c.relkind = '{relkind}' ORDER BY 1"
             ))
             .bind(schema)
@@ -54,10 +96,13 @@ pub(super) async fn list(
             .map_err(map_query_error)?;
             Ok(rows
                 .into_iter()
-                .map(|r| DbObjectInfo {
-                    name: r.get("name"),
-                    kind,
-                    detail: None,
+                .map(|r| {
+                    let mut info = DbObjectInfo::bare(r.get("name"), kind, None);
+                    info.owner = r.try_get::<Option<String>, _>("owner").ok().flatten();
+                    let n: i64 = r.try_get("rows").unwrap_or(-1);
+                    info.approx_rows = if n < 0 { None } else { Some(n) };
+                    info.size = r.try_get::<Option<String>, _>("size").ok().flatten();
+                    info
                 })
                 .collect())
         }
@@ -69,8 +114,15 @@ pub(super) async fn list(
             };
             let rows = sqlx::query(&format!(
                 "SELECT p.proname AS name, \
-                        pg_get_function_identity_arguments(p.oid) AS args \
+                        pg_get_function_identity_arguments(p.oid) AS args, \
+                        pg_get_function_result(p.oid) AS ret, \
+                        l.lanname AS lang, \
+                        p.provolatile::text AS vol, \
+                        p.pronargs::bigint AS nargs, \
+                        r.rolname AS owner \
                  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace \
+                 JOIN pg_language l ON l.oid = p.prolang \
+                 LEFT JOIN pg_roles r ON r.oid = p.proowner \
                  WHERE n.nspname = $1 AND p.prokind = '{prokind}' ORDER BY 1, 2"
             ))
             .bind(schema)
@@ -81,17 +133,28 @@ pub(super) async fn list(
                 .into_iter()
                 .map(|r| {
                     let args: String = r.get("args");
-                    DbObjectInfo {
-                        name: r.get("name"),
-                        kind,
-                        detail: Some(args),
+                    let mut info = DbObjectInfo::bare(r.get("name"), kind, Some(args));
+                    info.returns = r.try_get::<Option<String>, _>("ret").ok().flatten();
+                    info.language = r.try_get::<Option<String>, _>("lang").ok().flatten();
+                    if matches!(kind, DbObjectKind::Function) {
+                        info.volatility = r
+                            .try_get::<Option<String>, _>("vol")
+                            .ok()
+                            .flatten()
+                            .and_then(|s| s.chars().next())
+                            .and_then(volatility_label);
                     }
+                    info.arg_count = r.try_get::<i64, _>("nargs").ok();
+                    info.owner = r.try_get::<Option<String>, _>("owner").ok().flatten();
+                    info
                 })
                 .collect())
         }
         DbObjectKind::Trigger => {
             let rows = sqlx::query(
-                "SELECT t.tgname AS name, c.relname AS tbl FROM pg_trigger t \
+                "SELECT t.tgname AS name, c.relname AS tbl, t.tgtype::int AS tgtype, \
+                        t.tgenabled::text AS enabled \
+                 FROM pg_trigger t \
                  JOIN pg_class c ON c.oid = t.tgrelid \
                  JOIN pg_namespace n ON n.oid = c.relnamespace \
                  WHERE n.nspname = $1 AND NOT t.tgisinternal ORDER BY 1",
@@ -102,10 +165,17 @@ pub(super) async fn list(
             .map_err(map_query_error)?;
             Ok(rows
                 .into_iter()
-                .map(|r| DbObjectInfo {
-                    name: r.get("name"),
-                    kind,
-                    detail: Some(r.get::<String, _>("tbl")),
+                .map(|r| {
+                    let tbl: String = r.get("tbl");
+                    let mut info = DbObjectInfo::bare(r.get("name"), kind, Some(tbl.clone()));
+                    info.table = Some(tbl);
+                    let (timing, events) = trigger_bits(r.try_get("tgtype").unwrap_or(0));
+                    info.timing = Some(timing);
+                    info.events = events;
+                    if let Ok(en) = r.try_get::<String, _>("enabled") {
+                        info.enabled = Some(en != "D");
+                    }
+                    info
                 })
                 .collect())
         }
@@ -321,29 +391,8 @@ async fn enrich_trigger(
     let Ok(row) = row else { return };
     let tgtype: i32 = row.try_get("tgtype").unwrap_or(0);
     def.level = Some(if tgtype & 1 != 0 { "ROW" } else { "STATEMENT" }.into());
-    def.timing = Some(
-        if tgtype & 64 != 0 {
-            "INSTEAD OF"
-        } else if tgtype & 2 != 0 {
-            "BEFORE"
-        } else {
-            "AFTER"
-        }
-        .into(),
-    );
-    let mut events = Vec::new();
-    if tgtype & 4 != 0 {
-        events.push("INSERT".to_string());
-    }
-    if tgtype & 8 != 0 {
-        events.push("DELETE".to_string());
-    }
-    if tgtype & 16 != 0 {
-        events.push("UPDATE".to_string());
-    }
-    if tgtype & 32 != 0 {
-        events.push("TRUNCATE".to_string());
-    }
+    let (timing, events) = trigger_bits(tgtype);
+    def.timing = Some(timing);
     def.events = events;
     if let Ok(en) = row.try_get::<String, _>("enabled") {
         def.enabled = Some(en != "D");
@@ -443,6 +492,22 @@ mod tests {
             "DROP TRIGGER IF EXISTS \"trg\" ON \"public\".\"orders\";"
         );
         assert!(drop_sql("public", DbObjectKind::Trigger, "trg", None).is_err());
+    }
+
+    #[test]
+    fn pg_decodes_volatility_and_trigger_bits() {
+        assert_eq!(volatility_label('i'), Some("IMMUTABLE".to_string()));
+        assert_eq!(volatility_label('s'), Some("STABLE".to_string()));
+        assert_eq!(volatility_label('v'), Some("VOLATILE".to_string()));
+        assert_eq!(volatility_label('x'), None);
+        // tgtype: bit 2 = BEFORE, bits 4/16 = INSERT/UPDATE.
+        let (timing, events) = trigger_bits(2 | 4 | 16);
+        assert_eq!(timing, "BEFORE");
+        assert_eq!(events, vec!["INSERT".to_string(), "UPDATE".to_string()]);
+        // bit 64 = INSTEAD OF; bit 8 = DELETE.
+        let (timing, events) = trigger_bits(64 | 8);
+        assert_eq!(timing, "INSTEAD OF");
+        assert_eq!(events, vec!["DELETE".to_string()]);
     }
 
     #[test]

@@ -1,0 +1,473 @@
+/* Object Explorer (M22) — ported verbatim from the prototype's `.oe-*` rules
+   (ByteTable.html), plus the sidebar cap → "show all" escalation. `.obj-type-badge`
+   is defined once in ObjectsView.css (reused here, not duplicated). */
+
+.oe-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg0);
+  position: relative;
+}
+.oe-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg1);
+  flex: none;
+}
+.oe-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: none;
+}
+.oe-title-schema {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-faint);
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+.oe-search {
+  flex: 1;
+  max-width: 420px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 9px;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+.oe-search:focus-within {
+  border-color: color-mix(in oklab, var(--accent) 55%, var(--border));
+}
+.oe-search input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 12.5px;
+  font-family: inherit;
+}
+.oe-total {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+  flex: none;
+}
+
+.oe-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.oe-rail {
+  width: 168px;
+  flex: none;
+  border-right: 1px solid var(--border);
+  background: var(--bg1);
+  padding: 8px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.oe-rail-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 5px 6px;
+}
+.oe-facet {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  background: none;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--text-dim);
+  font-size: 12.5px;
+  font-family: inherit;
+}
+.oe-facet:hover {
+  background: var(--bg2);
+  color: var(--text);
+}
+.oe-facet.active {
+  background: color-mix(in oklab, var(--accent) 15%, transparent);
+  color: var(--text);
+}
+.oe-facet-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.oe-facet-count {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.oe-facet.active .oe-facet-count {
+  color: var(--accent);
+}
+
+.oe-grid {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.oe-grid-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.oe-grid-head {
+  display: flex;
+  align-items: stretch;
+  height: 34px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg1);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding-right: 10px;
+}
+.oe-th {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 12px;
+  border: none;
+  border-right: 1px solid var(--border);
+  background: none;
+  cursor: pointer;
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  font-family: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.oe-th:hover {
+  color: var(--text-dim);
+}
+.oe-th.sorted {
+  color: var(--accent);
+}
+.oe-th-static {
+  cursor: default;
+}
+.oe-th-name {
+  flex: 1 0 220px;
+  min-width: 220px;
+}
+
+.oe-row {
+  display: flex;
+  align-items: stretch;
+  min-height: 36px;
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+  cursor: pointer;
+  padding-right: 10px;
+}
+.oe-row:hover {
+  background: var(--bg1);
+}
+.oe-row.checked {
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+}
+.oe-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  flex: none;
+  cursor: pointer;
+  /* Pinned gutter — stays put during horizontal scroll, with an opaque header
+     background so scrolled cells never show through. */
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--bg1);
+  border-right: 1px solid var(--border);
+}
+/* The header's checkbox is the top-left corner — above both the sticky header
+   row and the sticky body gutter. */
+.oe-grid-head .oe-check {
+  z-index: 3;
+}
+/* Custom checkbox — matches the data grid's `.dg-check`. */
+.oe-check input {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  flex: none;
+  vertical-align: middle;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg2);
+  cursor: pointer;
+  position: relative;
+}
+.oe-check input:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+.oe-check input:checked,
+.oe-check input:indeterminate {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.oe-check input:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--bg0);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.oe-check input:indeterminate::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  top: 6px;
+  height: 2px;
+  background: var(--bg0);
+}
+.oe-td {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 12px;
+  color: var(--text-dim);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  min-width: 0;
+  border-right: 1px solid color-mix(in oklab, var(--border) 40%, transparent);
+}
+/* No trailing separator after the last column — otherwise the right-hand
+   scrollbar-gutter reads as an empty phantom column. */
+.oe-th:last-child,
+.oe-row .oe-td:last-child {
+  border-right: none;
+}
+.oe-td-name {
+  flex: 1 0 220px;
+  min-width: 220px;
+  gap: 9px;
+}
+.oe-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+}
+.oe-open,
+.oe-copy {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  border-radius: 5px;
+  color: var(--text-faint);
+  cursor: pointer;
+  opacity: 0;
+}
+.oe-row:hover .oe-copy,
+.oe-row:hover .oe-open {
+  opacity: 1;
+}
+.oe-copy:hover,
+.oe-open:hover {
+  background: var(--bg3);
+  color: var(--accent);
+}
+.oe-copy.done {
+  opacity: 1;
+  color: var(--accent);
+}
+.oe-copy:focus-visible,
+.oe-open:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.oe-td-detail {
+  color: var(--text-faint);
+}
+.oe-td span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.oe-mono {
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.oe-num {
+  justify-content: flex-start;
+}
+.oe-dim {
+  color: var(--text-faint);
+}
+.oe-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+.oe-on {
+  color: #2dd4a7;
+  background: #2dd4a71a;
+}
+.oe-off {
+  color: var(--text-faint);
+  background: var(--bg2);
+}
+
+.oe-empty {
+  position: sticky;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-faint);
+  padding: 60px;
+  min-height: 240px;
+}
+.oe-empty p {
+  font-size: 13px;
+}
+
+.oe-actionbar {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px 8px 16px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  z-index: 5;
+}
+.oe-sel-n {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.oe-clear {
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.oe-clear:hover {
+  color: var(--text);
+}
+.oe-drop-tally {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+.oe-drop-chip {
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 3px 9px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+}
+
+/* sidebar section cap → "show all" escalation */
+.obj-showall {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px 6px 26px;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.obj-showall:hover {
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+}
+.obj-other-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 6px 5px 8px;
+}
+.obj-other-head-label {
+  flex: 1;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-faint);
+}
+.obj-explore-all {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  font-size: 10.5px;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 3px 6px;
+  border-radius: 5px;
+}
+.obj-explore-all:hover {
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+}

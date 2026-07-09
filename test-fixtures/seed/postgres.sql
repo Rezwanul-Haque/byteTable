@@ -118,3 +118,47 @@ $$;
 DROP TRIGGER IF EXISTS orders_touch ON orders;
 CREATE TRIGGER orders_touch BEFORE UPDATE ON orders
   FOR EACH ROW EXECUTE FUNCTION trg_orders_noop();
+
+-- ── Bulk objects: exercise the Object Explorer at scale (M22 grid virtualization) ──
+-- Generates ~1,300 schema objects so the sidebar cap + Explorer windowing are
+-- real. Deterministic names (v_bulk_N / mv_bulk_N / fn_bulk_N / sp_bulk_N /
+-- trg_bulk_N). Comment this block out for a lean schema.
+DO $bulk$
+DECLARE
+  i int;
+BEGIN
+  FOR i IN 1..400 LOOP  -- views
+    EXECUTE format(
+      'CREATE OR REPLACE VIEW v_bulk_%s AS SELECT id, name, email, country FROM users WHERE id %% %s = 0',
+      i, (i % 7) + 1);
+  END LOOP;
+
+  FOR i IN 1..60 LOOP   -- materialized views
+    EXECUTE format(
+      'CREATE MATERIALIZED VIEW IF NOT EXISTS mv_bulk_%s AS SELECT user_id, count(*) AS orders, coalesce(sum(total),0) AS spent FROM orders GROUP BY user_id',
+      i);
+  END LOOP;
+
+  FOR i IN 1..300 LOOP  -- functions
+    EXECUTE format(
+      'CREATE OR REPLACE FUNCTION fn_bulk_%s(p integer DEFAULT %s) RETURNS integer LANGUAGE sql IMMUTABLE AS $f$ SELECT p + %s $f$',
+      i, i, i);
+  END LOOP;
+
+  FOR i IN 1..150 LOOP  -- procedures
+    EXECUTE format(
+      'CREATE OR REPLACE PROCEDURE sp_bulk_%s(p integer) LANGUAGE sql AS $p$ UPDATE users SET active = active WHERE id = p $p$',
+      i);
+  END LOOP;
+
+  FOR i IN 1..200 LOOP  -- triggers (function + trigger on orders)
+    EXECUTE format(
+      'CREATE OR REPLACE FUNCTION trg_bulk_fn_%s() RETURNS trigger LANGUAGE plpgsql AS $t$ BEGIN RETURN NEW; END $t$',
+      i);
+    EXECUTE format('DROP TRIGGER IF EXISTS trg_bulk_%s ON orders', i);
+    EXECUTE format(
+      'CREATE TRIGGER trg_bulk_%s BEFORE UPDATE ON orders FOR EACH ROW EXECUTE FUNCTION trg_bulk_fn_%s()',
+      i, i);
+  END LOOP;
+END
+$bulk$;

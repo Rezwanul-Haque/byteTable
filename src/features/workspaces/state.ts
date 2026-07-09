@@ -13,7 +13,7 @@ import { connectionClose } from "../connections/api";
 import { useIntrospectionStore } from "../introspection/state";
 import { newCondition } from "../browse/filter";
 import type { CellValue } from "../../shared/api/engine";
-import type { AlterOp, DbObjectInfo } from "../../shared/api/engine";
+import type { AlterOp, DbObjectInfo, DbObjectKind } from "../../shared/api/engine";
 import type {
   SqlHistoryEntry,
   SqlRun,
@@ -131,6 +131,12 @@ interface WorkspacesFeatureState {
    * already open, focus the existing one.
    */
   openMapTab: (schema: string) => void;
+  /**
+   * Open the Object Explorer catalog tab for `schema` (one per schema) focused
+   * on `focusClass` (`"all"` = the union facet). If already open, re-point its
+   * focus and focus the tab.
+   */
+  openObjExplorer: (schema: string, focusClass: DbObjectKind | "all") => void;
   /**
    * Close a tab. The neighbour (left, else right) becomes active when the
    * closed tab was active; closing the last tab sets activeTabId to null,
@@ -480,6 +486,23 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
         const existing = tabs.find((t) => t.kind === "map" && t.schema === schema);
         if (existing) return { activeTabId: existing.id };
         const tab: Tab = { id: newTabId("map"), kind: "map", schema };
+        return { tabs: [...tabs, tab], activeTabId: tab.id };
+      }),
+    })),
+
+  openObjExplorer: (schema, focusClass) =>
+    set((state) => ({
+      workspaces: patchActiveUi(state, (ui) => {
+        const tabs = ui.tabs ?? [];
+        const existing = tabs.find((t) => t.kind === "objexplorer" && t.schema === schema);
+        if (existing) {
+          // Re-point the open Explorer at the requested facet and focus it.
+          return {
+            tabs: tabs.map((t) => (t.id === existing.id ? { ...t, focusClass } : t)),
+            activeTabId: existing.id,
+          };
+        }
+        const tab: Tab = { id: newTabId("objexplorer"), kind: "objexplorer", schema, focusClass };
         return { tabs: [...tabs, tab], activeTabId: tab.id };
       }),
     })),

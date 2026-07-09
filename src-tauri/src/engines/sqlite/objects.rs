@@ -27,6 +27,35 @@ fn type_str(kind: DbObjectKind) -> Result<&'static str, AppError> {
     }
 }
 
+/// Best-effort parse of a stored `CREATE TRIGGER …` statement into
+/// (timing, events). SQLite has no trigger catalog columns, so we scan the DDL
+/// header (up to the ` ON ` that introduces the table) to avoid matching
+/// keywords in the trigger body.
+fn parse_trigger_sql(sql: &str) -> (Option<String>, Vec<String>) {
+    let up = sql.to_uppercase();
+    let header = up.split(" ON ").next().unwrap_or(&up);
+    let timing = if header.contains("INSTEAD OF") {
+        Some("INSTEAD OF".to_string())
+    } else if header.contains("BEFORE") {
+        Some("BEFORE".to_string())
+    } else if header.contains("AFTER") {
+        Some("AFTER".to_string())
+    } else {
+        None
+    };
+    let mut events = Vec::new();
+    if header.contains("INSERT") {
+        events.push("INSERT".to_string());
+    }
+    if header.contains("UPDATE") {
+        events.push("UPDATE".to_string());
+    }
+    if header.contains("DELETE") {
+        events.push("DELETE".to_string());
+    }
+    (timing, events)
+}
+
 pub(super) fn list_blocking(
     conn: &Connection,
     schema: &str,
@@ -35,7 +64,7 @@ pub(super) fn list_blocking(
     let ty = type_str(kind)?;
     // Triggers carry their owning table (tbl_name); views do not.
     let sql = format!(
-        "SELECT name, tbl_name FROM {}.sqlite_schema WHERE type = ?1 ORDER BY name",
+        "SELECT name, tbl_name, sql FROM {}.sqlite_schema WHERE type = ?1 ORDER BY name",
         quote_ident(schema)
     );
     let mut stmt = conn.prepare(&sql).map_err(|e| map_query_error(conn, e))?;
@@ -43,21 +72,23 @@ pub(super) fn list_blocking(
         .query_map([ty], |row| {
             let name: String = row.get(0)?;
             let tbl: String = row.get(1)?;
-            Ok((name, tbl))
+            let ddl: Option<String> = row.get(2)?;
+            Ok((name, tbl, ddl))
         })
         .map_err(|e| map_query_error(conn, e))?;
     let mut out = Vec::new();
     for r in rows {
-        let (name, tbl) = r.map_err(|e| map_query_error(conn, e))?;
-        out.push(DbObjectInfo {
-            name,
-            kind,
-            detail: if matches!(kind, DbObjectKind::Trigger) {
-                Some(tbl)
-            } else {
-                None
-            },
-        });
+        let (name, tbl, ddl) = r.map_err(|e| map_query_error(conn, e))?;
+        if matches!(kind, DbObjectKind::Trigger) {
+            let mut info = DbObjectInfo::bare(name, kind, Some(tbl.clone()));
+            info.table = Some(tbl);
+            let (timing, events) = parse_trigger_sql(ddl.as_deref().unwrap_or(""));
+            info.timing = timing;
+            info.events = events;
+            out.push(info);
+        } else {
+            out.push(DbObjectInfo::bare(name, kind, None));
+        }
     }
     Ok(out)
 }
@@ -114,6 +145,20 @@ pub(super) fn drop_sql(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sqlite_parses_trigger_timing_and_events() {
+        let (timing, events) =
+            parse_trigger_sql("CREATE TRIGGER trg_x AFTER UPDATE OF a, b ON t BEGIN SELECT 1; END");
+        assert_eq!(timing, Some("AFTER".to_string()));
+        assert_eq!(events, vec!["UPDATE".to_string()]);
+
+        let (timing, events) = parse_trigger_sql(
+            "CREATE TRIGGER v_ins INSTEAD OF INSERT ON my_view BEGIN INSERT INTO t VALUES (1); END",
+        );
+        assert_eq!(timing, Some("INSTEAD OF".to_string()));
+        assert_eq!(events, vec!["INSERT".to_string()]);
+    }
 
     #[test]
     fn sqlite_drop_sql_quotes_and_rejects_unsupported() {

@@ -36,8 +36,8 @@ pub(super) async fn list(
     match kind {
         DbObjectKind::View => {
             let rows = sqlx::query(
-                "SELECT CAST(table_name AS CHAR) FROM information_schema.views \
-                 WHERE table_schema = ? ORDER BY 1",
+                "SELECT CAST(table_name AS CHAR) AS name, CAST(definer AS CHAR) AS owner \
+                 FROM information_schema.views WHERE table_schema = ? ORDER BY 1",
             )
             .bind(schema)
             .fetch_all(pool)
@@ -45,10 +45,18 @@ pub(super) async fn list(
             .map_err(map_query_error)?;
             Ok(rows
                 .into_iter()
-                .map(|r| DbObjectInfo {
-                    name: r.try_get::<String, _>(0).unwrap_or_default(),
-                    kind,
-                    detail: None,
+                .map(|r| {
+                    let mut info = DbObjectInfo::bare(
+                        r.try_get::<String, _>("name").unwrap_or_default(),
+                        kind,
+                        None,
+                    );
+                    info.owner = r
+                        .try_get::<Option<String>, _>("owner")
+                        .ok()
+                        .flatten()
+                        .filter(|s| !s.is_empty());
+                    info
                 })
                 .collect())
         }
@@ -59,8 +67,16 @@ pub(super) async fn list(
                 "PROCEDURE"
             };
             let rows = sqlx::query(
-                "SELECT CAST(routine_name AS CHAR) FROM information_schema.routines \
-                 WHERE routine_schema = ? AND routine_type = ? ORDER BY 1",
+                "SELECT CAST(r.routine_name AS CHAR) AS name, \
+                        CAST(r.dtd_identifier AS CHAR) AS ret, \
+                        CAST(r.definer AS CHAR) AS owner, \
+                        CAST(r.last_altered AS CHAR) AS modified, \
+                        (SELECT COUNT(*) FROM information_schema.parameters pa \
+                          WHERE pa.specific_schema = r.routine_schema \
+                            AND pa.specific_name = r.specific_name \
+                            AND pa.ordinal_position > 0) AS nargs \
+                 FROM information_schema.routines r \
+                 WHERE r.routine_schema = ? AND r.routine_type = ? ORDER BY 1",
             )
             .bind(schema)
             .bind(routine_type)
@@ -69,16 +85,38 @@ pub(super) async fn list(
             .map_err(map_query_error)?;
             Ok(rows
                 .into_iter()
-                .map(|r| DbObjectInfo {
-                    name: r.try_get::<String, _>(0).unwrap_or_default(),
-                    kind,
-                    detail: None,
+                .map(|r| {
+                    let mut info = DbObjectInfo::bare(
+                        r.try_get::<String, _>("name").unwrap_or_default(),
+                        kind,
+                        None,
+                    );
+                    if matches!(kind, DbObjectKind::Function) {
+                        info.returns = r
+                            .try_get::<Option<String>, _>("ret")
+                            .ok()
+                            .flatten()
+                            .filter(|s| !s.is_empty());
+                    }
+                    info.language = Some("SQL".to_string());
+                    info.owner = r
+                        .try_get::<Option<String>, _>("owner")
+                        .ok()
+                        .flatten()
+                        .filter(|s| !s.is_empty());
+                    info.modified = r.try_get::<Option<String>, _>("modified").ok().flatten();
+                    info.arg_count = r.try_get::<i64, _>("nargs").ok();
+                    info
                 })
                 .collect())
         }
         DbObjectKind::Trigger => {
             let rows = sqlx::query(
-                "SELECT CAST(trigger_name AS CHAR), CAST(event_object_table AS CHAR) \
+                "SELECT CAST(trigger_name AS CHAR) AS name, \
+                        CAST(event_object_table AS CHAR) AS tbl, \
+                        CAST(action_timing AS CHAR) AS timing, \
+                        CAST(event_manipulation AS CHAR) AS event, \
+                        CAST(definer AS CHAR) AS owner \
                  FROM information_schema.triggers WHERE trigger_schema = ? ORDER BY 1",
             )
             .bind(schema)
@@ -87,10 +125,26 @@ pub(super) async fn list(
             .map_err(map_query_error)?;
             Ok(rows
                 .into_iter()
-                .map(|r| DbObjectInfo {
-                    name: r.try_get::<String, _>(0).unwrap_or_default(),
-                    kind,
-                    detail: r.try_get::<String, _>(1).ok(),
+                .map(|r| {
+                    let tbl = r.try_get::<Option<String>, _>("tbl").ok().flatten();
+                    let mut info = DbObjectInfo::bare(
+                        r.try_get::<String, _>("name").unwrap_or_default(),
+                        kind,
+                        tbl.clone(),
+                    );
+                    info.table = tbl;
+                    info.timing = r.try_get::<Option<String>, _>("timing").ok().flatten();
+                    if let Some(ev) = r.try_get::<Option<String>, _>("event").ok().flatten() {
+                        info.events = vec![ev];
+                    }
+                    // MySQL triggers have no disabled state — always enabled.
+                    info.enabled = Some(true);
+                    info.owner = r
+                        .try_get::<Option<String>, _>("owner")
+                        .ok()
+                        .flatten()
+                        .filter(|s| !s.is_empty());
+                    info
                 })
                 .collect())
         }

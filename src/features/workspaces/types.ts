@@ -193,6 +193,15 @@ export type Tab =
       objectKind: DbObjectKind;
       name: string;
       detail: string | null;
+    }
+  // The Object Explorer catalog (M22): one spacious, sortable/filterable grid of
+  // all non-table objects in a schema. One per schema; `focusClass` selects the
+  // facet the sidebar escalation landed on (`"all"` = the union facet).
+  | {
+      id: string;
+      kind: "objexplorer";
+      schema: string;
+      focusClass: DbObjectKind | "all";
     };
 
 /**

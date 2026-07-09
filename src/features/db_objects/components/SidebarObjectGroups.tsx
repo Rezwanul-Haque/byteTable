@@ -41,7 +41,11 @@ export function SidebarObjectGroups({
   const objectsMap = useIntrospectionStore((s) => s.objects);
   const openObjectTab = useWorkspacesStore((s) => s.openObjectTab);
   const openSqlTabWith = useWorkspacesStore((s) => s.openSqlTabWith);
+  const openObjExplorer = useWorkspacesStore((s) => s.openObjExplorer);
   const toast = useToast();
+
+  // Cap each class' inline list; the overflow escalates into the Object Explorer.
+  const CAP = 12;
 
   // Accordion: only one section open at a time.
   const [openSec, setOpenSec] = useState<DbObjectKind | null>(null);
@@ -87,6 +91,18 @@ export function SidebarObjectGroups({
 
   return (
     <div className="sidebar-other">
+      <div className="obj-other-head">
+        <Icon name="category" size={13} style={{ color: "var(--text-faint)" }} />
+        <span className="obj-other-head-label">Objects</span>
+        <button
+          type="button"
+          className="obj-explore-all"
+          title="Open Object Explorer"
+          onClick={() => openObjExplorer(schema, "all")}
+        >
+          <Icon name="open_in_full" size={12} /> Explore all
+        </button>
+      </div>
       {visible.map((kind) => {
         const sec = OBJ_SECTIONS[kind];
         const list = listOf(kind);
@@ -136,34 +152,45 @@ export function SidebarObjectGroups({
                 ) : list.length === 0 ? (
                   <div className="sb-obj-loading">No {sec.group.toLowerCase()}</div>
                 ) : (
-                  list.map((obj) => (
-                    <div
-                      key={obj.name}
-                      className="obj-item"
-                      role="button"
-                      tabIndex={0}
-                      title={obj.name}
-                      onClick={() => openObjectTab(schema, obj)}
-                    >
-                      <Icon
-                        name={sec.icon}
-                        size={15}
-                        style={{ color: "var(--text-faint)", flex: "none" }}
-                      />
-                      <span className="obj-item-name">{obj.name}</span>
+                  <>
+                    {(filter !== "" ? list : list.slice(0, CAP)).map((obj) => (
+                      <div
+                        key={obj.name}
+                        className="obj-item"
+                        role="button"
+                        tabIndex={0}
+                        title={obj.name}
+                        onClick={() => openObjectTab(schema, obj)}
+                      >
+                        <Icon
+                          name={sec.icon}
+                          size={15}
+                          style={{ color: "var(--text-faint)", flex: "none" }}
+                        />
+                        <span className="obj-item-name">{obj.name}</span>
+                        <button
+                          type="button"
+                          className="obj-item-drop"
+                          title={"Drop " + obj.name}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDropTarget(obj);
+                          }}
+                        >
+                          <Icon name="delete" size={13} />
+                        </button>
+                      </div>
+                    ))}
+                    {filter === "" && list.length > CAP ? (
                       <button
                         type="button"
-                        className="obj-item-drop"
-                        title={"Drop " + obj.name}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDropTarget(obj);
-                        }}
+                        className="obj-showall"
+                        onClick={() => openObjExplorer(schema, kind)}
                       >
-                        <Icon name="delete" size={13} />
+                        <Icon name="expand_more" size={13} /> Show all {list.length} in Explorer →
                       </button>
-                    </div>
-                  ))
+                    ) : null}
+                  </>
                 )}
               </div>
             ) : null}

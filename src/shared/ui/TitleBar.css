@@ -6,6 +6,7 @@
   position: relative;
   height: 36px;
   background: var(--bg1);
+  border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
   user-select: none;

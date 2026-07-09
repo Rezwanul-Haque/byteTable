@@ -703,6 +703,61 @@ pub struct DbObjectInfo {
     /// the owning table (triggers), or the identity arguments of an overloaded
     /// routine (Postgres functions, e.g. `"integer, text"`). `None` otherwise.
     pub detail: Option<String>,
+    // --- Object Explorer grid metadata (M22) ---
+    // Best-effort per engine; each field renders as a grid column only when
+    // present, so partial introspection degrades cleanly (empty → `—`). The
+    // sidebar ignores these; only the Explorer reads them.
+    #[serde(default)]
+    pub owner: Option<String>,
+    #[serde(default)]
+    pub modified: Option<String>,
+    #[serde(default)]
+    pub returns: Option<String>,
+    #[serde(default)]
+    pub language: Option<String>,
+    #[serde(default)]
+    pub volatility: Option<String>,
+    #[serde(default)]
+    pub arg_count: Option<i64>,
+    #[serde(default)]
+    pub table: Option<String>,
+    #[serde(default)]
+    pub timing: Option<String>,
+    #[serde(default)]
+    pub events: Vec<String>,
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    #[serde(default)]
+    pub approx_rows: Option<i64>,
+    #[serde(default)]
+    pub size: Option<String>,
+    #[serde(default)]
+    pub depends_on: Vec<String>,
+}
+
+impl DbObjectInfo {
+    /// A bare list row — name/kind/detail only, all Explorer grid metadata
+    /// empty. Engines fill the metadata fields they can source cheaply.
+    pub fn bare(name: String, kind: DbObjectKind, detail: Option<String>) -> Self {
+        Self {
+            name,
+            kind,
+            detail,
+            owner: None,
+            modified: None,
+            returns: None,
+            language: None,
+            volatility: None,
+            arg_count: None,
+            table: None,
+            timing: None,
+            events: Vec::new(),
+            enabled: None,
+            approx_rows: None,
+            size: None,
+            depends_on: Vec::new(),
+        }
+    }
 }
 
 /// One argument of a routine (function/procedure), for the viewer's args table.
@@ -2785,12 +2840,29 @@ mod tests {
     }
 
     #[test]
+    fn db_object_info_enriched_round_trips_camelcase() {
+        let mut info = DbObjectInfo::bare(
+            "trg_users_audit".into(),
+            DbObjectKind::Trigger,
+            Some("users".into()),
+        );
+        info.owner = Some("app_rw".into());
+        info.table = Some("users".into());
+        info.timing = Some("BEFORE".into());
+        info.events = vec!["INSERT".into(), "UPDATE".into()];
+        info.enabled = Some(true);
+        let json = serde_json::to_value(&info).unwrap();
+        // camelCase on the wire; unset numeric metadata serializes as null.
+        assert_eq!(json["argCount"], serde_json::Value::Null);
+        assert_eq!(json["events"][0], "INSERT");
+        assert_eq!(json["owner"], "app_rw");
+        let back: DbObjectInfo = serde_json::from_value(json).unwrap();
+        assert_eq!(back, info);
+    }
+
+    #[test]
     fn db_object_wire_shapes_round_trip() {
-        let info = DbObjectInfo {
-            name: "active_users".into(),
-            kind: DbObjectKind::View,
-            detail: None,
-        };
+        let info = DbObjectInfo::bare("active_users".into(), DbObjectKind::View, None);
         let json = serde_json::to_value(&info).unwrap();
         assert_eq!(json["kind"], "view");
         assert_eq!(json["name"], "active_users");

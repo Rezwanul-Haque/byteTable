@@ -28,6 +28,7 @@ const TAB_ICONS: Record<Tab["kind"], string> = {
   sql: "terminal",
   map: "schema",
   object: "visibility",
+  objexplorer: "category",
 };
 
 function tabIcon(tab: Tab): string {
@@ -49,6 +50,8 @@ function tabTitle(tab: Tab, defaultSchema: string): string {
       return tab.schema + " · map";
     case "object":
       return tab.schema === defaultSchema ? tab.name : tab.schema + "." + tab.name;
+    case "objexplorer":
+      return "Objects";
   }
 }
 

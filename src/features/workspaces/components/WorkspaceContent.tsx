@@ -14,6 +14,7 @@ import { selectPanel, shellLabel, usePanelStore } from "../../console/state";
 import { BTLogo } from "../../../shared/ui/BTLogo";
 import { Kbd } from "../../../shared/ui/Kbd";
 import { ObjectViewer } from "../../db_objects/components/ObjectViewer";
+import { ObjectExplorer } from "../../db_objects/components/ObjectExplorer";
 import { useWorkspacesStore } from "../state";
 import type { Tab, Workspace } from "../types";
 import { SqlEditorTab } from "./SqlEditorTab";
@@ -61,6 +62,10 @@ function TabBody({
           name={tab.name}
           detail={tab.detail}
         />
+      );
+    case "objexplorer":
+      return (
+        <ObjectExplorer workspace={workspace} schema={tab.schema} focusClass={tab.focusClass} />
       );
   }
 }

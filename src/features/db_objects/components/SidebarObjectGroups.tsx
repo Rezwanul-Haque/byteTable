@@ -23,12 +23,17 @@ export function SidebarObjectGroups({
   engine,
   env,
   envColor,
+  filter = "",
 }: {
   handleId: string;
   schema: string;
   engine: Engine;
   env: Env;
   envColor: string;
+  // Already normalized by the caller (trimmed + lowercased). When non-empty,
+  // every class list is filtered by name and matching sections auto-open so
+  // results are visible without expanding the accordion.
+  filter?: string;
 }) {
   const classes = objectClassesFor(engine);
   const loadObjects = useIntrospectionStore((s) => s.loadObjects);
@@ -55,8 +60,11 @@ export function SidebarObjectGroups({
 
   if (classes.length === 0) return null;
 
-  const listOf = (kind: DbObjectKind) =>
-    objectsMap[objectsKey(handleId, schema, kind)]?.objects ?? null;
+  const listOf = (kind: DbObjectKind) => {
+    const all = objectsMap[objectsKey(handleId, schema, kind)]?.objects ?? null;
+    if (all === null || filter === "") return all;
+    return all.filter((o) => o.name.toLowerCase().includes(filter));
+  };
 
   // Always show every supported class for the engine (even with zero objects)
   // so the section + its "+ New" affordance are always reachable.
@@ -82,7 +90,9 @@ export function SidebarObjectGroups({
       {visible.map((kind) => {
         const sec = OBJ_SECTIONS[kind];
         const list = listOf(kind);
-        const isOpen = openSec === kind;
+        // While filtering, ignore the accordion and open every section that has
+        // a match (collapse the rest); otherwise honor the one-open state.
+        const isOpen = filter !== "" ? (list?.length ?? 0) > 0 : openSec === kind;
         return (
           <div key={kind} className={"obj-section obj-section-acc" + (isOpen ? " open" : "")}>
             <div

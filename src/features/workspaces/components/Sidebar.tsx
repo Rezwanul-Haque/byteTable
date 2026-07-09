@@ -483,11 +483,11 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
       <div className="sidebar-search">
         <Icon name="search" size={15} style={{ color: "var(--text-faint)" }} />
         <input
-          placeholder="Filter tables…"
+          placeholder="Filter objects…"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           spellCheck="false"
-          aria-label="Filter tables"
+          aria-label="Filter database objects"
         />
         {query ? (
           <IconBtn icon="close" size={13} title="Clear" onClick={() => setQuery("")} />
@@ -684,6 +684,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
         engine={engine}
         env={workspace.saved.env}
         envColor={workspace.saved.color ?? ENV_COLOR[workspace.saved.env]}
+        filter={trimmed}
       />
 
       <div className="sidebar-footer">

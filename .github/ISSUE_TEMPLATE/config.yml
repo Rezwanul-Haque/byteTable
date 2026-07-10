@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions & discussions
+    url: https://github.com/Rezwanul-Haque/byteTable/discussions
+    about: Ask a question, share an idea, or show what you built. Not sure it's a bug? Start here.
+  - name: Documentation
+    url: https://github.com/Rezwanul-Haque/byteTable/tree/main/docs
+    about: Check the docs before filing — your answer may already be there.
+  - name: Report a security vulnerability
+    url: https://github.com/Rezwanul-Haque/byteTable/security/advisories/new
+    about: Please report security issues privately, not in public issues.

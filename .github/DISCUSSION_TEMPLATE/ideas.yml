@@ -1,0 +1,28 @@
+title: "[Idea]: "
+labels: ["idea"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea for ByteTable but it's not fully baked into a concrete feature request yet?
+        This is the place to float it and gather feedback.
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: The idea
+      description: What are you thinking? What would it enable?
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does it solve?
+      description: Who benefits, and what's painful without it?
+
+  - type: textarea
+    id: prior-art
+    attributes:
+      label: Prior art / references
+      description: Have you seen this done well (or badly) in TablePlus, Beekeeper, DBeaver, etc.?

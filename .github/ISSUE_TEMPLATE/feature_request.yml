@@ -1,0 +1,94 @@
+name: Feature request
+description: Suggest an idea, enhancement, or new capability for ByteTable.
+title: "[Feature]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping shape ByteTable.
+
+        For big features, please open the issue **before** sending a large PR so we can agree on the
+        approach first (see [CONTRIBUTING.md](https://github.com/Rezwanul-Haque/byteTable/blob/main/CONTRIBUTING.md)).
+        If this is more of an open-ended idea or question, consider a
+        [Discussion](https://github.com/Rezwanul-Haque/byteTable/discussions) instead.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Pre-flight checklist
+      options:
+        - label: I searched existing issues and discussions and this is not a duplicate.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What problem are you trying to solve? What's painful today?
+      placeholder: I'm always frustrated when ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What would you like to happen? Describe the feature or behavior.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches, workarounds, or tools you've tried.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of ByteTable does this touch?
+      options:
+        - Data grid / table view
+        - SQL editor
+        - Structure / schema
+        - Schema map / ER diagram
+        - Connections / workspaces
+        - Export / import
+        - A specific engine
+        - UI / UX / theming
+        - Performance
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Related engine (if any)
+      options:
+        - N/A — not engine-specific
+        - SQLite
+        - MySQL
+        - PostgreSQL
+        - SQL Server
+        - Redis
+        - DynamoDB
+        - MongoDB
+        - Cassandra
+
+  - type: dropdown
+    id: contribute
+    attributes:
+      label: Are you willing to contribute this?
+      options:
+        - "Yes — I'd like to open a PR"
+        - "Maybe — with some guidance"
+        - "No — just suggesting"
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Mockups, screenshots, links to how other tools do it, etc.

@@ -1,0 +1,49 @@
+title: "[Question]: "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Got a question about using or building ByteTable? Ask away.
+        Tip: search existing discussions and the [docs](https://github.com/Rezwanul-Haque/byteTable/tree/main/docs) first — you might find your answer faster.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: What are you trying to do or understand?
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: What have you tried?
+      description: Steps, docs read, or workarounds attempted so far.
+
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Database engine (if relevant)
+      options:
+        - N/A
+        - SQLite
+        - MySQL
+        - PostgreSQL
+        - SQL Server
+        - Redis
+        - DynamoDB
+        - MongoDB
+        - Cassandra
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: e.g. macOS 14.5, Windows 11, Ubuntu 24.04
+
+  - type: input
+    id: app-version
+    attributes:
+      label: ByteTable version
+      placeholder: e.g. v0.0.16

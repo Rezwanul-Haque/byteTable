@@ -1,0 +1,134 @@
+name: Bug report
+description: Report something that is broken or not working as expected.
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report.
+
+        Before you continue, please:
+        - Search [existing issues](https://github.com/Rezwanul-Haque/byteTable/issues?q=is%3Aissue) to avoid duplicates.
+        - Make sure you are on the latest release — the bug may already be fixed.
+        - **Never paste real credentials, connection strings, or private data.** ByteTable is local-first; we can't see your machine and don't need your secrets.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Pre-flight checklist
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: I reproduced this on the latest ByteTable release.
+          required: true
+        - label: This report contains no real credentials or private data.
+          required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear and concise description of the bug.
+      placeholder: When I do X, Y happens instead of Z.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exact steps so we can see it too. Numbered lists are ideal.
+      value: |
+        1. Go to '...'
+        2. Click on '...'
+        3. Run query / open table '...'
+        4. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Database engine
+      description: Which engine were you connected to? Pick "N/A" if the bug is engine-independent.
+      options:
+        - N/A — not engine-specific
+        - SQLite
+        - MySQL
+        - PostgreSQL
+        - SQL Server
+        - Redis
+        - DynamoDB
+        - MongoDB
+        - Cassandra
+    validations:
+      required: true
+
+  - type: input
+    id: engine-version
+    attributes:
+      label: Engine version
+      description: Server/engine version, if relevant (e.g. PostgreSQL 16.2).
+      placeholder: e.g. PostgreSQL 16.2
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Windows
+        - Linux
+    validations:
+      required: true
+
+  - type: input
+    id: os-version
+    attributes:
+      label: OS version
+      placeholder: e.g. macOS 14.5 (Apple Silicon), Ubuntu 24.04, Windows 11
+
+  - type: input
+    id: app-version
+    attributes:
+      label: ByteTable version
+      description: See the app's About screen or the release tag you installed.
+      placeholder: e.g. v0.0.16
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-source
+    attributes:
+      label: How did you install ByteTable?
+      options:
+        - Prebuilt release (installer / binary)
+        - install.sh / install.ps1 script
+        - Built from source
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs, stack traces, or screenshots
+      description: |
+        Paste relevant logs or drop screenshots/screen recordings here.
+        Redact any sensitive values first. Code and logs are auto-formatted.
+      render: shell
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Anything else that might help — dataset size, network setup, recent changes, etc.

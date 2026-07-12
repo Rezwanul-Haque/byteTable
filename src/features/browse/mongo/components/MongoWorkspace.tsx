@@ -42,7 +42,7 @@ import "../../../workspaces/components/TableTab.css"; // .table-tab, .table-tool
 import "../../../workspaces/components/SqlEditorTab.css"; // .sql-error, .sql-hint, .sql-snippets, .snippet-chip
 import "../../shared/DataGrid.css"; // .datagrid, .dg-*, .cell-*
 import "../../shared/StructureView.css"; // .structure-table, .structure-card, .ddl-block, .tag
-import "../../redis/components/DashboardTab.css"; // .rdash-*
+import "../../shared/dashboard.css"; // .rdash-*
 import "../../../console/SqlTerminalTab.css"; // .rcli-* terminal chrome
 import "../../../export/components/ExportProgressModal.css"; // .export-*
 import "../../../import/components/ImportModal.css"; // .import-*
@@ -50,6 +50,8 @@ import "../../dynamo/components/Dynamo.css"; // .ddb-* (toolbar/row/dash-num/io-
 import "../../../console/TerminalPanel.css"; // docked mongosh panel chrome
 // Mongo-specific (mg-*) styles load LAST so they win on any conflict.
 import "./Mongo.css";
+// Cross-engine mg-* + IO-modal overrides (shared with Cassandra) — load last.
+import "../../shared/mongoShared.css";
 
 const TAB_ICON: Record<string, string> = {
   dashboard: "monitoring",

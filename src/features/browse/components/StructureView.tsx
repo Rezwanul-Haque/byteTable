@@ -25,7 +25,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { highlightSql } from "../highlightSql";
+import { highlightSql } from "../shared/highlightSql";
 import { useIntrospectionStore, tableMetaKey, tablesKey } from "../../introspection/state";
 import { useTabMetaStore } from "../../workspaces/tabMeta";
 import { useWorkspacesStore } from "../../workspaces/state";
@@ -49,7 +49,7 @@ import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Modal, ModalTitle } from "../../../shared/ui/Modal";
 import { Select } from "../../../shared/ui/Select";
 import { useToast } from "../../../shared/ui/toastContext";
-import "./StructureView.css";
+import "../shared/StructureView.css";
 
 interface StructureViewProps {
   handleId: string;

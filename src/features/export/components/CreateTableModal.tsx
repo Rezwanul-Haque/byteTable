@@ -7,7 +7,7 @@
 
 import { useMemo, useState } from "react";
 
-import { highlightSql } from "../../browse/highlightSql";
+import { highlightSql } from "../../browse/shared/highlightSql";
 import { executeScriptText } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
 import { Btn } from "../../../shared/ui/Btn";

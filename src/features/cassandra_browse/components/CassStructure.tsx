@@ -8,7 +8,7 @@
 
 import { useEffect, useState } from "react";
 
-import { highlightSql } from "../../browse/highlightSql";
+import { highlightSql } from "../../browse/shared/highlightSql";
 import { isAppErrorPayload } from "../../../shared/api/error";
 import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";

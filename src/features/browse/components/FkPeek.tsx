@@ -15,7 +15,7 @@ import type { CellValue, RowLookup } from "../../../shared/api/engine";
 import { rowLookup } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
 import { Icon } from "../../../shared/ui/Icon";
-import { CellContent } from "./GridCell";
+import { CellContent } from "../shared/GridCell";
 import "./Popovers.css";
 
 /** Max referenced-row fields shown in the peek list (prototype truncation). */

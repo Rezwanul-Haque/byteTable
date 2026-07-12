@@ -23,7 +23,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { highlightSql } from "../../browse/highlightSql";
+import { highlightSql } from "../../browse/shared/highlightSql";
 import { queryRun, readTextFile } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
 import type { Engine } from "../../../shared/types";

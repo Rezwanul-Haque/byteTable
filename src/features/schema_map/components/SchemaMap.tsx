@@ -48,7 +48,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { TableMeta } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
-import { highlightSql } from "../../browse/highlightSql";
+import { highlightSql } from "../../browse/shared/highlightSql";
 import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";

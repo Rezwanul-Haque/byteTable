@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { highlightSql } from "../../browse/highlightSql";
+import { highlightSql } from "../../browse/shared/highlightSql";
 import { isAppErrorPayload } from "../../../shared/api/error";
 import { Btn } from "../../../shared/ui/Btn";
 import { BulkDeleteModal } from "../../../shared/ui/BulkDeleteModal";

@@ -51,13 +51,13 @@ import "../../../workspaces/components/TableTab.css";
 import "../../../workspaces/components/SqlEditorTab.css";
 import "../../shared/DataGrid.css";
 import "../../shared/StructureView.css";
-import "../../redis/components/DashboardTab.css";
+import "../../shared/dashboard.css";
 import "../../../console/SqlTerminalTab.css"; // .rcli-* terminal chrome
 import "../../../console/TerminalPanel.css"; // docked terminal panel chrome
 import "../../../export/components/ExportProgressModal.css"; // .export-progress-modal
 import "../../../import/components/ImportModal.css"; // import modal chrome
 import "../../dynamo/components/Dynamo.css"; // export-*/import-*/ddb-io-* IO modal classes
-import "../../mongo/components/Mongo.css"; // mg-mono / mg-idx-line reuse
+import "../../shared/mongoShared.css"; // mg-* + IO-modal bits shared with Mongo
 import "./Cassandra.css";
 
 const TAB_ICON: Record<string, string> = {

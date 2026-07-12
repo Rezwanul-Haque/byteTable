@@ -25,7 +25,7 @@ import type { KvDbInfo, KvServerInfo } from "../../../connections/api";
 import { kvScan, kvServerStats, type KeyType, type KvServerStats } from "../api";
 import { humanBytes, humanNum, REDIS_TYPES, REDIS_TYPE_ORDER } from "../helpers";
 import { RedisTypeBadge } from "./RedisTypeBadge";
-import "./DashboardTab.css";
+import "../../shared/dashboard.css";
 
 /** Total keys to sample (bounded) when deriving the per-type distribution. */
 const SAMPLE_MAX = 500;

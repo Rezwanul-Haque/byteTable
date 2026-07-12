@@ -3,13 +3,6 @@
    rdash, schema-map, terminal, modal, .seg, .filter-select) is reused from the
    SQL/Redis/Dynamo builds and is NOT restyled here. */
 
-.mg-mono,
-.mg-mono input,
-input.mg-mono,
-textarea.mg-mono {
-  font-family: var(--mono);
-  font-size: 11.5px;
-}
 /* value chips */
 .mg-oid {
   display: inline-flex;
@@ -42,30 +35,6 @@ textarea.mg-mono {
 }
 .cell-absent {
   color: var(--text-faint);
-}
-/* sidebar index lines */
-.mg-idx-line {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 8px 2px 30px;
-  font-size: 11px;
-  color: var(--text-dim);
-  font-family: var(--mono);
-}
-.mg-idx-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.mg-idx-flag {
-  font-size: 9px;
-  padding: 0 4px;
-  border-radius: 3px;
-  background: var(--bg3);
-  color: var(--text-faint);
-  font-family: var(--ui);
-  letter-spacing: 0.03em;
 }
 .sec-more-btn {
   margin-left: auto;
@@ -419,15 +388,6 @@ select.filter-select:focus {
   font-family: var(--mono);
   font-size: 10px;
   margin-left: 3px;
-}
-.mg-type-chip {
-  display: inline-block;
-  font-family: var(--mono);
-  font-size: 10px;
-  padding: 1px 6px;
-  border: 1px solid;
-  border-radius: 9px;
-  margin-right: 4px;
 }
 .mg-presence {
   display: inline-flex;
@@ -792,24 +752,4 @@ pre.term-json {
 }
 .mg-no {
   color: var(--text-faint);
-}
-.mg-import-target {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--text-dim);
-}
-.mg-import-target select {
-  font-family: var(--mono);
-}
-/* IO-modal bits the SQL export/import CSS doesn't define. */
-.export-progress-modal .export-cur {
-  margin-left: auto;
-  font-size: 10.5px;
-  color: var(--text-faint);
-  font-family: var(--mono);
-}
-.import-busy {
-  margin-top: 12px;
 }

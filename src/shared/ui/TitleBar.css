@@ -366,3 +366,37 @@ body[data-titlebar-position="bottomRightIcon"] .bt-titlebar-buttons {
   margin-left: 0;
   margin-right: auto;
 }
+
+/* ---- Menu popover placement follows the bar's position ------------------- */
+/* The popover defaults to opening downward + left-aligned (top:100%, left:0),
+   which only fits a top bar. When the bar docks to the bottom, or its menu group
+   sits on the right, the popover must flip so it opens toward the screen interior
+   instead of off-edge. Prefix selector matches both bottom rows (bottomLeftIcon,
+   bottomRightIcon); suffix selector matches both right rows (topRightIcon,
+   bottomRightIcon). */
+
+/* Bottom-docked bar: open upward (above the bar), not down past the screen edge. */
+body[data-titlebar-position^="bottom"] .tb-menu-pop {
+  top: auto;
+  bottom: calc(100% - 2px);
+  /* Slide up into place instead of down, to match the open direction. */
+  animation: tb-menu-in-up 0.12s ease;
+}
+
+/* Right-aligned menu group: align the popover's right edge to the button so its
+   208px width grows leftward (into view) rather than off the right screen edge. */
+body[data-titlebar-position$="RightIcon"] .tb-menu-pop {
+  left: auto;
+  right: 0;
+}
+
+@keyframes tb-menu-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

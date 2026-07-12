@@ -7,13 +7,13 @@
 import { useEffect, useRef, useState } from "react";
 
 import { isAppErrorPayload } from "../../shared/api/error";
-import { CassValue } from "../cassandra_browse/components/CassValue";
+import { CassValue } from "../browse/cassandra/components/CassValue";
 import {
   cassClusterStatus,
   cassRunCql,
   type CassColumn,
   type NodeStatus,
-} from "../cassandra_browse/api";
+} from "../browse/cassandra/api";
 import type { Workspace } from "../workspaces/types";
 import type { TermSession } from "./state";
 

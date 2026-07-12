@@ -1,7 +1,7 @@
 /* Table tab shell — toolbar rules ported byte-identical from ByteTable.html
    (.table-tab / .table-toolbar / .seg / .seg-btn / .filter-toggle /
    .applied-where / .table-rowcount). The grid itself lives in
-   features/browse/components/DataGrid (Task 3); the filter panel is M5. */
+   features/browse/sql/components/DataGrid (Task 3); the filter panel is M5. */
 
 .table-tab {
   flex: 1;

@@ -8,9 +8,9 @@
 
 import { useEffect, useState } from "react";
 
-import { mongoListDatabases } from "../mongo_browse/api";
-import { MongoShellTab } from "../mongo_browse/components/MongoShellTab";
-import { useMongoActiveDbStore } from "../mongo_browse/shellState";
+import { mongoListDatabases } from "../browse/mongo/api";
+import { MongoShellTab } from "../browse/mongo/components/MongoShellTab";
+import { useMongoActiveDbStore } from "../browse/mongo/shellState";
 import type { Workspace } from "../workspaces/types";
 import type { TermSession } from "./state";
 

@@ -26,6 +26,7 @@
 import { useEffect, useId, useReducer, useRef, useState, type KeyboardEvent } from "react";
 
 import { isAppErrorPayload } from "../../../shared/api/error";
+import { expandTilde, tildify, useHomeDir } from "../../../shared/homeDir";
 import type { Engine, Env } from "../../../shared/types";
 import { Btn } from "../../../shared/ui/Btn";
 import { EngineBadge } from "../../../shared/ui/EngineBadge";
@@ -486,6 +487,7 @@ function ProjectField({
 }
 
 export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
+  const home = useHomeDir();
   const [state, dispatch] = useReducer(reducer, edit ? formStateFromConnection(edit) : INITIAL);
   const {
     engine,
@@ -1309,8 +1311,11 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
             Database file
             <div className="file-row">
               <input
-                value={file}
-                onChange={(e) => field({ file: e.target.value })}
+                // Display the path with the home dir collapsed to `~`, but keep
+                // the absolute path as the stored value (expand on every edit) so
+                // save / test / connect all see a real filesystem path.
+                value={tildify(file, home)}
+                onChange={(e) => field({ file: expandTilde(e.target.value, home) })}
                 placeholder="~/path/to/database.db"
                 spellCheck={false}
               />

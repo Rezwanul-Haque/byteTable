@@ -56,7 +56,7 @@ import "../../../console/SqlTerminalTab.css"; // .rcli-* terminal chrome
 import "../../../console/TerminalPanel.css"; // docked terminal panel chrome
 import "../../../export/components/ExportProgressModal.css"; // .export-progress-modal
 import "../../../import/components/ImportModal.css"; // import modal chrome
-import "../../dynamo/components/Dynamo.css"; // export-*/import-*/ddb-io-* IO modal classes
+import "../../shared/dynamoShared.css"; // ddb grid family + io-seg labels shared with Dynamo
 import "../../shared/mongoShared.css"; // mg-* + IO-modal bits shared with Mongo
 import "./Cassandra.css";
 

@@ -29,14 +29,14 @@ import { Icon } from "../../shared/ui/Icon";
 import { IconBtn } from "../../shared/ui/IconBtn";
 import { Modal, ModalActions, ModalTitle } from "../../shared/ui/Modal";
 import { appErrorMessage } from "../../shared/api/error";
-import { kvCommand } from "../redis_browse/api";
+import { kvCommand } from "../browse/redis/api";
 import {
   formatReply,
   isDestructiveCommand,
   isMutatingCommand,
   tokenizeCommand,
-} from "../redis_browse/helpers";
-import { useRedisBrowseStore } from "../redis_browse/state";
+} from "../browse/redis/helpers";
+import { useRedisBrowseStore } from "../browse/redis/state";
 import type { Workspace } from "../workspaces/types";
 import { usePanelStore, type TermLine, type TermSession } from "./state";
 import "./SqlTerminalTab.css";

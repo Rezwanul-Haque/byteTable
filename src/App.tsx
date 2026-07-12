@@ -14,10 +14,10 @@ import { NewConnectionModal } from "./features/connections/components/NewConnect
 import { DonateModal } from "./features/workspaces/components/DonateModal";
 import { Rail } from "./features/workspaces/components/Rail";
 import { WorkspaceShell } from "./features/workspaces/components/WorkspaceShell";
-import { RedisWorkspace } from "./features/redis_browse/components/RedisWorkspace";
-import { DynamoWorkspace } from "./features/dynamo_browse/components/DynamoWorkspace";
-import { MongoWorkspace } from "./features/mongo_browse/components/MongoWorkspace";
-import { CassandraWorkspace } from "./features/cassandra_browse/components/CassandraWorkspace";
+import { RedisWorkspace } from "./features/browse/redis/components/RedisWorkspace";
+import { DynamoWorkspace } from "./features/browse/dynamo/components/DynamoWorkspace";
+import { MongoWorkspace } from "./features/browse/mongo/components/MongoWorkspace";
+import { CassandraWorkspace } from "./features/browse/cassandra/components/CassandraWorkspace";
 import { selectShowConnect, useWorkspacesStore } from "./features/workspaces/state";
 import { useTrayWorkspaces } from "./features/workspaces/trayMenu";
 import {

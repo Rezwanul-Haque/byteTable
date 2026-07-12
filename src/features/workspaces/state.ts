@@ -11,7 +11,7 @@ import { create } from "zustand";
 import type { SchemaInfo } from "../connections/api";
 import { connectionClose } from "../connections/api";
 import { useIntrospectionStore } from "../introspection/state";
-import { newCondition } from "../browse/filter";
+import { newCondition } from "../browse/sql/filter";
 import type { CellValue } from "../../shared/api/engine";
 import type { AlterOp, DbObjectInfo, DbObjectKind } from "../../shared/api/engine";
 import type {

@@ -201,7 +201,7 @@ export type ConnectionKind = "sql" | "kv" | "document" | "mongo" | "cassandra";
 
 /**
  * Server identity for the Redis dashboard header — mirrors Rust's
- * `KvServerInfo`. (Re-exported from `redis_browse/api.ts` for the Redis slice.)
+ * `KvServerInfo`. (Re-exported from `browse/redis/api.ts` for the Redis slice.)
  */
 export interface KvServerInfo {
   serverVersion: string;
@@ -235,7 +235,7 @@ export interface KeyspaceOverview {
  * - `kind: "sql"` → `schemas` holds the initial schema list, `keyspace` absent.
  * - `kind: "kv"` → `schemas` is empty, `keyspace` carries the Redis overview
  *   (server identity + per-db key counts). Per-key reads/scans are fetched on
- *   demand via the `kv*` wrappers in `redis_browse/api.ts`.
+ *   demand via the `kv*` wrappers in `browse/redis/api.ts`.
  *
  * The SQL open-result is unchanged except for the additive `kind`/`keyspace`
  * fields, which a relational renderer can ignore.

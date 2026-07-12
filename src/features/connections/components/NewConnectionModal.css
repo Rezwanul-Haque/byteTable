@@ -360,7 +360,7 @@
 /* DynamoDB (M17) AWS / Local-endpoint segmented toggle — full-width, the two
    segments split 50/50 (the shared .seg is `flex:none` with left-packed pills;
    here it must fill the row and stretch its buttons, matching the design). The
-   Dynamo workspace's own ddb-* styles live in dynamo_browse/Dynamo.css, which is
+   Dynamo workspace's own ddb-* styles live in browse/dynamo/components/Dynamo.css, which is
    not loaded by this modal, so the connect-form copy lives here. */
 .ddb-mode-seg {
   width: 100%;

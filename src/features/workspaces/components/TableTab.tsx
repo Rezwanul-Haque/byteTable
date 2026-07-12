@@ -17,10 +17,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { DataGrid, type DataGridHandle } from "../../browse/components/DataGrid";
-import { FilterPanel } from "../../browse/components/FilterPanel";
-import { StructureView } from "../../browse/components/StructureView";
-import { appliedDisplaySql, compileToSpec, emptyDraft } from "../../browse/filter";
+import { DataGrid, type DataGridHandle } from "../../browse/sql/components/DataGrid";
+import { FilterPanel } from "../../browse/sql/components/FilterPanel";
+import { StructureView } from "../../browse/sql/components/StructureView";
+import { appliedDisplaySql, compileToSpec, emptyDraft } from "../../browse/sql/filter";
 import { ExportProgressModal } from "../../export/components/ExportProgressModal";
 import { TruncateModal } from "../../export/components/TruncateModal";
 import { ImportModal } from "../../import/components/ImportModal";

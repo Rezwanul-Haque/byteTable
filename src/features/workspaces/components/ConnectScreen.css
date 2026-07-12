@@ -134,6 +134,15 @@
 .connect-card-info {
   flex: 1;
   min-width: 0;
+  transition: padding-right 0.12s;
+}
+
+/* The edit + remove icons reveal on hover/focus and overlay the card's right
+   edge. Pull the name/detail in so their ellipsis stops before the icons rather
+   than running underneath them. */
+.connect-card-wrap:hover .connect-card-info,
+.connect-card-wrap:focus-within .connect-card-info {
+  padding-right: 58px;
 }
 
 .connect-card-name {

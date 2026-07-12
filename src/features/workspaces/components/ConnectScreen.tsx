@@ -16,6 +16,7 @@ import { EnvTag } from "../../../shared/ui/EnvTag";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { useToast } from "../../../shared/ui/toastContext";
+import { tildify, useHomeDir } from "../../../shared/homeDir";
 import { connectionDetail, type SavedConnection } from "../../connections/api";
 import { NewConnectionModal } from "../../connections/components/NewConnectionModal";
 import { pickSqliteFile } from "../../connections/dialog";
@@ -30,6 +31,7 @@ const FILE_OPEN_ID = "__open-sqlite-file__";
 const OPENED_TOAST_SUFFIX = "” opened — right-click its tile to rename or recolor";
 
 export function ConnectScreen() {
+  const home = useHomeDir();
   const [connecting, setConnecting] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
   // The saved connection being edited (its pencil clicked), or null. Opens the
@@ -273,7 +275,9 @@ export function ConnectScreen() {
                                 <EnvTag env={c.env} />
                               </div>
                               <div className="connect-card-detail">
-                                {connectionDetail(c.params)}
+                                {c.params.engine === "sqlite"
+                                  ? tildify(c.params.path, home)
+                                  : connectionDetail(c.params)}
                               </div>
                             </div>
                             {connecting === c.id ? (

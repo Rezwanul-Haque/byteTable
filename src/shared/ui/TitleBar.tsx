@@ -16,6 +16,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { platform } from "@tauri-apps/plugin-os";
 import { invoke } from "@tauri-apps/api/core";
 
+import { abbreviatePath, tildify, useHomeDir } from "../homeDir";
 import { useSettingsStore } from "../../features/settings/state";
 import { selectShowConnect, useWorkspacesStore } from "../../features/workspaces/state";
 import { connectionDetail } from "../../features/connections/api";
@@ -39,6 +40,7 @@ function resolveMode(): Mode {
 
 export function TitleBar({ ctx }: { ctx: TitleBarCtx }) {
   const { settings, setSetting } = useSettingsStore();
+  const home = useHomeDir();
   const mode = resolveMode();
   const isMac = mode === "mac-native" || mode === "mac-frameless";
 
@@ -128,7 +130,11 @@ export function TitleBar({ ctx }: { ctx: TitleBarCtx }) {
             <EngineBadge engine={ws.saved.engine} size={18} />
             <span className="tb-ws-name">{ws.name}</span>
             <EnvPill env={ws.saved.env} color={ws.saved.color} />
-            <span className="tb-detail">{connectionDetail(ws.saved.params)}</span>
+            <span className="tb-detail">
+              {ws.saved.params.engine === "sqlite"
+                ? abbreviatePath(tildify(ws.saved.params.path, home))
+                : connectionDetail(ws.saved.params)}
+            </span>
           </>
         ) : (
           <span className="tb-context-empty">ByteTable — Database Client</span>

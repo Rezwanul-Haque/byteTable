@@ -18,7 +18,7 @@
 import type { ColumnInfo } from "../../shared/api/engine";
 import type { CellValue, Condition, FilterOp, FilterSpec } from "../../shared/api/engine";
 import type { FilterDraft, UiCondition } from "../workspaces/types";
-import { isBinaryType } from "./components/binaryCell";
+import { isBinaryType } from "./shared/binaryCell";
 
 /** One operator's display label + whether it takes a value input. */
 export interface FilterOpDef {

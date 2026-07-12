@@ -15,7 +15,7 @@ import type { CellValue, QueryResult } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
 import { Btn } from "../../../shared/ui/Btn";
 import { useToast } from "../../../shared/ui/toastContext";
-import { CellContent } from "../../browse/components/GridCell";
+import { CellContent } from "../../browse/shared/GridCell";
 
 /** Row overscan handed to the virtualizer (DOM rows beyond the viewport). */
 const ROW_OVERSCAN = 12;

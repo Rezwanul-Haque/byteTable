@@ -8,7 +8,7 @@
 
 import { useState } from "react";
 
-import { highlightSql } from "../../browse/highlightSql";
+import { highlightSql } from "../../browse/shared/highlightSql";
 import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";

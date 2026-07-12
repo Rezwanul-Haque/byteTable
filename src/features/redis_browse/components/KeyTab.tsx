@@ -20,8 +20,8 @@ import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Modal, ModalActions, ModalTitle } from "../../../shared/ui/Modal";
 import { useToast } from "../../../shared/ui/toastContext";
-import { CellContent } from "../../browse/components/GridCell";
-import { highlightJSON } from "../../browse/components/jsonCell";
+import { CellContent } from "../../browse/shared/GridCell";
+import { highlightJSON } from "../../browse/shared/jsonCell";
 import {
   kvDeleteKey,
   kvExpire,

@@ -12,8 +12,8 @@ import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
-import { binaryBytes, generateUuid, looksUuid, validateBinary } from "./binaryCell";
-import "./CellEditors.css";
+import { binaryBytes, generateUuid, looksUuid, validateBinary } from "../shared/binaryCell";
+import "../shared/CellEditors.css";
 
 interface BinaryEditorModalProps {
   schemaName: string;

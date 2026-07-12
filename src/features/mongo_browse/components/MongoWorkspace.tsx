@@ -40,8 +40,8 @@ import "../../workspaces/components/TabBar.css"; // .tabbar, .tab, .tab-new
 import "../../workspaces/components/StatusBar.css"; // .statusbar, .ws-chip, .env-tag, .status-*
 import "../../workspaces/components/TableTab.css"; // .table-tab, .table-toolbar, .seg/.seg-btn
 import "../../workspaces/components/SqlEditorTab.css"; // .sql-error, .sql-hint, .sql-snippets, .snippet-chip
-import "../../browse/components/DataGrid.css"; // .datagrid, .dg-*, .cell-*
-import "../../browse/components/StructureView.css"; // .structure-table, .structure-card, .ddl-block, .tag
+import "../../browse/shared/DataGrid.css"; // .datagrid, .dg-*, .cell-*
+import "../../browse/shared/StructureView.css"; // .structure-table, .structure-card, .ddl-block, .tag
 import "../../redis_browse/components/DashboardTab.css"; // .rdash-*
 import "../../console/SqlTerminalTab.css"; // .rcli-* terminal chrome
 import "../../export/components/ExportProgressModal.css"; // .export-*

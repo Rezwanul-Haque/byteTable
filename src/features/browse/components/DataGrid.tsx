@@ -71,14 +71,14 @@ import { useWorkspacesStore } from "../../workspaces/state";
 import { useSettingsStore } from "../../settings/state";
 import { useTabMetaStore } from "../../workspaces/tabMeta";
 import { BinaryEditorModal } from "./BinaryEditorModal";
-import { isBinaryType, looksUuid, uuidToHex } from "./binaryCell";
+import { isBinaryType, looksUuid, uuidToHex } from "../shared/binaryCell";
 import { ColumnInsights, type InsightsAnchor } from "./ColumnInsights";
 import { FkPeek, type FkPeekAnchor } from "./FkPeek";
-import { CellContent } from "./GridCell";
+import { CellContent } from "../shared/GridCell";
 import { JsonEditorModal } from "./JsonEditorModal";
-import { isJsonType } from "./jsonCell";
+import { isJsonType } from "../shared/jsonCell";
 import type { Engine } from "../../../shared/types";
-import "./DataGrid.css";
+import "../shared/DataGrid.css";
 
 /** Per-column metadata the grid keeps from tableMeta: pk/fk drive icons + FK
  *  hop (M10); dataType/nullable drive inline-edit type coercion + the

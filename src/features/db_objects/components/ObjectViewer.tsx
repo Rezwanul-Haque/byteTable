@@ -11,7 +11,7 @@
 
 import { useEffect, useState } from "react";
 
-import { highlightSql } from "../../browse/highlightSql";
+import { highlightSql } from "../../browse/shared/highlightSql";
 import { formatSql } from "../../workspaces/components/formatSql";
 import { appErrorMessage } from "../../../shared/api/error";
 import { Btn } from "../../../shared/ui/Btn";

@@ -49,8 +49,8 @@ import "../../workspaces/components/TabBar.css";
 import "../../workspaces/components/StatusBar.css";
 import "../../workspaces/components/TableTab.css";
 import "../../workspaces/components/SqlEditorTab.css";
-import "../../browse/components/DataGrid.css";
-import "../../browse/components/StructureView.css";
+import "../../browse/shared/DataGrid.css";
+import "../../browse/shared/StructureView.css";
 import "../../redis_browse/components/DashboardTab.css";
 import "../../console/SqlTerminalTab.css"; // .rcli-* terminal chrome
 import "../../console/TerminalPanel.css"; // docked terminal panel chrome

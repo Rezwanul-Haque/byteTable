@@ -11,8 +11,8 @@ import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
-import { highlightJSON, validateJSON } from "./jsonCell";
-import "./CellEditors.css";
+import { highlightJSON, validateJSON } from "../shared/jsonCell";
+import "../shared/CellEditors.css";
 
 /** Read-only collapsible tree view of a parsed JSON value. */
 function JsonTree({ value, depth = 0 }: { value: unknown; depth?: number }) {

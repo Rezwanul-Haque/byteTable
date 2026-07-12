@@ -32,6 +32,9 @@ import { DynamoSidebar } from "./DynamoSidebar";
 import { SidebarResizer } from "../../../../shared/ui/SidebarResizer";
 import { DynamoTableTab } from "./DynamoTableTab";
 import "./Dynamo.css";
+// Grid family + shared ddb bits (reused by Mongo/Cassandra) — load last to keep
+// the datagrid cascade order it had as one file.
+import "../../shared/dynamoShared.css";
 
 type TabKind = "dashboard" | "table" | "map" | "query";
 type Tab = DynamoWorkspaceTab;

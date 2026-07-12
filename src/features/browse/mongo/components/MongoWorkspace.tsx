@@ -46,7 +46,7 @@ import "../../shared/dashboard.css"; // .rdash-*
 import "../../../console/SqlTerminalTab.css"; // .rcli-* terminal chrome
 import "../../../export/components/ExportProgressModal.css"; // .export-*
 import "../../../import/components/ImportModal.css"; // .import-*
-import "../../dynamo/components/Dynamo.css"; // .ddb-* (toolbar/row/dash-num/io-label/seg/item-actions/edit-dot)
+import "../../shared/dynamoShared.css"; // ddb grid family + dash-num/edit-dot/io shared with Dynamo
 import "../../../console/TerminalPanel.css"; // docked mongosh panel chrome
 // Mongo-specific (mg-*) styles load LAST so they win on any conflict.
 import "./Mongo.css";

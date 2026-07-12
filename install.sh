@@ -24,6 +24,15 @@ command -v curl >/dev/null 2>&1 || err "curl is required."
 OS="$(uname -s)"
 ARCH="$(uname -m)"
 
+# Bail early on CPUs we don't ship for. ByteTable builds x86_64 (amd64) and
+# arm64 only; armv7l, i686, riscv64, etc. have no compatible asset and never
+# will. Fail here — before any network call — with a message that names the
+# arch and makes clear it's the CPU that's unsupported, not a broken release.
+case "$ARCH" in
+x86_64 | amd64 | aarch64 | arm64) ;;
+*) err "Unsupported CPU architecture '${ARCH}'. ByteTable ships for x86_64 (amd64) and arm64 only." ;;
+esac
+
 say "Fetching the latest release…"
 ASSETS="$(curl -fsSL "$API" | grep -o '"browser_download_url": *"[^"]*"' | sed 's/.*"\(https[^"]*\)".*/\1/')"
 [ -n "${ASSETS}" ] || err "Could not read the latest release (offline, rate-limited, or no published release yet)."
@@ -102,10 +111,13 @@ Linux)
     is_debian=1
   fi
 
+  # Only ever pick a .deb that matches THIS machine's architecture. Never fall
+  # back to a foreign-arch .deb: installing an amd64 package on arm64 (or vice
+  # versa) fails with "package architecture does not match system". If there's
+  # no arch-matched .deb, DEB_URL stays empty and we drop to the AppImage path.
   DEB_URL=""
   if [ "$is_debian" -eq 1 ]; then
     DEB_URL="$(printf '%s\n' "$ASSETS" | grep -iE '\.deb$' | grep -iE "$APAT" | head -1)"
-    [ -n "$DEB_URL" ] || DEB_URL="$(match '\.deb$')"
   fi
 
   if [ -n "$DEB_URL" ]; then
@@ -125,21 +137,25 @@ Linux)
     curl -fSL# "$DEB_URL" -o "$FILE"
     verify_checksum "$FILE" "$(basename "$DEB_URL")"
     say "Installing the .deb (needs sudo)…"
-    if $SUDO apt-get install -y "$FILE"; then
-      :
-    else
+    if ! $SUDO apt-get install -y "$FILE"; then
       # Older apt without local-file support: install, then fix dependencies.
       $SUDO dpkg -i "$FILE" || true
-      $SUDO apt-get -f install -y
+      $SUDO apt-get -f install -y || true
     fi
-    say "Installed. Launch ByteTable from your app menu, or run: bytetable"
-    exit 0
+    # Verify the package actually landed. apt/dpkg above can fail (unmet deps,
+    # arch mismatch) while a later `apt-get -f install` still exits 0, so a
+    # zero exit is NOT proof of success — check dpkg's own record instead.
+    if $SUDO dpkg -s byte-table >/dev/null 2>&1; then
+      say "Installed. Launch ByteTable from your app menu, or run: bytetable"
+      exit 0
+    fi
+    err "The .deb did not install cleanly (see the apt/dpkg output above). Grab the .AppImage from https://github.com/${REPO}/releases/latest"
   fi
 
-  # AppImage (non-Debian distro, or no matching .deb in the release).
+  # AppImage (non-Debian distro, or no matching .deb in the release). Same rule
+  # as the .deb: only an arch-matched AppImage — a foreign-arch binary won't run.
   URL="$(printf '%s\n' "$ASSETS" | grep -iE '\.AppImage$' | grep -iE "$APAT" | head -1)"
-  [ -n "$URL" ] || URL="$(match '\.AppImage$')"
-  [ -n "$URL" ] || err "No Linux .deb or .AppImage in the latest release."
+  [ -n "$URL" ] || err "No Linux .deb or .AppImage for ${ARCH} in the latest release."
   DEST="${HOME}/.local/bin"
   mkdir -p "$DEST"
   say "Downloading $(basename "$URL")…"

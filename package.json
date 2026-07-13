@@ -14,6 +14,7 @@
     "format:check": "prettier --check .",
     "typecheck": "tsc -b",
     "tauri": "tauri",
+    "devtools": "react-devtools",
     "prepare": "husky"
   },
   "lint-staged": {
@@ -56,9 +57,15 @@
     "husky": "^9.1.7",
     "lint-staged": "^17.0.7",
     "prettier": "^3.6.0",
+    "react-devtools": "^7.0.1",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.0",
     "vite": "^6.3.5"
   },
-  "packageManager": "pnpm@10.17.0"
+  "packageManager": "pnpm@10.17.0",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron"
+    ]
+  }
 }

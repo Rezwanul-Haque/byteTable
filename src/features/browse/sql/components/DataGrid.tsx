@@ -77,10 +77,12 @@ import { useSettingsStore } from "../../../settings/state";
 import { useTabMetaStore } from "../../../workspaces/tabMeta";
 import { BinaryEditorModal } from "./BinaryEditorModal";
 import { isBinaryType, looksUuid, uuidToHex } from "../../shared/binaryCell";
+import { highlightSql } from "../../shared/highlightSql";
 import { ColumnInsights, type InsightsAnchor } from "./ColumnInsights";
 import { FkPeek, type FkPeekAnchor } from "./FkPeek";
 import { CellContent } from "../../shared/GridCell";
 import { JsonEditorModal } from "./JsonEditorModal";
+import { RowInspector, type InspectorColumn } from "./RowInspector";
 import { isJsonType } from "../../shared/jsonCell";
 import type { Engine } from "../../../../shared/types";
 import "../../shared/DataGrid.css";
@@ -254,7 +256,7 @@ const COL_MAX_PX = 400;
 /** Minimum row-number gutter width (px) — matches `.dg-rownum` min-width. The
  *  actual track grows with the digit count so a 3+ digit number (page 2+) isn't
  *  clipped (see `rownumPx`). */
-const ROWNUM_PX = 30;
+const ROWNUM_PX = 40;
 /** Per-digit width of the row number (12.5px tabular-nums) + the gutter's 12px
  *  horizontal padding plus a little slack — used to size the gutter to fit. */
 const ROWNUM_DIGIT_PX = 7.5;
@@ -412,6 +414,12 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   const closeFkPeek = useCallback(() => setFkPeek(null), []);
   const closeInsights = useCallback(() => setInsights(null), []);
 
+  // --- Row Inspector drawer --------------------------------------------
+  // The row open in the drawer (real row by absolute index, or a staged new
+  // row), and whether it has un-staged edits (blocks row nav / retargeting).
+  const [inspect, setInspect] = useState<EditTarget | null>(null);
+  const [inspectDirty, setInspectDirty] = useState(false);
+
   // Copy a cell's raw value to the clipboard — handy for read-only cells
   // (primary keys can't be selected/edited) when pasting an id into a query.
   const copyCell = useCallback(
@@ -507,7 +515,19 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     setPendingEdits(new Map());
     setNewRows([]);
     setSaveConfirmSql(null);
+    // Switching table/schema closes the inspector (the TableTab instance is
+    // reused across table switches, so this must be explicit — see spec Task 1).
+    setInspect(null);
+    setInspectDirty(false);
   }, [handleId, schema, table]);
+
+  // The inspected row is addressed by absolute index / staged key; a page,
+  // filter, or refetch rebuilds the row cache, so close the drawer to avoid it
+  // pointing at a row that's no longer loaded.
+  useEffect(() => {
+    setInspect(null);
+    setInspectDirty(false);
+  }, [offset, filterKey, refetchNonce]);
 
   // Load the column header meta (pk/fk/default) once per identity.
   useEffect(() => {
@@ -810,6 +830,92 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       else stageNewValue(target.stagedKey, ci, value);
     },
     [stageRealValue, stageNewValue],
+  );
+
+  // --- Row Inspector data plumbing -------------------------------------
+  // Columns as the drawer needs them (name + type + pk/fk flags). Type uses the
+  // result typeHint (drives JSON/binary/temporal detection), falling back to the
+  // declared DDL type.
+  const inspectorColumns = useMemo<InspectorColumn[]>(
+    () =>
+      columns.map((c) => {
+        const m = colMeta.get(c.name);
+        return {
+          name: c.name,
+          type: c.typeHint || m?.dataType || "",
+          pk: m?.pk ?? false,
+          fk: !!(m?.fk && m.fk.column),
+        };
+      }),
+    [columns, colMeta],
+  );
+
+  // Ordered targets the drawer navigates with prev/next: staged new rows (page 0
+  // only) then the current backend page's rows, top to bottom.
+  const inspectOrder = useMemo<EditTarget[]>(() => {
+    const arr: EditTarget[] = [];
+    if (offset === 0) for (const nr of newRows) arr.push({ kind: "staged", stagedKey: nr.key });
+    for (let i = 0; i < pageRowCount; i++) arr.push({ kind: "real", rowIndex: offset + i });
+    return arr;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offset, newRows, pageRowCount, cacheVersion]);
+
+  // The displayed (pending-override-aware) values for a target, aligned to
+  // `columns`; null when the row isn't loaded/present.
+  const inspectValuesOf = useCallback(
+    (target: EditTarget): CellValue[] | null => {
+      if (target.kind === "staged") {
+        const nr = newRows.find((r) => r.key === target.stagedKey);
+        return nr ? columns.map((_, ci) => nr.values[ci] ?? null) : null;
+      }
+      const row = rowCacheRef.current.get(target.rowIndex);
+      if (!row) return null;
+      return columns.map((_, ci) => realCellValue(target.rowIndex, ci));
+    },
+    [newRows, columns, realCellValue],
+  );
+
+  // The `pk = value` subline (composite keys joined with ", ").
+  const pkLabelOf = useCallback(
+    (values: CellValue[]): string => {
+      if (pkColumns.length === 0) return "no primary key";
+      return pkColumns
+        .map((name) => {
+          const ci = columns.findIndex((c) => c.name === name);
+          const v = ci >= 0 ? (values[ci] ?? null) : null;
+          return name + " = " + (v == null ? "null" : String(v));
+        })
+        .join(", ");
+    },
+    [pkColumns, columns],
+  );
+
+  // Open / retarget the drawer for a row (blocked while it has un-staged edits).
+  const openInspect = useCallback(
+    (target: EditTarget, rowKey: string) => {
+      setSelected({ rowKey, col: -1 });
+      if (!inspectDirty) setInspect(target);
+    },
+    [inspectDirty],
+  );
+
+  // Move the drawer to the target at `pos` in `inspectOrder` (nav prev/next).
+  const gotoInspect = useCallback(
+    (pos: number) => {
+      const t = inspectOrder[pos];
+      if (!t) return;
+      setInspect(t);
+      setSelected({ rowKey: targetKey(t), col: -1 });
+    },
+    [inspectOrder],
+  );
+
+  // Stage the drawer's changed cells into the grid's pending buffer.
+  const stageFromInspector = useCallback(
+    (target: EditTarget, changes: Map<number, CellValue>) => {
+      changes.forEach((v, ci) => commitCellValue(target, ci, v));
+    },
+    [commitCellValue],
   );
 
   // --- staged-row counts -----------------------------------------------
@@ -1210,8 +1316,34 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       </div>
     ) : null;
 
+  const inspectValues = inspect ? inspectValuesOf(inspect) : null;
+  const inspectPos = inspect
+    ? inspectOrder.findIndex((t) => targetKey(t) === targetKey(inspect))
+    : -1;
+
   const popovers = (
     <>
+      <RowInspector
+        open={inspect != null && inspectValues != null}
+        columns={inspectorColumns}
+        values={inspectValues}
+        rowId={inspect ? targetKey(inspect) : ""}
+        isStagedNew={inspect?.kind === "staged"}
+        pkLabel={inspectValues ? pkLabelOf(inspectValues) : ""}
+        position={inspectPos + 1}
+        total={inspectOrder.length}
+        canPrev={inspectPos > 0}
+        canNext={inspectPos >= 0 && inspectPos < inspectOrder.length - 1}
+        schemaName={schema}
+        tableName={table}
+        onPrev={() => gotoInspect(inspectPos - 1)}
+        onNext={() => gotoInspect(inspectPos + 1)}
+        onClose={() => setInspect(null)}
+        onStage={(changes) => {
+          if (inspect) stageFromInspector(inspect, changes);
+        }}
+        onDirtyChange={setInspectDirty}
+      />
       {fkPeek ? (
         <FkPeek
           handleId={handleId}
@@ -1234,14 +1366,19 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       {saveConfirmSql ? (
         <Modal onClose={() => setSaveConfirmSql(null)} label="Confirm save" width={520}>
           <ModalTitle>
-            <Icon name="warning" size={18} style={{ color: "#e06c75" }} /> Save changes to a
-            production connection?
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+              <Icon name="warning" size={18} style={{ color: "#e06c75" }} /> Save changes to a
+              production connection?
+            </span>
           </ModalTitle>
           <p className="dg-confirm-body">
             This connection points at <b>production</b>. The following batch will run in one
             transaction:
           </p>
-          <code className="dg-confirm-sql">{saveConfirmSql}</code>
+          <code
+            className="dg-confirm-sql"
+            dangerouslySetInnerHTML={{ __html: highlightSql(saveConfirmSql) }}
+          />
           <ModalActions>
             <Btn variant="text" onClick={() => setSaveConfirmSql(null)}>
               Cancel
@@ -1484,7 +1621,19 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
                       )}
                     </div>
                   ) : null}
-                  <div className="dg-rownum">{isStaged ? "✱" : rowIndex + 1}</div>
+                  <div
+                    className={
+                      "dg-rownum" +
+                      (inspect && targetKey(inspect) === targetKey(target) ? " inspecting" : "")
+                    }
+                    title="Inspect row"
+                    onClick={() => openInspect(target, rowKey)}
+                  >
+                    <span className="dg-rownum-n">{isStaged ? "✱" : rowIndex + 1}</span>
+                    <span className="dg-rownum-eye">
+                      <Icon name="chrome_reader_mode" size={13} />
+                    </span>
+                  </div>
                   {virtualizeCols ? <div className="dg-pad" aria-hidden /> : null}
                   {windowCols.map(({ col: c, ci }) => {
                     if (!row) {
@@ -1517,7 +1666,10 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
                           (edited ? " cell-edited" : "")
                         }
                         title={roReason ?? undefined}
-                        onClick={() => setSelected({ rowKey, col: ci })}
+                        onClick={() => {
+                          setSelected({ rowKey, col: ci });
+                          if (!inspectDirty) setInspect(target);
+                        }}
                         onDoubleClick={() => {
                           clearPendingHop();
                           if (editable && json) openCellModal("json", target, ci, c);

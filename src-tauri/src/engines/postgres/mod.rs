@@ -350,7 +350,22 @@ impl EngineConnection for PostgresEngineConnection {
 
         let order_by = match &req.sort {
             Some(sort) => Some(order_by_clause(&column_names, &req.table, sort)?),
-            None => None,
+            // No explicit sort: default to the primary key so the browse order is
+            // stable. A Postgres heap table has no inherent order, and an UPDATE
+            // rewrites the row as a new tuple (MVCC) at a fresh physical slot —
+            // without this, a saved edit reshuffles the row (typically to the
+            // end / another page), which reads as the row "vanishing". Falls back
+            // to unordered when the table has no primary key (those aren't
+            // editable in the grid anyway).
+            None => {
+                let pk: Vec<String> = meta
+                    .columns
+                    .iter()
+                    .filter(|c| c.pk)
+                    .map(|c| quote_ident(&c.name))
+                    .collect();
+                (!pk.is_empty()).then(|| pk.join(", "))
+            }
         };
         let where_clause = match &req.filter {
             Some(filter) => where_clause(&column_names, &req.table, filter)?,

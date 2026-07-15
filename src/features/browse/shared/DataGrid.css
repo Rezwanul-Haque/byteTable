@@ -104,9 +104,10 @@
   text-align: right;
   justify-content: flex-end;
   padding: 0 6px;
-  min-width: 30px;
+  min-width: 40px;
   display: flex;
   align-items: center;
+  gap: 4px;
   border-right: 1px solid var(--border);
   border-bottom: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
   user-select: none;
@@ -114,6 +115,55 @@
 
 .dg-rownum-h {
   z-index: 3;
+}
+
+/* ---------- row-number → Row Inspector affordance ---------- */
+/* The gutter opens the inspector; on row-hover the number swaps for an accent
+   "reader" pill. The sticky cell keeps an OPAQUE background in every state
+   (hover/selected/staged/inspecting) — mixed with --bg1, never transparent — so
+   horizontally-scrolled cell text can't bleed through it. */
+.dg-rownum {
+  cursor: pointer;
+}
+.dg-rownum-eye {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  margin-left: auto;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 14%, var(--bg1));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 35%, transparent);
+}
+.dg-tr:hover .dg-rownum-n {
+  display: none;
+}
+.dg-tr:hover .dg-rownum-eye {
+  display: inline-flex;
+}
+.dg-rownum:hover .dg-rownum-eye {
+  background: color-mix(in oklab, var(--accent) 26%, var(--bg1));
+}
+body:not(.bt-no-rowhover) .dg-tr:hover .dg-rownum {
+  background: color-mix(in oklab, var(--bg2) 70%, var(--bg1));
+}
+.dg-tr.row-selected .dg-rownum {
+  background: color-mix(in oklab, var(--accent) 7%, var(--bg1));
+}
+.dg-tr.row-staged .dg-rownum {
+  background: color-mix(in oklab, var(--accent) 11%, var(--bg1));
+}
+/* The inspected row: pill only + an inset accent bar. */
+.dg-rownum.inspecting .dg-rownum-eye {
+  display: inline-flex;
+}
+.dg-rownum.inspecting .dg-rownum-n {
+  display: none;
+}
+.dg-rownum.inspecting {
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 /* When the multi-select checkbox gutter is present, the row-number column sticks
@@ -425,6 +475,27 @@ body:not(.bt-no-rowhover) .dg-tr:hover .dg-rownum {
   white-space: pre-wrap;
   word-break: break-word;
   line-height: 1.5;
+}
+
+/* Syntax-highlight the confirm-dialog batch SQL (highlightSql markup). Palette
+   matches the §3.6 DDL preview / §3.7 editor; scoped here so the classes don't
+   need StructureView.css loaded. */
+.dg-confirm-sql .sql-kw {
+  color: var(--accent);
+  font-weight: 500;
+}
+.dg-confirm-sql .sql-string {
+  color: #e5c07b;
+}
+.dg-confirm-sql .sql-num {
+  color: #7fb8e8;
+}
+.dg-confirm-sql .sql-func {
+  color: #c678dd;
+}
+.dg-confirm-sql .sql-comment {
+  color: var(--text-faint);
+  font-style: italic;
 }
 
 /* ---------- windowed-paging shimmer (rows not yet loaded) ---------- */

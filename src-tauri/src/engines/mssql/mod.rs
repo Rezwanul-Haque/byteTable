@@ -422,9 +422,23 @@ impl EngineConnection for MssqlEngineConnection {
 
         let order_by = match &req.sort {
             Some(sort) => order_by_clause(&column_names, &req.table, sort)?,
-            // T-SQL OFFSET/FETCH requires an ORDER BY; a stable arbitrary order
-            // when the caller gave none.
-            None => "(SELECT NULL)".to_string(),
+            // T-SQL OFFSET/FETCH requires an ORDER BY. Default to the primary key
+            // so the browse order is stable across saves (an arbitrary order can
+            // reshuffle an edited row onto another page). Falls back to a stable
+            // arbitrary order for a table with no primary key.
+            None => {
+                let pk: Vec<String> = meta
+                    .columns
+                    .iter()
+                    .filter(|c| c.pk)
+                    .map(|c| quote_ident(&c.name))
+                    .collect();
+                if pk.is_empty() {
+                    "(SELECT NULL)".to_string()
+                } else {
+                    pk.join(", ")
+                }
+            }
         };
         let (where_clause, _next) = match &req.filter {
             Some(filter) => where_clause(&column_names, &req.table, filter, 1)?,

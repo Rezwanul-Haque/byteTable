@@ -30,6 +30,11 @@ jobs:
     if: github.repository == 'Rezwanul-Haque/byteTable'
     outputs:
       release_id: ${{ steps.create.outputs.result }}
+      # The generated changelog — passed to tauri-action so it stamps the same
+      # notes into latest.json (updater manifest), not just the GitHub release
+      # body. Without this, latest.json.notes is "" and the update modal's
+      # "What's New" renders empty.
+      notes: ${{ steps.notes.outputs.body }}
     steps:
       # Full history + tags so the changelog step can diff the previous tag.
       - uses: actions/checkout@v5
@@ -96,12 +101,20 @@ jobs:
           if [ -z "${added}${improved}${fixed}${other}" ]; then
             body="${body}"$'\n'"_No notable changes._"$'\n'
           fi
-          body="${body}"$'\n'"---"$'\n'"Download the installer for your OS below. The app also self-updates from this release."
+
+          # `body` = the changelog only → goes into latest.json.notes (the in-app
+          # update modal's "What's New"). `full` appends the download/self-update
+          # footer for the GitHub release PAGE, where that line is useful; it would
+          # be noise inside the app, so the updater gets `body` without it.
+          full="${body}"$'\n'"---"$'\n'"Download the installer for your OS below. The app also self-updates from this release."
 
           {
             echo "body<<__NOTES_EOF__"
             printf '%s\n' "$body"
             echo "__NOTES_EOF__"
+            echo "full<<__FULL_EOF__"
+            printf '%s\n' "$full"
+            echo "__FULL_EOF__"
           } >> "$GITHUB_OUTPUT"
 
       - name: Create the draft release
@@ -109,7 +122,7 @@ jobs:
         uses: actions/github-script@v8
         env:
           TAG: ${{ github.ref_name }}
-          NOTES: ${{ steps.notes.outputs.body }}
+          NOTES: ${{ steps.notes.outputs.full }}
         with:
           script: |
             const tag = process.env.TAG;
@@ -197,6 +210,10 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
+          # Stamps latest.json.notes (updater manifest) with the changelog so the
+          # in-app update modal's "What's New" is populated. Same body already on
+          # the GitHub release; every matrix job passes the identical string.
+          releaseBody: ${{ needs.create-release.outputs.notes }}
           args: ${{ matrix.args }}
 
   publish-release:

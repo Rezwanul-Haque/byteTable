@@ -16,31 +16,39 @@ import { useToast } from "../../shared/ui/toastContext";
 import { releaseUrl, skipVersion, type Update } from "./api";
 import "./UpdateModal.css";
 
-/** Tiny markdown → elements (### headings + `-` bullet lists only), matching the
- *  prototype's renderNotes. */
+/** Tiny markdown → elements. Handles ATX headings (`#`–`######`), `-`/`*` bullet
+ *  lists, and horizontal rules (`---`/`***`/`___`). The release notes come from
+ *  the pipeline's changelog, which leads with a `## What's changed` heading and a
+ *  `---` divider before the download footer — so `##` and `---` must render as
+ *  chrome, not literal text. */
 function renderNotes(body: string) {
-  type Block = { kind: "h" | "p"; text: string } | { kind: "ul"; items: string[] };
+  type Block = { kind: "h" | "p" | "hr"; text: string } | { kind: "ul"; items: string[] };
   const blocks: Block[] = [];
   let list: { kind: "ul"; items: string[] } | null = null;
+  const flush = () => {
+    if (list) {
+      blocks.push(list);
+      list = null;
+    }
+  };
   for (const line of body.split("\n")) {
-    if (/^###\s/.test(line)) {
-      if (list) {
-        blocks.push(list);
-        list = null;
-      }
-      blocks.push({ kind: "h", text: line.replace(/^###\s/, "") });
+    if (/^#{1,6}\s/.test(line)) {
+      flush();
+      blocks.push({ kind: "h", text: line.replace(/^#{1,6}\s+/, "") });
+    } else if (/^\s*([-*_])\1{2,}\s*$/.test(line)) {
+      // A run of 3+ of the same -, *, or _ (optional surrounding space) is an
+      // <hr>, checked before the bullet rule so `---` isn't read as a "- " item.
+      flush();
+      blocks.push({ kind: "hr", text: "" });
     } else if (/^[-*]\s/.test(line)) {
       if (!list) list = { kind: "ul", items: [] };
       list.items.push(line.replace(/^[-*]\s/, ""));
     } else if (line.trim()) {
-      if (list) {
-        blocks.push(list);
-        list = null;
-      }
+      flush();
       blocks.push({ kind: "p", text: line });
     }
   }
-  if (list) blocks.push(list);
+  flush();
   return blocks.map((b, i) => {
     if (b.kind === "ul") {
       return (
@@ -50,6 +58,9 @@ function renderNotes(body: string) {
           ))}
         </ul>
       );
+    }
+    if (b.kind === "hr") {
+      return <hr className="rel-hr" key={i} />;
     }
     return (
       <div className={b.kind === "h" ? "rel-h" : "rel-p"} key={i}>

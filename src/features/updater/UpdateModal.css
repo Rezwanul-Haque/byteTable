@@ -75,6 +75,11 @@
   color: var(--text-dim);
   line-height: 1.5;
 }
+.rel-hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 10px 0;
+}
 .update-progress {
   display: flex;
   flex-direction: column;

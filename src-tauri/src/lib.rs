@@ -215,6 +215,41 @@ fn migrate_legacy_config_dir(new_dir: &std::path::Path) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // WebKitGTK (Linux Tauri webview) on X11 has a broken accelerated-compositing
+    // path: virtualized data-grid rows are absolutely positioned and moved with
+    // `transform: translateY`, and the DMABUF renderer fails to repaint the
+    // transformed layers on fast scroll. The result is stale tiles — "ghost rows"
+    // and columns that appear swapped for a few rows (the prior row's text bleeds
+    // through), plus a blank/laggy grid while scrolling. Hovering a cell forces a
+    // local repaint and the row "fixes itself", proving the DOM is correct and the
+    // fault is purely in the native compositor. The opaque `background` on `.dg-tr`
+    // (see DataGrid.css) only partially masks it because the child text layers are
+    // still not repainted.
+    //
+    // Disabling the DMABUF renderer forces WebKitGTK onto a repaint path that works.
+    // Gated to Linux + X11 only: Wayland and macOS repaint correctly and keep full
+    // GPU compositing. Must run before the webview is created (i.e. before the
+    // Tauri builder), because WebKitGTK reads these env vars at webview init.
+    #[cfg(target_os = "linux")]
+    {
+        let is_x11 = std::env::var("XDG_SESSION_TYPE")
+            .map(|s| s.eq_ignore_ascii_case("x11"))
+            .unwrap_or(false)
+            // Fallback for sessions that don't set XDG_SESSION_TYPE: DISPLAY set
+            // and no Wayland socket => X11.
+            || (std::env::var_os("WAYLAND_DISPLAY").is_none()
+                && std::env::var_os("DISPLAY").is_some());
+        if is_x11 {
+            // Primary fix: disable the DMABUF renderer.
+            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+            // Fallback: if tearing persists on some X11 drivers, also disabling
+            // compositing mode resolves it (heavier — drops GPU compositing).
+            // Uncomment to enable; kept off by default so the DMABUF fix can be
+            // validated as a single variable first.
+            // std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+        }
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_os::init())
         // Single-instance guard (MUST be the first plugin registered): a second

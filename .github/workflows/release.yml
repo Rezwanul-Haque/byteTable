@@ -91,7 +91,7 @@ jobs:
               chore|docs|doc|test|tests|ci|build|style|release) : ;;
               *) other="${other}${line}" ;;
             esac
-          done < <(git log --no-merges --pretty=format:'%s' "$range")
+          done < <(git log --no-merges --pretty=tformat:'%s' "$range")
 
           body="## What's changed"$'\n'
           [ -n "$added" ]    && body="${body}"$'\n'"### Added"$'\n'"${added}"

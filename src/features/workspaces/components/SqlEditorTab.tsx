@@ -79,6 +79,17 @@ type Snippet = { label: string; sql: string };
 const OBJECT_DDL_RE =
   /^\s*(create(\s+or\s+replace)?|drop|alter|refresh)\s+(materialized\s+view|view|function|procedure|trigger)\b/i;
 
+/** A statement that creates/drops/alters/renames a TABLE (or its indexes) —
+ *  used to force-refetch the schema's table list after an editor run so the
+ *  sidebar accordion + Structure view pick up new/dropped/renamed columns and
+ *  tables immediately, instead of showing stale cache until a manual refresh.
+ *  A forced `loadTables` drops the schema's column + tableMeta caches, so the
+ *  sidebar's column effect and an open Structure view refetch reactively —
+ *  the same path the manual refresh button takes. Matches at the statement
+ *  start so a `table`/`index` word inside a query body never trips it. */
+const TABLE_DDL_RE =
+  /^\s*(?:create(?:\s+(?:global|local))?(?:\s+temp(?:orary)?)?\s+table|(?:drop|alter|rename)\s+table|(?:create(?:\s+unique)?|drop)\s+index)\b/i;
+
 function snippetsFor(engine: Engine, schemaName: string): Snippet[] {
   switch (engine) {
     case "mysql":
@@ -365,12 +376,14 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
     void (async () => {
       const runs: SqlRun[] = [];
       let touchedObjects = false;
+      let touchedTables = false;
       for (let i = 0; i < statements.length; i++) {
         const stmt = statements[i]!;
         try {
           const result = await queryRun(workspace.handleId, stmt, { schema: schemaName });
           runs.push({ id: `r${i}`, sql: stmt, result, error: null });
           if (OBJECT_DDL_RE.test(stmt)) touchedObjects = true;
+          if (TABLE_DDL_RE.test(stmt)) touchedTables = true;
           pushSqlHistory(tab.id, {
             sql: stmt,
             ok: true,
@@ -389,6 +402,11 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
       // the introspection object caches so the sidebar + any open viewer pick up
       // the change immediately (matches running the same DDL via the object UI).
       if (touchedObjects) invalidateObjects(workspace.handleId, schemaName);
+      // A successful CREATE/ALTER/DROP/RENAME TABLE (or index DDL) force-refetches
+      // the schema's table list; that eviction of the column + tableMeta caches
+      // makes the sidebar accordion and any open Structure view refetch reactively
+      // — same path as the manual refresh button, so new columns show at once.
+      if (touchedTables) void loadTables(workspace.handleId, schemaName, { force: true });
     })();
   };
 

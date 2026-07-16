@@ -1124,12 +1124,16 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         addRow();
       } else if (k === "s") {
         e.preventDefault();
+        // While the row inspector holds un-staged edits, ⌘S must stage THOSE
+        // (the drawer's own listener does it) — not commit the batch. Skip the
+        // grid save so one keystroke doesn't both stage and commit.
+        if (inspect != null && inspectDirty) return;
         save();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [addRow, save]);
+  }, [addRow, save, inspect, inspectDirty]);
 
   // --- M11 FK coexistence: defer the single-click hop ------------------
   const fkHopTimer = useRef<number | null>(null);

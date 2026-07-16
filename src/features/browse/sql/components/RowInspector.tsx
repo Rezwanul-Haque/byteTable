@@ -13,7 +13,7 @@
 // `stageRealValue` / `stageNewValue`).
 
 import { createPortal } from "react-dom";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { CellValue } from "../../../../shared/api/engine";
 import { Icon } from "../../../../shared/ui/Icon";
@@ -640,15 +640,6 @@ export function RowInspector({
     setDrafts(new Map());
   }
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
   // Effective changes: drafts that differ from the current base value.
   const changes = useMemo(() => {
     const out = new Map<number, CellValue>();
@@ -687,6 +678,34 @@ export function RowInspector({
       next.delete(ci);
       return next;
     });
+
+  // Stage the current field edits into the grid's save bar — the action of the
+  // "Stage changes" button, also reachable via ⌘/Ctrl+S below. No-op unless
+  // there is a valid change (mirrors the button's `disabled` gate).
+  const stage = useCallback(() => {
+    if (nChanges === 0 || jsonBroken) return;
+    onStage(new Map(changes));
+    setDrafts(new Map());
+    onClose();
+  }, [nChanges, jsonBroken, changes, onStage, onClose]);
+
+  // Escape closes; ⌘/Ctrl+S stages (NOT the grid's batch commit — while the
+  // drawer holds un-staged edits, save must stage those first). The grid's own
+  // ⌘S window listener skips its `save()` when this drawer is open + dirty, so
+  // the two never both fire for one keystroke.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        stage();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose, stage]);
 
   return createPortal(
     <aside className={"ri-drawer" + (open ? " open" : "")}>
@@ -763,11 +782,7 @@ export function RowInspector({
                       ? "Fix invalid JSON first"
                       : "Stage into the save bar — commit with ⌘S"
                   }
-                  onClick={() => {
-                    onStage(new Map(changes));
-                    setDrafts(new Map());
-                    onClose();
-                  }}
+                  onClick={stage}
                 >
                   <Icon name="playlist_add_check" size={14} /> Stage changes
                 </button>

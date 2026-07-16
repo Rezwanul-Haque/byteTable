@@ -155,6 +155,7 @@ mod tests {
                 dx: 3.0,
                 dy: -4.0,
             }],
+            cardinalities: Vec::new(),
             zoom: Some(1.25),
         }
     }

@@ -17,6 +17,9 @@ export const ROW_H = 21;
 export const MAX_COLS = 12;
 /** Bottom padding inside a card below the last row (prototype `+ 8`). */
 export const CARD_PAD_B = 8;
+/** Top padding of the column area, below the header (rows start at HEAD_H+4).
+ *  Edge endpoints must include it to center on a column row. */
+export const CARD_PAD_T = 4;
 /** Dot-grid spacing (§3.8: 22px). */
 export const GRID = 22;
 
@@ -58,7 +61,21 @@ export interface EdgeModel {
   /** Bend-handle position: natural midpoint + any applied waypoint offset. */
   mx: number;
   my: number;
+  /** Cardinality marker kind at each endpoint (crow's-foot notation). Child end
+   *  is `many` for a normal 1:N, `one` for a 1:1 (unique/PK FK column); parent
+   *  end is always `one`. A derived M:N edge is `many` at both ends. */
+  childEnd: EndKind;
+  parentEnd: EndKind;
+  /** Direction the line leaves each card (from edge into line) — orients the
+   *  markers. +1 = card's right side, -1 = its left side. */
+  sOut: 1 | -1;
+  tOut: 1 | -1;
+  /** True for a derived M:N edge (junction table) — drawn dashed, no FK. */
+  derived?: boolean;
 }
+
+/** A relationship endpoint's cardinality: exactly one, or many (crow's foot). */
+export type EndKind = "one" | "many";
 
 /** Height of a card given its column count + truncation. */
 export function cardHeight(meta: TableMeta): number {
@@ -219,14 +236,20 @@ export interface EdgeGeometry {
    */
   mx: number;
   my: number;
+  /** Direction the line leaves each endpoint (from the card edge INTO the line):
+   *  +1 = the card's right side, -1 = its left side. Orients the cardinality
+   *  markers so their prongs/tick sit against the card. */
+  sOut: 1 | -1;
+  tOut: 1 | -1;
 }
 
 /**
- * Compute a bezier `<path>` between a child card's FK column row and a ref
- * card's header, plus the source/target marker anchors and the bend handle.
- * Picks the card sides by relative position (mirrors the prototype) so the
- * curve exits toward the target. `colIndex` is the FK column's row index
- * (clamped to the shown rows).
+ * Compute a bezier `<path>` between a child card's FK column row and the ref
+ * card's referenced column row, plus the source/target marker anchors and the
+ * bend handle. Picks the card sides by relative position (mirrors the
+ * prototype) so the curve exits toward the target. `colIndex` is the FK
+ * column's row index and `refColIndex` the referenced column's row index (both
+ * clamped to the shown rows).
  *
  * MOVABLE EDGES (Task 3): an optional `waypoint {dx,dy}` bends the curve. The
  * offset is applied to the *natural* midpoint — the point halfway along a
@@ -242,11 +265,13 @@ export function edgeGeometry(
   child: CardModel,
   ref: CardModel,
   colIndex: number,
+  refColIndex: number,
   waypoint?: Waypoint | null,
 ): EdgeGeometry {
   const clamped = Math.min(Math.max(0, colIndex), MAX_COLS - 1);
-  const sy = child.y + HEAD_H + clamped * ROW_H + ROW_H / 2;
-  const ty = ref.y + HEAD_H / 2;
+  const clampedRef = Math.min(Math.max(0, refColIndex), MAX_COLS - 1);
+  const sy = child.y + HEAD_H + CARD_PAD_T + clamped * ROW_H + ROW_H / 2;
+  const ty = ref.y + HEAD_H + CARD_PAD_T + clampedRef * ROW_H + ROW_H / 2;
   const childRight = child.x + child.w;
 
   let sx: number;
@@ -271,6 +296,10 @@ export function edgeGeometry(
   const mx = midX + wx;
   const my = midY + wy;
 
+  // Which side of each card the line leaves (for orienting cardinality markers).
+  const sOut: 1 | -1 = sx === childRight ? 1 : -1;
+  const tOut: 1 | -1 = tx === ref.x ? -1 : 1;
+
   const dx = Math.max(40, Math.abs(tx - sx) / 2);
   const c1 = sx + (tx >= sx ? dx : -dx);
   const c2 = tx + (tx >= sx ? -dx : dx);
@@ -278,7 +307,7 @@ export function edgeGeometry(
   // Unbent → original single cubic (preserves Task 2 visuals exactly).
   if (wx === 0 && wy === 0) {
     const path = `M ${sx} ${sy} C ${c1} ${sy}, ${c2} ${ty}, ${tx} ${ty}`;
-    return { path, sx, sy, tx, ty, mx, my };
+    return { path, sx, sy, tx, ty, mx, my, sOut, tOut };
   }
 
   // Bent → two cubic segments meeting at (mx,my). Endpoints keep their
@@ -291,7 +320,101 @@ export function edgeGeometry(
     `M ${sx} ${sy} ` +
     `C ${sx + (tx >= sx ? dx : -dx)} ${sy}, ${mx - hx} ${my - hy}, ${mx} ${my} ` +
     `C ${mx + hx} ${my + hy}, ${tx + (tx >= sx ? -dx : dx)} ${ty}, ${tx} ${ty}`;
-  return { path, sx, sy, tx, ty, mx, my };
+  return { path, sx, sy, tx, ty, mx, my, sOut, tOut };
+}
+
+// --- cardinality (crow's-foot notation) -------------------------------------
+
+/** Marker geometry, relative to the endpoint at the card edge. */
+const FOOT_LEN = 13; // how far the crow's-foot apex sits out along the line
+const FOOT_SPREAD = 6; // half the fork's opening at the card edge
+const TICK_OFF = 8; // how far the "one" tick sits off the card edge
+const TICK_H = 5; // half the tick's height
+
+/**
+ * SVG path `d` for a cardinality marker at `(ex,ey)` on a card edge. `outX` is
+ * the direction the line leaves the card (+1 right, -1 left). `one` draws a
+ * single perpendicular tick out along the line; `many` draws a 3-prong crow's
+ * foot whose prongs touch the card edge and converge to an apex out on the line.
+ */
+export function crowFoot(ex: number, ey: number, outX: 1 | -1, kind: EndKind): string {
+  if (kind === "one") {
+    const bx = ex + outX * TICK_OFF;
+    return `M ${bx} ${ey - TICK_H} L ${bx} ${ey + TICK_H}`;
+  }
+  const ax = ex + outX * FOOT_LEN;
+  return (
+    `M ${ax} ${ey} L ${ex} ${ey - FOOT_SPREAD} ` +
+    `M ${ax} ${ey} L ${ex} ${ey} ` +
+    `M ${ax} ${ey} L ${ex} ${ey + FOOT_SPREAD}`
+  );
+}
+
+/** Set-equal by membership (order-insensitive). */
+function sameSet(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const s = new Set(a);
+  return b.every((x) => s.has(x));
+}
+
+/** True when `cols` are unique in `meta` — i.e. the whole PK, or exactly the
+ *  columns of some UNIQUE index. A unique child FK column makes the edge 1:1. */
+function colsAreUnique(meta: TableMeta, cols: string[]): boolean {
+  const pkCols = meta.columns.filter((c) => c.pk).map((c) => c.name);
+  if (pkCols.length > 0 && sameSet(pkCols, cols)) return true;
+  return meta.indexes.some((ix) => ix.unique && sameSet(ix.columns, cols));
+}
+
+/** The child end's cardinality for one FK: `one` (1:1) when the FK column(s)
+ *  are unique in the child, else `many` (1:N). Parent end is always `one`. */
+export function childEndFor(childMeta: TableMeta, fkColumns: string[]): EndKind {
+  return colsAreUnique(childMeta, fkColumns) ? "one" : "many";
+}
+
+/** A detected junction (associative) table: exactly two FKs to two distinct
+ *  tables, with the table's PK equal to exactly those two FK columns. Implies an
+ *  M:N between `a` and `b`. */
+export interface Junction {
+  table: string;
+  a: string;
+  b: string;
+}
+
+/** Find junction tables among `tables` → the M:N relationships they encode. */
+export function detectJunctions(tables: string[], metas: Record<string, TableMeta>): Junction[] {
+  const out: Junction[] = [];
+  for (const t of tables) {
+    const m = metas[t];
+    if (!m || m.foreignKeys.length !== 2) continue;
+    const [f1, f2] = m.foreignKeys;
+    if (!f1 || !f2 || f1.refTable === f2.refTable) continue;
+    const pkCols = m.columns.filter((c) => c.pk).map((c) => c.name);
+    const fkCols = [...f1.columns, ...f2.columns];
+    if (pkCols.length > 0 && sameSet(pkCols, fkCols)) {
+      out.push({ table: t, a: f1.refTable, b: f2.refTable });
+    }
+  }
+  return out;
+}
+
+/** Stable id for a derived M:N edge between two tables (order-insensitive). */
+export function mnEdgeId(a: string, b: string): string {
+  return `mn:${[a, b].sort().join("--")}`;
+}
+
+/** A manual cardinality override value (mirrors the frontend `CardinalityKind`). */
+export type CardinalityKind = "1:1" | "1:N" | "M:N";
+
+/** Map an override kind to the two endpoint markers (child end, parent end). */
+export function endsForKind(kind: CardinalityKind): { child: EndKind; parent: EndKind } {
+  switch (kind) {
+    case "1:1":
+      return { child: "one", parent: "one" };
+    case "M:N":
+      return { child: "many", parent: "many" };
+    default:
+      return { child: "many", parent: "one" }; // 1:N
+  }
 }
 
 /**
@@ -304,6 +427,7 @@ export function buildEdges(
   metas: Record<string, TableMeta>,
   cards: Record<string, CardModel>,
   waypoints?: Record<string, Waypoint>,
+  overrides?: Record<string, CardinalityKind>,
 ): EdgeModel[] {
   const inSchema = new Set(tables);
   const out: EdgeModel[] = [];
@@ -316,8 +440,14 @@ export function buildEdges(
       const ref = cards[fk.refTable];
       if (!ref) continue;
       const colIndex = meta.columns.findIndex((c) => c.name === fk.columns[0]);
+      const refColIndex =
+        metas[fk.refTable]?.columns.findIndex((c) => c.name === fk.refColumns[0]) ?? 0;
       const id = edgeId(childTable, fk.columns, fk.refTable);
-      const geo = edgeGeometry(child, ref, colIndex, waypoints?.[id]);
+      const geo = edgeGeometry(child, ref, colIndex, refColIndex, waypoints?.[id]);
+      const override = overrides?.[id];
+      const ends = override
+        ? endsForKind(override)
+        : { child: childEndFor(meta, fk.columns), parent: "one" as EndKind };
       out.push({
         id,
         childTable,
@@ -329,8 +459,41 @@ export function buildEdges(
         ty: geo.ty,
         mx: geo.mx,
         my: geo.my,
+        childEnd: ends.child,
+        parentEnd: ends.parent,
+        sOut: geo.sOut,
+        tOut: geo.tOut,
       });
     }
+  }
+  // Derived M:N edges: one dashed edge between the two tables each junction
+  // links (both ends many). Deduped by the order-insensitive edge id.
+  const seen = new Set<string>();
+  for (const j of detectJunctions(tables, metas)) {
+    const a = cards[j.a];
+    const b = cards[j.b];
+    if (!a || !b) continue;
+    const id = mnEdgeId(j.a, j.b);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const geo = edgeGeometry(a, b, 0, 0, waypoints?.[id]);
+    out.push({
+      id,
+      childTable: j.a,
+      refTable: j.b,
+      path: geo.path,
+      sx: geo.sx,
+      sy: geo.sy,
+      tx: geo.tx,
+      ty: geo.ty,
+      mx: geo.mx,
+      my: geo.my,
+      childEnd: "many",
+      parentEnd: "many",
+      sOut: geo.sOut,
+      tOut: geo.tOut,
+      derived: true,
+    });
   }
   return out;
 }

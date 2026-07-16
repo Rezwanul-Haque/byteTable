@@ -38,6 +38,18 @@ pub struct EdgeWaypoint {
     pub dy: f64,
 }
 
+/// A manual cardinality override for one relationship edge. `id` matches the
+/// renderer's edge id (same scheme as `EdgeWaypoint.id`); `kind` is the
+/// frontend's cardinality string (`"1:1"` / `"1:N"` / `"M:N"`). Absent for an
+/// edge means "auto-derive from the schema". Stored opaquely — the renderer
+/// owns the value set.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EdgeCardinality {
+    pub id: String,
+    pub kind: String,
+}
+
 /// The full saved layout for one (connectionId, schema): every table card's
 /// position, every user-dragged FK edge offset, and the zoom level.
 ///
@@ -61,6 +73,10 @@ pub struct MapLayout {
     pub positions: Vec<NodePosition>,
     #[serde(default)]
     pub edges: Vec<EdgeWaypoint>,
+    /// Manual cardinality overrides, keyed by edge id. Omitted from the wire
+    /// when empty (a new optional field, non-breaking like `zoom`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cardinalities: Vec<EdgeCardinality>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub zoom: Option<f64>,
 }
@@ -117,6 +133,7 @@ mod tests {
                 dx: 12.0,
                 dy: -8.0,
             }],
+            cardinalities: Vec::new(),
             zoom: Some(1.5),
         }
     }

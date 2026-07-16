@@ -11,13 +11,14 @@
 // SQL string each operation emits, and the destructiveness rule that drives the
 // warning UI + production gate. The stateful half lives in `useSchemaEditor`.
 //
-// DDL DIALECT: the staged statements mirror the prototype's Postgres-flavoured
-// DDL (`ALTER TABLE … ALTER COLUMN … TYPE`, `ADD PRIMARY KEY`, …) verbatim —
-// they are also what the Review/Commit lists display. They run through
-// `executeScriptText` (one transaction). Postgres/MySQL accept them directly;
-// SQLite cannot express in-place type/PK changes via plain ALTER, so those
-// specific ops error and roll the whole batch back (surfaced to the user) —
-// table/column add/drop/rename + FK changes work everywhere.
+// DDL DIALECT: the staged statements are engine-aware — see `ddlFor(engine)`
+// below. Postgres is the baseline (`ALTER COLUMN … TYPE`, `DROP CONSTRAINT`);
+// MySQL uses `MODIFY COLUMN` + `DROP PRIMARY KEY`/`DROP FOREIGN KEY`; SQL Server
+// uses `ALTER COLUMN <type>`. SQLite cannot express in-place retype/PK changes
+// and those ops error at commit (add/drop/rename + FK changes work everywhere).
+// These strings are what the Review/Commit lists display and run through
+// `executeScriptText`. Caveat: MySQL implicitly commits each DDL statement, so
+// a mid-batch failure is NOT rolled back — a server limitation, not ours.
 
 import type { Engine } from "../../shared/types";
 import type { TableMeta } from "../../shared/api/engine";
@@ -173,23 +174,70 @@ export function isDestructive(sql: string): boolean {
   );
 }
 
-// --- staged DDL string builders (one per operation, prototype-verbatim) -----
+// --- staged DDL string builders (one per operation, engine-aware) -----------
 
-export const ddl = {
-  addColumn: (t: string, name: string) => `ALTER TABLE ${t} ADD COLUMN ${name} TEXT;`,
-  renameColumn: (t: string, from: string, to: string) =>
-    `ALTER TABLE ${t} RENAME COLUMN ${from} TO ${to};`,
-  changeType: (t: string, col: string, type: string) =>
-    `ALTER TABLE ${t} ALTER COLUMN ${col} TYPE ${type};`,
-  setNullable: (t: string, col: string, nullable: boolean) =>
-    `ALTER TABLE ${t} ALTER COLUMN ${col} ${nullable ? "DROP NOT NULL" : "SET NOT NULL"};`,
-  addPrimaryKey: (t: string, col: string) => `ALTER TABLE ${t} ADD PRIMARY KEY (${col});`,
-  dropPrimaryKey: (t: string) => `ALTER TABLE ${t} DROP CONSTRAINT ${t}_pkey;`,
-  dropColumn: (t: string, col: string) => `ALTER TABLE ${t} DROP COLUMN ${col};`,
-  addForeignKey: (t: string, name: string, col: string, refTable: string, refCol: string) =>
-    `ALTER TABLE ${t} ADD CONSTRAINT ${name} FOREIGN KEY (${col}) REFERENCES ${refTable}(${refCol}) ON DELETE RESTRICT;`,
-  dropForeignKey: (t: string, name: string) => `ALTER TABLE ${t} DROP CONSTRAINT ${name};`,
-  createTable: (name: string) => `CREATE TABLE ${name} (\n  id INTEGER PRIMARY KEY\n);`,
-  renameTable: (from: string, to: string) => `ALTER TABLE ${from} RENAME TO ${to};`,
-  dropTable: (t: string) => `DROP TABLE ${t};`,
-};
+/** The staged-DDL builders for one engine. Same shape for every engine; the
+ *  bodies differ where dialects diverge (in-place retype, nullability, PK/FK
+ *  drops). `setNullable`/`changeType` take the column's type because MySQL and
+ *  SQL Server restate the full column definition to alter it. */
+export interface Ddl {
+  addColumn: (t: string, name: string) => string;
+  renameColumn: (t: string, from: string, to: string) => string;
+  changeType: (t: string, col: string, type: string) => string;
+  setNullable: (t: string, col: string, nullable: boolean, type: string) => string;
+  addPrimaryKey: (t: string, col: string) => string;
+  dropPrimaryKey: (t: string) => string;
+  dropColumn: (t: string, col: string) => string;
+  addForeignKey: (t: string, name: string, col: string, refTable: string, refCol: string) => string;
+  dropForeignKey: (t: string, name: string) => string;
+  createTable: (name: string) => string;
+  renameTable: (from: string, to: string) => string;
+  dropTable: (t: string) => string;
+}
+
+/**
+ * Engine-specific staged-DDL builders.
+ *
+ * Postgres is the baseline (`ALTER COLUMN … TYPE`, `DROP CONSTRAINT …`). MySQL
+ * needs `MODIFY COLUMN` for retype/nullability, `DROP PRIMARY KEY`, and `DROP
+ * FOREIGN KEY`. SQL Server uses `ALTER COLUMN <type>` (no `TYPE` keyword).
+ * SQLite cannot express in-place retype/PK changes, so those still emit the
+ * Postgres form and error at commit (add/drop/rename + FK add/drop work).
+ *
+ * NOTE: MySQL implicitly commits each DDL statement, so a mid-batch failure is
+ * NOT rolled back — this is a server limitation, not something the builders can
+ * fix. The commit modal's "single transaction" framing holds only for Postgres.
+ */
+export function ddlFor(engine: Engine): Ddl {
+  const mysql = engine === "mysql";
+  const mssql = engine === "mssql";
+  return {
+    addColumn: (t, name) => `ALTER TABLE ${t} ADD COLUMN ${name} TEXT;`,
+    renameColumn: (t, from, to) => `ALTER TABLE ${t} RENAME COLUMN ${from} TO ${to};`,
+    changeType: (t, col, type) =>
+      mysql
+        ? `ALTER TABLE ${t} MODIFY COLUMN ${col} ${type};`
+        : mssql
+          ? `ALTER TABLE ${t} ALTER COLUMN ${col} ${type};`
+          : `ALTER TABLE ${t} ALTER COLUMN ${col} TYPE ${type};`,
+    setNullable: (t, col, nullable, type) =>
+      mysql
+        ? `ALTER TABLE ${t} MODIFY COLUMN ${col} ${type} ${nullable ? "NULL" : "NOT NULL"};`
+        : mssql
+          ? `ALTER TABLE ${t} ALTER COLUMN ${col} ${type} ${nullable ? "NULL" : "NOT NULL"};`
+          : `ALTER TABLE ${t} ALTER COLUMN ${col} ${nullable ? "DROP NOT NULL" : "SET NOT NULL"};`,
+    addPrimaryKey: (t, col) => `ALTER TABLE ${t} ADD PRIMARY KEY (${col});`,
+    dropPrimaryKey: (t) =>
+      mysql ? `ALTER TABLE ${t} DROP PRIMARY KEY;` : `ALTER TABLE ${t} DROP CONSTRAINT ${t}_pkey;`,
+    dropColumn: (t, col) => `ALTER TABLE ${t} DROP COLUMN ${col};`,
+    addForeignKey: (t, name, col, refTable, refCol) =>
+      `ALTER TABLE ${t} ADD CONSTRAINT ${name} FOREIGN KEY (${col}) REFERENCES ${refTable}(${refCol}) ON DELETE RESTRICT;`,
+    dropForeignKey: (t, name) =>
+      mysql
+        ? `ALTER TABLE ${t} DROP FOREIGN KEY ${name};`
+        : `ALTER TABLE ${t} DROP CONSTRAINT ${name};`,
+    createTable: (name) => `CREATE TABLE ${name} (\n  id INTEGER PRIMARY KEY\n);`,
+    renameTable: (from, to) => `ALTER TABLE ${from} RENAME TO ${to};`,
+    dropTable: (t) => `DROP TABLE ${t};`,
+  };
+}

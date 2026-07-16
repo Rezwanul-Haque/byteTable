@@ -83,6 +83,7 @@ mod tests {
                 dx: 1.0,
                 dy: 2.0,
             }],
+            cardinalities: Vec::new(),
             zoom: Some(1.0),
         }
     }

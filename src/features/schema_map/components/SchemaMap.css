@@ -143,6 +143,56 @@
   stroke-width: 1;
 }
 
+/* Crow's-foot cardinality markers (ticks + forks) at edge endpoints. */
+.map-edge-foot {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.map-edge.is-selected .map-edge-foot {
+  stroke-width: 2;
+}
+
+/* Derived M:N edge (junction): dashed to read as logical, not a physical FK. */
+.map-edge.is-mn .map-edge-path {
+  stroke-dasharray: 5 4;
+  stroke: color-mix(in oklab, var(--accent) 45%, var(--border));
+}
+
+/* Cardinality override popover (on a selected edge). The edge layer is
+   pointer-events:none, so re-enable it here. */
+.map-card-pop {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  pointer-events: auto;
+  width: max-content;
+}
+.map-card-pop-btn {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 2px 7px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.map-card-pop-btn:hover {
+  background: var(--bg3);
+  color: var(--text);
+}
+.map-card-pop-btn.active {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
 /* Draggable bend handle (shown when selected or already bent). */
 .map-edge-handle {
   fill: var(--bg1);
@@ -169,7 +219,10 @@
 
 /* ---------- cards ---------- */
 .map-card-box {
-  fill: var(--bg1);
+  /* Read-mode cards show one large flat body, so --bg1's designed blue tint
+     reads strongly. Mix it toward a neutral gray (same elevation) so the body
+     looks neutral like edit mode, where dark fields break up the surface. */
+  fill: color-mix(in oklab, var(--bg1), #1c1c1c);
   stroke: var(--border);
   stroke-width: 1;
   /* Soft layered shadow via the SVG <filter id="mapCardShadow"> (set on the
@@ -368,11 +421,31 @@
   stroke-dasharray: 4 4;
   opacity: 0.9;
 }
+/* Crow's-foot cardinality markers on edit-mode edges. */
+.map-inner .map-edge-foot {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* Derived M:N edge (junction) — dashed, no delete button. */
+.map-inner .map-edge-g.is-mn .map-edge-path {
+  stroke-dasharray: 5 4;
+  stroke: color-mix(in oklab, var(--accent) 45%, var(--border));
+}
+/* The edge layer is pointer-events:none; re-enable just the delete control so
+   it can be hovered/clicked, and keep it faintly visible (edge :hover can't
+   fire under pointer-events:none, so the old hover-to-reveal never showed). */
+.map-inner .map-edges foreignObject {
+  pointer-events: none;
+}
 .map-inner .map-edge-g .map-fk-del {
-  opacity: 0;
+  pointer-events: auto;
+  opacity: 0.45;
   transition: opacity 0.12s;
 }
-.map-inner .map-edge-g:hover .map-fk-del {
+.map-inner .map-edge-g .map-fk-del:hover {
   opacity: 1;
 }
 .map-fk-del {
@@ -408,7 +481,7 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 0 10px;
+  padding: 0 18px;
   height: 36px;
   background: var(--bg2);
   border-bottom: 1px solid var(--border);
@@ -487,13 +560,20 @@
 /* ---- per-row control grid ---- */
 .map-inner .map-card-col.editable {
   display: grid;
-  grid-template-columns: 13px minmax(0, 92px) 1fr 32px 16px 9px;
+  grid-template-columns: 13px minmax(0, 92px) 1fr 32px 16px;
   gap: 6px;
-  padding: 0 10px;
+  padding: 0 18px;
   position: relative;
 }
 .map-inner .map-card-col.editable:hover {
   background: var(--bg2);
+}
+/* While an FK is dragged onto a column, mark just the key icon before its
+   name (full-row highlight read as odd). */
+.map-inner .map-card-col.editable.fk-target .map-pk-btn {
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 22%, transparent);
+  border-radius: 4px;
 }
 .map-inner .map-card-col.editable .map-col-name {
   flex: none;
@@ -584,22 +664,38 @@
   color: #fff;
   background: var(--danger);
 }
+/* One FK port on each edge of a column row (absolute so both sides sit at the
+   card border and a link can start toward either direction). */
 .map-fk-port {
+  position: absolute;
+  top: calc(50% - 4.5px);
   width: 9px;
   height: 9px;
   border-radius: 50%;
   background: var(--bg3);
   border: 2px solid var(--text-faint);
-  flex: none;
   cursor: crosshair;
-  margin-right: -2px;
-  align-self: center;
-  transition: transform 0.1s ease;
+  opacity: 0;
+  transition:
+    transform 0.1s ease,
+    opacity 0.1s ease;
+}
+/* Inset a hair from the edges — the card clips overflow, so ports must sit
+   just inside its rounded border rather than poking out. */
+.map-fk-port.left {
+  left: 2px;
+}
+.map-fk-port.right {
+  right: 2px;
+}
+.map-card-col.editable:hover .map-fk-port {
+  opacity: 1;
 }
 .map-fk-port:hover {
   background: var(--accent);
   border-color: var(--accent);
   transform: scale(1.25);
+  opacity: 1;
 }
 
 /* ---- toolbar edit controls ---- */
@@ -705,6 +801,52 @@
 }
 .pending-sql.destructive {
   border-left: 2px solid #e06c75;
+}
+.pending-sql-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  border-radius: 6px;
+}
+.pending-sql-row.dragging {
+  opacity: 0.45;
+}
+.pending-sql-row.drag-over {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+.pending-sql-row .pending-sql {
+  flex: 1;
+  min-width: 0;
+}
+.pending-sql-grip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 18px;
+  margin-bottom: 5px;
+  color: var(--text-faint);
+  cursor: grab;
+}
+.pending-sql-grip:active {
+  cursor: grabbing;
+}
+.pending-sql-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 26px;
+  margin-bottom: 5px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg2);
+  color: var(--text-faint);
+  cursor: pointer;
+}
+.pending-sql-remove:hover {
+  color: var(--danger);
+  border-color: var(--danger);
 }
 
 /* ---- commit modal ---- */

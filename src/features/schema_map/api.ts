@@ -38,6 +38,19 @@ export interface EdgeWaypoint {
   dy: number;
 }
 
+/** A relationship's cardinality (crow's-foot). `1:1` / `1:N` / `M:N`. */
+export type CardinalityKind = "1:1" | "1:N" | "M:N";
+
+/**
+ * A manual cardinality override for one edge. `id` matches the renderer's edge
+ * id (same scheme as {@link EdgeWaypoint.id}); its presence overrides the
+ * schema-derived cardinality. Mirrors Rust's `EdgeCardinality`.
+ */
+export interface EdgeCardinality {
+  id: string;
+  kind: CardinalityKind;
+}
+
 /**
  * The full saved layout for one (connectionId, schema). Mirrors Rust's
  * `MapLayout`: `positions` / `edges` are always present (possibly empty);
@@ -47,6 +60,8 @@ export interface EdgeWaypoint {
 export interface MapLayout {
   positions: NodePosition[];
   edges: EdgeWaypoint[];
+  /** Manual cardinality overrides, keyed by edge id. Omitted/empty = all auto. */
+  cardinalities?: EdgeCardinality[];
   zoom?: number | null;
 }
 

@@ -29,7 +29,7 @@ import type { Workspace } from "../workspaces/types";
 import {
   buildEditSchema,
   cloneEditSchema,
-  ddl,
+  ddlFor,
   editTypesFor,
   sanitizeName,
   type EditMeta,
@@ -40,6 +40,16 @@ import {
 export interface XY {
   x: number;
   y: number;
+}
+
+/** One staged migration step: the SQL shown in Review/committed at the end, the
+ *  model mutation (kept so `unstage` can replay the survivors from the pre-edit
+ *  snapshot), and an optional identity tag so specific affordances (the visual
+ *  FK delete) can find their own op. */
+export interface StagedOp {
+  sql: string;
+  apply: (draft: EditSchema) => void;
+  tag?: string;
 }
 
 interface UseSchemaEditorArgs {
@@ -60,7 +70,7 @@ interface UseSchemaEditorArgs {
 
 export interface SchemaEditor {
   schema: EditSchema;
-  pending: string[];
+  pending: StagedOp[];
   editTypes: string[];
   busy: boolean;
   /** The id of the destructive control currently armed for its confirm click,
@@ -76,13 +86,15 @@ export interface SchemaEditor {
   togglePk: (table: string, colName: string) => void;
   dropColumn: (table: string, colName: string) => void;
   // relationship ops
-  addForeignKey: (fromT: string, fromCol: string, toT: string, toCol: string) => void;
-  dropForeignKey: (table: string, fkName: string) => void;
+  addForeignKey: (fromT: string, fromCol: string, toT: string) => void;
+  removeForeignKey: (table: string, fkName: string) => void;
   // table ops
   addTable: () => void;
   renameTable: (oldName: string, raw: string) => void;
   dropTable: (table: string) => void;
   // migration
+  unstage: (index: number) => void;
+  reorder: (from: number, to: number) => void;
   commit: () => Promise<void>;
   discard: () => void;
 }
@@ -108,7 +120,7 @@ export function useSchemaEditor({
     metas ? buildEditSchema(metas) : { meta: {}, order: [] },
   );
   const [seededFrom, setSeededFrom] = useState(metas);
-  const [pending, setPending] = useState<string[]>([]);
+  const [pending, setPending] = useState<StagedOp[]>([]);
   const [busy, setBusy] = useState(false);
   const [armedDrop, setArmedDrop] = useState<string | null>(null);
   const armTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -130,8 +142,8 @@ export function useSchemaEditor({
   );
 
   const editTypes = useMemo(() => editTypesFor(engine), [engine]);
+  const ddl = useMemo(() => ddlFor(engine), [engine]);
 
-  const stage = useCallback((sql: string) => setPending((p) => [...p, sql]), []);
   // Capture the pre-edit snapshot once per session, from the current model.
   const ensureSnapshot = useCallback(() => {
     if (!snapshotRef.current) snapshotRef.current = cloneEditSchema(schema);
@@ -144,6 +156,15 @@ export function useSchemaEditor({
       return next;
     });
   }, []);
+  // Stage one migration step: apply the mutation to the live model now AND
+  // record it (with its mutation + optional tag) so `unstage` can replay it.
+  const stageOp = useCallback(
+    (sql: string, apply: (draft: EditSchema) => void, tag?: string) => {
+      edit(apply);
+      setPending((p) => [...p, { sql, apply, tag }]);
+    },
+    [edit],
+  );
 
   const arm = useCallback((id: string) => {
     setArmedDrop(id);
@@ -164,7 +185,7 @@ export function useSchemaEditor({
       let i = 2;
       while (meta.columns.find((c) => c.name === name)) name = "new_column_" + i++;
       ensureSnapshot();
-      edit((next) => {
+      stageOp(ddl.addColumn(table, name), (next) => {
         next.meta[table]?.columns.push({
           name,
           type: "TEXT",
@@ -174,9 +195,8 @@ export function useSchemaEditor({
           fk: null,
         });
       });
-      stage(ddl.addColumn(table, name));
     },
-    [schema, ensureSnapshot, edit, stage],
+    [schema, ensureSnapshot, stageOp, ddl],
   );
 
   const renameColumn = useCallback(
@@ -190,7 +210,7 @@ export function useSchemaEditor({
         return;
       }
       ensureSnapshot();
-      edit((next) => {
+      stageOp(ddl.renameColumn(table, colName, newName), (next) => {
         const m = next.meta[table];
         if (!m) return;
         const col = m.columns.find((c) => c.name === colName);
@@ -202,9 +222,8 @@ export function useSchemaEditor({
           fk.columns = fk.columns.map((c) => (c === colName ? newName : c));
         });
       });
-      stage(ddl.renameColumn(table, colName, newName));
     },
-    [schema, ensureSnapshot, edit, stage, toast],
+    [schema, ensureSnapshot, stageOp, toast, ddl],
   );
 
   const changeType = useCallback(
@@ -214,13 +233,12 @@ export function useSchemaEditor({
       // when it isn't one of the offered types) — ignore that no-op.
       if (!col || !type || type === col.type) return;
       ensureSnapshot();
-      edit((next) => {
+      stageOp(ddl.changeType(table, colName, type), (next) => {
         const c = next.meta[table]?.columns.find((x) => x.name === colName);
         if (c) c.type = type;
       });
-      stage(ddl.changeType(table, colName, type));
     },
-    [schema, ensureSnapshot, edit, stage],
+    [schema, ensureSnapshot, stageOp, ddl],
   );
 
   const toggleNullable = useCallback(
@@ -229,13 +247,12 @@ export function useSchemaEditor({
       if (!col || col.pk) return;
       const nullable = !col.nullable;
       ensureSnapshot();
-      edit((next) => {
+      stageOp(ddl.setNullable(table, colName, nullable, col.type), (next) => {
         const c = next.meta[table]?.columns.find((x) => x.name === colName);
         if (c) c.nullable = nullable;
       });
-      stage(ddl.setNullable(table, colName, nullable));
     },
-    [schema, ensureSnapshot, edit, stage],
+    [schema, ensureSnapshot, stageOp, ddl],
   );
 
   const togglePk = useCallback(
@@ -244,7 +261,7 @@ export function useSchemaEditor({
       if (!col) return;
       const wasPk = col.pk;
       ensureSnapshot();
-      edit((next) => {
+      stageOp(wasPk ? ddl.dropPrimaryKey(table) : ddl.addPrimaryKey(table, colName), (next) => {
         const m = next.meta[table];
         if (!m) return;
         if (wasPk) {
@@ -261,62 +278,74 @@ export function useSchemaEditor({
           }
         }
       });
-      stage(wasPk ? ddl.dropPrimaryKey(table) : ddl.addPrimaryKey(table, colName));
     },
-    [schema, ensureSnapshot, edit, stage],
+    [schema, ensureSnapshot, stageOp, ddl],
   );
 
   const dropColumn = useCallback(
     (table: string, colName: string) => {
       if (!schema.meta[table]) return;
       ensureSnapshot();
-      edit((next) => {
+      stageOp(ddl.dropColumn(table, colName), (next) => {
         const m = next.meta[table];
         if (!m) return;
         m.columns = m.columns.filter((c) => c.name !== colName);
         m.indexes = m.indexes.filter((ix) => !ix.columns.includes(colName));
         m.foreignKeys = m.foreignKeys.filter((fk) => !fk.columns.includes(colName));
       });
-      stage(ddl.dropColumn(table, colName));
     },
-    [schema, ensureSnapshot, edit, stage],
+    [schema, ensureSnapshot, stageOp, ddl],
   );
 
   // --- relationship ops ------------------------------------------------
+  // The dragged column (fromT.fromCol) becomes the child FK column; the link
+  // always references the TARGET table's primary key (guaranteed indexed, so
+  // the DB accepts it). Which target row was dropped on is irrelevant.
   const addForeignKey = useCallback(
-    (fromT: string, fromCol: string, toT: string, toCol: string) => {
+    (fromT: string, fromCol: string, toT: string) => {
       const meta = schema.meta[fromT];
-      if (!meta) return;
+      const target = schema.meta[toT];
+      if (!meta || !target) return;
+      const pk = target.columns.find((c) => c.pk);
+      if (!pk) {
+        toast(`“${toT}” has no primary key to reference`, "err");
+        return;
+      }
+      const toCol = pk.name;
       if (meta.foreignKeys.find((fk) => fk.columns[0] === fromCol && fk.refTable === toT)) {
         toast("That foreign key already exists", "err");
         return;
       }
       const name = `fk_${fromT}_${fromCol}`;
       ensureSnapshot();
-      edit((next) => {
-        const m = next.meta[fromT];
-        if (!m) return;
-        m.foreignKeys.push({
-          name,
-          columns: [fromCol],
-          refTable: toT,
-          refColumns: [toCol],
-          onDelete: "RESTRICT",
-        });
-        const col = m.columns.find((c) => c.name === fromCol);
-        if (col) col.fk = `${toT}.${toCol}`;
-      });
-      stage(ddl.addForeignKey(fromT, name, fromCol, toT, toCol));
+      stageOp(
+        ddl.addForeignKey(fromT, name, fromCol, toT, toCol),
+        (next) => {
+          const m = next.meta[fromT];
+          if (!m) return;
+          m.foreignKeys.push({
+            name,
+            columns: [fromCol],
+            refTable: toT,
+            refColumns: [toCol],
+            onDelete: "RESTRICT",
+          });
+          const col = m.columns.find((c) => c.name === fromCol);
+          if (col) col.fk = `${toT}.${toCol}`;
+        },
+        `fk:${fromT}:${name}`,
+      );
       toast("Foreign key added", "ok");
     },
-    [schema, ensureSnapshot, edit, stage, toast],
+    [schema, ensureSnapshot, stageOp, toast, ddl],
   );
 
-  const dropForeignKey = useCallback(
+  // Stage a real DROP CONSTRAINT for a *pre-existing* (already-committed) FK.
+  const stageDropForeignKey = useCallback(
     (table: string, fkName: string) => {
       if (!schema.meta[table]) return;
       ensureSnapshot();
-      edit((next) => {
+      stageOp(ddl.dropForeignKey(table, fkName), (next) => {
         const m = next.meta[table];
         if (!m) return;
         const fk = m.foreignKeys.find((x) => x.name === fkName);
@@ -327,9 +356,8 @@ export function useSchemaEditor({
           if (c) c.fk = null;
         });
       });
-      stage(ddl.dropForeignKey(table, fkName));
     },
-    [schema, ensureSnapshot, edit, stage],
+    [schema, ensureSnapshot, stageOp, ddl],
   );
 
   // --- table ops -------------------------------------------------------
@@ -345,14 +373,13 @@ export function useSchemaEditor({
       foreignKeys: [],
     };
     ensureSnapshot();
-    edit((next) => {
+    stageOp(ddl.createTable(name), (next) => {
       next.meta[name] = meta;
       next.order = [...next.order, name];
     });
     const pos = newTablePos();
     setPositions((p) => ({ ...(p ?? {}), [name]: pos }));
-    stage(ddl.createTable(name));
-  }, [schema, ensureSnapshot, edit, stage, newTablePos, setPositions]);
+  }, [schema, ensureSnapshot, stageOp, newTablePos, setPositions, ddl]);
 
   const renameTable = useCallback(
     (oldName: string, raw: string) => {
@@ -364,7 +391,7 @@ export function useSchemaEditor({
         return;
       }
       ensureSnapshot();
-      edit((next) => {
+      stageOp(ddl.renameTable(oldName, newName), (next) => {
         const moved = next.meta[oldName];
         if (!moved) return;
         next.meta[newName] = moved;
@@ -388,16 +415,15 @@ export function useSchemaEditor({
         delete np[oldName];
         return np;
       });
-      stage(ddl.renameTable(oldName, newName));
     },
-    [schema, ensureSnapshot, edit, stage, toast, setPositions],
+    [schema, ensureSnapshot, stageOp, toast, setPositions, ddl],
   );
 
   const dropTable = useCallback(
     (table: string) => {
       if (!schema.meta[table]) return;
       ensureSnapshot();
-      edit((next) => {
+      stageOp(ddl.dropTable(table), (next) => {
         delete next.meta[table];
         next.order = next.order.filter((t) => t !== table);
         for (const m of Object.values(next.meta)) {
@@ -413,9 +439,62 @@ export function useSchemaEditor({
         delete np[table];
         return np;
       });
-      stage(ddl.dropTable(table));
     },
-    [schema, ensureSnapshot, edit, stage, setPositions],
+    [schema, ensureSnapshot, stageOp, setPositions, ddl],
+  );
+
+  // --- un-stage / reorder (rebuild the model from a new op list) -------
+  // Replay `nextOps` over the pre-edit snapshot to rebuild the model — correct
+  // for both removal (a survivor set) and reordering (same ops, new order),
+  // since the committed SQL and the diagram both follow the list order.
+  // Positions keep their live (dragged) coords; vanished tables drop out and
+  // reappearing ones get a fresh spot.
+  const rebuild = useCallback(
+    (nextOps: StagedOp[]) => {
+      const snap = snapshotRef.current;
+      if (!snap) return;
+      const nextSchema = cloneEditSchema(snap);
+      for (const op of nextOps) op.apply(nextSchema);
+      setSchema(nextSchema);
+      setPending(nextOps);
+      setPositions((pos) => {
+        if (!pos) return pos;
+        const np: Record<string, XY> = {};
+        for (const t of nextSchema.order) np[t] = pos[t] ?? newTablePos();
+        return np;
+      });
+    },
+    [setPositions, newTablePos],
+  );
+
+  const unstage = useCallback(
+    (index: number) => rebuild(pending.filter((_, i) => i !== index)),
+    [pending, rebuild],
+  );
+
+  // Move the pending step at `from` to `to` (list order = execution order).
+  const reorder = useCallback(
+    (from: number, to: number) => {
+      if (from === to || from < 0 || to < 0 || from >= pending.length || to >= pending.length)
+        return;
+      const next = [...pending];
+      const [moved] = next.splice(from, 1);
+      if (!moved) return;
+      next.splice(to, 0, moved);
+      rebuild(next);
+    },
+    [pending, rebuild],
+  );
+
+  // Remove a link: if it was added this session, un-stage its ADD (no DROP
+  // noise); otherwise stage a DROP CONSTRAINT against the committed FK.
+  const removeForeignKey = useCallback(
+    (table: string, fkName: string) => {
+      const idx = pending.findIndex((o) => o.tag === `fk:${table}:${fkName}`);
+      if (idx >= 0) unstage(idx);
+      else stageDropForeignKey(table, fkName);
+    },
+    [pending, unstage, stageDropForeignKey],
   );
 
   // --- migration -------------------------------------------------------
@@ -423,7 +502,7 @@ export function useSchemaEditor({
     if (pending.length === 0) return;
     setBusy(true);
     try {
-      await executeScriptText(handleId, schemaName, pending.join("\n"));
+      await executeScriptText(handleId, schemaName, pending.map((o) => o.sql).join("\n"));
     } catch (err) {
       toast(appErrorMessage(err, "Could not apply the schema changes."), "err");
       setBusy(false);
@@ -464,10 +543,12 @@ export function useSchemaEditor({
     togglePk,
     dropColumn,
     addForeignKey,
-    dropForeignKey,
+    removeForeignKey,
     addTable,
     renameTable,
     dropTable,
+    unstage,
+    reorder,
     commit,
     discard,
   };

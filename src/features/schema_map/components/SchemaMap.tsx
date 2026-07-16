@@ -57,14 +57,22 @@ import { useToast } from "../../../shared/ui/toastContext";
 import { useIntrospectionStore } from "../../introspection/state";
 import { useWorkspacesStore } from "../../workspaces/state";
 import type { Workspace } from "../../workspaces/types";
-import { diagramExport, type EdgeWaypoint, type NodePosition } from "../api";
+import {
+  diagramExport,
+  type CardinalityKind,
+  type EdgeCardinality,
+  type EdgeWaypoint,
+  type NodePosition,
+} from "../api";
 import { useSchemaMapStore } from "../state";
 import {
   autoLayout,
   buildEdges,
   cardModel,
+  CARD_PAD_T,
   contentBounds,
   contentExtent,
+  crowFoot,
   HEAD_H,
   ROW_H,
   type CardModel,
@@ -113,6 +121,22 @@ const SPREAD_Y = 1.4;
 function spreadPositions(p: Positions): Positions {
   const np: Positions = {};
   for (const [k, v] of Object.entries(p)) np[k] = { x: v.x * SPREAD_X, y: v.y * SPREAD_Y };
+  return np;
+}
+
+/** Re-anchor a layout's bounding box to `margin` from the origin. Read-mode
+ *  positions can sit anywhere (panned/dragged/saved), and edit mode navigates
+ *  by scroll from 0,0 — so without this, spread cards land off-screen and the
+ *  user has to hit Reset View. Keeps the arrangement, just shifts it into view. */
+const EDIT_MARGIN = 48;
+function anchorToOrigin(p: Positions): Positions {
+  const vals = Object.values(p);
+  if (vals.length === 0) return p;
+  const minX = Math.min(...vals.map((v) => v.x));
+  const minY = Math.min(...vals.map((v) => v.y));
+  const np: Positions = {};
+  for (const [k, v] of Object.entries(p))
+    np[k] = { x: v.x - minX + EDIT_MARGIN, y: v.y - minY + EDIT_MARGIN };
   return np;
 }
 
@@ -204,6 +228,9 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
   // Movable-edge waypoints: a {dx,dy} offset per edge id, applied to the live
   // midpoint so a bend follows the connected cards. Empty = all edges straight.
   const [waypoints, setWaypoints] = useState<Record<string, Waypoint>>({});
+  // Manual cardinality overrides per edge id (empty = all auto-derived). Wins
+  // over the schema-derived crow's-foot ends. Persisted with the layout.
+  const [overrides, setOverrides] = useState<Record<string, CardinalityKind>>({});
   // The currently selected edge id (highlighted + shows its bend handle), or
   // null. Clicking empty canvas deselects.
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
@@ -213,6 +240,10 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
   // --- edit mode (visual schema designer) -----------------------------
   const [editing, setEditing] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
+  // Drag-to-reorder state for the pending-migration list (index being dragged /
+  // index currently hovered as the drop target).
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
   const [commitOpen, setCommitOpen] = useState(false);
   const editable = EDITABLE_ENGINES.has(workspace.saved.engine);
   // Edit mode keeps its OWN positions, seeded (spread apart so the wider 340px
@@ -260,10 +291,43 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
       setEditing(false);
       setEditPositions(null);
     } else {
-      // Seed edit positions spread apart from the current read-mode layout.
-      setEditPositions(positions ? spreadPositions(positions) : {});
+      // Seed edit positions from the read-mode layout, spread apart for the
+      // wider cards and re-anchored to the origin so they land in view. Reset
+      // zoom + scroll so entering edit mode is centered without a Reset View.
+      setEditPositions(positions ? anchorToOrigin(spreadPositions(positions)) : {});
+      setZoom(1);
       setEditing(true);
+      requestAnimationFrame(() => wrapRef.current?.scrollTo({ left: 0, top: 0 }));
     }
+  };
+
+  // Reorder the pending list by pointer drag from a row's grip. Native HTML5
+  // drag/drop is unreliable in Tauri's webview, so this mirrors the card-drag
+  // approach (window mousemove/mouseup), hit-testing rows by their `data-idx`.
+  const startPendingDrag = (e: React.MouseEvent, from: number) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    setDragIdx(from);
+    setDragOverIdx(from);
+    let over = from;
+    const onMove = (me: MouseEvent) => {
+      const el = document.elementFromPoint(me.clientX, me.clientY);
+      const row = el && "closest" in el ? (el as Element).closest(".pending-sql-row") : null;
+      const idx = row?.getAttribute("data-idx");
+      if (idx != null) {
+        over = Number(idx);
+        setDragOverIdx(over);
+      }
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      if (over !== from) editor.reorder(from, over);
+      setDragIdx(null);
+      setDragOverIdx(null);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
   };
 
   // Resolve positions once metas are in: saved layout wins, else auto-layout.
@@ -285,10 +349,14 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         const wp: Record<string, Waypoint> = {};
         for (const e of layout.edges ?? []) wp[e.id] = { dx: e.dx, dy: e.dy };
         setWaypoints(wp);
+        const ov: Record<string, CardinalityKind> = {};
+        for (const c of layout.cardinalities ?? []) ov[c.id] = c.kind;
+        setOverrides(ov);
         if (typeof layout.zoom === "number") setZoom(clampZoom(layout.zoom));
       } else {
         setPositions(auto);
         setWaypoints({});
+        setOverrides({});
       }
     })();
     return () => {
@@ -302,6 +370,8 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
   // mapLayoutSave carries positions + edges + zoom together.
   const waypointsRef = useRef(waypoints);
   waypointsRef.current = waypoints;
+  const overridesRef = useRef(overrides);
+  overridesRef.current = overrides;
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const persist = useCallback(
     (pos: Positions, z: number) => {
@@ -317,9 +387,13 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
           dx: w.dx,
           dy: w.dy,
         }));
+        const cardinalitiesArr: EdgeCardinality[] = Object.entries(overridesRef.current).map(
+          ([id, kind]) => ({ id, kind }),
+        );
         void saveLayout(connectionId, schema, {
           positions: positionsArr,
           edges: edgesArr,
+          cardinalities: cardinalitiesArr,
           zoom: z,
         });
       }, SAVE_DEBOUNCE);
@@ -352,8 +426,23 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
   }, [cards]);
 
   const edges = useMemo(
-    () => (metas ? buildEdges(tables, metas, cardsById, waypoints) : []),
-    [metas, tables, cardsById, waypoints],
+    () => (metas ? buildEdges(tables, metas, cardsById, waypoints, overrides) : []),
+    [metas, tables, cardsById, waypoints, overrides],
+  );
+
+  // Set (or clear, with null) an edge's manual cardinality override, then persist.
+  const setCardinality = useCallback(
+    (id: string, kind: CardinalityKind | null) => {
+      setOverrides((prev) => {
+        const next = { ...prev };
+        if (kind === null) delete next[id];
+        else next[id] = kind;
+        overridesRef.current = next;
+        return next;
+      });
+      if (positions) persist(positions, zoom);
+    },
+    [positions, zoom, persist],
   );
 
   const extent = useMemo(() => contentExtent(cards), [cards]);
@@ -476,8 +565,9 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
     // In edit mode, reset only the (separate) edit-mode positions — re-spread so
     // the wider cards don't overlap — and leave the saved read layout untouched.
     if (editing) {
-      setEditPositions(spreadPositions(auto));
+      setEditPositions(anchorToOrigin(spreadPositions(auto)));
       setZoom(1);
+      requestAnimationFrame(() => wrapRef.current?.scrollTo({ left: 0, top: 0 }));
       return;
     }
     setPositions(auto);
@@ -742,9 +832,11 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
                       edge={edge}
                       selected={selectedEdge === edge.id}
                       bent={Boolean(waypoints[edge.id])}
+                      override={overrides[edge.id]}
                       onSelectPointerDown={(e) => onEdgePointerDown(e, edge.id)}
                       onHandlePointerDown={(e) => onHandlePointerDown(e, edge.id)}
                       onResetEdge={() => resetEdge(edge.id)}
+                      onSetCardinality={(kind) => setCardinality(edge.id, kind)}
                     />
                   ))}
                 </g>
@@ -776,12 +868,36 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
           {reviewOpen ? (
             <div className="pending-list">
               <div className="pending-list-title">Pending migration</div>
-              {editor.pending.map((sql, i) => (
-                <pre
+              {editor.pending.map((op, i) => (
+                <div
                   key={i}
-                  className={"pending-sql" + (isDestructive(sql) ? " destructive" : "")}
-                  dangerouslySetInnerHTML={{ __html: highlightSql(sql) }}
-                />
+                  data-idx={i}
+                  className={
+                    "pending-sql-row" +
+                    (dragIdx === i ? " dragging" : "") +
+                    (dragOverIdx === i && dragIdx !== i ? " drag-over" : "")
+                  }
+                >
+                  <span
+                    className="pending-sql-grip"
+                    title="Drag to reorder"
+                    onMouseDown={(e) => startPendingDrag(e, i)}
+                  >
+                    <Icon name="drag_indicator" size={15} />
+                  </span>
+                  <pre
+                    className={"pending-sql" + (isDestructive(op.sql) ? " destructive" : "")}
+                    dangerouslySetInnerHTML={{ __html: highlightSql(op.sql) }}
+                  />
+                  <button
+                    type="button"
+                    className="pending-sql-remove"
+                    title="Remove this statement"
+                    onClick={() => editor.unstage(i)}
+                  >
+                    <Icon name="close" size={13} />
+                  </button>
+                </div>
               ))}
             </div>
           ) : null}
@@ -819,7 +935,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
           schemaName={schema}
           env={workspace.saved.env}
           envColor={workspace.saved.color ?? ENV_COLOR[workspace.saved.env]}
-          statements={editor.pending}
+          statements={editor.pending.map((o) => o.sql)}
           busy={editor.busy}
           onConfirm={() => void editor.commit()}
           onClose={() => setCommitOpen(false)}
@@ -849,29 +965,45 @@ function CardIcon({
 }
 
 /** One FK edge: visible curve + wide hit-area + endpoints + bend handle. */
+const CARDINALITY_OPTIONS: { label: string; kind: CardinalityKind | null }[] = [
+  { label: "Auto", kind: null },
+  { label: "1:1", kind: "1:1" },
+  { label: "1:N", kind: "1:N" },
+  { label: "M:N", kind: "M:N" },
+];
+
 function Edge({
   edge,
   selected,
   bent,
+  override,
   onSelectPointerDown,
   onHandlePointerDown,
   onResetEdge,
+  onSetCardinality,
 }: {
   edge: EdgeModel;
   selected: boolean;
   bent: boolean;
+  override: CardinalityKind | undefined;
   onSelectPointerDown: (e: React.PointerEvent) => void;
   onHandlePointerDown: (e: React.PointerEvent) => void;
   onResetEdge: () => void;
+  onSetCardinality: (kind: CardinalityKind | null) => void;
 }) {
   return (
-    <g className={"map-edge" + (selected ? " is-selected" : "")} data-edge-id={edge.id}>
+    <g
+      className={"map-edge" + (selected ? " is-selected" : "") + (edge.derived ? " is-mn" : "")}
+      data-edge-id={edge.id}
+    >
       {/* Wide transparent hit-area makes the thin curve easy to click/touch. */}
       <path className="map-edge-hit" d={edge.path} onPointerDown={onSelectPointerDown} />
       <path className="map-edge-path" d={edge.path} />
-      <circle className="map-edge-dot" cx={edge.sx} cy={edge.sy} r={3.5} />
-      <circle className="map-edge-ring" cx={edge.tx} cy={edge.ty} r={5} />
+      <circle className="map-edge-dot" cx={edge.sx} cy={edge.sy} r={2} />
       <circle className="map-edge-dot" cx={edge.tx} cy={edge.ty} r={2} />
+      {/* Crow's-foot cardinality markers at each endpoint. */}
+      <path className="map-edge-foot" d={crowFoot(edge.sx, edge.sy, edge.sOut, edge.childEnd)} />
+      <path className="map-edge-foot" d={crowFoot(edge.tx, edge.ty, edge.tOut, edge.parentEnd)} />
       {/* Bend handle: shown when selected or already bent. Drag to bend, double
           -click to straighten (reset). */}
       {selected || bent ? (
@@ -886,6 +1018,27 @@ function Edge({
           onPointerDown={onHandlePointerDown}
           onDoubleClick={onResetEdge}
         />
+      ) : null}
+      {/* Cardinality override popover — only on a selected real FK edge (derived
+          M:N edges stay auto). Sits just below the bend handle. */}
+      {selected && !edge.derived ? (
+        <foreignObject x={edge.mx - 78} y={edge.my + 12} width={156} height={26}>
+          <div className="map-card-pop" onPointerDown={(e) => e.stopPropagation()}>
+            {CARDINALITY_OPTIONS.map((o) => {
+              const active = (override ?? null) === o.kind;
+              return (
+                <button
+                  key={o.label}
+                  type="button"
+                  className={"map-card-pop-btn" + (active ? " active" : "")}
+                  onClick={() => onSetCardinality(o.kind)}
+                >
+                  {o.label}
+                </button>
+              );
+            })}
+          </div>
+        </foreignObject>
       ) : null}
     </g>
   );
@@ -969,7 +1122,7 @@ function Card({
 
       {/* Column rows. */}
       {shownColumns.map((col, i) => {
-        const ry = HEAD_H + 4 + i * ROW_H;
+        const ry = HEAD_H + CARD_PAD_T + i * ROW_H;
         const cy = ry + ROW_H / 2;
         return (
           <g key={col.name} className="map-card-row">
@@ -1014,7 +1167,7 @@ function Card({
         <text
           className="map-col-more"
           x={26}
-          y={HEAD_H + 4 + shownColumns.length * ROW_H + ROW_H / 2}
+          y={HEAD_H + CARD_PAD_T + shownColumns.length * ROW_H + ROW_H / 2}
           dominantBaseline="central"
         >
           + {hiddenCount} more columns…

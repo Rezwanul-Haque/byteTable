@@ -54,7 +54,9 @@ use std::time::Duration;
 
 use rusqlite::Connection;
 
-use super::{ensure_schema_exists, map_query_error, quote_ident, table_ddl, table_meta_blocking};
+use super::error::map_query_error;
+use super::introspect::{ensure_schema_exists, table_ddl, table_meta_blocking};
+use super::sql::quote_ident;
 use crate::features::structure::domain::AlterOp;
 use crate::shared::engine::{AlterResult, ColumnInfo, ForeignKeyInfo, IndexInfo, TableMeta};
 use crate::shared::error::AppError;

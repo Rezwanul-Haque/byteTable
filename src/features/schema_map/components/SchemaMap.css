@@ -219,10 +219,10 @@
 
 /* ---------- cards ---------- */
 .map-card-box {
-  /* Read-mode cards show one large flat body, so --bg1's designed blue tint
-     reads strongly. Mix it toward a neutral gray (same elevation) so the body
-     looks neutral like edit mode, where dark fields break up the surface. */
-  fill: color-mix(in oklab, var(--bg1), #1c1c1c);
+  /* Theme surface token — adapts per theme (white in light, dark in dark) and
+     matches the edit-mode card body. (A fixed neutral mix here broke light
+     theme by forcing a dark body regardless of theme.) */
+  fill: var(--bg1);
   stroke: var(--border);
   stroke-width: 1;
   /* Soft layered shadow via the SVG <filter id="mapCardShadow"> (set on the

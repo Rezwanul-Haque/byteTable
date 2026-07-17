@@ -12,8 +12,10 @@ use crate::shared::engine::{
 };
 use crate::shared::error::AppError;
 
+use super::error::map_query_error;
+use super::introspect::get_str;
 use super::sql::quote_ident;
-use super::{get_str, map_query_error, TdsClient};
+use super::TdsClient;
 
 /// Kinds SQL Server exposes — the full set. `matview` reuses the label for
 /// **indexed views** (schemabound views carrying a unique clustered index).

@@ -9,7 +9,8 @@ use rusqlite::Connection;
 use crate::shared::engine::{DbObjectDefinition, DbObjectInfo, DbObjectKind};
 use crate::shared::error::AppError;
 
-use super::{map_query_error, quote_ident};
+use super::error::map_query_error;
+use super::sql::quote_ident;
 
 /// Kinds SQLite exposes.
 pub(super) const KINDS: &[DbObjectKind] = &[DbObjectKind::View, DbObjectKind::Trigger];

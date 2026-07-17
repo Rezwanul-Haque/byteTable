@@ -10,7 +10,7 @@
 // also keeps re-renders cheap (only ~20 rows reconcile), so button clicks stay
 // responsive while a large result is on screen.
 
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useVirtualizer } from "@tanstack/react-virtual";
 
@@ -18,6 +18,8 @@ import { Icon } from "../../../../shared/ui/Icon";
 import { useToast } from "../../../../shared/ui/toastContext";
 import type { DynamoItem, KeySchema } from "../api";
 import { attributeUnion, dynamoFmt } from "../helpers";
+// The shared column-resize handle styling (.dg-col-resize / body.dg-col-resizing).
+import "../../shared/DataGrid.css";
 
 /** The raw, copyable text of a cell value (objects → JSON, null → empty). */
 function copyText(v: unknown): string {
@@ -36,6 +38,8 @@ const CHAR_PX = 7;
 const PAD_PX = 26;
 const COL_MIN_PX = 90;
 const COL_MAX_PX = 360;
+/** Max width for a MANUALLY resized column (drag) — higher than the auto cap. */
+const COL_MANUAL_MAX_PX = 1200;
 /** Column overscan for the horizontal virtualizer; above the threshold the
  *  column axis is windowed too (a wide item no longer renders every attribute). */
 const COL_OVERSCAN = 3;
@@ -89,11 +93,22 @@ export function DynamoItemGrid({
 
   const selectable = !!onToggleRow;
 
-  // Per-column fixed px width (estimated from the header + a sample of cell
-  // lengths). Shared by the CSS grid tracks and the horizontal virtualizer.
+  // Manual column-width overrides (px) by attribute name. Session-only; a value
+  // wins over the auto estimate. Cleared per column by double-clicking its
+  // resize handle. `draggingCol` drives the live `--ddb-vg-col-w` CSS-var resize
+  // (pure repaint, no re-render — see startColResize).
+  const [colWidthOverrides, setColWidthOverrides] = useState<Record<string, number>>({});
+  const [draggingCol, setDraggingCol] = useState<string | null>(null);
+
+  // Per-column fixed px width — a manual override, else estimated from the
+  // header + a sample of cell lengths. Shared by the grid tracks + the virtualizer.
   const colWidths = useMemo(
     () =>
       ordered.map((c) => {
+        const override = colWidthOverrides[c];
+        if (override != null) {
+          return Math.round(Math.min(COL_MANUAL_MAX_PX, Math.max(COL_MIN_PX, override)));
+        }
         let maxLen = c.length;
         for (let i = 0; i < items.length && i < WIDTH_SAMPLE_ROWS; i++) {
           const len = copyText(items[i]?.[c]).length;
@@ -101,8 +116,50 @@ export function DynamoItemGrid({
         }
         return Math.round(Math.min(COL_MAX_PX, Math.max(COL_MIN_PX, maxLen * CHAR_PX + PAD_PX)));
       }),
-    [ordered, items],
+    [ordered, items, colWidthOverrides],
   );
+
+  // Drag a header's right-edge handle to set a manual width. While dragging, the
+  // width is written to the `--ddb-vg-col-w` CSS var on the scroll container (a
+  // pure repaint — no re-render / virtualizer re-measure per frame); committed to
+  // state on release. Mirrors the SQL DataGrid.
+  const startColResize = useCallback((e: React.MouseEvent, colName: string, startWidth: number) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const wrap = scrollRef.current;
+    const startX = e.clientX;
+    let finalW = startWidth;
+    setDraggingCol(colName);
+    wrap?.style.setProperty("--ddb-vg-col-w", startWidth + "px");
+    document.body.classList.add("dg-col-resizing");
+    const onMove = (me: MouseEvent) => {
+      finalW = Math.min(
+        COL_MANUAL_MAX_PX,
+        Math.max(COL_MIN_PX, startWidth + (me.clientX - startX)),
+      );
+      wrap?.style.setProperty("--ddb-vg-col-w", finalW + "px");
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.classList.remove("dg-col-resizing");
+      setColWidthOverrides((prev) => ({ ...prev, [colName]: finalW }));
+      setDraggingCol(null);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, []);
+
+  // Double-click the handle → drop the override, back to the auto estimate.
+  const autofitCol = useCallback((colName: string) => {
+    setColWidthOverrides((prev) => {
+      if (!(colName in prev)) return prev;
+      const next = { ...prev };
+      delete next[colName];
+      return next;
+    });
+  }, []);
 
   // Row-number gutter sized to the largest row number (see the browse DataGrid).
   const rownumPx = useMemo(() => {
@@ -143,10 +200,16 @@ export function DynamoItemGrid({
   // + [pad].
   const gridCols = useMemo(() => {
     const lead = (selectable ? CHECK_PX + "px " : "") + rownumPx + "px";
-    const tracks = winIdx.map((i) => colWidths[i] + "px").join(" ");
+    // The actively-resized column reads the live `--ddb-vg-col-w` var so the drag
+    // repaints via CSS alone (header + rows in lockstep).
+    const tracks = winIdx
+      .map((i) =>
+        ordered[i] === draggingCol ? `var(--ddb-vg-col-w, ${colWidths[i]}px)` : colWidths[i] + "px",
+      )
+      .join(" ");
     if (!virtualizeCols) return lead + " " + tracks;
     return lead + " " + padL + "px " + tracks + " " + padR + "px";
-  }, [selectable, rownumPx, colWidths, winIdx, virtualizeCols, padL, padR]);
+  }, [selectable, rownumPx, colWidths, winIdx, virtualizeCols, padL, padR, ordered, draggingCol]);
 
   // The virtualizer's results are consumed inline in render only (never passed
   // to a memoized child), so the compiler's "cannot memoize" caution is moot.
@@ -195,6 +258,18 @@ export function DynamoItemGrid({
                   <span className="ddb-key-badge sk">SK</span>
                 ) : null}
                 <span className="ddb-vg-colname">{c}</span>
+                {/* Right-edge resize handle (shared .dg-col-resize styling): drag
+                    to set a manual width, double-click to auto-fit. */}
+                <span
+                  className={"dg-col-resize" + (draggingCol === c ? " active" : "")}
+                  title="Drag to resize · double-click to auto-fit"
+                  onMouseDown={(e) => startColResize(e, c, colWidths[ci]!)}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    autofitCol(c);
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                />
               </div>
             );
           })}

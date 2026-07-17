@@ -97,7 +97,10 @@
 .cass-grid {
   border-collapse: collapse;
   font-size: 12px;
-  min-width: 100%;
+  /* Fixed layout so the <colgroup> widths are authoritative (resizable); width
+     is the sum of those tracks (scrolls when wider than the wrap). */
+  table-layout: fixed;
+  width: max-content;
 }
 .cass-grid th,
 .cass-grid td {
@@ -106,6 +109,9 @@
   padding: 5px 12px;
   text-align: left;
   white-space: nowrap;
+  /* Clip to the fixed column width rather than spilling into the next cell. */
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .cass-grid thead th {
   position: sticky;
@@ -113,6 +119,7 @@
   background: var(--bg2);
   z-index: 1;
   font-weight: 600;
+  /* Sticky establishes the containing block for the .dg-col-resize handle. */
 }
 .cass-th-name {
   font-family: var(--mono);

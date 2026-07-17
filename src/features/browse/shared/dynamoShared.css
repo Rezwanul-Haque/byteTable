@@ -283,6 +283,8 @@
   user-select: none;
   border-bottom: 1px solid var(--border);
   border-right: 1px solid var(--border);
+  /* Anchor the shared .dg-col-resize handle on the right edge. */
+  position: relative;
 }
 .ddb-vg-colname {
   overflow: hidden;

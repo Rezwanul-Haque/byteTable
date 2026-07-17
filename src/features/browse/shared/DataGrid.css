@@ -65,6 +65,8 @@
   /* Fixed track (Bug 1): clip an over-long header label rather than stretch. */
   min-width: 0;
   overflow: hidden;
+  /* Anchor the right-edge resize handle. */
+  position: relative;
 }
 
 .dg-th.sortable {
@@ -73,6 +75,35 @@
 
 .dg-th.sortable:hover {
   background: var(--bg2);
+}
+
+/* Column resize handle — a grab strip on the header's right edge. Drag to set a
+   manual width, double-click to auto-fit. */
+.dg-col-resize {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 2;
+}
+/* Idle hover affordance — suppressed during a drag so the accent doesn't blink
+   as the moving edge crosses the pointer. */
+body:not(.dg-col-resizing) .dg-col-resize:hover {
+  box-shadow: inset -2px 0 0 var(--accent);
+}
+/* The actively-dragged column: accent stays lit from state (steady, not from
+   :hover), so it never flickers as the edge tracks the cursor. */
+.dg-col-resize.active {
+  box-shadow: inset -2px 0 0 var(--accent);
+}
+/* While a resize drag is active: force the cursor everywhere and lock text
+   selection so the drag stays smooth even outside the header cell. */
+body.dg-col-resizing,
+body.dg-col-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
 }
 
 .dg-head {

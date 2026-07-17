@@ -253,6 +253,9 @@ const FALLBACK_ROW_H = 26;
 /** Min/max column track width (px). */
 const COL_MIN_PX = 90;
 const COL_MAX_PX = 400;
+/** Max width for a MANUALLY resized column (drag) — higher than the auto cap so
+ *  the user can widen a column past what auto-fit would pick. */
+const COL_MANUAL_MAX_PX = 1200;
 /** Minimum row-number gutter width (px) — matches `.dg-rownum` min-width. The
  *  actual track grows with the digit count so a 3+ digit number (page 2+) isn't
  *  clipped (see `rownumPx`). */
@@ -356,6 +359,15 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   const [columns, setColumns] = useState<ColumnMeta[]>([]);
   const [totalRows, setTotalRows] = useState<number | null>(null);
   const [sort, setSort] = useState<SortSpec | null>(null);
+  // Manual column-width overrides (px), keyed by column name. Session-only (no
+  // persistence); a value here wins over the auto-measured width. Cleared per
+  // column by double-clicking its resize handle (back to auto-fit).
+  const [colWidths, setColWidths] = useState<Record<string, number>>({});
+  // The column currently being drag-resized, or null. While dragging, its width
+  // is driven by the `--dg-col-w` CSS var (pure repaint, no re-render); the
+  // final px value is committed to `colWidths` on release. Its grid track is
+  // emitted as `var(--dg-col-w, …)` so header + rows follow in lockstep.
+  const [draggingCol, setDraggingCol] = useState<string | null>(null);
   const [selected, setSelected] = useState<{ rowKey: string; col: number } | null>(null);
   // Multi-select for bulk delete / export. Keyed by real-row key ("r"+absIndex);
   // staged rows are never selectable. Cleared on any (re)fetch / page change.
@@ -606,6 +618,54 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   const onHeaderClick = useCallback((column: string) => {
     onSortChangeRef.current?.();
     setSort((prev) => cycleSort(prev, column));
+  }, []);
+
+  // Drag a header's right-edge handle to set a manual column width (session
+  // only). During the drag the width is written to the `--dg-col-w` CSS var on
+  // the scroll container — a pure repaint, so there is NO React re-render and NO
+  // virtualizer re-measure per frame (that per-frame re-window was the flicker +
+  // the heaviness on wide grids). The final width commits to state on release.
+  const startColResize = useCallback((e: React.MouseEvent, colName: string, startWidth: number) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const wrap = scrollRef.current;
+    const startX = e.clientX;
+    let finalW = startWidth;
+    setDraggingCol(colName);
+    wrap?.style.setProperty("--dg-col-w", startWidth + "px");
+    document.body.classList.add("dg-col-resizing");
+    const onMove = (me: MouseEvent) => {
+      finalW = Math.min(
+        COL_MANUAL_MAX_PX,
+        Math.max(COL_MIN_PX, startWidth + (me.clientX - startX)),
+      );
+      // Pure CSS write — header + every row track follow via var(--dg-col-w).
+      wrap?.style.setProperty("--dg-col-w", finalW + "px");
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.classList.remove("dg-col-resizing");
+      // Commit once. Batched with clearing draggingCol so the re-render emits
+      // the literal committed px track (no var) — matching the live value, so
+      // there's no snap. The stale --dg-col-w is inert (no track references it).
+      setColWidths((prev) => ({ ...prev, [colName]: finalW }));
+      setDraggingCol(null);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, []);
+
+  // Double-click the handle → drop the override, auto-fit back to the measured
+  // width.
+  const autofitCol = useCallback((colName: string) => {
+    setColWidths((prev) => {
+      if (!(colName in prev)) return prev;
+      const next = { ...prev };
+      delete next[colName];
+      return next;
+    });
   }, []);
 
   const onFkClick = useCallback(
@@ -1171,12 +1231,18 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         if (++sampled >= WIDTH_SAMPLE_ROWS) break;
       }
       const cellPx = maxCellLen * CELL_CHAR_PX + CELL_PAD_PX;
-      const width = Math.round(Math.min(COL_MAX_PX, Math.max(COL_MIN_PX, headerPx, cellPx)));
+      // A manual override wins over the auto-measured width (allowed to exceed
+      // the auto cap, still clamped to a sane range).
+      const override = colWidths[c.name];
+      const width =
+        override != null
+          ? Math.round(Math.min(COL_MANUAL_MAX_PX, Math.max(COL_MIN_PX, override)))
+          : Math.round(Math.min(COL_MAX_PX, Math.max(COL_MIN_PX, headerPx, cellPx)));
       out.push({ col: c, ci, width });
     });
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [columns, isHidden, cacheVersion, pageRowCount, offset]);
+  }, [columns, isHidden, cacheVersion, pageRowCount, offset, colWidths]);
 
   // Column (horizontal) virtualization: a wide table renders only the columns in
   // view. Below the threshold every column renders (windowing gains nothing on a
@@ -1226,10 +1292,14 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   const gridCols = useMemo(() => {
     const check = hasPk ? CHECK_PX + "px " : "";
     const lead = check + rownumPx + "px";
-    const tracks = windowCols.map((v) => v.width + "px").join(" ");
+    // The actively-resized column's track reads the live `--dg-col-w` var (with
+    // its current width as the fallback) so the drag repaints via CSS alone.
+    const tracks = windowCols
+      .map((v) => (v.col.name === draggingCol ? `var(--dg-col-w, ${v.width}px)` : v.width + "px"))
+      .join(" ");
     if (!virtualizeCols) return lead + " " + tracks;
     return lead + " " + padL + "px " + tracks + " " + padR + "px";
-  }, [hasPk, rownumPx, windowCols, virtualizeCols, padL, padR]);
+  }, [hasPk, rownumPx, windowCols, virtualizeCols, padL, padR, draggingCol]);
 
   // --- multi-select bulk delete / export -------------------------------
   // Selection drops on any (re)fetch or page change (the row cache is rebuilt).
@@ -1483,7 +1553,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       ) : null}
       <div className="dg-rownum-h">#</div>
       {virtualizeCols ? <div className="dg-pad" aria-hidden /> : null}
-      {windowCols.map(({ col: c }) => {
+      {windowCols.map(({ col: c, width }) => {
         const m = colMeta.get(c.name);
         const active = sort?.column === c.name;
         return (
@@ -1520,6 +1590,18 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
                 <Icon name="monitoring" size={13} />
               </button>
             </span>
+            {/* Right-edge resize handle: drag to set a manual width, double-click
+                to auto-fit. Stops propagation so it never triggers the sort. */}
+            <span
+              className={"dg-col-resize" + (draggingCol === c.name ? " active" : "")}
+              title="Drag to resize · double-click to auto-fit"
+              onMouseDown={(e) => startColResize(e, c.name, width)}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                autofitCol(c.name);
+              }}
+              onClick={(e) => e.stopPropagation()}
+            />
           </div>
         );
       })}

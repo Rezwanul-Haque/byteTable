@@ -15,6 +15,7 @@
     "dialog:allow-save",
     "updater:default",
     "process:allow-restart",
+    "process:allow-exit",
     "core:webview:allow-set-webview-zoom",
     {
       "identifier": "opener:allow-open-url",

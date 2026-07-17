@@ -32,8 +32,14 @@ import { UpdateModal } from "./features/updater/UpdateModal";
 import { TitleBar } from "./shared/ui/TitleBar";
 import { KeyboardShortcutsModal } from "./shared/ui/KeyboardShortcutsModal";
 import type { TitleBarCtx } from "./shared/ui/titlebarMenus";
+import { Modal, ModalActions } from "./shared/ui/Modal";
+import { Btn } from "./shared/ui/Btn";
+import { Icon } from "./shared/ui/Icon";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { platform } from "@tauri-apps/plugin-os";
+import { exit } from "@tauri-apps/plugin-process";
+// Reuse the app's destructive-button styling (.btn-danger) for the quit confirm.
+import "./features/export/components/TruncateModal.css";
 import "./App.css";
 
 // Dev gallery (M0) is no longer the main screen: in dev builds it is toggled
@@ -125,6 +131,13 @@ export function App() {
   // New-connection modal, opened app-level from the title-bar File menu (the
   // connect screen has its own copy for its "New connection" button).
   const [newConnOpen, setNewConnOpen] = useState(false);
+
+  // "Close ByteTable" (File menu) → confirm, then hard-exit the app.
+  const [quitConfirmOpen, setQuitConfirmOpen] = useState(false);
+  const confirmQuit = () => {
+    if ("__TAURI_INTERNALS__" in window) void exit(0);
+    else setQuitConfirmOpen(false); // plain-browser dev: nothing to exit
+  };
 
   useEffect(() => {
     void loadPreferences();
@@ -221,6 +234,7 @@ export function App() {
     },
     onAbout: () => setAboutOpen(true),
     onShortcuts: () => setShortcutsOpen(true),
+    onQuit: () => setQuitConfirmOpen(true),
     onZoom: (dir) => {
       const cur = settings.fontSize;
       // The font-size setting drives the whole-app webview zoom (zoom.ts),
@@ -308,6 +322,29 @@ export function App() {
             setUpdateModalOpen(true);
           }}
         />
+      ) : null}
+
+      {quitConfirmOpen ? (
+        <Modal width={380} label="Close ByteTable" onClose={() => setQuitConfirmOpen(false)}>
+          <div style={{ padding: "6px 4px 2px" }}>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", marginBottom: 6 }}>
+              Close Byte<span style={{ color: "var(--accent)" }}>Table</span>?
+            </div>
+            <div style={{ fontSize: 13, color: "var(--text-dim)" }}>
+              Do you really want to close?
+            </div>
+          </div>
+          <ModalActions>
+            <div style={{ flex: 1 }} />
+            <Btn variant="text" small onClick={() => setQuitConfirmOpen(false)}>
+              Cancel
+            </Btn>
+            <button type="button" className="btn btn-danger btn-small" onClick={confirmQuit}>
+              <Icon name="logout" size={15} />
+              <span>Close ByteTable</span>
+            </button>
+          </ModalActions>
+        </Modal>
       ) : null}
 
       {Gallery && galleryOpen ? (

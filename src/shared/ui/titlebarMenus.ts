@@ -23,6 +23,8 @@ export interface TitleBarCtx {
   onAbout: () => void;
   onShortcuts: () => void;
   onZoom: (dir: "in" | "out" | "reset") => void;
+  /** Quit the whole app (after a confirm). */
+  onQuit: () => void;
 }
 
 /** Per-render enablement inputs, derived from the active workspace + zoom. */
@@ -96,6 +98,8 @@ export function buildMenus(m: MenuCtx): Menu[] {
           enabled: hasWs,
           run: ctx.onCloseWorkspace,
         },
+        "—",
+        { id: "quit", label: "Close ByteTable", enabled: true, run: ctx.onQuit },
       ],
     },
     {

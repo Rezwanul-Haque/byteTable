@@ -300,9 +300,40 @@ export function edgeGeometry(
   const sOut: 1 | -1 = sx === childRight ? 1 : -1;
   const tOut: 1 | -1 = tx === ref.x ? -1 : 1;
 
+  // Vertically-dominant edges route as a tidy rounded orthogonal bracket (out →
+  // along → in) rather than a tall squished bezier. This covers both same-side
+  // endpoints (stacked cards, vertical run OUTSIDE that side) and facing
+  // endpoints with a narrow horizontal gap (vertical run IN the gap between the
+  // cards). Horizontally-adjacent edges keep the smooth bezier below.
+  const hGap = Math.abs(tx - sx);
+  const vGap = Math.abs(ty - sy);
+  const sameSide = sOut === tOut;
+  if (sameSide || vGap > hGap + 60) {
+    const reach = 46;
+    const baseRunX = sameSide
+      ? sOut > 0
+        ? Math.max(sx, tx) + reach
+        : Math.min(sx, tx) - reach
+      : (sx + tx) / 2;
+    const runX = baseRunX + wx;
+    const runMy = midY + wy;
+    const vy = ty >= sy ? 1 : -1;
+    const r = Math.max(2, Math.min(12, vGap / 2));
+    const path =
+      `M ${sx} ${sy} L ${runX - sOut * r} ${sy} ` +
+      `Q ${runX} ${sy} ${runX} ${sy + vy * r} ` +
+      `L ${runX} ${ty - vy * r} ` +
+      `Q ${runX} ${ty} ${runX - tOut * r} ${ty} ` +
+      `L ${tx} ${ty}`;
+    return { path, sx, sy, tx, ty, mx: runX, my: runMy, sOut, tOut };
+  }
+
   const dx = Math.max(40, Math.abs(tx - sx) / 2);
-  const c1 = sx + (tx >= sx ? dx : -dx);
-  const c2 = tx + (tx >= sx ? -dx : dx);
+  // Each control handle extends OUTWARD from its own endpoint (by that side's
+  // direction), so two same-side endpoints (vertically-stacked cards) both bulge
+  // out cleanly instead of one looping back into the card.
+  const c1 = sx + sOut * dx;
+  const c2 = tx + tOut * dx;
 
   // Unbent → original single cubic (preserves Task 2 visuals exactly).
   if (wx === 0 && wy === 0) {
@@ -318,8 +349,8 @@ export function edgeGeometry(
   const hy = (ty - sy) / 4;
   const path =
     `M ${sx} ${sy} ` +
-    `C ${sx + (tx >= sx ? dx : -dx)} ${sy}, ${mx - hx} ${my - hy}, ${mx} ${my} ` +
-    `C ${mx + hx} ${my + hy}, ${tx + (tx >= sx ? -dx : dx)} ${ty}, ${tx} ${ty}`;
+    `C ${c1} ${sy}, ${mx - hx} ${my - hy}, ${mx} ${my} ` +
+    `C ${mx + hx} ${my + hy}, ${c2} ${ty}, ${tx} ${ty}`;
   return { path, sx, sy, tx, ty, mx, my, sOut, tOut };
 }
 

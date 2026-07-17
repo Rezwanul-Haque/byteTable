@@ -806,13 +806,15 @@
   display: flex;
   align-items: stretch;
   gap: 6px;
-  border-radius: 6px;
 }
 .pending-sql-row.dragging {
-  opacity: 0.45;
+  opacity: 0.4;
 }
-.pending-sql-row.drag-over {
-  box-shadow: inset 0 2px 0 var(--accent);
+/* Drop target: ring the actual SQL box (matches its rounded border) instead of
+   a floating bar on the transparent row wrapper. */
+.pending-sql-row.drag-over .pending-sql {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 .pending-sql-row .pending-sql {
   flex: 1;

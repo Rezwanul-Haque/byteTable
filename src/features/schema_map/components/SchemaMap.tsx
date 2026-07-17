@@ -875,7 +875,9 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
                   className={
                     "pending-sql-row" +
                     (dragIdx === i ? " dragging" : "") +
-                    (dragOverIdx === i && dragIdx !== i ? " drag-over" : "")
+                    // Only while a drag is active — otherwise a lingering
+                    // dragOverIdx would keep the drop indicator stuck on.
+                    (dragIdx !== null && dragOverIdx === i && dragIdx !== i ? " drag-over" : "")
                   }
                 >
                   <span

@@ -120,12 +120,54 @@ export const MSSQL_TYPES = [
   "ROWVERSION",
 ] as const;
 
-/** The Structure type-menu options for an engine (`stTypesFor`). SQL Server gets
- *  its full 36-type family; every other engine keeps the SQLite-affinity list
- *  the structure editor has always offered (their shorter lists just don't
- *  scroll). */
+/** The Oracle native type family (M23 §23.3, `ST_ORACLE_TYPES`) offered in the
+ *  Structure type menu — like SQL Server, a long list that rides the same
+ *  capped, scrollable popup. Order groups numerics, strings, date/time, then the
+ *  binary/special types. */
+export const ORACLE_TYPES = [
+  // numerics
+  "NUMBER",
+  "NUMBER(10)",
+  "NUMBER(19)",
+  "NUMBER(10,2)",
+  "FLOAT",
+  "BINARY_FLOAT",
+  "BINARY_DOUBLE",
+  // strings
+  "VARCHAR2(255)",
+  "VARCHAR2(4000)",
+  "NVARCHAR2(255)",
+  "CHAR(10)",
+  "NCHAR(10)",
+  "CLOB",
+  "NCLOB",
+  "LONG",
+  // date / time
+  "DATE",
+  "TIMESTAMP",
+  "TIMESTAMP WITH TIME ZONE",
+  "TIMESTAMP WITH LOCAL TIME ZONE",
+  "INTERVAL YEAR TO MONTH",
+  "INTERVAL DAY TO SECOND",
+  // binary / special
+  "BLOB",
+  "RAW(16)",
+  "LONG RAW",
+  "BFILE",
+  "ROWID",
+  "UROWID",
+  "JSON",
+  "XMLTYPE",
+] as const;
+
+/** The Structure type-menu options for an engine (`stTypesFor`). SQL Server and
+ *  Oracle get their full native families; every other engine keeps the
+ *  SQLite-affinity list the structure editor has always offered (their shorter
+ *  lists just don't scroll). */
 export function stTypesFor(engine: string): readonly string[] {
-  return engine === "mssql" ? MSSQL_TYPES : SQLITE_TYPES;
+  if (engine === "mssql") return MSSQL_TYPES;
+  if (engine === "oracle") return ORACLE_TYPES;
+  return SQLITE_TYPES;
 }
 
 /** A column in the working (post-edit) set the structure view renders. Carries

@@ -40,6 +40,9 @@ export const ENGINE_OBJECTS: Record<Engine, ObjectClass[]> = {
   // SQL Server (M21) exposes the full object set (like Postgres); `matview`
   // stands in for indexed views.
   mssql: ["table", "view", "materialized_view", "function", "procedure", "trigger"],
+  // Oracle (M23) exposes the full object set (like Postgres); `matview` is a
+  // real Oracle materialized view.
+  oracle: ["table", "view", "materialized_view", "function", "procedure", "trigger"],
   redis: [],
   dynamodb: [],
   mongodb: [],
@@ -68,6 +71,7 @@ export const ENGINE_DIALECT: Record<Engine, string> = {
   mysql: "MySQL",
   sqlite: "SQLite",
   mssql: "T-SQL",
+  oracle: "PL/SQL",
   redis: "Redis",
   dynamodb: "DynamoDB",
   mongodb: "MongoDB",
@@ -78,6 +82,35 @@ export const ENGINE_DIALECT: Record<Engine, string> = {
  *  in the SQL editor for the user to fill in and run. */
 export function newObjectTemplate(engine: Engine, kind: DbObjectKind): string {
   const mysql = engine === "mysql";
+  // Oracle (M23) uses PL/SQL create templates: `CREATE OR REPLACE` for
+  // view/function/procedure/trigger, a real materialized view with a refresh
+  // clause, and PL/SQL blocks (`IS/AS … BEGIN … END;`).
+  if (engine === "oracle") {
+    switch (kind) {
+      case "view":
+        return "CREATE OR REPLACE VIEW new_view AS\nSELECT *\nFROM table_name;";
+      case "materialized_view":
+        return (
+          "CREATE MATERIALIZED VIEW new_mview\nBUILD IMMEDIATE\n" +
+          "REFRESH COMPLETE ON DEMAND AS\nSELECT *\nFROM table_name;"
+        );
+      case "function":
+        return (
+          "CREATE OR REPLACE FUNCTION new_function(arg1 IN NUMBER)\nRETURN NUMBER IS\n" +
+          "BEGIN\n  RETURN arg1;\nEND;"
+        );
+      case "procedure":
+        return (
+          "CREATE OR REPLACE PROCEDURE new_procedure(arg1 IN NUMBER) AS\n" +
+          "BEGIN\n  NULL; -- statements\nEND;"
+        );
+      case "trigger":
+        return (
+          "CREATE OR REPLACE TRIGGER trg_new\nBEFORE INSERT ON table_name\nFOR EACH ROW\n" +
+          "BEGIN\n  NULL; -- statements\nEND;"
+        );
+    }
+  }
   // SQL Server (M21) uses T-SQL create templates: bracket/`dbo.`-qualified,
   // `CREATE OR ALTER` for routines/triggers, and an indexed view (schemabound
   // view + unique clustered index) in place of a materialized view.

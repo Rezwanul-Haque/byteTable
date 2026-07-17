@@ -162,7 +162,29 @@ chrono = "0.4"
 # pure-Rust (no OpenSSL system dep); native-protocol TLS arrives with a later M19
 # subtask behind an explicit rustls feature.
 scylla = "1.7"
+# Oracle Database engine (M23) — OPTIONAL, behind the `engine-oracle` feature.
+# Unlike every other driver in this tree, Oracle has no pure-Rust option: the
+# `oracle` crate wraps ODPI-C, which dlopen's the Oracle Instant Client
+# (libclntsh) at RUNTIME. Building the crate needs only a C compiler (ODPI-C is
+# bundled C, compiled by the crate — same as `rusqlite bundled`); RUNNING an
+# Oracle connection needs Instant Client installed on the host. The pure-Rust
+# thin driver `oracledb` was rejected: it forces nightly Rust (asupersync /
+# `try_trait_v2`) + a `pyo3` build dependency and is brand-new/experimental.
+# Feature-gating keeps the default build (CI + release) pure-Rust and stable and
+# free of any Oracle system dependency — only an opt-in `--features
+# engine-oracle` build compiles the adapter and registers the connector. All the
+# Oracle DIALECT logic (type mapping, DDL, quoting, paging, meta-commands) lives
+# in `engines::oracle::sql`, compiled UNCONDITIONALLY and unit-tested in the
+# default build; only the OCI driver access is gated. See docs/M23-oracle-engine.md.
+oracle = { version = "0.6", optional = true }
 tauri-plugin-os = "2"
+
+[features]
+# Opt-in Oracle Database engine (M23). Off by default so the standard build
+# stays pure-Rust + stable and needs no Oracle Instant Client. Enable with
+# `cargo build --features engine-oracle` (or `tauri build -- --features
+# engine-oracle`) on a host that provides Instant Client at runtime.
+engine-oracle = ["dep:oracle"]
 
 [dev-dependencies]
 tempfile = "3"

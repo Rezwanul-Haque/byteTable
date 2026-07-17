@@ -17,6 +17,9 @@ const ENGINE_META: Record<Engine, { label: string; short: string; color: string 
   // SQL Server (M21): crimson `MSS` badge (prototype ui.jsx ENGINE_META),
   // distinct from Redis's vermilion and the production/error reds.
   mssql: { label: "MS SQL Server", short: "MSS", color: "#d1495b" },
+  // Oracle (M23): brick-red `Or` badge (prototype ui.jsx ENGINE_META),
+  // distinct from SQL Server's crimson and Redis's vermilion.
+  oracle: { label: "Oracle", short: "Or", color: "#c74634" },
   // Redis (M13, REDIS_SPEC §1): vermilion, deliberately distinct from the
   // pinkish production/error red.
   redis: { label: "Redis", short: "Rd", color: "#e8533d" },

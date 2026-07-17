@@ -38,7 +38,9 @@ import { Select } from "../../../shared/ui/Select";
 import { useToast } from "../../../shared/ui/toastContext";
 import {
   connectionTest,
+  engineDriverStatus,
   type ConnectionParams,
+  type DriverStatus,
   type SavedConnection,
   type SshAuth,
   type SshConfig,
@@ -55,6 +57,7 @@ const ENGINES: { engine: Engine; label: string }[] = [
   { engine: "mysql", label: "MySQL" },
   { engine: "postgres", label: "PostgreSQL" },
   { engine: "mssql", label: "MS SQL Server" },
+  { engine: "oracle", label: "Oracle" },
   { engine: "redis", label: "Redis" },
   { engine: "dynamodb", label: "DynamoDB" },
   { engine: "mongodb", label: "MongoDB" },
@@ -83,6 +86,7 @@ const DEFAULT_PORTS: Partial<Record<Engine, string>> = {
   postgres: "5432",
   mysql: "3306",
   mssql: "1433",
+  oracle: "1521",
   redis: "6379",
   mongodb: "27017",
   cassandra: "9042",
@@ -96,6 +100,9 @@ const DEFAULT_USERS: Partial<Record<Engine, string>> = {
   mysql: "root",
   // SQL Server's built-in sysadmin login.
   mssql: "sa",
+  // Oracle: no universal superuser prefill (SYS/SYSTEM need SYSDBA); the
+  // prototype prefills the sample schema user.
+  oracle: "byteshop",
 };
 
 /**
@@ -345,6 +352,18 @@ function formStateFromConnection(c: SavedConnection): FormState {
       ...sshFields,
     };
   }
+  if (p.engine === "oracle") {
+    // Oracle reuses the `db` field for the service name (SID as a fallback).
+    return {
+      ...base,
+      host: p.host,
+      port: String(p.port),
+      db: p.serviceName ?? p.sid ?? "",
+      user: p.user ?? "",
+      tls: p.tlsMode,
+      ...sshFields,
+    };
+  }
   return {
     ...base,
     host: p.host,
@@ -541,6 +560,31 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
   const sshToggleId = useId();
   const envLabelId = useId();
 
+  // Driver availability per engine (M23). Most engines are pure-Rust and always
+  // available; Oracle is feature-gated + needs the Instant Client, so we probe
+  // every engine on open and warn proactively (a tile marker + an inline note)
+  // instead of only failing at connect time.
+  const [driverStatuses, setDriverStatuses] = useState<Partial<Record<Engine, DriverStatus>>>({});
+  useEffect(() => {
+    let alive = true;
+    void Promise.all(
+      ENGINES.map((e) =>
+        engineDriverStatus(e.engine)
+          .then((status) => [e.engine, status] as const)
+          .catch(() => null),
+      ),
+    ).then((pairs) => {
+      if (!alive) return;
+      const map: Partial<Record<Engine, DriverStatus>> = {};
+      for (const pair of pairs) if (pair) map[pair[0]] = pair[1];
+      setDriverStatuses(map);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const selectedDriver = driverStatuses[engine];
+
   // Convenience: a params-relevant field edit (resets the verdict).
   const field = (patch: Partial<FormState>) => dispatch({ type: "field", patch });
 
@@ -574,6 +618,10 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
   // Cassandra (M19): contact points + native port + optional keyspace + local
   // datacenter; no SSH tab (the driver discovers the ring).
   const isCassandra = engine === "cassandra";
+  // Oracle (M23): a relational form like MySQL/Postgres/SQL Server, but it
+  // connects by SERVICE NAME (the `db` field is relabelled "Service name"); it
+  // keeps the General/SSH tabs (Oracle tunnels).
+  const isOracle = engine === "oracle";
 
   const pickEngine = (next: Engine) => dispatch({ type: "engine", engine: next });
 
@@ -722,6 +770,25 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
           host: host.trim(),
           port: portNumber,
           dbIndex,
+          ...(user.trim() ? { user: user.trim() } : {}),
+          tlsMode: tls,
+          ...(ssh ? { ssh } : {}),
+        },
+      };
+    }
+
+    // Oracle (M23) connects by SERVICE NAME, not a relational database — the
+    // `db` field holds the service name (`ORCLPDB1`). Optional at the form level
+    // (an easy-connect can default), so omit when blank. SID is not surfaced in
+    // the form (service name is the modern form); the params type keeps it for
+    // legacy saved connections.
+    if (engine === "oracle") {
+      return {
+        params: {
+          engine: "oracle",
+          host: host.trim(),
+          port: portNumber,
+          ...(db.trim() ? { serviceName: db.trim() } : {}),
           ...(user.trim() ? { user: user.trim() } : {}),
           tlsMode: tls,
           ...(ssh ? { ssh } : {}),
@@ -891,20 +958,49 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
       <div className="ee-block">
         <span className="form-section-label">Engine</span>
         <div className="engine-picker" role="radiogroup" aria-label="Database engine">
-          {ENGINES.map((e) => (
-            <button
-              key={e.engine}
-              type="button"
-              role="radio"
-              aria-checked={engine === e.engine}
-              className={"engine-choice" + (engine === e.engine ? " active" : "")}
-              onClick={() => pickEngine(e.engine)}
-            >
-              <EngineBadge engine={e.engine} size={28} />
-              <span>{e.label}</span>
-            </button>
-          ))}
+          {ENGINES.filter((e) => {
+            // Hide an engine this edition doesn't ship (`notShipped`) in release
+            // builds — a permanently-dead tile is worse than its absence. Keep
+            // it in dev (with the warning + dev hint), keep the currently-
+            // selected engine visible regardless, and always keep `needsSetup`
+            // engines (they work once the user installs the prerequisite).
+            const status = driverStatuses[e.engine];
+            const hide = status?.code === "notShipped" && import.meta.env.PROD;
+            return e.engine === engine || !hide;
+          }).map((e) => {
+            const status = driverStatuses[e.engine];
+            const unavailable = status?.available === false;
+            return (
+              <button
+                key={e.engine}
+                type="button"
+                role="radio"
+                aria-checked={engine === e.engine}
+                className={
+                  "engine-choice" +
+                  (engine === e.engine ? " active" : "") +
+                  (unavailable ? " unavailable" : "")
+                }
+                title={unavailable ? status?.reason : status?.detail}
+                onClick={() => pickEngine(e.engine)}
+              >
+                <EngineBadge engine={e.engine} size={28} />
+                <span>{e.label}</span>
+                {unavailable ? (
+                  <span className="engine-choice-warn" role="img" aria-label="Driver unavailable">
+                    <Icon name="warning" size={12} />
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
         </div>
+        {selectedDriver?.available === false ? (
+          <div className="driver-warn" role="alert">
+            <Icon name="warning" size={15} />
+            <span>{selectedDriver.reason}</span>
+          </div>
+        ) : null}
       </div>
 
       <div className="ee-block">
@@ -1341,6 +1437,15 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
             aria-labelledby={generalTabId}
             hidden={section !== "general"}
           >
+            {isOracle ? (
+              <div className="span-2 form-note">
+                <Icon name="dns" size={14} />{" "}
+                <span>
+                  Oracle connects by <strong>service name</strong> (e.g. <code>ORCLPDB1</code>) on
+                  the TNS listener port (1521). Schemas are users — uppercase by default.
+                </span>
+              </div>
+            ) : null}
             <label>
               Host
               <input
@@ -1372,7 +1477,7 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
                 "DB index"
               ) : (
                 <span className="lbl-row">
-                  Database{" "}
+                  {isOracle ? "Service name" : "Database"}{" "}
                   {engine === "postgres" || engine === "mssql" ? null : (
                     <span className="opt-tag">optional</span>
                   )}
@@ -1384,11 +1489,13 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
                 placeholder={
                   isRedis
                     ? "0"
-                    : engine === "postgres"
-                      ? "postgres"
-                      : engine === "mssql"
-                        ? "byteshop"
-                        : "mysql"
+                    : isOracle
+                      ? "ORCLPDB1"
+                      : engine === "postgres"
+                        ? "postgres"
+                        : engine === "mssql"
+                          ? "byteshop"
+                          : "mysql"
                 }
                 spellCheck={false}
               />
@@ -1407,11 +1514,13 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
                 placeholder={
                   isRedis
                     ? "default"
-                    : engine === "mssql"
-                      ? "sa"
-                      : engine === "postgres"
-                        ? "postgres"
-                        : "root"
+                    : isOracle
+                      ? "byteshop"
+                      : engine === "mssql"
+                        ? "sa"
+                        : engine === "postgres"
+                          ? "postgres"
+                          : "root"
                 }
                 spellCheck={false}
               />

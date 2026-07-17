@@ -19,6 +19,18 @@ pub enum Engine {
     /// materialized views, `sqlcmd` terminal). Backed by the `tiberius` TDS
     /// driver in [`crate::engines::mssql`].
     Mssql,
+    /// Oracle Database (M23) — a **fifth relational engine** (Oracle SQL /
+    /// PL/SQL dialect). It implements the same SQL [`EngineConnection`] surface
+    /// as SQLite/MySQL/Postgres/SQL Server and flows through the relational
+    /// workspace; only the dialect differs (uppercase user-schemas, the `ALL_*`
+    /// catalog, `GENERATED … AS IDENTITY`, `OFFSET…FETCH` paging, real
+    /// materialized views, `SYSTIMESTAMP`/`SYS_GUID()` defaults, `sqlplus`
+    /// terminal). Backed by the OCI `oracle` crate in [`crate::engines::oracle`]
+    /// behind the `engine-oracle` Cargo feature — see that module's docs for the
+    /// Instant Client / driver rationale. The `Engine::Oracle` seam itself is
+    /// compiled unconditionally so the engine exists in the type system and UI
+    /// even when the driver feature is off.
+    Oracle,
     /// Redis (M13) — a key-value store, NOT relational. It does not implement
     /// the SQL [`EngineConnection`] surface; instead it implements the separate
     /// key-value port family in [`crate::shared::keyvalue`]. See the
@@ -52,6 +64,7 @@ impl Engine {
             Self::Mysql => "MySQL",
             Self::Postgres => "PostgreSQL",
             Self::Mssql => "SQL Server",
+            Self::Oracle => "Oracle",
             Self::Redis => "Redis",
             Self::Dynamodb => "DynamoDB",
             Self::Mongodb => "MongoDB",
@@ -246,6 +259,26 @@ pub enum ConnectionParams {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         ssh: Option<SshConfig>,
     },
+    /// An Oracle Database (M23). Relational like MySQL/Postgres/SQL Server, but
+    /// Oracle connects by **service name** (`service_name`, e.g. `ORCLPDB1`) on
+    /// the TNS listener rather than a relational `database`; `sid` is the
+    /// optional legacy SID form (mutually exclusive with the service name at
+    /// DSN-build time, service name preferred). `user` is the optional schema
+    /// user (Oracle uppercases it). Default port 1521. Password + SSH secrets
+    /// live in the OS keychain, never here.
+    Oracle {
+        host: String,
+        port: u16,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        service_name: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sid: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        user: Option<String>,
+        tls_mode: TlsMode,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ssh: Option<SshConfig>,
+    },
     /// A Redis server (M13). Like the SQL server engines, the password and any
     /// SSH secret live in the OS keychain — never here. Redis has no relational
     /// "database" name; instead it has 16 numbered logical databases (db0–db15),
@@ -325,6 +358,7 @@ impl ConnectionParams {
             Self::Mysql { .. } => Engine::Mysql,
             Self::Postgres { .. } => Engine::Postgres,
             Self::Mssql { .. } => Engine::Mssql,
+            Self::Oracle { .. } => Engine::Oracle,
             Self::Redis { .. } => Engine::Redis,
             Self::Dynamodb { .. } => Engine::Dynamodb,
             Self::Mongodb { .. } => Engine::Mongodb,
@@ -343,6 +377,7 @@ impl ConnectionParams {
             Self::Mysql { ssh, .. }
             | Self::Postgres { ssh, .. }
             | Self::Mssql { ssh, .. }
+            | Self::Oracle { ssh, .. }
             | Self::Redis { ssh, .. } => ssh.as_ref(),
         }
     }
@@ -454,6 +489,51 @@ impl<'de> Deserialize<'de> for ConnectionParams {
                         ssh,
                     }),
                 }
+            }
+            "oracle" => {
+                // Oracle differs from the mysql/postgres/mssql group: it
+                // connects by `serviceName` (or the legacy `sid`) rather than a
+                // relational `database`. `user` is optional; TLS + SSH are read
+                // exactly like the SQL engines (granular `tlsMode`, legacy `tls`
+                // bool tolerated). `port` defaults to 1521.
+                let host = value
+                    .get("host")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string)
+                    .ok_or_else(|| D::Error::custom("oracle params missing 'host'"))?;
+                let port = value
+                    .get("port")
+                    .and_then(serde_json::Value::as_u64)
+                    .and_then(|p| u16::try_from(p).ok())
+                    .unwrap_or(1521);
+                let opt_str = |k: &str| {
+                    value
+                        .get(k)
+                        .and_then(|v| v.as_str())
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_string)
+                };
+                let tls_mode = match value.get("tlsMode") {
+                    Some(m) => TlsMode::deserialize(m.clone()).map_err(D::Error::custom)?,
+                    None => match value.get("tls").and_then(serde_json::Value::as_bool) {
+                        Some(true) => TlsMode::Prefer,
+                        Some(false) => TlsMode::Disable,
+                        None => TlsMode::default(),
+                    },
+                };
+                let ssh = match value.get("ssh") {
+                    Some(serde_json::Value::Null) | None => None,
+                    Some(s) => Some(SshConfig::deserialize(s.clone()).map_err(D::Error::custom)?),
+                };
+                Ok(ConnectionParams::Oracle {
+                    host,
+                    port,
+                    service_name: opt_str("serviceName"),
+                    sid: opt_str("sid"),
+                    user: opt_str("user"),
+                    tls_mode,
+                    ssh,
+                })
             }
             "redis" => {
                 // Redis differs from the SQL server engines: no `database` name

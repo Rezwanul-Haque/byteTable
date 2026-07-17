@@ -79,6 +79,21 @@ const TYPES_BY_ENGINE: Record<Engine, string[]> = {
     "UNIQUEIDENTIFIER",
     "VARBINARY(MAX)",
   ],
+  // Oracle (M23): the common Oracle types (a curated subset of the full
+  // Structure type list); `NUMBER`-based numerics, `VARCHAR2` strings.
+  oracle: [
+    "NUMBER(10)",
+    "NUMBER(19)",
+    "NUMBER(10,2)",
+    "VARCHAR2(255)",
+    "VARCHAR2(4000)",
+    "CLOB",
+    "DATE",
+    "TIMESTAMP",
+    "TIMESTAMP WITH TIME ZONE",
+    "RAW(16)",
+    "BLOB",
+  ],
   // Redis / DynamoDB / MongoDB / Cassandra have no relational create-table here
   // (Cassandra has its own CQL create flow, M19 §19.6); never reached, but the
   // record must be total.

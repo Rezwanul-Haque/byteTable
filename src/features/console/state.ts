@@ -37,6 +37,8 @@ export function shellLabel(engine: Engine): string {
       return "mysql";
     case "mssql":
       return "sqlcmd";
+    case "oracle":
+      return "sqlplus";
     case "sqlite":
       return "sqlite3";
     case "redis":

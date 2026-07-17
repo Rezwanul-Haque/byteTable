@@ -46,6 +46,12 @@ pub mod dynamo;
 pub mod mongo;
 pub mod mssql;
 pub mod mysql;
+// Oracle (M23): the module is compiled UNCONDITIONALLY so its pure dialect
+// (`oracle::sql` — type mapping, DDL, quoting, paging, meta-commands) and unit
+// tests build/run in the default pure-Rust build; only the OCI driver access
+// inside it is gated behind the `engine-oracle` Cargo feature (see the module
+// docs and `Cargo.toml`).
+pub mod oracle;
 pub mod postgres;
 pub mod redis;
 pub mod sqlite;

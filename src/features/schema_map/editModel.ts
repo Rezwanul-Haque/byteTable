@@ -211,27 +211,41 @@ export interface Ddl {
 export function ddlFor(engine: Engine): Ddl {
   const mysql = engine === "mysql";
   const mssql = engine === "mssql";
+  // Oracle uses `MODIFY` for retype/nullability (like MySQL) but with Oracle
+  // syntax: `ADD`/`MODIFY`/`DROP` take no `COLUMN` keyword, and MODIFY toggles
+  // NOT NULL by naming just the column + constraint (repeating the type is not
+  // required and can error when unchanged).
+  const oracle = engine === "oracle";
   return {
-    addColumn: (t, name) => `ALTER TABLE ${t} ADD COLUMN ${name} TEXT;`,
+    addColumn: (t, name) =>
+      oracle
+        ? `ALTER TABLE ${t} ADD ${name} VARCHAR2(255);`
+        : `ALTER TABLE ${t} ADD COLUMN ${name} TEXT;`,
     renameColumn: (t, from, to) => `ALTER TABLE ${t} RENAME COLUMN ${from} TO ${to};`,
     changeType: (t, col, type) =>
       mysql
         ? `ALTER TABLE ${t} MODIFY COLUMN ${col} ${type};`
         : mssql
           ? `ALTER TABLE ${t} ALTER COLUMN ${col} ${type};`
-          : `ALTER TABLE ${t} ALTER COLUMN ${col} TYPE ${type};`,
+          : oracle
+            ? `ALTER TABLE ${t} MODIFY ${col} ${type};`
+            : `ALTER TABLE ${t} ALTER COLUMN ${col} TYPE ${type};`,
     setNullable: (t, col, nullable, type) =>
       mysql
         ? `ALTER TABLE ${t} MODIFY COLUMN ${col} ${type} ${nullable ? "NULL" : "NOT NULL"};`
         : mssql
           ? `ALTER TABLE ${t} ALTER COLUMN ${col} ${type} ${nullable ? "NULL" : "NOT NULL"};`
-          : `ALTER TABLE ${t} ALTER COLUMN ${col} ${nullable ? "DROP NOT NULL" : "SET NOT NULL"};`,
+          : oracle
+            ? `ALTER TABLE ${t} MODIFY ${col} ${nullable ? "NULL" : "NOT NULL"};`
+            : `ALTER TABLE ${t} ALTER COLUMN ${col} ${nullable ? "DROP NOT NULL" : "SET NOT NULL"};`,
     addPrimaryKey: (t, col) => `ALTER TABLE ${t} ADD PRIMARY KEY (${col});`,
     dropPrimaryKey: (t) =>
       mysql ? `ALTER TABLE ${t} DROP PRIMARY KEY;` : `ALTER TABLE ${t} DROP CONSTRAINT ${t}_pkey;`,
     dropColumn: (t, col) => `ALTER TABLE ${t} DROP COLUMN ${col};`,
     addForeignKey: (t, name, col, refTable, refCol) =>
-      `ALTER TABLE ${t} ADD CONSTRAINT ${name} FOREIGN KEY (${col}) REFERENCES ${refTable}(${refCol}) ON DELETE RESTRICT;`,
+      oracle
+        ? `ALTER TABLE ${t} ADD CONSTRAINT ${name} FOREIGN KEY (${col}) REFERENCES ${refTable}(${refCol}) ON DELETE CASCADE;`
+        : `ALTER TABLE ${t} ADD CONSTRAINT ${name} FOREIGN KEY (${col}) REFERENCES ${refTable}(${refCol}) ON DELETE RESTRICT;`,
     dropForeignKey: (t, name) =>
       mysql
         ? `ALTER TABLE ${t} DROP FOREIGN KEY ${name};`

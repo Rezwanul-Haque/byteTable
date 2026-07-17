@@ -501,6 +501,8 @@ export const OBJECT_CAPS: Record<Engine, DbObjectKind[]> = {
   sqlite: ["view", "trigger"],
   // SQL Server (M21): full set; `materialized_view` = indexed view.
   mssql: ["view", "materialized_view", "function", "procedure", "trigger"],
+  // Oracle (M23): full set; `materialized_view` = real Oracle MV.
+  oracle: ["view", "materialized_view", "function", "procedure", "trigger"],
   redis: [],
   dynamodb: [],
   mongodb: [],

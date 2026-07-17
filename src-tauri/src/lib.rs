@@ -308,6 +308,15 @@ pub fn run() {
             // flows through the same relational workspace host as Postgres/MySQL/
             // SQLite — only the dialect differs.
             registry.register(Engine::Mssql, Arc::new(MssqlConnector));
+            // Oracle (M23): a fifth relational engine (Oracle SQL / PL/SQL, OCI
+            // `oracle` driver). OPTIONAL — only registered when the crate is
+            // built with `--features engine-oracle` (the OCI adapter needs the
+            // Oracle Instant Client at runtime). In the default build the engine
+            // is fully present in the type system + UI, but opening a connection
+            // returns the manager's "no connector registered" §5 message. See
+            // `engines::oracle` and docs/M23-oracle-engine.md.
+            #[cfg(feature = "engine-oracle")]
+            registry.register(Engine::Oracle, Arc::new(engines::oracle::OracleConnector));
             // Redis (M13): a key-value engine. Its connector returns an
             // `OpenConnection::Kv`, kept apart from the SQL connections by the
             // manager's `get_sql` / `get_kv` kind seam.
@@ -413,6 +422,7 @@ pub fn run() {
             features::settings::commands::settings_load,
             features::settings::commands::settings_save,
             features::connections::commands::connection_list,
+            features::connections::commands::engine_driver_status,
             features::connections::commands::connection_save,
             features::connections::commands::connection_delete,
             features::connections::commands::connection_test,

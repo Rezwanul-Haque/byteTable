@@ -8,9 +8,10 @@
 //! surface. M6 (SQL editor) may move it to a dedicated query slice; the
 //! handle-id seam will survive that move.
 
+use serde::Serialize;
 use tauri::State;
 
-use crate::shared::engine::{ConnectionParams, EngineInfo, QueryOptions, QueryResult};
+use crate::shared::engine::{ConnectionParams, Engine, EngineInfo, QueryOptions, QueryResult};
 use crate::shared::engine::{SchemaInfo, TableInfo};
 use crate::shared::error::AppError;
 
@@ -77,6 +78,115 @@ pub async fn connection_list(
     state: State<'_, ConnectionsState>,
 ) -> Result<Vec<SavedConnection>, AppError> {
     application::list_connections(state.repository.as_ref())
+}
+
+/// Whether an engine's driver is actually usable in THIS build/host — drives the
+/// connect modal's proactive "driver unavailable" indicator so the user learns
+/// *before* a failed connect why an engine won't work and how to fix it.
+///
+/// Every pure-Rust engine is always available. Oracle (M23) is the exception:
+/// its OCI adapter is compiled only behind the `engine-oracle` Cargo feature and
+/// needs the Oracle Instant Client at runtime, so both are probed. `detail`
+/// carries the client version when present (a tooltip nicety); `reason` carries a
+/// §5-style explanation + fix when unavailable.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DriverStatus {
+    pub available: bool,
+    /// Machine-readable state so the UI can decide how to present it:
+    /// - `notShipped` — this edition of ByteTable does not include the engine.
+    ///   The UI hides it in release builds (showing it would be a dead choice).
+    /// - `needsSetup` — the engine ships, but a host-side prerequisite (the
+    ///   Oracle Instant Client) is missing. The UI shows it with the fix.
+    ///
+    /// `None` when `available` is true.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    /// A short, END-USER-facing explanation shown in the connect modal when
+    /// unavailable (no build/CLI jargon in release). `None` when available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// A short driver/version detail for the "available" tooltip (e.g. the
+    /// Instant Client version). `None` otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+/// Report whether `engine`'s driver is usable here. Never touches the database —
+/// Oracle's probe only loads the client library ([`oracle::Version::client`]).
+#[tauri::command]
+pub async fn engine_driver_status(engine: Engine) -> DriverStatus {
+    match engine {
+        Engine::Oracle => oracle_driver_status(),
+        // Every other engine is a pure-Rust driver compiled unconditionally.
+        _ => DriverStatus {
+            available: true,
+            code: None,
+            reason: None,
+            detail: None,
+        },
+    }
+}
+
+/// A developer-only build hint, appended to the user-facing reason ONLY in debug
+/// builds — a shipped release never shows `--features`/CLI internals to users.
+fn dev_hint(hint: &str) -> String {
+    if cfg!(debug_assertions) {
+        format!(" (Dev: {hint})")
+    } else {
+        String::new()
+    }
+}
+
+/// Feature build: probe the Instant Client by asking for its version (a `dlopen`
+/// of `libclntsh`, no DB connection). Ok → present; Err → missing/misconfigured.
+#[cfg(feature = "engine-oracle")]
+fn oracle_driver_status() -> DriverStatus {
+    match oracle::Version::client() {
+        Ok(version) => DriverStatus {
+            available: true,
+            code: None,
+            reason: None,
+            detail: Some(format!("Oracle Instant Client {version}")),
+        },
+        Err(err) => {
+            // The DPI-1047 error carries the entire dyld search-path dump — far
+            // too long for a UI warning. Log it for developers; keep the UI line
+            // short with only a concise dev hint.
+            if cfg!(debug_assertions) {
+                eprintln!("engine-oracle: Oracle Instant Client not loadable: {err}");
+            }
+            DriverStatus {
+                available: false,
+                code: Some("needsSetup".to_string()),
+                reason: Some(format!(
+                    "Oracle support needs the Oracle Instant Client, which wasn't found \
+                     on this system. Install it, then restart ByteTable.{}",
+                    dev_hint(
+                        "put the arm64 Instant Client on DYLD_LIBRARY_PATH (or in ~/lib or \
+                         /usr/local/lib); full error logged to the console"
+                    )
+                )),
+                detail: None,
+            }
+        }
+    }
+}
+
+/// Default build: the OCI adapter was not compiled into this edition, so Oracle
+/// is not available regardless of the host. The user-facing line says exactly
+/// that (no build jargon); the dev hint is added only in debug builds.
+#[cfg(not(feature = "engine-oracle"))]
+fn oracle_driver_status() -> DriverStatus {
+    DriverStatus {
+        available: false,
+        code: Some("notShipped".to_string()),
+        reason: Some(format!(
+            "Oracle isn't available in this version of ByteTable.{}",
+            dev_hint("build with `--features engine-oracle` to enable it")
+        )),
+        detail: None,
+    }
 }
 
 /// Save a connection. `password` / `sshSecret` are the optional transient

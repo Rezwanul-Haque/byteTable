@@ -21,6 +21,7 @@ const ENGINE_META = {
   mysql: { label: "MySQL", short: "My" },
   postgres: { label: "PostgreSQL", short: "Pg" },
   mssql: { label: "MS SQL Server", short: "MSS" },
+  oracle: { label: "Oracle", short: "Or" },
   redis: { label: "Redis", short: "Rd" },
   dynamodb: { label: "DynamoDB", short: "Dy" },
   mongodb: { label: "MongoDB", short: "Mg" },

@@ -62,6 +62,25 @@ services:
       - ./seed/mssql.sql:/seed.mssql.sql:ro
       - bt-mssql-data:/var/opt/mssql
 
+  # Oracle (M23). `gvenzl/oracle-free` = Oracle Database 23ai Free (no login
+  # required) and — unlike `gvenzl/oracle-xe` (amd64-only; Oracle never shipped
+  # XE for ARM) — ships a NATIVE linux/arm64 build, so it runs on Apple Silicon
+  # without emulation. Boots a pluggable DB `FREEPDB1` in ~1–2 min. Seed MANUALLY
+  # as SYSTEM once healthy (no multi-user drop-in init dir):
+  #   sqlplus system/ByteTable1!@//localhost:11521/FREEPDB1 @seed/oracle.sql
+  # The M23 adapter is feature-gated: build the app with `--features
+  # engine-oracle` (needs the Oracle Instant Client at runtime) to connect.
+  oracle:
+    image: gvenzl/oracle-free:23-slim
+    container_name: bt-oracle
+    environment:
+      ORACLE_PASSWORD: "ByteTable1!"
+    ports:
+      - "11521:1521"
+    volumes:
+      - ./seed/oracle.sql:/seed.oracle.sql:ro
+      - bt-oracle-data:/opt/oracle/oradata
+
   redis:
     image: redis:7
     container_name: bt-redis
@@ -161,6 +180,7 @@ volumes:
   bt-pg-data:
   bt-mysql-data:
   bt-mssql-data:
+  bt-oracle-data:
   bt-redis-data:
   bt-dynamo-data:
   bt-mongo-data:

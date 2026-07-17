@@ -80,6 +80,20 @@ function termConfig(engine: Engine, connName: string): TermConfig {
       errPrefix: "Msg 102, Level 15, State 1: ",
     };
   }
+  if (engine === "oracle") {
+    // sqlplus: `SQL>` prompt, numbered continuation (`  2  `), no meta char
+    // (SQL*Plus commands are bare words like DESC / EXIT). PL/SQL blocks end
+    // with `/`; the error prefix mimics an ORA-xxxxx message.
+    return {
+      shell: "sqlplus",
+      metaChar: null,
+      prompt: "SQL> ",
+      cont: "  2  ",
+      banner:
+        "SQL*Plus · type HELP for help, EXIT to close. Statements end with ; (PL/SQL blocks end with /).",
+      errPrefix: "ORA-00942: ",
+    };
+  }
   // postgres
   return {
     shell: "psql",
@@ -295,6 +309,14 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
         names.map((n) => ({ name: n })),
       ).concat([{ cls: "term-meta", text: "(" + names.length + " rows affected)" }]);
     }
+    if (engine === "oracle") {
+      // `SELECT table_name FROM user_tables` — a single uppercase `TABLE_NAME`
+      // column + sqlplus's "N rows selected." trailer.
+      return asciiObjTable(
+        ["TABLE_NAME"],
+        names.map((n) => ({ TABLE_NAME: n })),
+      ).concat([{ cls: "term-meta", text: names.length + " rows selected." }]);
+    }
     // postgres \dt
     const rows = names.map((n) => ({
       Schema: schemaName,
@@ -324,6 +346,13 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
         ["name"],
         names.map((s) => ({ name: s })),
       ).concat([{ cls: "term-meta", text: "(" + names.length + " rows affected)" }]);
+    }
+    if (engine === "oracle") {
+      // Oracle schemas are users — `SELECT username FROM all_users`.
+      return asciiObjTable(
+        ["USERNAME"],
+        names.map((s) => ({ USERNAME: s })),
+      ).concat([{ cls: "term-meta", text: names.length + " rows selected." }]);
     }
     const rows = names.map((s) => ({ Name: s, Owner: connName }));
     return [{ cls: "term-meta", text: "List of schemas" }].concat(
@@ -452,6 +481,17 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
         "",
         "Any T-SQL runs against the engine (GO ends a batch).",
       ];
+    } else if (engine === "oracle") {
+      rows = [
+        "SELECT ...;                         run a query",
+        "DESC name                           describe table",
+        "SELECT table_name FROM user_tables; list tables",
+        "ALTER SESSION SET CURRENT_SCHEMA=X; switch schema",
+        "CLEAR SCREEN                        clear screen",
+        "EXIT / quit                         close terminal",
+        "",
+        "Any SQL ending in ; runs; PL/SQL blocks end with /.",
+      ];
     } else {
       rows = [
         ".tables          list tables",
@@ -486,7 +526,9 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
       low === ".clear" ||
       low === "\\! clear" ||
       low === "\\clear" ||
-      low === ":clear"
+      low === ":clear" ||
+      low === "clear screen" ||
+      low === "cl scr"
     ) {
       setLines([]);
       return true;
@@ -535,6 +577,44 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
           .catch((e: unknown) =>
             appendLines([{ cls: "term-err", text: cfg.errPrefix + appErrorMessage(e, "failed") }]),
           );
+        return true;
+      }
+    }
+
+    // Oracle (sqlplus) meta forms: `SELECT … FROM user_tables` lists tables,
+    // `SELECT … FROM all_users` lists schemas (users), and `ALTER SESSION SET
+    // CURRENT_SCHEMA = X` switches schema (M23 §23.4). `DESC name` is handled by
+    // the shared describe branch below; `CLEAR SCREEN` by the shared clear.
+    if (engine === "oracle") {
+      if (/^select\b[\s\S]*\bfrom\s+user_tables\b/i.test(low)) {
+        void listTables()
+          .then(appendLines)
+          .catch((e: unknown) =>
+            appendLines([{ cls: "term-err", text: cfg.errPrefix + appErrorMessage(e, "failed") }]),
+          );
+        return true;
+      }
+      if (/^select\b[\s\S]*\bfrom\s+(all_users|dba_users)\b/i.test(low)) {
+        void listSchemas()
+          .then(appendLines)
+          .catch((e: unknown) =>
+            appendLines([{ cls: "term-err", text: cfg.errPrefix + appErrorMessage(e, "failed") }]),
+          );
+        return true;
+      }
+      const altSchema = t
+        .replace(/;$/, "")
+        .match(/^alter\s+session\s+set\s+current_schema\s*=\s*(.+)$/i);
+      if (altSchema) {
+        const target = altSchema[1]!.trim().replace(/^["']+|["']+$/g, "");
+        if (schemaNames.includes(target)) {
+          patchWorkspaceUi(wsId, { schemaName: target });
+          appendLines([{ cls: "term-meta", text: "Session altered." }]);
+        } else {
+          appendLines([
+            { cls: "term-err", text: cfg.errPrefix + 'schema "' + target + '" does not exist' },
+          ]);
+        }
         return true;
       }
     }
@@ -876,7 +956,13 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
               "sp_help users",
               "SELECT * FROM users WHERE country = 'DE';",
             ]
-          : ["\\dt", "\\d orders", "SELECT * FROM users WHERE country = 'DE';"];
+          : engine === "oracle"
+            ? [
+                "SELECT table_name FROM user_tables;",
+                "DESC orders",
+                "SELECT * FROM users WHERE country = 'DE';",
+              ]
+            : ["\\dt", "\\d orders", "SELECT * FROM users WHERE country = 'DE';"];
 
   const promptStr = session.buffer ? cfg.cont : cfg.prompt;
 

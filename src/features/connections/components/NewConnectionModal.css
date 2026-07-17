@@ -15,6 +15,7 @@
 }
 
 .engine-choice {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -32,6 +33,47 @@
   border-color: var(--accent);
   color: var(--text);
   background: color-mix(in oklab, var(--accent) 7%, var(--bg2));
+}
+
+/* A driver that is not usable in this build/host (M23: Oracle without the
+   `engine-oracle` feature / Instant Client). The tile stays clickable — the
+   inline .driver-warn note explains the fix — but is dimmed and flagged. */
+.engine-choice.unavailable {
+  opacity: 0.6;
+}
+
+.engine-choice.unavailable.active {
+  border-color: #e0a05c;
+  background: color-mix(in oklab, #e0a05c 7%, var(--bg2));
+}
+
+.engine-choice-warn {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: flex;
+  color: #e0a05c;
+}
+
+/* Inline "driver unavailable" note under the engine picker — amber (a warning,
+   not the destructive-red of .env-warn), mirroring its shape. */
+.driver-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 9px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: #e0a05c;
+  background: #e0a05c10;
+  border: 1px solid #e0a05c30;
+  border-radius: 8px;
+  padding: 8px 11px;
+}
+
+.driver-warn svg {
+  flex: none;
+  margin-top: 1px;
 }
 
 /* Environment picker (m15) — ported byte-exact from ByteTable.html

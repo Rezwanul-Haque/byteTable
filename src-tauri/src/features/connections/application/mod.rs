@@ -43,12 +43,39 @@ impl ConnectorRegistry {
 
     /// The connector for an engine, or `Unsupported` with a human message.
     pub fn get(&self, engine: Engine) -> Result<Arc<dyn Connector>, AppError> {
-        self.connectors.get(&engine).cloned().ok_or_else(|| {
-            AppError::Unsupported(format!(
-                "{} connections arrive in a later milestone.",
-                engine.display_name()
-            ))
-        })
+        self.connectors
+            .get(&engine)
+            .cloned()
+            .ok_or_else(|| AppError::Unsupported(unregistered_connector_message(engine)))
+    }
+}
+
+/// The §5 message shown when an engine has no registered connector. For most
+/// engines this is the generic "later milestone" line; Oracle (M23) is special —
+/// it IS implemented, but the OCI adapter is compiled only behind the
+/// `engine-oracle` Cargo feature (it needs the Oracle Instant Client), so a build
+/// without that feature reaches here. Say so, and how to fix it, rather than
+/// implying it is unbuilt.
+fn unregistered_connector_message(engine: Engine) -> String {
+    match engine {
+        // End-user-facing (this is a §5 error a shipped app can surface): no
+        // build/CLI jargon. The actionable dev hint is added only in debug
+        // builds. The connect modal normally prevents reaching here for Oracle
+        // (it hides/flags the engine up front), so this is a backstop.
+        Engine::Oracle => {
+            let mut msg = "Oracle isn't available in this version of ByteTable.".to_string();
+            if cfg!(debug_assertions) {
+                msg.push_str(
+                    " (Dev: build with `--features engine-oracle`, and install the Oracle \
+                     Instant Client, to enable it.)",
+                );
+            }
+            msg
+        }
+        _ => format!(
+            "{} connections arrive in a later milestone.",
+            engine.display_name()
+        ),
     }
 }
 
@@ -905,6 +932,23 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "MySQL connections arrive in a later milestone."
+        );
+    }
+
+    #[test]
+    fn oracle_unregistered_message_is_user_facing_not_a_milestone() {
+        // The message a shipped app can surface must read for an END USER — no
+        // "milestone" (Oracle is implemented, just not in this edition) and a
+        // plain "not in this version" line. The `--features` build hint is
+        // dev-only; tests run with debug_assertions on, so it is present here.
+        let msg = unregistered_connector_message(Engine::Oracle);
+        assert!(msg.contains("this version of ByteTable"), "{msg}");
+        assert!(!msg.contains("later milestone"), "{msg}");
+        // The build hint appears only in debug builds (as this test is).
+        assert_eq!(
+            cfg!(debug_assertions),
+            msg.contains("engine-oracle"),
+            "{msg}"
         );
     }
 

@@ -103,6 +103,21 @@ export type ConnectionParams =
       ssh?: SshConfig;
     }
   | {
+      // Oracle (M23). Relational like MySQL/Postgres/SQL Server, but Oracle
+      // connects by SERVICE NAME (`serviceName`, e.g. `ORCLPDB1`), not a
+      // `database`. `sid` is the optional legacy SID form; `user` is the schema
+      // user (uppercased by Oracle). Default port 1521. Password + SSH secrets
+      // live in the OS keychain.
+      engine: "oracle";
+      host: string;
+      port: number;
+      serviceName?: string;
+      sid?: string;
+      user?: string;
+      tlsMode: TlsMode;
+      ssh?: SshConfig;
+    }
+  | {
       // Redis (M13). No relational `database`; instead a numbered logical db
       // (`dbIndex`, 0–15, default 0). `user` is the optional ACL username
       // (absent → the Redis `default` user). Password + SSH secrets live in the
@@ -261,6 +276,37 @@ export function connectionList(): Promise<SavedConnection[]> {
 }
 
 /**
+ * Whether an engine's driver is usable in this build/host — mirrors Rust's
+ * `DriverStatus`. Drives the connect modal's proactive "driver unavailable"
+ * indicator. Pure-Rust engines are always available; Oracle (M23) is the
+ * exception — its OCI adapter is feature-gated and needs the Oracle Instant
+ * Client at runtime, so `available` may be false with a `reason` explaining the
+ * fix. `detail` carries the client version (tooltip) when available.
+ */
+export interface DriverStatus {
+  available: boolean;
+  /**
+   * Machine-readable state when unavailable, so the UI can decide presentation:
+   * - `"notShipped"` — this edition doesn't include the engine (hide it in
+   *   release; a dead tile is worse than its absence).
+   * - `"needsSetup"` — the engine ships but a host prerequisite is missing (the
+   *   Oracle Instant Client); show it with the fix.
+   * Absent when `available` is true.
+   */
+  code?: "notShipped" | "needsSetup";
+  /** End-user-facing explanation shown when unavailable (no build jargon in release). */
+  reason?: string;
+  /** Driver/version detail for the available-tooltip (e.g. the client version). */
+  detail?: string;
+}
+
+/** Probe an engine's driver availability (the `engine_driver_status` command).
+ *  Never touches a database — Oracle's probe only loads the client library. */
+export function engineDriverStatus(engine: Engine): Promise<DriverStatus> {
+  return invoke<DriverStatus>("engine_driver_status", { engine });
+}
+
+/**
  * Insert or update; returns the stored value (with assigned id/createdAt).
  *
  * `password` / `sshSecret` are the transient secrets the connect modal typed:
@@ -352,6 +398,13 @@ export function connectionDetail(params: ConnectionParams): string {
     return params.database
       ? params.host + ":" + params.port + " · " + params.database
       : params.host + ":" + params.port;
+  }
+  // Oracle: "host:port · <serviceName>" (prototype detail
+  // "oracle.byteshop.io:1521 · ORCLPDB1"); the service name replaces the
+  // relational database, with the legacy SID as a fallback label.
+  if (params.engine === "oracle") {
+    const svc = params.serviceName || params.sid;
+    return svc ? params.host + ":" + params.port + " · " + svc : params.host + ":" + params.port;
   }
   // Cassandra: "<contactPoints>:<port> · <keyspace>" (prototype detail
   // "127.0.0.1:9042 · byteshop"). The contact-points field may already carry a

@@ -19,6 +19,10 @@ import { ensureFont } from "./fonts";
  *  (read by the inline bootstrap script in index.html). */
 const SPLASH_ACCENT_KEY = "bytetable.splash-accent.v1";
 
+/** localStorage key holding the resolved surface colors (+ light flag) for the
+ *  pre-JS splash, so its background/text follow a light theme too. */
+const SPLASH_THEME_KEY = "bytetable.splash-theme.v1";
+
 export function applySettings(input: Partial<Settings> | null | undefined): void {
   const s: Settings = { ...DEFAULTS, ...(input ?? {}) };
   const theme = THEMES[s.theme] ?? THEMES.charcoal;
@@ -49,8 +53,22 @@ export function applySettings(input: Partial<Settings> | null | undefined): void
   // the user's accent instead of the hardcoded default.
   try {
     localStorage.setItem(SPLASH_ACCENT_KEY, accent);
+    // Also persist the resolved surface colors so the splash background / text /
+    // bar follow a light theme instead of the hardcoded dark defaults.
+    localStorage.setItem(
+      SPLASH_THEME_KEY,
+      JSON.stringify({
+        bg: theme.bg0,
+        gradA: theme.bg2,
+        gradB: theme.bg0,
+        text: theme.text,
+        dim: theme.dim,
+        bar: theme.bg3,
+        light: !!theme.light,
+      }),
+    );
   } catch {
-    // Storage disabled/full — the splash just falls back to its default accent.
+    // Storage disabled/full — the splash just falls back to its dark defaults.
   }
 
   // Fonts. Bundled families (JetBrains Mono, IBM Plex Sans) and system faces

@@ -9,18 +9,43 @@
          the previous launch (falls back to the default accent on first run). -->
     <script>
       try {
+        var r = document.documentElement.style;
         var a = localStorage.getItem("bytetable.splash-accent.v1");
-        if (a) document.documentElement.style.setProperty("--splash-accent", a);
+        if (a) r.setProperty("--splash-accent", a);
+        // Surface colors (+ light flag) from the previous launch, so the splash
+        // background/text follow a light theme instead of the hardcoded dark.
+        var t = JSON.parse(localStorage.getItem("bytetable.splash-theme.v1") || "null");
+        if (t) {
+          r.setProperty("--splash-bg", t.bg);
+          r.setProperty("--splash-grad-a", t.gradA);
+          r.setProperty("--splash-grad-b", t.gradB);
+          r.setProperty("--splash-text", t.text);
+          r.setProperty("--splash-dim", t.dim);
+          r.setProperty("--splash-bar", t.bar);
+          document.documentElement.style.colorScheme = t.light ? "light" : "dark";
+        }
       } catch (e) {}
     </script>
     <!-- Splash screen — shown instantly (inline so it paints before the JS/CSS
          bundle loads) and dismissed from main.tsx once React has mounted. Token
          values are hardcoded here since tokens.css isn't loaded yet. -->
     <style>
+      /* Splash tokens — the dark defaults. The inline script above overrides
+         these from the previous launch's theme (so a light theme carries over);
+         declaring them here also lets the IDE resolve the var() references. */
+      :root {
+        --splash-accent: #2dd4a7;
+        --splash-bg: #0f1013;
+        --splash-grad-a: #1b1e24;
+        --splash-grad-b: #131418;
+        --splash-text: #e7eaef;
+        --splash-dim: #9aa1ad;
+        --splash-bar: #262a32;
+      }
       html,
       body {
         margin: 0;
-        background: #0f1013;
+        background: var(--splash-bg, #0f1013);
         color-scheme: dark;
       }
       #bt-splash {
@@ -31,7 +56,11 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        background: radial-gradient(900px 560px at 50% 38%, #1b1e24, #131418 72%);
+        background: radial-gradient(
+          900px 560px at 50% 38%,
+          var(--splash-grad-a, #1b1e24),
+          var(--splash-grad-b, #131418) 72%
+        );
         border-radius: 10px;
         overflow: hidden;
         transition:
@@ -101,7 +130,7 @@
         font-size: 26px;
         font-weight: 600;
         letter-spacing: -0.01em;
-        color: #e7eaef;
+        color: var(--splash-text, #e7eaef);
         opacity: 0;
         animation: sl-fade 0.5s ease 0.42s forwards;
       }
@@ -111,7 +140,7 @@
       .splash-tag {
         font-family: "IBM Plex Sans", system-ui, sans-serif;
         font-size: 12.5px;
-        color: #9aa1ad;
+        color: var(--splash-dim, #9aa1ad);
         opacity: 0;
         animation: sl-fade 0.5s ease 0.52s forwards;
       }
@@ -119,7 +148,7 @@
         width: 168px;
         height: 3px;
         border-radius: 2px;
-        background: #262a32;
+        background: var(--splash-bar, #262a32);
         overflow: hidden;
         margin-top: 8px;
         opacity: 0;

@@ -60,7 +60,7 @@ export function AboutModal({
   };
 
   return (
-    <Modal className="about-modal" width={380} label="About ByteTable" onClose={onClose}>
+    <Modal className="about-modal" width={390} label="About ByteTable" onClose={onClose}>
       <div className="about-head">
         <div className="about-mark">
           <BrandMark size={30} blink />

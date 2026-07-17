@@ -165,13 +165,13 @@ export function CassandraSidebar({
           ) : null}
         </div>
         <IconBtn icon="schema" title="Schema map" onClick={onOpenMap} />
+        <IconBtn icon="monitoring" title="Keyspace dashboard" onClick={onOpenDashboard} />
         <IconBtn
-          icon="refresh"
+          icon="sync"
           title="Refresh tables"
           onClick={onRefresh}
           className={refreshing ? "sidebar-sync-spinning" : undefined}
         />
-        <IconBtn icon="monitoring" title="Keyspace dashboard" onClick={onOpenDashboard} />
       </div>
 
       <div className="sidebar-search">

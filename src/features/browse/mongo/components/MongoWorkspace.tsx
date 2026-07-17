@@ -108,8 +108,15 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
   const [importTarget, setImportTarget] = useState<{ coll: string | null } | null>(null);
 
   const loadCollections = useCallback(
-    async (database: string) => {
-      setLoading(true);
+    async (database: string, opts?: { silent?: boolean }) => {
+      // A background refresh (auto-refresh timer, post-write, import) must NOT
+      // flip `loading`: doing so swaps the sidebar list to a "Loading…" banner
+      // and the dashboard to its placeholder on every tick, which reads as a
+      // flicker. Only a foreground load (initial mount, db switch) shows the
+      // loading state; a silent refresh swaps the data in place, keeping the
+      // last-known collections visible until the new list arrives.
+      const silent = opts?.silent ?? false;
+      if (!silent) setLoading(true);
       setError(null);
       try {
         const list = await mongoListCollections(handleId, database);
@@ -118,9 +125,11 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
         setError(
           isAppErrorPayload(e) ? e.message : "Could not list collections (desktop app required)",
         );
-        setCollections([]);
+        // Keep the last-known collections on a silent-refresh failure so the UI
+        // shows stale data instead of blanking.
+        if (!silent) setCollections([]);
       } finally {
-        setLoading(false);
+        if (!silent) setLoading(false);
       }
     },
     [handleId],
@@ -250,13 +259,16 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
   };
   const refresh = () => {
     setVersion((v) => v + 1);
+    // Manual refresh is user-initiated: show the loading state as click feedback.
+    // Only the automatic/background paths (auto-refresh timer, post-write,
+    // import) load silently to avoid the per-tick flicker.
     void loadCollections(db);
   };
 
   // Settings-driven auto-refresh: reload only the sidebar collection list (not
   // the version bump — that would re-run the active query/grid). The returned
   // flag spins the sidebar's refresh icon once per tick.
-  const refreshSpinning = useAutoRefresh(() => void loadCollections(db));
+  const refreshSpinning = useAutoRefresh(() => void loadCollections(db, { silent: true }));
 
   // Ctrl/⌘+` toggles the docked mongosh panel (VS Code convention, like the
   // other engines' consoles).
@@ -392,7 +404,7 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
                   onUpdateTab={(p) => updateTab(t.id, p as Partial<Tab>)}
                   onExport={(c) => setExportJob({ scope: "collection", coll: c })}
                   onImport={(c) => setImportTarget({ coll: c })}
-                  onDataChanged={() => void loadCollections(db)}
+                  onDataChanged={() => void loadCollections(db, { silent: true })}
                 />
               )}
             </div>
@@ -443,7 +455,7 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
           onClose={() => setImportTarget(null)}
           onDone={() => {
             setImportTarget(null);
-            void loadCollections(db);
+            void loadCollections(db, { silent: true });
           }}
         />
       ) : null}

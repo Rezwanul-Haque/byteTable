@@ -150,13 +150,13 @@ export function MongoSidebar({
           ) : null}
         </div>
         <IconBtn icon="schema" title="Schema map" onClick={onOpenMap} />
+        <IconBtn icon="monitoring" title="Database dashboard" onClick={onOpenDashboard} />
         <IconBtn
-          icon="refresh"
+          icon="sync"
           title="Refresh collections"
           onClick={onRefresh}
           className={refreshing ? "sidebar-sync-spinning" : undefined}
         />
-        <IconBtn icon="monitoring" title="Database dashboard" onClick={onOpenDashboard} />
       </div>
 
       <div className="sidebar-search">

@@ -115,7 +115,7 @@ export function DynamoSidebar({
           <IconBtn icon="monitoring" title="Tables dashboard" onClick={onOpenDashboard} />
         ) : null}
         <IconBtn
-          icon="refresh"
+          icon="sync"
           title="Refresh tables"
           onClick={onRefresh}
           className={refreshing ? "sidebar-sync-spinning" : undefined}

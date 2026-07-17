@@ -234,6 +234,7 @@ export function App() {
     },
     onAbout: () => setAboutOpen(true),
     onShortcuts: () => setShortcutsOpen(true),
+    onSettings: () => setSettingsOpen(true),
     onQuit: () => setQuitConfirmOpen(true),
     onZoom: (dir) => {
       const cur = settings.fontSize;

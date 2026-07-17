@@ -23,6 +23,8 @@ export interface TitleBarCtx {
   onAbout: () => void;
   onShortcuts: () => void;
   onZoom: (dir: "in" | "out" | "reset") => void;
+  /** Open the Settings modal (same as the rail gear / ⌘,). */
+  onSettings: () => void;
   /** Quit the whole app (after a confirm). */
   onQuit: () => void;
 }
@@ -99,6 +101,7 @@ export function buildMenus(m: MenuCtx): Menu[] {
           run: ctx.onCloseWorkspace,
         },
         "—",
+        { id: "settings", label: "Settings…", hint: "⌘,", enabled: true, run: ctx.onSettings },
         { id: "quit", label: "Close ByteTable", enabled: true, run: ctx.onQuit },
       ],
     },

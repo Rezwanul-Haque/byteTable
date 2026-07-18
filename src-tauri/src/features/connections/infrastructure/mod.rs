@@ -6,7 +6,7 @@ use std::sync::Mutex;
 
 use crate::shared::error::AppError;
 
-use super::domain::SavedConnection;
+use super::domain::{SavedConnection, UnsupportedConnection};
 use super::ports::ConnectionRepository;
 
 /// Stores the saved-connection registry as pretty-printed JSON at a fixed
@@ -15,11 +15,16 @@ use super::ports::ConnectionRepository;
 /// difference:
 ///
 /// - Missing file → empty list. First launch is not an error.
-/// - Corrupt file → **error**, not silent reset. Unlike appearance
-///   preferences, saved connections are user data — silently wiping them on
-///   a parse error would be data loss. The error message names the file so
-///   the user (or a future repair flow) can act on it; the file is never
-///   overwritten until it parses again or the user deletes it.
+/// - Structurally corrupt file (not a JSON array, truncated, invalid JSON) →
+///   **error**, not silent reset. Saved connections are user data — silently
+///   wiping them on a parse error would be data loss. The error names the file
+///   so the user (or a repair flow) can act; the file is never overwritten
+///   until it parses again or the user deletes it.
+/// - A single unreadable ENTRY (e.g. a connection whose `engine` this build
+///   does not know, saved by a newer/feature build) → **skipped**, not fatal.
+///   The rest load; the unreadable row stays in the file untouched. This keeps
+///   switching between builds/versions from stranding the whole registry behind
+///   one row the current build can't parse — no manual file editing needed.
 /// - Saves are atomic: write a sibling temp file, then rename over the
 ///   target, so a crash mid-write never leaves a truncated registry.
 /// - An internal mutex serializes read-modify-write cycles so concurrent
@@ -54,7 +59,11 @@ impl JsonFileConnectionRepository {
         })
     }
 
-    fn read_all(&self) -> Result<Vec<SavedConnection>, AppError> {
+    /// The file as a raw JSON array — the source of truth that PRESERVES every
+    /// entry, including ones this build can't parse. A structural failure (not an
+    /// array, truncated, invalid JSON) is real corruption → error, never a silent
+    /// wipe; missing file → empty. Per-entry meaning is applied by the callers.
+    fn read_raw(&self) -> Result<Vec<serde_json::Value>, AppError> {
         let contents = match fs::read_to_string(&self.path) {
             Ok(contents) => contents,
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -69,15 +78,63 @@ impl JsonFileConnectionRepository {
         })
     }
 
-    fn write_all(&self, connections: &[SavedConnection]) -> Result<(), AppError> {
+    /// The entries this build CAN parse into a `SavedConnection`. Unreadable rows
+    /// (unknown engine, etc.) are left for [`Self::read_unsupported`] — they stay
+    /// in the file and never fail the whole load.
+    fn read_all(&self) -> Result<Vec<SavedConnection>, AppError> {
+        Ok(self
+            .read_raw()?
+            .into_iter()
+            .filter_map(|entry| serde_json::from_value::<SavedConnection>(entry).ok())
+            .collect())
+    }
+
+    /// The entries this build CANNOT parse, salvaged into display stubs (needs an
+    /// `id` to be actionable — entries without one are ignored).
+    fn read_unsupported(&self) -> Result<Vec<UnsupportedConnection>, AppError> {
+        let mut out = Vec::new();
+        for entry in self.read_raw()? {
+            if serde_json::from_value::<SavedConnection>(entry.clone()).is_ok() {
+                continue; // this build can use it — not "unsupported"
+            }
+            let str_field = |k: &str| entry.get(k).and_then(|v| v.as_str()).map(str::to_string);
+            let Some(id) = str_field("id") else {
+                continue; // no id → cannot delete/act on it; skip silently
+            };
+            let engine = str_field("engine").unwrap_or_else(|| "unknown".into());
+            out.push(UnsupportedConnection {
+                id,
+                name: str_field("name").unwrap_or_else(|| "(unnamed)".into()),
+                env: str_field("env"),
+                project: str_field("project"),
+                color: str_field("color"),
+                reason: format!(
+                    "This connection's engine \"{engine}\" isn't supported in this \
+                     version of ByteTable. Open the build that added it, or delete \
+                     this connection."
+                ),
+                engine,
+            });
+        }
+        Ok(out)
+    }
+
+    /// Atomically write the raw entry array back (temp file + rename), preserving
+    /// unreadable rows the callers rounded-trip through `read_raw`.
+    fn write_raw(&self, entries: &[serde_json::Value]) -> Result<(), AppError> {
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let json = serde_json::to_string_pretty(connections)?;
+        let json = serde_json::to_string_pretty(entries)?;
         let tmp_path = self.path.with_extension("json.tmp");
         fs::write(&tmp_path, json)?;
         fs::rename(&tmp_path, &self.path)?;
         Ok(())
+    }
+
+    /// The `id` field of a raw entry, if it is a string.
+    fn entry_id(entry: &serde_json::Value) -> Option<&str> {
+        entry.get("id").and_then(|v| v.as_str())
     }
 }
 
@@ -86,30 +143,41 @@ impl ConnectionRepository for JsonFileConnectionRepository {
         self.read_all()
     }
 
+    fn list_unsupported(&self) -> Result<Vec<UnsupportedConnection>, AppError> {
+        self.read_unsupported()
+    }
+
     fn get(&self, id: &str) -> Result<Option<SavedConnection>, AppError> {
         Ok(self.read_all()?.into_iter().find(|c| c.id == id))
     }
 
     fn save(&self, connection: &SavedConnection) -> Result<(), AppError> {
         let _guard = self.lock_for_write()?;
-        let mut connections = self.read_all()?;
-        if let Some(existing) = connections.iter_mut().find(|c| c.id == connection.id) {
-            *existing = connection.clone();
-        } else {
-            connections.push(connection.clone());
+        // Work on the RAW array so unreadable rows (unknown engines from other
+        // builds) survive the write instead of being dropped.
+        let mut raw = self.read_raw()?;
+        let value = serde_json::to_value(connection)?;
+        match raw
+            .iter_mut()
+            .find(|e| Self::entry_id(e) == Some(connection.id.as_str()))
+        {
+            Some(slot) => *slot = value,
+            None => raw.push(value),
         }
-        self.write_all(&connections)
+        self.write_raw(&raw)
     }
 
     fn delete(&self, id: &str) -> Result<(), AppError> {
         let _guard = self.lock_for_write()?;
-        let mut connections = self.read_all()?;
-        let before = connections.len();
-        connections.retain(|c| c.id != id);
-        if connections.len() == before {
+        // Delete by raw id so an unsupported (unknown-engine) entry is deletable
+        // too — the connect screen offers a delete action on its struck-out card.
+        let mut raw = self.read_raw()?;
+        let before = raw.len();
+        raw.retain(|e| Self::entry_id(e) != Some(id));
+        if raw.len() == before {
             return Err(AppError::NotFound(format!("saved connection '{id}'")));
         }
-        self.write_all(&connections)
+        self.write_raw(&raw)
     }
 }
 
@@ -204,5 +272,62 @@ mod tests {
             fs::read_to_string(&path).expect("read back"),
             "{ not json !!"
         );
+    }
+
+    /// A file with a valid SQLite connection plus one whose `engine` this build
+    /// does not know (as if saved by a newer/experimental build).
+    fn file_with_unsupported(dir: &tempfile::TempDir) -> std::path::PathBuf {
+        let path = dir.path().join("connections.json");
+        let json = r##"[
+          { "id": "ok", "name": "Good", "engine": "sqlite",
+            "params": { "engine": "sqlite", "path": "/tmp/ok.db" }, "env": "dev" },
+          { "id": "future", "name": "FromNewerBuild", "engine": "oracle",
+            "params": { "engine": "oracle", "host": "localhost", "port": 1521 },
+            "env": "dev", "project": "local", "color": "#56b6c2" }
+        ]"##;
+        fs::write(&path, json).expect("write");
+        path
+    }
+
+    #[test]
+    fn unknown_engine_entry_is_not_fatal_and_is_surfaced_separately() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = JsonFileConnectionRepository::new(file_with_unsupported(&dir));
+        // list() returns only the parseable one — never the whole-file error.
+        let all = repo.list().expect("list tolerates the unknown entry");
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].id, "ok");
+        // list_unsupported() surfaces the unknown one as an actionable stub.
+        let unsup = repo.list_unsupported().expect("list_unsupported");
+        assert_eq!(unsup.len(), 1);
+        assert_eq!(unsup[0].id, "future");
+        assert_eq!(unsup[0].engine, "oracle");
+        assert_eq!(unsup[0].project.as_deref(), Some("local"));
+        assert!(unsup[0].reason.contains("oracle"));
+    }
+
+    #[test]
+    fn saving_another_connection_preserves_the_unsupported_entry() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = JsonFileConnectionRepository::new(file_with_unsupported(&dir));
+        // Saving a NEW connection must not drop the unknown-engine row.
+        repo.save(&connection("new", "New One")).expect("save");
+        assert_eq!(repo.list().expect("list").len(), 2); // ok + new
+        let unsup = repo.list_unsupported().expect("list_unsupported");
+        assert_eq!(unsup.len(), 1); // the unknown one still there
+        assert_eq!(unsup[0].id, "future");
+    }
+
+    #[test]
+    fn deleting_an_unsupported_entry_by_id_removes_it() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = JsonFileConnectionRepository::new(file_with_unsupported(&dir));
+        // The connect screen's delete action targets the stub's id.
+        repo.delete("future").expect("delete unsupported by id");
+        assert!(repo
+            .list_unsupported()
+            .expect("list_unsupported")
+            .is_empty());
+        assert_eq!(repo.list().expect("list").len(), 1); // the valid one survives
     }
 }

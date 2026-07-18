@@ -261,6 +261,31 @@ export function connectionList(): Promise<SavedConnection[]> {
 }
 
 /**
+ * A saved-registry entry this build can't use — mirrors Rust's
+ * `UnsupportedConnection`. Almost always a connection whose `engine` is unknown
+ * to this build (saved by a newer/experimental build). The connect screen shows
+ * it struck-out with a delete action; it is never opened, and stays in the file
+ * for a build that supports it. Only non-secret display fields are salvaged.
+ */
+export interface UnsupportedConnection {
+  id: string;
+  /** The raw engine string from the file (unknown to this build). */
+  engine: string;
+  name: string;
+  env?: string;
+  project?: string;
+  color?: string;
+  /** Human explanation shown when the user clicks the struck-out card. */
+  reason: string;
+}
+
+/** Registry entries this build can't parse (unknown engine, etc.), for the
+ *  connect screen's struck-out cards (the `connection_list_unsupported` command). */
+export function connectionListUnsupported(): Promise<UnsupportedConnection[]> {
+  return invoke<UnsupportedConnection[]>("connection_list_unsupported");
+}
+
+/**
  * Insert or update; returns the stored value (with assigned id/createdAt).
  *
  * `password` / `sshSecret` are the transient secrets the connect modal typed:

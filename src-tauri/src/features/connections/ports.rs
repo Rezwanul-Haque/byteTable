@@ -7,7 +7,7 @@
 
 use crate::shared::error::AppError;
 
-use super::domain::SavedConnection;
+use super::domain::{SavedConnection, UnsupportedConnection};
 
 /// Persistence boundary for the saved-connection registry.
 ///
@@ -23,6 +23,14 @@ use super::domain::SavedConnection;
 pub trait ConnectionRepository: Send + Sync {
     /// All saved connections, in stored order.
     fn list(&self) -> Result<Vec<SavedConnection>, AppError>;
+
+    /// Registry entries this build cannot parse (unknown engine, etc.), surfaced
+    /// so the connect screen can show them struck-out with a delete action rather
+    /// than dropping them or failing the whole load. Default: none (fakes and
+    /// in-memory repositories have nothing unreadable).
+    fn list_unsupported(&self) -> Result<Vec<UnsupportedConnection>, AppError> {
+        Ok(Vec::new())
+    }
 
     /// Look up one saved connection. `Ok(None)` when the id is unknown —
     /// "does not exist" is a normal outcome here, not an error.

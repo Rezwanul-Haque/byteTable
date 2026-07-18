@@ -57,6 +57,31 @@ pub struct SavedConnection {
     pub created_at: Option<u64>,
 }
 
+/// A saved-registry entry this build cannot fully parse — almost always a
+/// connection whose `engine` is unknown here (saved by a newer/experimental
+/// build). It is NOT dropped: the raw entry stays in the file (so a build that
+/// *does* know the engine still sees it), and it is surfaced to the connect
+/// screen as a struck-out, non-openable card with a delete action, so the user
+/// can remove it deliberately instead of hand-editing the file. Only the
+/// non-secret display fields are salvaged from the raw JSON (best-effort).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnsupportedConnection {
+    pub id: String,
+    pub name: String,
+    /// The raw engine string from the file (unknown to this build).
+    pub engine: String,
+    /// Best-effort display fields, salvaged from the raw entry when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub env: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    /// Human explanation shown when the user clicks the struck-out card.
+    pub reason: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

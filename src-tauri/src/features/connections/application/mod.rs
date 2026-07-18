@@ -16,7 +16,7 @@ use crate::shared::engine::{
 use crate::shared::error::AppError;
 use crate::shared::keyvalue::KeyValueConnection;
 
-use super::domain::SavedConnection;
+use super::domain::{SavedConnection, UnsupportedConnection};
 use super::ports::ConnectionRepository;
 use super::secrets::{self as secrets_mod, SecretStore};
 
@@ -241,6 +241,14 @@ pub fn list_connections<R: ConnectionRepository + ?Sized>(
     repository: &R,
 ) -> Result<Vec<SavedConnection>, AppError> {
     repository.list()
+}
+
+/// Registry entries this build can't parse (unknown engine, etc.), for the
+/// connect screen's struck-out cards.
+pub fn list_unsupported_connections<R: ConnectionRepository + ?Sized>(
+    repository: &R,
+) -> Result<Vec<UnsupportedConnection>, AppError> {
+    repository.list_unsupported()
 }
 
 /// The transient secrets the connect modal may supply on save/open/test: the

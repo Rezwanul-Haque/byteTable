@@ -17,7 +17,13 @@ import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { useToast } from "../../../shared/ui/toastContext";
 import { tildify, useHomeDir } from "../../../shared/homeDir";
-import { connectionDetail, type SavedConnection } from "../../connections/api";
+import {
+  connectionDelete,
+  connectionDetail,
+  connectionListUnsupported,
+  type SavedConnection,
+  type UnsupportedConnection,
+} from "../../connections/api";
 import { NewConnectionModal } from "../../connections/components/NewConnectionModal";
 import { pickSqliteFile } from "../../connections/dialog";
 import { useConnectionsStore } from "../../connections/state";
@@ -51,11 +57,40 @@ export function ConnectScreen() {
   const openSqliteFile = useOpenSqliteFile();
   const toast = useToast();
 
+  // Registry entries this build can't use (unknown engine from another build):
+  // shown struck-out below the real connections, openable only to a warning,
+  // deletable. Kept in local state (not the connections store, which is typed to
+  // known engines) and refreshed alongside the main list.
+  const [unsupported, setUnsupported] = useState<UnsupportedConnection[]>([]);
+  const refreshUnsupported = () => {
+    void connectionListUnsupported()
+      .then(setUnsupported)
+      .catch(() => setUnsupported([]));
+  };
+
   // Refresh the registry on every mount: cheap (local JSON read) and keeps
   // the list current after saves/deletes made while the screen was away.
   useEffect(() => {
     void load();
+    refreshUnsupported();
   }, [load]);
+
+  // Delete an unsupported entry (its struck-out card's trash button). Goes
+  // straight through the delete command (the store only tracks known engines),
+  // then refreshes the struck-out list.
+  const removeUnsupported = async (u: UnsupportedConnection) => {
+    try {
+      await connectionDelete(u.id);
+    } catch (error) {
+      toast(
+        isAppErrorPayload(error) ? error.message : "Removing connections requires the desktop app",
+        "err",
+      );
+      return;
+    }
+    refreshUnsupported();
+    toast("Removed connection “" + u.name + "”", "ok");
+  };
 
   // Remove a saved connection (the card's trash button) — drops the registry
   // entry + its keychain secrets via the store.
@@ -312,6 +347,48 @@ export function ConnectScreen() {
             })}
             {hasConnections && shown.length === 0 ? (
               <div className="connect-empty">No connections match “{filter}”</div>
+            ) : null}
+            {unsupported.length > 0 ? (
+              <div className="connect-unsupported">
+                <div className="connect-unsupported-head">
+                  <Icon name="warning" size={13} />
+                  Unavailable in this version
+                </div>
+                {unsupported.map((u) => (
+                  <div key={u.id} className="connect-card-wrap">
+                    <button
+                      type="button"
+                      className="connect-card unsupported"
+                      title={u.reason}
+                      onClick={() => toast(u.reason, "info")}
+                    >
+                      <span className="unsupported-badge" title={u.engine}>
+                        {u.engine.slice(0, 2).toUpperCase()}
+                      </span>
+                      <div className="connect-card-info">
+                        <div className="connect-card-name">
+                          <span className="connect-card-name-struck">{u.name}</span>
+                          <span className="unsupported-tag">{u.engine}</span>
+                        </div>
+                        <div className="connect-card-detail">
+                          Unsupported engine — click for details
+                        </div>
+                      </div>
+                      <Icon name="error" size={17} className="unsupported-icon" />
+                    </button>
+                    <div className="connect-card-actions">
+                      <IconBtn
+                        icon="delete"
+                        size={15}
+                        danger
+                        title="Remove connection"
+                        disabled={connecting !== null}
+                        onClick={() => void removeUnsupported(u)}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : null}
           </div>
         )}

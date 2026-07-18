@@ -18,7 +18,7 @@ use super::application::{
     self, ConnectionHandleId, ConnectionManager, ConnectorRegistry, OpenTarget, OpenedConnection,
     TransientSecrets,
 };
-use super::domain::SavedConnection;
+use super::domain::{SavedConnection, UnsupportedConnection};
 use super::ports::ConnectionRepository;
 use super::secrets::SecretStore;
 
@@ -77,6 +77,16 @@ pub async fn connection_list(
     state: State<'_, ConnectionsState>,
 ) -> Result<Vec<SavedConnection>, AppError> {
     application::list_connections(state.repository.as_ref())
+}
+
+/// Registry entries this build cannot use (unknown engine from another build).
+/// The connect screen shows these struck-out, with a delete action — they are
+/// never opened, and are preserved in the file for a build that supports them.
+#[tauri::command]
+pub async fn connection_list_unsupported(
+    state: State<'_, ConnectionsState>,
+) -> Result<Vec<UnsupportedConnection>, AppError> {
+    application::list_unsupported_connections(state.repository.as_ref())
 }
 
 /// Save a connection. `password` / `sshSecret` are the optional transient

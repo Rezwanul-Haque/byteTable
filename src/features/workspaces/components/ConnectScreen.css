@@ -170,6 +170,71 @@
   white-space: nowrap;
 }
 
+/* Unsupported-connection section: registry entries whose engine this build
+   can't use (e.g. one saved by a newer/experimental build). Struck-out, amber,
+   non-openable — the card click only warns; a delete action removes it. */
+.connect-unsupported {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.connect-unsupported-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #e0a05c;
+  margin-bottom: 2px;
+}
+.connect-card.unsupported {
+  background: color-mix(in oklab, #e0a05c 5%, var(--bg2));
+}
+.connect-card.unsupported:hover:not(:disabled) {
+  border-color: color-mix(in oklab, #e0a05c 45%, transparent);
+  background: color-mix(in oklab, #e0a05c 8%, var(--bg2));
+}
+.unsupported-badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-faint);
+  background: var(--bg0);
+  border: 1px solid var(--border);
+}
+.connect-card-name-struck {
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in oklab, #e0a05c 70%, transparent);
+  color: var(--text-dim);
+}
+.unsupported-tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: lowercase;
+  color: #e0a05c;
+  background: color-mix(in oklab, #e0a05c 12%, transparent);
+  border: 1px solid color-mix(in oklab, #e0a05c 30%, transparent);
+  border-radius: 5px;
+  padding: 1px 6px;
+}
+.unsupported-icon {
+  flex: none;
+  color: #e0a05c;
+}
+
 /* Empty-registry state (M2) — not in the prototype, which always had mock
    connections; styled after the footnote (§3.2 small dim copy). */
 .connect-empty {

@@ -111,28 +111,90 @@ export function validateBinary(text: string, type: string | undefined): BinaryVa
   return { ok: false, message: "Enter a UUID (xxxxxxxx-xxxx-…) or 0x-hex" };
 }
 
-/** A random v4-ish UUID string (display form). Index-seeded externally to avoid
- *  Math.random pitfalls is unnecessary here — this is a UI convenience only. */
-export function generateUuid(): string {
+/** True for a text UUID/GUID column: Postgres `uuid`, SQL Server
+ *  `uniqueidentifier` (also `guid` — tiberius reports the result column type as
+ *  `Guid`, not the SQL name). A UUID stored as `binary(16)` is a binary column,
+ *  handled by the binary helpers instead. */
+export function isUuidType(type: string | undefined): boolean {
+  return /\b(uuid|uniqueidentifier|guid)\b/i.test(type ?? "");
+}
+
+/** The UUID versions the editor can generate. v7 is the default: time-ordered,
+ *  so it indexes far better than v4 as a key. */
+export type UuidVersion = "v7" | "v4" | "v1";
+export const UUID_VERSIONS: { id: UuidVersion; label: string; hint: string }[] = [
+  { id: "v7", label: "v7", hint: "Time-ordered (recommended for keys)" },
+  { id: "v4", label: "v4", hint: "Random" },
+  { id: "v1", label: "v1", hint: "Timestamp + random node" },
+];
+
+/** Random lowercase hex of `len` digits, from a CSPRNG when available. */
+function randomHex(len: number): string {
   const h = "0123456789abcdef";
-  let s = "";
-  for (let i = 0; i < 32; i++) {
-    s +=
-      i === 12
-        ? "4"
-        : i === 16
-          ? h[8 + Math.floor(Math.random() * 4)]
-          : h[Math.floor(Math.random() * 16)];
+  if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+    const bytes = new Uint8Array(Math.ceil(len / 2));
+    crypto.getRandomValues(bytes);
+    let s = "";
+    for (const b of bytes) s += h[b >> 4]! + h[b & 15]!;
+    return s.slice(0, len);
   }
+  let s = "";
+  for (let i = 0; i < len; i++) s += h[Math.floor(Math.random() * 16)];
+  return s;
+}
+
+/** Format an assembled 32-hex string as a canonical 8-4-4-4-12 UUID. */
+function dashed(hex32: string): string {
   return (
-    s.slice(0, 8) +
+    hex32.slice(0, 8) +
     "-" +
-    s.slice(8, 12) +
+    hex32.slice(8, 12) +
     "-" +
-    s.slice(12, 16) +
+    hex32.slice(12, 16) +
     "-" +
-    s.slice(16, 20) +
+    hex32.slice(16, 20) +
     "-" +
-    s.slice(20)
+    hex32.slice(20, 32)
   );
+}
+
+/** RFC 4122 v4 — fully random (bar version + variant bits). */
+export function generateUuidV4(): string {
+  const r = randomHex(32).split("");
+  r[12] = "4"; // version
+  r[16] = "89ab"[Math.floor(Math.random() * 4)]!; // variant 10xx
+  return dashed(r.join(""));
+}
+
+/** RFC 9562 v7 — 48-bit Unix-ms timestamp prefix, then random. Time-ordered, so
+ *  it keeps B-tree / clustered-index inserts sequential (unlike random v4). */
+export function generateUuidV7(): string {
+  const ts = BigInt(Date.now()) & 0xffffffffffffn; // 48-bit ms
+  const tsHex = ts.toString(16).padStart(12, "0");
+  const randA = randomHex(3); // 12 bits after the version nibble
+  const variant = "89ab"[Math.floor(Math.random() * 4)]!;
+  const randB = randomHex(15); // remaining bits after the variant nibble
+  return dashed(tsHex + "7" + randA + variant + randB);
+}
+
+/** RFC 4122 v1 — 60-bit Gregorian (100-ns) timestamp + random clock-seq and a
+ *  random node with the multicast bit set (we have no MAC address). */
+export function generateUuidV1(): string {
+  // 100-ns intervals since 1582-10-15, from Unix ms (+ the Gregorian offset).
+  const t = BigInt(Date.now()) * 10000n + 0x01b21dd213814000n;
+  const timeLow = (t & 0xffffffffn).toString(16).padStart(8, "0");
+  const timeMid = ((t >> 32n) & 0xffffn).toString(16).padStart(4, "0");
+  const timeHi = (((t >> 48n) & 0x0fffn) | 0x1000n).toString(16).padStart(4, "0"); // version 1
+  const clockSeq = ((parseInt(randomHex(4), 16) & 0x3fff) | 0x8000).toString(16).padStart(4, "0"); // variant 10xx
+  // Random 48-bit node with the multicast bit (LSB of the first octet) set, per
+  // RFC 4122 §4.5 for a non-MAC node.
+  const nodeBytes = randomHex(12).split("");
+  const first = (parseInt(nodeBytes[0]! + nodeBytes[1]!, 16) | 0x01).toString(16).padStart(2, "0");
+  const node = first + randomHex(10);
+  return `${timeLow}-${timeMid}-${timeHi}-${clockSeq}-${node}`;
+}
+
+/** Generate a UUID string of the given version. */
+export function generateUuidVersion(v: UuidVersion): string {
+  return v === "v4" ? generateUuidV4() : v === "v1" ? generateUuidV1() : generateUuidV7();
 }

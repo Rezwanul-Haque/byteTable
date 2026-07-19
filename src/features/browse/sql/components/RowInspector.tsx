@@ -19,7 +19,7 @@ import type { CellValue } from "../../../../shared/api/engine";
 import { Icon } from "../../../../shared/ui/Icon";
 import { useToast } from "../../../../shared/ui/toastContext";
 import { CellContent } from "../../shared/GridCell";
-import { formatBinary, isBinaryType } from "../../shared/binaryCell";
+import { formatBinary, isBinaryType, isUuidType } from "../../shared/binaryCell";
 import { highlightJSON, isJsonType, validateJSON } from "../../shared/jsonCell";
 import {
   RI_TZS,
@@ -34,6 +34,7 @@ import {
   type WallParts,
 } from "../../shared/dateTimeCell";
 import { BinaryEditorModal } from "./BinaryEditorModal";
+import { UuidEditorModal } from "./UuidEditorModal";
 import "../../shared/CellEditors.css";
 import "./RowInspector.css";
 
@@ -391,7 +392,9 @@ function RowInspectorField({
 }) {
   const json = isJsonType(col.type);
   const bin = isBinaryType(col.type);
+  const uuid = isUuidType(col.type);
   const [binOpen, setBinOpen] = useState(false);
+  const [uuidOpen, setUuidOpen] = useState(false);
   const toast = useToast();
   const taRef = useRef<HTMLTextAreaElement>(null);
   const hlRef = useRef<HTMLPreElement>(null);
@@ -525,6 +528,40 @@ function RowInspectorField({
         ) : null}
       </div>
     );
+  } else if (uuid) {
+    const guid = /uniqueidentifier|guid/i.test(col.type || "");
+    body = (
+      <div className="ri-bin">
+        <button
+          type="button"
+          className="ri-bin-val"
+          onClick={() => setUuidOpen(true)}
+          title="Edit UUID value"
+        >
+          <span className="bin-badge">{guid ? "GUID" : "UUID"}</span>
+          {isNull ? (
+            <span className="ri-null">NULL</span>
+          ) : (
+            <span className="bin-val uuid">{String(cur)}</span>
+          )}
+          <Icon name="edit" size={12} style={{ marginLeft: "auto", color: "var(--text-faint)" }} />
+        </button>
+        {uuidOpen ? (
+          <UuidEditorModal
+            schemaName={schemaName}
+            table={tableName}
+            column={col.name}
+            type={col.type}
+            value={cur}
+            onClose={() => setUuidOpen(false)}
+            onSave={(next) => {
+              onDraft(next);
+              setUuidOpen(false);
+            }}
+          />
+        ) : null}
+      </div>
+    );
   } else if (isTemporalType(col.type)) {
     body = <RiDateTime type={col.type} cur={cur} onDraft={onDraft} />;
   } else if (boolCol) {
@@ -649,6 +686,40 @@ function RowInspectorField({
                 readOnly
                 onClose={() => setBinOpen(false)}
                 onSave={() => setBinOpen(false)}
+              />
+            ) : null}
+          </div>
+        ) : uuid ? (
+          // UUID / GUID primary key: read-only chip; click to view in the modal.
+          <div className="ri-pk-lock">
+            <button
+              type="button"
+              className="bin-cell ri-pk-binbtn"
+              onClick={() => setUuidOpen(true)}
+              title="View UUID value"
+            >
+              <span className="bin-badge">
+                {/uniqueidentifier|guid/i.test(col.type || "") ? "GUID" : "UUID"}
+              </span>
+              {value == null ? (
+                <span className="ri-null">NULL</span>
+              ) : (
+                <span className="bin-val uuid">{String(value)}</span>
+              )}
+            </button>
+            <span className="ri-pk-note">
+              <Icon name="lock" size={11} /> primary key
+            </span>
+            {uuidOpen ? (
+              <UuidEditorModal
+                schemaName={schemaName}
+                table={tableName}
+                column={col.name}
+                type={col.type}
+                value={value}
+                readOnly
+                onClose={() => setUuidOpen(false)}
+                onSave={() => setUuidOpen(false)}
               />
             ) : null}
           </div>

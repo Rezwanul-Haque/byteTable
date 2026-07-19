@@ -1,9 +1,8 @@
-// BINARY(n) / UUID cell editor modal — ported from the prototype's
-// binary-cell.jsx onto the shared Modal primitive. Accepts a canonical UUID
-// (16-byte columns) or `0x`-hex of exactly the column's byte length; shows the
-// UUID + stored-bytes representations; "Generate" makes a random UUID. Empty
-// saves NULL. The saved value is the UUID (16-byte) or `0x`-HEX string — the
-// backend binds it as raw bytes for the binary column.
+// UUID / GUID cell editor modal — for text UUID columns (Postgres `uuid`,
+// SQL Server `uniqueidentifier`). Shows the value, validates the canonical
+// 8-4-4-4-12 form, and generates a fresh id in a chosen version (v7 default —
+// time-ordered, best for keys — plus v4 random and v1). Empty saves NULL. A
+// UUID stored as `binary(16)` uses BinaryEditorModal instead.
 
 import { useEffect, useRef, useState } from "react";
 
@@ -14,16 +13,14 @@ import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { Modal, ModalActions } from "../../../../shared/ui/Modal";
 import { Select } from "../../../../shared/ui/Select";
 import {
-  binaryBytes,
   generateUuidVersion,
   looksUuid,
   UUID_VERSIONS,
-  validateBinary,
   type UuidVersion,
 } from "../../shared/binaryCell";
 import "../../shared/CellEditors.css";
 
-interface BinaryEditorModalProps {
+interface UuidEditorModalProps {
   schemaName: string;
   table: string;
   column: string;
@@ -31,11 +28,16 @@ interface BinaryEditorModalProps {
   value: CellValue;
   onSave: (next: string | null) => void;
   onClose: () => void;
-  /** View-only (e.g. a binary primary key): no editing, generate, or save. */
+  /** View-only (e.g. a UUID primary key): no editing, generate, or save. */
   readOnly?: boolean;
 }
 
-export function BinaryEditorModal({
+/** SQL Server calls it GUID; everything else UUID. */
+function uuidLabel(type: string): string {
+  return /uniqueidentifier|guid/i.test(type) ? "GUID" : "UUID";
+}
+
+export function UuidEditorModal({
   schemaName,
   table,
   column,
@@ -44,39 +46,35 @@ export function BinaryEditorModal({
   onSave,
   onClose,
   readOnly = false,
-}: BinaryEditorModalProps) {
-  const expect = binaryBytes(type) ?? 16;
-  const init = looksUuid(value) ? String(value).toLowerCase() : value == null ? "" : String(value);
+}: UuidEditorModalProps) {
+  const label = uuidLabel(type);
+  const init = value == null ? "" : String(value);
   const [text, setText] = useState(init);
-  // UUID generator version (16-byte columns). Defaults to v7; shared with the
-  // text-UUID editor via the same localStorage key.
+  // Default the generator to v7; remember the last choice across opens.
   const [version, setVersion] = useState<UuidVersion>(
     () => (localStorage.getItem("bt.uuidGenVersion") as UuidVersion) || "v7",
   );
   const inputRef = useRef<HTMLInputElement | null>(null);
-
-  const generate = (v: UuidVersion) => {
-    setVersion(v);
-    localStorage.setItem("bt.uuidGenVersion", v);
-    setText(generateUuidVersion(v));
-  };
 
   useEffect(() => {
     inputRef.current?.focus();
     inputRef.current?.select();
   }, []);
 
-  const res = validateBinary(text, type);
-  const dirty = text.trim() !== init;
+  const trimmed = text.trim();
+  const empty = trimmed === "";
+  const valid = empty || looksUuid(trimmed);
+  const dirty = trimmed !== init.trim();
 
   const save = () => {
-    if (!res.ok) return;
-    if (res.empty) {
-      onSave(null);
-      return;
-    }
-    // Prefer the canonical UUID for 16-byte columns, else 0x-HEX.
-    onSave(res.uuid ?? "0x" + res.hex.toUpperCase());
+    if (!valid) return;
+    onSave(empty ? null : trimmed.toLowerCase());
+  };
+
+  const generate = (v: UuidVersion) => {
+    setVersion(v);
+    localStorage.setItem("bt.uuidGenVersion", v);
+    setText(generateUuidVersion(v));
   };
 
   const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -87,19 +85,16 @@ export function BinaryEditorModal({
     if (e.key === "Escape") onClose();
   };
 
-  const uuidRepr = res.ok && !res.empty ? (res.uuid ?? "—") : res.ok ? "∅" : "—";
-  const bytesRepr = res.ok && !res.empty ? "0x" + res.hex.toUpperCase() : res.ok ? "NULL" : "—";
-
   return (
     <Modal
       className="binary-modal"
       width={460}
-      label={readOnly ? "View binary value" : "Edit binary value"}
+      label={readOnly ? `View ${label} value` : `Edit ${label} value`}
       onClose={onClose}
     >
       <div className="modal-title">
         <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-          <Icon name="tag" size={17} style={{ color: "var(--accent)" }} />
+          <Icon name="fingerprint" size={17} style={{ color: "var(--accent)" }} />
           <span className="json-title-col">
             {schemaName}.{table}.<b>{column}</b>
           </span>
@@ -110,11 +105,11 @@ export function BinaryEditorModal({
 
       <label className="binary-field">
         <span className="binary-label">
-          Value <span className="binary-sub">UUID or 0x-hex · {expect} bytes</span>
+          Value <span className="binary-sub">canonical 8-4-4-4-12 {label}</span>
         </span>
         <input
           ref={inputRef}
-          className={"binary-input" + (res.ok ? "" : " err")}
+          className={"binary-input" + (valid ? "" : " err")}
           value={text}
           spellCheck={false}
           autoCapitalize="off"
@@ -125,25 +120,14 @@ export function BinaryEditorModal({
         />
       </label>
 
-      <div className="binary-repr">
-        <div className="binary-repr-row">
-          <span>UUID</span>
-          <code>{uuidRepr}</code>
-        </div>
-        <div className="binary-repr-row">
-          <span>Stored bytes</span>
-          <code>{bytesRepr}</code>
-        </div>
-      </div>
-
-      <div className={"json-status" + (res.ok ? " ok" : " err")}>
-        <Icon name={res.ok ? "check_circle" : "error"} size={14} />
+      <div className={"json-status" + (valid ? " ok" : " err")}>
+        <Icon name={valid ? "check_circle" : "error"} size={14} />
         <span>
-          {res.ok
-            ? res.empty
+          {valid
+            ? empty
               ? "Empty → will save as NULL"
-              : "Valid · " + expect + " bytes"
-            : res.message}
+              : `Valid ${label}`
+            : `Not a valid ${label} (expected 8-4-4-4-12 hex)`}
         </span>
       </div>
 
@@ -161,7 +145,7 @@ export function BinaryEditorModal({
               type="button"
               className="json-tool"
               onClick={() => generate(version)}
-              title={`Generate a ${version.toUpperCase()} UUID`}
+              title={`Generate a ${version.toUpperCase()} ${label}`}
             >
               <Icon name="autorenew" size={14} /> Generate
             </button>
@@ -177,7 +161,7 @@ export function BinaryEditorModal({
             <Btn variant="text" onClick={onClose}>
               Cancel
             </Btn>
-            <Btn variant="filled" icon="check" onClick={save} disabled={!res.ok || !dirty}>
+            <Btn variant="filled" icon="check" onClick={save} disabled={!valid || !dirty}>
               Save
             </Btn>
           </>

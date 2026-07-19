@@ -146,6 +146,14 @@
   opacity: 0.4;
   cursor: default;
 }
+/* Compact UUID-version picker next to the Generate button (binary + uuid modals). */
+.uuid-ver-select {
+  width: 68px;
+  flex: none;
+}
+.uuid-ver-select .sel-trigger {
+  padding: 5px 8px;
+}
 .json-editor-wrap {
   display: flex;
   height: 300px;

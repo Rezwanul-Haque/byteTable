@@ -10,18 +10,25 @@ import { isJsonType } from "./jsonCell";
 
 /** True for temporal column types (timestamp / timestamptz / datetime / date /
  *  time), but not JSON (a `json` type must never be treated as temporal).
- *  `timestamptz` is listed explicitly: `\btimestamp\b` has no word boundary
- *  before the `tz`, so it wouldn't otherwise match. */
+ *  Several tokens are listed explicitly because word boundaries don't fall where
+ *  a bare stem would need them: `timestamptz` (no `\b` before `tz`), and the SQL
+ *  Server family `datetime2` (trailing digit), `datetimeoffset`, and
+ *  `smalldatetime` (no `\b` before/after the `datetime` stem). Longest tokens
+ *  come first so alternation matches the full name. */
 export function isTemporalType(type: string | undefined): boolean {
-  return /\b(timestamptz|timestamp|datetime|date|time)\b/i.test(type ?? "") && !isJsonType(type);
+  return (
+    /\b(timestamptz|timestamp|smalldatetime|datetimeoffset|datetime2|datetime|date|time)\b/i.test(
+      type ?? "",
+    ) && !isJsonType(type)
+  );
 }
 
-/** True for a timezone-aware Postgres temporal type (`timestamptz` /
- *  `timestamp with time zone`). Such columns must be written with an explicit
- *  UTC offset, else Postgres reads a bare literal in the session timezone and
- *  shifts the stored instant. */
+/** True for a timezone-aware temporal type: Postgres `timestamptz` /
+ *  `timestamp with time zone`, or SQL Server `datetimeoffset`. Such columns must
+ *  be written with an explicit UTC offset, else the engine reads a bare literal
+ *  in the session timezone and shifts the stored instant. */
 export function isTzAwareType(type: string | undefined): boolean {
-  return /timestamptz|with time zone/i.test(type ?? "");
+  return /timestamptz|datetimeoffset|with time zone/i.test(type ?? "");
 }
 
 /** True for a pure `date` column (no time component in the editor). */

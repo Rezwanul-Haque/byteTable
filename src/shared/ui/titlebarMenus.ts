@@ -65,8 +65,6 @@ export function execEdit(cmd: "undo" | "redo" | "cut" | "copy" | "paste"): void 
   document.execCommand(cmd);
 }
 
-const IMPORT_EXPORT_HINT = "via a table's ⋯ menu";
-
 export function buildMenus(m: MenuCtx): Menu[] {
   const { hasWs, isSql, hasPalette, zoomChanged, ctx } = m;
 
@@ -84,15 +82,10 @@ export function buildMenus(m: MenuCtx): Menu[] {
         },
         {
           id: "open-sql-file",
-          label: "Open .sql File…",
+          label: "Open .sql File",
           enabled: isSql,
           run: () => emitCmd("open-sql-file"),
         },
-        "—",
-        // Import/Export live on a table's ⋯ context menu, not the app menu —
-        // permanently disabled here with a hint pointing at their real home.
-        { id: "import", label: "Import Data…", hint: IMPORT_EXPORT_HINT, enabled: false },
-        { id: "export", label: "Export Data…", hint: IMPORT_EXPORT_HINT, enabled: false },
         "—",
         {
           id: "close-workspace",
@@ -101,7 +94,7 @@ export function buildMenus(m: MenuCtx): Menu[] {
           run: ctx.onCloseWorkspace,
         },
         "—",
-        { id: "settings", label: "Settings…", hint: "⌘,", enabled: true, run: ctx.onSettings },
+        { id: "settings", label: "Settings", hint: "⌘,", enabled: true, run: ctx.onSettings },
         { id: "quit", label: "Close ByteTable", enabled: true, run: ctx.onQuit },
       ],
     },
@@ -121,7 +114,7 @@ export function buildMenus(m: MenuCtx): Menu[] {
       items: [
         {
           id: "palette",
-          label: "Command Palette…",
+          label: "Command Palette",
           hint: "⌘K",
           enabled: hasPalette,
           run: () => emitCmd("palette"),
@@ -166,7 +159,7 @@ export function buildMenus(m: MenuCtx): Menu[] {
         "—",
         {
           id: "save-query",
-          label: "Save Query…",
+          label: "Save Query",
           hint: "⌘S",
           enabled: isSql,
           run: () => emitCmd("save-query"),
@@ -186,7 +179,7 @@ export function buildMenus(m: MenuCtx): Menu[] {
         "—",
         {
           id: "check-updates",
-          label: "Check for Updates…",
+          label: "Check for Updates",
           enabled: true,
           run: ctx.onCheckUpdates,
         },

@@ -66,6 +66,18 @@
   gap: 0;
 }
 
+/* Rail collapsed: the columns pane takes the full width; the rail is hidden
+   (kept mounted so its accordion state is preserved on restore). */
+.structure-body.rail-collapsed {
+  grid-template-columns: 1fr;
+}
+.structure-body.rail-collapsed .structure-rail {
+  display: none;
+}
+.structure-body.rail-collapsed .columns-pane {
+  border-right: none;
+}
+
 /* ---------- left: columns pane (own scroll) ---------- */
 .columns-pane {
   display: flex;

@@ -83,6 +83,21 @@ export function StructureView({
   const toast = useToast();
   const [colQuery, setColQuery] = useState("");
   const [ddlOpen, setDdlOpen] = useState(false);
+  // Collapse the details rail (Indexes / FKs / Referenced by / DDL) to widen the
+  // columns table. Persisted globally so the choice sticks across tabs/sessions
+  // (the view unmounts on Data↔Structure switches).
+  const [railCollapsed, setRailCollapsed] = useState(
+    () => localStorage.getItem("bt.structureRailCollapsed") === "1",
+  );
+  const toggleRail = useCallback(
+    () =>
+      setRailCollapsed((v) => {
+        const next = !v;
+        localStorage.setItem("bt.structureRailCollapsed", next ? "1" : "0");
+        return next;
+      }),
+    [],
+  );
   // Rail accordion: which section is expanded, and whether its add-form is open.
   const [openSection, setOpenSection] = useState<"indexes" | "fks" | "refs" | "ddl" | null>(
     "indexes",
@@ -513,7 +528,7 @@ export function StructureView({
         </div>
       </div>
 
-      <div className="structure-body">
+      <div className={"structure-body" + (railCollapsed ? " rail-collapsed" : "")}>
         <section className="columns-pane">
           <div className="columns-pane-head">
             <h3>
@@ -538,6 +553,12 @@ export function StructureView({
             <button type="button" className="add-col-btn" onClick={addColumn}>
               <Icon name="add" size={14} /> Add column
             </button>
+            <IconBtn
+              icon={railCollapsed ? "right_panel_open" : "right_panel_close"}
+              size={16}
+              title={railCollapsed ? "Show details panel" : "Hide details panel"}
+              onClick={toggleRail}
+            />
           </div>
           <div className="columns-scroll">
             <table className="structure-table st-editable-table">

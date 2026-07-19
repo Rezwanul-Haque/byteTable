@@ -17,6 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { CellValue } from "../../../../shared/api/engine";
 import { Icon } from "../../../../shared/ui/Icon";
+import { useToast } from "../../../../shared/ui/toastContext";
 import { CellContent } from "../../shared/GridCell";
 import { formatBinary, isBinaryType } from "../../shared/binaryCell";
 import { highlightJSON, isJsonType, validateJSON } from "../../shared/jsonCell";
@@ -372,6 +373,7 @@ function RowInspectorField({
   const json = isJsonType(col.type);
   const bin = isBinaryType(col.type);
   const [binOpen, setBinOpen] = useState(false);
+  const toast = useToast();
   const taRef = useRef<HTMLTextAreaElement>(null);
   const hlRef = useRef<HTMLPreElement>(null);
   const cur = hasDraft ? draft : value;
@@ -380,6 +382,20 @@ function RowInspectorField({
   const boolCol =
     typeof value === "boolean" || /^(bool|boolean|tinyint\(1\))$/i.test((col.type || "").trim());
   const numCol = typeof value === "number";
+
+  // Copy the field's current value to the clipboard. Binary copies its display
+  // (hex/uuid) form; objects serialize to JSON; NULL copies an empty string.
+  const copyValue = () => {
+    let s: string;
+    if (isNull) s = "";
+    else if (bin) s = formatBinary(cur, col.type)?.text ?? "";
+    else if (typeof cur === "object") s = JSON.stringify(cur);
+    else s = String(cur);
+    void navigator.clipboard.writeText(s).then(
+      () => toast("Copied", "ok"),
+      () => toast("Couldn't copy to clipboard", "err"),
+    );
+  };
 
   let body: React.ReactNode;
   if (json) {
@@ -556,6 +572,14 @@ function RowInspectorField({
         <span className="ri-field-name">{col.name}</span>
         <span className="ri-field-type">{(col.type || "").toLowerCase()}</span>
         {dirty ? <span className="ri-dot" title="Changed — not staged yet" /> : null}
+        <button
+          type="button"
+          className="ri-mini-btn ri-copy"
+          title="Copy value"
+          onClick={copyValue}
+        >
+          <Icon name="content_copy" size={12} />
+        </button>
         {dirty ? (
           <button
             type="button"

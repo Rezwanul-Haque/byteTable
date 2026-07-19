@@ -280,6 +280,11 @@ body[data-platform="macos"] .ri-drawer {
   opacity: 0.4;
   cursor: default;
 }
+/* Per-field copy button — always visible, pushed to the head's right edge. */
+.ri-copy {
+  margin-left: auto;
+  padding: 2px 4px;
+}
 
 .ri-bool {
   display: flex;
@@ -340,6 +345,8 @@ body[data-platform="macos"] .ri-drawer {
   align-items: center;
   gap: 3px;
   margin-left: auto;
+  flex: none;
+  white-space: nowrap;
   font-size: 9.5px;
   color: var(--text-faint);
 }

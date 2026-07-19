@@ -91,8 +91,27 @@ function RiDateTime({
   const [tzOpen, setTzOpen] = useState(false);
   const [yrOpen, setYrOpen] = useState(false);
   const [textMode, setTextMode] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const yrListRef = useRef<HTMLDivElement>(null);
+
+  // Close the panel on a click outside this picker (so opening a second date
+  // field's panel closes this one). Uses `click`, not `mousedown`: the clicked
+  // button's onClick (which opens its own panel) runs first, then this closes
+  // the other. Closing on mousedown would collapse this panel and shift a lower
+  // button out from under the pointer before its click could register.
+  useEffect(() => {
+    if (!open) return;
+    const onClickOutside = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setTzOpen(false);
+        setYrOpen(false);
+      }
+    };
+    window.addEventListener("click", onClickOutside);
+    return () => window.removeEventListener("click", onClickOutside);
+  }, [open]);
 
   // Bring the freshly-opened panel into view inside the drawer's scroll area.
   useEffect(() => {
@@ -186,7 +205,7 @@ function RiDateTime({
   };
 
   return (
-    <div className="ri-dt">
+    <div className="ri-dt" ref={rootRef}>
       <button
         type="button"
         className={"ri-dt-display" + (open ? " open" : "")}

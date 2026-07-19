@@ -21,7 +21,7 @@ if (-not $asset) { throw 'No Windows installer (.exe / .msi) in the latest relea
 
 $out = Join-Path $env:TEMP $asset.name
 Say "Downloading $($asset.name)..."
-Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $out
+Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $out -UseBasicParsing
 
 # Verify against SHASUMS256.txt (sha256sum format: "<hash>  <name>"). Hashing is
 # sub-second — no real effect on install time. Aborts on mismatch; skips if the
@@ -29,7 +29,7 @@ Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $out
 $sums = $rel.assets | Where-Object { $_.name -eq 'SHASUMS256.txt' } | Select-Object -First 1
 if ($sums) {
   Say 'Verifying checksum...'
-  $text = (Invoke-WebRequest -Uri $sums.browser_download_url -Headers @{ 'User-Agent' = 'bytetable-installer' }).Content
+  $text = (Invoke-WebRequest -Uri $sums.browser_download_url -Headers @{ 'User-Agent' = 'bytetable-installer' } -UseBasicParsing).Content
   $line = $text -split "`n" | Where-Object { (($_ -split '\s+') | Select-Object -Index 1) -eq $asset.name } | Select-Object -First 1
   if (-not $line) { throw "No checksum listed for $($asset.name) in SHASUMS256.txt." }
   $expected = (($line -split '\s+')[0]).ToLower()

@@ -311,6 +311,12 @@ pub struct ColumnInfo {
     pub default_value: Option<String>,
     /// The foreign-key target, when this column references another table.
     pub fk: Option<FkRef>,
+    /// The column's comment / description, when the engine records one (Postgres
+    /// `COMMENT ON COLUMN` via `col_description`, MySQL `COLUMN_COMMENT`). `None`
+    /// when the column has no comment or the engine has no column comments
+    /// (SQLite). The structure editor's "Comment" cell reads + edits this.
+    #[serde(default)]
+    pub comment: Option<String>,
 }
 
 /// The target of a foreign-key reference: a column in another table.

@@ -61,6 +61,11 @@ export interface ColumnInfo {
   default?: string | null;
   /** The foreign-key target, when this column references another table. */
   fk: FkRef | null;
+  /** The column's comment / description, when the engine records one (Postgres
+   *  `COMMENT ON COLUMN`, MySQL `COLUMN_COMMENT`). `null`/absent otherwise
+   *  (incl. SQLite, which has no column comments). The structure editor's
+   *  "Comment" cell reads + edits this. */
+  comment?: string | null;
 }
 
 /** One index on a table (M7 structure view §3.6). */
@@ -864,6 +869,7 @@ export type AlterOp =
   | { op: "changeType"; column: string; newType: string }
   | { op: "setNullable"; column: string; nullable: boolean }
   | { op: "setDefault"; column: string; default: string | null }
+  | { op: "setComment"; column: string; comment: string | null }
   | { op: "dropColumn"; name: string }
   | { op: "addIndex"; name: string; columns: string[]; unique: boolean }
   | { op: "dropIndex"; name: string }

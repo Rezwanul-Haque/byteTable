@@ -79,6 +79,15 @@ pub enum AlterOp {
     },
     /// Drop a column. Native on SQLite ≥3.35 (`DROP COLUMN`). PK-protected.
     DropColumn { name: String },
+    /// Set or clear a column's comment / description. `comment: None` clears it.
+    /// Realized on Postgres via `COMMENT ON COLUMN` and on MySQL via
+    /// `MODIFY COLUMN … COMMENT` (which re-states the column definition).
+    /// Unsupported on SQLite (no column comments); the editor does not offer it
+    /// there.
+    SetComment {
+        column: String,
+        comment: Option<String>,
+    },
     /// Create an index over one or more columns. Native everywhere
     /// (`CREATE [UNIQUE] INDEX … ON …`). `name` is the (frontend-generated)
     /// index name; `unique` selects a UNIQUE index.
@@ -136,6 +145,7 @@ impl AlterOp {
             Self::ChangeType { column, .. } => Some(column),
             Self::SetNullable { column, .. } => Some(column),
             Self::SetDefault { column, .. } => Some(column),
+            Self::SetComment { column, .. } => Some(column),
             Self::DropColumn { name } => Some(name),
             // Index / foreign-key ops do not target a single existing column for
             // pk-protection purposes (their column references are validated by

@@ -169,6 +169,10 @@ export function Select<T extends string>({
       document.removeEventListener("keydown", onKey);
       window.removeEventListener("blur", onBlur);
     };
+    // Bind once per open/close: `commitText` reads the latest via refs and
+    // `editable` is stable for the component's life — re-binding every render
+    // would needlessly re-add the listeners.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   // On open: an editable combobox focuses its input (and selects the text so a

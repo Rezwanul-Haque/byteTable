@@ -146,6 +146,20 @@ pub(super) fn alter_statement(schema: &str, qualified: &str, op: &AlterOp) -> St
         AlterOp::DropColumn { name } => {
             format!("ALTER TABLE {qualified} DROP COLUMN {}", quote_ident(name))
         }
+        // Postgres column comments are set with a standalone statement, not an
+        // ALTER TABLE. `None` clears the comment (`IS NULL`).
+        AlterOp::SetComment { column, comment } => {
+            let literal = match comment {
+                // standard_conforming_strings is on by default → only single
+                // quotes need doubling.
+                Some(c) => format!("'{}'", c.replace('\'', "''")),
+                None => "NULL".to_string(),
+            };
+            format!(
+                "COMMENT ON COLUMN {qualified}.{} IS {literal}",
+                quote_ident(column)
+            )
+        }
         AlterOp::AddIndex {
             name,
             columns,
@@ -283,6 +297,28 @@ mod tests {
                 }
             ),
             "ALTER TABLE \"bt\".\"books\" ALTER COLUMN \"status\" DROP DEFAULT"
+        );
+        assert_eq!(
+            alter_statement(
+                "bt",
+                q,
+                &AlterOp::SetComment {
+                    column: "title".into(),
+                    comment: Some("the book's title".into())
+                }
+            ),
+            "COMMENT ON COLUMN \"bt\".\"books\".\"title\" IS 'the book''s title'"
+        );
+        assert_eq!(
+            alter_statement(
+                "bt",
+                q,
+                &AlterOp::SetComment {
+                    column: "title".into(),
+                    comment: None
+                }
+            ),
+            "COMMENT ON COLUMN \"bt\".\"books\".\"title\" IS NULL"
         );
         assert_eq!(
             alter_statement(

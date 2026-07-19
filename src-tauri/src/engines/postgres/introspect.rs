@@ -138,7 +138,8 @@ pub(super) async fn table_meta(
     // Columns from information_schema.columns; udt_name carries the canonical
     // type (int4/int8/bool/numeric/_text/jsonb/…) we use for numeric detection.
     let col_rows = sqlx::query(
-        "SELECT column_name, data_type, udt_name, is_nullable, column_default \
+        "SELECT column_name, data_type, udt_name, is_nullable, column_default, \
+            col_description(format('%I.%I', table_schema, table_name)::regclass, ordinal_position) AS comment \
          FROM information_schema.columns \
          WHERE table_schema = $1 AND table_name = $2 \
          ORDER BY ordinal_position",
@@ -157,11 +158,13 @@ pub(super) async fn table_meta(
         let udt_name: String = row.get("udt_name");
         let is_nullable: String = row.get("is_nullable");
         let default_value: Option<String> = row.try_get("column_default").unwrap_or(None);
+        let comment: Option<String> = row.try_get("comment").unwrap_or(None);
         udt_by_name.insert(name.clone(), udt_name.clone());
         columns.push(ColumnInfo {
             fk: fk_by_column.get(&name).cloned(),
             pk: pk_columns.iter().any(|c| c == &name),
             name,
+            comment,
             // Display `data_type` (information_schema's readable form, e.g.
             // "integer", "timestamp with time zone"). For ARRAY columns
             // data_type is just "ARRAY"; prefer the udt_name (e.g. "_text").
@@ -530,6 +533,7 @@ mod tests {
                 pk: true,
                 default_value: None,
                 fk: None,
+                comment: None,
             },
             ColumnInfo {
                 name: "author_id".into(),
@@ -538,6 +542,7 @@ mod tests {
                 pk: false,
                 default_value: None,
                 fk: None,
+                comment: None,
             },
             ColumnInfo {
                 name: "price".into(),
@@ -546,6 +551,7 @@ mod tests {
                 pk: false,
                 default_value: Some("0.0".into()),
                 fk: None,
+                comment: None,
             },
         ];
         let fks = vec![ForeignKeyInfo {

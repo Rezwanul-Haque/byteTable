@@ -525,6 +525,7 @@ mod tests {
                         pk: false,
                         default_value: None,
                         fk: None,
+                        comment: None,
                     })
                     .collect(),
                 ddl: self.ddl.clone(),

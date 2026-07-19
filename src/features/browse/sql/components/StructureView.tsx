@@ -117,6 +117,9 @@ export function StructureView({
     (state) => state.workspaces.find((ws) => ws.id === state.activeWorkspaceId)?.saved.engine,
   );
   const typeOptions = useMemo(() => [...stTypesFor(engine ?? "sqlite")], [engine]);
+  // Column comments are editable only on engines that store them (Postgres
+  // COMMENT ON COLUMN, MySQL COLUMN COMMENT). Others hide the column.
+  const supportsComments = engine === "postgres" || engine === "mysql";
 
   // Local editing UI state (transient — not persisted).
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -256,6 +259,23 @@ export function StructureView({
       setOps(rest);
     } else {
       setOps([...rest, { op: "setDefault", column: origin, default: next }]);
+    }
+  };
+
+  const changeComment = (col: WorkingColumn, raw: string) => {
+    const trimmed = raw.trim();
+    const next = trimmed === "" ? null : trimmed;
+    if (next === col.comment) return;
+    // A not-yet-applied added column carries no comment op (addColumn has no
+    // comment field); set its comment once the column exists.
+    if (col.origin === null) return;
+    const origin = col.origin;
+    const introspected = columns?.find((c) => c.name === origin);
+    const rest = ops.filter((o) => !(o.op === "setComment" && o.column === origin));
+    if (introspected && next === (introspected.comment ?? null)) {
+      setOps(rest);
+    } else {
+      setOps([...rest, { op: "setComment", column: origin, comment: next }]);
     }
   };
 
@@ -529,13 +549,14 @@ export function StructureView({
                   <th>Type</th>
                   <th>Nullable</th>
                   <th>Default</th>
+                  {supportsComments ? <th>Comment</th> : null}
                   <th />
                 </tr>
               </thead>
               <tbody>
                 {filteredCols.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="grid-empty-cell">
+                    <td colSpan={supportsComments ? 8 : 7} className="grid-empty-cell">
                       No columns match “{colQuery}”
                     </td>
                   </tr>
@@ -546,6 +567,7 @@ export function StructureView({
                       col={c}
                       num={i + 1}
                       typeOptions={typeOptions}
+                      supportsComments={supportsComments}
                       autoEditName={autoEditName}
                       onAutoEditConsumed={() => setAutoEditName(null)}
                       editingCell={editingCell}
@@ -554,6 +576,7 @@ export function StructureView({
                       onChangeType={changeType}
                       onToggleNullable={toggleNullable}
                       onChangeDefault={changeDefault}
+                      onChangeComment={changeComment}
                       onDrop={dropColumn}
                       onUndrop={undropColumn}
                     />
@@ -562,8 +585,8 @@ export function StructureView({
               </tbody>
             </table>
             <div className="st-edit-hint">
-              Double-click a name, type or default to edit · click nullable to toggle · changes
-              stage below before applying
+              Double-click a name, type{supportsComments ? ", default or comment" : " or default"}{" "}
+              to edit · click nullable to toggle · changes stage below before applying
             </div>
           </div>
         </section>
@@ -897,6 +920,8 @@ interface ColumnRowProps {
   num: number;
   /** Engine-specific type-menu options (`stTypesFor`). */
   typeOptions: string[];
+  /** Whether the engine stores column comments (renders the Comment cell). */
+  supportsComments: boolean;
   autoEditName: string | null;
   onAutoEditConsumed: () => void;
   editingCell: string | null;
@@ -905,6 +930,7 @@ interface ColumnRowProps {
   onChangeType: (col: WorkingColumn, type: string) => void;
   onToggleNullable: (col: WorkingColumn) => void;
   onChangeDefault: (col: WorkingColumn, raw: string) => void;
+  onChangeComment: (col: WorkingColumn, raw: string) => void;
   onDrop: (col: WorkingColumn) => void;
   onUndrop: (col: WorkingColumn) => void;
 }
@@ -913,6 +939,7 @@ function ColumnRow({
   col,
   num,
   typeOptions,
+  supportsComments,
   autoEditName,
   onAutoEditConsumed,
   editingCell,
@@ -921,6 +948,7 @@ function ColumnRow({
   onChangeType,
   onToggleNullable,
   onChangeDefault,
+  onChangeComment,
   onDrop,
   onUndrop,
 }: ColumnRowProps) {
@@ -1011,6 +1039,33 @@ function ColumnRow({
           }
         />
       </td>
+      {supportsComments ? (
+        <td className="st-comment">
+          {col.origin === null ? (
+            // A new column has no comment op yet — set it after applying.
+            <span className="cell-null" title="Set the comment after applying the new column">
+              —
+            </span>
+          ) : (
+            <EditableText
+              value={col.comment ?? ""}
+              placeholder="—"
+              editing={editingCell === cellId("comment")}
+              onEdit={() => setEditingCell(cellId("comment"))}
+              onDone={() => setEditingCell(null)}
+              onCommit={(v) => onChangeComment(col, v)}
+              title="Double-click to edit comment"
+              render={() =>
+                col.comment ? (
+                  <span className="st-comment-text">{col.comment}</span>
+                ) : (
+                  <span className="cell-null">—</span>
+                )
+              }
+            />
+          )}
+        </td>
+      ) : null}
       <td className="st-actions">
         {col.pk ? null : col.markedForDrop ? (
           <button

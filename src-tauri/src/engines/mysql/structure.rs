@@ -183,6 +183,37 @@ pub(super) fn alter_statement(
         AlterOp::DropColumn { name } => {
             format!("ALTER TABLE {qualified} DROP COLUMN {}", quote_ident(name))
         }
+        // MySQL has no standalone "set column comment": MODIFY COLUMN rewrites the
+        // whole definition, so we must re-state the current type, nullability, and
+        // default (from the introspected meta) or they'd be lost. `None` clears the
+        // comment by emitting COMMENT ''.
+        AlterOp::SetComment { column, comment } => {
+            let col = meta
+                .columns
+                .iter()
+                .find(|c| &c.name == column)
+                .ok_or_else(|| {
+                    AppError::Database(format!(
+                        "Cannot set the comment of '{column}': the column is unknown."
+                    ))
+                })?;
+            let mut s = format!(
+                "ALTER TABLE {qualified} MODIFY COLUMN {} {}",
+                quote_ident(column),
+                col.data_type
+            );
+            if !col.nullable {
+                s.push_str(" NOT NULL");
+            }
+            if let Some(default) = &col.default_value {
+                s.push_str(&format!(" DEFAULT {default}"));
+            }
+            // MySQL string literal: double single quotes and escape backslashes.
+            let text = comment.as_deref().unwrap_or("");
+            let escaped = text.replace('\\', "\\\\").replace('\'', "''");
+            s.push_str(&format!(" COMMENT '{escaped}'"));
+            s
+        }
         AlterOp::AddIndex {
             name,
             columns,
@@ -260,6 +291,7 @@ mod tests {
                 pk: false,
                 default_value: None,
                 fk: None,
+                comment: None,
             },
             ColumnInfo {
                 name: "title".into(),
@@ -268,6 +300,7 @@ mod tests {
                 pk: false,
                 default_value: None,
                 fk: None,
+                comment: None,
             },
         ]);
 
@@ -393,6 +426,36 @@ mod tests {
             .unwrap(),
             "ALTER TABLE `bytetable`.`books` DROP COLUMN `legacy`"
         );
+        // SetComment re-states the current type + nullability (MODIFY rewrites the
+        // whole definition) and appends the escaped COMMENT. `title` is
+        // varchar(255) NOT NULL in the meta.
+        assert_eq!(
+            alter_statement(
+                "bytetable",
+                q,
+                &AlterOp::SetComment {
+                    column: "title".into(),
+                    comment: Some("the book's title".into())
+                },
+                &meta
+            )
+            .unwrap(),
+            "ALTER TABLE `bytetable`.`books` MODIFY COLUMN `title` varchar(255) NOT NULL COMMENT 'the book''s title'"
+        );
+        // Clearing the comment emits COMMENT '' (still preserving the definition).
+        assert_eq!(
+            alter_statement(
+                "bytetable",
+                q,
+                &AlterOp::SetComment {
+                    column: "price".into(),
+                    comment: None
+                },
+                &meta
+            )
+            .unwrap(),
+            "ALTER TABLE `bytetable`.`books` MODIFY COLUMN `price` decimal(10,2) COMMENT ''"
+        );
         // CREATE INDEX (unique).
         assert_eq!(
             alter_statement(
@@ -465,6 +528,7 @@ mod tests {
                 pk: true,
                 default_value: None,
                 fk: None,
+                comment: None,
             },
             ColumnInfo {
                 name: "name".into(),
@@ -473,6 +537,7 @@ mod tests {
                 pk: false,
                 default_value: None,
                 fk: None,
+                comment: None,
             },
         ]);
         // Dropping the pk → rejected.

@@ -265,6 +265,7 @@ mod tests {
                     pk: true,
                     default_value: None,
                     fk: None,
+                    comment: None,
                 },
                 ColumnInfo {
                     name: "name".into(),
@@ -273,6 +274,7 @@ mod tests {
                     pk: false,
                     default_value: None,
                     fk: None,
+                    comment: None,
                 },
             ],
             ..Default::default()
@@ -290,6 +292,7 @@ mod tests {
                 nullable: false,
                 pk: true,
                 default_value: None,
+                comment: None,
                 fk: Some(FkRef {
                     table: "posts".into(),
                     column: "id".into(),
@@ -301,6 +304,7 @@ mod tests {
                 nullable: false,
                 pk: true,
                 default_value: None,
+                comment: None,
                 fk: Some(FkRef {
                     table: "tags".into(),
                     column: "id".into(),

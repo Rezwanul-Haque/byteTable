@@ -290,6 +290,7 @@ mod tests {
             pk,
             default_value: default.map(str::to_string),
             fk: None,
+            comment: None,
         }
     }
 

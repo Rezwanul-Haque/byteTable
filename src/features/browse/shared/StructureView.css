@@ -209,6 +209,16 @@
   color: #e5c07b;
 }
 
+/* Column comment cell — plain, dim, wraps for longer descriptions. */
+.st-comment {
+  max-width: 260px;
+  color: var(--text-dim);
+}
+.st-comment-text {
+  white-space: normal;
+  word-break: break-word;
+}
+
 /* ---------- structure editing (v4) — byte-exact from ByteTable.html ------ */
 .add-col-btn {
   display: inline-flex;
@@ -273,6 +283,8 @@
   border-radius: 5px;
   font-family: var(--mono);
   font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
 }
 
 .st-null-toggle:not(.locked):hover {
@@ -834,7 +846,7 @@
 
 .structure-view .cell-null {
   color: var(--text-faint);
-  font-style: italic;
+  font-style: normal;
   font-size: 0.92em;
 }
 

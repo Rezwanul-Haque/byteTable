@@ -164,6 +164,14 @@ pub(super) fn alter_statement(
         AlterOp::DropColumn { name } => {
             format!("ALTER TABLE {q} DROP COLUMN {}", quote_ident(name))
         }
+        // SQL Server column comments (MS_Description extended properties) are not
+        // implemented yet; the editor doesn't offer them on MSSQL, so this arm is
+        // a guard rather than a reachable path.
+        AlterOp::SetComment { column, .. } => {
+            return Err(AppError::Database(format!(
+                "Editing the comment of '{column}' isn't supported for SQL Server yet."
+            )));
+        }
         AlterOp::AddIndex {
             name,
             columns,

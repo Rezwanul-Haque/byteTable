@@ -235,6 +235,9 @@ pub(super) async fn read_columns(
             pk: is_pk,
             default_value,
             fk: None,
+            // SQL Server column comments (MS_Description extended properties) are
+            // not read yet — deferred.
+            comment: None,
         });
     }
     Ok(columns)

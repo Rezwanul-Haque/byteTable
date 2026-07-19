@@ -157,7 +157,8 @@ pub(super) async fn table_meta(
             CAST(data_type AS CHAR) AS data_type, \
             CAST(is_nullable AS CHAR) AS is_nullable, \
             CAST(column_default AS CHAR) AS column_default, \
-            CAST(column_key AS CHAR) AS column_key \
+            CAST(column_key AS CHAR) AS column_key, \
+            CAST(column_comment AS CHAR) AS column_comment \
          FROM information_schema.columns \
          WHERE table_schema = ? AND table_name = ? \
          ORDER BY ordinal_position",
@@ -180,10 +181,17 @@ pub(super) async fn table_meta(
         let is_nullable: String = row.get("is_nullable");
         let default_value: Option<String> = row.try_get("column_default").unwrap_or(None);
         let column_key: String = row.try_get("column_key").unwrap_or_default();
+        // MySQL COLUMN_COMMENT is NOT NULL and defaults to '' — normalize the
+        // empty string to None so the UI shows "no comment".
+        let comment: Option<String> = row
+            .try_get::<String, _>("column_comment")
+            .ok()
+            .filter(|s| !s.is_empty());
         columns.push(ColumnInfo {
             fk: fk_by_column.get(&name).cloned(),
             pk: column_key == "PRI",
             name,
+            comment,
             // Display the full COLUMN_TYPE; fall back to DATA_TYPE if absent.
             data_type: if column_type.is_empty() {
                 data_type

@@ -491,6 +491,7 @@ mod tests {
             pk,
             default_value: None,
             fk: None,
+            comment: None,
         }
     }
 
@@ -531,6 +532,7 @@ mod tests {
                             pk: false,
                             default_value: None,
                             fk: None,
+                            comment: None,
                         },
                     ],
                     ..Default::default()
@@ -544,6 +546,7 @@ mod tests {
                             nullable: false,
                             pk: false,
                             default_value: None,
+                            comment: None,
                             fk: Some(FkRef {
                                 table: "users".into(),
                                 column: "id".into(),

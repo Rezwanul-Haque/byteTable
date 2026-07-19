@@ -117,6 +117,7 @@ mod tests {
                     pk: false,
                     default_value: None,
                     fk: None,
+                    comment: None,
                 }],
                 ..Default::default()
             })

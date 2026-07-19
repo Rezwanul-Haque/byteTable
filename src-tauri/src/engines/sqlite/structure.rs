@@ -265,6 +265,14 @@ fn preview_statement(table: &str, op: &AlterOp) -> String {
         AlterOp::DropColumn { name } => {
             format!("ALTER TABLE {t} DROP COLUMN {}", quote_ident(name))
         }
+        // SQLite has no column comments; the editor never offers this on SQLite,
+        // but the preview must still render something if one is ever staged.
+        AlterOp::SetComment { column, .. } => {
+            format!(
+                "-- SQLite has no comment for column {}",
+                quote_ident(column)
+            )
+        }
         AlterOp::AddIndex {
             name,
             columns,
@@ -540,6 +548,7 @@ fn compute_target_columns(
                         pk: false,
                         default_value: default_value.clone(),
                         fk: None,
+                        comment: None,
                     },
                     from: None,
                 });
@@ -574,7 +583,9 @@ fn compute_target_columns(
             }
             // Index / foreign-key ops do not change the column set; they are
             // realized separately (target index set + rebuilt FK clauses).
-            AlterOp::AddIndex { .. }
+            // SetComment is a no-op on SQLite (no column comments).
+            AlterOp::SetComment { .. }
+            | AlterOp::AddIndex { .. }
             | AlterOp::DropIndex { .. }
             | AlterOp::AddForeignKey { .. }
             | AlterOp::DropForeignKey { .. } => {}

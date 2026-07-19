@@ -230,6 +230,8 @@ export interface WorkingColumn {
   nullable: boolean;
   pk: boolean;
   default: string | null;
+  /** The column's comment / description, or null when it has none. */
+  comment: string | null;
   fk: ColumnInfo["fk"];
   /** The introspected name this row maps from, or null for a freshly added
    *  column. Edit handlers key ops by this (original) name. */
@@ -252,6 +254,7 @@ export function applyOpsToColumns(columns: ColumnInfo[], ops: AlterOp[]): Workin
     nullable: c.nullable,
     pk: c.pk,
     default: c.default ?? null,
+    comment: c.comment ?? null,
     fk: c.fk,
     origin: c.name,
     isNew: false,
@@ -269,6 +272,7 @@ export function applyOpsToColumns(columns: ColumnInfo[], ops: AlterOp[]): Workin
           nullable: op.nullable,
           pk: false,
           default: op.default,
+          comment: null,
           fk: null,
           origin: null,
           isNew: true,
@@ -293,6 +297,11 @@ export function applyOpsToColumns(columns: ColumnInfo[], ops: AlterOp[]): Workin
       case "setDefault": {
         const col = find(op.column);
         if (col) col.default = op.default;
+        break;
+      }
+      case "setComment": {
+        const col = find(op.column);
+        if (col) col.comment = op.comment;
         break;
       }
       case "dropColumn": {

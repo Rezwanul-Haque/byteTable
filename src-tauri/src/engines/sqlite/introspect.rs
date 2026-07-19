@@ -178,6 +178,8 @@ pub(super) fn table_meta_blocking(
             nullable: notnull == 0,
             pk: pk > 0,
             default_value: dflt_value,
+            // SQLite has no column comments.
+            comment: None,
         })
         .collect();
     drop(stmt);
@@ -583,6 +585,7 @@ mod tests {
                 pk: true,
                 default_value: None,
                 fk: None,
+                comment: None,
             },
             ColumnInfo {
                 name: "title".into(),
@@ -591,6 +594,7 @@ mod tests {
                 pk: false,
                 default_value: None,
                 fk: None,
+                comment: None,
             },
             ColumnInfo {
                 name: "author_id".into(),
@@ -599,6 +603,7 @@ mod tests {
                 pk: false,
                 default_value: None,
                 // Explicit target: REFERENCES authors(id).
+                comment: None,
                 fk: Some(FkRef {
                     table: "authors".into(),
                     column: "id".into(),
@@ -612,6 +617,7 @@ mod tests {
                 default_value: None,
                 // Implicit target (`REFERENCES series`): resolved to the
                 // referenced table's pk, which is deliberately not "id".
+                comment: None,
                 fk: Some(FkRef {
                     table: "series".into(),
                     column: "series_code".into(),
@@ -625,6 +631,7 @@ mod tests {
                 default_value: None,
                 // Implicit target on a table that does not exist: the table
                 // name survives, the column falls back to "" (module docs).
+                comment: None,
                 fk: Some(FkRef {
                     table: "phantoms".into(),
                     column: String::new(),
@@ -639,6 +646,7 @@ mod tests {
                 // DEFAULT expression surfaced verbatim from dflt_value.
                 default_value: Some("'none'".into()),
                 fk: None,
+                comment: None,
             },
         ];
         assert_eq!(meta.columns, expected);

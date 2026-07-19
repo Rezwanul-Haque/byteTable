@@ -340,6 +340,11 @@ body[data-platform="macos"] .ri-drawer {
   font-size: 12px;
   font-family: var(--mono);
 }
+/* Binary pk chip: take the row's free width so the value isn't ellipsed away. */
+.ri-pk-binbtn {
+  flex: 1;
+  min-width: 0;
+}
 .ri-pk-note {
   display: inline-flex;
   align-items: center;

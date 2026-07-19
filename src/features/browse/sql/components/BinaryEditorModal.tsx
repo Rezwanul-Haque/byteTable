@@ -23,6 +23,8 @@ interface BinaryEditorModalProps {
   value: CellValue;
   onSave: (next: string | null) => void;
   onClose: () => void;
+  /** View-only (e.g. a binary primary key): no editing, generate, or save. */
+  readOnly?: boolean;
 }
 
 export function BinaryEditorModal({
@@ -33,6 +35,7 @@ export function BinaryEditorModal({
   value,
   onSave,
   onClose,
+  readOnly = false,
 }: BinaryEditorModalProps) {
   const expect = binaryBytes(type) ?? 16;
   const init = looksUuid(value) ? String(value).toLowerCase() : value == null ? "" : String(value);
@@ -58,7 +61,7 @@ export function BinaryEditorModal({
   };
 
   const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+    if (!readOnly && (e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault();
       save();
     }
@@ -69,7 +72,12 @@ export function BinaryEditorModal({
   const bytesRepr = res.ok && !res.empty ? "0x" + res.hex.toUpperCase() : res.ok ? "NULL" : "—";
 
   return (
-    <Modal className="binary-modal" width={460} label="Edit binary value" onClose={onClose}>
+    <Modal
+      className="binary-modal"
+      width={460}
+      label={readOnly ? "View binary value" : "Edit binary value"}
+      onClose={onClose}
+    >
       <div className="modal-title">
         <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
           <Icon name="tag" size={17} style={{ color: "var(--accent)" }} />
@@ -91,6 +99,7 @@ export function BinaryEditorModal({
           value={text}
           spellCheck={false}
           autoCapitalize="off"
+          readOnly={readOnly}
           placeholder="b1e7a4c2-3f9d-4a1e-8c77-2d5f6a0b9e34"
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKey}
@@ -120,21 +129,32 @@ export function BinaryEditorModal({
       </div>
 
       <ModalActions>
-        <button
-          type="button"
-          className="json-tool"
-          onClick={() => setText(generateUuid())}
-          title="Generate a random UUID"
-        >
-          <Icon name="autorenew" size={14} /> Generate
-        </button>
-        <div style={{ flex: 1 }} />
-        <Btn variant="text" onClick={onClose}>
-          Cancel
-        </Btn>
-        <Btn variant="filled" icon="check" onClick={save} disabled={!res.ok || !dirty}>
-          Save
-        </Btn>
+        {readOnly ? (
+          <>
+            <div style={{ flex: 1 }} />
+            <Btn variant="filled" onClick={onClose}>
+              Close
+            </Btn>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="json-tool"
+              onClick={() => setText(generateUuid())}
+              title="Generate a random UUID"
+            >
+              <Icon name="autorenew" size={14} /> Generate
+            </button>
+            <div style={{ flex: 1 }} />
+            <Btn variant="text" onClick={onClose}>
+              Cancel
+            </Btn>
+            <Btn variant="filled" icon="check" onClick={save} disabled={!res.ok || !dirty}>
+              Save
+            </Btn>
+          </>
+        )}
       </ModalActions>
     </Modal>
   );

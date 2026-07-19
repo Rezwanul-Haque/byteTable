@@ -592,12 +592,53 @@ function RowInspectorField({
         ) : null}
       </div>
       {col.pk ? (
-        <div className="ri-pk-lock">
-          <CellContent value={value} column={col.name} type={col.type} />
-          <span className="ri-pk-note">
-            <Icon name="lock" size={11} /> primary key
-          </span>
-        </div>
+        bin ? (
+          // Binary primary key: read-only. Borderless BIN chip inside the dashed
+          // pk box (matches the scalar pk look); clicking opens the binary editor
+          // modal in read-only mode to view the full UUID / stored bytes.
+          <div className="ri-pk-lock">
+            <button
+              type="button"
+              className="bin-cell ri-pk-binbtn"
+              onClick={() => setBinOpen(true)}
+              title="View binary value"
+            >
+              {(() => {
+                const fb = formatBinary(value, col.type);
+                return fb ? (
+                  <>
+                    <span className="bin-badge">BIN</span>
+                    <span className={"bin-val " + fb.kind}>{fb.text}</span>
+                  </>
+                ) : (
+                  <span className="ri-null">NULL</span>
+                );
+              })()}
+            </button>
+            <span className="ri-pk-note">
+              <Icon name="lock" size={11} /> primary key
+            </span>
+            {binOpen ? (
+              <BinaryEditorModal
+                schemaName={schemaName}
+                table={tableName}
+                column={col.name}
+                type={col.type}
+                value={value}
+                readOnly
+                onClose={() => setBinOpen(false)}
+                onSave={() => setBinOpen(false)}
+              />
+            ) : null}
+          </div>
+        ) : (
+          <div className="ri-pk-lock">
+            <CellContent value={value} column={col.name} type={col.type} />
+            <span className="ri-pk-note">
+              <Icon name="lock" size={11} /> primary key
+            </span>
+          </div>
+        )
       ) : (
         body
       )}

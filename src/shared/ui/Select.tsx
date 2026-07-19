@@ -38,6 +38,13 @@ interface SelectProps<T extends string> {
   /** Called whenever the popover closes (Escape / outside-click / after a pick).
    *  Inline editors map this to "exit edit mode". */
   onClose?: () => void;
+  /** Editable combobox: the trigger is a text input, the popover shows matching
+   *  suggestions, and any typed value commits (Enter / blur / outside-click).
+   *  Use for open-ended fields like a column type — pick `VARCHAR(255)` or type
+   *  `VARCHAR(20)` / `DECIMAL(4,6)`. Escape cancels without committing. */
+  editable?: boolean;
+  /** Placeholder for the editable input. */
+  placeholder?: string;
 }
 
 export function Select<T extends string>({
@@ -51,14 +58,42 @@ export function Select<T extends string>({
   placement = "down",
   autoOpen = false,
   onClose,
+  editable = false,
+  placeholder,
   "aria-label": ariaLabel,
   "aria-labelledby": ariaLabelledBy,
 }: SelectProps<T>) {
   const [open, setOpen] = useState(autoOpen);
+  const [text, setText] = useState<string>(value);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const popRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const optRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  // Refs so the outside-click / blur handlers (bound on open) read the latest
+  // typed text + callbacks without re-binding on every keystroke.
+  const textRef = useRef(text);
+  textRef.current = text;
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  // Keep the editable input mirrored to `value` while closed (external changes,
+  // exit edit mode). While open the user's typing is authoritative.
+  useEffect(() => {
+    if (!open) setText(value);
+  }, [value, open]);
+
+  // The suggestions shown in the popover: all options when picking, else the
+  // options whose label matches the typed text (substring, case-insensitive).
+  const q = text.trim().toLowerCase();
+  const shown = editable ? options.filter((o) => o.label.toLowerCase().includes(q)) : options;
+
+  const commitText = () => {
+    const t = textRef.current.trim();
+    if (t && t !== valueRef.current) onChangeRef.current(t as T);
+  };
   // The popover is portaled to <body> with fixed positioning so it escapes any
   // ancestor `overflow:hidden/auto` (scroll containers, modals). `pos` is the
   // measured trigger rect; recomputed on open + on scroll/resize.
@@ -89,7 +124,7 @@ export function Select<T extends string>({
   useLayoutEffect(() => {
     if (!open) return;
     const measure = () => {
-      const el = triggerRef.current;
+      const el = triggerRef.current ?? wrapRef.current;
       if (!el) return;
       const r = el.getBoundingClientRect();
       setPos({ left: r.left, top: r.bottom, bottom: r.top, width: r.width });
@@ -109,15 +144,23 @@ export function Select<T extends string>({
     if (!open) return;
     const onDown = (e: MouseEvent) => {
       const t = e.target as Node;
-      if (!wrapRef.current?.contains(t) && !popRef.current?.contains(t)) close(false);
+      if (!wrapRef.current?.contains(t) && !popRef.current?.contains(t)) {
+        if (editable) commitText();
+        close(false);
+      }
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        // Escape cancels an editable edit (no commit); a pick-only select just
+        // closes.
         e.preventDefault();
         close(true);
       }
     };
-    const onBlur = () => close(false);
+    const onBlur = () => {
+      if (editable) commitText();
+      close(false);
+    };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
     window.addEventListener("blur", onBlur);
@@ -128,10 +171,16 @@ export function Select<T extends string>({
     };
   }, [open]);
 
-  // Focus the selected option when the popover opens (keyboard users land on
-  // the current value).
+  // On open: an editable combobox focuses its input (and selects the text so a
+  // quick retype replaces it); a pick-only select focuses the current option.
   useEffect(() => {
-    if (open) optRefs.current[selectedIndex]?.focus();
+    if (!open) return;
+    if (editable) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    } else {
+      optRefs.current[selectedIndex]?.focus();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -143,16 +192,18 @@ export function Select<T extends string>({
   const onOptKeyDown = (e: React.KeyboardEvent, index: number) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      optRefs.current[Math.min(options.length - 1, index + 1)]?.focus();
+      optRefs.current[Math.min(shown.length - 1, index + 1)]?.focus();
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      optRefs.current[Math.max(0, index - 1)]?.focus();
+      // From the first option, an editable combobox returns to its input.
+      if (index === 0 && editable) inputRef.current?.focus();
+      else optRefs.current[Math.max(0, index - 1)]?.focus();
     } else if (e.key === "Home") {
       e.preventDefault();
       optRefs.current[0]?.focus();
     } else if (e.key === "End") {
       e.preventDefault();
-      optRefs.current[options.length - 1]?.focus();
+      optRefs.current[shown.length - 1]?.focus();
     }
   };
 
@@ -163,25 +214,68 @@ export function Select<T extends string>({
     }
   };
 
+  const onInputKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (!open) setOpen(true);
+      optRefs.current[0]?.focus();
+    } else if (e.key === "Enter") {
+      // Commit the typed value verbatim (free-form types like VARCHAR(20)).
+      e.preventDefault();
+      commitText();
+      close(true);
+    }
+    // Escape is handled by the document keydown listener (cancel).
+  };
+
   return (
     <div className={"sel-wrap" + (className ? " " + className : "")} ref={wrapRef}>
-      <button
-        ref={triggerRef}
-        type="button"
-        className={"sel-trigger" + (mono ? " sel-mono" : "")}
-        onClick={() => !disabled && setOpen((o) => !o)}
-        onKeyDown={onTriggerKeyDown}
-        disabled={disabled}
-        title={title}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-label={ariaLabel}
-        aria-labelledby={ariaLabelledBy}
-      >
-        <span className="sel-label">{current?.label ?? value}</span>
-        <Icon name="expand_more" size={15} className="sel-chevron" />
-      </button>
-      {open && pos
+      {editable ? (
+        <div className="sel-trigger sel-editable">
+          <input
+            ref={inputRef}
+            type="text"
+            className={"sel-input" + (mono ? " sel-mono" : "")}
+            value={text}
+            placeholder={placeholder}
+            disabled={disabled}
+            title={title}
+            spellCheck={false}
+            autoCapitalize="off"
+            autoComplete="off"
+            role="combobox"
+            aria-expanded={open}
+            aria-autocomplete="list"
+            aria-label={ariaLabel}
+            aria-labelledby={ariaLabelledBy}
+            onChange={(e) => {
+              setText(e.target.value);
+              if (!open) setOpen(true);
+            }}
+            onFocus={() => !disabled && setOpen(true)}
+            onKeyDown={onInputKeyDown}
+          />
+          <Icon name="expand_more" size={15} className="sel-chevron" />
+        </div>
+      ) : (
+        <button
+          ref={triggerRef}
+          type="button"
+          className={"sel-trigger" + (mono ? " sel-mono" : "")}
+          onClick={() => !disabled && setOpen((o) => !o)}
+          onKeyDown={onTriggerKeyDown}
+          disabled={disabled}
+          title={title}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          aria-label={ariaLabel}
+          aria-labelledby={ariaLabelledBy}
+        >
+          <span className="sel-label">{current?.label ?? value}</span>
+          <Icon name="expand_more" size={15} className="sel-chevron" />
+        </button>
+      )}
+      {open && pos && shown.length > 0
         ? createPortal(
             <div
               ref={popRef}
@@ -203,7 +297,7 @@ export function Select<T extends string>({
                     }),
               }}
             >
-              {options.map((o, i) => (
+              {shown.map((o, i) => (
                 <button
                   key={o.value}
                   ref={(el) => {

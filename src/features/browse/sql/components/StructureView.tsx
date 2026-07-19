@@ -1150,12 +1150,15 @@ function TypeCell({ value, typeOptions, pk, editing, onEdit, onDone, onCommit }:
   }
 
   if (editing) {
-    // Inline editor: open immediately; picking a type commits, and any close
-    // (Escape / outside-click) exits edit mode.
+    // Inline editor: an editable combobox — pick a preset type or type a
+    // free-form one (e.g. VARCHAR(20), DECIMAL(4,6)). Enter / outside-click
+    // commits the typed value; Escape / close exits edit mode.
     return (
       <Select
         className="st-type-select"
         autoOpen
+        editable
+        placeholder="type…"
         aria-label="Column type"
         value={value}
         options={options.map((t) => ({ value: t, label: t }))}

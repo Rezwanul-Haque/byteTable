@@ -398,8 +398,10 @@ function RowInspectorField({
   const cur = hasDraft ? draft : value;
   const dirty = hasDraft && draft !== value;
   const isNull = cur === null || cur === undefined;
-  const boolCol =
-    typeof value === "boolean" || /^(bool|boolean|tinyint\(1\))$/i.test((col.type || "").trim());
+  // Only true booleans get the toggle: Postgres native `boolean` (value is a JS
+  // boolean, or the column type says so even when NULL). MySQL `tinyint(1)` has
+  // no native bool — its value is the integer 0/1 — so it renders as a number.
+  const boolCol = typeof value === "boolean" || /^(bool|boolean)$/i.test((col.type || "").trim());
   const numCol = typeof value === "number";
 
   // Copy the field's current value to the clipboard. Binary copies its display

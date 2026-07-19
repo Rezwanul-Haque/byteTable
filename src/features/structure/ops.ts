@@ -120,12 +120,104 @@ export const MSSQL_TYPES = [
   "ROWVERSION",
 ] as const;
 
-/** The Structure type-menu options for an engine (`stTypesFor`). SQL Server gets
- *  its full 36-type family; every other engine keeps the SQLite-affinity list
- *  the structure editor has always offered (their shorter lists just don't
- *  scroll). */
+/** The MySQL / MariaDB type family offered in the Structure type menu. Grouped
+ *  numerics → strings → date/time → binary → special. Lengths are baked into
+ *  the types MySQL requires them on (`VARCHAR(n)`, `DECIMAL(p,s)`) so the ALTER
+ *  is valid as-picked. `BOOLEAN` is a MySQL alias MySQL rewrites to `TINYINT(1)`
+ *  (no native boolean); it's kept for convenience. */
+export const MYSQL_TYPES = [
+  // numerics
+  "TINYINT",
+  "SMALLINT",
+  "MEDIUMINT",
+  "INT",
+  "BIGINT",
+  "DECIMAL(10,2)",
+  "FLOAT",
+  "DOUBLE",
+  "BIT",
+  "BOOLEAN",
+  // strings
+  "CHAR",
+  "VARCHAR(255)",
+  "TINYTEXT",
+  "TEXT",
+  "MEDIUMTEXT",
+  "LONGTEXT",
+  "ENUM",
+  "SET",
+  // date / time
+  "DATE",
+  "TIME",
+  "DATETIME",
+  "TIMESTAMP",
+  "YEAR",
+  // binary
+  "BINARY",
+  "VARBINARY(255)",
+  "TINYBLOB",
+  "BLOB",
+  "MEDIUMBLOB",
+  "LONGBLOB",
+  // special
+  "JSON",
+] as const;
+
+/** The PostgreSQL type family offered in the Structure type menu. Grouped
+ *  numerics → boolean → strings → date/time → binary → special. Uses the
+ *  canonical Postgres spellings (`TIMESTAMPTZ`, `BYTEA`, `JSONB`, …). */
+export const POSTGRES_TYPES = [
+  // numerics
+  "SMALLINT",
+  "INTEGER",
+  "BIGINT",
+  "DECIMAL(10,2)",
+  "NUMERIC(10,2)",
+  "REAL",
+  "DOUBLE PRECISION",
+  "SERIAL",
+  "BIGSERIAL",
+  "MONEY",
+  // boolean
+  "BOOLEAN",
+  // strings
+  "CHAR",
+  "VARCHAR(255)",
+  "TEXT",
+  // date / time
+  "DATE",
+  "TIME",
+  "TIMESTAMP",
+  "TIMESTAMPTZ",
+  "INTERVAL",
+  // binary
+  "BYTEA",
+  // special
+  "UUID",
+  "JSON",
+  "JSONB",
+  "INET",
+  "CIDR",
+  "MACADDR",
+  "XML",
+] as const;
+
+/** The Structure type-menu options for an engine (`stTypesFor`). SQL Server,
+ *  MySQL, and Postgres each get their native type family; SQLite (and any other
+ *  engine) keeps the SQLite-affinity list the structure editor has always
+ *  offered. The current column type is prepended by the caller when missing, so
+ *  a type outside its engine's list still shows. */
 export function stTypesFor(engine: string): readonly string[] {
-  return engine === "mssql" ? MSSQL_TYPES : SQLITE_TYPES;
+  switch (engine) {
+    case "mssql":
+      return MSSQL_TYPES;
+    case "mysql":
+      return MYSQL_TYPES;
+    case "postgres":
+      return POSTGRES_TYPES;
+    default:
+      return SQLITE_TYPES;
+  }
 }
 
 /** A column in the working (post-edit) set the structure view renders. Carries

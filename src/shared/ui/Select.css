@@ -33,7 +33,8 @@
   border-color: color-mix(in oklab, var(--accent) 50%, var(--border));
 }
 
-.sel-trigger:focus-visible {
+.sel-trigger:focus-visible,
+.sel-editable:focus-within {
   outline: none;
   border-color: var(--accent);
 }
@@ -53,6 +54,26 @@
 }
 
 .sel-mono .sel-label {
+  font-family: var(--mono);
+}
+
+/* Editable combobox: the trigger wraps a real text input (free-form types like
+   VARCHAR(20)) plus the chevron. The input carries no border of its own — the
+   .sel-trigger wrapper provides it. */
+.sel-editable {
+  cursor: text;
+}
+.sel-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: none;
+  color: var(--text);
+  font-size: 12.5px;
+  padding: 0;
+}
+.sel-input.sel-mono {
   font-family: var(--mono);
 }
 

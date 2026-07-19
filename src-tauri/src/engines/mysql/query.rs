@@ -78,7 +78,7 @@ pub(super) async fn run_query(
                 .iter()
                 .map(|col| ColumnMeta {
                     name: col.name().to_string(),
-                    type_hint: col.type_info().name().to_string(),
+                    type_hint: result_type_hint(col.type_info().name()),
                 })
                 .collect(),
             Err(_) => Vec::new(),
@@ -279,6 +279,19 @@ pub(super) fn bind_all<'q>(
     query
 }
 
+/// The display type hint for a result column. sqlx surfaces `tinyint(1)` (and
+/// its `BOOL`/`BOOLEAN` aliases) as the type name "BOOLEAN", but MySQL has no
+/// native boolean — the value is decoded as the integer 0/1 (module docs) — so
+/// we report the real underlying type `tinyint(1)`. That matches
+/// information_schema's `COLUMN_TYPE` (introspection) and keeps the grid /
+/// row inspector treating the column as the integer it actually is.
+pub(super) fn result_type_hint(name: &str) -> String {
+    match name.to_ascii_uppercase().as_str() {
+        "BOOLEAN" | "BOOL" => "tinyint(1)".to_string(),
+        _ => name.to_string(),
+    }
+}
+
 /// Column metadata for a result row: name + the MySQL type name as the display
 /// type hint.
 pub(super) fn column_meta(row: &MySqlRow) -> Vec<ColumnMeta> {
@@ -286,7 +299,7 @@ pub(super) fn column_meta(row: &MySqlRow) -> Vec<ColumnMeta> {
         .iter()
         .map(|col| ColumnMeta {
             name: col.name().to_string(),
-            type_hint: col.type_info().name().to_string(),
+            type_hint: result_type_hint(col.type_info().name()),
         })
         .collect()
 }

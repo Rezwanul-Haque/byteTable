@@ -56,6 +56,11 @@
 .dg-pop-dim {
   color: var(--text-faint);
   font-size: 10.5px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .dg-pop-empty {
   color: var(--text-faint);
@@ -211,7 +216,7 @@
   animation: spin 0.7s linear infinite;
 }
 .fk-matchcount {
-  margin-left: auto;
+  flex: none;
   font-size: 10px;
   color: var(--accent);
   font-family: var(--mono);

@@ -1,5 +1,11 @@
 # Chocolatey package
 
+> [!IMPORTANT]
+> **One-time setup:** add a repository secret named **`CHOCO_API_KEY`**
+> (Settings → Secrets and variables → Actions) with your
+> community.chocolatey.org API key (Account → API Key). The release workflow's
+> `chocolatey` job **self-skips** until this secret exists — no key, no publish.
+
 Publishes ByteTable to the [Chocolatey Community Repository](https://community.chocolatey.org/).
 The package **downloads** the official signed NSIS installer from the matching
 GitHub release and verifies its SHA-256 (from `SHASUMS256.txt`) — it never embeds

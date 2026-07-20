@@ -1,0 +1,33 @@
+name: Question
+description: Ask about usage, behavior, or the roadmap.
+title: "[Question]: "
+labels: ["question", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Not sure it's a bug? For open-ended help a
+        [Discussion](https://github.com/Rezwanul-Haque/byteTable/discussions) is often a
+        better fit. Otherwise, ask away — this field is pre-filled when you use the
+        in-app **Report an issue** dialog.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: Describe what you are trying to do.
+      placeholder: How do I export only the schema?
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Auto-collected by ByteTable's "Report an issue" dialog (version, OS, engine, theme, locale). Edit if needed.
+
+  - type: input
+    id: handle
+    attributes:
+      label: GitHub handle (optional)
+      description: So maintainers can follow up with you.

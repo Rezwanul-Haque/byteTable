@@ -309,6 +309,30 @@
   transform: rotate(40deg);
 }
 
+/* Report an issue (M24) — sits below the settings gear. Idle faint; hover
+   reddens with a soft tinted background. Ported from the prototype .rail-bug. */
+.rail-bug {
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  flex: none;
+  margin-bottom: 8px;
+  color: var(--text-faint);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+.rail-bug:hover {
+  color: #e06c75;
+  background: color-mix(in oklab, #e06c75 14%, transparent);
+}
+
 .rail-donate {
   width: 38px;
   height: 38px;

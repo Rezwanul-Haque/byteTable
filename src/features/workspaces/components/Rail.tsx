@@ -56,6 +56,8 @@ interface RailProps {
   onAbout?: () => void;
   /** Settings gear click — opens the Settings modal (⌘,/Ctrl+,). */
   onSettings?: () => void;
+  /** Bug button click — opens the Report an issue modal (M24). */
+  onReportIssue?: () => void;
   /** Running app version (no leading `v`), shown under the donate button. */
   version?: string;
 }
@@ -67,6 +69,7 @@ export function Rail({
   onUpdate,
   onAbout,
   onSettings,
+  onReportIssue,
   version,
 }: RailProps) {
   const workspaces = useWorkspacesStore((state) => state.workspaces);
@@ -222,6 +225,18 @@ export function Rail({
           aria-label="Settings"
         >
           <Icon name="settings" size={20} />
+        </button>
+      ) : null}
+
+      {onReportIssue ? (
+        <button
+          type="button"
+          className="rail-bug"
+          onClick={onReportIssue}
+          title="Report an issue"
+          aria-label="Report an issue"
+        >
+          <Icon name="bug_report" size={20} />
         </button>
       ) : null}
 

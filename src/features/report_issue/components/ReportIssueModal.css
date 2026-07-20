@@ -1,0 +1,312 @@
+/*
+ * Report an issue modal (M24) — .bug-* rules ported verbatim from the
+ * prototype's ByteTable.html. The scrim and panel shell come from the shared
+ * Modal primitive; this file styles only the panel body. All colors go through
+ * the theme tokens (bg0, bg2, border, text, accent, on-accent) so light and
+ * dark both work; the panel scrolls (max-height: 88vh) on short screens.
+ */
+
+.bug-modal {
+  width: 560px;
+  max-width: 94vw;
+  gap: 13px;
+  max-height: 88vh;
+  overflow-y: auto;
+}
+
+.bug-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.bug-head-mark {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.bug-head-txt {
+  flex: 1;
+  min-width: 0;
+}
+.bug-sub {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 3px;
+  line-height: 1.5;
+}
+.bug-repo {
+  font-family: var(--mono);
+  color: var(--text);
+  font-size: 11.5px;
+}
+
+.bug-types {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.bug-type {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 10px 11px;
+  border-radius: 10px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 0.12s,
+    background 0.12s;
+}
+.bug-type:hover {
+  border-color: var(--text-faint);
+}
+.bug-type-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.bug-type-blurb {
+  font-size: 10px;
+  color: var(--text-faint);
+  line-height: 1.35;
+}
+
+.bug-body {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+.bug-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.bug-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.bug-req {
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+/* Required-field marker — red asterisk in place of the "required" badge. */
+.bug-star {
+  color: #e06c75;
+  font-weight: 700;
+  line-height: 1;
+}
+.bug-input {
+  width: 100%;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  color: var(--text);
+  outline: none;
+  font-family: inherit;
+}
+.bug-input:focus {
+  border-color: var(--accent);
+}
+.bug-ta {
+  resize: vertical;
+  line-height: 1.5;
+}
+.bug-ta.sm {
+  min-height: 34px;
+}
+.bug-grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.bug-col {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+.bug-sev {
+  display: flex;
+  gap: 6px;
+}
+.bug-sev-btn {
+  flex: 1;
+  border: 1px solid var(--border);
+  background: var(--bg0);
+  color: var(--text-dim);
+  font-size: 11px;
+  padding: 6px 4px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition:
+    border-color 0.12s,
+    color 0.12s,
+    background 0.12s;
+}
+.bug-sev-btn:hover {
+  color: var(--text);
+}
+.bug-sev-btn.on {
+  border-color: #e06c75;
+  color: #e06c75;
+  background: color-mix(in oklab, #e06c75 12%, transparent);
+  font-weight: 600;
+}
+
+.bug-diag {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 9px 10px;
+}
+.bug-diag-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+.bug-check {
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  border: 1.5px solid var(--text-faint);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--on-accent);
+  transition:
+    background 0.12s,
+    border-color 0.12s;
+}
+.bug-check.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.bug-diag-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: opacity 0.12s;
+}
+.bug-diag-body.off {
+  opacity: 0.4;
+}
+.bug-diag-engine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.bug-diag-engine-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+.bug-diag-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.bug-diag-chip {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 7px;
+}
+.bug-diag-chip b {
+  color: var(--text-faint);
+  font-weight: 600;
+  margin-right: 2px;
+}
+
+.bug-preview-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+}
+.bug-preview-toggle:hover {
+  color: var(--text);
+}
+.bug-preview {
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+  margin: 0;
+}
+
+.bug-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.bug-infobtn {
+  color: var(--text-faint);
+}
+
+.bug-foot {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.bug-linkbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 4px 2px;
+}
+.bug-linkbtn:hover {
+  color: var(--text);
+}
+.bug-hint {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  text-align: right;
+  margin-top: -4px;
+}

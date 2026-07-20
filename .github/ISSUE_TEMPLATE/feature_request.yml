@@ -1,22 +1,24 @@
 name: Feature request
-description: Suggest an idea, enhancement, or new capability for ByteTable.
+description: Suggest a new capability or improvement for ByteTable.
 title: "[Feature]: "
 labels: ["enhancement", "triage"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for helping shape ByteTable.
+        Thanks for helping shape ByteTable. Fields below are pre-filled when you use
+        the in-app **Report an issue** dialog — edit before you submit.
 
-        For big features, please open the issue **before** sending a large PR so we can agree on the
-        approach first (see [CONTRIBUTING.md](https://github.com/Rezwanul-Haque/byteTable/blob/main/CONTRIBUTING.md)).
-        If this is more of an open-ended idea or question, consider a
-        [Discussion](https://github.com/Rezwanul-Haque/byteTable/discussions) instead.
+        For big features, please open the issue **before** sending a large PR so we can
+        agree on the approach first (see
+        [CONTRIBUTING.md](https://github.com/Rezwanul-Haque/byteTable/blob/main/CONTRIBUTING.md)).
+        For open-ended ideas, a
+        [Discussion](https://github.com/Rezwanul-Haque/byteTable/discussions) may fit better.
 
   - type: checkboxes
     id: preflight
     attributes:
-      label: Pre-flight checklist
+      label: Pre-flight
       options:
         - label: I searched existing issues and discussions and this is not a duplicate.
           required: true
@@ -24,8 +26,8 @@ body:
   - type: textarea
     id: problem
     attributes:
-      label: Problem / motivation
-      description: What problem are you trying to solve? What's painful today?
+      label: Problem
+      description: What is painful or missing today?
       placeholder: I'm always frustrated when ...
     validations:
       required: true
@@ -34,61 +36,24 @@ body:
     id: solution
     attributes:
       label: Proposed solution
-      description: What would you like to happen? Describe the feature or behavior.
-    validations:
-      required: true
+      description: Describe the ideal behavior, or a rough sketch of the UI.
 
   - type: textarea
-    id: alternatives
+    id: screenshots
     attributes:
-      label: Alternatives considered
-      description: Other approaches, workarounds, or tools you've tried.
-
-  - type: dropdown
-    id: area
-    attributes:
-      label: Area
-      description: Which part of ByteTable does this touch?
-      options:
-        - Data grid / table view
-        - SQL editor
-        - Structure / schema
-        - Schema map / ER diagram
-        - Connections / workspaces
-        - Export / import
-        - A specific engine
-        - UI / UX / theming
-        - Performance
-        - Other
-    validations:
-      required: true
-
-  - type: dropdown
-    id: engine
-    attributes:
-      label: Related engine (if any)
-      options:
-        - N/A — not engine-specific
-        - SQLite
-        - MySQL
-        - PostgreSQL
-        - SQL Server
-        - Redis
-        - DynamoDB
-        - MongoDB
-        - Cassandra
-
-  - type: dropdown
-    id: contribute
-    attributes:
-      label: Are you willing to contribute this?
-      options:
-        - "Yes — I'd like to open a PR"
-        - "Maybe — with some guidance"
-        - "No — just suggesting"
+      label: Mockups or screenshots
+      description: |
+        Drag-and-drop or paste mockups, sketches, or references here — GitHub
+        uploads them for you.
 
   - type: textarea
-    id: context
+    id: environment
     attributes:
-      label: Additional context
-      description: Mockups, screenshots, links to how other tools do it, etc.
+      label: Environment
+      description: Auto-collected by ByteTable's "Report an issue" dialog (version, OS, engine, theme, locale). Edit if needed.
+
+  - type: input
+    id: handle
+    attributes:
+      label: GitHub handle (optional)
+      description: So maintainers can follow up with you.

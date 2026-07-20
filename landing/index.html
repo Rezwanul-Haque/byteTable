@@ -172,7 +172,18 @@
   .dl-cli { max-width:660px; margin:22px auto 0; display:flex; flex-direction:column; gap:8px; align-items:center; }
   .dl-cli-label { display:inline-flex; align-items:center; gap:6px; font-size:12.5px; color:var(--dim); }
   .dl-cli-label .msym { font-size:15px; color:var(--accent); }
-  .dl-cli-box { display:flex; align-items:center; gap:10px; width:100%; background:var(--bg0); border:1px solid color-mix(in oklab, var(--accent) 35%, var(--border)); border-radius:10px; padding:11px 12px; box-shadow:0 0 0 3px color-mix(in oklab, var(--accent) 8%, transparent); }
+  .dl-tabs { display:inline-flex; gap:4px; background:var(--bg1); border:1px solid var(--border); border-radius:9px; padding:3px; }
+  .dl-tab { appearance:none; border:0; background:transparent; color:var(--dim); font:inherit; font-size:12.5px; font-weight:600; padding:6px 16px; border-radius:7px; cursor:pointer; transition:color .15s, background .15s; }
+  .dl-tab:hover { color:var(--text); }
+  .dl-tab.is-active { color:var(--text); background:var(--bg0); box-shadow:0 1px 2px rgba(0,0,0,.25); }
+  .dl-panel { display:none; flex-direction:column; gap:8px; width:100%; }
+  .dl-panel.is-active { display:flex; }
+  .dl-cli-box { width:100%; min-width:0; display:flex; align-items:center; gap:10px; background:var(--bg0); border:1px solid color-mix(in oklab, var(--accent) 35%, var(--border)); border-radius:10px; padding:11px 12px; box-shadow:0 0 0 3px color-mix(in oklab, var(--accent) 8%, transparent); }
+  .dl-cli-sub { font-size:11px; color:var(--faint); text-align:center; }
+  .dl-cli-sub code { font-family:var(--mono); color:var(--dim); }
+  .dl-cli-releases { display:inline-flex; align-items:center; gap:6px; margin-top:4px; font-size:12px; color:var(--dim); text-decoration:none; transition:color .15s; }
+  .dl-cli-releases:hover { color:var(--accent); }
+  .dl-cli-releases .msym { font-size:15px; }
   .dl-cli-prompt { color:var(--accent); font-family:var(--mono); font-weight:600; }
   .dl-cli-box code { flex:1; min-width:0; overflow-x:auto; white-space:nowrap; font-family:var(--mono); font-size:12.5px; color:var(--text); scrollbar-width:none; -ms-overflow-style:none; }
   .dl-cli-box code::-webkit-scrollbar { display:none; }
@@ -180,8 +191,8 @@
   .dl-cli-copy:hover { color:var(--accent); border-color:var(--accent); }
   .dl-cli-copy.copied { color:var(--accent); }
   .dl-cli-copy .msym { font-size:16px; }
-  .dl-cli-note { font-size:11px; color:var(--faint); text-align:center; }
-  .dl-cli-note code { font-family:var(--mono); color:var(--dim); }
+  .dl-cli-box-muted { border-color:var(--border); box-shadow:none; background:var(--bg1); padding:8px 12px; }
+  .dl-cli-box-muted code { font-size:11.5px; color:var(--dim); }
 
   /* ---------- support ---------- */
   .support { text-align:center; }
@@ -352,14 +363,50 @@
 
     <div class="dl-cli">
       <span class="dl-cli-label"><span class="msym">terminal</span> …or install from your terminal</span>
-      <div class="dl-cli-box">
-        <span class="dl-cli-prompt">$</span>
-        <code id="dlCliCmd">curl -fsSL https://raw.githubusercontent.com/rezwanul-Haque/byteTable/main/install.sh | sh</code>
-        <button class="dl-cli-copy" id="dlCliCopy" type="button" aria-label="Copy install command">
-          <span class="msym">content_copy</span>
-        </button>
+      <div class="dl-tabs" role="tablist" aria-label="Install by OS">
+        <button class="dl-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="dlp-macos" id="dlt-macos" data-os="macos">macOS</button>
+        <button class="dl-tab" type="button" role="tab" aria-selected="false" aria-controls="dlp-linux" id="dlt-linux" data-os="linux">Linux</button>
+        <button class="dl-tab" type="button" role="tab" aria-selected="false" aria-controls="dlp-windows" id="dlt-windows" data-os="windows">Windows</button>
       </div>
-      <span class="dl-cli-note">macOS &amp; Linux. On Windows: <code>irm https://raw.githubusercontent.com/rezwanul-Haque/byteTable/main/install.ps1 | iex</code></span>
+
+      <div class="dl-panel is-active" id="dlp-macos" role="tabpanel" aria-labelledby="dlt-macos" data-os="macos">
+        <div class="dl-cli-box">
+          <span class="dl-cli-prompt">$</span>
+          <code>curl -fsSL https://raw.githubusercontent.com/rezwanul-Haque/byteTable/main/install.sh | sh</code>
+          <button class="dl-cli-copy" type="button" aria-label="Copy macOS script command"><span class="msym">content_copy</span></button>
+        </div>
+        <div class="dl-cli-box">
+          <span class="dl-cli-prompt">$</span>
+          <code>brew install --cask rezwanul-haque/tap/bytetable</code>
+          <button class="dl-cli-copy" type="button" aria-label="Copy macOS Homebrew command"><span class="msym">content_copy</span></button>
+        </div>
+        <span class="dl-cli-sub">Install script (detects arch, copies to <code>/Applications</code>) — or Homebrew.</span>
+      </div>
+
+      <div class="dl-panel" id="dlp-linux" role="tabpanel" aria-labelledby="dlt-linux" data-os="linux" hidden>
+        <div class="dl-cli-box">
+          <span class="dl-cli-prompt">$</span>
+          <code>curl -fsSL https://raw.githubusercontent.com/rezwanul-Haque/byteTable/main/install.sh | sh</code>
+          <button class="dl-cli-copy" type="button" aria-label="Copy Linux script command"><span class="msym">content_copy</span></button>
+        </div>
+        <span class="dl-cli-sub"><code>.deb</code> via apt (preferred) or <code>.AppImage</code> — AppImage needs <code>libfuse2</code>.</span>
+      </div>
+
+      <div class="dl-panel" id="dlp-windows" role="tabpanel" aria-labelledby="dlt-windows" data-os="windows" hidden>
+        <div class="dl-cli-box">
+          <span class="dl-cli-prompt">&gt;</span>
+          <code>choco install bytetable</code>
+          <button class="dl-cli-copy" type="button" aria-label="Copy Windows Chocolatey command"><span class="msym">content_copy</span></button>
+        </div>
+        <span class="dl-cli-sub">Chocolatey — or, without it, in PowerShell:</span>
+        <div class="dl-cli-box dl-cli-box-muted">
+          <span class="dl-cli-prompt">&gt;</span>
+          <code>irm https://raw.githubusercontent.com/rezwanul-Haque/byteTable/main/install.ps1 | iex</code>
+          <button class="dl-cli-copy" type="button" aria-label="Copy Windows PowerShell command"><span class="msym">content_copy</span></button>
+        </div>
+      </div>
+
+      <a class="dl-cli-releases" href="https://github.com/rezwanul-Haque/byteTable/releases/latest" target="_blank" rel="noreferrer"><span class="msym">download</span> Or download from GitHub Releases</a>
     </div>
   </div>
 </section>
@@ -404,27 +451,65 @@
 </footer>
 
 <script>
-  // Copy the install one-liner (hero) to the clipboard, with a ✓ flash.
+  // Copy each per-OS install command to the clipboard, with a ✓ flash.
   (function () {
-    var btn = document.getElementById('dlCliCopy');
-    var cmd = document.getElementById('dlCliCmd');
-    if (!btn || !cmd) return;
-    var icon = btn.querySelector('.msym');
-    btn.addEventListener('click', function () {
-      var done = function () {
-        btn.classList.add('copied');
-        if (icon) icon.textContent = 'check';
-        setTimeout(function () {
-          btn.classList.remove('copied');
-          if (icon) icon.textContent = 'content_copy';
-        }, 1400);
-      };
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(cmd.textContent).then(done).catch(function () {});
-      } else {
-        done();
-      }
+    var btns = document.querySelectorAll('.dl-cli-copy');
+    btns.forEach(function (btn) {
+      var box = btn.closest('.dl-cli-box');
+      var code = box && box.querySelector('code');
+      if (!code) return;
+      var icon = btn.querySelector('.msym');
+      btn.addEventListener('click', function () {
+        var done = function () {
+          btn.classList.add('copied');
+          if (icon) icon.textContent = 'check';
+          setTimeout(function () {
+            btn.classList.remove('copied');
+            if (icon) icon.textContent = 'content_copy';
+          }, 1400);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(code.textContent.trim()).then(done).catch(function () {});
+        } else {
+          done();
+        }
+      });
     });
+  })();
+
+  // OS install tabs — click a tab to reveal that platform's commands. Defaults
+  // to the macOS panel (which leads with the curl script).
+  (function () {
+    var tabs = Array.prototype.slice.call(document.querySelectorAll('.dl-tab'));
+    var panels = Array.prototype.slice.call(document.querySelectorAll('.dl-panel'));
+    if (!tabs.length) return;
+    function select(os) {
+      tabs.forEach(function (t) {
+        var on = t.getAttribute('data-os') === os;
+        t.classList.toggle('is-active', on);
+        t.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      panels.forEach(function (p) {
+        var on = p.getAttribute('data-os') === os;
+        p.classList.toggle('is-active', on);
+        if (on) { p.removeAttribute('hidden'); } else { p.setAttribute('hidden', ''); }
+      });
+    }
+    tabs.forEach(function (t) {
+      t.addEventListener('click', function () { select(t.getAttribute('data-os')); });
+    });
+
+    // Pre-select the visitor's platform (falls back to the default macOS tab).
+    function detectOs() {
+      var hint = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
+      var s = (hint + ' ' + navigator.userAgent).toLowerCase();
+      if (s.indexOf('win') !== -1) return 'windows';
+      if (s.indexOf('mac') !== -1) return 'macos';
+      if (s.indexOf('linux') !== -1 && s.indexOf('android') === -1) return 'linux';
+      return null;
+    }
+    var os = detectOs();
+    if (os && tabs.some(function (t) { return t.getAttribute('data-os') === os; })) select(os);
   })();
 
   // Latest release tag — shown in the hero badge. Falls back to the static

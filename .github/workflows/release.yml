@@ -295,3 +295,53 @@ jobs:
           $version = $env:TAG -replace '^v', ''
           choco pack
           choco push "bytetable.$version.nupkg" --source https://push.chocolatey.org/ --api-key $env:CHOCO_API_KEY
+
+  homebrew:
+    # Update the Homebrew cask in the tap repo (Rezwanul-Haque/homebrew-tap)
+    # once the release + SHASUMS256.txt are live. Canonical repo only; self-skips
+    # when HOMEBREW_TAP_TOKEN is unset.
+    needs: [publish-release]
+    if: github.repository == 'Rezwanul-Haque/byteTable'
+    runs-on: ubuntu-22.04
+    env:
+      TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ github.ref_name }}
+      TAP_REPO: Rezwanul-Haque/homebrew-tap
+    steps:
+      - name: Skip when no tap token
+        if: env.TAP_TOKEN == ''
+        run: echo "HOMEBREW_TAP_TOKEN not set — skipping Homebrew cask update."
+
+      - name: Checkout source (cask template)
+        if: env.TAP_TOKEN != ''
+        uses: actions/checkout@v5
+
+      # Render the cask from the tag + the universal.dmg SHA-256 (from the
+      # release's SHASUMS256.txt), then commit it into the tap repo's Casks/.
+      - name: Render + push the cask to the tap
+        if: env.TAP_TOKEN != ''
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          dmg="ByteTable_${version}_universal.dmg"
+          gh release download "v$version" --repo "$GITHUB_REPOSITORY" --pattern SHASUMS256.txt --dir .
+          sha=$(awk -v f="$dmg" '$2 == f { print $1 }' SHASUMS256.txt)
+          [ -n "$sha" ] || { echo "::error::No checksum for $dmg in SHASUMS256.txt"; exit 1; }
+          echo "Rendering cask bytetable $version (sha256 $sha)"
+          sed -e "s/__VERSION__/$version/g" -e "s/__SHA256__/$sha/g" \
+            packaging/homebrew/bytetable.rb.template > /tmp/bytetable.rb
+
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/${TAP_REPO}.git" tap
+          mkdir -p tap/Casks
+          cp /tmp/bytetable.rb tap/Casks/bytetable.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/bytetable.rb
+          if git diff --cached --quiet; then
+            echo "Cask already up to date — nothing to push."
+          else
+            git commit -m "bytetable ${version}"
+            git push
+          fi

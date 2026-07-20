@@ -1,0 +1,22 @@
+# Chocolatey install script TEMPLATE. `__VERSION__` and `__CHECKSUM__` are
+# substituted (from the git tag and SHASUMS256.txt) by the release workflow, or
+# by hand for a local build — see ../README.md.
+#
+# Downloads the official NSIS setup from the GitHub release and installs it
+# silently (Tauri's NSIS installer supports /S). The autoUninstaller handles
+# `choco uninstall` via the uninstaller NSIS registers — no uninstall script.
+$ErrorActionPreference = 'Stop'
+
+$version = '__VERSION__'
+$packageArgs = @{
+  packageName    = 'bytetable'
+  fileType       = 'exe'
+  softwareName   = 'ByteTable*'
+  url64bit       = "https://github.com/Rezwanul-Haque/byteTable/releases/download/v$version/ByteTable_${version}_x64-setup.exe"
+  checksum64     = '__CHECKSUM__'
+  checksumType64 = 'sha256'
+  silentArgs     = '/S'
+  validExitCodes = @(0)
+}
+
+Install-ChocolateyPackage @packageArgs

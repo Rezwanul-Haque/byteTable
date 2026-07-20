@@ -246,3 +246,52 @@ jobs:
               draft: false,
               make_latest: "true",
             });
+
+  chocolatey:
+    # Publish/refresh the Chocolatey package once the release + SHASUMS256.txt
+    # are live. Canonical repo only; self-skips when CHOCO_API_KEY is unset (so
+    # it never fails a fork or a run without the push key configured).
+    needs: [publish-release]
+    if: github.repository == 'Rezwanul-Haque/byteTable'
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      CHOCO_API_KEY: ${{ secrets.CHOCO_API_KEY }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Skip when no API key
+        if: env.CHOCO_API_KEY == ''
+        run: Write-Host "CHOCO_API_KEY not set — skipping Chocolatey publish."
+
+      # Fill the committed templates with the tag version and the x64 setup's
+      # SHA-256 (read from the release's SHASUMS256.txt — the same checksum the
+      # install scripts verify), producing the real nuspec + install script.
+      - name: Fill templates from tag + checksum
+        if: env.CHOCO_API_KEY != ''
+        working-directory: packaging/chocolatey
+        run: |
+          $version = $env:TAG -replace '^v', ''
+          gh release download "v$version" --repo $env:GITHUB_REPOSITORY --pattern SHASUMS256.txt --dir .
+          $exe = "ByteTable_${version}_x64-setup.exe"
+          $line = Get-Content SHASUMS256.txt | Where-Object { ($_ -split '\s+')[1] -eq $exe }
+          if (-not $line) { throw "No checksum for $exe in SHASUMS256.txt" }
+          $checksum = ($line -split '\s+')[0]
+          Write-Host "Packaging bytetable $version (sha256 $checksum)"
+          (Get-Content bytetable.nuspec.template) -replace '__VERSION__', $version |
+            Set-Content bytetable.nuspec
+          (Get-Content tools/chocolateyinstall.ps1.template) `
+            -replace '__VERSION__', $version -replace '__CHECKSUM__', $checksum |
+            Set-Content tools/chocolateyinstall.ps1
+
+      - name: Pack + push to Chocolatey
+        if: env.CHOCO_API_KEY != ''
+        working-directory: packaging/chocolatey
+        run: |
+          $version = $env:TAG -replace '^v', ''
+          choco pack
+          choco push "bytetable.$version.nupkg" --source https://push.chocolatey.org/ --api-key $env:CHOCO_API_KEY

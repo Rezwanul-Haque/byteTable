@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Chocolatey package manifest TEMPLATE. `__VERSION__` is substituted from the
+  git tag by the `chocolatey` job in .github/workflows/release.yml (or by hand
+  for a local build — see README.md). The package does NOT embed the installer;
+  tools/chocolateyinstall.ps1 downloads the official GitHub release asset and
+  verifies its SHA-256 against the checksum we publish in SHASUMS256.txt.
+-->
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>bytetable</id>
+    <version>__VERSION__</version>
+    <title>ByteTable</title>
+    <authors>Rezwanul-Haque</authors>
+    <owners>Rezwanul-Haque</owners>
+    <projectUrl>https://github.com/Rezwanul-Haque/byteTable</projectUrl>
+    <packageSourceUrl>https://github.com/Rezwanul-Haque/byteTable/tree/main/packaging/chocolatey</packageSourceUrl>
+    <projectSourceUrl>https://github.com/Rezwanul-Haque/byteTable</projectSourceUrl>
+    <docsUrl>https://github.com/Rezwanul-Haque/byteTable#readme</docsUrl>
+    <bugTrackerUrl>https://github.com/Rezwanul-Haque/byteTable/issues</bugTrackerUrl>
+    <licenseUrl>https://github.com/Rezwanul-Haque/byteTable/blob/main/LICENSE</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <tags>bytetable database sql gui client mysql postgres dynamodb sqlite mssql mongodb redis cassandra</tags>
+    <summary>Fast, local-first desktop database client.</summary>
+    <description>
+ByteTable is a fast, local-first desktop database client for MySQL, PostgreSQL,
+SQLite, SQL Server, MongoDB, Redis, Cassandra and DynamoDB. Browse and edit
+data, inspect and edit structure, run SQL, visualise schemas, and generate
+sample data — all from one native app.
+
+This package downloads the official signed NSIS installer from the project's
+GitHub release and verifies its SHA-256 checksum before installing.
+    </description>
+    <releaseNotes>https://github.com/Rezwanul-Haque/byteTable/releases/tag/v__VERSION__</releaseNotes>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>

@@ -29,7 +29,14 @@ Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $out -UseBasicParsin
 $sums = $rel.assets | Where-Object { $_.name -eq 'SHASUMS256.txt' } | Select-Object -First 1
 if ($sums) {
   Say 'Verifying checksum...'
-  $text = (Invoke-WebRequest -Uri $sums.browser_download_url -Headers @{ 'User-Agent' = 'bytetable-installer' } -UseBasicParsing).Content
+  # GitHub serves release assets as application/octet-stream, so IWR's .Content
+  # is a byte[], not text — splitting it on "`n" would scan a stringified byte
+  # array and never match. Download to a file (as we do the installer) and read
+  # it back as text instead.
+  $sumsPath = Join-Path $env:TEMP 'ByteTable_SHASUMS256.txt'
+  Invoke-WebRequest -Uri $sums.browser_download_url -Headers @{ 'User-Agent' = 'bytetable-installer' } -OutFile $sumsPath -UseBasicParsing
+  $text = Get-Content -Path $sumsPath -Raw
+  Remove-Item $sumsPath -Force -ErrorAction SilentlyContinue
   $line = $text -split "`n" | Where-Object { (($_ -split '\s+') | Select-Object -Index 1) -eq $asset.name } | Select-Object -First 1
   if (-not $line) { throw "No checksum listed for $($asset.name) in SHASUMS256.txt." }
   $expected = (($line -split '\s+')[0]).ToLower()

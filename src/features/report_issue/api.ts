@@ -214,7 +214,9 @@ const TEMPLATE_FILE: Record<BugTypeId, string> = {
  * Targeting `?template=` (not a blank `?body=`) is required because the repo
  * sets `blank_issues_enabled: false`, which redirects a blank prefill to the
  * template chooser and drops the query. Each param key is the form field's
- * `id`; the `severity` dropdown is prefilled by its option label. Labels and
+ * `id`. Note: GitHub only prefills text `input`/`textarea` fields from the
+ * query — `dropdown`/`checkboxes` are ignored — so every prefilled field
+ * (including `severity`) must be a text field in the template. Labels and
  * the title prefix come from the template, so they are not passed here (the
  * title query still carries the user's text after the prefix). Empty optional
  * fields are omitted so the template's own `value:` defaults survive.

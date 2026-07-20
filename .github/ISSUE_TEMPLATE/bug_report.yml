@@ -58,16 +58,12 @@ body:
         Drag-and-drop or paste images / short screen recordings here — GitHub
         uploads them for you. Redact any sensitive values first.
 
-  - type: dropdown
+  - type: input
     id: severity
     attributes:
       label: Severity
-      options:
-        - Low
-        - Medium
-        - High
-        - Critical
-      default: 1
+      description: One of Low / Medium / High / Critical. Pre-filled from the in-app dialog.
+      placeholder: Medium
     validations:
       required: true
 

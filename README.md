@@ -158,14 +158,21 @@ curl -fsSL https://raw.githubusercontent.com/rezwanul-Haque/byteTable/main/insta
   - **Other distros** (or no matching `.deb` in the release) → drops the `.AppImage` into
     `~/.local/bin/bytetable` (no `sudo`); if it won't run, `sudo apt install libfuse2`.
 
-**Windows** — in PowerShell:
+### Package managers
 
-```powershell
-irm https://raw.githubusercontent.com/rezwanul-Haque/byteTable/main/install.ps1 | iex
+**macOS** — [Homebrew](https://brew.sh):
+
+```sh
+brew install --cask rezwanul-haque/tap/bytetable
 ```
 
-It downloads the latest installer and runs it (or grab the `.exe` directly from the
-[latest release](https://github.com/rezwanul-Haque/byteTable/releases/latest)).
+**Windows** — [Chocolatey](https://chocolatey.org):
+
+```powershell
+choco install bytetable
+```
+
+No Chocolatey? Run the installer in PowerShell: `irm https://raw.githubusercontent.com/rezwanul-Haque/byteTable/main/install.ps1 | iex` — or grab the `.exe` from the [latest release](https://github.com/rezwanul-Haque/byteTable/releases/latest).
 
 > Prefer not to pipe to a shell? Read [`install.sh`](install.sh) / [`install.ps1`](install.ps1)
 > first, or just download the installer for your OS from the releases page. The scripts need a

@@ -143,7 +143,8 @@ docs/                    design specs
 
 ## Install
 
-**macOS / Linux** — one line; it detects your OS/arch and installs the latest release:
+**macOS / Linux — recommended.** One line; it detects your OS/arch, installs the latest
+release, and on macOS clears the Gatekeeper flag so there's no first-launch prompt:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/rezwanul-Haque/byteTable/main/install.sh | sh
@@ -165,6 +166,23 @@ curl -fsSL https://raw.githubusercontent.com/rezwanul-Haque/byteTable/main/insta
 ```sh
 brew install --cask rezwanul-haque/tap/bytetable
 ```
+
+> [!NOTE]
+> **Homebrew and `.dmg` installs need one extra step on first launch.** macOS shows a
+> Gatekeeper prompt because ByteTable isn't notarized yet — there's no Apple Developer
+> account behind it for now. It's open source and safe; macOS is just being cautious.
+>
+> Open it either way:
+>
+> - **System Settings → Privacy & Security → scroll to ByteTable → "Open Anyway"**, or
+> - clear the quarantine flag yourself:
+>   ```sh
+>   xattr -dr com.apple.quarantine /Applications/ByteTable.app
+>   ```
+>
+> The [recommended install script](#install) already does this for you — only the Homebrew
+> cask and direct `.dmg` downloads hit the prompt. It goes away for good once the app is
+> notarized.
 
 **Windows** — [Chocolatey](https://chocolatey.org):
 

@@ -181,6 +181,12 @@
   .dl-cli-box { width:100%; min-width:0; display:flex; align-items:center; gap:10px; background:var(--bg0); border:1px solid color-mix(in oklab, var(--accent) 35%, var(--border)); border-radius:10px; padding:11px 12px; box-shadow:0 0 0 3px color-mix(in oklab, var(--accent) 8%, transparent); }
   .dl-cli-sub { font-size:11px; color:var(--faint); text-align:center; }
   .dl-cli-sub code { font-family:var(--mono); color:var(--dim); }
+  .dl-cli-warn { display:flex; gap:8px; font-size:11px; line-height:1.5; text-align:left; color:var(--dim); background:color-mix(in oklab, #61afef 9%, transparent); border:1px solid color-mix(in oklab, #61afef 28%, var(--border)); border-radius:9px; padding:9px 11px; margin-top:2px; }
+  .dl-cli-warn .msym { color:#61afef; font-size:15px; flex:none; margin-top:1px; }
+  .dl-cli-warn b { color:var(--text); }
+  .dl-cli-warn code { font-family:var(--mono); color:var(--dim); }
+  .dl-rec { align-self:flex-start; display:inline-flex; align-items:center; gap:5px; font-size:10px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--accent); background:color-mix(in oklab, var(--accent) 12%, transparent); border:1px solid color-mix(in oklab, var(--accent) 35%, var(--border)); border-radius:99px; padding:2px 8px 2px 6px; }
+  .dl-rec .msym { font-size:13px; }
   .dl-cli-releases { display:inline-flex; align-items:center; gap:6px; margin-top:4px; font-size:12px; color:var(--dim); text-decoration:none; transition:color .15s; }
   .dl-cli-releases:hover { color:var(--accent); }
   .dl-cli-releases .msym { font-size:15px; }
@@ -193,6 +199,7 @@
   .dl-cli-copy .msym { font-size:16px; }
   .dl-cli-box-muted { border-color:var(--border); box-shadow:none; background:var(--bg1); padding:8px 12px; }
   .dl-cli-box-muted code { font-size:11.5px; color:var(--dim); }
+  .dl-cli-alt { align-self:flex-start; font-size:10.5px; color:var(--faint); margin-top:2px; }
 
   /* ---------- support ---------- */
   .support { text-align:center; }
@@ -370,17 +377,20 @@
       </div>
 
       <div class="dl-panel is-active" id="dlp-macos" role="tabpanel" aria-labelledby="dlt-macos" data-os="macos">
+        <span class="dl-rec"><span class="msym">check_circle</span> Recommended</span>
         <div class="dl-cli-box">
           <span class="dl-cli-prompt">$</span>
           <code>curl -fsSL https://raw.githubusercontent.com/rezwanul-Haque/byteTable/main/install.sh | sh</code>
           <button class="dl-cli-copy" type="button" aria-label="Copy macOS script command"><span class="msym">content_copy</span></button>
         </div>
-        <div class="dl-cli-box">
+        <span class="dl-cli-alt">Or via Homebrew:</span>
+        <div class="dl-cli-box dl-cli-box-muted">
           <span class="dl-cli-prompt">$</span>
           <code>brew install --cask rezwanul-haque/tap/bytetable</code>
           <button class="dl-cli-copy" type="button" aria-label="Copy macOS Homebrew command"><span class="msym">content_copy</span></button>
         </div>
-        <span class="dl-cli-sub">Install script (detects arch, copies to <code>/Applications</code>) — or Homebrew.</span>
+        <span class="dl-cli-sub">Install script detects arch and copies to <code>/Applications</code>.</span>
+        <p class="dl-cli-warn"><span class="msym">info</span><span><b>Homebrew &amp; .dmg installs need one extra step on first launch.</b> ByteTable isn&rsquo;t notarized yet (no Apple Developer account for now), so macOS asks you to confirm it&rsquo;s safe — it is, and it&rsquo;s open source. Open it via <b>System&nbsp;Settings → Privacy&nbsp;&amp;&nbsp;Security → Open&nbsp;Anyway</b>, or run <code>xattr -dr com.apple.quarantine /Applications/ByteTable.app</code>. The recommended install script above skips this for you.</span></p>
       </div>
 
       <div class="dl-panel" id="dlp-linux" role="tabpanel" aria-labelledby="dlt-linux" data-os="linux" hidden>

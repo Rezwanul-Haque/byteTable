@@ -14,6 +14,13 @@
     <authors>Rezwanul-Haque</authors>
     <owners>Rezwanul-Haque</owners>
     <projectUrl>https://github.com/Rezwanul-Haque/byteTable</projectUrl>
+    <!--
+      Package icon. Chocolatey requires a remote HTTPS PNG (not embedded) and
+      moderation prefers a CDN, so this points at jsDelivr serving the repo's
+      app icon, pinned to the release tag (`v__VERSION__`) so the URL is
+      immutable + cache-friendly. __VERSION__ is substituted alongside the rest.
+    -->
+    <iconUrl>https://cdn.jsdelivr.net/gh/Rezwanul-Haque/byteTable@v__VERSION__/src-tauri/icons/icon.png</iconUrl>
     <packageSourceUrl>https://github.com/Rezwanul-Haque/byteTable/tree/main/packaging/chocolatey</packageSourceUrl>
     <projectSourceUrl>https://github.com/Rezwanul-Haque/byteTable</projectSourceUrl>
     <docsUrl>https://github.com/Rezwanul-Haque/byteTable#readme</docsUrl>

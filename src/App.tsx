@@ -12,6 +12,7 @@ import { subscribeSettings } from "./features/settings/sync";
 import { ConnectScreen } from "./features/workspaces/components/ConnectScreen";
 import { NewConnectionModal } from "./features/connections/components/NewConnectionModal";
 import { DonateModal } from "./features/workspaces/components/DonateModal";
+import { ReportIssueModal } from "./features/report_issue/components/ReportIssueModal";
 import { Rail } from "./features/workspaces/components/Rail";
 import { WorkspaceShell } from "./features/workspaces/components/WorkspaceShell";
 import { RedisWorkspace } from "./features/browse/redis/components/RedisWorkspace";
@@ -102,6 +103,10 @@ export function App() {
 
   // Prototype app.jsx `donateOpen`: local app state, not a store concern.
   const [donateOpen, setDonateOpen] = useState(false);
+
+  // M24 Report an issue modal: opened from the rail bug button. Local app
+  // state, mirroring the prototype's `bugOpen`.
+  const [bugOpen, setBugOpen] = useState(false);
 
   const [galleryOpen, setGalleryOpen] = useState(false);
 
@@ -262,6 +267,7 @@ export function App() {
             onUpdate={() => setUpdateModalOpen(true)}
             onAbout={() => setAboutOpen(true)}
             onSettings={() => setSettingsOpen(true)}
+            onReportIssue={() => setBugOpen(true)}
             version={version}
           />
           <div className="app-body">
@@ -309,6 +315,14 @@ export function App() {
       {newConnOpen ? <NewConnectionModal onClose={() => setNewConnOpen(false)} /> : null}
 
       {donateOpen ? <DonateModal onClose={() => setDonateOpen(false)} /> : null}
+
+      {bugOpen ? (
+        <ReportIssueModal
+          activeEngine={activeWorkspace?.saved.engine ?? null}
+          version={version}
+          onClose={() => setBugOpen(false)}
+        />
+      ) : null}
 
       {update && updateModalOpen ? (
         <UpdateModal update={update} onClose={closeUpdateModal} />

@@ -403,17 +403,20 @@
       </div>
 
       <div class="dl-panel" id="dlp-windows" role="tabpanel" aria-labelledby="dlt-windows" data-os="windows" hidden>
+        <!-- Chocolatey install temporarily disabled while the package clears first-time
+             moderation on the community repo. Restore this box once it's approved:
         <div class="dl-cli-box">
           <span class="dl-cli-prompt">&gt;</span>
           <code>choco install bytetable</code>
           <button class="dl-cli-copy" type="button" aria-label="Copy Windows Chocolatey command"><span class="msym">content_copy</span></button>
         </div>
-        <span class="dl-cli-sub">Chocolatey — or, without it, in PowerShell:</span>
-        <div class="dl-cli-box dl-cli-box-muted">
+        -->
+        <div class="dl-cli-box">
           <span class="dl-cli-prompt">&gt;</span>
           <code>irm https://raw.githubusercontent.com/rezwanul-Haque/byteTable/main/install.ps1 | iex</code>
           <button class="dl-cli-copy" type="button" aria-label="Copy Windows PowerShell command"><span class="msym">content_copy</span></button>
         </div>
+        <span class="dl-cli-sub">PowerShell installer — or grab the <code>.exe</code> from GitHub Releases below.</span>
       </div>
 
       <a class="dl-cli-releases" href="https://github.com/rezwanul-Haque/byteTable/releases/latest" target="_blank" rel="noreferrer"><span class="msym">download</span> Or download from GitHub Releases</a>

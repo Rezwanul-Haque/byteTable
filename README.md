@@ -184,13 +184,17 @@ brew install --cask rezwanul-haque/tap/bytetable
 > cask and direct `.dmg` downloads hit the prompt. It goes away for good once the app is
 > notarized.
 
-**Windows** — [Chocolatey](https://chocolatey.org):
+**Windows** — PowerShell:
 
 ```powershell
-choco install bytetable
+irm https://raw.githubusercontent.com/rezwanul-Haque/byteTable/main/install.ps1 | iex
 ```
 
-No Chocolatey? Run the installer in PowerShell: `irm https://raw.githubusercontent.com/rezwanul-Haque/byteTable/main/install.ps1 | iex` — or grab the `.exe` from the [latest release](https://github.com/rezwanul-Haque/byteTable/releases/latest).
+Or grab the `.exe` from the [latest release](https://github.com/rezwanul-Haque/byteTable/releases/latest).
+
+<!-- Chocolatey install temporarily disabled while the package clears first-time
+     moderation on the community repo. Restore this once it's approved:
+     **Windows** — [Chocolatey](https://chocolatey.org): `choco install bytetable` -->
 
 > Prefer not to pipe to a shell? Read [`install.sh`](install.sh) / [`install.ps1`](install.ps1)
 > first, or just download the installer for your OS from the releases page. The scripts need a

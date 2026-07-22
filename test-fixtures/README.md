@@ -6,7 +6,7 @@ Throwaway databases for exercising all engines. **Test data only — never produ
 
 ```sh
 cd test-fixtures
-docker compose up -d        # Postgres + MySQL + SQL Server + Redis + DynamoDB + MongoDB + Cassandra (Postgres/MySQL/MongoDB auto-seed on first init)
+docker compose up -d        # Postgres + MySQL + SQL Server + Redis + DynamoDB + MongoDB + Cassandra + ClickHouse (Postgres/MySQL/MongoDB/ClickHouse auto-seed on first init)
 ./seed/seed-redis.sh        # seed Redis (no auto-init dir for Redis)
 ./seed/seed-dynamo.sh       # seed DynamoDB (creates tables + items)
 ./seed/seed-cassandra.sh    # seed Cassandra (waits for the node, ~30–60s)
@@ -107,6 +107,23 @@ New connection → **Cassandra**:
 
 Run `./seed/seed-cassandra.sh` once after `up` (the node takes ~30–60s to accept CQL; re-running drops + recreates the keyspaces).
 
+### ClickHouse
+
+New connection → **ClickHouse**. Columnar OLAP over the HTTP port (8123); native TCP
+9000 is offset to 19000. Auto-seeds on first init (like the SQL engines) — no manual step.
+
+| field    | value       |
+| -------- | ----------- |
+| Host     | `localhost` |
+| Port     | `8123`      |
+| Database | `default`   |
+| User     | `default`   |
+| Password | `bytetable` |
+
+> The e-commerce tables live in `default`; the analytics dataset (with a view, a
+> SummingMergeTree materialized view, a SQL UDF, and a data-skipping index) lives in the
+> `analytics` database. `system` is ClickHouse's built-in catalog.
+
 ### SQLite
 
 Use **"Open SQLite file…"** → `test-fixtures/byteshop.db` (committed in this folder).
@@ -118,12 +135,13 @@ Use **"Open SQLite file…"** → `test-fixtures/byteshop.db` (committed in this
 - **Redis** (db0, 8 keys, one of every type): `user:1:name` (string), `config:json` (JSON string), `user:1` (hash), `queue:emails` (list), `tags:user:1` (set), `leaderboard:sales` (zset), `events:log` (stream), `session:abc` (string with a 3600s TTL).
 - **DynamoDB** (M17): `ShopApp` — the **single-table design** (PK + SK + `GSI1`, on-demand): heterogeneous `USER` profiles, `ORDER`s sharing each user's partition (item collections), and `PRODUCT`s with `L`/`N`/`M` attributes. Plus `Sessions` (partition-only, a `byUser` GSI, provisioned 5/5, a `ttl` TimeToLive attr) and `EventLog` (PK + SK with a `byType` GSI). Exercises the dashboard, scan/query (base table + GSI sort-key ops), item editor, schema map, and export/import.
 - **MongoDB** (M18): two databases — `byteshop` (`users` 24, `products` 12, `orders` 30, `reviews` 26) and `analytics` (`events` 40, `sessions` 18). Real `ObjectId`/`ISODate` values with referential integrity (`orders.userId`/`items.productId`, `reviews`/`events`/`sessions` → users/products) for the schema-map edges; secondary + unique + sparse indexes; a `$jsonSchema` validator on `byteshop.products`. Exercises the dashboard, Find (filter/projection/sort, IXSCAN vs COLLSCAN explain), aggregation pipeline (incl. `$lookup`), document editor + validation, inferred-schema/Structure, mongosh, schema map, and export/import.
+- **ClickHouse** (M25): the ByteShop e-commerce model adapted to columnar OLAP — no PK/FK, every table a `MergeTree` with an `ORDER BY` sort key. `default` holds the shared tables (`users`/`orders`/`products`/`order_items`, plus `accounts`/`documents` with `UUID` + JSON-in-`String`); `analytics` holds the analytics dataset (`events`, partitioned `PARTITION BY toYYYYMM(ts)` with a `set` **data-skipping index** on `kind`) and the full object set — `active_users` (view), `orders_by_day` (**SummingMergeTree materialized view**), `line_total` (SQL UDF function). Exercises ENGINE + ORDER BY + PARTITION BY DDL, `Nullable(...)` wrapping, secondary indexes as `ALTER TABLE … ADD INDEX`, the schema switcher (`default`/`analytics`/`system`), and the `clickhouse-client` terminal.
 - **Cassandra** (M19): the **query-first wide-column** ByteShop model across two keyspaces — `byteshop` (`users_by_id` + a 2i on `email`, `orders_by_user` + the `orders_by_status` materialized view, `order_items_by_order`, `products_by_category`) and `analytics` (`events_by_user`, `sessions_by_day`, TimeWindowCompaction). Denormalized `*_by_*` tables with consistent `uuid`/`timeuuid` keys (so the schema map's shared-key edges line up) and CQL types throughout (`uuid`/`timeuuid`/`decimal`/`timestamp`/`date`/`inet`/`set`/`map`). `byteshop` uses `NetworkTopologyStrategy {dc1:1}`, `analytics` `SimpleStrategy RF 1`. Exercises the keyspace dashboard (tables/indexes/views + replication + cluster ring), the query builder (partition key, clustering order, ALLOW FILTERING), hybrid inline editing + row modal, the structure view (Kind badges, indexes/MVs), the standalone CQL tab + cqlsh, the schema map, the create flows, and export/import.
 
 ## Files
 
 - `docker-compose.yml` — the seven services.
-- `seed/postgres.sql`, `seed/mysql.sql`, `seed/mongo.js` — auto-run on first container init.
+- `seed/postgres.sql`, `seed/mysql.sql`, `seed/mongo.js`, `seed/clickhouse.sql` — auto-run on first container init.
 - `seed/seed-redis.sh`, `seed/seed-dynamo.sh`, `seed/seed-cassandra.sh`, `seed/seed-mssql.sh` — run manually after `up`.
 - `seed/cassandra.cql` — the CQL seed run by `seed-cassandra.sh` (mounted at `/seed.cql`).
 - `seed/mssql.sql` — the T-SQL seed run by `seed-mssql.sh` (mounted at `/seed.mssql.sql`; run via an ephemeral `mssql-tools` container since azure-sql-edge bundles no `sqlcmd`).
@@ -132,4 +150,4 @@ Use **"Open SQLite file…"** → `test-fixtures/byteshop.db` (committed in this
 
 ## Note: containers may already be running
 
-The same containers (`bt-pg`/`bt-mysql`/`bt-mssql`/`bt-redis`/`bt-dynamo`/`bt-mongo`/`bt-cassandra`) may already be up from an ad-hoc launch with identical credentials. If `docker compose up` reports a port/name conflict, remove the ad-hoc ones first: `docker rm -f bt-pg bt-mysql bt-mssql bt-redis bt-dynamo bt-mongo bt-cassandra`, then `docker compose up -d`.
+The same containers (`bt-pg`/`bt-mysql`/`bt-mssql`/`bt-redis`/`bt-dynamo`/`bt-mongo`/`bt-cassandra`/`bt-clickhouse`) may already be up from an ad-hoc launch with identical credentials. If `docker compose up` reports a port/name conflict, remove the ad-hoc ones first: `docker rm -f bt-pg bt-mysql bt-mssql bt-redis bt-dynamo bt-mongo bt-cassandra bt-clickhouse`, then `docker compose up -d`.

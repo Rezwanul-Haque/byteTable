@@ -13,7 +13,8 @@ export type Engine =
   | "redis"
   | "dynamodb"
   | "mongodb"
-  | "cassandra";
+  | "cassandra"
+  | "clickhouse";
 
 /**
  * Deployment environment a connection points at (drives the EnvTag tint).

@@ -79,6 +79,22 @@ const TYPES_BY_ENGINE: Record<Engine, string[]> = {
     "UNIQUEIDENTIFIER",
     "VARBINARY(MAX)",
   ],
+  // ClickHouse (M25): common columnar types. No inline PRIMARY KEY — the DDL
+  // builder appends `ENGINE = MergeTree() ORDER BY (…)` for the sort key.
+  clickhouse: [
+    "UInt32",
+    "UInt64",
+    "Int32",
+    "Int64",
+    "String",
+    "Float64",
+    "Decimal(18, 2)",
+    "Bool",
+    "DateTime64(3, 'UTC')",
+    "Date",
+    "UUID",
+    "JSON",
+  ],
   // Redis / DynamoDB / MongoDB / Cassandra have no relational create-table here
   // (Cassandra has its own CQL create flow, M19 §19.6); never reached, but the
   // record must be total.
@@ -158,6 +174,31 @@ export function CreateTableModal({
     setCols((cs) => cs.map((c) => (c.id === id ? { ...c, pk: !c.pk } : c)));
 
   const ddl = useMemo(() => {
+    // ClickHouse (M25) is columnar: no inline PRIMARY KEY / AUTOINCREMENT / NOT
+    // NULL — nullability is a `Nullable(...)` type wrapper, and the "primary
+    // key" is the MergeTree `ORDER BY` sort key appended after the column list.
+    if (engine === "clickhouse") {
+      const pkCols = validCols.filter((c) => c.pk);
+      const orderCols = (pkCols.length ? pkCols : validCols.slice(0, 1)).map((c) => slug(c.name));
+      const lines = validCols.map((c) => {
+        const type =
+          c.nullable && !/^Nullable\(/i.test(c.type) ? "Nullable(" + c.type + ")" : c.type;
+        let l = "  " + slug(c.name) + " " + type;
+        if (c.dflt.trim()) l += " DEFAULT " + c.dflt.trim();
+        return l;
+      });
+      const orderBy =
+        orderCols.length > 1 ? "(" + orderCols.join(", ") + ")" : orderCols[0] || "tuple()";
+      return (
+        "CREATE TABLE " +
+        (clean || "table_name") +
+        " (\n" +
+        lines.join(",\n") +
+        "\n)\nENGINE = MergeTree()\nORDER BY " +
+        orderBy +
+        ";"
+      );
+    }
     const isInt = (t: string) => /INT/i.test(t);
     const pkCols = validCols.filter((c) => c.pk);
     // Auto-increment only makes sense for a single integer primary key (a

@@ -202,6 +202,49 @@ export const POSTGRES_TYPES = [
   "XML",
 ] as const;
 
+/** The ClickHouse native type family (M25, prototype `ST_CLICKHOUSE_TYPES`)
+ *  offered in the Structure type menu, grouped numerics → strings → date/time →
+ *  containers/specials → nullable. `Nullable(...)` wrappers are offered directly
+ *  since ClickHouse nullability is a type wrapper, not a column flag. */
+export const CLICKHOUSE_TYPES = [
+  // numerics
+  "UInt8",
+  "UInt16",
+  "UInt32",
+  "UInt64",
+  "Int8",
+  "Int16",
+  "Int32",
+  "Int64",
+  "Float32",
+  "Float64",
+  "Decimal(18, 2)",
+  "Bool",
+  // strings
+  "String",
+  "FixedString(16)",
+  "LowCardinality(String)",
+  "UUID",
+  // date / time
+  "Date",
+  "Date32",
+  "DateTime",
+  "DateTime64(3, 'UTC')",
+  // containers / specials
+  "Enum8()",
+  "Array(String)",
+  "Array(UInt64)",
+  "Map(String, String)",
+  "Tuple(String, UInt64)",
+  "JSON",
+  "IPv4",
+  "IPv6",
+  // nullable
+  "Nullable(String)",
+  "Nullable(Int64)",
+  "Nullable(DateTime)",
+] as const;
+
 /** The Structure type-menu options for an engine (`stTypesFor`). SQL Server,
  *  MySQL, and Postgres each get their native type family; SQLite (and any other
  *  engine) keeps the SQLite-affinity list the structure editor has always
@@ -215,6 +258,8 @@ export function stTypesFor(engine: string): readonly string[] {
       return MYSQL_TYPES;
     case "postgres":
       return POSTGRES_TYPES;
+    case "clickhouse":
+      return CLICKHOUSE_TYPES;
     default:
       return SQLITE_TYPES;
   }

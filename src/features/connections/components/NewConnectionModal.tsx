@@ -59,6 +59,7 @@ const ENGINES: { engine: Engine; label: string }[] = [
   { engine: "dynamodb", label: "DynamoDB" },
   { engine: "mongodb", label: "MongoDB" },
   { engine: "cassandra", label: "Cassandra" },
+  { engine: "clickhouse", label: "ClickHouse" },
 ];
 
 /** AWS regions offered in the DynamoDB connect form (prototype `AWS_REGIONS`). */
@@ -86,6 +87,9 @@ const DEFAULT_PORTS: Partial<Record<Engine, string>> = {
   redis: "6379",
   mongodb: "27017",
   cassandra: "9042",
+  // ClickHouse (M25): the HTTP interface (the adapter speaks HTTP, not native
+  // TCP 9000). Kept standard so the local Docker fixture works as-is.
+  clickhouse: "8123",
 };
 
 // The conventional superuser each engine ships with — prefilled into the User
@@ -96,6 +100,8 @@ const DEFAULT_USERS: Partial<Record<Engine, string>> = {
   mysql: "root",
   // SQL Server's built-in sysadmin login.
   mssql: "sa",
+  // ClickHouse's built-in default user.
+  clickhouse: "default",
 };
 
 /**
@@ -574,6 +580,9 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
   // Cassandra (M19): contact points + native port + optional keyspace + local
   // datacenter; no SSH tab (the driver discovers the ring).
   const isCassandra = engine === "cassandra";
+  // ClickHouse (M25): a columnar OLAP store over the shared host/port + SSH form
+  // (like SQL Server); an OLAP form-note, a `default`-placeholder Database field.
+  const isClickHouse = engine === "clickhouse";
 
   const pickEngine = (next: Engine) => dispatch({ type: "engine", engine: next });
 
@@ -1388,7 +1397,9 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
                       ? "postgres"
                       : engine === "mssql"
                         ? "byteshop"
-                        : "mysql"
+                        : isClickHouse
+                          ? "default"
+                          : "mysql"
                 }
                 spellCheck={false}
               />
@@ -1411,7 +1422,9 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
                       ? "sa"
                       : engine === "postgres"
                         ? "postgres"
-                        : "root"
+                        : isClickHouse
+                          ? "default"
+                          : "root"
                 }
                 spellCheck={false}
               />
@@ -1430,6 +1443,14 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
                 placeholder="••••••••"
               />
             </label>
+            {isClickHouse ? (
+              <div className="span-2 form-note">
+                <Icon name="bolt" size={14} /> ClickHouse is a columnar OLAP store. Use the HTTP
+                port (8123) or the secure HTTPS port (8443) with TLS. Databases group tables; there
+                are no foreign keys — tables use an <code>ENGINE</code> + <code>ORDER BY</code> sort
+                key.
+              </div>
+            ) : null}
           </div>
           <div
             className="form-grid"

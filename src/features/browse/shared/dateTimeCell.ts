@@ -11,13 +11,15 @@ import { isJsonType } from "./jsonCell";
 /** True for temporal column types (timestamp / timestamptz / datetime / date /
  *  time), but not JSON (a `json` type must never be treated as temporal).
  *  Several tokens are listed explicitly because word boundaries don't fall where
- *  a bare stem would need them: `timestamptz` (no `\b` before `tz`), and the SQL
+ *  a bare stem would need them: `timestamptz` (no `\b` before `tz`), the SQL
  *  Server family `datetime2` (trailing digit), `datetimeoffset`, and
- *  `smalldatetime` (no `\b` before/after the `datetime` stem). Longest tokens
+ *  `smalldatetime` (no `\b` before/after the `datetime` stem), and the ClickHouse
+ *  family `datetime64` (`DateTime64(3, 'UTC')`) and `date32` (a trailing digit
+ *  again blocks the `\b` a bare `datetime`/`date` would need). Longest tokens
  *  come first so alternation matches the full name. */
 export function isTemporalType(type: string | undefined): boolean {
   return (
-    /\b(timestamptz|timestamp|smalldatetime|datetimeoffset|datetime2|datetime|date|time)\b/i.test(
+    /\b(timestamptz|timestamp|smalldatetime|datetimeoffset|datetime64|datetime2|datetime|date32|date|time)\b/i.test(
       type ?? "",
     ) && !isJsonType(type)
   );

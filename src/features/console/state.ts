@@ -47,6 +47,8 @@ export function shellLabel(engine: Engine): string {
       return "mongosh";
     case "cassandra":
       return "cqlsh";
+    case "clickhouse":
+      return "clickhouse-client";
     case "postgres":
     default:
       return "psql";

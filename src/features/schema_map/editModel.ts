@@ -150,9 +150,26 @@ const SQLITE_EDIT_TYPES = [
   "TIMESTAMP",
 ] as const;
 
+/** ClickHouse (M25) columnar type menu. */
+const CLICKHOUSE_EDIT_TYPES = [
+  "UInt32",
+  "UInt64",
+  "Int32",
+  "Int64",
+  "String",
+  "Float64",
+  "Decimal(18, 2)",
+  "Bool",
+  "DateTime64(3, 'UTC')",
+  "Date",
+  "UUID",
+] as const;
+
 /** The type menu for the per-column type select, by engine. */
 export function editTypesFor(engine: Engine): string[] {
-  return engine === "sqlite" ? [...SQLITE_EDIT_TYPES] : [...SQL_EDIT_TYPES];
+  if (engine === "sqlite") return [...SQLITE_EDIT_TYPES];
+  if (engine === "clickhouse") return [...CLICKHOUSE_EDIT_TYPES];
+  return [...SQL_EDIT_TYPES];
 }
 
 /** Sanitise a typed identifier: trim, collapse non-word runs to `_`, lowercase
@@ -209,6 +226,33 @@ export interface Ddl {
  * fix. The commit modal's "single transaction" framing holds only for Postgres.
  */
 export function ddlFor(engine: Engine): Ddl {
+  // ClickHouse (M25) is columnar: `MODIFY COLUMN` for retype/nullability
+  // (nullability is a `Nullable(...)` wrapper, not a NOT NULL keyword), a
+  // MergeTree table, and NO primary-key/foreign-key DDL — those ops emit an
+  // inert comment (executes as zero statements) rather than invalid SQL.
+  if (engine === "clickhouse") {
+    const unwrap = (type: string) => type.replace(/^Nullable\((.*)\)$/i, "$1");
+    return {
+      addColumn: (t, name) => `ALTER TABLE ${t} ADD COLUMN ${name} String;`,
+      renameColumn: (t, from, to) => `ALTER TABLE ${t} RENAME COLUMN ${from} TO ${to};`,
+      changeType: (t, col, type) => `ALTER TABLE ${t} MODIFY COLUMN ${col} ${type};`,
+      setNullable: (t, col, nullable, type) =>
+        `ALTER TABLE ${t} MODIFY COLUMN ${col} ${
+          nullable ? `Nullable(${unwrap(type)})` : unwrap(type)
+        };`,
+      addPrimaryKey: () =>
+        `/* ClickHouse: the primary key is the ORDER BY sort key; it cannot be added by ALTER (requires a table rebuild). */`,
+      dropPrimaryKey: () =>
+        `/* ClickHouse: the primary key is the ORDER BY sort key; it cannot be dropped by ALTER. */`,
+      dropColumn: (t, col) => `ALTER TABLE ${t} DROP COLUMN ${col};`,
+      addForeignKey: () => `/* ClickHouse has no foreign keys. */`,
+      dropForeignKey: () => `/* ClickHouse has no foreign keys. */`,
+      createTable: (name) =>
+        `CREATE TABLE ${name} (\n  id UInt64\n)\nENGINE = MergeTree()\nORDER BY id;`,
+      renameTable: (from, to) => `RENAME TABLE ${from} TO ${to};`,
+      dropTable: (t) => `DROP TABLE ${t};`,
+    };
+  }
   const mysql = engine === "mysql";
   const mssql = engine === "mssql";
   return {

@@ -129,9 +129,12 @@ function trim(doc: string, from: number, to: number): StatementRange {
  * `from < pos <= to`, so a caret sitting immediately after a `;` resolves to
  * the statement that just ended — the one BEFORE the semicolon.
  *
- * If the resolved segment is empty after trimming (e.g. the caret is in the
- * trailing whitespace after the final `;`), the search walks backwards to the
- * nearest non-empty statement. Returns null when the buffer has no statement.
+ * A caret in the whitespace GAP between two statements (a blank line after a
+ * `;`) attaches to the statement that just ended — the one above — not the one
+ * below, so right-clicking / ⌘↵ after a `;` runs the query before it. If the
+ * resolved segment is empty after trimming (e.g. the caret is in the trailing
+ * whitespace after the final `;`), the search walks backwards to the nearest
+ * non-empty statement. Returns null when the buffer has no statement.
  */
 export function statementRangeAt(doc: string, pos: number): StatementRange | null {
   const n = doc.length;
@@ -148,6 +151,22 @@ export function statementRangeAt(doc: string, pos: number): StatementRange | nul
 
   let idx = segments.findIndex((seg) => pos > seg.from && pos <= seg.to);
   if (idx === -1) idx = pos <= 0 ? 0 : segments.length - 1;
+
+  // If the caret sits in the LEADING whitespace of its segment — i.e. in the
+  // blank gap after the previous statement's `;` and before the next
+  // statement's first character — it belongs to the statement that just ENDED,
+  // not the one below. Attach it to the nearest preceding non-empty statement
+  // (matching "a caret after a `;` runs the query before it"). A caret inside
+  // the statement's text (`pos >= r.from`) keeps that statement.
+  const here = segments[idx] ? trim(doc, segments[idx]!.from, segments[idx]!.to) : null;
+  if (here && here.to > here.from && pos < here.from) {
+    for (let k = idx - 1; k >= 0; k--) {
+      const seg = segments[k];
+      if (!seg) continue;
+      const r = trim(doc, seg.from, seg.to);
+      if (r.to > r.from) return r;
+    }
+  }
 
   // Walk back over empty/whitespace-only segments (e.g. caret after final ;).
   for (let k = idx; k >= 0; k--) {

@@ -299,7 +299,7 @@ export function Rail({
       </button>
 
       <button type="button" className="rail-version" onClick={onAbout} title="About ByteTable">
-        v{version ?? "0.0.22"}
+        v{version ?? "0.0.23"}
       </button>
 
       {editPop && editingWs ? (

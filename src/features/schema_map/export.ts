@@ -91,12 +91,6 @@ function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max - 1) + "…" : s;
 }
 
-function formatCount(n: number): string {
-  if (n < 1000) return String(n);
-  if (n < 1_000_000) return (n / 1000).toFixed(n < 10_000 ? 1 : 0).replace(/\.0$/, "") + "k";
-  return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
-}
-
 /** Render one inline icon path at (x,y) scaled from its 24-box to `size`px. */
 function iconSvg(icon: IconPath, x: number, y: number, size: number, fill: string): string {
   const s = size / 24;
@@ -105,7 +99,7 @@ function iconSvg(icon: IconPath, x: number, y: number, size: number, fill: strin
 
 /** One card → SVG markup, positioned in world coords. */
 function cardSvg(card: CardModel, c: ExportColors): string {
-  const { x, y, w, h, shownColumns, hiddenCount, rowCount } = card;
+  const { x, y, w, h, shownColumns, hiddenCount } = card;
   const parts: string[] = [];
   parts.push(`<g transform="translate(${x} ${y})">`);
   // body
@@ -125,11 +119,6 @@ function cardSvg(card: CardModel, c: ExportColors): string {
   parts.push(
     `<text x="30" y="${HEAD_H / 2}" dominant-baseline="central" font-family="${MONO}" font-size="12" font-weight="600" fill="${c.text}">${esc(truncate(card.table, 18))}</text>`,
   );
-  if (rowCount !== null) {
-    parts.push(
-      `<text x="${w - 30}" y="${HEAD_H / 2}" text-anchor="end" dominant-baseline="central" font-family="${MONO}" font-size="10" fill="${c.textFaint}">${esc(formatCount(rowCount))}</text>`,
-    );
-  }
   // open-in-new icon (13px)
   parts.push(iconSvg(ICON_OPEN, w - 20.5, HEAD_H / 2 - 6.5, 13, c.textFaint));
 

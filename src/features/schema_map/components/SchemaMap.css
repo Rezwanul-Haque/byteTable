@@ -262,12 +262,6 @@
   font-weight: 600;
 }
 
-.map-card-count {
-  fill: var(--text-faint);
-  font-family: var(--mono);
-  font-size: 10px;
-}
-
 .map-card-open {
   cursor: pointer;
 }
@@ -501,11 +495,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: text;
-}
-.map-inner .map-card-count {
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--text-faint);
 }
 .map-inner .map-card-cols {
   padding: 4px 0;

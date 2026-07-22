@@ -168,10 +168,8 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
   // --- table metas for the whole schema -------------------------------
   // The map needs every table's columns + FKs. There is no bulk meta command,
   // so we load per table in parallel (the map opens once per schema and the
-  // introspection cache de-dupes / warms the sidebar+grid too). Row counts
-  // come from the cheap `loadTables` list (approxRowCount).
+  // introspection cache de-dupes / warms the sidebar+grid too).
   const [metas, setMetas] = useState<Record<string, TableMeta> | null>(null);
-  const [rowCounts, setRowCounts] = useState<Record<string, number | null>>({});
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
@@ -191,8 +189,6 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         setLoading(false);
         return;
       }
-      const counts: Record<string, number | null> = {};
-      for (const t of list) counts[t.name] = t.approxRowCount;
       const results = await Promise.all(
         list.map(async (t) => [t.name, await loadTableMeta(handleId, schema, t.name)] as const),
       );
@@ -211,7 +207,6 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         return;
       }
       setMetas(map);
-      setRowCounts(counts);
       setLoading(false);
     })();
     return () => {
@@ -414,10 +409,10 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
     for (const t of tables) {
       const meta = metas[t];
       if (!meta) continue;
-      out.push(cardModel(t, meta, positions[t] ?? { x: 0, y: 0 }, rowCounts[t] ?? null));
+      out.push(cardModel(t, meta, positions[t] ?? { x: 0, y: 0 }));
     }
     return out;
-  }, [metas, positions, tables, rowCounts]);
+  }, [metas, positions, tables]);
 
   const cardsById = useMemo<Record<string, CardModel>>(() => {
     const m: Record<string, CardModel> = {};
@@ -1056,7 +1051,7 @@ function Card({
   onHeaderPointerDown: (e: React.PointerEvent) => void;
   onOpen: () => void;
 }) {
-  const { x, y, w, h, shownColumns, hiddenCount, rowCount } = card;
+  const { x, y, w, h, shownColumns, hiddenCount } = card;
   return (
     <g className="map-card" transform={`translate(${x},${y})`}>
       <rect
@@ -1068,7 +1063,7 @@ function Card({
         rx={11}
         filter="url(#mapCardShadow)"
       />
-      {/* Header — grab handle (drag), table icon, name, row count, open btn. */}
+      {/* Header — grab handle (drag), table icon, name, open btn. */}
       <g className="map-card-head" onPointerDown={onHeaderPointerDown}>
         <rect className="map-card-head-bg" x={0} y={0} width={w} height={HEAD_H} rx={11} />
         {/* square off the header's bottom corners (rx only rounds the top) */}
@@ -1078,17 +1073,6 @@ function Card({
         <text className="map-card-name" x={30} y={HEAD_H / 2} dominantBaseline="central">
           {truncate(card.table, 18)}
         </text>
-        {rowCount !== null ? (
-          <text
-            className="map-card-count"
-            x={w - 30}
-            y={HEAD_H / 2}
-            textAnchor="end"
-            dominantBaseline="central"
-          >
-            {formatCount(rowCount)}
-          </text>
-        ) : null}
         {/* open-in-new — SVG button with its own click handler. */}
         <g
           className="map-card-open"
@@ -1182,11 +1166,4 @@ function Card({
 /** Truncate a label to `max` chars with an ellipsis (SVG has no text-overflow). */
 function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max - 1) + "…" : s;
-}
-
-/** Compact row-count label for the header chip (e.g. 12.3k). */
-function formatCount(n: number): string {
-  if (n < 1000) return String(n);
-  if (n < 1_000_000) return (n / 1000).toFixed(n < 10_000 ? 1 : 0).replace(/\.0$/, "") + "k";
-  return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
 }

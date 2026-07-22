@@ -34,8 +34,6 @@ export interface CardModel {
   shownColumns: TableMeta["columns"];
   /** Retained for the export path; always 0 now that all columns are drawn. */
   hiddenCount: number;
-  /** Approx row count for the header chip, when known. */
-  rowCount: number | null;
 }
 
 /** One FK relationship, resolved to drawable endpoints. */
@@ -85,7 +83,6 @@ export function cardModel(
   table: string,
   meta: TableMeta,
   pos: { x: number; y: number },
-  rowCount: number | null,
 ): CardModel {
   return {
     table,
@@ -95,7 +92,6 @@ export function cardModel(
     h: cardHeight(meta),
     shownColumns: meta.columns,
     hiddenCount: 0,
-    rowCount,
   };
 }
 

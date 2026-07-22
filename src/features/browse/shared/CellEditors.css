@@ -38,9 +38,9 @@
   font-size: 8.5px;
   font-weight: 600;
   letter-spacing: 0.03em;
-  color: #56b6c2;
-  background: #56b6c21f;
-  border: 1px solid #56b6c244;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in oklab, var(--accent) 27%, transparent);
   border-radius: 4px;
   padding: 0 4px;
   line-height: 1.5;
@@ -54,7 +54,7 @@
   white-space: nowrap;
 }
 .bin-val.uuid {
-  color: #56b6c2;
+  color: var(--accent);
 }
 .bin-val.hex {
   color: #d19a66;

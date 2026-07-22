@@ -13,8 +13,6 @@ import type { TableMeta } from "../../shared/api/engine";
 export const CARD_W = 224;
 export const HEAD_H = 36;
 export const ROW_H = 21;
-/** Columns shown before the "+N more columns…" truncation row. */
-export const MAX_COLS = 12;
 /** Bottom padding inside a card below the last row (prototype `+ 8`). */
 export const CARD_PAD_B = 8;
 /** Top padding of the column area, below the header (rows start at HEAD_H+4).
@@ -32,9 +30,9 @@ export interface CardModel {
   w: number;
   /** Full card height (header + shown rows + optional "more" row + pad). */
   h: number;
-  /** Columns actually drawn (capped at MAX_COLS). */
+  /** Columns actually drawn (all of them — no truncation). */
   shownColumns: TableMeta["columns"];
-  /** Count of columns hidden behind the "+N more" row (0 = none hidden). */
+  /** Retained for the export path; always 0 now that all columns are drawn. */
   hiddenCount: number;
   /** Approx row count for the header chip, when known. */
   rowCount: number | null;
@@ -77,11 +75,9 @@ export interface EdgeModel {
 /** A relationship endpoint's cardinality: exactly one, or many (crow's foot). */
 export type EndKind = "one" | "many";
 
-/** Height of a card given its column count + truncation. */
+/** Height of a card given its column count (all columns shown, no truncation). */
 export function cardHeight(meta: TableMeta): number {
-  const shown = Math.min(meta.columns.length, MAX_COLS);
-  const moreRow = meta.columns.length > MAX_COLS ? 1 : 0;
-  return HEAD_H + (shown + moreRow) * ROW_H + CARD_PAD_B;
+  return HEAD_H + meta.columns.length * ROW_H + CARD_PAD_B;
 }
 
 /** Resolve a table to its drawable card model at a given position. */
@@ -91,15 +87,14 @@ export function cardModel(
   pos: { x: number; y: number },
   rowCount: number | null,
 ): CardModel {
-  const hiddenCount = Math.max(0, meta.columns.length - MAX_COLS);
   return {
     table,
     x: pos.x,
     y: pos.y,
     w: CARD_W,
     h: cardHeight(meta),
-    shownColumns: meta.columns.slice(0, MAX_COLS),
-    hiddenCount,
+    shownColumns: meta.columns,
+    hiddenCount: 0,
     rowCount,
   };
 }
@@ -268,8 +263,10 @@ export function edgeGeometry(
   refColIndex: number,
   waypoint?: Waypoint | null,
 ): EdgeGeometry {
-  const clamped = Math.min(Math.max(0, colIndex), MAX_COLS - 1);
-  const clampedRef = Math.min(Math.max(0, refColIndex), MAX_COLS - 1);
+  // Clamp the FK dot to the card's real row range — all columns are drawn now,
+  // so an out-of-range index just pins to the last row.
+  const clamped = Math.min(Math.max(0, colIndex), Math.max(0, child.shownColumns.length - 1));
+  const clampedRef = Math.min(Math.max(0, refColIndex), Math.max(0, ref.shownColumns.length - 1));
   const sy = child.y + HEAD_H + CARD_PAD_T + clamped * ROW_H + ROW_H / 2;
   const ty = ref.y + HEAD_H + CARD_PAD_T + clampedRef * ROW_H + ROW_H / 2;
   const childRight = child.x + child.w;

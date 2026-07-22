@@ -97,3 +97,55 @@
   color: var(--accent);
   transform: rotate(45deg);
 }
+
+/* ---- right-click context menu (Run Selected / Run All / Format / clipboard) ---- */
+.sql-ctx-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+.sql-ctx-menu {
+  position: fixed;
+  min-width: 176px;
+  padding: 4px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.sql-ctx-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.sql-ctx-item:hover:not(:disabled) {
+  background: var(--bg3);
+}
+.sql-ctx-item:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+.sql-ctx-key {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.sql-ctx-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}

@@ -38,7 +38,15 @@ import {
 import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, keymap, drawSelection, lineNumbers } from "@codemirror/view";
 import { tags as t } from "@lezer/highlight";
-import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
 
 import {
   completionAddToOptions,
@@ -145,6 +153,20 @@ function readStoredFontPx(): number {
 
 function fontSizeTheme(px: number) {
   return EditorView.theme({ "&": { fontSize: px + "px" } });
+}
+
+/** macOS shows ⌘/⌥ glyphs in the context-menu shortcut hints; other platforms
+ *  show Ctrl/Alt words. Best-effort — hints are cosmetic. */
+const IS_MAC = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform);
+const RUN_HINT = IS_MAC ? "⌘↵" : "Ctrl+↵";
+const FORMAT_HINT = IS_MAC ? "⇧⌥F" : "Shift+Alt+F";
+
+/** An open editor context menu: viewport coords + whether a selection exists
+ *  (drives the Copy/Cut enablement). */
+interface CtxMenu {
+  x: number;
+  y: number;
+  hasSelection: boolean;
 }
 
 interface SqlCodeEditorProps {
@@ -367,6 +389,158 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
       view.dispatch({ changes: { from: 0, to: current.length, insert: value } });
     }, [value]);
 
-    return <div className="sql-cm" ref={hostRef} />;
+    // ---- right-click context menu (Run Selected / Run All / Format / clipboard) ----
+    const [menu, setMenu] = useState<CtxMenu | null>(null);
+    const closeMenu = () => setMenu(null);
+
+    const openMenu = (e: React.MouseEvent) => {
+      const view = viewRef.current;
+      if (!view) return;
+      e.preventDefault();
+      // Point the caret at the click when there is no selection, or the click
+      // lands outside the current selection — so "Run Selected" resolves to the
+      // statement the user pointed at (matching native right-click behaviour).
+      const sel = view.state.selection.main;
+      const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
+      if (pos != null && (sel.empty || pos < sel.from || pos > sel.to)) {
+        view.dispatch({ selection: { anchor: pos } });
+      }
+      view.focus();
+      // Clamp so the menu stays on screen (approx menu box ~190×230).
+      const x = Math.min(e.clientX, window.innerWidth - 196);
+      const y = Math.min(e.clientY, window.innerHeight - 236);
+      setMenu({ x, y, hasSelection: !view.state.selection.main.empty });
+    };
+
+    // Dismiss on Escape, scroll, or window resize while the menu is open.
+    useEffect(() => {
+      if (!menu) return;
+      const onKey = (e: KeyboardEvent) => {
+        if (e.key === "Escape") closeMenu();
+      };
+      window.addEventListener("keydown", onKey);
+      window.addEventListener("resize", closeMenu);
+      window.addEventListener("scroll", closeMenu, true);
+      return () => {
+        window.removeEventListener("keydown", onKey);
+        window.removeEventListener("resize", closeMenu);
+        window.removeEventListener("scroll", closeMenu, true);
+      };
+    }, [menu]);
+
+    const runSelected = () => {
+      const view = viewRef.current;
+      if (view) onRunRef.current(pickAndSelect(view));
+      closeMenu();
+    };
+    const runAll = () => {
+      onRunRef.current();
+      closeMenu();
+    };
+    const format = () => {
+      onFormatRef.current?.();
+      closeMenu();
+    };
+    const copySelection = async () => {
+      const view = viewRef.current;
+      const sel = view?.state.selection.main;
+      if (view && sel && !sel.empty) {
+        try {
+          await navigator.clipboard.writeText(view.state.sliceDoc(sel.from, sel.to));
+        } catch {
+          // Clipboard blocked (permissions) — nothing to do.
+        }
+      }
+      closeMenu();
+    };
+    const cutSelection = async () => {
+      const view = viewRef.current;
+      const sel = view?.state.selection.main;
+      if (view && sel && !sel.empty) {
+        try {
+          await navigator.clipboard.writeText(view.state.sliceDoc(sel.from, sel.to));
+          view.dispatch({ changes: { from: sel.from, to: sel.to, insert: "" } });
+          view.focus();
+        } catch {
+          // Clipboard blocked — leave the buffer untouched.
+        }
+      }
+      closeMenu();
+    };
+    const pasteAtCursor = async () => {
+      const view = viewRef.current;
+      if (view) {
+        try {
+          const text = await navigator.clipboard.readText();
+          const sel = view.state.selection.main;
+          view.dispatch({
+            changes: { from: sel.from, to: sel.to, insert: text },
+            selection: { anchor: sel.from + text.length },
+          });
+          view.focus();
+        } catch {
+          // Clipboard read blocked — nothing pasted.
+        }
+      }
+      closeMenu();
+    };
+
+    return (
+      <>
+        <div className="sql-cm" ref={hostRef} onContextMenu={openMenu} />
+        {menu
+          ? createPortal(
+              <div
+                className="sql-ctx-overlay"
+                onMouseDown={closeMenu}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  closeMenu();
+                }}
+              >
+                <div
+                  className="sql-ctx-menu"
+                  role="menu"
+                  style={{ left: menu.x, top: menu.y }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  <button className="sql-ctx-item" role="menuitem" onClick={runSelected}>
+                    <span>Run Selected</span>
+                    <span className="sql-ctx-key">{RUN_HINT}</span>
+                  </button>
+                  <button className="sql-ctx-item" role="menuitem" onClick={runAll}>
+                    <span>Run All</span>
+                  </button>
+                  <button className="sql-ctx-item" role="menuitem" onClick={format}>
+                    <span>Format</span>
+                    <span className="sql-ctx-key">{FORMAT_HINT}</span>
+                  </button>
+                  <div className="sql-ctx-sep" />
+                  <button
+                    className="sql-ctx-item"
+                    role="menuitem"
+                    onClick={copySelection}
+                    disabled={!menu.hasSelection}
+                  >
+                    <span>Copy</span>
+                  </button>
+                  <button
+                    className="sql-ctx-item"
+                    role="menuitem"
+                    onClick={cutSelection}
+                    disabled={!menu.hasSelection}
+                  >
+                    <span>Cut</span>
+                  </button>
+                  <button className="sql-ctx-item" role="menuitem" onClick={pasteAtCursor}>
+                    <span>Paste</span>
+                  </button>
+                </div>
+              </div>,
+              document.body,
+            )
+          : null}
+      </>
+    );
   },
 );

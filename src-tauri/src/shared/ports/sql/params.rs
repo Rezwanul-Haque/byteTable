@@ -42,6 +42,17 @@ pub enum Engine {
     /// port family in [`crate::shared::widecolumn`]; the [`OpenConnection`] kind
     /// seam keeps it apart from SQL / key-value / document / MongoDB.
     Cassandra,
+    /// ClickHouse (M25) — a columnar OLAP store. SQL, but NOT OLTP: no
+    /// transactions, no foreign keys, no per-row primary key. Tables use a table
+    /// ENGINE (MergeTree family) with an `ORDER BY` sort key (the sparse primary
+    /// index) and an optional `PARTITION BY`. Despite that it is relational
+    /// enough to implement the same SQL [`EngineConnection`] surface as
+    /// SQLite/MySQL/Postgres/SQL Server and flow through the relational
+    /// workspace; only the dialect differs (backtick-free identifier quoting,
+    /// `system.*` catalog, ENGINE + ORDER BY DDL, `ALTER TABLE … UPDATE/DELETE`
+    /// mutations, `clickhouse-client` terminal). Reached over HTTP (8123) by the
+    /// `clickhouse` crate in [`crate::engines::clickhouse`].
+    Clickhouse,
 }
 
 impl Engine {
@@ -56,6 +67,7 @@ impl Engine {
             Self::Dynamodb => "DynamoDB",
             Self::Mongodb => "MongoDB",
             Self::Cassandra => "Cassandra",
+            Self::Clickhouse => "ClickHouse",
         }
     }
 }
@@ -315,6 +327,23 @@ pub enum ConnectionParams {
         user: Option<String>,
         tls_mode: TlsMode,
     },
+    /// ClickHouse (M25) — a columnar OLAP store reached over HTTP (default 8123;
+    /// native TCP 9000 also accepted). Same relational shape as MySQL/Postgres/
+    /// SQL Server: password + SSH secrets live in the OS keychain, never here.
+    /// `database` and `user` are optional: omitted, the connector targets the
+    /// `default` database as the `default` user. Optional SSH tunnel + TLS
+    /// (secure variants 8443 HTTP / 9440 native) exactly like the SQL engines.
+    Clickhouse {
+        host: String,
+        port: u16,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        database: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        user: Option<String>,
+        tls_mode: TlsMode,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ssh: Option<SshConfig>,
+    },
 }
 
 impl ConnectionParams {
@@ -329,6 +358,7 @@ impl ConnectionParams {
             Self::Dynamodb { .. } => Engine::Dynamodb,
             Self::Mongodb { .. } => Engine::Mongodb,
             Self::Cassandra { .. } => Engine::Cassandra,
+            Self::Clickhouse { .. } => Engine::Clickhouse,
         }
     }
 
@@ -343,6 +373,7 @@ impl ConnectionParams {
             Self::Mysql { ssh, .. }
             | Self::Postgres { ssh, .. }
             | Self::Mssql { ssh, .. }
+            | Self::Clickhouse { ssh, .. }
             | Self::Redis { ssh, .. } => ssh.as_ref(),
         }
     }
@@ -391,7 +422,7 @@ impl<'de> Deserialize<'de> for ConnectionParams {
                     .to_string();
                 Ok(ConnectionParams::Sqlite { path })
             }
-            "mysql" | "postgres" | "mssql" => {
+            "mysql" | "postgres" | "mssql" | "clickhouse" => {
                 let str_field = |k: &str| -> Result<String, D::Error> {
                     value
                         .get(k)
@@ -438,6 +469,14 @@ impl<'de> Deserialize<'de> for ConnectionParams {
                         ssh,
                     }),
                     "mssql" => Ok(ConnectionParams::Mssql {
+                        host,
+                        port,
+                        database,
+                        user,
+                        tls_mode,
+                        ssh,
+                    }),
+                    "clickhouse" => Ok(ConnectionParams::Clickhouse {
                         host,
                         port,
                         database,

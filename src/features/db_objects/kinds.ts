@@ -40,6 +40,9 @@ export const ENGINE_OBJECTS: Record<Engine, ObjectClass[]> = {
   // SQL Server (M21) exposes the full object set (like Postgres); `matview`
   // stands in for indexed views.
   mssql: ["table", "view", "materialized_view", "function", "procedure", "trigger"],
+  // ClickHouse (M25): columnar OLAP — tables, views, materialized views, and
+  // SQL UDF functions. No procedures, no triggers (ClickHouse has neither).
+  clickhouse: ["table", "view", "materialized_view", "function"],
   redis: [],
   dynamodb: [],
   mongodb: [],
@@ -68,6 +71,7 @@ export const ENGINE_DIALECT: Record<Engine, string> = {
   mysql: "MySQL",
   sqlite: "SQLite",
   mssql: "T-SQL",
+  clickhouse: "ClickHouse",
   redis: "Redis",
   dynamodb: "DynamoDB",
   mongodb: "MongoDB",

@@ -9,6 +9,7 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Emitter, Manager, Runtime, WindowEvent};
 
 use engines::cassandra::CassandraConnector;
+use engines::clickhouse::ClickhouseConnector;
 use engines::dynamo::DynamoConnector;
 use engines::mongo::MongoConnector;
 use engines::mssql::MssqlConnector;
@@ -324,6 +325,13 @@ pub fn run() {
             // `OpenConnection::WideColumn`, kept apart from SQL / Redis /
             // DynamoDB / MongoDB by the manager's `get_wide_column` kind seam.
             registry.register(Engine::Cassandra, Arc::new(CassandraConnector));
+            // ClickHouse (M25): a columnar OLAP engine. Relational (SQL) — its
+            // connector returns an `OpenConnection::Sql`, so it flows through the
+            // same relational workspace host as Postgres/MySQL/SQLite/SQL Server;
+            // only the dialect differs (ENGINE + ORDER BY DDL, `system.*`
+            // catalog, `ALTER TABLE … UPDATE/DELETE` mutations). Reached over the
+            // ClickHouse HTTP interface by the `reqwest`-based adapter.
+            registry.register(Engine::Clickhouse, Arc::new(ClickhouseConnector));
             app.manage(ConnectionsState::new(
                 Box::new(repository),
                 registry,

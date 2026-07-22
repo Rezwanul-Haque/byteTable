@@ -15,7 +15,7 @@
 
 import type { CellValue, FkRef } from "../../../shared/api/engine";
 import { Icon } from "../../../shared/ui/Icon";
-import { formatBinary, isBinaryType } from "./binaryCell";
+import { formatBinary, isBinaryType, isUuidType, looksUuid } from "./binaryCell";
 import { isJsonType, jsonPreview } from "./jsonCell";
 import "./CellEditors.css";
 
@@ -142,6 +142,20 @@ export function CellContent({
       >
         {typeof value === "number" && !Number.isInteger(value) ? value.toFixed(2) : String(value)}
       </button>
+    );
+  }
+  // Text UUID / GUID (Postgres `uuid`, SQL Server `uniqueidentifier`, ClickHouse
+  // `UUID`) → a UUID/GUID badge + the canonical value, matching the binary-UUID
+  // chip and the row inspector. A UUID stored as binary(16) is handled by the
+  // binary path above; this covers the native text-UUID types. Purely visual —
+  // editing uses the normal cell path (double-click).
+  if (type && isUuidType(type) && typeof value === "string" && looksUuid(value)) {
+    const guid = /uniqueidentifier|guid/i.test(type);
+    return (
+      <span className="bin-cell">
+        <span className="bin-badge">{guid ? "GUID" : "UUID"}</span>
+        <span className="bin-val uuid">{value.toLowerCase()}</span>
+      </span>
     );
   }
   if (typeof value === "boolean") {

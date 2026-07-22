@@ -27,6 +27,9 @@ const ENGINE_META: Record<Engine, { label: string; short: string; color: string 
   // Cassandra (M19): the Cassandra accent (prototype ui.jsx ENGINE_META),
   // a cyan-blue distinct from Postgres/Dynamo blues and SQLite's teal.
   cassandra: { label: "Cassandra", short: "Cs", color: "#1798c1" },
+  // ClickHouse (M25): the ClickHouse yellow (prototype ui.jsx ENGINE_META),
+  // distinct from every other engine tint.
+  clickhouse: { label: "ClickHouse", short: "CH", color: "#faff69" },
 };
 
 interface EngineBadgeProps {

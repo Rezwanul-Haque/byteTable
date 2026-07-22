@@ -155,6 +155,20 @@ export type ConnectionParams =
       localDatacenter?: string;
       user?: string;
       tlsMode: TlsMode;
+    }
+  | {
+      // ClickHouse (M25). A columnar OLAP store reached over its HTTP interface
+      // (default 8123). Same relational shape as MySQL/Postgres/SQL Server —
+      // `database` + `user` optional (omitted, the connector targets the
+      // `default` database as the `default` user). Optional SSH tunnel + TLS.
+      // Password + SSH secrets live in the OS keychain, never in params.
+      engine: "clickhouse";
+      host: string;
+      port: number;
+      database?: string;
+      user?: string;
+      tlsMode: TlsMode;
+      ssh?: SshConfig;
     };
 
 /**

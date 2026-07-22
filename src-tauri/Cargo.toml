@@ -169,6 +169,22 @@ chrono = "0.4"
 # pure-Rust (no OpenSSL system dep); native-protocol TLS arrives with a later M19
 # subtask behind an explicit rustls feature.
 scylla = "1.7"
+# ClickHouse engine (M25). ClickHouse is a columnar OLAP store reached over its
+# HTTP interface (default 8123). Rather than the official `clickhouse` crate —
+# which is built around compile-time-typed `#[derive(Row)]` structs and RowBinary,
+# a poor fit for a *dynamic* SQL browser whose columns are unknown until runtime —
+# the adapter drives the HTTP interface directly with `reqwest` and `FORMAT
+# JSONCompact`, whose `{meta,data}` payload maps straight onto the `QueryResult`
+# JSON contract (64-bit ints already arrive as strings, preserving precision).
+# `default-features = false` + `rustls-tls` keeps the pure-Rust TLS stack (no
+# OpenSSL system dep), consistent with the sqlx/redis/mongo/tiberius driver picks;
+# cargo unifies on the single rustls already in the tree. `json` pulls serde_json
+# integration; `gzip` lets the server compress large result sets.
+reqwest = { version = "0.12", default-features = false, features = [
+    "rustls-tls",
+    "json",
+    "gzip",
+] }
 tauri-plugin-os = "2"
 
 [dev-dependencies]

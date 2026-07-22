@@ -112,6 +112,7 @@ export const AFFECTED_ENGINES: { id: AffectedEngine; label: string }[] = [
   { id: "dynamodb", label: "DynamoDB" },
   { id: "mongodb", label: "MongoDB" },
   { id: "cassandra", label: "Cassandra" },
+  { id: "clickhouse", label: "ClickHouse" },
 ];
 
 /** Display label for an affected-engine value (falls back to the raw id). */

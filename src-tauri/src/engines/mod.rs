@@ -42,6 +42,7 @@
 //! (public-API integration), gated behind `BYTETABLE_TEST_*_URL`.
 
 pub mod cassandra;
+pub mod clickhouse;
 pub mod dynamo;
 pub mod mongo;
 pub mod mssql;

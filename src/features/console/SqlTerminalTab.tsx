@@ -80,6 +80,20 @@ function termConfig(engine: Engine, connName: string): TermConfig {
       errPrefix: "Msg 102, Level 15, State 1: ",
     };
   }
+  if (engine === "clickhouse") {
+    // clickhouse-client: `:)` prompt, `:-]` continuation, no meta-char (plain
+    // SQL), PrettyCompact default output. The error prefix mimics a ClickHouse
+    // DB::Exception.
+    return {
+      shell: "clickhouse-client",
+      metaChar: null,
+      prompt: ":) ",
+      cont: ":-] ",
+      banner:
+        "ClickHouse client · type \\? for help, exit to close. Statements end with ; · FORMAT PrettyCompact by default.",
+      errPrefix: "Code: 60. DB::Exception: ",
+    };
+  }
   // postgres
   return {
     shell: "psql",
@@ -451,6 +465,17 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
         ":quit / exit / quit             close terminal",
         "",
         "Any T-SQL runs against the engine (GO ends a batch).",
+      ];
+    } else if (engine === "clickhouse") {
+      rows = [
+        "SELECT ...;      run a query",
+        "SHOW TABLES;     list tables",
+        "DESCRIBE name;   describe table",
+        "SHOW DATABASES;  list databases",
+        "USE db;          switch database",
+        "exit / quit      close terminal",
+        "",
+        "Any SQL ending in ; runs · results FORMAT PrettyCompact.",
       ];
     } else {
       rows = [
@@ -876,7 +901,13 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
               "sp_help users",
               "SELECT * FROM users WHERE country = 'DE';",
             ]
-          : ["\\dt", "\\d orders", "SELECT * FROM users WHERE country = 'DE';"];
+          : engine === "clickhouse"
+            ? [
+                "SHOW TABLES;",
+                "DESCRIBE orders;",
+                "SELECT status, count() FROM orders GROUP BY status ORDER BY count() DESC;",
+              ]
+            : ["\\dt", "\\d orders", "SELECT * FROM users WHERE country = 'DE';"];
 
   const promptStr = session.buffer ? cfg.cont : cfg.prompt;
 

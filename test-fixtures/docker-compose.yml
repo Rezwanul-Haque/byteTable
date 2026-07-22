@@ -157,6 +157,37 @@ services:
       retries: 12
       start_period: 60s
 
+  # ClickHouse (M25). Columnar OLAP. The official server image IS arm64-native and
+  # HAS an auto-init dir (/docker-entrypoint-initdb.d), so the seed auto-runs on
+  # first init like Postgres/MySQL/Mongo — no manual seeder. HTTP 8123 is kept
+  # standard (like Mongo/Cassandra) so the connect modal's default port works
+  # as-is; native TCP 9000 is offset to 19000 to avoid clashing with a local
+  # install. The `default` user gets password `bytetable`;
+  # CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1 lets the seed create the SQL UDF.
+  # ClickHouse wants a high open-file limit (nofile 262144).
+  clickhouse:
+    image: clickhouse/clickhouse-server:24
+    container_name: bt-clickhouse
+    environment:
+      CLICKHOUSE_PASSWORD: bytetable
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    ports:
+      - "8123:8123"
+      - "19000:9000"
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - ./seed/clickhouse.sql:/docker-entrypoint-initdb.d/seed.sql:ro
+      - bt-clickhouse-data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --password bytetable --query 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
 volumes:
   bt-pg-data:
   bt-mysql-data:
@@ -165,3 +196,4 @@ volumes:
   bt-dynamo-data:
   bt-mongo-data:
   bt-cassandra-data:
+  bt-clickhouse-data:

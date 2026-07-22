@@ -2,7 +2,7 @@
 
 A free, open-source, **local-first desktop database client** — a TablePlus / BeekeeperStudio
 like tool with first-class Linux, MacOS, Windows support, no pro tier, and no subscription. One window, Multiple workspace, eight engines:
-**SQLite · MySQL · PostgreSQL · SQL Server · Redis · DynamoDB · MongoDB · Cassandra**. Many more engines to come.
+**SQLite · MySQL · PostgreSQL · SQL Server · Redis · DynamoDB · MongoDB · Cassandra · ClickHouse**. Many more engines to come.
 
 ![ByteTable](docs/byteTable.png)
 ![Data Explorer](docs/data_explorer.png)
@@ -50,7 +50,9 @@ each with its own tab set and sidebar state.
 
 **Settings** — a tabbed preferences modal (`⌘,`): 12 themes (incl. light), accent + font (editor mono + UI) + size + density, and behavior toggles (ligatures, reduce-motion, row-hover, default row limit, production-write confirm). Applied app-wide via CSS variables; persisted locally (localStorage + an editable on-disk mirror).
 
-**Shared** — a VS Code-style **docked terminal panel** (per-engine REPL: psql/mysql/sqlite3-style for SQL, `sqlcmd` for SQL Server, redis-cli for Redis, mongosh for MongoDB, `cqlsh` for Cassandra; PartiQL for DynamoDB; `Ctrl+\``), command palette (`⌘K`), system tray, and live theming via the Settings modal.
+**ClickHouse** — the columnar OLAP store as a first-class relational engine: the `analytics`/`default`/`system` database switcher, browse grid + filter builder + row inspector, a Structure tab that renders ENGINE + `ORDER BY` sort key + `PARTITION BY` with `Nullable(…)` wrapping and data-skipping (secondary) indexes as `ALTER TABLE … ADD INDEX`, an object browser (views / materialized views / SQL UDF functions — no procedures or triggers), inline edits as `ALTER TABLE … UPDATE` mutations, and a `clickhouse-client` terminal (`:)` prompt, PrettyCompact output). Spoken over the ClickHouse HTTP interface.
+
+**Shared** — a VS Code-style **docked terminal panel** (per-engine REPL: psql/mysql/sqlite3-style for SQL, `sqlcmd` for SQL Server, redis-cli for Redis, mongosh for MongoDB, `cqlsh` for Cassandra, `clickhouse-client` for ClickHouse; PartiQL for DynamoDB; `Ctrl+\``), command palette (`⌘K`), system tray, and live theming via the Settings modal.
 
 ## Tech stack
 
@@ -60,7 +62,8 @@ each with its own tab set and sidebar state.
   (`connections`, `introspection`, `browse`, `query`, `structure`, `mutate`, `export`, `keyvalue`,
   `dynamo`, `mongo`, `cassandra`, `schema_map`, `insights`, `preferences`, `settings`), each with
   domain / application / ports / infrastructure / thin Tauri-command layers. Engine drivers
-  (`rusqlite`, `sqlx`, `tiberius`, `redis`, `aws-sdk-dynamodb`, `mongodb`, `scylla`) are infrastructure adapters
+  (`rusqlite`, `sqlx`, `tiberius`, `redis`, `aws-sdk-dynamodb`, `mongodb`, `scylla`, `reqwest` for
+  ClickHouse's HTTP interface) are infrastructure adapters
   behind shared port traits (a separate port family per data model: SQL, key-value,
   DynamoDB-document, MongoDB, and Cassandra wide-column).
 
@@ -113,7 +116,7 @@ compiles the Rust core, so it takes a few minutes; subsequent runs are fast.
 A ready-to-use set of throwaway databases lives in [`test-fixtures/`](test-fixtures/):
 
 ```sh
-make db-up          # Postgres + MySQL + SQL Server + Redis + DynamoDB + MongoDB + Cassandra (seeded) on offset ports
+make db-up          # Postgres + MySQL + SQL Server + Redis + DynamoDB + MongoDB + Cassandra + ClickHouse (seeded) on offset ports
 ```
 
 Then in the app's **New connection** modal (TLS: disable), use the credentials in

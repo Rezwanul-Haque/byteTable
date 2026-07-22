@@ -415,8 +415,8 @@ export function ConnectScreen() {
       </div>
 
       <div className="connect-footnote">
-        SQLite · MySQL · PostgreSQL · SQL Server · Redis · DynamoDB · MongoDB · Cassandra — more
-        engines coming. Your credentials never leave this machine.
+        SQLite · MySQL · PostgreSQL · SQL Server · Redis · DynamoDB · MongoDB · Cassandra ·
+        ClickHouse — more engines coming. Your credentials never leave this machine.
       </div>
 
       {showNew || editConn ? (

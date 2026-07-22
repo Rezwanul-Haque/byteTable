@@ -506,6 +506,9 @@ export const OBJECT_CAPS: Record<Engine, DbObjectKind[]> = {
   sqlite: ["view", "trigger"],
   // SQL Server (M21): full set; `materialized_view` = indexed view.
   mssql: ["view", "materialized_view", "function", "procedure", "trigger"],
+  // ClickHouse (M25): views, materialized views, SQL UDF functions — no
+  // procedures/triggers.
+  clickhouse: ["view", "materialized_view", "function"],
   redis: [],
   dynamodb: [],
   mongodb: [],

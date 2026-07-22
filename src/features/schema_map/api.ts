@@ -88,11 +88,19 @@ export function mapLayoutSave(
 /**
  * Write an exported diagram to a user-chosen `path`.
  *
- * `data` is the SVG document text for `format: "svg"`, or **base64-encoded**
- * PNG bytes for `format: "png"` (base64 keeps large images cheap over IPC; the
- * backend decodes before writing). The `path` must come from the native save
- * dialog — that explicit user action is the only consent the write needs.
+ * `data` is always the diagram's SVG document text. For `format: "svg"` it is
+ * written verbatim; for `format: "png"` the backend rasterizes it with resvg at
+ * `scale`× (default 2 for crisp HiDPI). Rasterizing in Rust — not the webview
+ * canvas — is what makes PNG export work on Linux, where WebKitGTK cannot draw
+ * an SVG to a canvas. The `path` must come from the native save dialog — that
+ * explicit user action is the only consent the write needs.
  */
-export function diagramExport(path: string, format: ExportFormat, data: string): Promise<void> {
-  return invoke("diagram_export", { payload: { path, format, data } });
+export function diagramExport(
+  path: string,
+  format: ExportFormat,
+  data: string,
+  scale = 2,
+): Promise<void> {
+  const payload = format === "png" ? { path, format, data, scale } : { path, format, data };
+  return invoke("diagram_export", { payload });
 }

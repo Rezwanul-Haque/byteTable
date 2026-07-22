@@ -13,11 +13,13 @@
 //!    so layouts survive restarts and follow the connection, not the ephemeral
 //!    `ws-<uuid>` workspace.
 //!
-//! 2. **Export-write.** The renderer rasterizes/serializes the diagram and the
-//!    user picks a destination via the native save dialog (Task 3); the
-//!    `diagram_export` command writes the bytes to that user-chosen path. PNG
-//!    bytes travel over IPC as base64 (far cheaper than a JSON number array for
-//!    a large image) and are decoded here; SVG travels as plain text.
+//! 2. **Export.** The renderer builds the diagram's SVG and the user picks a
+//!    destination via the native save dialog (Task 3); the `diagram_export`
+//!    command writes to that user-chosen path. The SVG text travels over IPC for
+//!    both formats: an `svg` export is written verbatim, a `png` export is
+//!    rasterized in Rust (`render::svg_to_png`, resvg). Rasterizing here rather
+//!    than in the webview canvas is what makes PNG export work on Linux —
+//!    WebKitGTK cannot draw an SVG to a canvas / read it back as PNG.
 //!
 //! Layering (dependencies point left): domain ← application ← (infrastructure | commands).
 //!
@@ -34,3 +36,4 @@ pub mod commands;
 pub mod domain;
 pub mod infrastructure;
 pub mod ports;
+pub mod render;

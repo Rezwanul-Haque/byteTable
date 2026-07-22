@@ -51,10 +51,17 @@ pub async fn map_layout_save(
     application::save_map_layout(state.repository.as_ref(), &connection_id, &schema, layout)
 }
 
-/// Write an exported diagram (SVG text or base64 PNG bytes) to the
-/// user-chosen `payload.path`. The path comes from the native save dialog, so
-/// no scope restriction applies beyond that explicit user action.
+/// Write an exported diagram to the user-chosen `payload.path`. `payload.data`
+/// is the SVG document text for both formats; a PNG export is rasterized here
+/// with resvg (see `write_export`). The path comes from the native save dialog,
+/// so no scope restriction applies beyond that explicit user action.
+///
+/// Rasterizing is a synchronous, CPU-bound job (hundreds of ms for a large
+/// diagram), so it runs on a blocking thread rather than the async runtime —
+/// keeping the UI responsive while the export renders.
 #[tauri::command]
 pub async fn diagram_export(payload: ExportPayload) -> Result<(), AppError> {
-    write_export(&payload)
+    tauri::async_runtime::spawn_blocking(move || write_export(&payload))
+        .await
+        .map_err(|err| AppError::Io(format!("The export task did not finish: {err}")))?
 }

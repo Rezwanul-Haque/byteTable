@@ -383,6 +383,54 @@
   position: relative;
 }
 
+/* ---------- export loader overlay ---------- */
+.map-export-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in oklab, var(--bg0) 74%, transparent);
+  backdrop-filter: blur(2px);
+  /* Swallow clicks while the export is in flight. */
+  cursor: progress;
+}
+
+.map-export-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 26px 34px;
+  border-radius: 14px;
+  background: color-mix(in oklab, var(--bg1) 92%, transparent);
+  border: 1px solid var(--border);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+.map-export-logo {
+  animation: map-export-pulse 1.2s ease-in-out infinite;
+}
+
+.map-export-label {
+  font-size: 13px;
+  color: var(--text-dim);
+  letter-spacing: 0.01em;
+}
+
+@keyframes map-export-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.85;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+}
+
 .map-canvas {
   position: relative;
 }

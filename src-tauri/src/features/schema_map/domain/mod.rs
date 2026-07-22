@@ -90,24 +90,31 @@ pub enum ExportFormat {
     Svg,
 }
 
-/// What `diagram_export` writes and how `data` is encoded.
+/// What `diagram_export` writes and how `data` is interpreted.
 ///
-/// - `format: "svg"` → `data` is the SVG document text, written verbatim.
-/// - `format: "png"` → `data` is **base64-encoded** PNG bytes. Base64 is used
-///   (rather than a raw `Vec<u8>`, which serde would send as a JSON number
-///   array) because a rasterized diagram can be hundreds of KB; a number array
-///   roughly decuples that over IPC, whereas base64 is ~1.33×. The command
-///   decodes the base64 before writing.
+/// For **both** formats `data` is the diagram's SVG document text — the renderer
+/// no longer rasterizes. This is deliberate: WebKitGTK (the Linux webview)
+/// cannot draw an SVG to a `<canvas>` and read it back as PNG, so a browser-side
+/// raster fails there while working on macOS/Windows. Instead:
+///
+/// - `format: "svg"` → the SVG text is written verbatim.
+/// - `format: "png"` → the SVG is rasterized in Rust (`render::svg_to_png`) at
+///   `scale`× its intrinsic size, and the resulting PNG bytes are written. This
+///   renders identically on every platform. `scale` defaults to 1× when absent;
+///   the renderer sends 2× for crisp HiDPI output.
 ///
 /// `path` is the user-chosen destination from the native save dialog. Because
 /// the user explicitly picked it, no extra scope restriction applies (the
 /// save dialog *is* the consent).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportPayload {
     pub path: String,
     pub format: ExportFormat,
     pub data: String,
+    /// PNG raster scale factor (ignored for SVG). Absent → 1×.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scale: Option<f64>,
 }
 
 #[cfg(test)]
@@ -202,6 +209,7 @@ mod tests {
             path: "/tmp/diagram.svg".into(),
             format: ExportFormat::Svg,
             data: "<svg/>".into(),
+            scale: None,
         };
         assert_eq!(
             serde_json::to_value(&svg).expect("serialize"),
@@ -215,21 +223,22 @@ mod tests {
         let png = ExportPayload {
             path: "/tmp/diagram.png".into(),
             format: ExportFormat::Png,
-            data: "AAAA".into(),
+            data: "<svg/>".into(),
+            scale: Some(2.0),
         };
-        assert_eq!(
-            serde_json::to_value(&png).expect("serialize")["format"],
-            "png"
-        );
+        let png_json = serde_json::to_value(&png).expect("serialize");
+        assert_eq!(png_json["format"], "png");
+        assert_eq!(png_json["scale"], 2.0);
 
-        // Round-trips from a renderer-shaped literal.
+        // Round-trips from a renderer-shaped literal; scale defaults to None.
         let back: ExportPayload = serde_json::from_value(serde_json::json!({
             "path": "/tmp/x.png",
             "format": "png",
-            "data": "Zm9v",
+            "data": "<svg/>",
         }))
         .expect("deserialize");
         assert_eq!(back.format, ExportFormat::Png);
-        assert_eq!(back.data, "Zm9v");
+        assert_eq!(back.data, "<svg/>");
+        assert_eq!(back.scale, None);
     }
 }

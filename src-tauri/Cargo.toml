@@ -75,6 +75,13 @@ sqlx-postgres = { version = "=0.8.6", default-features = false, features = ["chr
 # Used by the schema_map slice to decode base64 PNG export bytes received over
 # IPC (base64 is ~1.33× the raw size vs. ~10× for a JSON number array).
 base64 = "0.22"
+# Schema-map PNG export is rasterized in Rust (not the webview canvas): WebKitGTK
+# on Linux cannot draw an SVG to <canvas> / toDataURL, so a browser-side raster
+# fails there while Mac/Windows work. resvg renders the same export SVG to PNG
+# identically on every OS. `default-features = false` drops system-fonts (we ship
+# our own JetBrains Mono, the only face the export uses) and raster-images (the
+# export SVG has none) — keeping only the `text` feature we need.
+resvg = { version = "0.47", default-features = false, features = ["text"] }
 # OS keychain for server-connection secrets (M12 Task 3): the database password
 # and the SSH password/key-passphrase are stored here keyed by the saved
 # connection id, never in the JSON registry. `apple-native` uses the macOS

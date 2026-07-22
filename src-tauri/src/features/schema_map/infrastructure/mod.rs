@@ -6,12 +6,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use base64::Engine as _;
-
 use crate::shared::error::AppError;
 
 use super::domain::{ExportFormat, ExportPayload, MapLayout};
 use super::ports::MapLayoutRepository;
+use super::render::svg_to_png;
 
 /// On-disk separator joining `connectionId` and `schema` into one map key. A
 /// NUL byte can appear in neither a `SavedConnection` id (a UUID) nor a schema
@@ -109,10 +108,16 @@ impl MapLayoutRepository for JsonFileMapLayoutRepository {
     }
 }
 
+/// Default PNG raster scale when the renderer sends none — 2× for crisp HiDPI
+/// output, matching what the old webview-canvas path produced.
+const DEFAULT_PNG_SCALE: f64 = 2.0;
+
 /// Write an exported diagram to a user-chosen path (create/truncate).
 ///
-/// SVG is written as the verbatim UTF-8 text; PNG is base64-decoded to bytes
-/// first (see `ExportPayload`). The destination came from the native save
+/// For both formats `payload.data` is the SVG document text (see
+/// `ExportPayload`): SVG is written verbatim; PNG is rasterized here with resvg
+/// (`render::svg_to_png`) at `payload.scale`× — never in the webview canvas,
+/// which WebKitGTK can't do on Linux. The destination came from the native save
 /// dialog, so the user explicitly consented to this path — no scope check.
 ///
 /// DESIGN_SPEC §5: any IO failure surfaces a human sentence naming the path so
@@ -120,11 +125,10 @@ impl MapLayoutRepository for JsonFileMapLayoutRepository {
 pub fn write_export(payload: &ExportPayload) -> Result<(), AppError> {
     let bytes = match payload.format {
         ExportFormat::Svg => payload.data.as_bytes().to_vec(),
-        ExportFormat::Png => base64::engine::general_purpose::STANDARD
-            .decode(payload.data.as_bytes())
-            .map_err(|err| {
-                AppError::Invalid(format!("The exported image could not be decoded: {err}"))
-            })?,
+        ExportFormat::Png => {
+            let scale = payload.scale.unwrap_or(DEFAULT_PNG_SCALE) as f32;
+            svg_to_png(&payload.data, scale)?
+        }
     };
     write_bytes(Path::new(&payload.path), &bytes)
 }
@@ -243,25 +247,37 @@ mod tests {
             path: path.to_string_lossy().into_owned(),
             format: ExportFormat::Svg,
             data: svg.into(),
+            scale: None,
         })
         .expect("write svg");
         assert_eq!(fs::read_to_string(&path).expect("read back"), svg);
     }
 
     #[test]
-    fn write_export_decodes_base64_png_bytes() {
+    fn write_export_rasterizes_png_from_svg() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("diagram.png");
-        // A small known byte sequence (a PNG magic header) base64-encoded.
-        let raw: &[u8] = &[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3];
-        let b64 = base64::engine::general_purpose::STANDARD.encode(raw);
+        let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"10\" \
+                   viewBox=\"0 0 20 10\"><rect width=\"20\" height=\"10\"/></svg>";
         write_export(&ExportPayload {
             path: path.to_string_lossy().into_owned(),
             format: ExportFormat::Png,
-            data: b64,
+            data: svg.into(),
+            scale: Some(2.0),
         })
         .expect("write png");
-        assert_eq!(fs::read(&path).expect("read back"), raw);
+        let bytes = fs::read(&path).expect("read back");
+        // Real PNG magic header — proof it was rasterized, not written verbatim.
+        assert!(bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]));
+        // 20×10 @2× → 40×20 in the IHDR.
+        assert_eq!(
+            u32::from_be_bytes([bytes[16], bytes[17], bytes[18], bytes[19]]),
+            40
+        );
+        assert_eq!(
+            u32::from_be_bytes([bytes[20], bytes[21], bytes[22], bytes[23]]),
+            20
+        );
     }
 
     #[test]
@@ -273,6 +289,7 @@ mod tests {
             path: bad.to_string_lossy().into_owned(),
             format: ExportFormat::Svg,
             data: "<svg/>".into(),
+            scale: None,
         })
         .unwrap_err();
         assert!(matches!(err, AppError::Io(_)));
@@ -281,13 +298,14 @@ mod tests {
     }
 
     #[test]
-    fn write_export_rejects_invalid_base64_png() {
+    fn write_export_rejects_unparseable_svg_png() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("diagram.png");
         let err = write_export(&ExportPayload {
             path: path.to_string_lossy().into_owned(),
             format: ExportFormat::Png,
-            data: "not!valid!base64!".into(),
+            data: "not an svg".into(),
+            scale: Some(2.0),
         })
         .unwrap_err();
         assert!(matches!(err, AppError::Invalid(_)));

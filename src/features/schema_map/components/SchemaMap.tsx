@@ -50,6 +50,7 @@ import type { TableMeta } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
 import { highlightSql } from "../../browse/shared/highlightSql";
 import { Btn } from "../../../shared/ui/Btn";
+import { BTLogo } from "../../../shared/ui/BTLogo";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { ENV_COLOR } from "../../../shared/ui/envColors";
@@ -70,7 +71,6 @@ import {
   buildEdges,
   cardModel,
   CARD_PAD_T,
-  contentBounds,
   contentExtent,
   crowFoot,
   HEAD_H,
@@ -80,12 +80,7 @@ import {
   type Waypoint,
 } from "../diagram";
 import { ICON_KEY, ICON_LINK, ICON_OPEN, ICON_TABLE, type IconPath } from "../icons";
-import {
-  buildExportSvg,
-  embeddedFontFaceCss,
-  rasterizeToPngBase64,
-  readExportColors,
-} from "../export";
+import { buildExportSvg, embeddedFontFaceCss, exportTimestamp, readExportColors } from "../export";
 import { isDestructive } from "../editModel";
 import { useSchemaEditor } from "../useSchemaEditor";
 import { SchemaCommitModal } from "./SchemaCommitModal";
@@ -425,6 +420,13 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
     [metas, tables, cardsById, waypoints, overrides],
   );
 
+  // The selected edge's live model — resolved here so its cardinality popover
+  // can render in a top layer (above the cards), not inside the edge layer.
+  const selectedEdgeModel = useMemo(
+    () => (selectedEdge ? (edges.find((e) => e.id === selectedEdge) ?? null) : null),
+    [edges, selectedEdge],
+  );
+
   // Set (or clear, with null) an edge's manual cardinality override, then persist.
   const setCardinality = useCallback(
     (id: string, kind: CardinalityKind | null) => {
@@ -600,13 +602,11 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         toast("Nothing to export yet.", "info");
         return;
       }
-      setExporting(true);
       try {
         const colors = readExportColors();
         const fontCss = await embeddedFontFaceCss();
         const svg = buildExportSvg(cards, edges, colors, fontCss);
-        const b = contentBounds(cards, 48);
-        const defaultName = `${schema}-schema-map.${format}`;
+        const defaultName = `${schema}-schema-map-${exportTimestamp()}.${format}`;
 
         let path: string | null;
         try {
@@ -622,8 +622,12 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         }
         if (!path) return; // user cancelled
 
-        const data = format === "png" ? await rasterizeToPngBase64(svg, b.width, b.height, 2) : svg;
-        await diagramExport(path, format, data);
+        // Only now show the loader — the render + file write is the slow part
+        // (CPU-bound resvg raster for PNG); the save dialog above is user time.
+        setExporting(true);
+        // Both formats ship the SVG text; PNG is rasterized in Rust (resvg), not
+        // the webview canvas — WebKitGTK can't do SVG→canvas→PNG on Linux.
+        await diagramExport(path, format, svg);
         const file = path.split(/[\\/]/).pop() ?? defaultName;
         toast(`Exported schema map to ${file}`, "ok");
       } catch (err) {
@@ -827,11 +831,9 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
                       edge={edge}
                       selected={selectedEdge === edge.id}
                       bent={Boolean(waypoints[edge.id])}
-                      override={overrides[edge.id]}
                       onSelectPointerDown={(e) => onEdgePointerDown(e, edge.id)}
                       onHandlePointerDown={(e) => onHandlePointerDown(e, edge.id)}
                       onResetEdge={() => resetEdge(edge.id)}
-                      onSetCardinality={(kind) => setCardinality(edge.id, kind)}
                     />
                   ))}
                 </g>
@@ -844,6 +846,17 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
                     onOpen={() => openTableTab(schema, card.table)}
                   />
                 ))}
+
+                {/* Cardinality popover on its own top layer — after the cards so
+                    it paints above them (a real FK edge only; derived M:N stays
+                    auto). */}
+                {selectedEdgeModel && !selectedEdgeModel.derived ? (
+                  <CardinalityPopover
+                    edge={selectedEdgeModel}
+                    override={overrides[selectedEdgeModel.id]}
+                    onSetCardinality={(kind) => setCardinality(selectedEdgeModel.id, kind)}
+                  />
+                ) : null}
               </g>
             </svg>
             {/* Off-screen spacer matching the scaled SVG, so the wrap reserves the
@@ -938,6 +951,20 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
           onClose={() => setCommitOpen(false)}
         />
       ) : null}
+
+      {/* Export loader — rasterizing/writing a large diagram can take a moment
+          (CPU-bound in the backend), so cover the canvas with a branded overlay
+          rather than leaving the UI looking idle until the toast fires. */}
+      {exporting ? (
+        <div className="map-export-overlay" role="status" aria-live="polite">
+          <div className="map-export-loader">
+            <div className="map-export-logo">
+              <BTLogo size={44} blink />
+            </div>
+            <span className="map-export-label">Exporting schema map…</span>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -973,20 +1000,16 @@ function Edge({
   edge,
   selected,
   bent,
-  override,
   onSelectPointerDown,
   onHandlePointerDown,
   onResetEdge,
-  onSetCardinality,
 }: {
   edge: EdgeModel;
   selected: boolean;
   bent: boolean;
-  override: CardinalityKind | undefined;
   onSelectPointerDown: (e: React.PointerEvent) => void;
   onHandlePointerDown: (e: React.PointerEvent) => void;
   onResetEdge: () => void;
-  onSetCardinality: (kind: CardinalityKind | null) => void;
 }) {
   return (
     <g
@@ -1016,28 +1039,43 @@ function Edge({
           onDoubleClick={onResetEdge}
         />
       ) : null}
-      {/* Cardinality override popover — only on a selected real FK edge (derived
-          M:N edges stay auto). Sits just below the bend handle. */}
-      {selected && !edge.derived ? (
-        <foreignObject x={edge.mx - 78} y={edge.my + 12} width={156} height={26}>
-          <div className="map-card-pop" onPointerDown={(e) => e.stopPropagation()}>
-            {CARDINALITY_OPTIONS.map((o) => {
-              const active = (override ?? null) === o.kind;
-              return (
-                <button
-                  key={o.label}
-                  type="button"
-                  className={"map-card-pop-btn" + (active ? " active" : "")}
-                  onClick={() => onSetCardinality(o.kind)}
-                >
-                  {o.label}
-                </button>
-              );
-            })}
-          </div>
-        </foreignObject>
-      ) : null}
     </g>
+  );
+}
+
+/**
+ * Cardinality override popover for the selected FK edge (1:1 / 1:N / M:N /
+ * Auto). Rendered in its OWN layer *above* the cards — a foreignObject left
+ * inside the edge layer paints under any card the edge passes behind, hiding
+ * the buttons (see the layer order in the main SVG).
+ */
+function CardinalityPopover({
+  edge,
+  override,
+  onSetCardinality,
+}: {
+  edge: EdgeModel;
+  override: CardinalityKind | undefined;
+  onSetCardinality: (kind: CardinalityKind | null) => void;
+}) {
+  return (
+    <foreignObject x={edge.mx - 78} y={edge.my + 12} width={156} height={26}>
+      <div className="map-card-pop" onPointerDown={(e) => e.stopPropagation()}>
+        {CARDINALITY_OPTIONS.map((o) => {
+          const active = (override ?? null) === o.kind;
+          return (
+            <button
+              key={o.label}
+              type="button"
+              className={"map-card-pop-btn" + (active ? " active" : "")}
+              onClick={() => onSetCardinality(o.kind)}
+            >
+              {o.label}
+            </button>
+          );
+        })}
+      </div>
+    </foreignObject>
   );
 }
 

@@ -24,7 +24,7 @@
 // An <img> loaded from such an SVG draws to a <canvas> WITHOUT tainting it, so
 // canvas.toBlob('image/png') succeeds. This is why Task 2 chose SVG-native.
 
-import { HEAD_H, ROW_H, contentBounds, type CardModel, type EdgeModel } from "./diagram";
+import { HEAD_H, ROW_H, contentBounds, crowFoot, type CardModel, type EdgeModel } from "./diagram";
 import { ICON_KEY, ICON_LINK, ICON_OPEN, ICON_TABLE, type IconPath } from "./icons";
 import { embeddedFontFaceCss } from "./fonts";
 
@@ -91,6 +91,19 @@ function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max - 1) + "…" : s;
 }
 
+/**
+ * A filename-safe local timestamp for default export names, e.g.
+ * `20260722-143005` (YYYYMMDD-HHMMSS). Local time so it matches the user's
+ * clock; sortable and free of characters that break file systems.
+ */
+export function exportTimestamp(d = new Date()): string {
+  const p = (n: number): string => String(n).padStart(2, "0");
+  return (
+    `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}` +
+    `-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`
+  );
+}
+
 /** Render one inline icon path at (x,y) scaled from its 24-box to `size`px. */
 function iconSvg(icon: IconPath, x: number, y: number, size: number, fill: string): string {
   const s = size / 24;
@@ -103,8 +116,16 @@ function cardSvg(card: CardModel, c: ExportColors): string {
   const parts: string[] = [];
   parts.push(`<g transform="translate(${x} ${y})">`);
   // body
+  // Static offset "shadow" (a dark rounded rect nudged down) instead of an SVG
+  // blur filter. A per-card feDropShadow gaussian blur is by far the most
+  // expensive thing to rasterize on the CPU (resvg/tiny-skia) — it dominated
+  // export time (~5× the whole render on a 40-card diagram). This flat offset
+  // keeps a depth cue for near-free.
   parts.push(
-    `<rect x="0" y="0" width="${w}" height="${h}" rx="11" fill="${c.bg1}" stroke="${c.border}" stroke-width="1" filter="url(#cardShadow)"/>`,
+    `<rect x="0" y="5" width="${w}" height="${h}" rx="11" fill="#000000" fill-opacity="0.35"/>`,
+  );
+  parts.push(
+    `<rect x="0" y="0" width="${w}" height="${h}" rx="11" fill="${c.bg1}" stroke="${c.border}" stroke-width="1"/>`,
   );
   // header background (rounded top, square bottom) + hairline rule
   parts.push(
@@ -148,21 +169,26 @@ function cardSvg(card: CardModel, c: ExportColors): string {
   return parts.join("");
 }
 
-/** One FK edge → SVG markup (path + source dot + target ring). */
+/** One FK edge → SVG markup: path, endpoint dots, and the crow's-foot
+ *  cardinality markers (one/many) at each end — matching the live canvas. */
 function edgeSvg(edge: EdgeModel, c: ExportColors): string {
+  const foot = (d: string): string =>
+    `<path d="${d}" fill="none" stroke="${c.accent}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`;
   return (
     `<path d="${edge.path}" fill="none" stroke="${c.edge}" stroke-width="1.5" stroke-opacity="0.65"/>` +
     `<circle cx="${edge.sx}" cy="${edge.sy}" r="3.5" fill="${c.accent}"/>` +
     `<circle cx="${edge.tx}" cy="${edge.ty}" r="5" fill="${c.bg0}" stroke="${c.accent}" stroke-width="1"/>` +
-    `<circle cx="${edge.tx}" cy="${edge.ty}" r="2" fill="${c.accent}"/>`
+    `<circle cx="${edge.tx}" cy="${edge.ty}" r="2" fill="${c.accent}"/>` +
+    foot(crowFoot(edge.sx, edge.sy, edge.sOut, edge.childEnd)) +
+    foot(crowFoot(edge.tx, edge.ty, edge.tOut, edge.parentEnd))
   );
 }
 
 /**
  * Build the standalone export SVG string for the whole diagram. `fontCss` is
  * the embedded @font-face block (data: URIs); pass "" to fall back to system
- * fonts (last-resort — text drifts but still renders). Marker is unused; the
- * direction cue is the source dot + target ring like the live canvas.
+ * fonts (last-resort — text drifts but still renders). Edges carry crow's-foot
+ * cardinality markers at each end, matching the live canvas.
  */
 export function buildExportSvg(
   cards: CardModel[],
@@ -178,10 +204,9 @@ export function buildExportSvg(
     `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(b.width)}" height="${Math.round(b.height)}" viewBox="${b.x} ${b.y} ${b.width} ${b.height}" font-family="${UI}">` +
     `<defs>` +
     (fontCss ? `<style>${fontCss}</style>` : "") +
-    // soft layered drop shadow for cards
-    `<filter id="cardShadow" x="-20%" y="-20%" width="140%" height="160%">` +
-    `<feDropShadow dx="0" dy="6" stdDeviation="9" flood-color="#000000" flood-opacity="0.40"/>` +
-    `</filter>` +
+    // NOTE: no blur filter here — cards use a cheap static offset shadow (see
+    // cardSvg). A per-card feDropShadow gaussian blur is the single most
+    // expensive thing to CPU-rasterize and dominated export time.
     // dot-grid pattern
     `<pattern id="dotGrid" width="${GRID}" height="${GRID}" patternUnits="userSpaceOnUse" x="${b.x}" y="${b.y}">` +
     `<circle cx="1" cy="1" r="1" fill="${colors.grid}" fill-opacity="0.55"/>` +
@@ -195,54 +220,10 @@ export function buildExportSvg(
   );
 }
 
-/**
- * Rasterise an export SVG string to a base64 PNG (no data: prefix — the backend
- * decodes raw base64). Draws at `scale`× for crispness. Resolves to the base64
- * string. Rejects if the image fails to load or the canvas is unexpectedly
- * tainted (it should not be — the SVG is fully self-contained).
- */
-export async function rasterizeToPngBase64(
-  svg: string,
-  width: number,
-  height: number,
-  scale = 2,
-): Promise<string> {
-  const blob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  try {
-    const img = new Image();
-    img.src = url;
-    // Prefer decode(): it resolves only once the image — including the SVG's
-    // embedded data-URI @font-face glyphs — is fully ready to draw, avoiding a
-    // race where text rasterizes blank because fonts hadn't parsed yet. Fall
-    // back to onload on engines where decode() rejects for SVG sources.
-    try {
-      await img.decode();
-    } catch {
-      await new Promise<void>((resolve, reject) => {
-        if (img.complete && img.naturalWidth > 0) {
-          resolve();
-          return;
-        }
-        img.onload = () => resolve();
-        img.onerror = () => reject(new Error("Failed to render diagram image."));
-      });
-    }
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(width * scale));
-    canvas.height = Math.max(1, Math.round(height * scale));
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Canvas 2D context unavailable.");
-    ctx.scale(scale, scale);
-    ctx.drawImage(img, 0, 0, width, height);
-    const dataUrl = canvas.toDataURL("image/png");
-    const comma = dataUrl.indexOf(",");
-    if (comma < 0) throw new Error("Could not encode PNG.");
-    return dataUrl.slice(comma + 1);
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
+// PNG rasterization moved to the Rust backend (`render::svg_to_png`, resvg): the
+// webview-canvas path (SVG → <img> → <canvas> → toDataURL) is unsupported by
+// WebKitGTK on Linux, so it failed there while working on macOS/Windows. The
+// backend renders the same SVG identically on every platform. See api.ts.
 
 /** Re-export for the component (kept here so the export surface is one import). */
 export { embeddedFontFaceCss };

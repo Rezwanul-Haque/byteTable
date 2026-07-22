@@ -1,15 +1,16 @@
 // Export a NoSQL "card map" (HTML-card maps: MongoDB collections, DynamoDB
-// single-table) to PNG / SVG, reusing the SQL schema-map's rasterizer, embedded
-// fonts, theme colors, and the `diagram_export` backend writer + save dialog.
+// single-table) to PNG / SVG, reusing the SQL schema-map's embedded fonts, theme
+// colors, and the `diagram_export` backend writer + save dialog. PNG rasterizing
+// happens in Rust (resvg) — see `api.diagramExport`.
 //
 // The SQL map is already pure SVG, so it serializes directly. The NoSQL maps
-// render as HTML cards + an SVG edge layer; HTML-in-SVG (<foreignObject>) taints
-// the canvas and breaks PNG export, so this module REDRAWS the cards as native
-// SVG (rect + text) from a generic model the caller builds from its own card
-// shapes. Edge `d` paths are reused as-is (same coordinate space as the cards).
+// render as HTML cards + an SVG edge layer; HTML-in-SVG (<foreignObject>) can't
+// be rasterized, so this module REDRAWS the cards as native SVG (rect + text)
+// from a generic model the caller builds from its own card shapes. Edge `d`
+// paths are reused as-is (same coordinate space as the cards).
 
 import { diagramExport } from "./api";
-import { embeddedFontFaceCss, rasterizeToPngBase64, readExportColors } from "./export";
+import { embeddedFontFaceCss, exportTimestamp, readExportColors } from "./export";
 
 const MONO = "JetBrains Mono";
 const HEAD_H = 36;
@@ -138,9 +139,9 @@ export async function exportCardMap(opts: {
 
   const colors = readExportColors();
   const fontCss = await embeddedFontFaceCss();
-  const { svg, width, height } = buildSvg(cards, edges, colors, fontCss);
+  const { svg } = buildSvg(cards, edges, colors, fontCss);
 
-  const defaultName = `${fileBase}.${format}`;
+  const defaultName = `${fileBase}-${exportTimestamp()}.${format}`;
   let path: string | null;
   try {
     path = await saveDialog(defaultName, format, format === "png" ? "PNG image" : "SVG image");
@@ -149,8 +150,8 @@ export async function exportCardMap(opts: {
   }
   if (!path) return { status: "cancelled" };
 
-  const data = format === "png" ? await rasterizeToPngBase64(svg, width, height, 2) : svg;
-  await diagramExport(path, format, data);
+  // PNG is rasterized in Rust (resvg); both formats ship the SVG text.
+  await diagramExport(path, format, svg);
   const file = path.split(/[\\/]/).pop() ?? defaultName;
   return { status: "ok", file };
 }

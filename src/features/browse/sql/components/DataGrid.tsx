@@ -321,8 +321,13 @@ interface DataGridProps {
   /** Explicit paging — the table tab owns `offset`/`pageSize`. */
   offset: number;
   pageSize: number;
-  /** Called when the user changes the sort (resets paging to page 1). */
-  onSortChange?: () => void;
+  /**
+   * Controlled sort — the table tab owns it (lifted out of the grid) so the
+   * filter panel's staged ORDER BY and header clicks share one source of truth.
+   * `null` = unsorted. A header click reports the next sort via `onSetSort`.
+   */
+  sort: SortSpec | null;
+  onSetSort: (next: SortSpec | null) => void;
   /**
    * Called by `addRow` BEFORE prepending the staged row: the table tab clears
    * any applied filter and jumps to the first page so the new row (which rides
@@ -344,7 +349,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     hiddenColumns,
     offset,
     pageSize,
-    onSortChange,
+    sort,
+    onSetSort,
     onAddRowReset,
   },
   ref,
@@ -358,7 +364,6 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   // --- result state ----------------------------------------------------
   const [columns, setColumns] = useState<ColumnMeta[]>([]);
   const [totalRows, setTotalRows] = useState<number | null>(null);
-  const [sort, setSort] = useState<SortSpec | null>(null);
   // Manual column-width overrides (px), keyed by column name. Session-only (no
   // persistence); a value here wins over the auto-measured width. Cleared per
   // column by double-clicking its resize handle (back to auto-fit).
@@ -613,11 +618,14 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   }, [tabId]);
 
   // --- render ----------------------------------------------------------
-  const onSortChangeRef = useRef(onSortChange);
-  onSortChangeRef.current = onSortChange;
+  // Sort is controlled by the table tab; refs keep the header-click callback
+  // stable while always seeing the latest sort + setter.
+  const sortRef = useRef(sort);
+  sortRef.current = sort;
+  const onSetSortRef = useRef(onSetSort);
+  onSetSortRef.current = onSetSort;
   const onHeaderClick = useCallback((column: string) => {
-    onSortChangeRef.current?.();
-    setSort((prev) => cycleSort(prev, column));
+    onSetSortRef.current(cycleSort(sortRef.current, column));
   }, []);
 
   // Drag a header's right-edge handle to set a manual column width (session
@@ -1143,10 +1151,10 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   // Add a staged new row at the top of page 0 (prototype `addRow`).
   const addRow = useCallback(() => {
     if (columns.length === 0) return;
-    // Clear filter + jump to page 0 (table tab) and sort (ours) so the new row
-    // is visible at the top.
+    // Clear filter + jump to page 0 (table tab) and sort so the new row is
+    // visible at the top.
     onAddRowReset?.();
-    setSort(null);
+    onSetSortRef.current(null);
     const values: CellValue[] = columns.map((c) => {
       const m = colMeta.get(c.name);
       const affinity = affinityOf(m?.dataType ?? "");

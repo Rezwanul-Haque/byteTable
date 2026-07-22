@@ -13,13 +13,14 @@ import { connectionClose } from "../connections/api";
 import { useIntrospectionStore } from "../introspection/state";
 import { newCondition } from "../browse/sql/filter";
 import type { CellValue } from "../../shared/api/engine";
-import type { AlterOp, DbObjectInfo, DbObjectKind } from "../../shared/api/engine";
+import type { AlterOp, DbObjectInfo, DbObjectKind, SortSpec } from "../../shared/api/engine";
 import type {
   SqlHistoryEntry,
   SqlRun,
   Tab,
   TableTabMode,
   TabFilterState,
+  TabViewState,
   Workspace,
   WorkspaceConnection,
   WorkspaceUiState,
@@ -160,6 +161,27 @@ interface WorkspacesFeatureState {
    * workspace switches. No-op when there is no active workspace.
    */
   setTabFilter: (tabId: string, filter: TabFilterState) => void;
+  /**
+   * Persist just the filter panel's open/closed flag for a tab, merged into its
+   * existing filter entry. No-op when the tab has no filter entry yet (nothing
+   * to remember) — the open paths always seed one first via `setTabFilter`.
+   */
+  setTabFilterOpen: (tabId: string, open: boolean) => void;
+  /**
+   * Persist a table tab's applied sort (ORDER BY) so it survives the tab
+   * unmounting on a switch. `null` clears it. Merged into the tab's view entry.
+   */
+  setTabSort: (tabId: string, sort: SortSpec | null) => void;
+  /**
+   * Persist a table tab's *staged* ORDER BY (the filter panel's not-yet-applied
+   * sort) so it survives a tab switch. Merged into the tab's view entry.
+   */
+  setTabPendingSort: (tabId: string, pendingSort: SortSpec | null) => void;
+  /**
+   * Persist a table tab's hidden-column set (the Columns picker) so column
+   * visibility survives a tab switch. Merged into the tab's view entry.
+   */
+  setTabHiddenCols: (tabId: string, hiddenCols: string[]) => void;
 
   // --- Structure editor (M8) ---------------------------------------------
   /**
@@ -531,7 +553,13 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
           structureEdits = { ...structureEdits };
           delete structureEdits[tabId];
         }
-        return { tabs: next, activeTabId, filters, structureEdits };
+        // Likewise its view state (sort + hidden columns).
+        let tableViews = ui.tableViews;
+        if (tableViews && tabId in tableViews) {
+          tableViews = { ...tableViews };
+          delete tableViews[tabId];
+        }
+        return { tabs: next, activeTabId, filters, structureEdits, tableViews };
       }),
     })),
 
@@ -556,6 +584,56 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
       workspaces: patchActiveUi(state, (ui) => ({
         filters: { ...(ui.filters ?? {}), [tabId]: filter },
       })),
+    })),
+
+  setTabFilterOpen: (tabId, open) =>
+    set((state) => ({
+      workspaces: patchActiveUi(state, (ui) => {
+        const existing = ui.filters?.[tabId];
+        // Nothing to remember for a tab that never opened its filter, and no
+        // write when the flag is unchanged (avoids a needless state churn).
+        if (!existing || existing.open === open) return {};
+        return { filters: { ...ui.filters, [tabId]: { ...existing, open } } };
+      }),
+    })),
+
+  setTabSort: (tabId, sort) =>
+    set((state) => ({
+      workspaces: patchActiveUi(state, (ui) => {
+        const existing: TabViewState = ui.tableViews?.[tabId] ?? {};
+        // Committing a sort also syncs the staged value, so the ORDER BY control
+        // reflects an applied sort (header click / Apply) rather than drifting.
+        return {
+          tableViews: {
+            ...(ui.tableViews ?? {}),
+            [tabId]: { ...existing, sort, pendingSort: sort },
+          },
+        };
+      }),
+    })),
+
+  setTabPendingSort: (tabId, pendingSort) =>
+    set((state) => ({
+      workspaces: patchActiveUi(state, (ui) => {
+        const existing: TabViewState = ui.tableViews?.[tabId] ?? {};
+        return {
+          tableViews: { ...(ui.tableViews ?? {}), [tabId]: { ...existing, pendingSort } },
+        };
+      }),
+    })),
+
+  setTabHiddenCols: (tabId, hiddenCols) =>
+    set((state) => ({
+      workspaces: patchActiveUi(state, (ui) => {
+        const existing: TabViewState = ui.tableViews?.[tabId] ?? {};
+        // Skip the write when unchanged — the mirroring effect re-runs on mount
+        // with the value it just restored.
+        const same =
+          (existing.hiddenCols ?? []).length === hiddenCols.length &&
+          (existing.hiddenCols ?? []).every((c, i) => c === hiddenCols[i]);
+        if (same) return {};
+        return { tableViews: { ...(ui.tableViews ?? {}), [tabId]: { ...existing, hiddenCols } } };
+      }),
     })),
 
   setTabStructureOps: (tabId, ops) =>

@@ -8,11 +8,15 @@
 // only mutate the draft (a dirty state) until Apply or Enter. The committed
 // draft is deep-cloned into `applied` so later draft edits don't leak in.
 
+import { useState } from "react";
+
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { Select } from "../../../../shared/ui/Select";
-import type { ColumnInfo, FilterOp } from "../../../../shared/api/engine";
+import { useToast } from "../../../../shared/ui/toastContext";
+import type { ColumnInfo, FilterOp, SortSpec } from "../../../../shared/api/engine";
 import type { FilterDraft, TabFilterState, UiCondition } from "../../../workspaces/types";
+import { highlightSql } from "../../shared/highlightSql";
 import {
   FILTER_OPS,
   activeConditionCount,
@@ -48,14 +52,55 @@ interface FilterPanelProps {
   onChange: (next: TabFilterState) => void;
   /** Close the panel (removing the last condition closes rather than resets). */
   onClose?: () => void;
+  /** Table + schema for the generated-query preview's FROM clause. */
+  tableName: string;
+  schemaName: string;
+  /** Applied grid sort — drives the dirty state (staged vs applied). */
+  sort: SortSpec | null;
+  /** Commit a new sort to the grid (also resets paging). Called from Apply. */
+  onSetSort: (sort: SortSpec | null) => void;
+  /** Staged ORDER BY (persisted live so it survives a tab switch). */
+  pendingSort: SortSpec | null;
+  /** Persist a change to the staged ORDER BY (does not touch the grid). */
+  onSetPendingSort: (sort: SortSpec | null) => void;
+  /** Current page size — shown as `LIMIT n` in the preview only. */
+  pageSize: number;
+  /** Open the generated query in a new SQL tab. */
+  onOpenSql: (sql: string) => void;
+  /** Currently-visible column names (drives the preview's SELECT list). */
+  selectCols: string[];
 }
 
-export function FilterPanel({ open, columns, state, error, onChange, onClose }: FilterPanelProps) {
+export function FilterPanel({
+  open,
+  columns,
+  state,
+  error,
+  onChange,
+  onClose,
+  tableName,
+  schemaName,
+  sort,
+  onSetSort,
+  pendingSort,
+  onSetPendingSort,
+  pageSize,
+  onOpenSql,
+  selectCols,
+}: FilterPanelProps) {
   const { draft } = state;
   const firstColumn = columns[0]?.name ?? "";
+  const toast = useToast();
 
-  // Commit the draft into applied (Apply / immediate re-apply on toggle).
-  const apply = (nextDraft: FilterDraft) => {
+  // "Show query" preview toggle. The staged ORDER BY (`pendingSort`) is owned by
+  // the tab and persisted, so it survives a tab switch; changing it does NOT
+  // re-sort the grid until Apply commits it via onSetSort.
+  const [showSql, setShowSql] = useState(false);
+
+  // Commit the draft into applied (Apply / immediate re-apply on toggle) and
+  // commit the staged sort to the grid in the same step.
+  const apply = (nextDraft: FilterDraft, sortToCommit: SortSpec | null = pendingSort) => {
+    onSetSort(sortToCommit);
     onChange({ draft: nextDraft, applied: cloneDraft(nextDraft) });
   };
   // Mutate the draft only (dirty until Apply/Enter).
@@ -87,7 +132,10 @@ export function FilterPanel({ open, columns, state, error, onChange, onClose }: 
   };
 
   const clearAll = () => {
-    apply(emptyDraft(firstColumn));
+    // Reset conditions/raw AND the staged + applied sort, so both the grid order
+    // and the preview drop back to bare `SELECT … FROM …;`.
+    onSetPendingSort(null);
+    apply(emptyDraft(firstColumn), null);
   };
 
   const switchMode = () => {
@@ -100,15 +148,48 @@ export function FilterPanel({ open, columns, state, error, onChange, onClose }: 
     }
   };
 
-  // Dirty = the draft would compile differently from what is applied. Compare
-  // the cosmetic display SQL of each, which captures the effective filter for
-  // both modes (matching the prototype's `pending`).
+  // Dirty = the draft would compile differently from what is applied, OR the
+  // staged ORDER BY differs from the applied grid sort. Compare the cosmetic
+  // display SQL of each (matching the prototype's `pending`).
   const appliedSql = state.applied ? draftToDisplaySql(state.applied, columns) : "";
   const draftSql = draftToDisplaySql(draft, columns);
-  const dirty = draftSql !== appliedSql;
+  const sortKey = (s: SortSpec | null) => (s ? `${s.column} ${s.direction}` : "");
+  const dirty = draftSql !== appliedSql || sortKey(pendingSort) !== sortKey(sort);
 
   const activeCount = activeConditionCount(draft.conditions);
   const total = draft.conditions.length;
+
+  // Generated-query preview (§ Task 2/3/4). SELECT follows the visible columns
+  // (`*` only when all are shown); ORDER BY / LIMIT reflect the staged sort and
+  // the current page size live.
+  const qualified = (schemaName ? schemaName + "." : "") + (tableName || "table");
+  const previewWhere = draftToDisplaySql(draft, columns);
+  const orderClause = pendingSort
+    ? `\nORDER BY ${pendingSort.column} ${pendingSort.direction === "desc" ? "DESC" : "ASC"}`
+    : "";
+  const limitClause = pageSize ? `\nLIMIT ${pageSize}` : "";
+  const allCols = columns.map((c) => c.name);
+  const visible = selectCols.length ? selectCols : allCols;
+  const selectList = visible.length === allCols.length ? "*" : visible.join(", ");
+  const previewSql =
+    `SELECT ${selectList}\nFROM ${qualified}` +
+    (previewWhere ? `\nWHERE ${previewWhere}` : "") +
+    orderClause +
+    limitClause +
+    ";";
+  const previewHtml = highlightSql(previewSql);
+  const copyPreview = () => {
+    // Clipboard API with a no-throw fallback (unavailable in some webviews);
+    // confirm with a toast either way, like the app's other copy actions.
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(previewSql).then(
+        () => toast("Query copied", "ok"),
+        () => toast("Couldn't copy to clipboard", "err"),
+      );
+    } else {
+      toast("Couldn't copy to clipboard", "err");
+    }
+  };
 
   return (
     <div className={"filter-panel" + (open ? "" : " hidden")}>
@@ -211,6 +292,48 @@ export function FilterPanel({ open, columns, state, error, onChange, onClose }: 
           <Icon name={draft.rawMode ? "tune" : "code"} size={13} />
           {draft.rawMode ? "Use builder" : "Edit as SQL"}
         </button>
+        <button
+          type="button"
+          className={"filter-rawtoggle" + (showSql ? " on" : "")}
+          onClick={() => setShowSql((s) => !s)}
+          title="Preview the generated query"
+        >
+          <Icon name="preview" size={13} />
+          {showSql ? "Hide query" : "Show query"}
+        </button>
+        <div className="filter-orderlimit">
+          <Icon name="swap_vert" size={13} style={{ color: "var(--text-faint)" }} />
+          <Select
+            className="filter-select filter-ol-col"
+            aria-label="Order by column"
+            value={pendingSort?.column ?? ""}
+            options={[
+              { value: "", label: "no order" },
+              ...columns.map((col) => ({ value: col.name, label: col.name })),
+            ]}
+            onChange={(v) =>
+              onSetPendingSort(v ? { column: v, direction: pendingSort?.direction ?? "asc" } : null)
+            }
+          />
+          <button
+            type="button"
+            className="filter-ol-dir"
+            disabled={!pendingSort}
+            title="Toggle direction"
+            onClick={() =>
+              onSetPendingSort(
+                pendingSort
+                  ? {
+                      column: pendingSort.column,
+                      direction: pendingSort.direction === "desc" ? "asc" : "desc",
+                    }
+                  : pendingSort,
+              )
+            }
+          >
+            {pendingSort?.direction === "desc" ? "DESC" : "ASC"}
+          </button>
+        </div>
         <div style={{ flex: 1 }} />
         {error ? (
           <span className="filter-err-inline">
@@ -228,6 +351,30 @@ export function FilterPanel({ open, columns, state, error, onChange, onClose }: 
           Apply
         </Btn>
       </div>
+
+      {/* Generated-query preview strip — highlighted SQL + Copy + Open-in-SQL. */}
+      {showSql ? (
+        <div className="filter-sqlpeek">
+          <span className="filter-sqlpeek-label">GENERATED QUERY</span>
+          <pre className="filter-sqlpeek-code" dangerouslySetInnerHTML={{ __html: previewHtml }} />
+          <button
+            type="button"
+            className="filter-sqlpeek-copy"
+            title="Copy query"
+            onClick={copyPreview}
+          >
+            <Icon name="content_copy" size={13} />
+          </button>
+          <button
+            type="button"
+            className="filter-sqlpeek-copy"
+            title="Open in a new SQL tab"
+            onClick={() => onOpenSql(previewSql)}
+          >
+            <Icon name="open_in_new" size={13} />
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

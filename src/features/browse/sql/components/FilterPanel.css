@@ -184,6 +184,101 @@
   background: var(--bg2);
 }
 
+/* Active "Show query" toggle (ByteTable.html .filter-rawtoggle.on). */
+.filter-rawtoggle.on {
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+}
+
+/* Staged ORDER BY group in the footer (column select + ASC/DESC toggle). */
+.filter-orderlimit {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.filter-ol-col {
+  font-size: 11px;
+}
+
+.filter-ol-dir {
+  font-size: 10px;
+  font-family: var(--mono);
+  font-weight: 600;
+  color: var(--text-dim);
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 3px 7px;
+  cursor: pointer;
+}
+
+.filter-ol-dir:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.filter-ol-dir:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Generated-query preview strip (ByteTable.html .filter-sqlpeek). */
+.filter-sqlpeek {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 9px 10px;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  position: relative;
+}
+
+.filter-sqlpeek-label {
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  color: var(--text-faint);
+  position: absolute;
+  top: -6px;
+  left: 10px;
+  background: var(--bg1);
+  padding: 0 5px;
+}
+
+.filter-sqlpeek-code {
+  flex: 1;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.filter-sqlpeek-copy {
+  flex: none;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.filter-sqlpeek-copy:hover {
+  background: var(--bg2);
+  color: var(--accent);
+}
+
 .filter-count-note {
   font-size: 10.5px;
   color: var(--text-faint);

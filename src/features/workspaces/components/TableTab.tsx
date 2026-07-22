@@ -15,7 +15,7 @@
 // stable key) into the grid. The grid re-windows + re-counts on filter change
 // exactly like sort; tabMeta.shownRows/totalRows then drive "n of N rows".
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { DataGrid, type DataGridHandle } from "../../browse/sql/components/DataGrid";
 import { FilterPanel } from "../../browse/sql/components/FilterPanel";
@@ -29,7 +29,7 @@ import { useSettingsStore } from "../../settings/state";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Icon } from "../../../shared/ui/Icon";
 import { Select } from "../../../shared/ui/Select";
-import type { ColumnInfo } from "../../../shared/api/engine";
+import type { ColumnInfo, SortSpec } from "../../../shared/api/engine";
 import { useWorkspacesStore } from "../state";
 import { rowCountLabel, useTabMetaStore } from "../tabMeta";
 import type { TabFilterState, Tab } from "../types";
@@ -54,6 +54,8 @@ export function TableTab({
   defaultSchema: string;
 }) {
   const setTableTabMode = useWorkspacesStore((state) => state.setTableTabMode);
+  // Open the filter panel's generated query in a new SQL tab (Show query strip).
+  const openSqlTabWith = useWorkspacesStore((state) => state.openSqlTabWith);
   // Narrow selector: only this tab's meta, so other tabs' fetches don't
   // re-render the toolbar.
   const meta = useTabMetaStore((state) => state.meta[tab.id]);
@@ -67,9 +69,19 @@ export function TableTab({
 
   // --- filter state (per-tab, persisted in workspace ui) ---------------
   const setTabFilter = useWorkspacesStore((state) => state.setTabFilter);
+  const setTabFilterOpen = useWorkspacesStore((state) => state.setTabFilterOpen);
+  const setTabSort = useWorkspacesStore((state) => state.setTabSort);
+  const setTabPendingSort = useWorkspacesStore((state) => state.setTabPendingSort);
+  const setTabHiddenCols = useWorkspacesStore((state) => state.setTabHiddenCols);
   const filterState = useWorkspacesStore(
     (state) =>
       state.workspaces.find((ws) => ws.id === state.activeWorkspaceId)?.ui.filters?.[tab.id],
+  );
+  // Per-tab view state (sort + hidden columns) — persisted so it survives the
+  // tab unmounting on a switch (like the filter above).
+  const tabView = useWorkspacesStore(
+    (state) =>
+      state.workspaces.find((ws) => ws.id === state.activeWorkspaceId)?.ui.tableViews?.[tab.id],
   );
 
   // Columns for the panel's column select + value typing + cosmetic SQL. Reads
@@ -89,15 +101,25 @@ export function TableTab({
     void loadColumns(handleId, tab.schema, tab.table);
   }, [columnsEntry, loadColumns, handleId, tab.schema, tab.table]);
 
-  // Panel open/close (transient, local) and the inline raw-mode error.
-  const [panelOpen, setPanelOpen] = useState(false);
+  // Panel open/close — seeded from the persisted per-tab flag so it survives an
+  // unmount (switching to another tab and back), then mirrored back to the store
+  // on every change. The inline raw-mode error stays transient/local.
+  const [panelOpen, setPanelOpen] = useState(() => filterState?.open ?? false);
   const [filterError, setFilterError] = useState<string | null>(null);
+  useEffect(() => {
+    setTabFilterOpen(tab.id, panelOpen);
+  }, [panelOpen, tab.id, setTabFilterOpen]);
 
   // --- M15 Task 2: column show/hide + table-actions + truncate ----------
-  // Column hide is display-only, kept as local component state (the prototype
-  // keeps it local too — it resets on tab close, which is acceptable). The set
+  // Column hide (display-only). Seeded from the persisted per-tab view and
+  // mirrored back, so the Columns picker choice survives a tab switch. The set
   // holds the *hidden* column names; the grid render-filters on it.
-  const [hiddenCols, setHiddenCols] = useState<Set<string>>(() => new Set());
+  const [hiddenCols, setHiddenCols] = useState<Set<string>>(
+    () => new Set(tabView?.hiddenCols ?? []),
+  );
+  useEffect(() => {
+    setTabHiddenCols(tab.id, [...hiddenCols]);
+  }, [hiddenCols, tab.id, setTabHiddenCols]);
   const [colOpen, setColOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [truncateOpen, setTruncateOpen] = useState(false);
@@ -117,10 +139,35 @@ export function TableTab({
     () => (useSettingsStore.getState().settings.defaultLimit as number) ?? DEFAULT_PAGE_SIZE,
   );
   const [offset, setOffset] = useState(0);
+  // Sort is lifted out of the grid (M5 filter enhancement): both header clicks
+  // and the filter panel's staged ORDER BY drive this one source of truth. It
+  // lives in the persisted per-tab view so it survives an unmount; a change
+  // persists it and resets paging to the first page.
+  const sort = tabView?.sort ?? null;
+  // Staged ORDER BY (filter panel). Persisted live so it survives a tab switch
+  // even before Apply; falls back to the applied sort until the user stages one.
+  const pendingSort = tabView?.pendingSort !== undefined ? tabView.pendingSort : sort;
+  const handleSetSort = useCallback(
+    (next: SortSpec | null) => {
+      setTabSort(tab.id, next);
+      setOffset(0);
+    },
+    [setTabSort, tab.id],
+  );
+  const handleSetPendingSort = useCallback(
+    (next: SortSpec | null) => setTabPendingSort(tab.id, next),
+    [setTabPendingSort, tab.id],
+  );
   const colRef = useRef<HTMLDivElement | null>(null);
   const actionsRef = useRef<HTMLDivElement | null>(null);
   // Imperative handle to the grid's staged-editing actions (add-row toolbar +).
   const gridRef = useRef<DataGridHandle | null>(null);
+
+  // Visible columns in display order — drives the filter preview's SELECT list.
+  const selectCols = useMemo(
+    () => columns.filter((c) => !hiddenCols.has(c.name)).map((c) => c.name),
+    [columns, hiddenCols],
+  );
 
   const visibleCount = columns.length - hiddenCols.size;
   const toggleCol = (name: string) =>
@@ -207,8 +254,8 @@ export function TableTab({
   // schema (a new tab identity) or the applied filter. Done during render (the
   // React-recommended "adjust state on prop change" pattern) rather than in an
   // effect, so the new page is fetched on the same pass without a flash of the
-  // old offset. Sort resets separately via the grid's onSortChange callback
-  // (sort state lives in the grid).
+  // old offset. Sort resets paging separately via `handleSetSort` (sort is
+  // lifted here and shared by the grid header + the filter panel's ORDER BY).
   const pageResetKey = tab.table + " " + tab.schema + " " + filterKey;
   const [lastResetKey, setLastResetKey] = useState(pageResetKey);
   if (lastResetKey !== pageResetKey) {
@@ -490,6 +537,15 @@ export function TableTab({
             error={filterError}
             onChange={onFilterChange}
             onClose={() => setPanelOpen(false)}
+            tableName={tab.table}
+            schemaName={tab.schema}
+            sort={sort}
+            onSetSort={handleSetSort}
+            pendingSort={pendingSort}
+            onSetPendingSort={handleSetPendingSort}
+            pageSize={pageSize}
+            onOpenSql={openSqlTabWith}
+            selectCols={selectCols}
           />
 
           {/* The virtualized data grid. Receives the applied filter + a stable
@@ -506,11 +562,12 @@ export function TableTab({
             hiddenColumns={hiddenCols}
             offset={offset}
             pageSize={pageSize}
-            onSortChange={() => setOffset(0)}
+            sort={sort}
+            onSetSort={handleSetSort}
             onAddRowReset={() => {
               // A new staged row rides at the top of page 0 with no filter — so
-              // clear any applied filter and jump to the first page (the grid
-              // clears its own sort).
+              // clear any applied filter and jump to the first page (the grid's
+              // addRow also clears the sort via onSetSort).
               if (hasApplied) clearFilters();
               setOffset(0);
             }}

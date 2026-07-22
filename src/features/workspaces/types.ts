@@ -12,6 +12,7 @@ import type {
   DbObjectKind,
   FilterOp,
   QueryResult,
+  SortSpec,
 } from "../../shared/api/engine";
 import type {
   ConnectionKind,
@@ -69,6 +70,32 @@ export interface FilterDraft {
 export interface TabFilterState {
   draft: FilterDraft;
   applied: FilterDraft | null;
+  /**
+   * Whether the filter panel is expanded on this tab. Persisted per-tab so the
+   * panel stays open after switching away and back (a table tab unmounts when
+   * inactive, so a local flag would reset). Absent = closed.
+   */
+  open?: boolean;
+}
+
+/**
+ * Per-table-tab *view* state that must survive the tab unmounting on a switch
+ * (like {@link TabFilterState}, but for grid presentation rather than the
+ * filter): the applied sort (ORDER BY) and which columns are hidden from the
+ * Columns picker. Kept out of `TabFilterState` because it is not part of the
+ * WHERE filter and is not reset by "Clear filters".
+ */
+export interface TabViewState {
+  /** Applied single-column sort (drives the grid), or null/absent = unsorted. */
+  sort?: SortSpec | null;
+  /**
+   * Staged ORDER BY from the filter panel — persisted live (like the filter
+   * draft) so a not-yet-applied choice survives a tab switch. Reaches the grid
+   * (→ `sort`) only when Apply is pressed. `undefined` = follow `sort`.
+   */
+  pendingSort?: SortSpec | null;
+  /** Column names hidden by the Columns popover (display-only). */
+  hiddenCols?: string[];
 }
 
 /**
@@ -248,6 +275,13 @@ export interface WorkspaceUiState {
    * harmless; `closeTab` prunes it.
    */
   filters?: Record<string, TabFilterState>;
+  /**
+   * Per-table-tab view state (sort + hidden columns), keyed by tab id. Same
+   * survives-the-unmount rationale as `filters`: a table tab unmounts when
+   * inactive, so grid sort/column choices held in local component state would
+   * reset on return. Sparse; `closeTab` prunes a closed tab's entry.
+   */
+  tableViews?: Record<string, TabViewState>;
   /**
    * Per-table-tab structure-editor draft (M8 §3.6 / §4), keyed by tab id: the
    * accumulated {@link AlterOp} batch the pending-changes bar sends to

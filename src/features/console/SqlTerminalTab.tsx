@@ -25,6 +25,7 @@ import { appErrorMessage } from "../../shared/api/error";
 import type { Engine } from "../../shared/types";
 import { Icon } from "../../shared/ui/Icon";
 import { IconBtn } from "../../shared/ui/IconBtn";
+import { CopyButton } from "../../shared/ui/CopyButton";
 import { columnsKey, tablesKey, useIntrospectionStore } from "../introspection/state";
 import {
   suggestSql,
@@ -1057,6 +1058,11 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
 // numbers, italic NULLs, hover row highlight, and horizontal scroll when wider
 // than the panel (.term-grid-wrap). Ported from the prototype's TermGrid;
 // adapted to positional CellValue rows.
+//
+// Each cell has a hover copy button (mirrors the browse DataGrid's `.dg-copy`):
+// the terminal refocuses its input on any body click, which collapses a text
+// selection, so dragging to select a value is unreliable — the copy button is
+// the dependable way to grab a single value.
 function TermGrid({ columns, rows }: { columns: string[]; rows: CellValue[][] }) {
   if (columns.length === 0) return null;
   return (
@@ -1092,7 +1098,8 @@ function TermGrid({ columns, rows }: { columns: string[]; rows: CellValue[][] })
                   const text = typeof v === "boolean" ? (v ? "t" : "f") : String(v);
                   return (
                     <td key={j} className={isNum ? "term-grid-num" : ""}>
-                      {text}
+                      <span className="term-cell-val">{text}</span>
+                      <CopyButton className="term-copy" text={text} />
                     </td>
                   );
                 })}

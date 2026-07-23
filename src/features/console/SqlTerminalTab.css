@@ -261,6 +261,7 @@
 }
 
 .term-grid td {
+  position: relative;
   padding: 4px 12px;
   border-bottom: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
   border-right: 1px solid color-mix(in oklab, var(--border) 40%, transparent);
@@ -270,6 +271,37 @@
 
 .term-grid td:last-child {
   border-right: none;
+}
+
+/* Per-cell copy button — pinned to the cell's right edge, revealed on cell
+   hover (mirrors the browse DataGrid's `.dg-copy`). A small backing keeps it
+   readable over long values. */
+.term-copy {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-faint);
+  background: var(--bg2);
+  box-shadow: -6px 0 6px -2px var(--bg2);
+  opacity: 0;
+  transition:
+    opacity 0.1s,
+    color 0.1s;
+}
+.term-grid td:hover .term-copy {
+  opacity: 1;
+}
+.term-copy:hover {
+  color: var(--text);
 }
 
 .term-grid tbody tr:last-child td {

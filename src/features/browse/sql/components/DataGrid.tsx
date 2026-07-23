@@ -69,6 +69,7 @@ import { appErrorMessage } from "../../../../shared/api/error";
 import { BulkDeleteModal } from "../../../../shared/ui/BulkDeleteModal";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
+import { CopyButton } from "../../../../shared/ui/CopyButton";
 import { Modal, ModalActions, ModalTitle } from "../../../../shared/ui/Modal";
 import { useToast } from "../../../../shared/ui/toastContext";
 import { useIntrospectionStore } from "../../../introspection/state";
@@ -436,19 +437,6 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   // row), and whether it has un-staged edits (blocks row nav / retargeting).
   const [inspect, setInspect] = useState<EditTarget | null>(null);
   const [inspectDirty, setInspectDirty] = useState(false);
-
-  // Copy a cell's raw value to the clipboard — handy for read-only cells
-  // (primary keys can't be selected/edited) when pasting an id into a query.
-  const copyCell = useCallback(
-    (value: CellValue) => {
-      if (value === null) return;
-      void navigator.clipboard.writeText(String(value)).then(
-        () => toast("Copied", "ok"),
-        () => toast("Couldn't copy to clipboard", "err"),
-      );
-    },
-    [toast],
-  );
 
   // The current page's rows, keyed by ABSOLUTE row index (`offset + i`).
   const rowCacheRef = useRef<Map<number, CellValue[]>>(new Map());
@@ -1816,18 +1804,11 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
                             useful for read-only cells (primary keys) that can't
                             be selected/edited to grab the value for a query. */}
                         {!isEditing && cellVal !== null ? (
-                          <button
-                            type="button"
+                          <CopyButton
                             className="dg-copy"
-                            title="Copy value"
-                            aria-label={"Copy " + c.name + " value"}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              copyCell(cellVal);
-                            }}
-                          >
-                            <Icon name="content_copy" size={12} />
-                          </button>
+                            label={"Copy " + c.name + " value"}
+                            text={String(cellVal)}
+                          />
                         ) : null}
                       </div>
                     );

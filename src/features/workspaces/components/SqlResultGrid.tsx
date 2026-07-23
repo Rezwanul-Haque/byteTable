@@ -14,6 +14,7 @@ import { exportSave } from "../../../shared/api/engine";
 import type { CellValue, QueryResult } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
 import { Btn } from "../../../shared/ui/Btn";
+import { CopyButton } from "../../../shared/ui/CopyButton";
 import { useToast } from "../../../shared/ui/toastContext";
 import { CellContent } from "../../browse/shared/GridCell";
 
@@ -35,13 +36,20 @@ const FALLBACK_ROW_H = 26;
  *  the layout — the cell ellipsizes/scrolls within it. */
 const COL_MIN_PX = 90;
 const COL_MAX_PX = 400;
+/** Max width for a MANUALLY resized column (drag) — higher than the auto cap so
+ *  the user can widen a column past what auto-fit would pick (mirrors the browse
+ *  DataGrid). */
+const COL_MANUAL_MAX_PX = 1200;
 /** Column overscan for the horizontal virtualizer; above the threshold columns
  *  are windowed too (a wide result no longer renders every column per row). */
 const COL_OVERSCAN = 3;
 const COL_VIRT_THRESHOLD = 30;
-/** Minimum row-number gutter width (px) — matches `.dg-rownum` min-width. The
- *  track grows with the digit count so large row numbers aren't clipped. */
-const ROWNUM_PX = 30;
+/** Minimum row-number gutter width (px) — MUST match `.dg-rownum`'s CSS
+ *  `min-width: 40px`. If the track is narrower than that, the sticky gutter
+ *  overflows its grid track and paints over the first data cell's left padding
+ *  (the "first column hugs the left edge" bug). The track grows with the digit
+ *  count so large row numbers aren't clipped. */
+const ROWNUM_PX = 40;
 /** Per-digit width of the row number (12.5px tabular-nums) + gutter padding. */
 const ROWNUM_DIGIT_PX = 7.5;
 const ROWNUM_PAD_PX = 14;
@@ -71,6 +79,12 @@ function cellTextLength(value: unknown): number {
   return String(value).length;
 }
 
+/** A cell value as clipboard text: objects → JSON (same as the CSV export),
+ *  everything else its string form. */
+function cellText(value: CellValue): string {
+  return typeof value === "object" ? JSON.stringify(value) : String(value);
+}
+
 export function SqlResultGrid({ result }: { result: QueryResult }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const { columns, rows } = result;
@@ -79,6 +93,14 @@ export function SqlResultGrid({ result }: { result: QueryResult }) {
   // Multi-select (by row index into the in-memory result). Cleared when a new
   // result lands (the component is keyed/remounted per run upstream).
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  // Manual column-width overrides (px), keyed by column name. Session-only (no
+  // persistence, matching the browse DataGrid); a value here wins over the
+  // auto-measured width. Cleared per column by double-clicking its handle.
+  const [colOverrides, setColOverrides] = useState<Record<string, number>>({});
+  // The column being drag-resized (null when idle). While dragging, its width is
+  // driven by the `--dg-col-w` CSS var (pure repaint, no re-render / re-window);
+  // the final px value commits to `colOverrides` on release.
+  const [draggingCol, setDraggingCol] = useState<string | null>(null);
   useEffect(() => {
     setSelected(new Set());
   }, [result]);
@@ -164,10 +186,54 @@ export function SqlResultGrid({ result }: { result: QueryResult }) {
           if (len > maxCellLen) maxCellLen = len;
         }
         const cellPx = maxCellLen * CELL_CHAR_PX + CELL_PAD_PX;
-        return Math.round(Math.min(COL_MAX_PX, Math.max(COL_MIN_PX, headerPx, cellPx)));
+        const auto = Math.round(Math.min(COL_MAX_PX, Math.max(COL_MIN_PX, headerPx, cellPx)));
+        // A manual override (drag) wins over the auto-measured width.
+        return colOverrides[c.name] ?? auto;
       }),
-    [columns, rows],
+    [columns, rows, colOverrides],
   );
+
+  // Drag a header's right-edge handle to set a manual column width (session
+  // only). During the drag the width is written to the `--dg-col-w` CSS var on
+  // the scroll container — a pure repaint, so there is NO React re-render and NO
+  // virtualizer re-window per frame. The final width commits to state on release.
+  const startColResize = (e: React.MouseEvent, colName: string, startWidth: number) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const wrap = scrollRef.current;
+    const startX = e.clientX;
+    let finalW = startWidth;
+    setDraggingCol(colName);
+    wrap?.style.setProperty("--dg-col-w", startWidth + "px");
+    document.body.classList.add("dg-col-resizing");
+    const onMove = (me: MouseEvent) => {
+      finalW = Math.min(
+        COL_MANUAL_MAX_PX,
+        Math.max(COL_MIN_PX, startWidth + (me.clientX - startX)),
+      );
+      wrap?.style.setProperty("--dg-col-w", finalW + "px");
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.classList.remove("dg-col-resizing");
+      setColOverrides((prev) => ({ ...prev, [colName]: finalW }));
+      setDraggingCol(null);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  // Double-click the handle → drop the override, auto-fit back to measured.
+  const autofitCol = (colName: string) => {
+    setColOverrides((prev) => {
+      if (!(colName in prev)) return prev;
+      const next = { ...prev };
+      delete next[colName];
+      return next;
+    });
+  };
 
   // Row-number gutter sized to the largest row number (see the browse DataGrid).
   const rownumPx = useMemo(() => {
@@ -208,10 +274,18 @@ export function SqlResultGrid({ result }: { result: QueryResult }) {
   // Grid column template: gutters + [pad] + visible tracks + [pad].
   const gridCols = useMemo(() => {
     const lead = CHECK_PX + "px " + rownumPx + "px";
-    const tracks = winIdx.map((i) => colWidths[i] + "px").join(" ");
+    // The actively-resized column's track reads the live `--dg-col-w` var (with
+    // its current width as the fallback) so the drag repaints via CSS alone.
+    const tracks = winIdx
+      .map((i) =>
+        columns[i]!.name === draggingCol
+          ? `var(--dg-col-w, ${colWidths[i]}px)`
+          : colWidths[i] + "px",
+      )
+      .join(" ");
     if (!virtualizeCols) return lead + " " + tracks;
     return lead + " " + padL + "px " + tracks + " " + padR + "px";
-  }, [rownumPx, colWidths, winIdx, virtualizeCols, padL, padR]);
+  }, [rownumPx, colWidths, columns, winIdx, virtualizeCols, padL, padR, draggingCol]);
 
   const virtualRows = rowVirtualizer.getVirtualItems();
   const totalHeight = rowVirtualizer.getTotalSize();
@@ -260,6 +334,18 @@ export function SqlResultGrid({ result }: { result: QueryResult }) {
                       <span className="dg-coltype">{c.typeHint.toLowerCase()}</span>
                     ) : null}
                   </span>
+                  {/* Right-edge resize handle: drag to set a manual width,
+                      double-click to auto-fit. */}
+                  <span
+                    className={"dg-col-resize" + (draggingCol === c.name ? " active" : "")}
+                    title="Drag to resize · double-click to auto-fit"
+                    onMouseDown={(e) => startColResize(e, c.name, colWidths[ci]!)}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      autofitCol(c.name);
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  />
                 </div>
               );
             })}
@@ -288,9 +374,18 @@ export function SqlResultGrid({ result }: { result: QueryResult }) {
                   {virtualizeCols ? <div className="dg-pad" aria-hidden /> : null}
                   {winIdx.map((ci) => {
                     const c = columns[ci]!;
+                    const cellVal = row[ci] ?? null;
                     return (
                       <div key={c.name + ":" + ci} className="dg-td">
-                        <CellContent value={row[ci] ?? null} column={c.name} type={c.typeHint} />
+                        <CellContent value={cellVal} column={c.name} type={c.typeHint} />
+                        {/* Hover copy button — copies the raw value. */}
+                        {cellVal !== null ? (
+                          <CopyButton
+                            className="dg-copy"
+                            label={"Copy " + c.name + " value"}
+                            text={cellText(cellVal)}
+                          />
+                        ) : null}
                       </div>
                     );
                   })}

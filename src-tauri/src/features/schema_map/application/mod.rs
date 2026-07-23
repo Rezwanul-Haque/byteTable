@@ -77,6 +77,7 @@ mod tests {
                 table: table.into(),
                 x,
                 y: 0.0,
+                w: None,
             }],
             edges: vec![EdgeWaypoint {
                 id: "e1".into(),

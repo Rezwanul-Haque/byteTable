@@ -18,6 +18,12 @@ pub struct NodePosition {
     pub table: String,
     pub x: f64,
     pub y: f64,
+    /// Optional user-resized card width (read-mode "resizable cards"). Absent
+    /// (and omitted from the wire) when the card is at its default width, so
+    /// pre-resize saved layouts keep parsing unchanged and only widened cards
+    /// carry a value. The renderer clamps and applies it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub w: Option<f64>,
 }
 
 /// A user-dragged offset for one FK edge's midpoint waypoint.
@@ -128,11 +134,13 @@ mod tests {
                     table: "users".into(),
                     x: 10.0,
                     y: 20.5,
+                    w: None,
                 },
                 NodePosition {
                     table: "orders".into(),
                     x: 300.0,
                     y: -40.0,
+                    w: Some(360.0),
                 },
             ],
             edges: vec![EdgeWaypoint {
@@ -153,7 +161,7 @@ mod tests {
             serde_json::json!({
                 "positions": [
                     { "table": "users", "x": 10.0, "y": 20.5 },
-                    { "table": "orders", "x": 300.0, "y": -40.0 },
+                    { "table": "orders", "x": 300.0, "y": -40.0, "w": 360.0 },
                 ],
                 "edges": [
                     { "id": "orders.user_id->users", "dx": 12.0, "dy": -8.0 },
@@ -183,6 +191,33 @@ mod tests {
                 "edges": [],
             })
         );
+    }
+
+    #[test]
+    fn node_width_is_omitted_when_absent_and_round_trips_when_set() {
+        // Default width → no `w` key on the wire (pre-resize layouts stay lean).
+        let none = NodePosition {
+            table: "t".into(),
+            x: 1.0,
+            y: 2.0,
+            w: None,
+        };
+        assert!(serde_json::to_value(&none).unwrap().get("w").is_none());
+        // A resized card carries its width and round-trips.
+        let some = NodePosition {
+            table: "t".into(),
+            x: 1.0,
+            y: 2.0,
+            w: Some(420.0),
+        };
+        let back: NodePosition =
+            serde_json::from_value(serde_json::to_value(&some).unwrap()).unwrap();
+        assert_eq!(back.w, Some(420.0));
+        // An old payload with no `w` field still deserializes (defaults to None).
+        let legacy: NodePosition =
+            serde_json::from_value(serde_json::json!({ "table": "t", "x": 1.0, "y": 2.0 }))
+                .expect("legacy node parses");
+        assert_eq!(legacy.w, None);
     }
 
     #[test]

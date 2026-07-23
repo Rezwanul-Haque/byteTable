@@ -283,6 +283,36 @@
   fill: var(--accent);
 }
 
+/* ---------- right-edge resize handle (read-mode, widen-only) ---------- */
+.map-card-resize {
+  cursor: ew-resize;
+}
+
+.map-card-resize-hit {
+  fill: transparent;
+  pointer-events: fill;
+}
+
+/* The visible grip line is hidden until the card (or the handle) is hovered,
+ * then tints with the accent — matching the edge/handle affordances. */
+.map-card-resize-grip {
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  opacity: 0;
+  transition: opacity 120ms ease;
+  pointer-events: none;
+}
+
+.map-card:hover .map-card-resize-grip,
+.map-card-resize:hover .map-card-resize-grip {
+  opacity: 0.7;
+}
+
+.map-card-resize:hover .map-card-resize-grip {
+  opacity: 1;
+}
+
 /* ---------- column rows ---------- */
 .map-col-pk {
   fill: var(--accent);

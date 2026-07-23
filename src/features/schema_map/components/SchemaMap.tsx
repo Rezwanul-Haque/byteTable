@@ -71,6 +71,7 @@ import {
   buildEdges,
   cardModel,
   CARD_PAD_T,
+  CARD_W,
   contentExtent,
   crowFoot,
   HEAD_H,
@@ -104,10 +105,19 @@ const ZOOM_STEP = 0.1;
 /** Debounce (ms) for persisting positions after a drag settles. */
 const SAVE_DEBOUNCE = 400;
 
+// Read-mode card resize bounds (widen-only): the default CARD_W is the floor,
+// so resizing only grows a card to fit long names, never shrinks it below the
+// default. MAX caps how wide a single card can get.
+const MIN_CARD_W = CARD_W;
+const MAX_CARD_W = 720;
+const clampCardW = (w: number): number => Math.min(MAX_CARD_W, Math.max(MIN_CARD_W, w));
+
 const clampZoom = (z: number): number =>
   Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(z * 10) / 10));
 
 type Positions = Record<string, { x: number; y: number }>;
+/** User-resized card widths by table (read-mode). Absent = default CARD_W. */
+type Widths = Record<string, number>;
 
 /** Spread a read-mode layout apart for edit mode, where cards are 340px wide
  *  (vs 224px) and show every column, so the read spacing would overlap. */
@@ -138,6 +148,7 @@ function anchorToOrigin(p: Positions): Positions {
 /** A drag in progress — a card move, an edge bend, or a canvas pan. */
 type Drag =
   | { kind: "card"; table: string; startX: number; startY: number; origX: number; origY: number }
+  | { kind: "resize"; table: string; startX: number; origW: number }
   | {
       kind: "edge";
       id: string;
@@ -213,6 +224,8 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
 
   // --- positions + zoom (with saved-layout restore) -------------------
   const [positions, setPositions] = useState<Positions | null>(null);
+  // User-resized read-mode card widths by table (empty = all default width).
+  const [widths, setWidths] = useState<Widths>({});
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   // Movable-edge waypoints: a {dx,dy} offset per edge id, applied to the live
@@ -330,12 +343,19 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
       const auto = autoLayout(Object.keys(metas), metas);
       if (layout && layout.positions.length > 0) {
         const saved: Positions = {};
-        for (const p of layout.positions) saved[p.table] = { x: p.x, y: p.y };
+        const savedWidths: Widths = {};
+        for (const p of layout.positions) {
+          saved[p.table] = { x: p.x, y: p.y };
+          // A saved width only applies to tables still present; clamp defends
+          // against a stale/out-of-range value in the JSON.
+          if (typeof p.w === "number" && metas[p.table]) savedWidths[p.table] = clampCardW(p.w);
+        }
         // Merge: saved positions win; any table missing a saved position
         // (schema gained a table since the save) falls back to auto-layout.
         const merged: Positions = { ...auto };
         for (const t of Object.keys(metas)) if (saved[t]) merged[t] = saved[t];
         setPositions(merged);
+        setWidths(savedWidths);
         const wp: Record<string, Waypoint> = {};
         for (const e of layout.edges ?? []) wp[e.id] = { dx: e.dx, dy: e.dy };
         setWaypoints(wp);
@@ -345,6 +365,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         if (typeof layout.zoom === "number") setZoom(clampZoom(layout.zoom));
       } else {
         setPositions(auto);
+        setWidths({});
         setWaypoints({});
         setOverrides({});
       }
@@ -362,6 +383,10 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
   waypointsRef.current = waypoints;
   const overridesRef = useRef(overrides);
   overridesRef.current = overrides;
+  // Mirror the live widths so any debounced save writes the current sizes,
+  // whichever drag (card move / resize / edge bend / zoom) triggered it.
+  const widthsRef = useRef(widths);
+  widthsRef.current = widths;
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const persist = useCallback(
     (pos: Positions, z: number) => {
@@ -371,6 +396,9 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
           table,
           x: p.x,
           y: p.y,
+          // Only widened cards carry `w`; a default-width card omits it (undefined
+          // is dropped by JSON.stringify), keeping the saved layout lean.
+          w: widthsRef.current[table],
         }));
         const edgesArr: EdgeWaypoint[] = Object.entries(waypointsRef.current).map(([id, w]) => ({
           id,
@@ -404,10 +432,10 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
     for (const t of tables) {
       const meta = metas[t];
       if (!meta) continue;
-      out.push(cardModel(t, meta, positions[t] ?? { x: 0, y: 0 }));
+      out.push(cardModel(t, meta, positions[t] ?? { x: 0, y: 0 }, widths[t]));
     }
     return out;
-  }, [metas, positions, tables]);
+  }, [metas, positions, widths, tables]);
 
   const cardsById = useMemo<Record<string, CardModel>>(() => {
     const m: Record<string, CardModel> = {};
@@ -465,6 +493,19 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
     };
   };
 
+  // Grab a card's right-edge handle → drag to resize its width (widen-only).
+  const onCardResizePointerDown = (e: React.PointerEvent, table: string) => {
+    if (e.button !== 0 || !positions) return;
+    e.stopPropagation();
+    svgRef.current?.setPointerCapture?.(e.pointerId);
+    dragRef.current = {
+      kind: "resize",
+      table,
+      startX: e.clientX,
+      origW: widths[table] ?? CARD_W,
+    };
+  };
+
   const onCanvasPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     // Clicking empty canvas deselects any selected edge + closes the menu.
@@ -512,6 +553,9 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
       const nx = Math.max(0, d.origX + (e.clientX - d.startX) / zoom);
       const ny = Math.max(0, d.origY + (e.clientY - d.startY) / zoom);
       setPositions((prev) => (prev ? { ...prev, [d.table]: { x: nx, y: ny } } : prev));
+    } else if (d.kind === "resize") {
+      const nw = clampCardW(d.origW + (e.clientX - d.startX) / zoom);
+      setWidths((prev) => ({ ...prev, [d.table]: nw }));
     } else if (d.kind === "edge") {
       const dx = d.origDx + (e.clientX - d.startX) / zoom;
       const dy = d.origDy + (e.clientY - d.startY) / zoom;
@@ -528,6 +572,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
     // Persist when a card moved or an edge bent (positions/waypoints changed);
     // panning is pure view state and is not saved here.
     if (d?.kind === "card" && positions) persist(positions, zoom);
+    else if (d?.kind === "resize" && positions) persist(positions, zoom);
     else if (d?.kind === "edge" && d.moved && positions) persist(positions, zoom);
   };
 
@@ -570,11 +615,14 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
     setPositions(auto);
     setZoom(1);
     setPan({ x: 0, y: 0 });
-    // Full reset to the initial state: re-run auto-layout AND straighten every
-    // edge (clear all bezier waypoints). waypointsRef is cleared first so the
-    // debounced persist below writes empty edges.
+    // Full reset to the initial state: re-run auto-layout, straighten every edge
+    // (clear all bezier waypoints), AND drop custom card widths back to default.
+    // The refs are cleared first so the debounced persist below writes the empty
+    // edges + default widths.
     waypointsRef.current = {};
     setWaypoints({});
+    widthsRef.current = {};
+    setWidths({});
     persist(auto, 1);
   };
 
@@ -843,6 +891,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
                     key={card.table}
                     card={card}
                     onHeaderPointerDown={(e) => onCardPointerDown(e, card.table)}
+                    onResizePointerDown={(e) => onCardResizePointerDown(e, card.table)}
                     onOpen={() => openTableTab(schema, card.table)}
                   />
                 ))}
@@ -1083,13 +1132,22 @@ function CardinalityPopover({
 function Card({
   card,
   onHeaderPointerDown,
+  onResizePointerDown,
   onOpen,
 }: {
   card: CardModel;
   onHeaderPointerDown: (e: React.PointerEvent) => void;
+  onResizePointerDown: (e: React.PointerEvent) => void;
   onOpen: () => void;
 }) {
   const { x, y, w, h, shownColumns, hiddenCount } = card;
+  // Truncation budgets scale with width (widen-only), so a resized card reveals
+  // more of long table/column names rather than just adding whitespace. The
+  // baseline char counts hold at the default CARD_W.
+  const wr = w / CARD_W;
+  const nameMax = Math.round(18 * wr);
+  const colNameMax = Math.round(16 * wr);
+  const colTypeMax = Math.round(12 * wr);
   return (
     <g className="map-card" transform={`translate(${x},${y})`}>
       <rect
@@ -1109,7 +1167,7 @@ function Card({
         <line className="map-card-head-rule" x1={0} y1={HEAD_H} x2={w} y2={HEAD_H} />
         <CardIcon className="map-card-icon" icon={ICON_TABLE} x={9} y={HEAD_H / 2 - 7} size={14} />
         <text className="map-card-name" x={30} y={HEAD_H / 2} dominantBaseline="central">
-          {truncate(card.table, 18)}
+          {truncate(card.table, nameMax)}
         </text>
         {/* open-in-new — SVG button with its own click handler. */}
         <g
@@ -1173,7 +1231,7 @@ function Card({
               y={cy}
               dominantBaseline="central"
             >
-              {truncate(col.name, 16)}
+              {truncate(col.name, colNameMax)}
             </text>
             <text
               className="map-col-type"
@@ -1182,7 +1240,7 @@ function Card({
               textAnchor="end"
               dominantBaseline="central"
             >
-              {truncate(col.dataType.toLowerCase(), 12)}
+              {truncate(col.dataType.toLowerCase(), colTypeMax)}
             </text>
           </g>
         );
@@ -1197,6 +1255,15 @@ function Card({
           + {hiddenCount} more columns…
         </text>
       ) : null}
+
+      {/* Right-edge resize handle (widen-only). A transparent hit strip
+          straddling the card's right border, below the header so it never
+          conflicts with the header drag or the open button. The thin visible
+          grip appears on hover (CSS). */}
+      <g className="map-card-resize" onPointerDown={onResizePointerDown}>
+        <rect className="map-card-resize-hit" x={w - 5} y={HEAD_H} width={10} height={h - HEAD_H} />
+        <line className="map-card-resize-grip" x1={w} y1={HEAD_H + 6} x2={w} y2={h - 6} />
+      </g>
     </g>
   );
 }

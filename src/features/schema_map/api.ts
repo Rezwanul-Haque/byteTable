@@ -24,6 +24,10 @@ export interface NodePosition {
   table: string;
   x: number;
   y: number;
+  /** User-resized card width (read-mode resizable cards). Omitted when the card
+   *  is at its default width, so pre-resize layouts have no `w`. Mirrors Rust's
+   *  optional `w`. */
+  w?: number;
 }
 
 /**

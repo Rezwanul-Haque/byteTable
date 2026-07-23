@@ -78,17 +78,20 @@ export function cardHeight(meta: TableMeta): number {
   return HEAD_H + meta.columns.length * ROW_H + CARD_PAD_B;
 }
 
-/** Resolve a table to its drawable card model at a given position. */
+/** Resolve a table to its drawable card model at a given position. `width`
+ *  overrides the default {@link CARD_W} (read-mode resizable cards); callers
+ *  pass the user-resized width, or omit it for the default. */
 export function cardModel(
   table: string,
   meta: TableMeta,
   pos: { x: number; y: number },
+  width?: number,
 ): CardModel {
   return {
     table,
     x: pos.x,
     y: pos.y,
-    w: CARD_W,
+    w: width ?? CARD_W,
     h: cardHeight(meta),
     shownColumns: meta.columns,
     hiddenCount: 0,

@@ -430,6 +430,7 @@ pub fn run() {
             features::connections::commands::connection_schemas,
             features::connections::commands::connection_tables,
             features::connections::commands::query_run,
+            features::connections::commands::query_run_batch,
             features::introspection::commands::table_meta,
             features::introspection::commands::list_objects,
             features::introspection::commands::object_definition,

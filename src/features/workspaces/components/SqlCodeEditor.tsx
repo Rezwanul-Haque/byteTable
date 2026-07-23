@@ -179,6 +179,13 @@ interface SqlCodeEditorProps {
    * whole buffer" — the caller decides.
    */
   onRun: (sql?: string) => void;
+  /**
+   * "Run as Batch" handler — same SQL resolution as {@link onRun} (selection,
+   * else the caret's statement), but forces the session-pinned batch path so
+   * the statements share ONE connection (transactions / savepoints /
+   * `SET SESSION` span them). Optional; the menu item hides when absent.
+   */
+  onRunBatch?: (sql?: string) => void;
   /** Shift+Alt+F handler — beautify the buffer (also bound to the wand FAB). */
   onFormat?: () => void;
   /** Caret offset, reported on every selection / document change (for the
@@ -197,7 +204,7 @@ interface SqlCodeEditorProps {
 
 export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>(
   function SqlCodeEditor(
-    { value, onChange, onRun, onFormat, onCaret, onAllSelected, schema },
+    { value, onChange, onRun, onRunBatch, onFormat, onCaret, onAllSelected, schema },
     ref,
   ) {
     const hostRef = useRef<HTMLDivElement>(null);
@@ -210,6 +217,7 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
     // without re-creating the EditorView on every parent render.
     const onChangeRef = useRef(onChange);
     const onRunRef = useRef(onRun);
+    const onRunBatchRef = useRef(onRunBatch);
     const onFormatRef = useRef(onFormat);
     const onCaretRef = useRef(onCaret);
     const onAllSelectedRef = useRef(onAllSelected);
@@ -218,6 +226,7 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
     const schemaRef = useRef<EditorSchema>(schema ?? { tables: [] });
     onChangeRef.current = onChange;
     onRunRef.current = onRun;
+    onRunBatchRef.current = onRunBatch;
     onFormatRef.current = onFormat;
     onCaretRef.current = onCaret;
     onAllSelectedRef.current = onAllSelected;
@@ -433,6 +442,11 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
       if (view) onRunRef.current(pickAndSelect(view));
       closeMenu();
     };
+    const runSelectedAsBatch = () => {
+      const view = viewRef.current;
+      if (view) onRunBatchRef.current?.(pickAndSelect(view));
+      closeMenu();
+    };
     const runAll = () => {
       onRunRef.current();
       closeMenu();
@@ -511,6 +525,11 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
                   <button className="sql-ctx-item" role="menuitem" onClick={runAll}>
                     <span>Run All</span>
                   </button>
+                  {onRunBatchRef.current ? (
+                    <button className="sql-ctx-item" role="menuitem" onClick={runSelectedAsBatch}>
+                      <span>Run as Batch</span>
+                    </button>
+                  ) : null}
                   <button className="sql-ctx-item" role="menuitem" onClick={format}>
                     <span>Format</span>
                     <span className="sql-ctx-key">{FORMAT_HINT}</span>

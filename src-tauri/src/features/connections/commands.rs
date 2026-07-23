@@ -11,7 +11,7 @@
 use tauri::State;
 
 use crate::shared::engine::{ConnectionParams, EngineInfo, QueryOptions, QueryResult};
-use crate::shared::engine::{SchemaInfo, TableInfo};
+use crate::shared::engine::{SchemaInfo, StatementOutcome, TableInfo};
 use crate::shared::error::AppError;
 
 use super::application::{
@@ -212,6 +212,27 @@ pub async fn query_run(
         &state.manager,
         &handle_id,
         &sql,
+        clamp_row_limit(options.unwrap_or_default()),
+    )
+    .await
+}
+
+/// Run several statements as ONE session-pinned batch (transaction / savepoint
+/// / session state carries across them). Each statement's outcome — success
+/// result or §5 error — is returned in order; the renderer maps each to a
+/// result tab. Used by the SQL editor for multi-statement runs (a single
+/// statement still goes through `query_run`).
+#[tauri::command]
+pub async fn query_run_batch(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+    statements: Vec<String>,
+    options: Option<QueryOptions>,
+) -> Result<Vec<StatementOutcome>, AppError> {
+    application::run_batch(
+        &state.manager,
+        &handle_id,
+        &statements,
         clamp_row_limit(options.unwrap_or_default()),
     )
     .await

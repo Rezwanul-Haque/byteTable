@@ -215,6 +215,51 @@ pub trait EngineConnection: Send + Sync {
     /// is given but always enforces `row_limit`.
     async fn run_query(&self, sql: &str, options: QueryOptions) -> Result<QueryResult, AppError>;
 
+    /// Run several statements as ONE session-pinned batch: every statement
+    /// executes on the SAME underlying connection, in order, so transaction /
+    /// savepoint / session state (`BEGIN … SAVEPOINT … ROLLBACK TO … COMMIT`,
+    /// `SET SESSION …`, temp tables, server-side `PREPARE`) carries across
+    /// them — which a per-statement [`run_query`](Self::run_query) loop CANNOT
+    /// do, because a pooled engine hands each `run_query` a *different* pooled
+    /// connection.
+    ///
+    /// The batch does NOT stop at the first failure: each statement's outcome
+    /// (success result or §5 error) is captured into a [`StatementOutcome`], in
+    /// order, so a failing statement never hides the ones after it (mirrors the
+    /// SQL editor's per-statement result tabs). The `Err` arm is reserved for a
+    /// whole-batch failure that prevents running any statement (e.g. the
+    /// connection could not be acquired).
+    ///
+    /// Default impl: NO session pinning — each statement runs via `run_query`
+    /// (its own pooled connection), capturing per-statement outcomes. This is
+    /// behaviourally identical to the old per-statement editor loop, so every
+    /// engine keeps working unchanged; an engine whose pool would otherwise
+    /// break cross-statement state (MySQL) overrides this to pin one
+    /// connection.
+    async fn run_batch(
+        &self,
+        statements: &[String],
+        options: QueryOptions,
+    ) -> Result<Vec<StatementOutcome>, AppError> {
+        let mut out = Vec::with_capacity(statements.len());
+        for stmt in statements {
+            let outcome = match self.run_query(stmt, options.clone()).await {
+                Ok(result) => StatementOutcome {
+                    sql: stmt.clone(),
+                    result: Some(result),
+                    error: None,
+                },
+                Err(err) => StatementOutcome {
+                    sql: stmt.clone(),
+                    result: None,
+                    error: Some(err.to_string()),
+                },
+            };
+            out.push(outcome);
+        }
+        Ok(out)
+    }
+
     /// Fetch one page of rows from a table for the data grid (M4 + M5): paged
     /// (`offset`/`limit`), optionally sorted by a single column, and
     /// optionally filtered (M5), with an exact `COUNT(*)` for the row-count

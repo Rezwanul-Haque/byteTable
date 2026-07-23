@@ -27,8 +27,6 @@ pub(super) async fn run_query(
     sql: &str,
     options: QueryOptions,
 ) -> Result<QueryResult, AppError> {
-    let started = Instant::now();
-
     // One acquired connection so a `USE` and the query share a session.
     // A `USE` on the pool surface lands on a random pooled connection, so
     // the query — which may grab a DIFFERENT pooled connection — would not
@@ -37,20 +35,79 @@ pub(super) async fn run_query(
     // fails with MySQL ERROR 1046 "No database selected". Pinning the
     // session is the same fix `execute_script` uses for imports.
     let mut conn = pool.acquire().await.map_err(map_query_error)?;
+    apply_schema(&mut conn, options.schema.as_deref()).await;
+    run_on_conn(&mut conn, sql, &options).await
+}
 
-    // Apply the schema as the default database for unqualified names, when
-    // given. Best effort: a bad schema simply leaves the current default.
-    if let Some(schema) = &options.schema {
+/// Session-pinned multi-statement execution (the `run_batch` port method):
+/// run EVERY statement on ONE acquired connection, in order, so transaction /
+/// savepoint / session state carries across them. A per-statement `run_query`
+/// loop cannot do this — the pool hands each call a different connection, so
+/// `START TRANSACTION` / `SAVEPOINT` / `SET SESSION` set on one connection are
+/// invisible to the next statement (that was the "SAVEPOINT sp1 does not
+/// exist" bug).
+///
+/// The `USE schema` is applied ONCE on the pinned connection and persists for
+/// the whole batch. Continue-on-error: each statement's success result or §5
+/// error is captured into a `StatementOutcome`; a failing statement never
+/// aborts the rest (matches the editor's per-statement result tabs). Only a
+/// failure to acquire the connection is the outer `Err`.
+pub(super) async fn run_batch(
+    pool: &MySqlPool,
+    statements: &[String],
+    options: QueryOptions,
+) -> Result<Vec<StatementOutcome>, AppError> {
+    let mut conn = pool.acquire().await.map_err(map_query_error)?;
+    apply_schema(&mut conn, options.schema.as_deref()).await;
+
+    let mut out = Vec::with_capacity(statements.len());
+    for stmt in statements {
+        let outcome = match run_on_conn(&mut conn, stmt, &options).await {
+            Ok(result) => StatementOutcome {
+                sql: stmt.clone(),
+                result: Some(result),
+                error: None,
+            },
+            Err(err) => StatementOutcome {
+                sql: stmt.clone(),
+                result: None,
+                error: Some(err.to_string()),
+            },
+        };
+        out.push(outcome);
+    }
+    Ok(out)
+}
+
+/// Apply `schema` as the default database (`USE`) for unqualified names on the
+/// given connection, when given. Best effort: a bad schema simply leaves the
+/// current default. Applied ONCE per acquired connection so it persists for
+/// every statement run on it.
+async fn apply_schema(conn: &mut sqlx::mysql::MySqlConnection, schema: Option<&str>) {
+    if let Some(schema) = schema {
         use sqlx::Executor as _;
         let _ = conn
             .execute(format!("USE {}", quote_ident(schema)).as_str())
             .await;
     }
+}
+
+/// Run ONE statement on an already-acquired connection and decode it to a
+/// [`QueryResult`]. Shared by the single-statement `run_query` and the
+/// session-pinned `run_batch` so both take the same prepared→text fallback and
+/// decoding path; the caller owns connection acquisition and `USE schema`.
+async fn run_on_conn(
+    conn: &mut sqlx::mysql::MySqlConnection,
+    sql: &str,
+    options: &QueryOptions,
+) -> Result<QueryResult, AppError> {
+    let started = Instant::now();
 
     // MySQL refuses some commands in the prepared-statement protocol
-    // (error 1295) — notably CREATE/DROP FUNCTION/PROCEDURE/TRIGGER. On that
-    // error, re-run via the unprepared TEXT protocol (`raw_sql`), which
-    // accepts them; such DDL returns no result rows.
+    // (error 1295) — notably CREATE/DROP FUNCTION/PROCEDURE/TRIGGER — and some
+    // statements (e.g. `SET GLOBAL time_zone=...`) return a PrepareOk packet
+    // sqlx cannot decode. On either, re-run via the unprepared TEXT protocol
+    // (`raw_sql`), which accepts them; such statements return no result rows.
     let rows = match sqlx::query(sql).fetch_all(&mut *conn).await {
         Ok(rows) => rows,
         Err(err) if is_unpreparable(&err) => {

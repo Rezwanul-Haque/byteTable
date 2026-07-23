@@ -597,6 +597,34 @@ export function queryRun(
 }
 
 /**
+ * One statement's outcome inside a session-pinned batch run (`query_run_batch`).
+ * Exactly one of `result` / `error` is set: `result` on success, `error` (the
+ * §5 message) on failure. Shape-compatible with `SqlRun` minus its `id`.
+ */
+export interface StatementOutcome {
+  sql: string;
+  result: QueryResult | null;
+  error: string | null;
+}
+
+/**
+ * Run several statements as ONE session-pinned batch (`query_run_batch`): every
+ * statement runs on the SAME connection, in order, so transaction / savepoint /
+ * session state (`BEGIN … SAVEPOINT … ROLLBACK TO … COMMIT`, `SET SESSION …`,
+ * temp tables, server-side `PREPARE`) carries across them — which a per-statement
+ * `queryRun` loop cannot do, because a pooled engine hands each call a different
+ * connection. Continue-on-error: every statement reports its own outcome, so a
+ * failing statement never hides the ones after it.
+ */
+export function queryRunBatch(
+  handleId: string,
+  statements: string[],
+  options?: QueryOptions,
+): Promise<StatementOutcome[]> {
+  return invoke<StatementOutcome[]>("query_run_batch", { handleId, statements, options });
+}
+
+/**
  * Update a single cell for M11 inline editing (the `row_update` command): set
  * one column to a new value on the row identified by its full primary key.
  * **Mutates user data.** Returns the affected count (always 1 on success) plus

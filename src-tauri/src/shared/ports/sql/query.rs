@@ -43,6 +43,24 @@ pub struct QueryResult {
     pub elapsed_ms: u64,
 }
 
+/// One statement's outcome inside a session-pinned multi-statement run
+/// ([`EngineConnection::run_batch`]). Exactly one of `result` / `error` is
+/// `Some`: `result` on success, `error` (the §5 human message) on failure. The
+/// batch runs every statement on ONE pinned connection, in order, and does NOT
+/// stop at the first failure — each statement reports its own outcome so a
+/// failing statement never hides the ones after it (mirrors the SQL editor's
+/// per-statement result tabs). The renderer maps each of these to a `SqlRun`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StatementOutcome {
+    /// The statement that produced this outcome (the result tab's tooltip).
+    pub sql: String,
+    /// The result set on success, or `None` when this statement failed.
+    pub result: Option<QueryResult>,
+    /// The §5 driver message on failure, or `None` on success.
+    pub error: Option<String>,
+}
+
 /// Sort direction for a single column. Lowercase on the wire ("asc" /
 /// "desc"), matching the renderer's `SortDirection` in
 /// `src/shared/api/engine.ts`.

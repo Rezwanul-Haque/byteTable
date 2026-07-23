@@ -24,11 +24,26 @@ pub(super) fn map_query_error(err: sqlx::Error) -> AppError {
     AppError::Database(humanize(&err.to_string()))
 }
 
-/// True for MySQL error 1295 — a command the prepared-statement protocol does
-/// not support (CREATE/DROP FUNCTION/PROCEDURE/TRIGGER, etc.). Such statements
-/// must run via the text protocol instead.
+/// True when a statement cannot run over the prepared-statement (binary)
+/// protocol and must fall back to the text protocol (`raw_sql`). Two cases:
+///
+/// 1. MySQL error 1295 — a command the prepared-statement protocol does not
+///    support (CREATE/DROP FUNCTION/PROCEDURE/TRIGGER, etc.). Surfaces as a
+///    `Database` error.
+/// 2. A `COM_STMT_PREPARE` reply sqlx cannot decode — e.g. `SET GLOBAL
+///    time_zone=...` and some admin statements make the server send a
+///    short/non-standard PrepareOk packet, and sqlx fails with a protocol
+///    decode error ("PrepareOk expected 12 bytes but got 7 bytes"). This is a
+///    `Protocol` error, NOT a `Database` error, so it must be matched
+///    separately or the text-protocol fallback never fires.
 pub(super) fn is_unpreparable(err: &sqlx::Error) -> bool {
-    matches!(err, sqlx::Error::Database(db) if db.message().contains("prepared statement protocol"))
+    match err {
+        sqlx::Error::Database(db) => db.message().contains("prepared statement protocol"),
+        other => {
+            let msg = other.to_string();
+            msg.contains("PrepareOk") || msg.contains("prepare_ok")
+        }
+    }
 }
 
 /// The bare driver message for an error (strip sqlx's wrapping).

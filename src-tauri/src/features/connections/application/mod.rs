@@ -11,7 +11,7 @@ use tokio::sync::RwLock;
 use crate::shared::document::DocumentStoreConnection;
 use crate::shared::engine::{
     ConnectSecret, ConnectionParams, Connector, Engine, EngineConnection, EngineInfo,
-    OpenConnection, QueryOptions, QueryResult, SchemaInfo, TableInfo,
+    OpenConnection, QueryOptions, QueryResult, SchemaInfo, StatementOutcome, TableInfo,
 };
 use crate::shared::error::AppError;
 use crate::shared::keyvalue::KeyValueConnection;
@@ -586,6 +586,23 @@ pub async fn run_query(
     options: QueryOptions,
 ) -> Result<QueryResult, AppError> {
     manager.get_sql(handle).await?.run_query(sql, options).await
+}
+
+/// Run a session-pinned batch of statements on one connection, so transaction
+/// / savepoint / session state carries across them. Each statement's outcome
+/// (success or §5 error) is returned in order; see
+/// [`EngineConnection::run_batch`](crate::shared::engine::EngineConnection::run_batch).
+pub async fn run_batch(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    statements: &[String],
+    options: QueryOptions,
+) -> Result<Vec<StatementOutcome>, AppError> {
+    manager
+        .get_sql(handle)
+        .await?
+        .run_batch(statements, options)
+        .await
 }
 
 #[cfg(test)]

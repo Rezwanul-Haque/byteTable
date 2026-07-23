@@ -321,6 +321,73 @@ async fn run_query_maps_types() {
 }
 
 #[tokio::test]
+async fn run_batch_pins_one_session_across_transaction_and_savepoint() {
+    let Some((params, secret)) =
+        gate("run_batch_pins_one_session_across_transaction_and_savepoint")
+    else {
+        return;
+    };
+    let pool = raw_pool(&params, &secret).await;
+    let (schema, other) = ("bt_it_batch", "bt_it_batch_other");
+    setup_fixture(&pool, schema, other).await;
+    let conn = open_conn(&params, &secret).await;
+
+    // A transaction + savepoint spanning five statements. A per-statement
+    // `run_query` loop would hand each statement a DIFFERENT pooled connection,
+    // so the SAVEPOINT set on one connection would be invisible to the
+    // ROLLBACK TO on another ("SAVEPOINT sp1 does not exist"). Pinned to one
+    // session, all five succeed and the UPDATE is undone by the savepoint.
+    let statements: Vec<String> = vec![
+        "START TRANSACTION".into(),
+        "SAVEPOINT sp1".into(),
+        format!("UPDATE `{schema}`.`authors` SET name = 'changed' WHERE id = 1"),
+        "ROLLBACK TO SAVEPOINT sp1".into(),
+        "COMMIT".into(),
+    ];
+    let outcomes = conn
+        .run_batch(&statements, QueryOptions::default())
+        .await
+        .expect("run batch");
+    assert_eq!(outcomes.len(), 5);
+    for (i, o) in outcomes.iter().enumerate() {
+        assert!(o.error.is_none(), "statement {i} errored: {:?}", o.error);
+    }
+
+    // The UPDATE was rolled back to the savepoint, so the original name
+    // survives the COMMIT.
+    let check = conn
+        .run_query(
+            &format!("SELECT name FROM `{schema}`.`authors` WHERE id = 1"),
+            QueryOptions::default(),
+        )
+        .await
+        .expect("verify");
+    assert_eq!(check.rows[0][0], serde_json::json!("Ada"));
+
+    // Continue-on-error: a failing statement mid-batch reports its own error
+    // and does NOT abort the statements after it.
+    let mixed: Vec<String> = vec![
+        format!("SELECT 1 FROM `{schema}`.`authors` LIMIT 1"),
+        "SELECT * FROM nonexistent_table_xyz".into(),
+        "SELECT 2".into(),
+    ];
+    let outcomes = conn
+        .run_batch(&mixed, QueryOptions::default())
+        .await
+        .expect("run mixed batch");
+    assert_eq!(outcomes.len(), 3);
+    assert!(outcomes[0].error.is_none());
+    assert!(
+        outcomes[1].error.is_some(),
+        "bad statement reports its error"
+    );
+    assert!(outcomes[2].error.is_none(), "run continues after a failure");
+
+    conn.close().await.expect("close");
+    drop_fixture(&pool, schema, other).await;
+}
+
+#[tokio::test]
 async fn fetch_rows_paging_sort_filter_and_total() {
     let Some((params, secret)) = gate("fetch_rows_paging_sort_filter_and_total") else {
         return;

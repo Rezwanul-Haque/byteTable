@@ -84,8 +84,8 @@ use crate::shared::engine::{
     AlterResult, ColumnStats, ColumnStatsRequest, ConnectSecret, ConnectionParams, Connector,
     DbObjectDefinition, DbObjectInfo, DbObjectKind, DeleteRowsRequest, DeleteRowsResult, Engine,
     EngineConnection, EngineInfo, FetchRowsRequest, ImportResult, OpenConnection, QueryOptions,
-    QueryResult, RowLookup, RowLookupRequest, RowsPage, SchemaInfo, TableInfo, TableMeta,
-    UpdateCellRequest, UpdateResult,
+    QueryResult, RowLookup, RowLookupRequest, RowsPage, SchemaInfo, StatementOutcome, TableInfo,
+    TableMeta, UpdateCellRequest, UpdateResult,
 };
 use crate::shared::error::AppError;
 
@@ -97,7 +97,7 @@ use bulk::{bulk_insert, fetch_pk_pool};
 use error::{map_connect_error, map_query_error};
 use introspect::{list_schemas, list_tables, table_meta};
 use mutate::{delete_rows, drop_schema, execute_script, truncate_table, update_cell};
-use query::{column_stats, fetch_row_by_key, fetch_rows, run_query};
+use query::{column_stats, fetch_row_by_key, fetch_rows, run_batch, run_query};
 use structure::alter_table;
 
 /// Max connections in one ByteTable connection's pool. Small: a desktop client
@@ -223,6 +223,14 @@ impl EngineConnection for MysqlEngineConnection {
 
     async fn run_query(&self, sql: &str, options: QueryOptions) -> Result<QueryResult, AppError> {
         run_query(&self.pool, sql, options).await
+    }
+
+    async fn run_batch(
+        &self,
+        statements: &[String],
+        options: QueryOptions,
+    ) -> Result<Vec<StatementOutcome>, AppError> {
+        run_batch(&self.pool, statements, options).await
     }
 
     async fn fetch_rows(&self, req: FetchRowsRequest) -> Result<RowsPage, AppError> {

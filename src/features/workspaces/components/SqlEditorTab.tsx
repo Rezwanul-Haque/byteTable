@@ -24,7 +24,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { highlightSql } from "../../browse/shared/highlightSql";
-import { queryRun, readTextFile } from "../../../shared/api/engine";
+import type { QueryResult } from "../../../shared/api/engine";
+import { queryRun, queryRunBatch, readTextFile } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
 import type { Engine } from "../../../shared/types";
 import { Btn } from "../../../shared/ui/Btn";
@@ -357,18 +358,24 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   // Run SQL. With no override the whole buffer runs; the toolbar Run button and
   // ⌘/Ctrl+Enter pass the statement at the caret, OR — when the user has
   // selected text spanning several statements — that whole selection. The
-  // source is split into top-level statements and run IN ORDER, one at a time,
-  // because the engines' prepared-query path accepts only a single statement
-  // (a multi-statement string would error). EVERY statement's outcome becomes a
-  // result tab (success or its §5 error), so a failing statement doesn't hide
-  // the others; the run continues through all of them and the first tab is
-  // focused. Latest `running` is read off state so double-fires are ignored;
-  // runs / history go to the store (survive switches).
-  const run = (override?: string) => {
+  // source is split into top-level statements and run IN ORDER. A SINGLE
+  // statement goes through `queryRun`; TWO OR MORE run as one session-pinned
+  // batch (`queryRunBatch`) so they share ONE connection — a per-statement loop
+  // hands each statement a different pooled connection, which breaks
+  // transactions / savepoints / `SET SESSION` that must span statements. EVERY
+  // statement's outcome becomes a result tab (success or its §5 error), so a
+  // failing statement doesn't hide the others; the run continues through all of
+  // them and the first tab is focused. Latest `running` is read off state so
+  // double-fires are ignored; runs / history go to the store (survive switches).
+  const run = (override?: string, opts?: { forceBatch?: boolean }) => {
     const source = (override ?? text).trim();
     if (running || source === "") return;
     const statements = splitStatements(source);
     if (statements.length === 0) return;
+    // Batch when there is more than one statement (they must share a session),
+    // or when the caller forces it via the "Run as Batch" context-menu action
+    // (pins even a lone statement onto one connection).
+    const useBatch = opts?.forceBatch === true || statements.length > 1;
     setRunning(true);
     setPop(null);
     // A new run always re-expands the results pane (Prompt 5).
@@ -377,25 +384,54 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
       const runs: SqlRun[] = [];
       let touchedObjects = false;
       let touchedTables = false;
-      for (let i = 0; i < statements.length; i++) {
-        const stmt = statements[i]!;
-        try {
-          const result = await queryRun(workspace.handleId, stmt, { schema: schemaName });
-          runs.push({ id: `r${i}`, sql: stmt, result, error: null });
+      // Record one statement's outcome as a result tab + a history entry, and
+      // flag object/table DDL so the sidebar caches refresh after a success.
+      const record = (
+        i: number,
+        stmt: string,
+        result: QueryResult | null,
+        error: string | null,
+      ) => {
+        runs.push({ id: `r${i}`, sql: stmt, result, error });
+        if (error === null) {
           if (OBJECT_DDL_RE.test(stmt)) touchedObjects = true;
           if (TABLE_DDL_RE.test(stmt)) touchedTables = true;
           pushSqlHistory(tab.id, {
             sql: stmt,
             ok: true,
-            rowCount: result.rowCount,
+            rowCount: result?.rowCount,
             ranAt: Date.now(),
           });
+        } else {
+          pushSqlHistory(tab.id, { sql: stmt, ok: false, error, ranAt: Date.now() });
+        }
+      };
+
+      if (!useBatch) {
+        // One statement, not forced: nothing to carry across, so the plain
+        // single-statement path (unchanged from before).
+        const stmt = statements[0]!;
+        try {
+          const result = await queryRun(workspace.handleId, stmt, { schema: schemaName });
+          record(0, stmt, result, null);
         } catch (err: unknown) {
-          const message = appErrorMessage(err, "Query failed.");
-          runs.push({ id: `r${i}`, sql: stmt, result: null, error: message });
-          pushSqlHistory(tab.id, { sql: stmt, ok: false, error: message, ranAt: Date.now() });
+          record(0, stmt, null, appErrorMessage(err, "Query failed."));
+        }
+      } else {
+        // Multiple statements: one session-pinned batch. Per-statement errors
+        // arrive INSIDE the outcomes (continue-on-error); the promise itself
+        // only rejects on a whole-run failure (e.g. the connection was lost
+        // before anything ran), surfaced as a single error tab.
+        try {
+          const outcomes = await queryRunBatch(workspace.handleId, statements, {
+            schema: schemaName,
+          });
+          outcomes.forEach((o, i) => record(i, o.sql, o.result, o.error));
+        } catch (err: unknown) {
+          record(0, source, null, appErrorMessage(err, "Query failed."));
         }
       }
+
       setSqlRuns(tab.id, runs); // focuses the first tab
       setRunning(false);
       // A successful CREATE/DROP/ALTER/REFRESH of a schema object invalidates
@@ -644,6 +680,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
             value={text}
             onChange={(v) => setSqlText(tab.id, v)}
             onRun={run}
+            onRunBatch={(sql) => run(sql, { forceBatch: true })}
             onFormat={format}
             onCaret={setCaret}
             onAllSelected={setAllSelected}

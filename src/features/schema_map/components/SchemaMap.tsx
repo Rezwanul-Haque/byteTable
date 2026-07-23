@@ -237,6 +237,10 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
   // The currently selected edge id (highlighted + shows its bend handle), or
   // null. Clicking empty canvas deselects.
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
+  // The edge the pointer is currently over. Drives the hover glow AND raises
+  // that edge to the top of the paint order, so an overlapping neighbour can't
+  // occlude the highlighted portion of the curve.
+  const [hoveredEdge, setHoveredEdge] = useState<string | null>(null);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
 
@@ -454,6 +458,22 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
     () => (selectedEdge ? (edges.find((e) => e.id === selectedEdge) ?? null) : null),
     [edges, selectedEdge],
   );
+
+  // Paint order with the highlighted edges lifted to the end (SVG has no
+  // z-index — last painted wins). Selected rises above the rest; the hovered
+  // edge rises above everything, so the curve under the cursor is never
+  // occluded by an overlapping neighbour and glows along its whole length.
+  const orderedEdges = useMemo(() => {
+    if (!hoveredEdge && !selectedEdge) return edges;
+    const raised = [selectedEdge, hoveredEdge].filter(
+      (id, i, a): id is string => Boolean(id) && a.indexOf(id) === i,
+    );
+    const base = edges.filter((e) => !raised.includes(e.id));
+    const top = raised
+      .map((id) => edges.find((e) => e.id === id))
+      .filter((e): e is EdgeModel => Boolean(e));
+    return [...base, ...top];
+  }, [edges, hoveredEdge, selectedEdge]);
 
   // Set (or clear, with null) an edge's manual cardinality override, then persist.
   const setCardinality = useCallback(
@@ -873,13 +893,17 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
               >
                 {/* Edges first so cards paint over their endpoints. */}
                 <g className="map-edges-layer">
-                  {edges.map((edge) => (
+                  {orderedEdges.map((edge) => (
                     <Edge
                       key={edge.id}
                       edge={edge}
                       selected={selectedEdge === edge.id}
+                      hovered={hoveredEdge === edge.id}
                       bent={Boolean(waypoints[edge.id])}
                       onSelectPointerDown={(e) => onEdgePointerDown(e, edge.id)}
+                      onHoverChange={(h) =>
+                        setHoveredEdge((cur) => (h ? edge.id : cur === edge.id ? null : cur))
+                      }
                       onHandlePointerDown={(e) => onHandlePointerDown(e, edge.id)}
                       onResetEdge={() => resetEdge(edge.id)}
                     />
@@ -1048,25 +1072,41 @@ const CARDINALITY_OPTIONS: { label: string; kind: CardinalityKind | null }[] = [
 function Edge({
   edge,
   selected,
+  hovered,
   bent,
   onSelectPointerDown,
+  onHoverChange,
   onHandlePointerDown,
   onResetEdge,
 }: {
   edge: EdgeModel;
   selected: boolean;
+  hovered: boolean;
   bent: boolean;
   onSelectPointerDown: (e: React.PointerEvent) => void;
+  onHoverChange: (hovering: boolean) => void;
   onHandlePointerDown: (e: React.PointerEvent) => void;
   onResetEdge: () => void;
 }) {
   return (
     <g
-      className={"map-edge" + (selected ? " is-selected" : "") + (edge.derived ? " is-mn" : "")}
+      className={
+        "map-edge" +
+        (selected ? " is-selected" : "") +
+        (hovered ? " is-hovered" : "") +
+        (edge.derived ? " is-mn" : "")
+      }
       data-edge-id={edge.id}
     >
-      {/* Wide transparent hit-area makes the thin curve easy to click/touch. */}
-      <path className="map-edge-hit" d={edge.path} onPointerDown={onSelectPointerDown} />
+      {/* Wide transparent hit-area makes the thin curve easy to click/touch, and
+          drives the hover glow + raise (the thin path is not directly hovered). */}
+      <path
+        className="map-edge-hit"
+        d={edge.path}
+        onPointerDown={onSelectPointerDown}
+        onPointerEnter={() => onHoverChange(true)}
+        onPointerLeave={() => onHoverChange(false)}
+      />
       <path className="map-edge-path" d={edge.path} />
       <circle className="map-edge-dot" cx={edge.sx} cy={edge.sy} r={2} />
       <circle className="map-edge-dot" cx={edge.tx} cy={edge.ty} r={2} />

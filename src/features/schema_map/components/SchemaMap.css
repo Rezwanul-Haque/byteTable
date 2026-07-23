@@ -122,7 +122,11 @@
     stroke-width 120ms ease;
 }
 
-/* Hover brighten even when not selected (hover lives on the hit-area sibling). */
+/* Hover brighten even when not selected. Driven by the JS `is-hovered` class
+ * (which also raises the edge to the top of the paint order, so the glow can't
+ * be occluded by an overlapping neighbour). The `:hover ~` sibling rule is kept
+ * as a fallback so the brighten still appears the frame before state settles. */
+.map-edge.is-hovered .map-edge-path,
 .map-edge-hit:hover ~ .map-edge-path {
   stroke: color-mix(in oklab, var(--accent) 80%, var(--border));
   stroke-width: 2;

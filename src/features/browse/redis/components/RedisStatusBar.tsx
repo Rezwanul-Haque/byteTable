@@ -11,6 +11,7 @@ import { Icon } from "../../../../shared/ui/Icon";
 import type { Env } from "../../../../shared/types";
 import type { KeyType } from "../api";
 import { humanBytes, REDIS_TYPES } from "../helpers";
+import "../../../processes/ProcessList.css";
 import "./RedisStatusBar.css";
 
 /** The project's source repository (opened from the "Built by" credit). */
@@ -39,6 +40,8 @@ interface RedisStatusBarProps {
   activeKeyType: KeyType | null;
   /** The active key's `MEMORY USAGE` bytes (null when unknown / no key tab). */
   activeKeyMemory: number | null;
+  /** Open (or focus) the connected-clients (processes) tab (M26). */
+  onOpenProcesses: () => void;
 }
 
 export function RedisStatusBar(props: RedisStatusBarProps) {
@@ -53,6 +56,7 @@ export function RedisStatusBar(props: RedisStatusBarProps) {
     dbIndex,
     activeKeyType,
     activeKeyMemory,
+    onOpenProcesses,
   } = props;
 
   const keyMeta = activeKeyType
@@ -80,6 +84,14 @@ export function RedisStatusBar(props: RedisStatusBarProps) {
           {keyMeta}
         </span>
       ) : null}
+      <button
+        type="button"
+        className="status-btn"
+        title="Connected clients"
+        onClick={onOpenProcesses}
+      >
+        <Icon name="monitor_heart" size={13} /> clients
+      </button>
       <button
         type="button"
         className="status-dim status-credit"

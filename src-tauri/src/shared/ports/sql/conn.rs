@@ -138,6 +138,17 @@ pub trait EngineConnection: Send + Sync {
     /// What `open` learned about the target (engine + version).
     fn engine_info(&self) -> EngineInfo;
 
+    /// The M26 process-list capability for this connection, when the engine
+    /// exposes a server session list (Postgres/MySQL/SQL Server/ClickHouse).
+    /// SQLite (embedded) keeps the default `None`, so the Processes tab shows an
+    /// empty state for it. Returning `Some` opts the adapter in — the concrete
+    /// type must also `impl ProcessReader`.
+    fn as_process_reader(
+        self: std::sync::Arc<Self>,
+    ) -> Option<std::sync::Arc<dyn crate::shared::process::ProcessReader>> {
+        None
+    }
+
     /// Schemas visible on this connection (SQLite: `main` + attached).
     async fn list_schemas(&self) -> Result<Vec<SchemaInfo>, AppError>;
 

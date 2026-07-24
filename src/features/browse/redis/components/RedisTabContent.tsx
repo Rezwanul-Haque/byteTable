@@ -6,6 +6,7 @@
 // on the active tab's kind and hands each its props.
 
 import type { KvDbInfo, KvServerInfo } from "../../../connections/api";
+import { ProcessesTab } from "../../../processes/ProcessesTab";
 import type { KeyType } from "../api";
 import type { RedisTab } from "../state";
 import { DashboardTab } from "./DashboardTab";
@@ -20,6 +21,8 @@ interface RedisTabContentProps {
   serverInfo: KvServerInfo | undefined;
   /** The workspace's selected db (dashboard sample). */
   dbIndex: number;
+  /** Connection deployment env (drives the kill modal's production gate). */
+  env: string;
   /** Per-db key counts (dashboard per-db panel). */
   databases: KvDbInfo[];
   /** Invalidation nonce — bumped after writes / manual refresh (REDIS_SPEC §7). */
@@ -41,6 +44,7 @@ export function RedisTabContent({
   handleId,
   serverInfo,
   dbIndex,
+  env,
   databases,
   version,
   isProduction,
@@ -77,6 +81,10 @@ export function RedisTabContent({
           onClose={() => onCloseTab(tab.id)}
           onMeta={(meta) => onKeyMeta(tab.id, meta)}
         />
+      );
+    case "processes":
+      return (
+        <ProcessesTab handleId={handleId} engine="redis" env={env} schemaName={"db" + dbIndex} />
       );
   }
 }

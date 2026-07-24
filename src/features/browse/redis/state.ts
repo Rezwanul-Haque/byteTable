@@ -42,7 +42,10 @@ export interface CliLine {
  */
 export type RedisTab =
   | { id: string; kind: "dashboard"; closable: false }
-  | { id: string; kind: "key"; db: number; key: string; keyType: KeyType };
+  | { id: string; kind: "key"; db: number; key: string; keyType: KeyType }
+  // The connected-clients list with kill actions (M26). Singleton, titled
+  // "Clients".
+  | { id: string; kind: "processes" };
 
 /** Per-workspace Redis UI state, preserved across workspace switches. */
 export interface RedisWorkspaceState {
@@ -89,6 +92,8 @@ interface RedisBrowseState {
   ) => void;
   /** Focus the (single) dashboard tab — it always exists. */
   openDashboardTab: (workspaceId: string, initialDb: number) => void;
+  /** Open (or focus) the singleton Clients (processes) tab (M26). */
+  openProcessesTab: (workspaceId: string, initialDb: number) => void;
   /** Set the active tab (no-op if the id is unknown). */
   setActiveTab: (workspaceId: string, initialDb: number, tabId: string) => void;
   /**
@@ -156,6 +161,17 @@ export const useRedisBrowseStore = create<RedisBrowseState>((set, get) => {
       const ws = current(workspaceId, initialDb);
       const dash = ws.tabs.find((t) => t.kind === "dashboard");
       if (dash) put(workspaceId, { ...ws, activeTabId: dash.id });
+    },
+
+    openProcessesTab: (workspaceId, initialDb) => {
+      const ws = current(workspaceId, initialDb);
+      const existing = ws.tabs.find((t) => t.kind === "processes");
+      if (existing) {
+        put(workspaceId, { ...ws, activeTabId: existing.id });
+        return;
+      }
+      const tab: RedisTab = { id: newTabId("processes"), kind: "processes" };
+      put(workspaceId, { ...ws, tabs: [...ws.tabs, tab], activeTabId: tab.id });
     },
 
     setActiveTab: (workspaceId, initialDb, tabId) => {

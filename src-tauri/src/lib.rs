@@ -452,6 +452,8 @@ pub fn run() {
             features::export::commands::execute_script_text,
             features::structure::commands::alter_preview,
             features::structure::commands::alter_apply,
+            features::processes::commands::process_list,
+            features::processes::commands::process_kill,
             features::saved_queries::commands::saved_query_list,
             features::saved_queries::commands::saved_query_save,
             features::saved_queries::commands::saved_query_delete,

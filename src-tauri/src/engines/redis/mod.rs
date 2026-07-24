@@ -56,6 +56,7 @@ use crate::shared::keyvalue::{CommandRunner, KeyValueConnection, RespReply};
 use value::{redis_error_as_reply_text, value_to_reply, value_to_string};
 
 mod error;
+mod processes;
 mod reader;
 mod writer;
 
@@ -310,6 +311,12 @@ impl CommandRunner for RedisKvConnection {
 impl KeyValueConnection for RedisKvConnection {
     fn engine_info(&self) -> EngineInfo {
         self.info.clone()
+    }
+
+    fn as_process_reader(
+        self: std::sync::Arc<Self>,
+    ) -> Option<std::sync::Arc<dyn crate::shared::process::ProcessReader>> {
+        Some(self)
     }
 
     async fn close(&self) -> Result<(), AppError> {

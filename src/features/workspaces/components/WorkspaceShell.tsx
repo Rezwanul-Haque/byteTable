@@ -24,6 +24,7 @@ export function WorkspaceShell({ workspace }: { workspace: Workspace }) {
   const openSqlTab = useWorkspacesStore((state) => state.openSqlTab);
   const closeTab = useWorkspacesStore((state) => state.closeTab);
   const openMapTab = useWorkspacesStore((state) => state.openMapTab);
+  const openProcessesTab = useWorkspacesStore((state) => state.openProcessesTab);
   const togglePanel = usePanelStore((state) => state.togglePanel);
   const [paletteOpen, setPaletteOpen] = useState(false);
 
@@ -36,6 +37,9 @@ export function WorkspaceShell({ workspace }: { workspace: Workspace }) {
   useBtCmd("schema-map", () => {
     const schema = workspace.schemas[0]?.name;
     if (schema) openMapTab(schema);
+  });
+  useBtCmd("processes", () => {
+    openProcessesTab(workspace.schemas[0]?.name ?? "main");
   });
 
   // §3.12: ⌘/Ctrl+K toggles the palette, ⌘/Ctrl+T opens a new SQL tab.

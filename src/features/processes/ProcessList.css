@@ -1,0 +1,313 @@
+/* Processes tab (M26) — ported verbatim from the prototype's ByteTable.html
+   .proc-* / .status-btn rules. Uses theme tokens; var(--danger) is set at
+   runtime alongside var(--error) (features/settings/apply.ts). */
+
+.status-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.status-btn:hover {
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+}
+
+.proc-tab {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.proc-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.proc-title {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.proc-src {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 2px 7px;
+}
+.proc-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px 9px;
+  width: 300px;
+  color: var(--text-faint);
+}
+.proc-search input {
+  flex: 1;
+  border: none;
+  background: none;
+  outline: none;
+  color: var(--text);
+  font-size: 12px;
+}
+.proc-search:focus-within {
+  border-color: var(--accent);
+}
+.proc-search-x {
+  display: inline-flex;
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  padding: 0;
+}
+.proc-stat {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.proc-stat b {
+  color: var(--text);
+  font-weight: 600;
+}
+.proc-stat.run b {
+  color: var(--accent);
+}
+.proc-stat.warn b {
+  color: #e5c07b;
+}
+.proc-auto {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg2);
+  color: var(--text-faint);
+  font-size: 10.5px;
+  font-family: var(--mono);
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.proc-auto.on {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+}
+.proc-auto.on .msym {
+  animation: proc-spin 2.5s linear infinite;
+}
+@keyframes proc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.proc-clear {
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  font-size: 11px;
+  cursor: pointer;
+}
+.proc-clear:hover {
+  color: var(--text);
+}
+/* --- Table chrome: reuse the data-grid design system (.dg-* from
+   features/browse/shared/DataGrid.css) so the process list matches the SQL data
+   grid. The grid there is virtualized (absolute rows + measured px tracks); the
+   process list is a small set, so rows sit in normal flow and columns use a
+   shared fr-based template (set inline on each row). Only the layout differs —
+   header/cell/checkbox visuals + density row height are the grid's. --- */
+.proc-grid-wrap {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+  position: relative;
+}
+.proc-grid {
+  min-width: 100%;
+  font-family: var(--mono);
+  font-size: var(--grid-fs);
+}
+/* Header + every body row share one grid template (applied inline). Rows size
+   to the summed fixed-px tracks (min the viewport) so resizing a column past the
+   viewport scrolls horizontally — matching the data grid. */
+.proc-grid-row {
+  display: grid;
+  width: max-content;
+  min-width: 100%;
+}
+.proc-grid .proc-grid-row:not(.dg-header) {
+  cursor: default;
+}
+/* Row hover / selection tints — mirror the data grid's .dg-tr rules (opt-out via
+   the same body.bt-no-rowhover as the grid). */
+body:not(.bt-no-rowhover) .proc-grid-row:not(.dg-header):hover .dg-td,
+body:not(.bt-no-rowhover) .proc-grid-row:not(.dg-header):hover .dg-check-c {
+  background: color-mix(in oklab, var(--bg2) 70%, transparent);
+}
+.proc-grid-row.row-selected .dg-td,
+.proc-grid-row.row-selected .dg-check-c {
+  background: color-mix(in oklab, var(--accent) 7%, transparent);
+}
+.proc-self {
+  font-size: 8.5px;
+  font-weight: 700;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+  border-radius: 4px;
+  padding: 1px 4px;
+  margin-left: 6px;
+  vertical-align: 1px;
+}
+.proc-state {
+  font-size: 10px;
+  font-family: var(--mono);
+  border-radius: 5px;
+  padding: 2px 7px;
+}
+.proc-state.run {
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+}
+.proc-state.idle {
+  color: var(--text-faint);
+  background: var(--bg2);
+}
+.proc-state.warn {
+  color: #e5c07b;
+  background: color-mix(in oklab, #e5c07b 12%, transparent);
+}
+/* Kill button cell — centered, hover-revealed on row hover (data-grid row). */
+.proc-kill-cell {
+  justify-content: center;
+  overflow: visible;
+}
+.proc-kill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  color: var(--text-faint);
+  cursor: pointer;
+  opacity: 0;
+}
+.proc-grid-row:not(.dg-header):hover .proc-kill {
+  opacity: 1;
+}
+.proc-kill:hover:not(:disabled) {
+  color: var(--danger);
+  background: color-mix(in oklab, var(--danger) 12%, transparent);
+}
+.proc-kill:disabled {
+  cursor: default;
+  opacity: 0.25;
+}
+.proc-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  border-top: 1px solid var(--border);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  flex: none;
+}
+.proc-kill-preview {
+  background: var(--bg0);
+  border: 1px solid color-mix(in oklab, var(--danger) 35%, var(--border));
+  border-radius: 8px;
+  padding: 9px 11px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--danger);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+.proc-arm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  margin-top: 12px;
+}
+.proc-arm code {
+  font-family: var(--mono);
+  color: var(--danger);
+}
+.proc-arm input {
+  border: 1px solid var(--border);
+  background: var(--bg0);
+  border-radius: 7px;
+  padding: 6px 9px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  outline: none;
+}
+.proc-arm input:focus {
+  border-color: var(--danger);
+}
+.proc-kill-sel {
+  font-size: 11.5px;
+  padding: 4px 11px;
+}
+
+/* Modal description line (shared with the kill modal; not defined globally). */
+.modal-desc {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  margin: 4px 0 12px;
+}
+.proc-kill-error {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+/* Fallback so the embedded-engine empty state centers inside the proc tab even
+   when the shared .empty-state selectors don't scope here. */
+.proc-tab > .empty-state {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  color: var(--text-dim);
+}
+.proc-tab > .empty-state p {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+}
+.proc-tab > .empty-state span {
+  font-size: 12px;
+  color: var(--text-faint);
+  max-width: 340px;
+}

@@ -38,6 +38,7 @@ mod http;
 mod introspect;
 mod mutate;
 mod objects;
+mod processes;
 mod query;
 mod sql;
 mod structure;
@@ -174,6 +175,12 @@ pub struct ClickhouseEngineConnection {
 impl EngineConnection for ClickhouseEngineConnection {
     fn engine_info(&self) -> EngineInfo {
         self.info.clone()
+    }
+
+    fn as_process_reader(
+        self: std::sync::Arc<Self>,
+    ) -> Option<std::sync::Arc<dyn crate::shared::process::ProcessReader>> {
+        Some(self)
     }
 
     async fn list_schemas(&self) -> Result<Vec<SchemaInfo>, AppError> {

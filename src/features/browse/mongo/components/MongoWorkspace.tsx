@@ -11,6 +11,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { isAppErrorPayload } from "../../../../shared/api/error";
 import { ENV_COLOR } from "../../../../shared/ui/envColors";
 import { Icon } from "../../../../shared/ui/Icon";
+import { useBtCmd } from "../../../../shared/ui/btCmd";
+import { ProcessesTab } from "../../../processes/ProcessesTab";
 import { useTabMenu } from "../../../../shared/ui/useTabMenu";
 import { connectionDetail } from "../../../connections/api";
 import { TerminalPanel } from "../../../console/TerminalPanel";
@@ -58,6 +60,7 @@ const TAB_ICON: Record<string, string> = {
   collection: "folder_special",
   pipeline: "account_tree",
   map: "schema",
+  processes: "monitor_heart",
 };
 
 let seq = 0;
@@ -206,7 +209,7 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
     setTabs((ts) => [...ts, tab]);
     setActiveId(tab.id);
   };
-  const openSingleton = (kind: "dashboard" | "map", title: string) => {
+  const openSingleton = (kind: "dashboard" | "map" | "processes", title: string) => {
     const ex = tabs.find((t) => t.kind === kind);
     if (ex) {
       setActiveId(ex.id);
@@ -269,6 +272,9 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
   // the version bump — that would re-run the active query/grid). The returned
   // flag spins the sidebar's refresh icon once per tick.
   const refreshSpinning = useAutoRefresh(() => void loadCollections(db, { silent: true }));
+
+  // Title-bar View menu → "Running Processes" opens the operations tab (M26).
+  useBtCmd("processes", () => openSingleton("processes", "Processes"));
 
   // Ctrl/⌘+` toggles the docked mongosh panel (VS Code convention, like the
   // other engines' consoles).
@@ -384,6 +390,14 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
                   collections={collections}
                   onOpenColl={openColl}
                 />
+              ) : t.kind === "processes" ? (
+                <ProcessesTab
+                  handleId={handleId}
+                  engine="mongodb"
+                  env={env}
+                  schemaName={db}
+                  isActive={t.id === activeId}
+                />
               ) : t.kind === "pipeline" ? (
                 <MongoPipelineTab
                   tab={t as MongoPipelineTabState}
@@ -434,6 +448,14 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
             {descOf((activeTab as MongoTab).coll)?.count.toLocaleString()} docs
           </span>
         ) : null}
+        <button
+          type="button"
+          className="status-btn"
+          title="db.currentOp()"
+          onClick={() => openSingleton("processes", "Processes")}
+        >
+          <Icon name="monitor_heart" size={13} /> processes
+        </button>
       </div>
 
       {exportJob ? (

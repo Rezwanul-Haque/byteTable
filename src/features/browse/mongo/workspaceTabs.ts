@@ -15,6 +15,8 @@ import type { MongoPipelineTabState } from "./components/MongoPipelineTab";
 export type MongoWorkspaceTab =
   | { id: string; kind: "dashboard"; title: string }
   | { id: string; kind: "map"; title: string }
+  // The live operations list with kill actions (M26). Singleton.
+  | { id: string; kind: "processes"; title: string }
   | MongoTab
   | MongoPipelineTabState;
 

@@ -334,6 +334,14 @@ pub trait MongoConnection: MongoReader + MongoWriter {
     /// Engine + version of this connection (`MongoDB 7.0.9`).
     fn engine_info(&self) -> EngineInfo;
 
+    /// The M26 process-list capability — MongoDB exposes it via
+    /// `db.currentOp()` / `db.killOp()`. Default `None`; the adapter opts in.
+    fn as_process_reader(
+        self: std::sync::Arc<Self>,
+    ) -> Option<std::sync::Arc<dyn crate::shared::process::ProcessReader>> {
+        None
+    }
+
     /// Release driver resources. The driver client is `Clone`/`Drop`-managed,
     /// so this is typically a no-op, but the manager calls it for symmetry.
     async fn close(&self) -> Result<(), AppError>;

@@ -37,6 +37,8 @@ export interface MenuCtx {
   isSql: boolean;
   /** The active workspace has a command palette (SQL or Redis/kv). */
   hasPalette: boolean;
+  /** The active workspace exposes a server process list (SQL, Redis, Mongo). */
+  hasProcesses: boolean;
   /** The app is zoomed away from 100% (font-size setting != base). */
   zoomChanged: boolean;
   ctx: TitleBarCtx;
@@ -66,7 +68,7 @@ export function execEdit(cmd: "undo" | "redo" | "cut" | "copy" | "paste"): void 
 }
 
 export function buildMenus(m: MenuCtx): Menu[] {
-  const { hasWs, isSql, hasPalette, zoomChanged, ctx } = m;
+  const { hasWs, isSql, hasPalette, hasProcesses, zoomChanged, ctx } = m;
 
   return [
     {
@@ -127,6 +129,12 @@ export function buildMenus(m: MenuCtx): Menu[] {
           run: () => emitCmd("toggle-terminal"),
         },
         { id: "schema-map", label: "Schema Map", enabled: isSql, run: () => emitCmd("schema-map") },
+        {
+          id: "processes",
+          label: "Running Processes",
+          enabled: hasProcesses,
+          run: () => emitCmd("processes"),
+        },
         "—",
         { id: "zoom-in", label: "Zoom In", hint: "⌘+", enabled: true, run: () => ctx.onZoom("in") },
         {

@@ -42,6 +42,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
   const openTableTab = useWorkspacesStore((state) => state.openTableTab);
   const openSqlTab = useWorkspacesStore((state) => state.openSqlTab);
   const openSqlTabWith = useWorkspacesStore((state) => state.openSqlTabWith);
+  const openProcessesTab = useWorkspacesStore((state) => state.openProcessesTab);
   const patchWorkspaceUi = useWorkspacesStore((state) => state.patchWorkspaceUi);
   const openPanel = usePanelStore((state) => state.openPanel);
   const tablesMap = useIntrospectionStore((state) => state.tables);
@@ -102,6 +103,13 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
       hint: "Ctrl+`",
       run: () => openPanel(workspace.id, shell),
     };
+    const processes: Command = {
+      id: "processes",
+      icon: "monitor_heart",
+      label: "Running processes",
+      hint: "view & kill sessions",
+      run: () => openProcessesTab(schemaName),
+    };
     // Saved queries visible from this workspace (global + this-workspace-
     // attached). Selecting one opens a fresh SQL tab seeded with its SQL.
     const savedCmds: Command[] = selectQueriesForConnection(savedQueries, workspace.saved.id).map(
@@ -113,7 +121,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
         run: () => openSqlTabWith(q.sql),
       }),
     );
-    return [...tableCmds, ...schemaCmds, newSql, openTerminal, ...savedCmds];
+    return [...tableCmds, ...schemaCmds, newSql, openTerminal, processes, ...savedCmds];
   }, [
     tablesMap,
     handleId,
@@ -126,6 +134,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
     openTableTab,
     openSqlTab,
     openSqlTabWith,
+    openProcessesTab,
     patchWorkspaceUi,
     openPanel,
   ]);

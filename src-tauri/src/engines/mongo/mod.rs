@@ -43,6 +43,7 @@ use crate::shared::mongo::{IndexInfo, MongoConnection};
 use value::doc_to_json;
 
 mod error;
+mod processes;
 mod reader;
 mod writer;
 
@@ -265,6 +266,12 @@ fn index_name_from_keys(keys: &Document) -> String {
 impl MongoConnection for MongoDbConnection {
     fn engine_info(&self) -> EngineInfo {
         self.info.clone()
+    }
+
+    fn as_process_reader(
+        self: std::sync::Arc<Self>,
+    ) -> Option<std::sync::Arc<dyn crate::shared::process::ProcessReader>> {
+        Some(self)
     }
 
     async fn close(&self) -> Result<(), AppError> {

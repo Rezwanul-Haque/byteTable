@@ -78,6 +78,7 @@ export function TitleBar({ ctx }: { ctx: TitleBarCtx }) {
     hasWs: ws !== null,
     isSql: ws?.kind === "sql",
     hasPalette: ws?.kind === "sql" || ws?.kind === "kv",
+    hasProcesses: ws?.kind === "sql" || ws?.kind === "kv" || ws?.kind === "mongo",
     zoomChanged: settings.fontSize !== 13,
     ctx,
   };

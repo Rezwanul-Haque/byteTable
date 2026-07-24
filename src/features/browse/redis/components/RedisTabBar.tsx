@@ -25,6 +25,8 @@ function tabTitle(tab: RedisTab): string {
       return "Dashboard";
     case "key":
       return tab.key;
+    case "processes":
+      return "Clients";
   }
 }
 
@@ -99,7 +101,7 @@ export function RedisTabBar({
                 <RedisTypeBadge type={tab.keyType} size={13} />
               ) : (
                 <Icon
-                  name="monitoring"
+                  name={tab.kind === "processes" ? "monitor_heart" : "monitoring"}
                   size={14}
                   style={{ color: active ? "var(--accent)" : "var(--text-faint)" }}
                 />

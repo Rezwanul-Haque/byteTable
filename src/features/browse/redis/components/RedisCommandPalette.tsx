@@ -54,6 +54,7 @@ export function RedisCommandPalette(props: RedisCommandPaletteProps) {
     onClose,
   } = props;
   const openDashboardTab = useRedisBrowseStore((state) => state.openDashboardTab);
+  const openProcessesTab = useRedisBrowseStore((state) => state.openProcessesTab);
   const setDbIndex = useRedisBrowseStore((state) => state.setDbIndex);
   // M14: the docked console panel replaces the M13 cli tab; the "New CLI
   // console" entry opens it.
@@ -105,6 +106,13 @@ export function RedisCommandPalette(props: RedisCommandPaletteProps) {
       label: "Keyspace dashboard",
       run: () => openDashboardTab(workspaceId, initialDb),
     };
+    const clients: PaletteCommand = {
+      id: "processes",
+      icon: "monitor_heart",
+      label: "Connected clients",
+      hint: "CLIENT LIST · kill",
+      run: () => openProcessesTab(workspaceId, initialDb),
+    };
     const dbCmds: PaletteCommand[] = databases
       .filter((d) => d.index !== dbIndex && d.keyCount > 0)
       .map((d) => ({
@@ -121,7 +129,7 @@ export function RedisCommandPalette(props: RedisCommandPaletteProps) {
       hint: workspaceName,
       run: onCloseWorkspace,
     };
-    return [...keyCmds, cli, dash, ...dbCmds, close];
+    return [...keyCmds, cli, dash, clients, ...dbCmds, close];
   }, [
     sampleKeys,
     databases,
@@ -132,6 +140,7 @@ export function RedisCommandPalette(props: RedisCommandPaletteProps) {
     onOpenKey,
     openPanel,
     openDashboardTab,
+    openProcessesTab,
     setDbIndex,
     onCloseWorkspace,
   ]);

@@ -19,7 +19,9 @@ import { connectionIsTunneled, tunnelTitle } from "../../connections/api";
 import { EnvTag } from "../../../shared/ui/EnvTag";
 import { Icon } from "../../../shared/ui/Icon";
 import { rowCountLabel, useTabMetaStore } from "../tabMeta";
+import { useWorkspacesStore } from "../state";
 import type { Workspace } from "../types";
+import "../../processes/ProcessList.css";
 import "./StatusBar.css";
 
 /** The project's source repository (opened from the "Built by" credit). */
@@ -36,6 +38,7 @@ function openExternal(url: string): void {
 }
 
 export function StatusBar({ workspace }: { workspace: Workspace }) {
+  const openProcessesTab = useWorkspacesStore((state) => state.openProcessesTab);
   const tabs = workspace.ui.tabs ?? [];
   const activeTabId = workspace.ui.activeTabId ?? null;
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
@@ -77,6 +80,14 @@ export function StatusBar({ workspace }: { workspace: Workspace }) {
       <span className="status-dim">schema: {schemaName}</span>
       <div style={{ flex: 1 }} />
       {context ? <span className="status-dim">{context}</span> : null}
+      <button
+        type="button"
+        className="status-btn"
+        title="Running processes"
+        onClick={() => openProcessesTab(schemaName)}
+      >
+        <Icon name="monitor_heart" size={13} /> processes
+      </button>
       <button
         type="button"
         className="status-dim status-credit"

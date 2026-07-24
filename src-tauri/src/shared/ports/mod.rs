@@ -16,6 +16,7 @@
 pub mod document;
 pub mod keyvalue;
 pub mod mongo;
+pub mod process;
 pub mod sql;
 pub mod widecolumn;
 

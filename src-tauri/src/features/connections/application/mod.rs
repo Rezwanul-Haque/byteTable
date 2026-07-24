@@ -174,6 +174,30 @@ impl ConnectionManager {
         }
     }
 
+    /// The M26 process-list capability behind a handle, across engine families:
+    /// SQL (Postgres/MySQL/SQL Server/ClickHouse), key-value (Redis), and Mongo
+    /// all opt in via their family trait's `as_process_reader`. An engine that
+    /// does not expose a server session list (SQLite, DynamoDB, Cassandra) is a
+    /// §5 `Unsupported` — the renderer shows the embedded/empty state.
+    pub async fn get_process_reader(
+        &self,
+        handle: &ConnectionHandleId,
+    ) -> Result<Arc<dyn crate::shared::process::ProcessReader>, AppError> {
+        let reader = {
+            let guard = self.open.read().await;
+            match guard.get(handle) {
+                Some(OpenConnection::Sql(conn)) => Arc::clone(conn).as_process_reader(),
+                Some(OpenConnection::Kv(conn)) => Arc::clone(conn).as_process_reader(),
+                Some(OpenConnection::Mongo(conn)) => Arc::clone(conn).as_process_reader(),
+                Some(OpenConnection::Document(_)) | Some(OpenConnection::WideColumn(_)) => None,
+                None => return Err(not_open(handle)),
+            }
+        };
+        reader.ok_or_else(|| {
+            AppError::Unsupported("This engine has no server process list to inspect.".into())
+        })
+    }
+
     /// Remove a handle, returning the connection for teardown — or `None`
     /// when the handle is unknown (already closed); see [`close_connection`]
     /// for why that is not an error.

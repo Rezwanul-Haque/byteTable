@@ -211,6 +211,9 @@ export type Tab =
   | { id: string; kind: "table"; schema: string; table: string; mode: TableTabMode }
   | ({ id: string; kind: "sql"; title: string } & SqlTabState)
   | { id: string; kind: "map"; schema: string }
+  // The live server process/session list with kill actions (M26). Singleton;
+  // `schema` is the active schema shown in the DB column for a fresh listing.
+  | { id: string; kind: "processes"; schema: string }
   // A schema object's read-only DDL viewer (+ browse-as-data for views).
   // Create/edit reuse the SQL editor (`sql` tab), not a dedicated kind.
   | {

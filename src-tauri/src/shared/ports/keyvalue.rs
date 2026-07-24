@@ -378,6 +378,14 @@ pub trait KeyValueConnection: KeyspaceReader + KeyspaceWriter + CommandRunner {
     /// Engine + version of this connection (`Redis 7.4.1`).
     fn engine_info(&self) -> EngineInfo;
 
+    /// The M26 process-list capability — Redis exposes it via `CLIENT LIST` /
+    /// `CLIENT KILL`. Default `None`; the adapter opts in.
+    fn as_process_reader(
+        self: std::sync::Arc<Self>,
+    ) -> Option<std::sync::Arc<dyn crate::shared::process::ProcessReader>> {
+        None
+    }
+
     /// Release the driver resources / tear down any SSH tunnel. Like the SQL
     /// side, the manager hands out `Arc` clones, so `close` may race in-flight
     /// work and must tolerate it.

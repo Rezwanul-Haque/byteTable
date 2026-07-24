@@ -9,6 +9,7 @@
 // mount just the active one — simpler, and grid scroll persistence is the
 // grid's concern via the documented seam, Task 3).
 
+import { ProcessesTab } from "../../processes/ProcessesTab";
 import { SchemaMap } from "../../schema_map/components/SchemaMap";
 import { selectPanel, shellLabel, usePanelStore } from "../../console/state";
 import { BTLogo } from "../../../shared/ui/BTLogo";
@@ -52,6 +53,15 @@ function TabBody({
       return <SqlEditorTab workspace={workspace} tab={tab} />;
     case "map":
       return <SchemaMap workspace={workspace} schema={tab.schema} />;
+    case "processes":
+      return (
+        <ProcessesTab
+          handleId={workspace.handleId}
+          engine={workspace.saved.engine}
+          env={workspace.saved.env}
+          schemaName={tab.schema}
+        />
+      );
     case "object":
       return (
         <ObjectViewer

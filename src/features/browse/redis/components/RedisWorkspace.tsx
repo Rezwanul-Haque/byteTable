@@ -21,6 +21,7 @@ import type { Workspace } from "../../../workspaces/types";
 import { kvKeyspace, type KeyType } from "../api";
 import { useRedisBrowseStore } from "../state";
 import { ENV_COLOR } from "../../../../shared/ui/envColors";
+import { useBtCmd } from "../../../../shared/ui/btCmd";
 import { RedisCommandPalette } from "./RedisCommandPalette";
 import { RedisSidebar } from "./RedisSidebar";
 import { SidebarResizer } from "../../../../shared/ui/SidebarResizer";
@@ -56,6 +57,7 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
   const bumpVersion = useRedisBrowseStore((state) => state.bumpVersion);
   const openKeyTab = useRedisBrowseStore((state) => state.openKeyTab);
   const openDashboardTab = useRedisBrowseStore((state) => state.openDashboardTab);
+  const openProcessesTab = useRedisBrowseStore((state) => state.openProcessesTab);
   const setActiveTab = useRedisBrowseStore((state) => state.setActiveTab);
   const closeTab = useRedisBrowseStore((state) => state.closeTab);
   // M14: the docked console panel REPLACES the M13 cli tab. ⌘T / the tab-bar +
@@ -69,6 +71,9 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
   const rs = slice ?? ensure(wsId, initialDb);
 
   const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // Title-bar View menu → "Running Processes" opens the Clients tab (M26).
+  useBtCmd("processes", () => openProcessesTab(wsId, initialDb));
 
   // ⌘K palette toggle; ⌘T opens the console panel (M14: was "new CLI tab", now
   // the docked panel); ⌃` (Ctrl+backtick, the VS Code convention) toggles it —
@@ -198,6 +203,7 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
               handleId={workspace.handleId}
               serverInfo={serverInfo}
               dbIndex={rs.dbIndex}
+              env={env}
               databases={databases}
               version={rs.version}
               isProduction={env === "production"}
@@ -225,6 +231,7 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
         dbIndex={rs.dbIndex}
         activeKeyType={activeKeyMeta?.keyType ?? null}
         activeKeyMemory={activeKeyMeta?.memory ?? null}
+        onOpenProcesses={() => openProcessesTab(wsId, initialDb)}
       />
       {paletteOpen ? (
         <RedisCommandPalette

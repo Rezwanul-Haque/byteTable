@@ -133,6 +133,11 @@ interface WorkspacesFeatureState {
    */
   openMapTab: (schema: string) => void;
   /**
+   * Open (or focus) the singleton Processes tab (M26) — the live server session
+   * list with kill actions. `schema` seeds the DB column for a fresh listing.
+   */
+  openProcessesTab: (schema: string) => void;
+  /**
    * Open the Object Explorer catalog tab for `schema` (one per schema) focused
    * on `focusClass` (`"all"` = the union facet). If already open, re-point its
    * focus and focus the tab.
@@ -508,6 +513,18 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
         const existing = tabs.find((t) => t.kind === "map" && t.schema === schema);
         if (existing) return { activeTabId: existing.id };
         const tab: Tab = { id: newTabId("map"), kind: "map", schema };
+        return { tabs: [...tabs, tab], activeTabId: tab.id };
+      }),
+    })),
+
+  openProcessesTab: (schema) =>
+    set((state) => ({
+      workspaces: patchActiveUi(state, (ui) => {
+        const tabs = ui.tabs ?? [];
+        // Singleton: one Processes tab per workspace, regardless of schema.
+        const existing = tabs.find((t) => t.kind === "processes");
+        if (existing) return { activeTabId: existing.id };
+        const tab: Tab = { id: newTabId("processes"), kind: "processes", schema };
         return { tabs: [...tabs, tab], activeTabId: tab.id };
       }),
     })),

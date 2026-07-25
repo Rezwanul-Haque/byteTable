@@ -132,6 +132,7 @@ export function buildMenus(m: MenuCtx): Menu[] {
         {
           id: "processes",
           label: "Running Processes",
+          hint: "Ctrl+Shift+P",
           enabled: hasProcesses,
           run: () => emitCmd("processes"),
         },

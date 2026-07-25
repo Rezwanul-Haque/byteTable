@@ -115,6 +115,7 @@
   margin-left: auto;
   display: flex;
   align-items: center;
+  gap: 4px;
   padding-right: 6px;
   /* Never scroll away or shrink — stays pinned at the right while tabs scroll. */
   flex: none;
@@ -133,6 +134,10 @@
     color 0.12s,
     background 0.12s,
     border-color 0.12s;
+}
+/* Icon-only variant (Processes toggle): square padding, no label. */
+.tabbar-tool-icon {
+  padding: 5px 7px;
 }
 .tabbar-tool:hover {
   color: var(--text);

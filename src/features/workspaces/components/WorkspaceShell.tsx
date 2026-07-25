@@ -16,6 +16,7 @@ import { StatusBar } from "./StatusBar";
 import { WorkspaceContent } from "./WorkspaceContent";
 import { TerminalPanel } from "../../console/TerminalPanel";
 import { shellLabel, usePanelStore } from "../../console/state";
+import { PROC_SOURCES } from "../../processes/api";
 import { useWorkspacesStore } from "../state";
 import { useBtCmd } from "../../../shared/ui/btCmd";
 import type { Workspace } from "../types";
@@ -57,6 +58,13 @@ export function WorkspaceShell({ workspace }: { workspace: Workspace }) {
       const mod = event.metaKey || event.ctrlKey;
       if (!mod) return;
       const key = event.key.toLowerCase();
+      // ⌃⇧P (⌘⇧P on macOS) opens the Processes tab — only for engines with a
+      // server process list, matching the tab-bar toggle's gating.
+      if (event.shiftKey && key === "p" && workspace.saved.engine in PROC_SOURCES) {
+        event.preventDefault();
+        openProcessesTab(workspace.schemas[0]?.name ?? "main");
+        return;
+      }
       if (key === "k") {
         event.preventDefault();
         setPaletteOpen((open) => !open);
@@ -79,8 +87,10 @@ export function WorkspaceShell({ workspace }: { workspace: Workspace }) {
     openSqlTab,
     closeTab,
     togglePanel,
+    openProcessesTab,
     workspace.id,
     workspace.saved.engine,
+    workspace.schemas,
     workspace.ui.activeTabId,
   ]);
 

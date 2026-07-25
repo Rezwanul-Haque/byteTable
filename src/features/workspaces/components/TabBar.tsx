@@ -69,6 +69,9 @@ interface TabBarProps {
   consoleOpen: boolean;
   /** Toggle the docked console panel (M14). */
   onToggleConsole: () => void;
+  /** Open the Processes tab (M26). Omitted for engines with no server process
+   *  list, which hides the button. */
+  onOpenProcesses?: () => void;
 }
 
 export function TabBar({
@@ -80,6 +83,7 @@ export function TabBar({
   onNewSql,
   consoleOpen,
   onToggleConsole,
+  onOpenProcesses,
 }: TabBarProps) {
   const menu = useTabMenu({
     ids: tabs.map((t) => t.id),
@@ -165,6 +169,17 @@ export function TabBar({
           <Icon name="terminal" size={15} />
           <span>Terminal</span>
         </button>
+        {onOpenProcesses ? (
+          <button
+            type="button"
+            className="tabbar-tool tabbar-tool-icon"
+            title="Running processes (Ctrl+Shift+P)"
+            aria-label="Running processes (Ctrl+Shift+P)"
+            onClick={onOpenProcesses}
+          >
+            <Icon name="monitor_heart" size={15} />
+          </button>
+        ) : null}
       </div>
       {menu.element}
     </div>

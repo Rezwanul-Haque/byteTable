@@ -9,6 +9,7 @@
 // mount just the active one — simpler, and grid scroll persistence is the
 // grid's concern via the documented seam, Task 3).
 
+import { PROC_SOURCES } from "../../processes/api";
 import { ProcessesTab } from "../../processes/ProcessesTab";
 import { SchemaMap } from "../../schema_map/components/SchemaMap";
 import { selectPanel, shellLabel, usePanelStore } from "../../console/state";
@@ -84,6 +85,7 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
   const setActiveTab = useWorkspacesStore((state) => state.setActiveTab);
   const closeTab = useWorkspacesStore((state) => state.closeTab);
   const openSqlTab = useWorkspacesStore((state) => state.openSqlTab);
+  const openProcessesTab = useWorkspacesStore((state) => state.openProcessesTab);
   const consoleOpen = usePanelStore((state) => selectPanel(state, workspace.id).open);
   const togglePanel = usePanelStore((state) => state.togglePanel);
 
@@ -94,6 +96,15 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
   // Default schema for tab-title shortening (drop schema prefix on the
   // connection's first schema — SQLite: "main").
   const defaultSchema = workspace.schemas[0]?.name ?? "main";
+
+  // Schema the Processes tab opens against — the active tab's schema when it
+  // has one, else the workspace default. Mirrors StatusBar's "processes" btn.
+  const procSchema =
+    activeTab?.kind === "table" || activeTab?.kind === "map"
+      ? activeTab.schema
+      : (workspace.ui.schemaName ?? defaultSchema);
+  // Only engines with a server process list (PROC_SOURCES) get the toggle.
+  const hasProcesses = workspace.saved.engine in PROC_SOURCES;
 
   if (tabs.length === 0) return <NoTabs />;
 
@@ -108,6 +119,7 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
         onNewSql={openSqlTab}
         consoleOpen={consoleOpen}
         onToggleConsole={() => togglePanel(workspace.id, shellLabel(workspace.saved.engine))}
+        onOpenProcesses={hasProcesses ? () => openProcessesTab(procSchema) : undefined}
       />
       <div className="tab-content">
         {activeTab ? (

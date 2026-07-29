@@ -41,6 +41,12 @@ GitHub release and verifies its SHA-256 checksum before installing.
     <releaseNotes>https://github.com/Rezwanul-Haque/byteTable/releases/tag/v__VERSION__</releaseNotes>
   </metadata>
   <files>
-    <file src="tools\**" target="tools" />
+    <!--
+      List the shipped files EXPLICITLY. A `tools\**` glob would also sweep in
+      the committed `chocolateyinstall.ps1.template` source, which Chocolatey
+      moderation flags ("do not include *.template in the package") — only the
+      rendered script belongs in the nupkg.
+    -->
+    <file src="tools\chocolateyinstall.ps1" target="tools" />
   </files>
 </package>

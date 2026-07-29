@@ -20,6 +20,11 @@ the binary.
 The generated `bytetable.nuspec`, `tools/chocolateyinstall.ps1`, and
 `*.nupkg` are produced at build time and are git-ignored.
 
+The nuspec's `<files>` section lists `tools/chocolateyinstall.ps1` **explicitly**
+rather than globbing `tools\**` — a glob also packs the `*.template` sources,
+which Chocolatey moderation flags. The pack step asserts no `*.template` entry
+made it into the nupkg. Add new shipped files to `<files>` one by one.
+
 ## Automated release (CI)
 
 The `chocolatey` job in `.github/workflows/release.yml` runs on every `v*` tag

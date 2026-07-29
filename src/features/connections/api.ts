@@ -442,3 +442,25 @@ export function tunnelTitle(params: ConnectionParams): string {
   const { user, host, port } = params.ssh;
   return "Tunnelled through " + user + "@" + host + ":" + port;
 }
+
+/**
+ * The login a connection authenticates as, for display in the workspace status
+ * bar — or `null` when the connection has no username at all.
+ *
+ * This is the *configured* user (what the connect modal stored), not what the
+ * server reports back: it is already in memory, so the status bar costs no
+ * round-trip. The two can differ — MySQL matches logins by host pattern and may
+ * authenticate you as a different account than you typed — so this answers
+ * "which login did I open this workspace with?", not "who does the server think
+ * I am?".
+ *
+ * `null` for the engines with no user concept (SQLite is a local file;
+ * DynamoDB authenticates with an AWS profile or access keys, not a username),
+ * and for a blank/whitespace user — every server engine treats the field as
+ * optional, and an empty string is absence, not a name.
+ */
+export function connectionUser(params: ConnectionParams): string | null {
+  if (params.engine === "sqlite" || params.engine === "dynamodb") return null;
+  const user = params.user?.trim();
+  return user ? user : null;
+}

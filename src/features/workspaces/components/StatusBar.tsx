@@ -15,7 +15,7 @@
 
 import { openUrl } from "@tauri-apps/plugin-opener";
 
-import { connectionIsTunneled, tunnelTitle } from "../../connections/api";
+import { connectionIsTunneled, connectionUser, tunnelTitle } from "../../connections/api";
 import { EnvTag } from "../../../shared/ui/EnvTag";
 import { Icon } from "../../../shared/ui/Icon";
 import { rowCountLabel, useTabMetaStore } from "../tabMeta";
@@ -56,6 +56,11 @@ export function StatusBar({ workspace }: { workspace: Workspace }) {
   // Context info: a table tab shows "N rows" (+ timing once the grid
   // reports it). Other tab kinds (sql/map placeholders this milestone) show
   // nothing.
+  // The login this workspace was opened with. Absent for SQLite / DynamoDB and
+  // for connections saved with a blank user, in which case no chip is shown at
+  // all — so the chip's presence always means something.
+  const user = connectionUser(workspace.saved.params);
+
   let context: string | null = null;
   if (activeTab?.kind === "table") {
     context = rowCountLabel(activeMeta);
@@ -78,6 +83,11 @@ export function StatusBar({ workspace }: { workspace: Workspace }) {
         </span>
       ) : null}
       <span className="status-dim">schema: {schemaName}</span>
+      {user ? (
+        <span className="status-dim" title={"Connected as " + user}>
+          user: {user}
+        </span>
+      ) : null}
       <div style={{ flex: 1 }} />
       {context ? <span className="status-dim">{context}</span> : null}
       <button

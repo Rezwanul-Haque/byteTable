@@ -6,7 +6,7 @@
 // connection" opens the NewConnectionModal (conditionally mounted, so its
 // form state resets on every open, per the prototype).
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { isAppErrorPayload } from "../../../shared/api/error";
 import { BrandMark } from "../../../shared/ui/BrandMark";
@@ -36,6 +36,24 @@ const FILE_OPEN_ID = "__open-sqlite-file__";
 
 const OPENED_TOAST_SUFFIX = "” opened — right-click its tile to rename or recolor";
 
+/** The pseudo-group holding connections with no project. */
+const UNGROUPED = "Ungrouped";
+
+/** How far the pointer must travel before a press becomes a drag rather than a
+ *  click. Below this the card still opens its workspace as it always did. */
+const DRAG_THRESHOLD_PX = 5;
+
+/** A card being dragged onto another project's header. `over` is the group
+ *  currently under the pointer (null when there is none, or when it is the
+ *  card's own group — dropping there is a no-op). */
+interface CardDrag {
+  connection: SavedConnection;
+  from: string;
+  x: number;
+  y: number;
+  over: string | null;
+}
+
 export function ConnectScreen() {
   const home = useHomeDir();
   const [connecting, setConnecting] = useState<string | null>(null);
@@ -48,7 +66,19 @@ export function ConnectScreen() {
   const [projFilter, setProjFilter] = useState<string>("all");
   const [projOpen, setProjOpen] = useState(false);
   const [openGroup, setOpenGroup] = useState<string | null>(null);
+  // Non-null only while a card is being dragged between project groups.
+  const [drag, setDrag] = useState<CardDrag | null>(null);
+  // Set when a drag actually started, so the click the browser fires on
+  // pointerup does not also open the workspace. Read and cleared by the card's
+  // onClick, which always runs immediately after.
+  const draggedRef = useRef(false);
+  // Mirrors `drag` for the pointer handlers. The commit on pointerup MUST read
+  // the target from here rather than from inside a setState updater: React
+  // StrictMode double-invokes updaters in development, so a side effect placed
+  // there would move the connection twice.
+  const dragRef = useRef<CardDrag | null>(null);
   const savedConnections = useConnectionsStore((state) => state.savedConnections);
+  const saveConnection = useConnectionsStore((state) => state.save);
   const loaded = useConnectionsStore((state) => state.loaded);
   const loadError = useConnectionsStore((state) => state.loadError);
   const load = useConnectionsStore((state) => state.load);
@@ -138,7 +168,7 @@ export function ConnectScreen() {
   };
 
   // ---- project grouping + filtering ------------------------------------
-  const projectOf = (c: SavedConnection) => c.project || "Ungrouped";
+  const projectOf = (c: SavedConnection) => c.project || UNGROUPED;
   const allProjects = [...new Set(savedConnections.map(projectOf))];
   const q = filter.trim().toLowerCase();
   const matches = (c: SavedConnection) =>
@@ -155,8 +185,8 @@ export function ConnectScreen() {
   const groups: Record<string, SavedConnection[]> = {};
   for (const c of shown) (groups[projectOf(c)] ??= []).push(c);
   const groupKeys = Object.keys(groups).sort((a, b) => {
-    if (a === "Ungrouped") return 1;
-    if (b === "Ungrouped") return -1;
+    if (a === UNGROUPED) return 1;
+    if (b === UNGROUPED) return -1;
     return a.localeCompare(b);
   });
   // Within a project: production → staging → dev.
@@ -168,8 +198,104 @@ export function ConnectScreen() {
       return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
     });
   }
+  // ---- drag a card into another project --------------------------------
+  //
+  // Pointer events, NOT the HTML5 drag-and-drop API: the repo already drags
+  // this way (SchemaMap), and Tauri's window `dragDropEnabled` defaults to
+  // true, so the webview intercepts OS-level drag/drop — a well-known way for
+  // HTML5 DnD to misbehave inside a Tauri window. Pointer events sidestep it
+  // and behave the same on all three platforms.
+  const moveToProject = async (c: SavedConnection, target: string) => {
+    // "Ungrouped" is the pseudo-group for "no project at all".
+    const project = target === UNGROUPED ? undefined : target;
+    try {
+      // No secrets argument: the backend leaves the keychain untouched when
+      // none are supplied, so re-saving to move a card cannot disturb the
+      // stored password / SSH secret.
+      await saveConnection({ ...c, project });
+    } catch (error) {
+      if (isAppErrorPayload(error)) toast(error.message, "err");
+      else toast("Moving connections requires the desktop app", "info");
+      return;
+    }
+    // Expand the destination so the card is visibly *there* — more convincing
+    // than a toast alone, and it orients you after the list regroups.
+    setOpenGroup(target);
+    toast("Moved “" + c.name + "” to " + target, "ok");
+  };
+
+  /** Set both the rendered drag state and the ref the handlers read. */
+  const setDragState = (next: CardDrag | null | ((d: CardDrag | null) => CardDrag | null)) => {
+    const value = typeof next === "function" ? next(dragRef.current) : next;
+    dragRef.current = value;
+    setDrag(value);
+  };
+
+  const onCardPointerDown = (e: React.PointerEvent, c: SavedConnection) => {
+    // Left button only, and never mid-connect (the cards are disabled then).
+    if (e.button !== 0 || connecting !== null) return;
+    // Clear any stale suppression: a drag cancelled with Escape and released
+    // off-card leaves no trailing click to swallow, and the flag would
+    // otherwise eat the next genuine click.
+    draggedRef.current = false;
+    const origin = { x: e.clientX, y: e.clientY };
+    const from = projectOf(c);
+    let started = false;
+    const card = e.currentTarget as HTMLElement;
+
+    const move = (ev: PointerEvent) => {
+      if (!started) {
+        // Below the threshold this is still a click, so click-to-connect keeps
+        // working exactly as before.
+        if (Math.hypot(ev.clientX - origin.x, ev.clientY - origin.y) < DRAG_THRESHOLD_PX) return;
+        started = true;
+        draggedRef.current = true;
+        card.setPointerCapture(ev.pointerId);
+        setDragState({ connection: c, from, x: ev.clientX, y: ev.clientY, over: null });
+        return;
+      }
+      // Pointer capture stops `pointerenter` firing on the headers, so the drop
+      // target is hit-tested by hand on every move.
+      const el = document.elementFromPoint(ev.clientX, ev.clientY);
+      const over = el?.closest<HTMLElement>("[data-proj-drop]")?.dataset.projDrop ?? null;
+      setDragState((d) =>
+        d ? { ...d, x: ev.clientX, y: ev.clientY, over: over === from ? null : over } : d,
+      );
+    };
+
+    const finish = (ev: PointerEvent, commit: boolean) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", cancel);
+      window.removeEventListener("keydown", onKey);
+      if (!started) return;
+      card.releasePointerCapture?.(ev.pointerId);
+      // Read the target BEFORE clearing, and commit outside any state updater.
+      const target = dragRef.current;
+      setDragState(null);
+      if (commit && target?.over) void moveToProject(target.connection, target.over);
+    };
+    const up = (ev: PointerEvent) => finish(ev, true);
+    const cancel = (ev: PointerEvent) => finish(ev, false);
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key !== "Escape" || !started) return;
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", cancel);
+      window.removeEventListener("keydown", onKey);
+      setDragState(null);
+    };
+
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", cancel);
+    window.addEventListener("keydown", onKey);
+  };
+
   // Default-open the first group; while searching, every matching group opens.
-  const effectiveOpen = q ? null : (openGroup ?? groupKeys[0]);
+  // While dragging, keep the source group open so the card does not vanish
+  // from under the pointer when the accordion would otherwise switch.
+  const effectiveOpen = q ? null : (drag?.from ?? openGroup ?? groupKeys[0]);
   // Show the filter once there's more than one connection to sift through.
   const showSearch = savedConnections.length > 1;
   const hasConnections = savedConnections.length > 0;
@@ -275,7 +401,14 @@ export function ConnectScreen() {
                 <div className={"proj-acc" + (isOpen ? " open" : "")} key={proj}>
                   <button
                     type="button"
-                    className="proj-acc-head"
+                    // Hit-tested by `document.elementFromPoint` during a drag —
+                    // pointer capture stops pointerenter reaching the headers.
+                    data-proj-drop={proj}
+                    className={
+                      "proj-acc-head" +
+                      (drag && drag.from !== proj ? " droppable" : "") +
+                      (drag?.over === proj ? " drop-over" : "")
+                    }
                     onClick={() => setOpenGroup(isOpen && !q ? "__none__" : proj)}
                   >
                     <Icon
@@ -284,7 +417,7 @@ export function ConnectScreen() {
                       style={{ color: "var(--text-faint)" }}
                     />
                     <Icon
-                      name={proj === "Ungrouped" ? "folder_off" : "folder"}
+                      name={proj === UNGROUPED ? "folder_off" : "folder"}
                       size={14}
                       style={{ color: isOpen ? "var(--accent)" : "var(--text-dim)" }}
                     />
@@ -299,8 +432,18 @@ export function ConnectScreen() {
                         <div key={c.id} className="connect-card-wrap">
                           <button
                             type="button"
-                            className="connect-card"
-                            onClick={() => void connect(c)}
+                            className={
+                              "connect-card" + (drag?.connection.id === c.id ? " dragging" : "")
+                            }
+                            onPointerDown={(e) => onCardPointerDown(e, c)}
+                            onClick={() => {
+                              // A drag just ended — swallow its trailing click.
+                              if (draggedRef.current) {
+                                draggedRef.current = false;
+                                return;
+                              }
+                              void connect(c);
+                            }}
                             disabled={connecting !== null}
                           >
                             <EngineBadge engine={c.engine} size={34} />
@@ -418,6 +561,18 @@ export function ConnectScreen() {
         SQLite · MySQL · PostgreSQL · SQL Server · Redis · DynamoDB · MongoDB · Cassandra ·
         ClickHouse — more engines coming. Your credentials never leave this machine.
       </div>
+
+      {/* The card following the cursor mid-drag. Fixed-positioned and
+          pointer-events:none so it never becomes its own hit-test target. */}
+      {drag ? (
+        <div className="connect-drag-pill" style={{ left: drag.x, top: drag.y }}>
+          <EngineBadge engine={drag.connection.engine} size={18} />
+          <span className="connect-drag-name">{drag.connection.name}</span>
+          <span className="connect-drag-to">
+            {drag.over ? "→ " + drag.over : "drop on a project"}
+          </span>
+        </div>
+      ) : null}
 
       {showNew || editConn ? (
         <NewConnectionModal

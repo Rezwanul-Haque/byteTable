@@ -457,3 +457,65 @@
   /* Keep cards clear of the scrollbar gutter. */
   scrollbar-gutter: stable;
 }
+
+/* ---------------------------------------------------------------------------
+   Drag a connection card into another project.
+
+   Pointer-event driven (see ConnectScreen.tsx) — no HTML5 drag-and-drop, so
+   there is no browser drag image to style: the card following the cursor is
+   the `.connect-drag-pill` below.
+   --------------------------------------------------------------------------- */
+
+/* The card left behind while its copy follows the cursor. Kept in the layout
+   (not hidden) so the list does not reflow mid-drag. */
+.connect-card.dragging {
+  opacity: 0.4;
+}
+
+/* Every project header that can receive the drop — dashed so the targets read
+   as "somewhere to put this" rather than as ordinary hover states. */
+.proj-acc-head.droppable {
+  border: 1px dashed color-mix(in oklab, var(--accent) 45%, transparent);
+  border-radius: 9px;
+  /* Compensate for the border so the row does not shift by 1px when it
+     appears. */
+  padding: 9px 10px;
+}
+
+.proj-acc-head.drop-over {
+  border-style: solid;
+  border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 12%, var(--bg2));
+  color: var(--text);
+}
+
+/* Follows the cursor. `pointer-events: none` is load-bearing: the pill sits
+   under the pointer, so without it `document.elementFromPoint` would hit the
+   pill instead of the project header behind it and no drop target would ever
+   be found. */
+.connect-drag-pill {
+  position: fixed;
+  z-index: 60;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 11px;
+  border-radius: 9px;
+  background: var(--bg1);
+  border: 1px solid var(--accent);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+  /* Offset from the cursor so the pointer itself stays visible. */
+  transform: translate(14px, 10px);
+}
+
+.connect-drag-name {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.connect-drag-to {
+  color: var(--text-faint);
+  font-size: 11px;
+}

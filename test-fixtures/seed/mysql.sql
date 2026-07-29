@@ -96,3 +96,12 @@ CREATE PROCEDURE deactivate_user(IN uid INT)
 DROP TRIGGER IF EXISTS orders_touch;
 CREATE TRIGGER orders_touch BEFORE UPDATE ON orders
   FOR EACH ROW SET NEW.status = NEW.status;
+
+-- ── A deliberately unprivileged login ────────────────────────────────────────
+-- Read-only on byteshop, and NOT granted SUPER / SYSTEM_VARIABLES_ADMIN. Exists
+-- so permission-denied paths can be exercised by hand: `SET GLOBAL wait_timeout
+-- =30` as this user is refused at PREPARE time (error 1227), which is the case
+-- that used to desynchronize the connection and hang the editor's Run button.
+DROP USER IF EXISTS 'lowpriv'@'%';
+CREATE USER 'lowpriv'@'%' IDENTIFIED BY 'lowpriv';
+GRANT SELECT ON byteshop.* TO 'lowpriv'@'%';

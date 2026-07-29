@@ -407,33 +407,52 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
         }
       };
 
-      if (!useBatch) {
-        // One statement, not forced: nothing to carry across, so the plain
-        // single-statement path (unchanged from before).
-        const stmt = statements[0]!;
-        try {
-          const result = await queryRun(workspace.handleId, stmt, { schema: schemaName });
-          record(0, stmt, result, null);
-        } catch (err: unknown) {
-          record(0, stmt, null, appErrorMessage(err, "Query failed."));
+      // The whole run is wrapped so the `running` flag is ALWAYS cleared. The
+      // inner try/catch blocks already turn a rejected invoke into an error
+      // tab, so reaching this outer catch means the run path itself threw — a
+      // bug, not a query error. Without the `finally` that left the Run button
+      // stuck in "Running…" with no way back except switching tabs (which
+      // remounts the component and resets the local flag).
+      try {
+        if (!useBatch) {
+          // One statement, not forced: nothing to carry across, so the plain
+          // single-statement path (unchanged from before).
+          const stmt = statements[0]!;
+          try {
+            const result = await queryRun(workspace.handleId, stmt, { schema: schemaName });
+            record(0, stmt, result, null);
+          } catch (err: unknown) {
+            record(0, stmt, null, appErrorMessage(err, "Query failed."));
+          }
+        } else {
+          // Multiple statements: one session-pinned batch. Per-statement errors
+          // arrive INSIDE the outcomes (continue-on-error); the promise itself
+          // only rejects on a whole-run failure (e.g. the connection was lost
+          // before anything ran), surfaced as a single error tab.
+          try {
+            const outcomes = await queryRunBatch(workspace.handleId, statements, {
+              schema: schemaName,
+            });
+            outcomes.forEach((o, i) => record(i, o.sql, o.result, o.error));
+          } catch (err: unknown) {
+            record(0, source, null, appErrorMessage(err, "Query failed."));
+          }
         }
-      } else {
-        // Multiple statements: one session-pinned batch. Per-statement errors
-        // arrive INSIDE the outcomes (continue-on-error); the promise itself
-        // only rejects on a whole-run failure (e.g. the connection was lost
-        // before anything ran), surfaced as a single error tab.
-        try {
-          const outcomes = await queryRunBatch(workspace.handleId, statements, {
-            schema: schemaName,
-          });
-          outcomes.forEach((o, i) => record(i, o.sql, o.result, o.error));
-        } catch (err: unknown) {
-          record(0, source, null, appErrorMessage(err, "Query failed."));
-        }
+      } catch (err: unknown) {
+        // Pushed directly rather than through `record`: if `record` is what
+        // threw, calling it again here would throw again and escape as an
+        // unhandled rejection.
+        runs.push({
+          id: `r${runs.length}`,
+          sql: source,
+          result: null,
+          error: appErrorMessage(err, "Query failed."),
+        });
+      } finally {
+        setSqlRuns(tab.id, runs); // focuses the first tab
+        setRunning(false);
       }
 
-      setSqlRuns(tab.id, runs); // focuses the first tab
-      setRunning(false);
       // A successful CREATE/DROP/ALTER/REFRESH of a schema object invalidates
       // the introspection object caches so the sidebar + any open viewer pick up
       // the change immediately (matches running the same DDL via the object UI).

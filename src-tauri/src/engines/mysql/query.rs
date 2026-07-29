@@ -9,7 +9,7 @@ use sqlx::{Column, Row, TypeInfo};
 use crate::shared::engine::*;
 use crate::shared::error::AppError;
 
-use super::error::{is_unpreparable, map_query_error};
+use super::error::{is_unpreparable, map_query_error, prepare_desynchronized};
 use super::introspect::table_meta;
 use super::sql::{
     is_numeric_type, order_by_clause, qualified, quote_ident, validate_column, where_clause,
@@ -36,7 +36,20 @@ pub(super) async fn run_query(
     // session is the same fix `execute_script` uses for imports.
     let mut conn = pool.acquire().await.map_err(map_query_error)?;
     apply_schema(&mut conn, options.schema.as_deref()).await;
-    run_on_conn(&mut conn, sql, &options).await
+    match run_on_conn(&mut conn, sql, &options).await {
+        Ok(result) => Ok(result),
+        Err(RunFailure::Statement(err)) => Err(err),
+        // The prepare desynchronized this connection (see
+        // `error::prepare_desynchronized`). Drop it — anything further on it
+        // would block forever — and re-run the statement on a fresh one over
+        // the text protocol, which is where the server's real error surfaces.
+        Err(RunFailure::ConnectionLost) => {
+            drop(conn);
+            let mut fresh = pool.acquire().await.map_err(map_query_error)?;
+            apply_schema(&mut fresh, options.schema.as_deref()).await;
+            run_unprepared(&mut fresh, sql, started_now()).await
+        }
+    }
 }
 
 /// Session-pinned multi-statement execution (the `run_batch` port method):
@@ -61,22 +74,65 @@ pub(super) async fn run_batch(
     apply_schema(&mut conn, options.schema.as_deref()).await;
 
     let mut out = Vec::with_capacity(statements.len());
+    // Set once a statement desynchronizes the pinned connection: the session is
+    // gone, so the remaining statements are reported as not-run rather than
+    // silently continued on a different connection (which would break exactly
+    // the transaction / savepoint / SET SESSION continuity this batch exists to
+    // guarantee).
+    let mut session_lost = false;
     for stmt in statements {
+        if session_lost {
+            out.push(StatementOutcome {
+                sql: stmt.clone(),
+                result: None,
+                error: Some(SESSION_LOST_MESSAGE.to_string()),
+            });
+            continue;
+        }
         let outcome = match run_on_conn(&mut conn, stmt, &options).await {
             Ok(result) => StatementOutcome {
                 sql: stmt.clone(),
                 result: Some(result),
                 error: None,
             },
-            Err(err) => StatementOutcome {
+            Err(RunFailure::Statement(err)) => StatementOutcome {
                 sql: stmt.clone(),
                 result: None,
                 error: Some(err.to_string()),
             },
+            // The pinned connection is unusable from here on. Re-run just this
+            // statement on a throwaway connection so the user still sees the
+            // server's real error (an access-denied `SET GLOBAL`, say) instead
+            // of a hang, then stop the batch.
+            Err(RunFailure::ConnectionLost) => {
+                session_lost = true;
+                let retried = retry_unprepared_on_fresh(pool, stmt, &options).await;
+                StatementOutcome {
+                    sql: stmt.clone(),
+                    result: retried.as_ref().ok().cloned(),
+                    error: retried.err().map(|e| e.to_string()),
+                }
+            }
         };
         out.push(outcome);
     }
     Ok(out)
+}
+
+/// Shown for the statements a batch never got to after the session was lost.
+const SESSION_LOST_MESSAGE: &str =
+    "Not run: the database session ended when the previous statement failed. Re-run the batch.";
+
+/// Run one statement over the text protocol on a connection taken fresh from
+/// the pool. Used only to recover the real error after a desync.
+async fn retry_unprepared_on_fresh(
+    pool: &MySqlPool,
+    sql: &str,
+    options: &QueryOptions,
+) -> Result<QueryResult, AppError> {
+    let mut fresh = pool.acquire().await.map_err(map_query_error)?;
+    apply_schema(&mut fresh, options.schema.as_deref()).await;
+    run_unprepared(&mut fresh, sql, started_now()).await
 }
 
 /// Apply `schema` as the default database (`USE`) for unqualified names on the
@@ -92,6 +148,49 @@ async fn apply_schema(conn: &mut sqlx::mysql::MySqlConnection, schema: Option<&s
     }
 }
 
+/// Why one statement did not produce a [`QueryResult`].
+///
+/// The distinction matters to the caller, not to the user: a `Statement`
+/// failure leaves the connection healthy (report it and carry on), while
+/// `ConnectionLost` means the connection must be discarded before anything else
+/// touches it — reusing it blocks forever.
+enum RunFailure {
+    /// The statement failed; the connection is still usable.
+    Statement(AppError),
+    /// The prepare desynchronized the protocol. No user-facing error yet: the
+    /// decode message ("PrepareOk expected 12 bytes…") describes our driver's
+    /// confusion, not the user's problem. Re-running on a fresh connection is
+    /// what surfaces the server's actual complaint.
+    ConnectionLost,
+}
+
+/// `Instant::now()`, named for readability at the call sites that start timing
+/// a retry rather than the original attempt.
+fn started_now() -> Instant {
+    Instant::now()
+}
+
+/// Run ONE statement over the unprepared TEXT protocol and shape the (always
+/// row-less) outcome into a [`QueryResult`]. Used for the fresh-connection
+/// retry after a desync; the prepared path never reaches here.
+async fn run_unprepared(
+    conn: &mut sqlx::mysql::MySqlConnection,
+    sql: &str,
+    started: Instant,
+) -> Result<QueryResult, AppError> {
+    use sqlx::Executor as _;
+    conn.execute(sqlx::raw_sql(sql))
+        .await
+        .map_err(map_query_error)?;
+    Ok(QueryResult {
+        columns: Vec::new(),
+        row_count: 0,
+        rows: Vec::new(),
+        truncated: false,
+        elapsed_ms: started.elapsed().as_millis() as u64,
+    })
+}
+
 /// Run ONE statement on an already-acquired connection and decode it to a
 /// [`QueryResult`]. Shared by the single-statement `run_query` and the
 /// session-pinned `run_batch` so both take the same prepared→text fallback and
@@ -100,28 +199,42 @@ async fn run_on_conn(
     conn: &mut sqlx::mysql::MySqlConnection,
     sql: &str,
     options: &QueryOptions,
-) -> Result<QueryResult, AppError> {
+) -> Result<QueryResult, RunFailure> {
     let started = Instant::now();
 
-    // MySQL refuses some commands in the prepared-statement protocol
-    // (error 1295) — notably CREATE/DROP FUNCTION/PROCEDURE/TRIGGER — and some
-    // statements (e.g. `SET GLOBAL time_zone=...`) return a PrepareOk packet
-    // sqlx cannot decode. On either, re-run via the unprepared TEXT protocol
-    // (`raw_sql`), which accepts them; such statements return no result rows.
+    // MySQL refuses some commands in the prepared-statement protocol (error
+    // 1295) — notably CREATE/DROP FUNCTION/PROCEDURE/TRIGGER. That is a clean
+    // ERR packet, so the connection stays usable and the statement is simply
+    // re-run here over the unprepared TEXT protocol (`raw_sql`), which accepts
+    // it; such statements return no result rows.
+    //
+    // A PrepareOk *decode* failure is a different animal: it leaves the
+    // connection protocol-desynchronized, and reusing it deadlocks. That case
+    // returns `ConnectionLost` so the caller can retry on a fresh connection —
+    // see `error::prepare_desynchronized`.
+    let mut unprepared = false;
     let rows = match sqlx::query(sql).fetch_all(&mut *conn).await {
         Ok(rows) => rows,
+        Err(err) if prepare_desynchronized(&err) => return Err(RunFailure::ConnectionLost),
         Err(err) if is_unpreparable(&err) => {
             use sqlx::Executor as _;
             conn.execute(sqlx::raw_sql(sql))
                 .await
-                .map_err(map_query_error)?;
+                .map_err(|e| RunFailure::Statement(map_query_error(e)))?;
+            unprepared = true;
             Vec::new()
         }
-        Err(err) => return Err(map_query_error(err)),
+        Err(err) => return Err(RunFailure::Statement(map_query_error(err))),
     };
 
     let columns = if let Some(first) = rows.first() {
         column_meta(first)
+    } else if unprepared {
+        // Do NOT describe a statement that could not be prepared: describing
+        // prepares it again, so it would fail again — and if that failure is a
+        // decode error it would desynchronize this connection, hanging the NEXT
+        // statement in a batch. These statements have no columns anyway.
+        Vec::new()
     } else {
         // No rows returned: ask the engine to describe the statement so an
         // empty SELECT still reports its column headers (the grid shows the

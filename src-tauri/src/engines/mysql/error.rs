@@ -25,20 +25,39 @@ pub(super) fn map_query_error(err: sqlx::Error) -> AppError {
 }
 
 /// True when a statement cannot run over the prepared-statement (binary)
-/// protocol and must fall back to the text protocol (`raw_sql`). Two cases:
+/// protocol and must fall back to the text protocol (`raw_sql`) — MySQL error
+/// 1295, a command the prepared-statement protocol does not support
+/// (CREATE/DROP FUNCTION/PROCEDURE/TRIGGER, etc.).
 ///
-/// 1. MySQL error 1295 — a command the prepared-statement protocol does not
-///    support (CREATE/DROP FUNCTION/PROCEDURE/TRIGGER, etc.). Surfaces as a
-///    `Database` error.
-/// 2. A `COM_STMT_PREPARE` reply sqlx cannot decode — e.g. `SET GLOBAL
-///    time_zone=...` and some admin statements make the server send a
-///    short/non-standard PrepareOk packet, and sqlx fails with a protocol
-///    decode error ("PrepareOk expected 12 bytes but got 7 bytes"). This is a
-///    `Protocol` error, NOT a `Database` error, so it must be matched
-///    separately or the text-protocol fallback never fires.
+/// This is a clean `Database` error: the server sent a well-formed ERR packet,
+/// sqlx read it fully, and **the connection is still usable**, so the caller
+/// may retry on that same connection. Contrast [`prepare_desynchronized`].
 pub(super) fn is_unpreparable(err: &sqlx::Error) -> bool {
     match err {
         sqlx::Error::Database(db) => db.message().contains("prepared statement protocol"),
+        _ => false,
+    }
+}
+
+/// True when a `COM_STMT_PREPARE` reply left the connection's protocol state
+/// **desynchronized**, so the connection must be discarded rather than reused.
+///
+/// sqlx fails here with a protocol decode error like
+/// `PrepareOk expected 12 bytes but got 7 bytes` — it committed to reading a
+/// PrepareOk packet and got something else (in practice an ERR packet: MySQL
+/// rejects `SET GLOBAL wait_timeout=…` at prepare time with 1227 when the user
+/// lacks SUPER / SYSTEM_VARIABLES_ADMIN). Because the packet was only partly
+/// consumed, unread bytes remain in the stream and **the next command on that
+/// connection blocks forever** waiting for a reply that never aligns.
+///
+/// This used to be lumped in with [`is_unpreparable`], so the text-protocol
+/// retry ran on the poisoned connection and hung — the Tauri command never
+/// returned, the editor's Run button spun forever, and the real error (1227)
+/// was never shown. Retrying on a *fresh* connection surfaces it immediately.
+pub(super) fn prepare_desynchronized(err: &sqlx::Error) -> bool {
+    match err {
+        // A real ERR packet is never a desync — see `is_unpreparable`.
+        sqlx::Error::Database(_) => false,
         other => {
             let msg = other.to_string();
             msg.contains("PrepareOk") || msg.contains("prepare_ok")
@@ -79,5 +98,83 @@ mod tests {
         assert_eq!(humanize("table doesn't exist"), "Table doesn't exist.");
         assert_eq!(humanize("Already fine."), "Already fine.");
         assert_eq!(humanize(""), "The database reported an unknown error.");
+    }
+
+    /// Minimal `DatabaseError` so the `Database` arm of the two predicates can
+    /// be exercised without a live server.
+    #[derive(Debug)]
+    struct FakeDbError(String);
+
+    impl std::fmt::Display for FakeDbError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str(&self.0)
+        }
+    }
+
+    impl std::error::Error for FakeDbError {}
+
+    impl sqlx::error::DatabaseError for FakeDbError {
+        fn message(&self) -> &str {
+            &self.0
+        }
+        fn kind(&self) -> sqlx::error::ErrorKind {
+            sqlx::error::ErrorKind::Other
+        }
+        fn as_error(&self) -> &(dyn std::error::Error + Send + Sync + 'static) {
+            self
+        }
+        fn as_error_mut(&mut self) -> &mut (dyn std::error::Error + Send + Sync + 'static) {
+            self
+        }
+        fn into_error(self: Box<Self>) -> Box<dyn std::error::Error + Send + Sync + 'static> {
+            self
+        }
+    }
+
+    fn db_error(message: &str) -> sqlx::Error {
+        sqlx::Error::Database(Box::new(FakeDbError(message.to_string())))
+    }
+
+    #[test]
+    fn error_1295_is_unpreparable_and_leaves_the_connection_usable() {
+        let err = db_error("This command is not supported in the prepared statement protocol yet");
+        assert!(is_unpreparable(&err));
+        assert!(
+            !prepare_desynchronized(&err),
+            "a clean ERR packet is fully read — the connection stays usable, so the \
+             text-protocol retry may reuse it"
+        );
+    }
+
+    /// The regression this pair was split for: a PrepareOk decode failure must
+    /// NOT be treated as a plain unpreparable statement, because retrying on the
+    /// same connection blocks forever (it is protocol-desynchronized).
+    #[test]
+    fn prepare_ok_decode_failure_is_a_desync_not_an_unpreparable_statement() {
+        for message in [
+            "encountered unexpected or invalid data: PrepareOk expected 12 bytes but got 7 bytes",
+            "error occurred while decoding prepare_ok",
+        ] {
+            let err = sqlx::Error::Protocol(message.to_string());
+            assert!(
+                prepare_desynchronized(&err),
+                "should be flagged as a desync: {message}"
+            );
+            assert!(
+                !is_unpreparable(&err),
+                "must NOT reuse the poisoned connection: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn ordinary_errors_are_neither() {
+        let err = db_error("Table 'byteshop.nope' doesn't exist");
+        assert!(!is_unpreparable(&err));
+        assert!(!prepare_desynchronized(&err));
+
+        let protocol = sqlx::Error::Protocol("something else entirely".to_string());
+        assert!(!is_unpreparable(&protocol));
+        assert!(!prepare_desynchronized(&protocol));
     }
 }

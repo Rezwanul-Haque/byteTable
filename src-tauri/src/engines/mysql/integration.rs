@@ -1232,3 +1232,95 @@ async fn import_round_trip_multi_statement_and_nonatomic_error_against_live_mysq
         .await;
     drop_fixture(&pool, schema, other).await;
 }
+
+/// A statement the *prepare* rejects must surface the server's real error, fast.
+///
+/// `SET GLOBAL …` is refused at prepare time (error 1227) for a user without
+/// SUPER / SYSTEM_VARIABLES_ADMIN. sqlx mis-decodes that ERR packet as a
+/// PrepareOk, which leaves the connection protocol-desynchronized; the
+/// text-protocol fallback used to be retried on that same connection and
+/// blocked forever, so the command never returned and the editor's Run button
+/// spun with no error ever shown. The retry now happens on a fresh connection.
+#[tokio::test]
+async fn unpreparable_statement_reports_the_server_error_instead_of_hanging() {
+    let Some((params, secret)) =
+        gate("unpreparable_statement_reports_the_server_error_instead_of_hanging")
+    else {
+        return;
+    };
+    // Fixture: a login with no SUPER / SYSTEM_VARIABLES_ADMIN.
+    let admin = raw_pool(&params, &secret).await;
+    for stmt in [
+        "DROP USER IF EXISTS 'bt_lowpriv'@'%'",
+        "CREATE USER 'bt_lowpriv'@'%' IDENTIFIED BY 'bt_lowpriv'",
+        "GRANT SELECT ON *.* TO 'bt_lowpriv'@'%'",
+    ] {
+        sqlx::query(stmt).execute(&admin).await.expect(stmt);
+    }
+
+    let ConnectionParams::Mysql { host, port, .. } = &params else {
+        panic!("mysql params");
+    };
+    let low_params = ConnectionParams::Mysql {
+        host: host.clone(),
+        port: *port,
+        database: None,
+        user: Some("bt_lowpriv".into()),
+        tls_mode: crate::shared::engine::TlsMode::Disable,
+        ssh: None,
+    };
+    let low_secret = Some(ConnectSecret::new("bt_lowpriv"));
+    let conn = open_conn(&low_params, &low_secret).await;
+
+    // Single-statement path: an error, not a hang. The timeout IS the assertion
+    // — before the fix this future never resolved.
+    let single = tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        conn.run_query("SET GLOBAL wait_timeout=30", QueryOptions::default()),
+    )
+    .await
+    .expect("run_query must not hang on an unpreparable statement");
+    let message = single
+        .expect_err("SET GLOBAL must fail for an unprivileged user")
+        .to_string();
+    assert!(
+        message.contains("Access denied"),
+        "the server's own error must reach the user, got: {message}"
+    );
+
+    // Batch path: the failing statement reports the same real error, and the
+    // statements after it are reported as not-run (the pinned session is gone)
+    // rather than silently continued on another connection.
+    let outcomes = tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        conn.run_batch(
+            &[
+                "SET GLOBAL wait_timeout=30".to_string(),
+                "SELECT 1".to_string(),
+            ],
+            QueryOptions::default(),
+        ),
+    )
+    .await
+    .expect("run_batch must not hang on an unpreparable statement")
+    .expect("the batch itself succeeds; per-statement errors ride in the outcomes");
+    assert_eq!(outcomes.len(), 2);
+    let first = outcomes[0].error.as_deref().expect("statement 1 failed");
+    assert!(
+        first.contains("Access denied"),
+        "statement 1 must carry the server error, got: {first}"
+    );
+    let second = outcomes[1]
+        .error
+        .as_deref()
+        .expect("statement 2 was not run");
+    assert!(
+        second.contains("session ended"),
+        "statement 2 must say the session was lost, got: {second}"
+    );
+
+    sqlx::query("DROP USER IF EXISTS 'bt_lowpriv'@'%'")
+        .execute(&admin)
+        .await
+        .ok();
+}

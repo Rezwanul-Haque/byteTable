@@ -109,6 +109,17 @@ pub async fn connection_save(
     )
 }
 
+/// Copy a saved connection ("Duplicate" on the connect screen): a new entry
+/// named "Copy of …" in the same project, with the original's keychain secrets
+/// copied under the new id so it connects without retyping the password.
+#[tauri::command]
+pub async fn connection_duplicate(
+    state: State<'_, ConnectionsState>,
+    id: String,
+) -> Result<SavedConnection, AppError> {
+    application::duplicate_connection(state.repository.as_ref(), state.secret_store.as_ref(), &id)
+}
+
 #[tauri::command]
 pub async fn connection_delete(
     state: State<'_, ConnectionsState>,

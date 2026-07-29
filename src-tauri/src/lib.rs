@@ -423,6 +423,7 @@ pub fn run() {
             features::connections::commands::connection_list,
             features::connections::commands::connection_list_unsupported,
             features::connections::commands::connection_save,
+            features::connections::commands::connection_duplicate,
             features::connections::commands::connection_delete,
             features::connections::commands::connection_test,
             features::connections::commands::connection_open,

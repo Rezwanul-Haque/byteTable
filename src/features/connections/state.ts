@@ -6,7 +6,13 @@ import { create } from "zustand";
 
 import { isAppErrorPayload } from "../../shared/api/error";
 import { normalizeEnv } from "../../shared/types";
-import { connectionDelete, connectionList, connectionSave, type SavedConnection } from "./api";
+import {
+  connectionDelete,
+  connectionDuplicate,
+  connectionList,
+  connectionSave,
+  type SavedConnection,
+} from "./api";
 
 /**
  * Read-boundary migration: map any persisted env onto the canonical set
@@ -43,6 +49,13 @@ interface ConnectionsFeatureState {
     connection: SavedConnection,
     secrets?: { password?: string; sshSecret?: string },
   ) => Promise<SavedConnection>;
+  /**
+   * Copy a saved connection ("Duplicate" on the connect screen) and return the
+   * new entry. The backend names it "Copy of <name>" (numbered when taken),
+   * keeps it in the same project, and copies its keychain secrets under the new
+   * id. Rejections bubble to the caller.
+   */
+  duplicate: (id: string) => Promise<SavedConnection>;
   /** Delete a saved connection. Rejections bubble to the caller. */
   remove: (id: string) => Promise<void>;
 }
@@ -81,6 +94,12 @@ export const useConnectionsStore = create<ConnectionsFeatureState>((set) => ({
       // empty-state gate may open even if load() hasn't settled yet.
       loaded: true,
     }));
+    return stored;
+  },
+
+  duplicate: async (id) => {
+    const stored = migrate(await connectionDuplicate(id));
+    set((state) => ({ savedConnections: [...state.savedConnections, stored] }));
     return stored;
   },
 

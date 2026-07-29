@@ -40,3 +40,14 @@
   font-size: 11px;
   color: var(--text-faint);
 }
+
+/* Destructive entry (e.g. the connect screen's Delete). Tinted rather than
+   loud: it sits in the same list as ordinary actions, so it needs to read as
+   "careful" without dominating the menu. */
+.tabmenu-item.danger {
+  color: var(--danger);
+}
+.tabmenu-item.danger:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--danger) 14%, transparent);
+  color: var(--danger);
+}

@@ -351,6 +351,82 @@ pub fn save_connection<R: ConnectionRepository + ?Sized, S: SecretStore + ?Sized
     Ok(connection)
 }
 
+/// Copy a saved connection, secrets and all ("Duplicate" on the connect
+/// screen).
+///
+/// The copy keeps every non-secret field — engine, params, env, color, and
+/// crucially `project`, so it lands in the same group the original was in — and
+/// gets a fresh id, a fresh `created_at`, and a [`copy_name`]-derived name.
+///
+/// Keychain secrets are keyed by connection id, so a copy would otherwise be
+/// unable to connect until the user retyped its password. They are copied
+/// across under the new id — but ONLY the accounts this connection actually
+/// uses: every keychain read can pop an OS prompt, so a passwordless (SQLite)
+/// or non-tunnelled connection must not touch them (the same care
+/// [`resolve_open_secret`] takes).
+pub fn duplicate_connection<R: ConnectionRepository + ?Sized, S: SecretStore + ?Sized>(
+    repository: &R,
+    secret_store: &S,
+    id: &str,
+) -> Result<SavedConnection, AppError> {
+    let source = repository
+        .get(id)?
+        .ok_or_else(|| AppError::NotFound(format!("saved connection '{id}'")))?;
+
+    let taken: Vec<String> = repository.list()?.into_iter().map(|c| c.name).collect();
+    let copy = SavedConnection {
+        id: String::new(),
+        name: copy_name(&source.name, &taken),
+        created_at: None,
+        ..source.clone()
+    };
+    // Reuse the save use-case so id/created_at assignment and validation live in
+    // exactly one place. No transient secrets — they are copied below instead.
+    let saved = save_connection(repository, secret_store, copy, &TransientSecrets::default())?;
+
+    if source.params.uses_password() {
+        if let Some(secret) = secret_store.get(&secrets_mod::db_account(id))? {
+            secret_store.set(&secrets_mod::db_account(&saved.id), &secret)?;
+        }
+    }
+    if source.params.ssh().is_some() {
+        if let Some(secret) = secret_store.get(&secrets_mod::ssh_account(id))? {
+            secret_store.set(&secrets_mod::ssh_account(&saved.id), &secret)?;
+        }
+    }
+    Ok(saved)
+}
+
+/// The name for a duplicate: `"Copy of <base>"`, numbered when that is taken
+/// (`"Copy of api 2"`, `"Copy of api 3"`, …).
+///
+/// Duplicating a copy does NOT nest ("Copy of Copy of api"): when the original
+/// already starts with `Copy of `, the prefix and any trailing counter are
+/// stripped first, so a whole family stays flat and sorted together. A trailing
+/// number is only stripped from something that is already a copy — a connection
+/// the user deliberately named `api 2` keeps it, and duplicates to
+/// `Copy of api 2`.
+fn copy_name(original: &str, taken: &[String]) -> String {
+    const PREFIX: &str = "Copy of ";
+    let base = match original.strip_prefix(PREFIX) {
+        Some(rest) => rest
+            .rsplit_once(' ')
+            .filter(|(_, n)| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
+            .map_or(rest, |(head, _)| head),
+        None => original,
+    };
+    let first = format!("{PREFIX}{base}");
+    if !taken.iter().any(|n| n == &first) {
+        return first;
+    }
+    // Start at 2: the unnumbered name IS the first copy.
+    (2..)
+        .map(|n| format!("{first} {n}"))
+        .find(|candidate| !taken.iter().any(|n| n == candidate))
+        // The range is unbounded, so a name is always found.
+        .unwrap_or(first)
+}
+
 /// Remove a saved connection by id, deleting its keychain secrets too (best
 /// effort: a missing keychain entry is not an error).
 pub fn delete_connection<R: ConnectionRepository + ?Sized, S: SecretStore + ?Sized>(
@@ -913,6 +989,110 @@ mod tests {
             store.get(&db_account(&resaved.id)).unwrap().as_deref(),
             Some("pw")
         );
+    }
+
+    #[test]
+    fn duplicate_copies_params_project_and_secrets_under_a_new_id() {
+        let repo = FakeRepository::default();
+        let store = InMemorySecretStore::default();
+        let mut original = server_connection("Prod");
+        original.project = Some("payments".into());
+        // Tunnelled, so the SSH-secret branch is exercised too — the copy only
+        // reads the keychain accounts the connection actually uses.
+        if let ConnectionParams::Postgres { ssh, .. } = &mut original.params {
+            *ssh = Some(crate::shared::engine::SshConfig {
+                host: "bastion".into(),
+                port: 22,
+                user: "tunnel".into(),
+                auth: crate::shared::engine::SshAuth::Password,
+            });
+        }
+        let secrets = TransientSecrets::new(Some("pw".into()), Some("ssh-pass".into()));
+        let saved = save_connection(&repo, &store, original, &secrets).expect("save");
+
+        let copy = duplicate_connection(&repo, &store, &saved.id).expect("duplicate");
+
+        assert_eq!(copy.name, "Copy of Prod");
+        assert_ne!(copy.id, saved.id, "the copy is a separate entry");
+        assert_eq!(copy.params, saved.params);
+        assert_eq!(
+            copy.project,
+            Some("payments".into()),
+            "the copy stays in the original's project"
+        );
+        assert!(copy.created_at.is_some(), "the copy is stamped as new");
+        // Secrets are readable under the COPY's id, so it connects immediately.
+        assert_eq!(
+            store.get(&db_account(&copy.id)).unwrap().as_deref(),
+            Some("pw")
+        );
+        assert_eq!(
+            store.get(&ssh_account(&copy.id)).unwrap().as_deref(),
+            Some("ssh-pass")
+        );
+        // The original is untouched.
+        assert_eq!(
+            store.get(&db_account(&saved.id)).unwrap().as_deref(),
+            Some("pw")
+        );
+        assert_eq!(list_connections(&repo).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn duplicating_a_passwordless_connection_touches_no_keychain_account() {
+        let repo = FakeRepository::default();
+        let store = InMemorySecretStore::default();
+        let saved = save_connection(&repo, &store, new_connection("Local file"), &no_secrets())
+            .expect("save");
+
+        let copy = duplicate_connection(&repo, &store, &saved.id).expect("duplicate");
+
+        // SQLite has no secrets: nothing was written, so nothing can prompt.
+        assert_eq!(store.get(&db_account(&copy.id)).unwrap(), None);
+        assert_eq!(store.get(&ssh_account(&copy.id)).unwrap(), None);
+    }
+
+    #[test]
+    fn duplicate_of_an_unknown_id_is_not_found() {
+        let repo = FakeRepository::default();
+        let store = InMemorySecretStore::default();
+        assert!(matches!(
+            duplicate_connection(&repo, &store, "nope"),
+            Err(AppError::NotFound(_))
+        ));
+    }
+
+    #[test]
+    fn copy_names_number_themselves_and_never_nest() {
+        // First copy takes the unnumbered name.
+        assert_eq!(copy_name("api", &[]), "Copy of api");
+        // Then it counts up, skipping names already taken.
+        let taken = vec!["api".to_string(), "Copy of api".to_string()];
+        assert_eq!(copy_name("api", &taken), "Copy of api 2");
+        let taken = vec![
+            "Copy of api".to_string(),
+            "Copy of api 2".to_string(),
+            "Copy of api 3".to_string(),
+        ];
+        assert_eq!(copy_name("api", &taken), "Copy of api 4");
+
+        // Duplicating a copy stays flat rather than nesting the prefix.
+        assert_eq!(
+            copy_name("Copy of api", &["Copy of api".to_string()]),
+            "Copy of api 2"
+        );
+        assert_eq!(
+            copy_name(
+                "Copy of api 2",
+                &["Copy of api".to_string(), "Copy of api 2".to_string()]
+            ),
+            "Copy of api 3"
+        );
+
+        // A trailing number the USER chose is part of the name, not a counter:
+        // only something already prefixed "Copy of " gets its counter stripped.
+        assert_eq!(copy_name("api 2", &[]), "Copy of api 2");
+        assert_eq!(copy_name("v1.2", &[]), "Copy of v1.2");
     }
 
     #[test]

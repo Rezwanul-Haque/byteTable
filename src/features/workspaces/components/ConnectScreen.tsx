@@ -15,6 +15,7 @@ import { EngineBadge } from "../../../shared/ui/EngineBadge";
 import { EnvTag } from "../../../shared/ui/EnvTag";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
+import { useContextMenu } from "../../../shared/ui/useContextMenu";
 import { useToast } from "../../../shared/ui/toastContext";
 import { tildify, useHomeDir } from "../../../shared/homeDir";
 import {
@@ -83,6 +84,7 @@ export function ConnectScreen() {
   const loadError = useConnectionsStore((state) => state.loadError);
   const load = useConnectionsStore((state) => state.load);
   const removeConnection = useConnectionsStore((state) => state.remove);
+  const duplicateConnection = useConnectionsStore((state) => state.duplicate);
   const connectAndOpen = useConnectAndOpen();
   const openSqliteFile = useOpenSqliteFile();
   const toast = useToast();
@@ -166,6 +168,33 @@ export function ConnectScreen() {
     if (name) toast("Workspace “" + name + OPENED_TOAST_SUFFIX, "ok");
     setConnecting(null);
   };
+
+  // Copy a connection into the same project. The backend does the work — name
+  // ("Copy of …", numbered when taken), fresh id, and the keychain secrets
+  // copied across so the duplicate connects without retyping the password.
+  const duplicateConn = async (conn: SavedConnection) => {
+    let copy: SavedConnection;
+    try {
+      copy = await duplicateConnection(conn.id);
+    } catch (error) {
+      toast(
+        isAppErrorPayload(error)
+          ? error.message
+          : "Duplicating connections requires the desktop app",
+        "err",
+      );
+      return;
+    }
+    toast("Created “" + copy.name + "”", "ok");
+  };
+
+  // Right-click menu on a connection card. Same actions as the hover icons,
+  // plus Duplicate, which has no hover affordance of its own.
+  const cardMenu = useContextMenu<SavedConnection>((c) => [
+    { label: "Edit connection", icon: "edit", onSelect: () => setEditConn(c) },
+    { label: "Duplicate", icon: "content_copy", onSelect: () => void duplicateConn(c) },
+    { label: "Delete", icon: "delete", danger: true, onSelect: () => void removeConn(c) },
+  ]);
 
   // ---- project grouping + filtering ------------------------------------
   const projectOf = (c: SavedConnection) => c.project || UNGROUPED;
@@ -429,7 +458,11 @@ export function ConnectScreen() {
                       {groups[proj]!.map((c) => (
                         // Wrapper so the edit affordance is a sibling of the card
                         // button (a <button> can't nest another button).
-                        <div key={c.id} className="connect-card-wrap">
+                        <div
+                          key={c.id}
+                          className="connect-card-wrap"
+                          onContextMenu={(e) => cardMenu.open(e, c)}
+                        >
                           <button
                             type="button"
                             className={
@@ -561,6 +594,8 @@ export function ConnectScreen() {
         SQLite · MySQL · PostgreSQL · SQL Server · Redis · DynamoDB · MongoDB · Cassandra ·
         ClickHouse — more engines coming. Your credentials never leave this machine.
       </div>
+
+      {cardMenu.element}
 
       {/* The card following the cursor mid-drag. Fixed-positioned and
           pointer-events:none so it never becomes its own hit-test target. */}

@@ -318,6 +318,19 @@ export function connectionSave(
   });
 }
 
+/**
+ * Copy a saved connection ("Duplicate" on the connect screen) and return the
+ * new entry.
+ *
+ * The copy keeps every non-secret field — including `project`, so it lands in
+ * the same group — and is named "Copy of <name>", numbered when that is taken.
+ * The backend also copies the original's OS-keychain secrets under the new id,
+ * so the duplicate connects without the password being retyped.
+ */
+export function connectionDuplicate(id: string): Promise<SavedConnection> {
+  return invoke<SavedConnection>("connection_duplicate", { id });
+}
+
 export function connectionDelete(id: string): Promise<void> {
   return invoke("connection_delete", { id });
 }

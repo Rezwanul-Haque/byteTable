@@ -11,7 +11,9 @@ import { create } from "zustand";
 import type { SchemaInfo } from "../connections/api";
 import { connectionClose } from "../connections/api";
 import { useIntrospectionStore } from "../introspection/state";
+import { useSettingsStore } from "../settings/state";
 import { newCondition } from "../browse/sql/filter";
+import { readSession } from "./session";
 import type { CellValue } from "../../shared/api/engine";
 import type { AlterOp, DbObjectInfo, DbObjectKind, SortSpec } from "../../shared/api/engine";
 import type {
@@ -237,6 +239,20 @@ interface WorkspacesFeatureState {
  * `ui`, which would otherwise reset numbering oddly on reload).
  */
 const sqlCounters = new Map<string, number>();
+/**
+ * Start "Query N" numbering above the highest restored title, so a session that
+ * came back with "Query 3" does not hand out "Query 1" again.
+ */
+function seedSqlCounter(workspaceId: string, tabs: Tab[]): void {
+  let highest = 0;
+  for (const tab of tabs) {
+    if (tab.kind !== "sql") continue;
+    const n = Number(/^Query (\d+)$/.exec(tab.title)?.[1]);
+    if (Number.isFinite(n) && n > highest) highest = n;
+  }
+  if (highest > 0) sqlCounters.set(workspaceId, highest);
+}
+
 function nextSqlTitle(workspaceId: string): string {
   const n = (sqlCounters.get(workspaceId) ?? 0) + 1;
   sqlCounters.set(workspaceId, n);
@@ -296,6 +312,12 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
 
   openWorkspace: (connection) =>
     set((state) => {
+      // Restore this connection's last session (Settings › Behavior ›
+      // "Restore tabs"). Read at open time, so toggling the setting takes
+      // effect on the next connect without any re-wiring.
+      const restored = useSettingsStore.getState().settings.restoreTabs
+        ? readSession(connection.saved.id)
+        : null;
       // The connection's own color (m15 env picker) wins; otherwise cycle the
       // 8-color palette. The cursor only advances when the palette is actually
       // used, so a run of color-bearing connections doesn't skip palette slots
@@ -311,8 +333,11 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
           savedColor ??
           WORKSPACE_COLORS[state.colorCursor % WORKSPACE_COLORS.length] ??
           WORKSPACE_COLORS[0],
-        ui: {},
+        ui: restored ?? {},
       };
+      // "Query N" numbering continues past the restored tabs instead of
+      // colliding with them (the counter is keyed by the fresh workspace id).
+      seedSqlCounter(workspace.id, workspace.ui.tabs ?? []);
       return {
         workspaces: [...state.workspaces, workspace],
         activeWorkspaceId: workspace.id,

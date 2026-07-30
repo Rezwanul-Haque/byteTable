@@ -19,6 +19,7 @@ import { RedisWorkspace } from "./features/browse/redis/components/RedisWorkspac
 import { DynamoWorkspace } from "./features/browse/dynamo/components/DynamoWorkspace";
 import { MongoWorkspace } from "./features/browse/mongo/components/MongoWorkspace";
 import { CassandraWorkspace } from "./features/browse/cassandra/components/CassandraWorkspace";
+import { startSessionPersistence } from "./features/workspaces/sessionSync";
 import { selectShowConnect, useWorkspacesStore } from "./features/workspaces/state";
 import { useTrayWorkspaces } from "./features/workspaces/trayMenu";
 import {
@@ -153,6 +154,10 @@ export function App() {
   // M20.6: re-apply settings broadcast by another window (desktop multi-window;
   // no-op in plain browser dev).
   useEffect(() => subscribeSettings(syncSettings), [syncSettings]);
+
+  // Persist each open workspace's tabs so reconnecting brings them back
+  // (Settings › Behavior › "Restore tabs"). Read back in `openWorkspace`.
+  useEffect(() => startSessionPersistence(), []);
 
   useEffect(() => {
     let alive = true;

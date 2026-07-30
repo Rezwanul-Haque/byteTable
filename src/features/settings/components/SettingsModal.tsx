@@ -603,7 +603,10 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
                 />
               </SetRow>
               <div className="set-section-label">Session</div>
-              <SetRow label="Restore tabs on launch" hint="Reopen the tabs you had open last time">
+              <SetRow
+                label="Restore tabs when reconnecting"
+                hint="Reopen each connection's tabs, unsaved SQL, and grid filters when you open it again. Connections are never opened automatically."
+              >
                 <SetToggle
                   on={settings.restoreTabs}
                   onChange={(v) => setSetting("restoreTabs", v)}

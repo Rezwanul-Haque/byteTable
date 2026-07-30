@@ -15,6 +15,7 @@ pub mod mutate;
 pub mod preferences;
 pub mod processes;
 pub mod saved_queries;
+pub mod schema_diff;
 pub mod schema_map;
 pub mod settings;
 pub mod structure;

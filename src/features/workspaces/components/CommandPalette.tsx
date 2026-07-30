@@ -20,6 +20,7 @@ import { Icon } from "../../../shared/ui/Icon";
 import { Kbd } from "../../../shared/ui/Kbd";
 import { shellLabel, usePanelStore } from "../../console/state";
 import { tablesKey, useIntrospectionStore } from "../../introspection/state";
+import { isDiffable } from "../../schema_diff/handles";
 import { selectQueriesForConnection, useSavedQueriesStore } from "../../saved_queries/state";
 import { useWorkspacesStore } from "../state";
 import type { Workspace } from "../types";
@@ -43,6 +44,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
   const openSqlTab = useWorkspacesStore((state) => state.openSqlTab);
   const openSqlTabWith = useWorkspacesStore((state) => state.openSqlTabWith);
   const openProcessesTab = useWorkspacesStore((state) => state.openProcessesTab);
+  const openDiffTab = useWorkspacesStore((state) => state.openDiffTab);
   const patchWorkspaceUi = useWorkspacesStore((state) => state.patchWorkspaceUi);
   const openPanel = usePanelStore((state) => state.openPanel);
   const tablesMap = useIntrospectionStore((state) => state.tables);
@@ -110,6 +112,18 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
       hint: "view & kill sessions",
       run: () => openProcessesTab(schemaName),
     };
+    // Schema diff (M28) — only for the engines with a structural snapshot.
+    const diffCmds: Command[] = isDiffable(workspace.saved)
+      ? [
+          {
+            id: "diff",
+            icon: "difference",
+            label: "Schema diff",
+            hint: "compare environments",
+            run: openDiffTab,
+          },
+        ]
+      : [];
     // Saved queries visible from this workspace (global + this-workspace-
     // attached). Selecting one opens a fresh SQL tab seeded with its SQL.
     const savedCmds: Command[] = selectQueriesForConnection(savedQueries, workspace.saved.id).map(
@@ -121,20 +135,28 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
         run: () => openSqlTabWith(q.sql),
       }),
     );
-    return [...tableCmds, ...schemaCmds, newSql, openTerminal, processes, ...savedCmds];
+    return [
+      ...tableCmds,
+      ...schemaCmds,
+      newSql,
+      openTerminal,
+      processes,
+      ...diffCmds,
+      ...savedCmds,
+    ];
   }, [
     tablesMap,
     handleId,
     schemaName,
     workspace.schemas,
     workspace.id,
-    workspace.saved.id,
-    workspace.saved.engine,
+    workspace.saved,
     savedQueries,
     openTableTab,
     openSqlTab,
     openSqlTabWith,
     openProcessesTab,
+    openDiffTab,
     patchWorkspaceUi,
     openPanel,
   ]);

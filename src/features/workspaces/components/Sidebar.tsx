@@ -25,6 +25,7 @@ import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { ENV_COLOR } from "../../../shared/ui/envColors";
 import { SidebarObjectGroups } from "../../db_objects/components/SidebarObjectGroups";
+import { isDiffable } from "../../schema_diff/handles";
 import { useToast } from "../../../shared/ui/toastContext";
 import { normalizeEnv } from "../../../shared/types";
 import {
@@ -102,6 +103,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   const openTableTab = useWorkspacesStore((state) => state.openTableTab);
   const openSqlTab = useWorkspacesStore((state) => state.openSqlTab);
   const openMapTab = useWorkspacesStore((state) => state.openMapTab);
+  const openDiffTab = useWorkspacesStore((state) => state.openDiffTab);
 
   const { handleId } = workspace;
   const engine = workspace.saved.engine;
@@ -467,6 +469,14 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
           ) : null}
         </div>
         <IconBtn icon="schema" title="Schema map (ER diagram)" onClick={openMap} />
+        {/* M28: only the engines with a structural snapshot can be diffed. */}
+        {isDiffable(workspace.saved) ? (
+          <IconBtn
+            icon="difference"
+            title="Schema diff (compare environments)"
+            onClick={openDiffTab}
+          />
+        ) : null}
         <IconBtn
           icon="download"
           title={"Export schema “" + schemaName + "” as .sql"}

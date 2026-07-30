@@ -28,6 +28,7 @@ const TAB_ICONS: Record<Tab["kind"], string> = {
   sql: "terminal",
   map: "schema",
   processes: "monitor_heart",
+  diff: "difference",
   object: "visibility",
   objexplorer: "category",
 };
@@ -51,6 +52,8 @@ function tabTitle(tab: Tab, defaultSchema: string): string {
       return tab.schema + " · map";
     case "processes":
       return "Processes";
+    case "diff":
+      return "Schema diff";
     case "object":
       return tab.schema === defaultSchema ? tab.name : tab.schema + "." + tab.name;
     case "objexplorer":

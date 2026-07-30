@@ -138,6 +138,11 @@ interface WorkspacesFeatureState {
    */
   openProcessesTab: (schema: string) => void;
   /**
+   * Open (or focus) the singleton Schema diff tab (M28) — the structural
+   * comparison between this workspace's schema and another SQL connection's.
+   */
+  openDiffTab: () => void;
+  /**
    * Open the Object Explorer catalog tab for `schema` (one per schema) focused
    * on `focusClass` (`"all"` = the union facet). If already open, re-point its
    * focus and focus the tab.
@@ -525,6 +530,19 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
         const existing = tabs.find((t) => t.kind === "processes");
         if (existing) return { activeTabId: existing.id };
         const tab: Tab = { id: newTabId("processes"), kind: "processes", schema };
+        return { tabs: [...tabs, tab], activeTabId: tab.id };
+      }),
+    })),
+
+  openDiffTab: () =>
+    set((state) => ({
+      workspaces: patchActiveUi(state, (ui) => {
+        const tabs = ui.tabs ?? [];
+        // Singleton: one Schema diff tab per workspace — the two compared
+        // schemas are picked inside it, not by the opener.
+        const existing = tabs.find((t) => t.kind === "diff");
+        if (existing) return { activeTabId: existing.id };
+        const tab: Tab = { id: newTabId("diff"), kind: "diff" };
         return { tabs: [...tabs, tab], activeTabId: tab.id };
       }),
     })),

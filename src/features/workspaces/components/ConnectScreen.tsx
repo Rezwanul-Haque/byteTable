@@ -28,6 +28,7 @@ import {
 import { NewConnectionModal } from "../../connections/components/NewConnectionModal";
 import { pickSqliteFile } from "../../connections/dialog";
 import { useConnectionsStore } from "../../connections/state";
+import { CompareSchemasModal } from "../../schema_diff/components/CompareSchemasModal";
 import { useConnectAndOpen, useOpenSqliteFile } from "../connect";
 import "./ConnectScreen.css";
 
@@ -59,6 +60,8 @@ export function ConnectScreen() {
   const home = useHomeDir();
   const [connecting, setConnecting] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
+  /** The compare-only Schema Diff modal (M28) — structure only, never applies. */
+  const [showCompare, setShowCompare] = useState(false);
   // The saved connection being edited (its pencil clicked), or null. Opens the
   // same modal in edit mode.
   const [editConn, setEditConn] = useState<SavedConnection | null>(null);
@@ -579,6 +582,14 @@ export function ConnectScreen() {
             New connection
           </Btn>
           <Btn
+            icon="difference"
+            variant="text"
+            disabled={connecting !== null}
+            onClick={() => setShowCompare(true)}
+          >
+            Compare schemas…
+          </Btn>
+          <Btn
             icon="folder_open"
             variant="text"
             disabled={connecting !== null}
@@ -608,6 +619,8 @@ export function ConnectScreen() {
           </span>
         </div>
       ) : null}
+
+      {showCompare ? <CompareSchemasModal onClose={() => setShowCompare(false)} /> : null}
 
       {showNew || editConn ? (
         <NewConnectionModal

@@ -11,6 +11,7 @@
 
 import { PROC_SOURCES } from "../../processes/api";
 import { ProcessesTab } from "../../processes/ProcessesTab";
+import { SchemaDiff } from "../../schema_diff/components/SchemaDiff";
 import { SchemaMap } from "../../schema_map/components/SchemaMap";
 import { selectPanel, shellLabel, usePanelStore } from "../../console/state";
 import { BTLogo } from "../../../shared/ui/BTLogo";
@@ -63,6 +64,11 @@ function TabBody({
           schemaName={tab.schema}
         />
       );
+    case "diff":
+      // Compare-only from the workspace: the diff tab compares this schema
+      // against another connection's; applying a migration is the sync mode,
+      // which no entry point mounts yet.
+      return <SchemaDiff currentConn={workspace.saved} compareOnly />;
     case "object":
       return (
         <ObjectViewer

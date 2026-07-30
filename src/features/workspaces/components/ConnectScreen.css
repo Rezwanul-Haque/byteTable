@@ -21,7 +21,9 @@
 }
 
 .connect-panel {
-  width: 460px;
+  /* 520 not 460: the three footer actions need ~432px of content box and 460
+     left them 404, pushing "Open SQLite file…" past the panel edge. */
+  width: 520px;
   max-width: calc(100vw - 48px);
   /* Never taller than the viewport; the list scrolls, header + actions stay put. */
   max-height: calc(100vh - 48px);

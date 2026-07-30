@@ -10,7 +10,14 @@ import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Select } from "../../../shared/ui/Select";
 import { useToast } from "../../../shared/ui/toastContext";
-import type { AutoRefreshSec, DefaultLimit, Density, Settings, SidebarSide } from "../api";
+import type {
+  AutoRefreshSec,
+  ConnectTimeoutSec,
+  DefaultLimit,
+  Density,
+  Settings,
+  SidebarSide,
+} from "../api";
 import {
   ACCENTS,
   monoMetaFor,
@@ -577,6 +584,22 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
                 <SetToggle
                   on={settings.confirmProd}
                   onChange={(v) => setSetting("confirmProd", v)}
+                />
+              </SetRow>
+              <div className="set-section-label">Connecting</div>
+              <SetRow
+                label="Connection timeout"
+                hint="Give up on a server that does not answer — covers the SSH tunnel and TLS handshake too, so raise it for a bastion or a slow link"
+              >
+                <SetSeg<ConnectTimeoutSec>
+                  value={settings.connectTimeoutSec}
+                  onChange={(v) => setSetting("connectTimeoutSec", v)}
+                  options={[
+                    { value: 3, label: "3s" },
+                    { value: 5, label: "5s" },
+                    { value: 10, label: "10s" },
+                    { value: 30, label: "30s" },
+                  ]}
                 />
               </SetRow>
               <div className="set-section-label">Session</div>

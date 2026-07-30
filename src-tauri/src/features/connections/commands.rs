@@ -8,8 +8,15 @@
 //! surface. M6 (SQL editor) may move it to a dedicated query slice; the
 //! handle-id seam will survive that move.
 
+use std::time::Duration;
+
 use tauri::State;
 
+// Cross-feature composition at the presentation boundary (as introspection and
+// the other slices do with `ConnectionsState`): the connect path honours the
+// user's connect-timeout setting, so it reads the settings slice's store.
+use crate::features::settings::application as settings_app;
+use crate::features::settings::commands::SettingsState;
 use crate::shared::engine::{ConnectionParams, EngineInfo, QueryOptions, QueryResult};
 use crate::shared::engine::{SchemaInfo, StatementOutcome, TableInfo};
 use crate::shared::error::AppError;
@@ -137,12 +144,36 @@ pub async fn connection_delete(
 #[tauri::command]
 pub async fn connection_test(
     state: State<'_, ConnectionsState>,
+    settings: State<'_, SettingsState>,
     params: ConnectionParams,
     password: Option<String>,
     ssh_secret: Option<String>,
 ) -> Result<EngineInfo, AppError> {
     let secrets = TransientSecrets::new(password, ssh_secret);
-    application::test_connection(&state.registry, &params, &secrets).await
+    application::test_connection(
+        &state.registry,
+        &params,
+        &secrets,
+        connect_timeout(&settings),
+    )
+    .await
+}
+
+/// The user's connect budget (Settings › Behavior › "Connection timeout").
+///
+/// Read from the on-disk settings mirror, which the renderer writes on every
+/// change. A missing or unreadable file is NOT an error worth failing a connect
+/// over — fall back to the contract default, exactly as a fresh profile would.
+/// Zero would mean "give up instantly", so it also falls back.
+fn connect_timeout(settings: &State<'_, SettingsState>) -> Duration {
+    let secs = settings_app::get_settings(settings.store())
+        .map(|s| s.connect_timeout_sec)
+        .unwrap_or(0);
+    if secs == 0 {
+        application::DEFAULT_CONNECT_TIMEOUT
+    } else {
+        Duration::from_secs(u64::from(secs))
+    }
 }
 
 /// Open by saved id *or* ad-hoc params ("Open SQLite file…"); exactly one
@@ -152,6 +183,7 @@ pub async fn connection_test(
 #[tauri::command]
 pub async fn connection_open(
     state: State<'_, ConnectionsState>,
+    settings: State<'_, SettingsState>,
     id: Option<String>,
     params: Option<ConnectionParams>,
     password: Option<String>,
@@ -179,6 +211,7 @@ pub async fn connection_open(
         &state.manager,
         target,
         &secrets,
+        connect_timeout(&settings),
     )
     .await
 }

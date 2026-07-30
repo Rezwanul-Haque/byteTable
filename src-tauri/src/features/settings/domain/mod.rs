@@ -124,6 +124,9 @@ fn default_default_limit() -> u32 {
 fn default_auto_refresh_sec() -> u32 {
     10
 }
+fn default_connect_timeout_sec() -> u32 {
+    5
+}
 fn default_true() -> bool {
     true
 }
@@ -171,6 +174,17 @@ pub struct Settings {
     /// Auto-refresh cadence in seconds — 5, 10, or 30 in the UI.
     #[serde(default = "default_auto_refresh_sec")]
     pub auto_refresh_sec: u32,
+    /// How long a connect attempt may take before it is abandoned, in seconds
+    /// — 3, 5, 10, or 30 in the UI.
+    ///
+    /// Without a cap, a server that is simply not there (a stopped Docker
+    /// container is the everyday case) leaves the connect screen spinning for as
+    /// long as the driver keeps retrying — sqlx pools retry for 30s, Mongo's
+    /// server selection has its own window. This is the budget for the whole
+    /// attempt, SSH tunnel and TLS handshake included, so raise it if you reach
+    /// databases through a bastion or a slow link.
+    #[serde(default = "default_connect_timeout_sec")]
+    pub connect_timeout_sec: u32,
     /// Which side the object-list sidebar renders on. Left by default.
     #[serde(default = "default_sidebar_side")]
     pub sidebar_side: SidebarSide,
@@ -200,6 +214,7 @@ impl Default for Settings {
             restore_tabs: true,
             auto_refresh: true,
             auto_refresh_sec: default_auto_refresh_sec(),
+            connect_timeout_sec: default_connect_timeout_sec(),
             sidebar_side: default_sidebar_side(),
             titlebar_position: default_titlebar_position(),
             mac_chrome: default_mac_chrome(),
@@ -229,6 +244,7 @@ mod tests {
         assert!(s.restore_tabs);
         assert!(s.auto_refresh);
         assert_eq!(s.auto_refresh_sec, 10);
+        assert_eq!(s.connect_timeout_sec, 5);
         assert_eq!(s.sidebar_side, SidebarSide::Left);
         assert_eq!(s.titlebar_position, TitlebarPosition::TopLeftIcon);
         assert_eq!(s.mac_chrome, MacChrome::Native);
@@ -268,6 +284,7 @@ mod tests {
             restore_tabs: false,
             auto_refresh: false,
             auto_refresh_sec: 30,
+            connect_timeout_sec: 30,
             sidebar_side: SidebarSide::Right,
             titlebar_position: TitlebarPosition::BottomRightIcon,
             mac_chrome: MacChrome::Frameless,

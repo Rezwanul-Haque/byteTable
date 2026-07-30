@@ -22,6 +22,13 @@ impl SettingsState {
     pub fn new(store: Box<dyn SettingsStore + Send + Sync>) -> Self {
         Self { store }
     }
+
+    /// The store, for the few backend paths that must honour a user setting
+    /// rather than only mirror the renderer's copy — the connect timeout (M28
+    /// follow-up) is read here by the connections slice's commands.
+    pub fn store(&self) -> &(dyn SettingsStore + Send + Sync) {
+        self.store.as_ref()
+    }
 }
 
 /// Load the on-disk settings mirror. The renderer prefers its localStorage

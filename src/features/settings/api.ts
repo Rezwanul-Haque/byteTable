@@ -11,6 +11,8 @@ import type { MonoFontId, ThemeId, UiFontId } from "./catalogs";
 export type DefaultLimit = 100 | 300 | 1000;
 /** Auto-refresh cadence in seconds. */
 export type AutoRefreshSec = 5 | 10 | 30;
+/** Connect budget in seconds — how long an unreachable server is waited on. */
+export type ConnectTimeoutSec = 3 | 5 | 10 | 30;
 export type Density = "compact" | "comfortable";
 /** Which side the object-list sidebar renders on. */
 export type SidebarSide = "left" | "right";
@@ -49,6 +51,13 @@ export interface Settings {
   /** Periodically refresh the sidebar object list (+ Redis keyspace). */
   autoRefresh: boolean;
   autoRefreshSec: AutoRefreshSec;
+  /**
+   * How long a connect attempt may take before it is abandoned. Read by the
+   * BACKEND connect path (from the on-disk mirror), not by the renderer: it
+   * bounds the driver work itself. Covers the whole attempt — SSH tunnel and
+   * TLS handshake included — so raise it for bastions or slow links.
+   */
+  connectTimeoutSec: ConnectTimeoutSec;
   sidebarSide: SidebarSide;
   titlebarPosition: TitlebarPosition;
   /** macOS-only: which custom-titlebar chrome to use. */
@@ -72,6 +81,7 @@ export const DEFAULTS: Settings = {
   restoreTabs: true,
   autoRefresh: true,
   autoRefreshSec: 10,
+  connectTimeoutSec: 5,
   sidebarSide: "left",
   titlebarPosition: "topLeftIcon",
   macChrome: "native",

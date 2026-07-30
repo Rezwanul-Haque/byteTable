@@ -2,8 +2,9 @@
 //! shared engine abstraction only — no Tauri, no drivers.
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
@@ -456,16 +457,76 @@ fn now_epoch_ms() -> u64 {
 /// Uses ONLY the transiently-typed secrets (the modal's password / SSH secret)
 /// — testing happens before save, so the keychain is never read or written
 /// here. SQLite ignores secrets (default `Connector` impl).
+/// The connect budget used when the caller has no user setting to pass (tests,
+/// and any path that predates the setting). Mirrors `Settings::default()`.
+pub const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Bound a connect attempt so an unreachable server fails fast instead of
+/// leaving the UI spinning.
+///
+/// This is a **backstop over every engine**, not a per-driver knob: each driver
+/// has its own idea of how long to keep trying (sqlx pools retry the connect for
+/// their whole 30s acquire window, Mongo runs server selection, the AWS SDK
+/// retries), and a stopped Docker container hits all of them. Dropping the
+/// future here cancels the attempt and, with it, any half-built pool.
+///
+/// The message is a §5 sentence: it names the target, says how long we waited,
+/// and points at the setting that changes it.
+async fn within_connect_timeout<T>(
+    timeout: Duration,
+    params: &ConnectionParams,
+    attempt: impl Future<Output = Result<T, AppError>>,
+) -> Result<T, AppError> {
+    match tokio::time::timeout(timeout, attempt).await {
+        Ok(result) => result,
+        Err(_elapsed) => Err(AppError::Database(format!(
+            "Could not reach {} within {}s. Check the server is running and reachable — \
+             if it is just slow (an SSH tunnel or a remote link), raise the connection \
+             timeout in Settings › Behavior.",
+            connect_target(params),
+            timeout.as_secs()
+        ))),
+    }
+}
+
+/// Human "where we were trying to connect" for the timeout message: the file
+/// for SQLite, `host:port` for the server engines, the region for DynamoDB.
+fn connect_target(params: &ConnectionParams) -> String {
+    match params {
+        ConnectionParams::Sqlite { path } => path.clone(),
+        ConnectionParams::Mysql { host, port, .. }
+        | ConnectionParams::Postgres { host, port, .. }
+        | ConnectionParams::Mssql { host, port, .. }
+        | ConnectionParams::Redis { host, port, .. }
+        | ConnectionParams::Clickhouse { host, port, .. } => format!("{host}:{port}"),
+        ConnectionParams::Mongodb {
+            uri, host, port, ..
+        } => uri.clone().unwrap_or_else(|| format!("{host}:{port}")),
+        ConnectionParams::Cassandra {
+            contact_points,
+            port,
+            ..
+        } => format!("{contact_points}:{port}"),
+        ConnectionParams::Dynamodb {
+            region, endpoint, ..
+        } => endpoint.clone().unwrap_or_else(|| region.clone()),
+    }
+}
+
 pub async fn test_connection(
     registry: &ConnectorRegistry,
     params: &ConnectionParams,
     secrets: &TransientSecrets,
+    timeout: Duration,
 ) -> Result<EngineInfo, AppError> {
     let secret = connect_secret_from(secrets);
-    registry
-        .get(params.engine())?
-        .test_with_secret(params, secret.as_ref())
-        .await
+    let connector = registry.get(params.engine())?;
+    within_connect_timeout(
+        timeout,
+        params,
+        connector.test_with_secret(params, secret.as_ref()),
+    )
+    .await
 }
 
 /// Build a [`ConnectSecret`] from transient secrets, or `None` when both are
@@ -547,6 +608,7 @@ pub async fn open_connection<R: ConnectionRepository + ?Sized, S: SecretStore + 
     manager: &ConnectionManager,
     target: OpenTarget,
     transient: &TransientSecrets,
+    timeout: Duration,
 ) -> Result<OpenedConnection, AppError> {
     let (params, saved_id) = match target {
         OpenTarget::Params(params) => (params, None),
@@ -562,43 +624,49 @@ pub async fn open_connection<R: ConnectionRepository + ?Sized, S: SecretStore + 
     // Merge keychain-stored secrets with transient ones (transient wins).
     let secret = resolve_open_secret(secret_store, &params, saved_id.as_deref(), transient)?;
 
-    let connection = registry
-        .get(params.engine())?
-        .open_with_secret(&params, secret.as_ref())
-        .await?;
+    let connector = registry.get(params.engine())?;
+
+    // The whole first round trip shares one budget — opening AND the initial
+    // payload below. A server that accepts the socket but never answers would
+    // otherwise just move the hang from the connect to `list_schemas`.
+    let (connection, schemas, keyspace) = within_connect_timeout(timeout, &params, async {
+        let connection = connector.open_with_secret(&params, secret.as_ref()).await?;
+
+        // Gather the kind-specific initial payload BEFORE handing the connection
+        // to the manager (we still own it here, no handle round-trip needed).
+        let (schemas, keyspace) = match &connection {
+            OpenConnection::Sql(conn) => (conn.list_schemas().await?, None),
+            OpenConnection::Kv(conn) => {
+                let server_info = conn.server_info().await?;
+                let databases = conn.keyspace().await?;
+                (
+                    Vec::new(),
+                    Some(KeyspaceOverview {
+                        server_info,
+                        databases,
+                    }),
+                )
+            }
+            // DynamoDB (M17): no schemas, no keyspace. The DynamoDB workspace
+            // fetches its table list on mount via `dynamo_list_tables` — the open
+            // result only carries the `kind` the renderer routes on.
+            OpenConnection::Document(_) => (Vec::new(), None),
+            // MongoDB (M18): no SQL schemas, no Redis keyspace. The MongoDB
+            // workspace fetches its database + collection list on mount via
+            // `mongo_list_databases` / `mongo_list_collections`; the open result
+            // only carries the `kind` the renderer routes on.
+            OpenConnection::Mongo(_) => (Vec::new(), None),
+            // Cassandra (M19): no SQL schemas, no Redis keyspace. The Cassandra
+            // workspace fetches its keyspace + table list on mount (M19 §19.1); the
+            // open result only carries the `kind` the renderer routes on.
+            OpenConnection::WideColumn(_) => (Vec::new(), None),
+        };
+        Ok((connection, schemas, keyspace))
+    })
+    .await?;
+
     let engine_info = connection.engine_info();
     let kind = connection.kind();
-
-    // Gather the kind-specific initial payload BEFORE handing the connection to
-    // the manager (we still own it here, no handle round-trip needed).
-    let (schemas, keyspace) = match &connection {
-        OpenConnection::Sql(conn) => (conn.list_schemas().await?, None),
-        OpenConnection::Kv(conn) => {
-            let server_info = conn.server_info().await?;
-            let databases = conn.keyspace().await?;
-            (
-                Vec::new(),
-                Some(KeyspaceOverview {
-                    server_info,
-                    databases,
-                }),
-            )
-        }
-        // DynamoDB (M17): no schemas, no keyspace. The DynamoDB workspace
-        // fetches its table list on mount via `dynamo_list_tables` — the open
-        // result only carries the `kind` the renderer routes on.
-        OpenConnection::Document(_) => (Vec::new(), None),
-        // MongoDB (M18): no SQL schemas, no Redis keyspace. The MongoDB
-        // workspace fetches its database + collection list on mount via
-        // `mongo_list_databases` / `mongo_list_collections`; the open result
-        // only carries the `kind` the renderer routes on.
-        OpenConnection::Mongo(_) => (Vec::new(), None),
-        // Cassandra (M19): no SQL schemas, no Redis keyspace. The Cassandra
-        // workspace fetches its keyspace + table list on mount (M19 §19.1); the
-        // open result only carries the `kind` the renderer routes on.
-        OpenConnection::WideColumn(_) => (Vec::new(), None),
-    };
-
     let handle_id = manager.insert(connection).await;
     Ok(OpenedConnection {
         handle_id,
@@ -865,6 +933,99 @@ mod tests {
         }
     }
 
+    /// A connector that never answers — a stopped server, or a driver stuck in
+    /// its own retry loop.
+    struct HangingConnector;
+
+    #[async_trait]
+    impl Connector for HangingConnector {
+        async fn test(&self, _params: &ConnectionParams) -> Result<EngineInfo, AppError> {
+            std::future::pending().await
+        }
+
+        async fn open(&self, _params: &ConnectionParams) -> Result<OpenConnection, AppError> {
+            std::future::pending().await
+        }
+    }
+
+    fn registry_with_hang() -> ConnectorRegistry {
+        let mut registry = ConnectorRegistry::new();
+        registry.register(Engine::Postgres, Arc::new(HangingConnector));
+        registry
+    }
+
+    fn postgres_params() -> ConnectionParams {
+        ConnectionParams::Postgres {
+            host: "127.0.0.1".into(),
+            port: 55432,
+            database: None,
+            user: None,
+            tls_mode: crate::shared::engine::TlsMode::Disable,
+            ssh: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_test_that_never_answers_gives_up_at_the_timeout() {
+        let registry = registry_with_hang();
+        let err = test_connection(
+            &registry,
+            &postgres_params(),
+            &no_secrets(),
+            Duration::from_millis(30),
+        )
+        .await
+        .unwrap_err();
+        // A §5 sentence naming the target and pointing at the setting — never a
+        // hang, and never a bare "timed out".
+        assert!(matches!(err, AppError::Database(_)));
+        let message = err.to_string();
+        assert!(message.contains("127.0.0.1:55432"), "{message}");
+        assert!(message.contains("Settings"), "{message}");
+    }
+
+    #[tokio::test]
+    async fn an_open_that_never_answers_gives_up_and_registers_no_handle() {
+        let registry = registry_with_hang();
+        let manager = ConnectionManager::new();
+        let repo = FakeRepository::default();
+        let store = InMemorySecretStore::default();
+        let err = open_connection(
+            &repo,
+            &registry,
+            &store,
+            &manager,
+            OpenTarget::Params(postgres_params()),
+            &no_secrets(),
+            Duration::from_millis(30),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(err, AppError::Database(_)));
+        // The abandoned attempt leaves nothing behind for the user to close.
+        assert_eq!(manager.open_count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn a_connect_inside_the_budget_still_succeeds() {
+        let registry = registry_with_fake(Arc::new(AtomicBool::new(false)));
+        let manager = ConnectionManager::new();
+        let repo = FakeRepository::default();
+        let store = InMemorySecretStore::default();
+        let opened = open_connection(
+            &repo,
+            &registry,
+            &store,
+            &manager,
+            OpenTarget::Params(sqlite_params()),
+            &no_secrets(),
+            DEFAULT_CONNECT_TIMEOUT,
+        )
+        .await
+        .expect("open");
+        assert_eq!(opened.engine_info.engine, Engine::Sqlite);
+    }
+
     fn registry_with_fake(closed_flag: Arc<AtomicBool>) -> ConnectorRegistry {
         let mut registry = ConnectorRegistry::new();
         registry.register(
@@ -1127,7 +1288,7 @@ mod tests {
             tls_mode: crate::shared::engine::TlsMode::Disable,
             ssh: None,
         };
-        let err = test_connection(&registry, &params, &no_secrets())
+        let err = test_connection(&registry, &params, &no_secrets(), DEFAULT_CONNECT_TIMEOUT)
             .await
             .unwrap_err();
         assert!(matches!(err, AppError::Unsupported(_)));
@@ -1154,6 +1315,7 @@ mod tests {
             &manager,
             OpenTarget::Params(sqlite_params()),
             &no_secrets(),
+            DEFAULT_CONNECT_TIMEOUT,
         )
         .await
         .expect("open");
@@ -1233,6 +1395,7 @@ mod tests {
             &manager,
             OpenTarget::SavedId(saved.id.clone()),
             &no_secrets(),
+            DEFAULT_CONNECT_TIMEOUT,
         )
         .await
         .expect("open");
@@ -1246,6 +1409,7 @@ mod tests {
             &manager,
             OpenTarget::SavedId("ghost".into()),
             &no_secrets(),
+            DEFAULT_CONNECT_TIMEOUT,
         )
         .await
         .unwrap_err();

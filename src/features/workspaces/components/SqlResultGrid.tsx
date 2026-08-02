@@ -4,19 +4,28 @@
 // `result.rows`. We still virtualize the row axis with @tanstack/react-virtual
 // so a large result (hundreds–thousands of rows) renders at 60fps without
 // thousands of DOM nodes. Cells reuse the shared `CellContent` so visuals match
-// the browse grid exactly. No header sort / no FK links here (FK is M10).
+// the browse grid exactly. No FK links here (FK is M10).
+//
+// Header sort mirrors the browse DataGrid's affordance (a header click cycles
+// asc → desc → none) but is CLIENT-side: there is no query to re-run and no
+// backend paging here, so the already-materialized rows are reordered in
+// memory. It sorts what the query RETURNED — with a backend row_limit in play
+// that is the returned page, not the whole table.
 
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { exportSave } from "../../../shared/api/engine";
-import type { CellValue, QueryResult } from "../../../shared/api/engine";
+import type { CellValue, QueryResult, SortSpec } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
 import { Btn } from "../../../shared/ui/Btn";
 import { CopyButton } from "../../../shared/ui/CopyButton";
+import { Icon } from "../../../shared/ui/Icon";
 import { useToast } from "../../../shared/ui/toastContext";
 import { CellContent } from "../../browse/shared/GridCell";
+
+import { cycleSort, sortedOrder } from "./resultSort";
 
 /** Row overscan handed to the virtualizer (DOM rows beyond the viewport). */
 const ROW_OVERSCAN = 12;
@@ -101,8 +110,11 @@ export function SqlResultGrid({ result }: { result: QueryResult }) {
   // driven by the `--dg-col-w` CSS var (pure repaint, no re-render / re-window);
   // the final px value commits to `colOverrides` on release.
   const [draggingCol, setDraggingCol] = useState<string | null>(null);
+  // Client-side header sort; null = the query's own row order.
+  const [sort, setSort] = useState<SortSpec | null>(null);
   useEffect(() => {
     setSelected(new Set());
+    setSort(null);
   }, [result]);
   const allSelected = rows.length > 0 && selected.size === rows.length;
   const someSelected = selected.size > 0 && !allSelected;
@@ -116,9 +128,22 @@ export function SqlResultGrid({ result }: { result: QueryResult }) {
   const toggleAll = () =>
     setSelected((s) => (s.size === rows.length ? new Set() : new Set(rows.map((_, i) => i))));
 
-  // Export the selected rows (or all rows when none are checked) to CSV.
+  // Display order as row indexes INTO `rows` — sorting reorders this, never the
+  // result itself, so selection (keyed by the original index) and the measured
+  // column widths survive a sort untouched.
+  const order = useMemo(() => {
+    if (!sort) return rows.map((_, i) => i);
+    return sortedOrder(
+      rows,
+      columns.findIndex((c) => c.name === sort.column),
+      sort.direction,
+    );
+  }, [rows, columns, sort]);
+
+  // Export the selected rows (or all rows when none are checked) to CSV, in the
+  // order they're displayed — a sorted grid exports sorted.
   const exportCsv = async () => {
-    const idxs = selected.size > 0 ? [...selected].sort((a, b) => a - b) : rows.map((_, i) => i);
+    const idxs = selected.size > 0 ? order.filter((i) => selected.has(i)) : order;
     if (!idxs.length) return;
     const esc = (v: CellValue) => {
       if (v === null || v === undefined) return "";
@@ -322,16 +347,28 @@ export function SqlResultGrid({ result }: { result: QueryResult }) {
             {virtualizeCols ? <div className="dg-pad" aria-hidden /> : null}
             {winIdx.map((ci) => {
               const c = columns[ci]!;
+              const active = sort?.column === c.name;
               return (
                 <div
                   key={c.name + ":" + ci}
-                  className="dg-th"
-                  title={c.typeHint ? c.name + " · " + c.typeHint : c.name}
+                  className="dg-th sortable"
+                  onClick={() => setSort((s) => cycleSort(s, c.name))}
+                  title={
+                    (c.typeHint ? c.name + " · " + c.typeHint : c.name) +
+                    " · click to sort these results"
+                  }
                 >
                   <span className="dg-head">
                     <span className="dg-colname">{c.name}</span>
                     {c.typeHint ? (
                       <span className="dg-coltype">{c.typeHint.toLowerCase()}</span>
+                    ) : null}
+                    {active ? (
+                      <Icon
+                        name={sort!.direction === "asc" ? "arrow_upward" : "arrow_downward"}
+                        size={13}
+                        style={{ color: "var(--accent)" }}
+                      />
                     ) : null}
                   </span>
                   {/* Right-edge resize handle: drag to set a manual width,
@@ -354,10 +391,13 @@ export function SqlResultGrid({ result }: { result: QueryResult }) {
 
           <div style={{ height: totalHeight, position: "relative" }}>
             {virtualRows.map((vr) => {
-              const row = rows[vr.index]!;
+              // `vr.index` is the DISPLAY position; `rowIdx` the row's index in
+              // the untouched result (what selection is keyed by).
+              const rowIdx = order[vr.index]!;
+              const row = rows[rowIdx]!;
               return (
                 <div
-                  key={vr.index}
+                  key={rowIdx}
                   className="dg-tr dg-row"
                   style={{ height: vr.size, transform: `translateY(${vr.start}px)` }}
                 >
@@ -365,8 +405,8 @@ export function SqlResultGrid({ result }: { result: QueryResult }) {
                     <input
                       type="checkbox"
                       className="dg-check"
-                      checked={selected.has(vr.index)}
-                      onChange={() => toggleRow(vr.index)}
+                      checked={selected.has(rowIdx)}
+                      onChange={() => toggleRow(rowIdx)}
                       aria-label={"Select row " + (vr.index + 1)}
                     />
                   </div>

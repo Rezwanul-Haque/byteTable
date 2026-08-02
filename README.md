@@ -33,7 +33,7 @@ each with its own tab set and sidebar state.
 
 - Virtualized data grid: type-aware cells, sort, server-side paging (rows-per-page footer), inline cell editing (parameterized `UPDATE`, production-confirm).
 - Stackable filter builder (13 operators, parameterized) + raw `WHERE` escape hatch.
-- SQL editor: syntax highlighting, `⌘↩` run, per-tab history, **global saved queries** (optionally scoped to a workspace), and an **Explain** panel + execution-order minimap.
+- SQL editor: syntax highlighting, `⌘↩` run, per-tab history, **global saved queries** (optionally scoped to a workspace), and an **Explain** panel + execution-order minimap. Results render in a virtualized grid with client-side header sort (asc → desc → none, NULLs last) and CSV export.
 - Structure view: columns / indexes / foreign keys / referenced-by / DDL, with inline editing staged into reviewable `ALTER` statements (apply/discard).
 - **FK hop** (peek a referenced row → open it filtered), **column insights** (distinct/nulls/min/max/avg + top-5 over the current filter).
 - **Schema map**: draggable ER diagram with movable FK edges, zoom, and PNG/SVG export.

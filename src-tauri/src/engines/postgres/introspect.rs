@@ -138,7 +138,7 @@ pub(super) async fn table_meta(
     // Columns from information_schema.columns; udt_name carries the canonical
     // type (int4/int8/bool/numeric/_text/jsonb/…) we use for numeric detection.
     let col_rows = sqlx::query(
-        "SELECT column_name, data_type, udt_name, is_nullable, column_default, \
+        "SELECT column_name, data_type, udt_name, is_nullable, column_default, is_identity, \
             col_description(format('%I.%I', table_schema, table_name)::regclass, ordinal_position) AS comment \
          FROM information_schema.columns \
          WHERE table_schema = $1 AND table_name = $2 \
@@ -159,10 +159,18 @@ pub(super) async fn table_meta(
         let is_nullable: String = row.get("is_nullable");
         let default_value: Option<String> = row.try_get("column_default").unwrap_or(None);
         let comment: Option<String> = row.try_get("comment").unwrap_or(None);
+        // Both identity columns (GENERATED … AS IDENTITY) and the legacy serial
+        // types (a `nextval(…)` default over a sequence) auto-assign on insert.
+        let is_identity: String = row.try_get("is_identity").unwrap_or_default();
+        let auto_increment = is_identity.eq_ignore_ascii_case("YES")
+            || default_value
+                .as_deref()
+                .is_some_and(|d| d.trim_start().to_ascii_lowercase().starts_with("nextval("));
         udt_by_name.insert(name.clone(), udt_name.clone());
         columns.push(ColumnInfo {
             fk: fk_by_column.get(&name).cloned(),
             pk: pk_columns.iter().any(|c| c == &name),
+            auto_increment,
             name,
             comment,
             // Display `data_type` (information_schema's readable form, e.g.
@@ -534,6 +542,7 @@ mod tests {
                 default_value: None,
                 fk: None,
                 comment: None,
+                auto_increment: false,
             },
             ColumnInfo {
                 name: "author_id".into(),
@@ -543,6 +552,7 @@ mod tests {
                 default_value: None,
                 fk: None,
                 comment: None,
+                auto_increment: false,
             },
             ColumnInfo {
                 name: "price".into(),
@@ -552,6 +562,7 @@ mod tests {
                 default_value: Some("0.0".into()),
                 fk: None,
                 comment: None,
+                auto_increment: false,
             },
         ];
         let fks = vec![ForeignKeyInfo {

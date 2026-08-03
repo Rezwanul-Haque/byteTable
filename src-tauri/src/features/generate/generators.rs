@@ -485,6 +485,7 @@ mod tests {
             default_value: None,
             fk: None,
             comment: None,
+            auto_increment: false,
         }
     }
 

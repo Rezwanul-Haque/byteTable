@@ -207,6 +207,13 @@
   font-weight: 500;
 }
 
+/* Auto-increment badge in the column-name cell (read-only metadata). */
+.st-auto-tag {
+  margin-left: 8px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
 .st-fk-ref {
   color: var(--text-faint);
   margin-left: 8px;

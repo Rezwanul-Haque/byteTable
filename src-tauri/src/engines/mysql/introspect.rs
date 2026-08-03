@@ -158,6 +158,7 @@ pub(super) async fn table_meta(
             CAST(is_nullable AS CHAR) AS is_nullable, \
             CAST(column_default AS CHAR) AS column_default, \
             CAST(column_key AS CHAR) AS column_key, \
+            CAST(extra AS CHAR) AS extra, \
             CAST(column_comment AS CHAR) AS column_comment \
          FROM information_schema.columns \
          WHERE table_schema = ? AND table_name = ? \
@@ -181,6 +182,8 @@ pub(super) async fn table_meta(
         let is_nullable: String = row.get("is_nullable");
         let default_value: Option<String> = row.try_get("column_default").unwrap_or(None);
         let column_key: String = row.try_get("column_key").unwrap_or_default();
+        // EXTRA carries "auto_increment" (alongside e.g. "DEFAULT_GENERATED").
+        let extra: String = row.try_get("extra").unwrap_or_default();
         // MySQL COLUMN_COMMENT is NOT NULL and defaults to '' — normalize the
         // empty string to None so the UI shows "no comment".
         let comment: Option<String> = row
@@ -190,6 +193,7 @@ pub(super) async fn table_meta(
         columns.push(ColumnInfo {
             fk: fk_by_column.get(&name).cloned(),
             pk: column_key == "PRI",
+            auto_increment: extra.to_ascii_lowercase().contains("auto_increment"),
             name,
             comment,
             // Display the full COLUMN_TYPE; fall back to DATA_TYPE if absent.

@@ -549,6 +549,8 @@ fn compute_target_columns(
                         default_value: default_value.clone(),
                         fk: None,
                         comment: None,
+                        // The editor cannot add a rowid-alias column.
+                        auto_increment: false,
                     },
                     from: None,
                 });

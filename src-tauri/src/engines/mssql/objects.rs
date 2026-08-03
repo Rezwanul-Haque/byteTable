@@ -209,16 +209,12 @@ pub(super) fn generate_table_ddl(
 
     for col in columns {
         let mut line = format!("    {} {}", quote_ident(&col.name), col.data_type);
-        // IDENTITY (surfaced in default_value as the sentinel "IDENTITY").
-        let is_identity = col.default_value.as_deref() == Some("IDENTITY");
-        if is_identity {
+        if col.auto_increment {
             line.push_str(" IDENTITY(1,1)");
         }
         line.push_str(if col.nullable { " NULL" } else { " NOT NULL" });
         if let Some(default) = &col.default_value {
-            if !is_identity {
-                line.push_str(&format!(" DEFAULT {default}"));
-            }
+            line.push_str(&format!(" DEFAULT {default}"));
         }
         lines.push(line);
     }
@@ -291,6 +287,15 @@ mod tests {
             default_value: default.map(str::to_string),
             fk: None,
             comment: None,
+            auto_increment: false,
+        }
+    }
+
+    /// `col` plus the IDENTITY flag (the DDL assembler's `IDENTITY(1,1)` path).
+    fn identity_col(name: &str, ty: &str, pk: bool) -> ColumnInfo {
+        ColumnInfo {
+            auto_increment: true,
+            ..col(name, ty, false, pk, None)
         }
     }
 
@@ -317,7 +322,7 @@ mod tests {
     #[test]
     fn generate_table_ddl_brackets_identity_pk_and_fk() {
         let columns = vec![
-            col("id", "INT", false, true, Some("IDENTITY")),
+            identity_col("id", "INT", true),
             col("name", "NVARCHAR(100)", false, false, None),
             col("status", "VARCHAR(20)", true, false, Some("'pending'")),
             col("user_id", "INT", true, false, None),

@@ -468,6 +468,7 @@ fn table_meta_wire_shape_is_camel_case_with_nullable_fk() {
                     table: "authors".into(),
                     column: "id".into(),
                 }),
+                auto_increment: false,
             },
             ColumnInfo {
                 name: "note".into(),
@@ -477,6 +478,7 @@ fn table_meta_wire_shape_is_camel_case_with_nullable_fk() {
                 default_value: Some("'n/a'".into()),
                 fk: None,
                 comment: None,
+                auto_increment: false,
             },
         ],
         ..Default::default()
@@ -493,7 +495,8 @@ fn table_meta_wire_shape_is_camel_case_with_nullable_fk() {
                     "pk": false,
                     "default": null,
                     "fk": { "table": "authors", "column": "id" },
-                    "comment": null
+                    "comment": null,
+                    "autoIncrement": false
                 },
                 {
                     "name": "note",
@@ -502,7 +505,8 @@ fn table_meta_wire_shape_is_camel_case_with_nullable_fk() {
                     "pk": true,
                     "default": "'n/a'",
                     "fk": null,
-                    "comment": null
+                    "comment": null,
+                    "autoIncrement": false
                 }
             ],
             // M7 additions: always present on the wire, empty/null by default.
@@ -529,6 +533,7 @@ fn table_meta_m7_structure_fields_wire_shape_round_trips() {
             default_value: None,
             fk: None,
             comment: None,
+            auto_increment: true,
         }],
         comment: Some("the books table".into()),
         indexes: vec![
@@ -568,7 +573,7 @@ fn table_meta_m7_structure_fields_wire_shape_round_trips() {
         json,
         serde_json::json!({
             "columns": [
-                { "name": "id", "dataType": "INTEGER", "nullable": true, "pk": true, "default": null, "fk": null, "comment": null }
+                { "name": "id", "dataType": "INTEGER", "nullable": true, "pk": true, "default": null, "fk": null, "comment": null, "autoIncrement": true }
             ],
             "comment": "the books table",
             "indexes": [

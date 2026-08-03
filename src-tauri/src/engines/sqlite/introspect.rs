@@ -169,10 +169,25 @@ pub(super) fn table_meta_blocking(
         .and_then(Iterator::collect::<Result<Vec<_>, _>>)
         .map_err(|err| map_query_error(conn, err))?;
 
+    // A single-column INTEGER primary key is an alias for the rowid, so SQLite
+    // assigns it automatically on insert (with or without the AUTOINCREMENT
+    // keyword). WITHOUT ROWID tables have no such alias — the DDL tells us.
+    let ddl = table_ddl(conn, schema, table)?;
+    let has_rowid = !ddl
+        .as_deref()
+        .unwrap_or_default()
+        .to_ascii_uppercase()
+        .contains("WITHOUT ROWID");
+    let single_col_pk = rows.iter().filter(|(.., pk)| *pk > 0).count() == 1;
+
     let columns: Vec<ColumnInfo> = rows
         .into_iter()
         .map(|(name, data_type, notnull, dflt_value, pk)| ColumnInfo {
             fk: fk_by_column.remove(&name),
+            auto_increment: has_rowid
+                && single_col_pk
+                && pk > 0
+                && data_type.trim().eq_ignore_ascii_case("INTEGER"),
             name,
             data_type,
             nullable: notnull == 0,
@@ -186,7 +201,6 @@ pub(super) fn table_meta_blocking(
 
     let indexes = table_indexes(conn, schema, table)?;
     let referenced_by = inbound_foreign_keys(conn, schema, table)?;
-    let ddl = table_ddl(conn, schema, table)?;
 
     Ok(TableMeta {
         columns,
@@ -586,6 +600,8 @@ mod tests {
                 default_value: None,
                 fk: None,
                 comment: None,
+                // A lone INTEGER pk aliases the rowid → assigned on insert.
+                auto_increment: true,
             },
             ColumnInfo {
                 name: "title".into(),
@@ -595,6 +611,7 @@ mod tests {
                 default_value: None,
                 fk: None,
                 comment: None,
+                auto_increment: false,
             },
             ColumnInfo {
                 name: "author_id".into(),
@@ -608,6 +625,7 @@ mod tests {
                     table: "authors".into(),
                     column: "id".into(),
                 }),
+                auto_increment: false,
             },
             ColumnInfo {
                 name: "series_code".into(),
@@ -622,6 +640,7 @@ mod tests {
                     table: "series".into(),
                     column: "series_code".into(),
                 }),
+                auto_increment: false,
             },
             ColumnInfo {
                 name: "ghost_id".into(),
@@ -636,6 +655,7 @@ mod tests {
                     table: "phantoms".into(),
                     column: String::new(),
                 }),
+                auto_increment: false,
             },
             ColumnInfo {
                 name: "notes".into(),
@@ -647,6 +667,7 @@ mod tests {
                 default_value: Some("'none'".into()),
                 fk: None,
                 comment: None,
+                auto_increment: false,
             },
         ];
         assert_eq!(meta.columns, expected);
@@ -673,6 +694,51 @@ mod tests {
                 ("qty", false, false),
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn table_meta_flags_only_rowid_alias_columns_as_auto_increment() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("autoinc.db");
+        {
+            let conn = Connection::open(&path).expect("create db");
+            conn.execute_batch(
+                "CREATE TABLE rowid_pk (id INTEGER PRIMARY KEY, name TEXT);
+                 CREATE TABLE keyword_pk (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT);
+                 CREATE TABLE text_pk (code TEXT PRIMARY KEY, name TEXT);
+                 CREATE TABLE composite_pk (a INTEGER, b INTEGER, PRIMARY KEY (a, b));
+                 CREATE TABLE no_rowid (id INTEGER PRIMARY KEY, v TEXT) WITHOUT ROWID;",
+            )
+            .expect("seed db");
+        }
+        let conn = SqliteConnector
+            .open(&params_for(&path))
+            .await
+            .expect("open autoinc db")
+            .into_sql()
+            .expect("sql connection");
+
+        let flagged = |table: &'static str| {
+            let conn = conn.clone();
+            async move {
+                conn.table_meta("main", table)
+                    .await
+                    .expect("table meta")
+                    .columns
+                    .into_iter()
+                    .filter(|c| c.auto_increment)
+                    .map(|c| c.name)
+                    .collect::<Vec<_>>()
+            }
+        };
+
+        // The rowid alias auto-assigns with or without the AUTOINCREMENT keyword.
+        assert_eq!(flagged("rowid_pk").await, vec!["id".to_string()]);
+        assert_eq!(flagged("keyword_pk").await, vec!["id".to_string()]);
+        // A non-INTEGER pk, a composite pk and a WITHOUT ROWID table have no alias.
+        assert!(flagged("text_pk").await.is_empty());
+        assert!(flagged("composite_pk").await.is_empty());
+        assert!(flagged("no_rowid").await.is_empty());
     }
 
     #[tokio::test]

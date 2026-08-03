@@ -492,6 +492,7 @@ mod tests {
             default_value: None,
             fk: None,
             comment: None,
+            auto_increment: false,
         }
     }
 
@@ -533,6 +534,7 @@ mod tests {
                             default_value: None,
                             fk: None,
                             comment: None,
+                            auto_increment: false,
                         },
                     ],
                     ..Default::default()
@@ -551,6 +553,7 @@ mod tests {
                                 table: "users".into(),
                                 column: "id".into(),
                             }),
+                            auto_increment: false,
                         },
                     ],
                     foreign_keys: vec![ForeignKeyInfo {

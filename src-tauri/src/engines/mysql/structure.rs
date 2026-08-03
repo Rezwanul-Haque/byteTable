@@ -292,6 +292,7 @@ mod tests {
                 default_value: None,
                 fk: None,
                 comment: None,
+                auto_increment: false,
             },
             ColumnInfo {
                 name: "title".into(),
@@ -301,6 +302,7 @@ mod tests {
                 default_value: None,
                 fk: None,
                 comment: None,
+                auto_increment: false,
             },
         ]);
 
@@ -529,6 +531,7 @@ mod tests {
                 default_value: None,
                 fk: None,
                 comment: None,
+                auto_increment: false,
             },
             ColumnInfo {
                 name: "name".into(),
@@ -538,6 +541,7 @@ mod tests {
                 default_value: None,
                 fk: None,
                 comment: None,
+                auto_increment: false,
             },
         ]);
         // Dropping the pk → rejected.

@@ -266,6 +266,7 @@ mod tests {
                     default_value: None,
                     fk: None,
                     comment: None,
+                    auto_increment: false,
                 },
                 ColumnInfo {
                     name: "name".into(),
@@ -275,6 +276,7 @@ mod tests {
                     default_value: None,
                     fk: None,
                     comment: None,
+                    auto_increment: false,
                 },
             ],
             ..Default::default()
@@ -297,6 +299,7 @@ mod tests {
                     table: "posts".into(),
                     column: "id".into(),
                 }),
+                auto_increment: false,
             },
             ColumnInfo {
                 name: "tag_id".into(),
@@ -309,6 +312,7 @@ mod tests {
                     table: "tags".into(),
                     column: "id".into(),
                 }),
+                auto_increment: false,
             },
         ];
         assert_eq!(classify_role("post_tags", &j), TableRole::Junction);

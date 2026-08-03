@@ -66,6 +66,11 @@ export interface ColumnInfo {
    *  (incl. SQLite, which has no column comments). The structure editor's
    *  "Comment" cell reads + edits this. */
   comment?: string | null;
+  /** True when the engine assigns this column's value on insert: MySQL
+   *  `AUTO_INCREMENT`, Postgres identity / `serial`, SQL Server `IDENTITY`,
+   *  SQLite's `INTEGER PRIMARY KEY` rowid alias. Read-only — the structure view
+   *  shows it as a badge; no `AlterOp` changes it. */
+  autoIncrement?: boolean;
 }
 
 /** One index on a table (M7 structure view §3.6). */

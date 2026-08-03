@@ -278,6 +278,9 @@ export interface WorkingColumn {
   /** The column's comment / description, or null when it has none. */
   comment: string | null;
   fk: ColumnInfo["fk"];
+  /** True when the engine assigns the value on insert (AUTO_INCREMENT / identity
+   *  / serial / SQLite rowid alias). Read-only — shown as a badge. */
+  autoIncrement: boolean;
   /** The introspected name this row maps from, or null for a freshly added
    *  column. Edit handlers key ops by this (original) name. */
   origin: string | null;
@@ -301,6 +304,7 @@ export function applyOpsToColumns(columns: ColumnInfo[], ops: AlterOp[]): Workin
     default: c.default ?? null,
     comment: c.comment ?? null,
     fk: c.fk,
+    autoIncrement: c.autoIncrement ?? false,
     origin: c.name,
     isNew: false,
     markedForDrop: false,
@@ -319,6 +323,8 @@ export function applyOpsToColumns(columns: ColumnInfo[], ops: AlterOp[]): Workin
           default: op.default,
           comment: null,
           fk: null,
+          // The editor cannot stage an auto-increment column.
+          autoIncrement: false,
           origin: null,
           isNew: true,
           markedForDrop: false,

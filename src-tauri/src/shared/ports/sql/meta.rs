@@ -317,6 +317,14 @@ pub struct ColumnInfo {
     /// (SQLite). The structure editor's "Comment" cell reads + edits this.
     #[serde(default)]
     pub comment: Option<String>,
+    /// True when the engine generates this column's value automatically on
+    /// insert: MySQL `AUTO_INCREMENT`, Postgres identity / `serial`
+    /// (`nextval(…)` default), SQL Server `IDENTITY`, SQLite's `INTEGER PRIMARY
+    /// KEY` rowid alias. Read-only metadata — the structure editor shows it as a
+    /// badge next to the key icon; no `AlterOp` sets it. Engines without the
+    /// concept (ClickHouse) always report `false`.
+    #[serde(default)]
+    pub auto_increment: bool,
 }
 
 /// The target of a foreign-key reference: a column in another table.

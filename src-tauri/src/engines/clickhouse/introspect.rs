@@ -159,6 +159,8 @@ async fn read_columns(
                     .then_some(default_expr),
                 fk: None,
                 comment: (!comment.is_empty()).then_some(comment),
+                // ClickHouse has no auto-increment / identity columns.
+                auto_increment: false,
                 name,
                 data_type,
             })

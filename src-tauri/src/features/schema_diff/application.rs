@@ -149,6 +149,7 @@ mod tests {
                         default_value: None,
                         fk: None,
                         comment: None,
+                        auto_increment: false,
                     })
                     .collect(),
                 indexes: vec![IndexInfo {

@@ -1006,6 +1006,14 @@ function ColumnRow({
           render={() => (
             <>
               {col.name}
+              {col.autoIncrement ? (
+                <span
+                  className="tag tag-accent st-auto-tag"
+                  title="Auto-increment — the database assigns this value on insert"
+                >
+                  AUTO INC
+                </span>
+              ) : null}
               {col.fk ? (
                 <span className="st-fk-ref">
                   → {col.fk.table}

@@ -215,18 +215,11 @@ pub(super) async fn read_columns(
         let is_nullable: bool = row.try_get("is_nullable").ok().flatten().unwrap_or(true);
         let is_identity: bool = row.try_get("is_identity").ok().flatten().unwrap_or(false);
         let is_pk: bool = row.try_get("is_pk").ok().flatten().unwrap_or(false);
-        let mut default_value: Option<String> = row
+        let default_value: Option<String> = row
             .try_get::<&str, _>("default_def")
             .ok()
             .flatten()
             .map(strip_default_parens);
-
-        // Surface IDENTITY in the default cell so the Structure view shows it
-        // (T-SQL has no separate "extra" column; IDENTITY is the analogue of
-        // MySQL AUTO_INCREMENT / Postgres SERIAL).
-        if is_identity && default_value.is_none() {
-            default_value = Some("IDENTITY".to_string());
-        }
 
         columns.push(ColumnInfo {
             name,
@@ -234,6 +227,9 @@ pub(super) async fn read_columns(
             nullable: is_nullable,
             pk: is_pk,
             default_value,
+            // IDENTITY is T-SQL's analogue of MySQL AUTO_INCREMENT / Postgres
+            // SERIAL; the DDL assembler reads this flag back.
+            auto_increment: is_identity,
             fk: None,
             // SQL Server column comments (MS_Description extended properties) are
             // not read yet — deferred.

@@ -943,7 +943,12 @@ export function RowInspector({
             >
               <Icon name="refresh" size={16} className={refreshing ? "ri-spin" : undefined} />
             </button>
-            <button type="button" className="ri-close" title="Close (Esc)" onClick={onClose}>
+            <button
+              type="button"
+              className="ri-close"
+              title="Close (Esc / ⌘E / Ctrl+E)"
+              onClick={onClose}
+            >
               <Icon name="close" size={16} />
             </button>
           </div>

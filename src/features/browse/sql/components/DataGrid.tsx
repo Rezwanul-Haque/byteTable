@@ -113,6 +113,15 @@ function targetKey(t: EditTarget): string {
   return t.kind === "real" ? "r" + t.rowIndex : "s" + t.stagedKey;
 }
 
+/** Inverse of `targetKey` — the selection only carries the key string. */
+function targetFromKey(key: string): EditTarget | null {
+  const n = Number(key.slice(1));
+  if (!Number.isFinite(n)) return null;
+  if (key.startsWith("r")) return { kind: "real", rowIndex: n };
+  if (key.startsWith("s")) return { kind: "staged", stagedKey: n };
+  return null;
+}
+
 /** The in-flight inline edit: which cell, and the draft text in the input. */
 interface EditState {
   target: EditTarget;
@@ -1009,6 +1018,18 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       });
   }, [inspect, handleId, schema, table, sort, toast]);
 
+  // ⌘/Ctrl+E: close the drawer when it's open, otherwise inspect the selected
+  // row (the first row on the page when nothing is selected yet).
+  const toggleInspect = useCallback(() => {
+    if (inspect) {
+      setInspect(null);
+      return;
+    }
+    const target = (selected ? targetFromKey(selected.rowKey) : null) ?? inspectOrder[0];
+    if (!target || !inspectValuesOf(target)) return;
+    openInspect(target, targetKey(target));
+  }, [inspect, selected, inspectOrder, inspectValuesOf, openInspect]);
+
   // Stage the drawer's changed cells into the grid's pending buffer.
   const stageFromInspector = useCallback(
     (target: EditTarget, changes: Map<number, CellValue>) => {
@@ -1212,8 +1233,9 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
 
   useImperativeHandle(ref, () => ({ addRow, save, discard }), [addRow, save, discard]);
 
-  // ⌘I / Ctrl+I → add row; ⌘S / Ctrl+S → save. The grid is mounted only for the
-  // active table tab in data mode, so a window listener is correctly scoped.
+  // ⌘I / Ctrl+I → add row; ⌘E / Ctrl+E → toggle the row inspector; ⌘S / Ctrl+S →
+  // save. The grid is mounted only for the active table tab in data mode, so a
+  // window listener is correctly scoped.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey)) return;
@@ -1221,6 +1243,9 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       if (k === "i") {
         e.preventDefault();
         addRow();
+      } else if (k === "e" && !e.altKey && !e.shiftKey) {
+        e.preventDefault();
+        toggleInspect();
       } else if (k === "s") {
         e.preventDefault();
         // While the row inspector holds un-staged edits, ⌘S must stage THOSE
@@ -1232,7 +1257,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [addRow, save, inspect, inspectDirty]);
+  }, [addRow, save, toggleInspect, inspect, inspectDirty]);
 
   // --- M11 FK coexistence: defer the single-click hop ------------------
   const fkHopTimer = useRef<number | null>(null);
@@ -1753,7 +1778,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
                       "dg-rownum" +
                       (inspect && targetKey(inspect) === targetKey(target) ? " inspecting" : "")
                     }
-                    title="Inspect row"
+                    title="Inspect row (⌘E / Ctrl+E)"
                     onClick={() => openInspect(target, rowKey)}
                   >
                     <span className="dg-rownum-n">{isStaged ? "✱" : rowIndex + 1}</span>

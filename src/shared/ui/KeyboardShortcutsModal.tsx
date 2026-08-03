@@ -29,6 +29,15 @@ const GROUPS: Group[] = [
     ],
   },
   {
+    title: "Grid",
+    rows: [
+      { keys: "⌘E", label: "Toggle row inspector" },
+      { keys: "⌘I", label: "Add row" },
+      { keys: "⌘F", label: "Filter rows" },
+      { keys: "⌘S", label: "Save staged changes" },
+    ],
+  },
+  {
     title: "View",
     rows: [
       { keys: "⌘+", label: "Zoom in" },

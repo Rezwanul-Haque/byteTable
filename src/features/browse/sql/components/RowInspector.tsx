@@ -779,6 +779,10 @@ interface RowInspectorProps {
   onPrev: () => void;
   onNext: () => void;
   onClose: () => void;
+  /** Re-fetch the grid page and re-read this row, drawer stays open. */
+  onRefresh: () => void;
+  /** True while that re-fetch is in flight — spins the refresh icon. */
+  refreshing: boolean;
   /** Stage the changed cells (column index → new value) into the grid's buffer. */
   onStage: (changes: Map<number, CellValue>) => void;
   onDirtyChange: (dirty: boolean) => void;
@@ -800,6 +804,8 @@ export function RowInspector({
   onPrev,
   onNext,
   onClose,
+  onRefresh,
+  refreshing,
   onStage,
   onDirtyChange,
 }: RowInspectorProps) {
@@ -919,6 +925,24 @@ export function RowInspector({
                 <Icon name="keyboard_arrow_down" size={16} />
               </button>
             </div>
+            {/* Re-read this row from the database without closing the drawer —
+                the way to confirm a save actually landed. Blocked while dirty:
+                a re-fetch replaces the base values under the open drafts. */}
+            <button
+              type="button"
+              className="ri-close"
+              disabled={dirty || isStagedNew || refreshing}
+              title={
+                isStagedNew
+                  ? "Staged row — not in the database yet"
+                  : dirty
+                    ? "Stage or discard changes first"
+                    : "Reload this row"
+              }
+              onClick={onRefresh}
+            >
+              <Icon name="refresh" size={16} className={refreshing ? "ri-spin" : undefined} />
+            </button>
             <button type="button" className="ri-close" title="Close (Esc)" onClick={onClose}>
               <Icon name="close" size={16} />
             </button>

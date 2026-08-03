@@ -437,6 +437,9 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   // row), and whether it has un-staged edits (blocks row nav / retargeting).
   const [inspect, setInspect] = useState<EditTarget | null>(null);
   const [inspectDirty, setInspectDirty] = useState(false);
+  // True while the drawer's reload button re-reads its one row (see
+  // `refreshInspect`) — the grid itself is left alone.
+  const [inspectRefreshing, setInspectRefreshing] = useState(false);
 
   // The current page's rows, keyed by ABSOLUTE row index (`offset + i`).
   const rowCacheRef = useRef<Map<number, CellValue[]>>(new Map());
@@ -966,6 +969,46 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     [inspectOrder],
   );
 
+  // Drawer reload: re-read ONLY the inspected row — a one-row window at its
+  // absolute index, under the page's own sort + filter — and patch it into the
+  // row cache. Deliberately NOT the tab's refresh nonce: that resets the cache
+  // and re-fetches the whole page, which flickers the grid under the drawer.
+  // Only reachable with no un-staged drafts (the button is disabled otherwise).
+  const refreshInspect = useCallback(() => {
+    if (!inspect || inspect.kind !== "real") return;
+    const rowIndex = inspect.rowIndex;
+    const generation = generationRef.current;
+    setInspectRefreshing(true);
+    void rowsFetch(handleId, {
+      schema,
+      table,
+      sort,
+      filter: filterRef.current,
+      offset: rowIndex,
+      limit: 1,
+    })
+      .then((page) => {
+        // A page/table/filter change during the fetch retargets the cache.
+        if (generation !== generationRef.current) return;
+        const row = page.rows[0];
+        if (row) {
+          rowCacheRef.current.set(rowIndex, row);
+          setCacheVersion((v) => v + 1);
+        } else {
+          // The row no longer exists at this position — nothing to inspect.
+          setInspect(null);
+          setInspectDirty(false);
+          toast("That row is no longer in this page — refresh the grid.", "err");
+        }
+      })
+      .catch((err: unknown) => {
+        toast(appErrorMessage(err, "Could not reload this row."), "err");
+      })
+      .finally(() => {
+        setInspectRefreshing(false);
+      });
+  }, [inspect, handleId, schema, table, sort, toast]);
+
   // Stage the drawer's changed cells into the grid's pending buffer.
   const stageFromInspector = useCallback(
     (target: EditTarget, changes: Map<number, CellValue>) => {
@@ -1409,6 +1452,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         onPrev={() => gotoInspect(inspectPos - 1)}
         onNext={() => gotoInspect(inspectPos + 1)}
         onClose={() => setInspect(null)}
+        onRefresh={refreshInspect}
+        refreshing={inspectRefreshing}
         onStage={(changes) => {
           if (inspect) stageFromInspector(inspect, changes);
         }}

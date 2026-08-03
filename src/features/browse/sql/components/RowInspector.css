@@ -104,9 +104,19 @@ body[data-platform="macos"] .ri-drawer {
   cursor: pointer;
   flex: none;
 }
-.ri-close:hover {
+.ri-close:hover:not(:disabled) {
   background: var(--bg3);
   color: var(--text);
+}
+.ri-close:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+/* Reload icon while the row re-fetch is in flight (@keyframes spin lives in
+   ConnectScreen.css — same bundle, as with the sidebar's sync button). */
+.ri-spin {
+  animation: spin 0.7s linear infinite;
+  color: var(--accent);
 }
 
 .ri-body {

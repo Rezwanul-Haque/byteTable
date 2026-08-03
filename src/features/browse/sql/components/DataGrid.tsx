@@ -1341,13 +1341,59 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     setNewRows((prev) => [{ key: stagedKeySeq.current, values }, ...prev]);
   }, [columns, colMeta, newRows, onAddRowReset]);
 
+  // Escape's counterpart to ⌘I: drop the most recently staged new row (the top
+  // one — `addRow` prepends), with any values typed into it. Repeated presses
+  // peel off the staged rows one at a time; edits to REAL rows are untouched
+  // (those still need the save bar's Discard).
+  const cancelNewRow = useCallback(() => {
+    const dropped = newRows[0];
+    if (!dropped) return;
+    const key = targetKey({ kind: "staged", stagedKey: dropped.key });
+    setNewRows((prev) => prev.filter((r) => r.key !== dropped.key));
+    // Drop selection / inspector focus that pointed at the removed row.
+    setSelected((sel) => (sel?.rowKey === key ? null : sel));
+    setInspect((t) => (t && targetKey(t) === key ? null : t));
+    setEditing((e) => (e && targetKey(e.target) === key ? null : e));
+    toast("Staged row discarded");
+  }, [newRows, toast]);
+
   useImperativeHandle(ref, () => ({ addRow, save, discard }), [addRow, save, discard]);
 
-  // ⌘I / Ctrl+I → add row; ⌘E / Ctrl+E → toggle the row inspector; ⌘S / Ctrl+S →
-  // save. The grid is mounted only for the active table tab in data mode, so a
-  // window listener is correctly scoped.
+  // ⌘I / Ctrl+I → add row; Escape → cancel the newest staged row; ⌘E / Ctrl+E →
+  // toggle the row inspector; ⌘S / Ctrl+S → save. The grid is mounted only for
+  // the active table tab in data mode, so a window listener is correctly scoped.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Escape belongs to whatever is layered above the grid first (cell editor,
+      // drawer, popovers, modals); only a press with nothing open reaches the
+      // staged row, so the second Escape cancels it.
+      if (e.key === "Escape") {
+        // Escape typed inside a text field (the filter box, a cell editor, the
+        // drawer's inputs) belongs to that field.
+        const el = e.target as HTMLElement | null;
+        if (
+          el?.tagName === "INPUT" ||
+          el?.tagName === "TEXTAREA" ||
+          el?.isContentEditable === true
+        ) {
+          return;
+        }
+        if (
+          editing !== null ||
+          inspect !== null ||
+          cellModal !== null ||
+          saveConfirmSql !== null ||
+          bulkDeleteOpen ||
+          fkPeek !== null ||
+          insights !== null ||
+          newRows.length === 0
+        ) {
+          return;
+        }
+        e.preventDefault();
+        cancelNewRow();
+        return;
+      }
       if (!(e.metaKey || e.ctrlKey)) return;
       const k = e.key.toLowerCase();
       if (k === "i") {
@@ -1367,7 +1413,21 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [addRow, save, toggleInspect, inspect, inspectDirty]);
+  }, [
+    addRow,
+    save,
+    toggleInspect,
+    inspect,
+    inspectDirty,
+    cancelNewRow,
+    editing,
+    cellModal,
+    saveConfirmSql,
+    bulkDeleteOpen,
+    fkPeek,
+    insights,
+    newRows,
+  ]);
 
   // --- M11 FK coexistence: defer the single-click hop ------------------
   const fkHopTimer = useRef<number | null>(null);

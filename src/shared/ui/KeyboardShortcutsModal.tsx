@@ -33,6 +33,7 @@ const GROUPS: Group[] = [
     rows: [
       { keys: "⌘E", label: "Toggle row inspector" },
       { keys: "⌘I", label: "Add row" },
+      { keys: "Esc", label: "Cancel staged row" },
       { keys: "⌘F", label: "Filter rows" },
       { keys: "⌘S", label: "Save staged changes" },
     ],

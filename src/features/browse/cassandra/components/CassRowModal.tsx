@@ -4,7 +4,7 @@
 // Save runs a full INSERT (new) or full-primary-key UPDATE (edit); Delete runs a
 // full-primary-key DELETE. Writes to a production connection require confirmation.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { isAppErrorPayload } from "../../../../shared/api/error";
 import { Btn } from "../../../../shared/ui/Btn";
@@ -63,6 +63,20 @@ export function CassRowModal({
   const [dirty, setDirty] = useState(!!isNew);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState<null | "save" | "delete">(null);
+
+  // Escape cancels the row (⌘I's counterpart), matching the other editor
+  // modals. A pending confirm takes the first press; the write itself is not
+  // interruptible.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || busy) return;
+      e.preventDefault();
+      if (confirming) setConfirming(null);
+      else onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [busy, confirming, onClose]);
 
   const setField = (name: string, val: unknown) => {
     setDraft((d) => ({ ...d, [name]: val }));

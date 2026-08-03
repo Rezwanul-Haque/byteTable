@@ -300,6 +300,13 @@
 .obj-item:hover {
   background: var(--bg2);
 }
+/* Own inset accent ring instead of the UA outline — same convention as
+   `.table-item` in Sidebar.css. */
+.obj-item:focus-visible {
+  outline: none;
+  background: var(--bg2);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 45%, transparent);
+}
 .obj-item.active {
   background: color-mix(in oklab, var(--accent) 13%, transparent);
 }

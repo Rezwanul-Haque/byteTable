@@ -71,6 +71,7 @@ button {
    on a menu item just clicked). Keyboard focus keeps its ring unless the
    component styles :focus-visible itself (see Select.css, Sidebar.css). */
 button:focus:not(:focus-visible),
+[role="button"]:focus:not(:focus-visible),
 [role^="menuitem"]:focus:not(:focus-visible) {
   outline: none;
 }

@@ -112,6 +112,42 @@ body[data-platform="macos"] .ri-drawer {
   opacity: 0.35;
   cursor: default;
 }
+.ri-close.on {
+  background: var(--bg3);
+  color: var(--text);
+}
+/* Copy-row button + its format menu, anchored under the button. */
+.ri-copyrow {
+  position: relative;
+  flex: none;
+}
+.ri-copyrow-menu {
+  position: absolute;
+  top: 30px;
+  right: 0;
+  z-index: 5;
+  min-width: 168px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+.ri-copyrow-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.ri-copyrow-item:hover {
+  background: var(--bg3);
+  color: var(--text);
+}
 /* Reload icon while the row re-fetch is in flight (@keyframes spin lives in
    ConnectScreen.css — same bundle, as with the sidebar's sync button). */
 .ri-spin {

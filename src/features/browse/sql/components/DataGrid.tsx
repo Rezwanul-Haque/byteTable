@@ -83,7 +83,7 @@ import { ColumnInsights, type InsightsAnchor } from "./ColumnInsights";
 import { FkPeek, type FkPeekAnchor } from "./FkPeek";
 import { CellContent } from "../../shared/GridCell";
 import { JsonEditorModal } from "./JsonEditorModal";
-import { RowInspector, type InspectorColumn } from "./RowInspector";
+import { RowInspector, type InspectorColumn, type RowCopyFormat } from "./RowInspector";
 import { isJsonType } from "../../shared/jsonCell";
 import type { Engine } from "../../../../shared/types";
 import "../../shared/DataGrid.css";
@@ -247,6 +247,27 @@ function binaryLiteral(value: CellValue, engine: Engine | undefined): string {
   hex = hex.toUpperCase();
   if (engine === "postgres") return "decode('" + hex + "', 'hex')";
   return "X'" + hex + "'"; // MySQL + SQLite hex/blob literal
+}
+
+/** A parsed JSON document re-serialized with single quotes around keys and
+ *  strings — `{'bn': 'x', 'en': 'y'}`. Used ONLY by the row inspector's CSV
+ *  copy, where the double-quoted form would be swallowed by CSV's own quote
+ *  doubling. Deliberately NOT valid JSON: an inner `'` is backslash-escaped so
+ *  the string boundaries stay unambiguous, nothing else is escaped. */
+function singleQuotedJson(v: unknown): string {
+  if (v === null || v === undefined) return "null";
+  if (typeof v === "string") return "'" + v.replace(/\\/g, "\\\\").replace(/'/g, "\\'") + "'";
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  if (Array.isArray(v)) return "[" + v.map(singleQuotedJson).join(", ") + "]";
+  if (typeof v === "object")
+    return (
+      "{" +
+      Object.entries(v as Record<string, unknown>)
+        .map(([k, val]) => singleQuotedJson(k) + ": " + singleQuotedJson(val))
+        .join(", ") +
+      "}"
+    );
+  return String(v);
 }
 
 /** Row overscan handed to the virtualizer (DOM rows beyond the viewport). */
@@ -1018,6 +1039,95 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       });
   }, [inspect, handleId, schema, table, sort, toast]);
 
+  // Drawer copy-row: the inspected row as CSV (header + one data line, same
+  // escaping as the SQL result grid's export), a JSON object keyed by column,
+  // the bare values (one per line, nothing escaped), or a ready-to-run INSERT
+  // reusing the save batch's engine-aware literals (binary columns bind as
+  // hex/blob literals, not strings).
+  const copyInspectRow = useCallback(
+    (format: RowCopyFormat, values: CellValue[]) => {
+      // A JSON column arrives as the raw TEXT of the document. Re-parsing it
+      // lets the JSON copy nest the real object instead of stringifying the
+      // string (which would escape every inner quote as \").
+      const jsonValue = (v: CellValue, colName: string): unknown => {
+        if (typeof v !== "string" || !isJsonType(colMeta.get(colName)?.dataType)) return v;
+        try {
+          return JSON.parse(v) as unknown;
+        } catch {
+          return v; // not valid JSON — keep the text as-is
+        }
+      };
+      let text: string;
+      if (format === "csv") {
+        const esc = (v: CellValue) => {
+          if (v === null || v === undefined) return "";
+          const s = typeof v === "object" ? JSON.stringify(v) : String(v);
+          return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+        };
+        // JSON columns are re-serialized with SINGLE-quoted keys/strings before
+        // the CSV escape: a double-quoted document would come out as a wall of
+        // doubled quotes (`"{""bn"": ""x""}"`), which is valid CSV but unreadable
+        // in the clipboard. The trade-off is that this form is no longer parsable
+        // JSON — the "Copy as JSON" / "Copy values only" items keep the real one.
+        const cell = (v: CellValue, colName: string) => {
+          const parsed = jsonValue(v, colName);
+          return typeof parsed === "object" && parsed !== null
+            ? esc(singleQuotedJson(parsed))
+            : esc(v);
+        };
+        text =
+          columns.map((c) => esc(c.name)).join(",") +
+          "\n" +
+          columns.map((c, ci) => cell(values[ci] ?? null, c.name)).join(",");
+      } else if (format === "json") {
+        const obj: Record<string, unknown> = {};
+        columns.forEach((c, ci) => {
+          obj[c.name] = jsonValue(values[ci] ?? null, c.name);
+        });
+        text = JSON.stringify(obj, null, 2);
+      } else if (format === "values") {
+        // Bare values, one per line, in column order — no names, no quoting,
+        // no escaping. A JSON column copies as its own pretty-printed document,
+        // NULL as an empty line.
+        text = columns
+          .map((c, ci) => {
+            const v = values[ci] ?? null;
+            if (v === null) return "";
+            const parsed = jsonValue(v, c.name);
+            return typeof parsed === "object" && parsed !== null
+              ? JSON.stringify(parsed, null, 2)
+              : String(v);
+          })
+          .join("\n");
+      } else {
+        const qi = (n: string) => quoteIdent(n, engine);
+        const litCol = (v: CellValue, colName: string) =>
+          v !== null && isBinaryType(colMeta.get(colName)?.dataType)
+            ? binaryLiteral(v, engine)
+            : sqlLiteral(v, engine);
+        text =
+          "INSERT INTO " +
+          qi(schema) +
+          "." +
+          qi(table) +
+          " (" +
+          columns.map((c) => qi(c.name)).join(", ") +
+          ") VALUES (" +
+          columns.map((c, ci) => litCol(values[ci] ?? null, c.name)).join(", ") +
+          ");";
+      }
+      void navigator.clipboard.writeText(text).then(
+        () =>
+          toast(
+            format === "values" ? "Row values copied" : "Row copied as " + format.toUpperCase(),
+            "ok",
+          ),
+        () => toast("Couldn't copy to clipboard", "err"),
+      );
+    },
+    [columns, colMeta, engine, schema, table, toast],
+  );
+
   // ⌘/Ctrl+E: close the drawer when it's open, otherwise inspect the selected
   // row (the first row on the page when nothing is selected yet).
   const toggleInspect = useCallback(() => {
@@ -1479,6 +1589,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         onClose={() => setInspect(null)}
         onRefresh={refreshInspect}
         refreshing={inspectRefreshing}
+        onCopyRow={copyInspectRow}
         onStage={(changes) => {
           if (inspect) stageFromInspector(inspect, changes);
         }}

@@ -76,6 +76,21 @@ export function formatBinary(value: CellValue, type: string | undefined): Binary
   return { kind: "blob", text: expect + " B" };
 }
 
+/** Clipboard form for a binary value: ALWAYS `0x`-hex, never the UUID display
+ *  form — matching the grid's copy button (which copies the raw backend value)
+ *  and DataGrip, which copies a BINARY(16) as its hex literal. Pasting the UUID
+ *  text into a query against a `binary(16)` column would bind 36 chars, not the
+ *  16 bytes. A draft saved by the binary editor may be a UUID, so convert.
+ *  Large-blob placeholders ("[N bytes]") and non-hex values copy as-is. */
+export function binaryClipboardText(value: CellValue): string {
+  if (value == null) return "";
+  const s = String(value);
+  if (PLACEHOLDER_RE.test(s)) return s;
+  const hex = looksUuid(s) ? uuidToHex(s) : s.replace(/^0x/i, "");
+  if (!HEX_RE.test(hex) || hex.length % 2 !== 0) return s;
+  return "0x" + hex.toLowerCase();
+}
+
 export type BinaryValidation =
   | { ok: true; empty: true }
   | { ok: true; empty?: false; uuid: string | null; hex: string }

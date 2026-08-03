@@ -19,7 +19,12 @@ import type { CellValue } from "../../../../shared/api/engine";
 import { Icon } from "../../../../shared/ui/Icon";
 import { useToast } from "../../../../shared/ui/toastContext";
 import { CellContent } from "../../shared/GridCell";
-import { formatBinary, isBinaryType, isUuidType } from "../../shared/binaryCell";
+import {
+  binaryClipboardText,
+  formatBinary,
+  isBinaryType,
+  isUuidType,
+} from "../../shared/binaryCell";
 import { highlightJSON, isJsonType, validateJSON } from "../../shared/jsonCell";
 import {
   RI_TZS,
@@ -37,6 +42,16 @@ import { BinaryEditorModal } from "./BinaryEditorModal";
 import { UuidEditorModal } from "./UuidEditorModal";
 import "../../shared/CellEditors.css";
 import "./RowInspector.css";
+
+/** Clipboard shapes offered by the drawer's copy-row menu. */
+export type RowCopyFormat = "csv" | "json" | "sql" | "values";
+
+const ROW_COPY_ITEMS: { format: RowCopyFormat; label: string; icon: string }[] = [
+  { format: "csv", label: "Copy as CSV", icon: "table_view" },
+  { format: "json", label: "Copy as JSON", icon: "data_object" },
+  { format: "sql", label: "Copy as SQL INSERT", icon: "database" },
+  { format: "values", label: "Copy values only", icon: "notes" },
+];
 
 /** One column as the inspector needs it: name, declared type, pk/fk flags. */
 export interface InspectorColumn {
@@ -426,12 +441,14 @@ function RowInspectorField({
   const boolCol = typeof value === "boolean" || /^(bool|boolean)$/i.test((col.type || "").trim());
   const numCol = typeof value === "number";
 
-  // Copy the field's current value to the clipboard. Binary copies its display
-  // (hex/uuid) form; objects serialize to JSON; NULL copies an empty string.
+  // Copy the field's current value to the clipboard. Binary copies `0x`-hex —
+  // NOT the UUID display form — so it matches the grid's copy button and pastes
+  // into a query as the stored bytes; objects serialize to JSON; NULL copies an
+  // empty string.
   const copyValue = () => {
     let s: string;
     if (isNull) s = "";
-    else if (bin) s = formatBinary(cur, col.type)?.text ?? "";
+    else if (bin) s = binaryClipboardText(cur);
     else if (typeof cur === "object") s = JSON.stringify(cur);
     else s = String(cur);
     void navigator.clipboard.writeText(s).then(
@@ -783,6 +800,9 @@ interface RowInspectorProps {
   onRefresh: () => void;
   /** True while that re-fetch is in flight — spins the refresh icon. */
   refreshing: boolean;
+  /** Copy this row to the clipboard in one of the offered shapes. Gets the
+   *  values the drawer is SHOWING (drafts folded over the base row). */
+  onCopyRow: (format: RowCopyFormat, values: CellValue[]) => void;
   /** Stage the changed cells (column index → new value) into the grid's buffer. */
   onStage: (changes: Map<number, CellValue>) => void;
   onDirtyChange: (dirty: boolean) => void;
@@ -806,6 +826,7 @@ export function RowInspector({
   onClose,
   onRefresh,
   refreshing,
+  onCopyRow,
   onStage,
   onDirtyChange,
 }: RowInspectorProps) {
@@ -847,6 +868,26 @@ export function RowInspector({
     }
     return false;
   }, [changes, columns, values]);
+
+  // Copy-row menu (CSV / JSON / SQL), anchored beside the reload button.
+  const [copyOpen, setCopyOpen] = useState(false);
+  const copyRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!copyOpen) return;
+    const onClickOutside = (e: MouseEvent) => {
+      if (copyRef.current && !copyRef.current.contains(e.target as Node)) setCopyOpen(false);
+    };
+    window.addEventListener("click", onClickOutside);
+    return () => window.removeEventListener("click", onClickOutside);
+  }, [copyOpen]);
+
+  // What the drawer is showing right now: base row with the open drafts folded
+  // in, so a copy matches the fields on screen rather than the stored row.
+  const shownValues = useMemo(
+    () =>
+      columns.map((_, ci) => (drafts.has(ci) ? (drafts.get(ci) ?? null) : (values?.[ci] ?? null))),
+    [columns, drafts, values],
+  );
 
   const setDraft = (ci: number, v: CellValue) =>
     setDrafts((prev) => {
@@ -924,6 +965,36 @@ export function RowInspector({
               >
                 <Icon name="keyboard_arrow_down" size={16} />
               </button>
+            </div>
+            {/* Copy the whole row to the clipboard — CSV (header + one line),
+                JSON object, or a ready-to-run INSERT. Shape building lives in
+                the grid (it holds the engine + column metadata). */}
+            <div className="ri-copyrow" ref={copyRef}>
+              <button
+                type="button"
+                className={"ri-close" + (copyOpen ? " on" : "")}
+                title="Copy this row to the clipboard"
+                onClick={() => setCopyOpen(!copyOpen)}
+              >
+                <Icon name="content_copy" size={16} />
+              </button>
+              {copyOpen ? (
+                <div className="ri-copyrow-menu">
+                  {ROW_COPY_ITEMS.map((it) => (
+                    <div
+                      key={it.format}
+                      className="ri-copyrow-item"
+                      onClick={() => {
+                        setCopyOpen(false);
+                        onCopyRow(it.format, shownValues);
+                      }}
+                    >
+                      <Icon name={it.icon} size={13} />
+                      {it.label}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
             {/* Re-read this row from the database without closing the drawer —
                 the way to confirm a save actually landed. Blocked while dirty:

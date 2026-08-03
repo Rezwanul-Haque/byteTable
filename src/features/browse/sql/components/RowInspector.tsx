@@ -177,6 +177,16 @@ function RiDateTime({
         >
           <Icon name="schedule" size={12} /> clock
         </button>
+        {cur != null ? (
+          <button
+            type="button"
+            className="ri-mini-btn"
+            onClick={() => onDraft(null)}
+            title="Clear this field — stages NULL"
+          >
+            <Icon name="block" size={12} /> null
+          </button>
+        ) : null}
       </div>
     );
   }
@@ -266,11 +276,20 @@ function RiDateTime({
             >
               <Icon name="edit" size={12} /> text
             </button>
-            {!date ? (
+            {date ? (
+              <button
+                type="button"
+                className="ri-mini-btn"
+                onClick={() => onDraft(null)}
+                title="Clear this field — stages NULL"
+              >
+                <Icon name="block" size={12} /> null
+              </button>
+            ) : (
               <button type="button" className="ri-mini-btn" onClick={() => emit(new Date())}>
                 now
               </button>
-            ) : null}
+            )}
           </div>
           {date && w ? (
             <>

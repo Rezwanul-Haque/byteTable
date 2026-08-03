@@ -76,6 +76,19 @@ button:focus:not(:focus-visible),
   outline: none;
 }
 
+/* App-wide replacement for the UA keyboard-focus ring: a thin accent outline
+   drawn INSIDE the element's box. Two reasons it must be ours everywhere: the
+   platform ring is blue and clashes with the theme, and per spec ANY keypress
+   re-flags the currently focused element as :focus-visible — so a shortcut
+   handled elsewhere (Escape in the data grid) lights up whatever was last
+   clicked. Drawing inside also stops the ring from being clipped into stray
+   lines by scroll/overflow parents (the tab bar). Components with their own
+   :focus-visible rule (`.tab`, `.table-item`, Select, …) out-specify this. */
+:focus-visible {
+  outline: 1px solid color-mix(in oklab, var(--accent) 55%, transparent);
+  outline-offset: -1px;
+}
+
 ::selection {
   background: color-mix(in oklab, var(--accent) 35%, transparent);
 }

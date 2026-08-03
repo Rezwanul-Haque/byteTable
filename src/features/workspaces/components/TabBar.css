@@ -52,6 +52,16 @@
   color: var(--text);
 }
 
+/* No focus ring on a tab. A tab is a mouse target that KEEPS focus after the
+   click, and per spec any later keypress re-flags the focused element as
+   :focus-visible — so a shortcut handled elsewhere (Escape in the data grid)
+   drew a ring here, clipped by the bar into two stray vertical lines. The
+   active tab already reads as selected (accent top bar + lifted background).
+   Buttons, fields and menus keep the global indicator (global.css). */
+.tab:focus-visible {
+  outline: none;
+}
+
 .tab.active::after {
   content: "";
   position: absolute;
@@ -108,6 +118,11 @@
   color: var(--accent);
   background: var(--bg2);
 }
+.tab-new:focus-visible {
+  outline: none;
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 45%, transparent);
+}
 
 /* Right-aligned tool cluster holding the Terminal toggle (M14) — ported from
    ByteTable.html `.tabbar-tools` / `.tabbar-tool`. */
@@ -142,6 +157,12 @@
 .tabbar-tool:hover {
   color: var(--text);
   background: var(--bg2);
+}
+.tabbar-tool:focus-visible {
+  outline: none;
+  color: var(--text);
+  background: var(--bg2);
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
 }
 .tabbar-tool.active {
   color: var(--accent);

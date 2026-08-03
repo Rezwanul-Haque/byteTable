@@ -324,14 +324,13 @@
   background: var(--bg2);
 }
 
-/* Keyboard focus draws our own inset accent ring, never the UA one (WebKit's
-   blue rounded outline clashes with the theme). Per spec a keypress anywhere
-   re-flags the focused element as :focus-visible, so the last-clicked row lit
-   up whenever a shortcut fired elsewhere — e.g. Escape in the data grid. */
+/* No focus ring on a table row — same reasoning as `.tab` (TabBar.css): the row
+   keeps focus after the click, and per spec any later keypress re-flags it as
+   :focus-visible, so a shortcut handled elsewhere (Escape in the data grid) drew
+   a ring around the last-clicked table. The open table already reads as active.
+   Buttons, fields and menus keep the global indicator (global.css). */
 .table-item:focus-visible {
   outline: none;
-  background: var(--bg2);
-  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 45%, transparent);
 }
 
 /* No table is ever active in M3 (tabs arrive in M4) — rules kept so M4 only

@@ -111,8 +111,15 @@
   transition: border-color 0.12s;
 }
 
-.schema-btn:hover {
+.schema-btn:hover,
+.schema-btn:focus-visible {
   border-color: color-mix(in oklab, var(--accent) 50%, var(--border));
+}
+/* Keyboard focus is shown with our own accent border, never the UA ring (the
+   platform ring is a blue rounded outline that clashes with the theme). Same
+   convention as the shared Select (`.sel-trigger` / `.sel-opt`). */
+.schema-btn:focus-visible {
+  outline: none;
 }
 
 .schema-btn-name {
@@ -167,8 +174,10 @@
   cursor: pointer;
   white-space: nowrap;
 }
-.schema-pop-create:hover {
+.schema-pop-create:hover,
+.schema-pop-create:focus-visible {
   background: color-mix(in oklab, var(--accent) 14%, var(--bg3));
+  outline: none;
 }
 .schema-pop-sep {
   height: 1px;
@@ -176,9 +185,11 @@
   margin: 4px 2px;
 }
 
-.schema-pop-item:hover {
+.schema-pop-item:hover,
+.schema-pop-item:focus-visible {
   background: var(--bg3);
   color: var(--text);
+  outline: none;
 }
 
 .schema-pop-item.active {
@@ -464,9 +475,11 @@
   white-space: nowrap;
 }
 
-.ctx-item:hover {
+.ctx-item:hover,
+.ctx-item:focus-visible {
   background: var(--bg3);
   color: var(--text);
+  outline: none;
 }
 
 /* Destructive context-menu item + section label + separator (M15 Task 2),
@@ -475,7 +488,8 @@
 .ctx-item.danger {
   color: #e06c75;
 }
-.ctx-item.danger:hover {
+.ctx-item.danger:hover,
+.ctx-item.danger:focus-visible {
   background: #e06c7518;
   color: #e06c75;
 }
@@ -484,7 +498,8 @@
 .ctx-item.ctx-item-accent {
   color: var(--accent);
 }
-.ctx-item.ctx-item-accent:hover {
+.ctx-item.ctx-item-accent:hover,
+.ctx-item.ctx-item-accent:focus-visible {
   background: color-mix(in oklab, var(--accent) 14%, var(--bg3));
   color: var(--accent);
 }

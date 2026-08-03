@@ -65,6 +65,16 @@ button {
   border: none;
 }
 
+/* Never show the platform focus ring for pointer focus — WebKit draws it as a
+   blue rounded outline that clashes with the theme, and which engine/platform
+   focuses a <button> on click varies (hence it appearing only "sometimes", e.g.
+   on a menu item just clicked). Keyboard focus keeps its ring unless the
+   component styles :focus-visible itself (see Select.css, Sidebar.css). */
+button:focus:not(:focus-visible),
+[role^="menuitem"]:focus:not(:focus-visible) {
+  outline: none;
+}
+
 ::selection {
   background: color-mix(in oklab, var(--accent) 35%, transparent);
 }

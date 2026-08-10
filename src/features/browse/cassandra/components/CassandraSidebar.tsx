@@ -10,6 +10,7 @@ import { EngineBadge } from "../../../../shared/ui/EngineBadge";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { Btn } from "../../../../shared/ui/Btn";
+import { LanguageChip } from "../../../../shared/ui/LanguageChip";
 import type { Env } from "../../../../shared/types";
 import type { TableDescriptor } from "../api";
 
@@ -107,6 +108,7 @@ export function CassandraSidebar({
             <span className="conn-eng">Cassandra</span>
           </div>
         </div>
+        <LanguageChip />
         <IconBtn
           icon="power_settings_new"
           title="Close workspace"

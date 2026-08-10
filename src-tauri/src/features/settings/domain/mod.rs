@@ -91,8 +91,33 @@ pub enum MacChrome {
     Frameless,
 }
 
+/// First day of the week for calendar-style surfaces. `Auto` defers to the
+/// region's own convention (`Intl.Locale.weekInfo` in the renderer).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FirstDay {
+    #[default]
+    Auto,
+    Mon,
+    Sun,
+    Sat,
+}
+
 fn default_theme() -> Theme {
     Theme::default()
+}
+/// Interface language id (M31). A free-form `String` rather than an enum: the
+/// renderer owns the locale catalog and validates against it, so shipping a new
+/// translation never needs a backend change.
+fn default_locale() -> String {
+    "en".to_string()
+}
+/// `"auto"` (follow the language), a BCP-47 tag, or `"ISO"` for ISO 8601.
+fn default_region() -> String {
+    "auto".to_string()
+}
+fn default_first_day() -> FirstDay {
+    FirstDay::default()
 }
 fn default_accent() -> String {
     "auto".to_string()
@@ -194,6 +219,18 @@ pub struct Settings {
     /// macOS-only custom-titlebar chrome (hiddenInset vs frameless).
     #[serde(default = "default_mac_chrome")]
     pub mac_chrome: MacChrome,
+    /// Interface language (M31) — only the chrome is translated, never schema,
+    /// data or SQL. Validated against the renderer's locale catalog on load.
+    #[serde(default = "default_locale")]
+    pub locale: String,
+    /// Date/number format region: `"auto"`, a BCP-47 tag, or `"ISO"`.
+    #[serde(default = "default_region")]
+    pub region: String,
+    /// 12-hour clock instead of 24-hour.
+    #[serde(default)]
+    pub hour12: bool,
+    #[serde(default = "default_first_day")]
+    pub first_day: FirstDay,
 }
 
 impl Default for Settings {
@@ -218,6 +255,10 @@ impl Default for Settings {
             sidebar_side: default_sidebar_side(),
             titlebar_position: default_titlebar_position(),
             mac_chrome: default_mac_chrome(),
+            locale: default_locale(),
+            region: default_region(),
+            hour12: false,
+            first_day: default_first_day(),
         }
     }
 }
@@ -248,6 +289,10 @@ mod tests {
         assert_eq!(s.sidebar_side, SidebarSide::Left);
         assert_eq!(s.titlebar_position, TitlebarPosition::TopLeftIcon);
         assert_eq!(s.mac_chrome, MacChrome::Native);
+        assert_eq!(s.locale, "en");
+        assert_eq!(s.region, "auto");
+        assert!(!s.hour12);
+        assert_eq!(s.first_day, FirstDay::Auto);
     }
 
     #[test]
@@ -264,6 +309,8 @@ mod tests {
         assert!(json.contains(r#""fontSize":13"#), "{json}");
         assert!(json.contains(r#""reduceMotion":false"#), "{json}");
         assert!(json.contains(r#""defaultLimit":300"#), "{json}");
+        assert!(json.contains(r#""locale":"en""#), "{json}");
+        assert!(json.contains(r#""firstDay":"auto""#), "{json}");
     }
 
     #[test]
@@ -288,6 +335,10 @@ mod tests {
             sidebar_side: SidebarSide::Right,
             titlebar_position: TitlebarPosition::BottomRightIcon,
             mac_chrome: MacChrome::Frameless,
+            locale: "zh-Hant".to_string(),
+            region: "ISO".to_string(),
+            hour12: true,
+            first_day: FirstDay::Sat,
         };
         let json = serde_json::to_string(&s).expect("serialize");
         let back: Settings = serde_json::from_str(&json).expect("deserialize");
@@ -307,6 +358,11 @@ mod tests {
         assert!(back.ligatures);
         assert_eq!(back.default_limit, 300);
         assert!(back.restore_tabs);
+        // A pre-M31 file has no language keys; the renderer treats a blob with
+        // no `locale` as a first run and follows the OS language instead.
+        assert_eq!(back.locale, "en");
+        assert_eq!(back.region, "auto");
+        assert_eq!(back.first_day, FirstDay::Auto);
     }
 
     #[test]

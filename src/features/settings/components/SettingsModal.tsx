@@ -1,10 +1,29 @@
-// Settings modal (M20.2–20.5): a 4-tab dialog — Appearance, Fonts & text,
-// Data grid, Behavior — editing the global settings contract. Every change
-// applies + persists immediately through the settings store (no Save button).
+// Settings modal (M20.2–20.5, M31): a 5-tab dialog — Appearance, Fonts & text,
+// Data grid, Language & region, Behavior — editing the global settings
+// contract. Every change applies + persists immediately through the settings
+// store (no Save button).
 // Ported from the prototype's settings.jsx; the store replaces its useSettings.
+//
+// The modal's own chrome (title, tab labels, section labels, Reset all) is
+// localized; the per-row labels and hints are part of the deferred workspace
+// migration and stay English for now.
 
 import { useEffect, useRef, useState } from "react";
 
+import {
+  // coverage, ← restore with the coverage bar + note in the Language pane
+  fmtDate,
+  fmtNumber,
+  fmtRelative,
+  fmtTime,
+  LOCALES,
+  REGIONS,
+  type FirstDay,
+  type LocaleId,
+  type StringKey,
+} from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n/useT";
+import { LanguageMenu } from "../../../shared/ui/LanguageMenu";
 import { Modal } from "../../../shared/ui/Modal";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
@@ -29,19 +48,22 @@ import {
   type UiFontId,
 } from "../catalogs";
 import { platform } from "@tauri-apps/plugin-os";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { UPDATE_REPO } from "../../updater/api";
 import { detectSystemMonos } from "../fonts";
 import { renderSqlPreview } from "../sqlPreview";
-import { useSettingsStore } from "../state";
+import { useSettingsStore, type SettingsTabId } from "../state";
 import "./SettingsModal.css";
 
-const TABS = [
-  { id: "appearance", label: "Appearance", icon: "palette" },
-  { id: "fonts", label: "Fonts & text", icon: "text_fields" },
-  { id: "grid", label: "Data grid", icon: "table_rows" },
-  { id: "behavior", label: "Behavior", icon: "tune" },
-] as const;
-
-type TabId = (typeof TABS)[number]["id"];
+// Each tab carries the KEY of its label, never the label itself — the nav is
+// re-rendered through t() so a language switch relabels it in place (M31).
+const TABS: { id: SettingsTabId; key: StringKey; icon: string }[] = [
+  { id: "appearance", key: "set.tab.appearance", icon: "palette" },
+  { id: "fonts", key: "set.tab.fonts", icon: "text_fields" },
+  { id: "grid", key: "set.tab.grid", icon: "table_rows" },
+  { id: "language", key: "set.tab.language", icon: "translate" },
+  { id: "behavior", key: "set.tab.behavior", icon: "tune" },
+];
 
 // ---- small controls (ported from settings.jsx) ----
 
@@ -296,14 +318,221 @@ function MonoFontPicker({ value, onChange }: { value: string; onChange: (id: str
   );
 }
 
+// ---- Language & region (M31 Task 3) ----
+
+/** The translator's guide the "contributions welcome" note points at. */
+const TRANSLATING_GUIDE_URL = `https://github.com/${UPDATE_REPO}/blob/main/docs/TRANSLATING.md`;
+
+/** Open a URL in the OS browser; window.open fallback in plain-browser dev.
+ *  The app never navigates its own webview away.
+ *
+ *  Rejections are propagated, NOT swallowed: `openUrl` fails silently when the
+ *  URL is outside the opener capability's allowlist
+ *  (src-tauri/capabilities/default.json) or the OS has no handler, and a dead
+ *  link that reports nothing is indistinguishable from a dead click. */
+async function openExternal(url: string): Promise<void> {
+  if ("__TAURI_INTERNALS__" in window) {
+    await openUrl(url);
+    return;
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
+/**
+ * The trigger for the language list: shows the active locale, drops the shared
+ * LanguageMenu (the same list the sidebar's language chip opens).
+ *
+ * The "N% translated" note below is commented out rather than deleted, as is
+ * the coverage bar in LanguageMenu — `coverage()` measures translated keys ÷
+ * English keys, but only the shell is keyed at all, so a locale with every key
+ * still shows a mostly-English app and "100% translated" would be a false
+ * claim. Both go back when the number means what it says.
+ */
+function LanguagePicker({
+  value,
+  onChange,
+}: {
+  value: LocaleId;
+  onChange: (code: LocaleId) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && e.target instanceof Node && !ref.current.contains(e.target))
+        setOpen(false);
+    };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const current = LOCALES[value] ?? LOCALES.en;
+
+  return (
+    <div className="lang-picker" ref={ref}>
+      <button
+        type="button"
+        className="lang-trigger"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span className="lang-endonym">{current.endonym}</span>
+        <span className="lang-name">{current.name}</span>
+        {current.dir === "rtl" ? <span className="lang-rtl-tag">RTL</span> : null}
+        <span style={{ flex: 1 }} />
+        <Icon name="expand_more" size={15} style={{ color: "var(--text-faint)" }} />
+      </button>
+      {open ? (
+        <LanguageMenu
+          value={value}
+          onPick={(code) => {
+            onChange(code);
+            setOpen(false);
+          }}
+          className="lang-pop-anchored"
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function LanguagePane({
+  settings,
+  setSetting,
+}: {
+  settings: Settings;
+  setSetting: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
+}) {
+  const t = useT();
+  const toast = useToast();
+  const current = LOCALES[settings.locale] ?? LOCALES.en;
+  // const pct = coverage(settings.locale);
+  // Recomputed every render, so the card reflects the language AND the region
+  // controls the moment either changes.
+  const now = new Date();
+
+  return (
+    <>
+      <div className="set-section-label">{t("set.sec.language")}</div>
+      <SetRow label={t("set.lang.pick")} hint={t("set.lang.hint")}>
+        <LanguagePicker value={settings.locale} onChange={(code) => setSetting("locale", code)} />
+      </SetRow>
+      {/* Coverage note — restore together with the bar in LanguagePicker:
+      {pct < 100 ? (
+        <div className="lang-note">
+          <Icon name="info" size={14} />
+          <span>
+            {t("set.lang.coverage", { pct })} · {t("set.lang.machine")}
+          </span>
+        </div>
+      ) : null}
+      */}
+      {current.dir === "rtl" ? (
+        <SetRow label={t("set.lang.rtl")} hint={t("set.lang.rtlHint")}>
+          <span className="lang-auto-tag">
+            <Icon name="check" size={13} /> auto
+          </span>
+        </SetRow>
+      ) : null}
+
+      <div className="set-section-label">{t("set.sec.formats")}</div>
+      <SetRow label={t("set.lang.region")} hint={t("set.lang.regionHint")}>
+        <Select
+          className="set-select"
+          value={settings.region}
+          onChange={(id) => setSetting("region", id)}
+          mono={false}
+          options={REGIONS.map((r) => ({ value: r.id, label: r.label }))}
+        />
+      </SetRow>
+      <SetRow label={t("set.lang.clock")}>
+        <SetSeg
+          value={settings.hour12 ? "12" : "24"}
+          onChange={(v) => setSetting("hour12", v === "12")}
+          options={[
+            { value: "24", label: t("set.lang.clock24") },
+            { value: "12", label: t("set.lang.clock12") },
+          ]}
+        />
+      </SetRow>
+      <SetRow label={t("set.lang.firstDay")}>
+        <SetSeg<FirstDay>
+          value={settings.firstDay}
+          onChange={(v) => setSetting("firstDay", v)}
+          options={[
+            { value: "auto", label: "Auto" },
+            { value: "mon", label: "Mon" },
+            { value: "sun", label: "Sun" },
+            { value: "sat", label: "Sat" },
+          ]}
+        />
+      </SetRow>
+
+      <div className="set-section-label">{t("set.lang.preview")}</div>
+      <div className="lang-preview">
+        <div className="lang-pv-row">
+          <span>{t("set.lang.previewDate")}</span>
+          <b>{fmtDate(now, { dateStyle: "full" })}</b>
+        </div>
+        <div className="lang-pv-row">
+          <span>{t("set.lang.previewNumber")}</span>
+          <b>{fmtNumber(1234567.89)}</b>
+        </div>
+        <div className="lang-pv-row">
+          <span>{t("set.lang.previewRel")}</span>
+          <b>
+            {fmtRelative(-3, "day")} · {fmtTime(now)}
+          </b>
+        </div>
+        <div className="lang-pv-row">
+          <span>{t("set.lang.previewRows")}</span>
+          <b>
+            {t("set.rowsFound", { count: 1 })} · {t("set.rowsFound", { count: 3128 })}
+          </b>
+        </div>
+      </div>
+      <div className="lang-note">
+        <Icon name="database" size={14} />
+        <span>{t("set.lang.dataNote")}</span>
+      </div>
+      <button
+        type="button"
+        className="lang-note subtle lang-note-link"
+        title={TRANSLATING_GUIDE_URL}
+        onClick={() => {
+          void openExternal(TRANSLATING_GUIDE_URL).catch((error: unknown) => {
+            toast(`Could not open ${TRANSLATING_GUIDE_URL} — ${String(error)}`, "err");
+          });
+        }}
+      >
+        <Icon name="volunteer_activism" size={14} />
+        <span>{t("set.lang.contribute")}</span>
+        <Icon name="open_in_new" size={13} className="lang-note-ext" />
+      </button>
+    </>
+  );
+}
+
 // ---- the modal ----
 
-export function SettingsModal({ onClose }: { onClose: () => void }) {
+interface SettingsModalProps {
+  /** The tab to open on — whichever surface opened the modal picks it. */
+  tab: SettingsTabId;
+  onClose: () => void;
+}
+
+export function SettingsModal({ tab: initialTab, onClose }: SettingsModalProps) {
   const settings = useSettingsStore((s) => s.settings);
   const setSettingRaw = useSettingsStore((s) => s.setSetting);
   const reset = useSettingsStore((s) => s.reset);
   const toast = useToast();
-  const [tab, setTab] = useState<TabId>("appearance");
+  const t = useT();
+  // Which tab the opener asked for; changing it afterwards is local state, so
+  // clicking through the nav never writes back to the store.
+  const [tab, setTab] = useState<SettingsTabId>(initialTab);
 
   // Narrow helper so each call site stays type-safe per key.
   function setSetting<K extends keyof Settings>(key: K, value: Settings[K]): void {
@@ -322,7 +551,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
     <Modal onClose={onClose} className="set-modal" label="Settings">
       <div className="set-head">
         <Icon name="settings" size={18} style={{ color: "var(--accent)" }} />
-        <div className="modal-title-text">Settings</div>
+        <div className="modal-title-text">{t("set.title")}</div>
         <div style={{ flex: 1 }} />
         <IconBtn icon="close" onClick={onClose} title="Close (Esc)" />
       </div>
@@ -336,7 +565,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
               className={"set-nav-item" + (tab === tb.id ? " active" : "")}
               onClick={() => setTab(tb.id)}
             >
-              <Icon name={tb.icon} size={16} /> {tb.label}
+              <Icon name={tb.icon} size={16} /> {t(tb.key)}
             </button>
           ))}
           <div style={{ flex: 1 }} />
@@ -348,14 +577,14 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
               toast("Settings reset to defaults");
             }}
           >
-            <Icon name="restart_alt" size={15} /> Reset all
+            <Icon name="restart_alt" size={15} /> {t("common.reset")}
           </button>
         </nav>
 
         <div className="set-pane">
           {tab === "appearance" ? (
             <>
-              <div className="set-section-label">Theme</div>
+              <div className="set-section-label">{t("set.sec.theme")}</div>
               {Object.entries(groups).map(([g, list]) => (
                 <div key={g} className="set-theme-group">
                   <div className="set-theme-group-label">{g}</div>
@@ -372,7 +601,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
                   </div>
                 </div>
               ))}
-              <div className="set-section-label">Accent color</div>
+              <div className="set-section-label">{t("set.sec.accent")}</div>
               <SetRow label="Accent" hint="“Auto” follows the theme’s own accent">
                 <div className="set-accents">
                   {ACCENTS.map((a) => (
@@ -405,7 +634,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
                 />
               </SetRow>
 
-              <div className="set-section-label">Layout</div>
+              <div className="set-section-label">{t("set.sec.layout")}</div>
               <SetRow label="Sidebar position" hint="Which side the table / object list sits on">
                 <SetSeg<SidebarSide>
                   value={settings.sidebarSide}
@@ -442,7 +671,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
 
           {tab === "fonts" ? (
             <>
-              <div className="set-section-label">Database client font</div>
+              <div className="set-section-label">{t("set.sec.clientFont")}</div>
               <MonoFontPicker
                 value={settings.monoFont}
                 onChange={(id) => setSetting("monoFont", id)}
@@ -455,7 +684,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
                 <SetToggle on={settings.ligatures} onChange={(v) => setSetting("ligatures", v)} />
               </SetRow>
 
-              <div className="set-section-label">Interface font</div>
+              <div className="set-section-label">{t("set.sec.uiFont")}</div>
               <SetRow label="UI typeface">
                 <Select
                   className="set-select"
@@ -469,7 +698,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
                 />
               </SetRow>
 
-              <div className="set-section-label">Text size</div>
+              <div className="set-section-label">{t("set.sec.textSize")}</div>
               <SetRow
                 label="App text size"
                 hint={`Scales all text — chrome, editor, and grid (${Math.round((settings.fontSize / 13) * 100)}%)`}
@@ -509,7 +738,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
 
           {tab === "grid" ? (
             <>
-              <div className="set-section-label">Row layout</div>
+              <div className="set-section-label">{t("set.sec.rowLayout")}</div>
               <SetRow label="Density" hint="Row height in data tables">
                 <SetSeg<Density>
                   value={settings.density}
@@ -526,7 +755,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
                   onChange={(v) => setSetting("highlightRow", v)}
                 />
               </SetRow>
-              <div className="set-section-label">Query defaults</div>
+              <div className="set-section-label">{t("set.sec.queryDefaults")}</div>
               <SetRow
                 label="Default row limit"
                 hint="Rows fetched before paging — protects against huge tables"
@@ -548,7 +777,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
                 />
               </SetRow>
 
-              <div className="set-section-label">Live data</div>
+              <div className="set-section-label">{t("set.sec.liveData")}</div>
               <SetRow
                 label="Auto-refresh"
                 hint="Periodically refresh the sidebar object list (and the Redis keyspace)"
@@ -574,9 +803,11 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
             </>
           ) : null}
 
+          {tab === "language" ? <LanguagePane settings={settings} setSetting={setSetting} /> : null}
+
           {tab === "behavior" ? (
             <>
-              <div className="set-section-label">Safety</div>
+              <div className="set-section-label">{t("set.sec.safety")}</div>
               <SetRow
                 label="Confirm writes on production"
                 hint="Require a typed confirm for UPDATE / DELETE / TRUNCATE on prod connections"
@@ -586,7 +817,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
                   onChange={(v) => setSetting("confirmProd", v)}
                 />
               </SetRow>
-              <div className="set-section-label">Connecting</div>
+              <div className="set-section-label">{t("set.sec.connecting")}</div>
               <SetRow
                 label="Connection timeout"
                 hint="Give up on a server that does not answer — covers the SSH tunnel and TLS handshake too, so raise it for a bastion or a slow link"
@@ -602,7 +833,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
                   ]}
                 />
               </SetRow>
-              <div className="set-section-label">Session</div>
+              <div className="set-section-label">{t("set.sec.session")}</div>
               <SetRow
                 label="Restore tabs when reconnecting"
                 hint="Reopen each connection's tabs, unsaved SQL, and grid filters when you open it again. Connections are never opened automatically."

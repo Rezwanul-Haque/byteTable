@@ -9,6 +9,7 @@ import { Btn } from "../../../../shared/ui/Btn";
 import { EngineBadge } from "../../../../shared/ui/EngineBadge";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
+import { LanguageChip } from "../../../../shared/ui/LanguageChip";
 import type { TableDescriptor } from "../api";
 
 interface DynamoSidebarProps {
@@ -95,6 +96,7 @@ export function DynamoSidebar({
             <span className="conn-eng">DynamoDB</span>
           </div>
         </div>
+        <LanguageChip />
         <IconBtn
           icon="power_settings_new"
           title="Close workspace"

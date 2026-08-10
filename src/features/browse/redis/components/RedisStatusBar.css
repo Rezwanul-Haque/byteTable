@@ -16,6 +16,9 @@
   font-size: 11px;
   color: var(--text-dim);
   user-select: none;
+  /* One line only — the bar is a fixed 28px grid row (see StatusBar.css). */
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .redis-statusbar .status-strong {
@@ -52,6 +55,9 @@
   padding: 0;
   cursor: pointer;
   font: inherit;
+  /* As in StatusBar.css: never squeezed, so it cannot break across two lines
+     in a 28px bar (non-Latin locales widen the Latin glyphs — M31). */
+  flex: none;
 }
 
 .redis-statusbar .status-credit b {

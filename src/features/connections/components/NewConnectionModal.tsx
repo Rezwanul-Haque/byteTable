@@ -27,6 +27,7 @@ import { useEffect, useId, useReducer, useRef, useState, type KeyboardEvent } fr
 
 import { isAppErrorPayload } from "../../../shared/api/error";
 import { expandTilde, tildify, useHomeDir } from "../../../shared/homeDir";
+import { useT } from "../../../shared/i18n/useT";
 import type { Engine, Env } from "../../../shared/types";
 import { Btn } from "../../../shared/ui/Btn";
 import { EngineBadge } from "../../../shared/ui/EngineBadge";
@@ -493,6 +494,7 @@ function ProjectField({
 }
 
 export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
+  const t = useT();
   const home = useHomeDir();
   const [state, dispatch] = useReducer(reducer, edit ? formStateFromConnection(edit) : INITIAL);
   const {
@@ -875,7 +877,7 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
   return (
     <Modal label={edit ? "Edit connection" : "New connection"} onClose={onClose}>
       <ModalTitle>
-        <span>{edit ? "Edit connection" : "New connection"}</span>
+        <span>{edit ? t("connect.edit") : t("connect.new")}</span>
         <IconBtn icon="close" onClick={onClose} title="Close" />
       </ModalTitle>
 

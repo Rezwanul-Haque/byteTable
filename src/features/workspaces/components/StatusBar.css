@@ -13,6 +13,15 @@
   font-size: 11px;
   color: var(--text-dim);
   user-select: none;
+  /* The bar is a fixed 28px grid row — it has room for exactly one line, so
+     nothing in it may wrap. This bites in non-Latin locales (M31): --ui gains a
+     Noto face whose Latin glyphs are wider, the items no longer fit, and the
+     credit used to break across two lines inside a bar too short to show them.
+     `overflow: hidden` is the companion: with no wrapping, an overlong bar
+     would otherwise push past the window instead. Same pair the DynamoDB bar
+     already uses. */
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .status-strong {
@@ -37,6 +46,9 @@
   padding: 0;
   cursor: pointer;
   font: inherit;
+  /* Never squeezed by the flex row: it is two short words and a name, and
+     shrinking it is what broke the line in the first place. */
+  flex: none;
 }
 
 .status-credit b {

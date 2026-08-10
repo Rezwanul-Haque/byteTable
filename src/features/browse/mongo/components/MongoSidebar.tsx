@@ -12,6 +12,7 @@ import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { Btn } from "../../../../shared/ui/Btn";
 import type { Env } from "../../../../shared/types";
 import { ENV_COLOR } from "../../../../shared/ui/envColors";
+import { LanguageChip } from "../../../../shared/ui/LanguageChip";
 import type { CollectionDescriptor } from "../api";
 
 interface CtxMenu {
@@ -103,6 +104,7 @@ export function MongoSidebar({
             <span className="conn-eng">MongoDB</span>
           </div>
         </div>
+        <LanguageChip />
         <IconBtn
           icon="power_settings_new"
           title="Close workspace"

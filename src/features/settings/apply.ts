@@ -11,6 +11,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 
+import { setLocale } from "../../shared/i18n";
 import { DEFAULTS, type Settings } from "./api";
 import { monoMetaFor, THEMES, UI_FONTS } from "./catalogs";
 import { ensureFont } from "./fonts";
@@ -79,7 +80,11 @@ export function applySettings(input: Partial<Settings> | null | undefined): void
   ensureFont(mono.google);
   ensureFont(ui.google);
   root.setProperty("--mono", mono.stack);
-  root.setProperty("--ui", ui.stack);
+  // --ui-script (set by setLocale below) prepends the locale's script family,
+  // so CJK / Bengali / Arabic UI text renders in its Noto face instead of
+  // falling through to a system font. Order matters: the Latin UI font would
+  // shadow the script font if it came first.
+  root.setProperty("--ui", `var(--ui-script) ${ui.stack}`);
 
   // Sizes. The editor/grid keep a FIXED base (13 / 12 px); the font-size
   // setting now scales the WHOLE app via the webview zoom (see zoom.ts), so all
@@ -106,4 +111,9 @@ export function applySettings(input: Partial<Settings> | null | undefined): void
   // selected mode. Idempotent and macOS-gated in Rust; best-effort so it
   // no-ops in plain browser dev / before the shell is ready.
   void invoke("set_mac_chrome", { mode: s.macChrome }).catch(() => {});
+
+  // Language LAST (M31): it writes --ui-script, html[lang]/[dir] and body
+  // .bt-rtl, then notifies its subscribers — which must see the fonts and
+  // palette above already in place.
+  setLocale(s.locale, { region: s.region, hour12: s.hour12, firstDay: s.firstDay });
 }

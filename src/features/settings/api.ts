@@ -5,6 +5,14 @@
 
 import { invoke } from "@tauri-apps/api/core";
 
+import {
+  detectLocale,
+  isLocaleId,
+  REGIONS,
+  type FirstDay,
+  type LocaleId,
+  type RegionId,
+} from "../../shared/i18n";
 import type { MonoFontId, ThemeId, UiFontId } from "./catalogs";
 
 /** Rows fetched before paging. */
@@ -62,6 +70,12 @@ export interface Settings {
   titlebarPosition: TitlebarPosition;
   /** macOS-only: which custom-titlebar chrome to use. */
   macChrome: MacChrome;
+  /** Interface language (M31). Only the chrome is translated — never data. */
+  locale: LocaleId;
+  /** Date/number formats; `"auto"` follows the language's own region. */
+  region: RegionId;
+  hour12: boolean;
+  firstDay: FirstDay;
 }
 
 /** The single source of truth for the contract shape and default values. */
@@ -85,7 +99,27 @@ export const DEFAULTS: Settings = {
   sidebarSide: "left",
   titlebarPosition: "topLeftIcon",
   macChrome: "native",
+  // English is the contract default; a FIRST RUN (nothing stored at all) starts
+  // from the OS languages instead — see `mergeSettings` / `initialSettings`.
+  locale: "en",
+  region: "auto",
+  hour12: false,
+  firstDay: "auto",
 };
+
+/** Valid `region` ids, for validating a stored (or hand-edited) blob. */
+const REGION_IDS = new Set<string>(REGIONS.map((r) => r.id));
+/** Valid `firstDay` ids. */
+const FIRST_DAYS = new Set<string>(["auto", "mon", "sun", "sat"]);
+
+/**
+ * The settings a profile starts from when NOTHING is stored — DEFAULTS, except
+ * the interface language, which follows the OS. An explicit choice always wins
+ * because it is persisted from the moment it is made.
+ */
+export function initialSettings(): Settings {
+  return { ...DEFAULTS, locale: detectLocale() };
+}
 
 /**
  * Merge a stored (possibly partial or old) blob over DEFAULTS. Unknown keys
@@ -102,7 +136,15 @@ export function mergeSettings(stored: unknown): Settings {
         (merged as unknown as Record<string, unknown>)[key] = value;
       }
     }
+    // A blob written before M31 has no `locale` at all: that user has never
+    // chosen a language, so treat it as a first run and follow the OS.
+    if (!("locale" in stored)) merged.locale = detectLocale();
   }
+  // The locale-ish keys are open string unions, so a stale or hand-edited value
+  // would otherwise pass the typeof check above and reach Intl.
+  if (!isLocaleId(merged.locale)) merged.locale = DEFAULTS.locale;
+  if (!REGION_IDS.has(merged.region)) merged.region = DEFAULTS.region;
+  if (!FIRST_DAYS.has(merged.firstDay)) merged.firstDay = DEFAULTS.firstDay;
   return merged;
 }
 

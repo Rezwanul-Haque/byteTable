@@ -8,15 +8,31 @@
 
 import { create } from "zustand";
 
-import { DEFAULTS, settingsLoad, settingsSave, type Settings } from "./api";
+import { DEFAULTS, initialSettings, settingsLoad, settingsSave, type Settings } from "./api";
 import { applySettings } from "./apply";
 import { readCachedSettings, writeCachedSettings } from "./cache";
 import { broadcastSettings } from "./sync";
 import { applyZoom } from "./zoom";
 
+/** The Settings modal's tabs. Lives here, not in the component, so any surface
+ *  can ask for a specific one (the sidebar's language chip opens "language"). */
+export type SettingsTabId = "appearance" | "fonts" | "grid" | "language" | "behavior";
+
 interface SettingsFeatureState {
   settings: Settings;
   loaded: boolean;
+  /**
+   * Which tab the Settings modal is open on, or `null` when it is closed.
+   * Modal visibility lives in the store rather than in App's local state
+   * because openers are scattered across the tree — the rail gear, ⌘,, the
+   * title-bar menu, and (M31) the language chip in every engine sidebar.
+   */
+  settingsTab: SettingsTabId | null;
+  /** Open the modal on `tab` (Appearance by default). */
+  openSettings: (tab?: SettingsTabId) => void;
+  closeSettings: () => void;
+  /** ⌘, semantics: open on Appearance, or close if already open. */
+  toggleSettings: () => void;
   /** Reconcile the localStorage fast-path with the on-disk mirror and apply. */
   load: () => Promise<void>;
   /** Change one setting: apply, cache, and mirror to disk. */
@@ -42,8 +58,15 @@ function persist(settings: Settings): void {
 }
 
 export const useSettingsStore = create<SettingsFeatureState>((set, get) => ({
-  settings: readCachedSettings() ?? DEFAULTS,
+  // No cache at all = a fresh profile: start from the OS language (M31), which
+  // is exactly what the pre-mount bootstrap already applied.
+  settings: readCachedSettings() ?? initialSettings(),
   loaded: false,
+
+  settingsTab: null,
+  openSettings: (tab = "appearance") => set({ settingsTab: tab }),
+  closeSettings: () => set({ settingsTab: null }),
+  toggleSettings: () => set((s) => ({ settingsTab: s.settingsTab ? null : "appearance" })),
 
   load: async () => {
     const cached = readCachedSettings();

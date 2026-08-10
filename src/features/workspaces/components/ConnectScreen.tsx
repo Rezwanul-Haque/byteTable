@@ -17,6 +17,7 @@ import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { useContextMenu } from "../../../shared/ui/useContextMenu";
 import { useToast } from "../../../shared/ui/toastContext";
+import { useT } from "../../../shared/i18n/useT";
 import { tildify, useHomeDir } from "../../../shared/homeDir";
 import {
   connectionDelete,
@@ -57,6 +58,7 @@ interface CardDrag {
 }
 
 export function ConnectScreen() {
+  const t = useT();
   const home = useHomeDir();
   const [connecting, setConnecting] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
@@ -348,12 +350,12 @@ export function ConnectScreen() {
             <h1>
               Byte<span className="connect-brand-accent">Table</span>
             </h1>
-            <p>Local-first database client · free forever</p>
+            <p>{t("connect.tagline")}</p>
           </div>
         </div>
 
         <div className="connect-list-label">
-          <span>Open a workspace</span>
+          <span>{t("connect.openWorkspace")}</span>
           {hasConnections ? (
             <span className="connect-list-count">{savedConnections.length}</span>
           ) : null}
@@ -367,7 +369,7 @@ export function ConnectScreen() {
                 onBlur={() => setTimeout(() => setProjOpen(false), 120)}
               >
                 <Icon name="folder" size={13} />
-                <span>{projFilter === "all" ? "All projects" : projFilter}</span>
+                <span>{projFilter === "all" ? t("connect.allProjects") : projFilter}</span>
                 <Icon name="expand_more" size={14} style={{ color: "var(--text-faint)" }} />
               </button>
               {projOpen ? (
@@ -380,7 +382,8 @@ export function ConnectScreen() {
                       setProjOpen(false);
                     }}
                   >
-                    All projects <span className="proj-pop-n">{savedConnections.length}</span>
+                    {t("connect.allProjects")}{" "}
+                    <span className="proj-pop-n">{savedConnections.length}</span>
                   </button>
                   {allProjects.map((p) => (
                     <button
@@ -407,7 +410,7 @@ export function ConnectScreen() {
           <div className="connect-search">
             <Icon name="search" size={15} style={{ color: "var(--text-faint)" }} />
             <input
-              placeholder="Filter connections…"
+              placeholder={t("connect.filter")}
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
               spellCheck={false}
@@ -579,7 +582,7 @@ export function ConnectScreen() {
             disabled={connecting !== null}
             onClick={() => setShowNew(true)}
           >
-            New connection
+            {t("connect.new")}
           </Btn>
           <Btn
             icon="difference"
@@ -587,7 +590,7 @@ export function ConnectScreen() {
             disabled={connecting !== null}
             onClick={() => setShowCompare(true)}
           >
-            Compare schemas…
+            {t("connect.compare")}
           </Btn>
           <Btn
             icon="folder_open"
@@ -595,7 +598,7 @@ export function ConnectScreen() {
             disabled={connecting !== null}
             onClick={() => void openFile()}
           >
-            Open SQLite file…
+            {t("connect.openFile")}
           </Btn>
           {connecting === FILE_OPEN_ID ? <span className="spinner" /> : null}
         </div>

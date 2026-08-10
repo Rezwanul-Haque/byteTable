@@ -63,8 +63,14 @@
      The settings store overrides these inline on :root at runtime. */
   --editor-fs: 13px;
 
-  /* Font stacks */
-  --ui: "IBM Plex Sans", system-ui, sans-serif;
+  /* Font stacks.
+     --ui-script is the per-script font prepended to --ui for non-Latin locales
+     (M31): empty here, written inline on :root by the i18n runtime's
+     setLocale(). It must exist as a token so --ui resolves before any locale
+     has been applied. The mono stack is never scripted — code keeps the user's
+     chosen mono face. */
+  --ui-script: ;
+  --ui: var(--ui-script) "IBM Plex Sans", system-ui, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, monospace;
 }
 

@@ -1,22 +1,27 @@
 /* Sidebar resize handle — a thin strip on the sidebar/main seam. Absolutely
-   positioned at the sidebar's right edge (x = --sidebar-w) within the relative
-   .workspace grid, spanning the content rows but not the 28px status bar. */
+   positioned at the sidebar's inner edge (x = --sidebar-w) within the relative
+   .workspace grid, spanning the content rows but not the 28px status bar.
+   Logical insets (M31): the .workspace grid mirrors itself under dir=rtl, so
+   the seam follows the inline start/end rather than a physical side. The
+   centering offset is a negative margin for the same reason — a translateX
+   would not mirror. */
 .sidebar-resizer {
   position: absolute;
   top: 0;
-  left: var(--sidebar-w, 248px);
+  inset-inline-start: var(--sidebar-w, 248px);
+  margin-inline-start: -4px;
   width: 8px;
   height: calc(100% - 28px);
-  transform: translateX(-4px);
   cursor: col-resize;
   z-index: 6;
 }
 
 /* Sidebar on the right: the seam is at the window-width minus the sidebar. */
 body.bt-sidebar-right .sidebar-resizer {
-  left: auto;
-  right: var(--sidebar-w, 248px);
-  transform: translateX(4px);
+  inset-inline-start: auto;
+  inset-inline-end: var(--sidebar-w, 248px);
+  margin-inline-start: 0;
+  margin-inline-end: -4px;
 }
 
 /* The visible 2px line, only tinted on hover / while dragging. */
@@ -25,7 +30,7 @@ body.bt-sidebar-right .sidebar-resizer {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 3px;
+  inset-inline-start: 3px;
   width: 2px;
   background: transparent;
   transition: background 0.12s;

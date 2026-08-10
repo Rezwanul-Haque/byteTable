@@ -73,22 +73,69 @@ pub struct TrayWorkspace {
     open: bool,
 }
 
+/// The tray menu's own labels, already localized by the renderer (M31).
+///
+/// The tray is built in Rust, where the i18n layer does not reach, so the
+/// frontend sends the four strings alongside the workspace list on every
+/// `tray_update` — including after a language switch. Each field defaults to
+/// its English text, which is what the startup build (before the renderer is
+/// alive) and any older/partial payload get.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrayLabels {
+    #[serde(default = "default_tray_show")]
+    show: String,
+    #[serde(default = "default_tray_workspaces")]
+    workspaces: String,
+    #[serde(default = "default_tray_no_connections")]
+    no_connections: String,
+    #[serde(default = "default_tray_quit")]
+    quit: String,
+}
+
+fn default_tray_show() -> String {
+    "Show ByteTable".to_string()
+}
+fn default_tray_workspaces() -> String {
+    "Workspaces".to_string()
+}
+fn default_tray_no_connections() -> String {
+    "No saved connections".to_string()
+}
+fn default_tray_quit() -> String {
+    "Quit ByteTable".to_string()
+}
+
+impl Default for TrayLabels {
+    fn default() -> Self {
+        Self {
+            show: default_tray_show(),
+            workspaces: default_tray_workspaces(),
+            no_connections: default_tray_no_connections(),
+            quit: default_tray_quit(),
+        }
+    }
+}
+
 /// Build the tray's right-click menu: Show, a "Workspaces" submenu (one
 /// checkable item per saved connection — checked = a workspace is open for
 /// it), then Quit. Reused at startup (empty list) and on every `tray_update`.
 /// Workspace items carry the id `ws:<connectionId>`; the menu-event handler
 /// strips that prefix to know which connection was picked.
+///
+/// Item IDs are never localized — the event handler matches on them.
 fn build_tray_menu<R: Runtime, M: Manager<R>>(
     manager: &M,
     workspaces: &[TrayWorkspace],
+    labels: &TrayLabels,
 ) -> tauri::Result<Menu<R>> {
-    let show = MenuItemBuilder::with_id("show", "Show ByteTable").build(manager)?;
-    let quit = MenuItemBuilder::with_id("quit", "Quit ByteTable").build(manager)?;
+    let show = MenuItemBuilder::with_id("show", &labels.show).build(manager)?;
+    let quit = MenuItemBuilder::with_id("quit", &labels.quit).build(manager)?;
 
-    let mut ws_sub = SubmenuBuilder::new(manager, "Workspaces");
+    let mut ws_sub = SubmenuBuilder::new(manager, &labels.workspaces);
     if workspaces.is_empty() {
         // A disabled placeholder so the submenu is never empty/confusing.
-        let none = MenuItemBuilder::with_id("ws-none", "No saved connections")
+        let none = MenuItemBuilder::with_id("ws-none", &labels.no_connections)
             .enabled(false)
             .build(manager)?;
         ws_sub = ws_sub.item(&none);
@@ -114,11 +161,16 @@ fn build_tray_menu<R: Runtime, M: Manager<R>>(
 /// The tray-icon's menu-event handler (registered once at build) keeps working
 /// across `set_menu`, so this only swaps the menu contents.
 #[tauri::command]
-fn tray_update(app: AppHandle, workspaces: Vec<TrayWorkspace>) -> Result<(), String> {
+fn tray_update(
+    app: AppHandle,
+    workspaces: Vec<TrayWorkspace>,
+    labels: Option<TrayLabels>,
+) -> Result<(), String> {
     let tray = app
         .tray_by_id("main-tray")
         .ok_or_else(|| "tray icon not found".to_string())?;
-    let menu = build_tray_menu(&app, &workspaces).map_err(|e| e.to_string())?;
+    let labels = labels.unwrap_or_default();
+    let menu = build_tray_menu(&app, &workspaces, &labels).map_err(|e| e.to_string())?;
     tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -363,10 +415,11 @@ pub fn run() {
             // running in the tray when the window is closed (see CloseRequested
             // below), so the tray is the way back in — and "Quit" is the only
             // path that actually exits (besides ⌘Q).
-            // Starts with an empty Workspaces submenu; the frontend repopulates
-            // it via `tray_update` once the saved-connection list loads (and on
-            // every change after).
-            let menu = build_tray_menu(app, &[])?;
+            // Starts with an empty Workspaces submenu and English labels; the
+            // frontend repopulates it via `tray_update` once the saved-connection
+            // list loads (and on every change after, including a language
+            // switch), which is when the labels become localized.
+            let menu = build_tray_menu(app, &[], &TrayLabels::default())?;
             let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?;
             TrayIconBuilder::with_id("main-tray")
                 .icon(tray_icon)

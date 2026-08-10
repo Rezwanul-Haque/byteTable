@@ -27,6 +27,7 @@ import { ENV_COLOR } from "../../../shared/ui/envColors";
 import { SidebarObjectGroups } from "../../db_objects/components/SidebarObjectGroups";
 import { isDiffable } from "../../schema_diff/handles";
 import { useToast } from "../../../shared/ui/toastContext";
+import { LanguageChip } from "../../../shared/ui/LanguageChip";
 import { normalizeEnv } from "../../../shared/types";
 import {
   connectionDetail,
@@ -403,6 +404,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
             <span className="conn-eng">{ENGINE_LABEL[engine] ?? engine}</span>
           </div>
         </div>
+        <LanguageChip />
         <IconBtn
           icon="power_settings_new"
           title="Close workspace"

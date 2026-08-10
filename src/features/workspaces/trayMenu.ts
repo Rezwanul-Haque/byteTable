@@ -15,12 +15,19 @@ import { useEffect } from "react";
 
 import { invoke } from "@tauri-apps/api/core";
 
+import { onChange, t } from "../../shared/i18n";
 import { useConnectionsStore } from "../connections/state";
 import { useConnectAndOpen } from "./connect";
 import { useWorkspacesStore } from "./state";
 
 /** The payload shape `tray_update` expects (matches the Rust `TrayWorkspace`). */
 type TrayItem = { id: string; name: string; open: boolean };
+
+/** The tray's own labels (matches the Rust `TrayLabels`). */
+type TrayLabels = { show: string; workspaces: string; noConnections: string; quit: string };
+
+/** The product name — interpolated, never translated. */
+const APP_NAME = "ByteTable";
 
 /** Saved connections + an `open` flag (a workspace is open for that id). */
 function currentItems(): TrayItem[] {
@@ -30,29 +37,45 @@ function currentItems(): TrayItem[] {
   return savedConnections.map((c) => ({ id: c.id, name: c.name, open: openIds.has(c.id) }));
 }
 
+/** The tray menu's labels in the active language (M31). The tray is built in
+ *  Rust, where the i18n layer does not reach, so they travel with the list. */
+function currentLabels(): TrayLabels {
+  return {
+    show: t("tray.show", { app: APP_NAME }),
+    workspaces: t("tray.workspaces"),
+    noConnections: t("tray.noConnections"),
+    quit: t("tray.quit", { app: APP_NAME }),
+  };
+}
+
 export function useTrayWorkspaces(): void {
   const connectAndOpen = useConnectAndOpen();
 
   // PUSH: keep the native submenu in sync with the stores. The workspaces store
   // also changes on every editor keystroke (buffer text lives there), so dedupe
   // on a signature of just the tray-relevant fields to avoid spamming `invoke`.
+  // The labels are part of that signature, so a language switch (which changes
+  // no store) still rebuilds the tray.
   useEffect(() => {
     let lastSig = "";
     const push = () => {
       const items = currentItems();
-      const sig = JSON.stringify(items);
+      const labels = currentLabels();
+      const sig = JSON.stringify([items, labels]);
       if (sig === lastSig) return;
       lastSig = sig;
-      void invoke("tray_update", { workspaces: items }).catch(() => {
+      void invoke("tray_update", { workspaces: items, labels }).catch(() => {
         /* no Tauri / tray unavailable — nothing to update */
       });
     };
     push();
     const unsubConns = useConnectionsStore.subscribe(push);
     const unsubWs = useWorkspacesStore.subscribe(push);
+    const unsubLocale = onChange(push);
     return () => {
       unsubConns();
       unsubWs();
+      unsubLocale();
     };
   }, []);
 

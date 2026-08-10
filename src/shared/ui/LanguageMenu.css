@@ -1,0 +1,116 @@
+/* The interface-language list (M31). Shared by the Settings pane's picker and
+   the sidebar's language chip, so it lives here rather than in SettingsModal.css
+   — the chip renders in workspaces where the settings modal is not mounted.
+
+   The surface carries no positioning: each caller anchors it, because one hangs
+   under a trigger inside a scrolling pane and the other is portaled to <body>
+   at the chip's screen rect. */
+
+.lang-pop {
+  z-index: 40;
+  min-width: 268px;
+  /* Headroom for ~10 rows: the eight shipped locales must never scroll, and
+     they nearly did at 250px — a row grows by a couple of px once a script font
+     (Noto Bengali / JP / SC / TC / Arabic) loads, which is exactly when the
+     list is being used. The cap still applies, so locale nine starts scrolling.
+     Also bounded by the viewport, since the chip's menu is fixed-positioned and
+     can open near the bottom of a short window. */
+  max-height: min(340px, 70vh);
+  overflow: auto;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  padding: 5px;
+}
+
+/* Anchored under a trigger (Settings → Language & region). It hangs off the
+   trigger's inline END: the control sits flush against the pane's right edge
+   and `.set-pane` clips overflow-x, so a popover anchored at the start would be
+   cut off. Logical insets, so RTL mirrors it to grow the other way. */
+.lang-pop.lang-pop-anchored {
+  position: absolute;
+  inset-inline-end: 0;
+  inset-inline-start: auto;
+  top: calc(100% + 4px);
+}
+
+/* Portaled to <body> at a screen rect (the sidebar chip). Fixed so no ancestor
+   can clip it or win the stacking order — the sidebar sits before the main
+   column in the DOM, so an absolutely-positioned menu would paint underneath. */
+.lang-pop.lang-pop-floating {
+  position: fixed;
+  z-index: 300;
+}
+
+.lang-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.lang-item:hover,
+.lang-item:focus-visible {
+  background: var(--bg3);
+  color: var(--text);
+  outline: none;
+}
+.lang-item.active {
+  color: var(--accent);
+}
+.lang-item-endonym {
+  font-weight: 600;
+}
+.lang-item-name {
+  color: var(--text-faint);
+  font-size: 10.5px;
+}
+
+/* Shown on RTL locales, in the list and on the Settings trigger. */
+.lang-rtl-tag {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.06em;
+  color: var(--warn);
+  background: color-mix(in oklab, var(--warn) 14%, transparent);
+  border-radius: 99px;
+  padding: 1px 6px;
+}
+
+/* Coverage bar. Its markup is commented out in LanguageMenu.tsx until the
+   percentage is honest (only the shell is keyed today, so "100% translated"
+   would overstate it) — these rules stay so it can be switched back on. */
+.lang-cov {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-inline-start: auto;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+.lang-cov-bar {
+  display: block;
+  width: 34px;
+  height: 3px;
+  background: var(--bg3);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.lang-cov-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+/* Invisible click-catcher behind a portaled menu (same shape as .tabmenu-overlay). */
+.lang-pop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 299;
+}

@@ -7,7 +7,10 @@
 // fresh profile with no cache, DEFAULTS apply, which matches tokens.css, so the
 // first frame is correct either way.
 
+import { initialSettings } from "./api";
 import { applySettings } from "./apply";
 import { readCachedSettings } from "./cache";
 
-applySettings(readCachedSettings());
+// M31: the language is applied here too, so the first painted frame is already
+// in the right language and direction — no flash of English, no layout flip.
+applySettings(readCachedSettings() ?? initialSettings());

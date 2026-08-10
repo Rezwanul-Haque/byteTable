@@ -17,6 +17,7 @@ import { platform } from "@tauri-apps/plugin-os";
 import { invoke } from "@tauri-apps/api/core";
 
 import { abbreviatePath, tildify, useHomeDir } from "../homeDir";
+import { useT } from "../i18n/useT";
 import { useSettingsStore } from "../../features/settings/state";
 import { selectShowConnect, useWorkspacesStore } from "../../features/workspaces/state";
 import { connectionDetail } from "../../features/connections/api";
@@ -40,6 +41,9 @@ function resolveMode(): Mode {
 
 export function TitleBar({ ctx }: { ctx: TitleBarCtx }) {
   const { settings, setSetting } = useSettingsStore();
+  // buildMenus reads its labels through t() at call time, so subscribe to the
+  // locale: a language switch has to relabel the menu bar in place.
+  useT();
   const home = useHomeDir();
   const mode = resolveMode();
   const isMac = mode === "mac-native" || mode === "mac-frameless";

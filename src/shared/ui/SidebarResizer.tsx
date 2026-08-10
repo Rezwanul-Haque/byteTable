@@ -32,9 +32,12 @@ export function SidebarResizer() {
     const root = document.documentElement;
     const startX = e.clientX;
     const startW = parseFloat(getComputedStyle(root).getPropertyValue("--sidebar-w")) || 248;
-    // When the sidebar is on the right, dragging left (negative dx) widens it,
-    // so the delta sign flips.
-    const rightSide = document.body.classList.contains("bt-sidebar-right");
+    // When the sidebar sits on the right, dragging left (negative dx) widens
+    // it, so the delta sign flips. An RTL locale mirrors the grid and flips it
+    // again — the two cancel out, hence the XOR.
+    const rightSide =
+      document.body.classList.contains("bt-sidebar-right") !==
+      document.body.classList.contains("bt-rtl");
 
     const onMove = (ev: globalThis.MouseEvent) => {
       const dx = (ev.clientX - startX) * (rightSide ? -1 : 1);

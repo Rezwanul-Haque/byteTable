@@ -12,8 +12,18 @@
 //     query tab surface (see btCmd.ts). Gated on that surface being present.
 //  3. `execEdit(cmd)` → document.execCommand against whatever is focused,
 //     failing silently if nothing is.
+//
+// Every label — the five menus and all their items — is localized (M31
+// `menu.*`). Because they are read at build time, the title bar re-runs this on
+// a locale change (it subscribes through useT). Two things stay untranslated by
+// design: the product name, interpolated as `{app}` so it can sit anywhere in
+// the sentence, and the shortcut hints (⌘T), which are key names.
 
+import { t } from "../i18n";
 import { emitCmd } from "./btCmd";
+
+/** The product name. Interpolated into labels rather than translated. */
+const APP_NAME = "ByteTable";
 
 /** App-level handlers the title bar dispatches to (App.tsx owns the state). */
 export interface TitleBarCtx {
@@ -72,127 +82,170 @@ export function buildMenus(m: MenuCtx): Menu[] {
 
   return [
     {
-      label: "File",
+      label: t("menu.file"),
       items: [
-        { id: "new-connection", label: "New Connection…", enabled: true, run: ctx.onNewConnection },
+        {
+          id: "new-connection",
+          label: t("menu.file.newConnection"),
+          enabled: true,
+          run: ctx.onNewConnection,
+        },
         {
           id: "new-query",
-          label: "New Query Tab",
+          label: t("menu.file.newQuery"),
           hint: "⌘T",
           enabled: isSql,
           run: () => emitCmd("new-query"),
         },
         {
           id: "open-sql-file",
-          label: "Open .sql File",
+          label: t("menu.file.openSqlFile"),
           enabled: isSql,
           run: () => emitCmd("open-sql-file"),
         },
         "—",
         {
           id: "close-workspace",
-          label: "Close Workspace",
+          label: t("menu.file.closeWorkspace"),
           enabled: hasWs,
           run: ctx.onCloseWorkspace,
         },
         "—",
-        { id: "settings", label: "Settings", hint: "⌘,", enabled: true, run: ctx.onSettings },
-        { id: "quit", label: "Close ByteTable", enabled: true, run: ctx.onQuit },
+        {
+          id: "settings",
+          label: t("menu.file.settings"),
+          hint: "⌘,",
+          enabled: true,
+          run: ctx.onSettings,
+        },
+        {
+          id: "quit",
+          label: t("menu.file.quit", { app: APP_NAME }),
+          enabled: true,
+          run: ctx.onQuit,
+        },
       ],
     },
     {
-      label: "Edit",
+      label: t("menu.edit"),
       items: [
-        { id: "undo", label: "Undo", enabled: true, run: () => execEdit("undo") },
-        { id: "redo", label: "Redo", enabled: true, run: () => execEdit("redo") },
+        { id: "undo", label: t("menu.edit.undo"), enabled: true, run: () => execEdit("undo") },
+        { id: "redo", label: t("menu.edit.redo"), enabled: true, run: () => execEdit("redo") },
         "—",
-        { id: "cut", label: "Cut", enabled: true, run: () => execEdit("cut") },
-        { id: "copy", label: "Copy", enabled: true, run: () => execEdit("copy") },
-        { id: "paste", label: "Paste", enabled: true, run: () => execEdit("paste") },
+        { id: "cut", label: t("menu.edit.cut"), enabled: true, run: () => execEdit("cut") },
+        { id: "copy", label: t("menu.edit.copy"), enabled: true, run: () => execEdit("copy") },
+        { id: "paste", label: t("menu.edit.paste"), enabled: true, run: () => execEdit("paste") },
       ],
     },
     {
-      label: "View",
+      label: t("menu.view"),
       items: [
         {
           id: "palette",
-          label: "Command Palette",
+          label: t("menu.view.palette"),
           hint: "⌘K",
           enabled: hasPalette,
           run: () => emitCmd("palette"),
         },
         {
           id: "toggle-terminal",
-          label: "Toggle Terminal",
+          label: t("menu.view.terminal"),
           hint: "Ctrl+`",
           enabled: hasWs,
           run: () => emitCmd("toggle-terminal"),
         },
-        { id: "schema-map", label: "Schema Map", enabled: isSql, run: () => emitCmd("schema-map") },
+        {
+          id: "schema-map",
+          label: t("menu.view.schemaMap"),
+          enabled: isSql,
+          run: () => emitCmd("schema-map"),
+        },
         {
           id: "processes",
-          label: "Running Processes",
+          label: t("menu.view.processes"),
           hint: "Ctrl+Shift+P",
           enabled: hasProcesses,
           run: () => emitCmd("processes"),
         },
         "—",
-        { id: "zoom-in", label: "Zoom In", hint: "⌘+", enabled: true, run: () => ctx.onZoom("in") },
+        {
+          id: "zoom-in",
+          label: t("menu.view.zoomIn"),
+          hint: "⌘+",
+          enabled: true,
+          run: () => ctx.onZoom("in"),
+        },
         {
           id: "zoom-out",
-          label: "Zoom Out",
+          label: t("menu.view.zoomOut"),
           hint: "⌘-",
           enabled: true,
           run: () => ctx.onZoom("out"),
         },
         {
           id: "actual-size",
-          label: "Actual Size",
+          label: t("menu.view.actualSize"),
           enabled: zoomChanged,
           run: () => ctx.onZoom("reset"),
         },
       ],
     },
     {
-      label: "Query",
+      label: t("menu.query"),
       items: [
-        { id: "run", label: "Run", hint: "⌘↩", enabled: isSql, run: () => emitCmd("run") },
+        {
+          id: "run",
+          label: t("menu.query.run"),
+          hint: "⌘↩",
+          enabled: isSql,
+          run: () => emitCmd("run"),
+        },
         {
           id: "format",
-          label: "Format Query",
+          label: t("menu.query.format"),
           hint: "⇧⌥F",
           enabled: isSql,
           run: () => emitCmd("format"),
         },
-        { id: "explain", label: "Explain Plan", enabled: isSql, run: () => emitCmd("explain") },
+        {
+          id: "explain",
+          label: t("menu.query.explain"),
+          enabled: isSql,
+          run: () => emitCmd("explain"),
+        },
         "—",
         {
           id: "save-query",
-          label: "Save Query",
+          label: t("menu.query.save"),
           hint: "⌘S",
           enabled: isSql,
           run: () => emitCmd("save-query"),
         },
         {
           id: "query-history",
-          label: "Query History",
+          label: t("menu.query.history"),
           enabled: isSql,
           run: () => emitCmd("query-history"),
         },
       ],
     },
     {
-      label: "Help",
+      label: t("menu.help"),
       items: [
-        { id: "shortcuts", label: "Keyboard Shortcuts", enabled: true, run: ctx.onShortcuts },
+        { id: "shortcuts", label: t("menu.help.shortcuts"), enabled: true, run: ctx.onShortcuts },
         "—",
         {
           id: "check-updates",
-          label: "Check for Updates",
+          label: t("menu.help.checkUpdates"),
           enabled: true,
           run: ctx.onCheckUpdates,
         },
-        { id: "about", label: "About ByteTable", enabled: true, run: ctx.onAbout },
+        {
+          id: "about",
+          label: t("menu.help.about", { app: APP_NAME }),
+          enabled: true,
+          run: ctx.onAbout,
+        },
       ],
     },
   ];

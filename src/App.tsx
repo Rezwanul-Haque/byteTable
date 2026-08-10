@@ -98,6 +98,11 @@ export function App() {
   const closeWorkspace = useWorkspacesStore((state) => state.closeWorkspace);
   const settings = useSettingsStore((state) => state.settings);
   const setSetting = useSettingsStore((state) => state.setSetting);
+  // Settings-modal visibility + which tab it lands on. In the store, not local
+  // state, so surfaces deep in the tree can open it on a specific tab (M31).
+  const settingsTab = useSettingsStore((state) => state.settingsTab);
+  const openSettings = useSettingsStore((state) => state.openSettings);
+  const closeSettings = useSettingsStore((state) => state.closeSettings);
   // Prototype app.jsx `showConnect`: the rail's "+" tile shows the connect
   // screen without dropping the (still-open) active workspace.
   const showConnect = useWorkspacesStore(selectShowConnect);
@@ -112,7 +117,6 @@ export function App() {
   const [galleryOpen, setGalleryOpen] = useState(false);
 
   // M20 Settings modal: opened from the rail gear or the ⌘,/Ctrl+, shortcut.
-  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // In-app updater (M-updater): check GitHub releases once on launch; surface
   // the modal when a newer signed build exists and the user hasn't skipped it.
@@ -211,7 +215,7 @@ export function App() {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key === ",") {
         event.preventDefault();
-        setSettingsOpen((open) => !open);
+        useSettingsStore.getState().toggleSettings();
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -244,7 +248,7 @@ export function App() {
     },
     onAbout: () => setAboutOpen(true),
     onShortcuts: () => setShortcutsOpen(true),
-    onSettings: () => setSettingsOpen(true),
+    onSettings: () => openSettings(),
     onQuit: () => setQuitConfirmOpen(true),
     onZoom: (dir) => {
       const cur = settings.fontSize;
@@ -271,7 +275,7 @@ export function App() {
             updateSkipped={updateSkipped}
             onUpdate={() => setUpdateModalOpen(true)}
             onAbout={() => setAboutOpen(true)}
-            onSettings={() => setSettingsOpen(true)}
+            onSettings={() => openSettings()}
             onReportIssue={() => setBugOpen(true)}
             version={version}
           />
@@ -313,7 +317,7 @@ export function App() {
         </div>
       </div>
 
-      {settingsOpen ? <SettingsModal onClose={() => setSettingsOpen(false)} /> : null}
+      {settingsTab ? <SettingsModal tab={settingsTab} onClose={closeSettings} /> : null}
 
       {shortcutsOpen ? <KeyboardShortcutsModal onClose={() => setShortcutsOpen(false)} /> : null}
 

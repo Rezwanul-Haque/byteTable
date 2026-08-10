@@ -509,3 +509,112 @@
   margin-top: 1px;
   color: var(--accent);
 }
+
+/* ---- Language & region (M31) ---- */
+
+.lang-picker {
+  position: relative;
+}
+.lang-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 230px;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--text);
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.lang-trigger:hover,
+.lang-trigger:focus-visible {
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+  outline: none;
+}
+.lang-endonym {
+  font-weight: 600;
+}
+.lang-name {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+/* `.lang-rtl-tag`, `.lang-pop*`, `.lang-item*` and `.lang-cov*` moved to
+   shared/ui/LanguageMenu.css — the sidebar's language chip shows the same list
+   in workspaces where this stylesheet is not loaded. */
+
+.lang-auto-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--accent);
+}
+.lang-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 9px 11px;
+  margin: 4px 0 10px;
+}
+.lang-note.subtle {
+  color: var(--text-faint);
+  background: none;
+  border-style: dashed;
+}
+/* The contribute note is a <button> that opens the translator's guide in the
+   OS browser, so it has to read as pressable rather than as prose. */
+.lang-note-link {
+  width: 100%;
+  text-align: start;
+  font: inherit;
+  cursor: pointer;
+  transition:
+    color 0.12s,
+    border-color 0.12s;
+}
+.lang-note-link:hover,
+.lang-note-link:focus-visible {
+  color: var(--text-dim);
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+  outline: none;
+}
+.lang-note-link .lang-note-ext {
+  margin-inline-start: auto;
+  color: var(--text-faint);
+}
+.lang-note-link:hover .lang-note-ext {
+  color: var(--accent);
+}
+.lang-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.lang-pv-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  padding: 3px 0;
+}
+.lang-pv-row b {
+  margin-inline-start: auto;
+  color: var(--text);
+  font-weight: 500;
+  text-align: end;
+}

@@ -23,6 +23,7 @@ import { EngineBadge } from "../../../../shared/ui/EngineBadge";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { useToast } from "../../../../shared/ui/toastContext";
+import { LanguageChip } from "../../../../shared/ui/LanguageChip";
 import type { KvDbInfo } from "../../../connections/api";
 import {
   kvCommand,
@@ -516,6 +517,7 @@ export function RedisSidebar(props: RedisSidebarProps) {
             {detail}
           </div>
         </div>
+        <LanguageChip />
         <IconBtn
           icon="power_settings_new"
           title="Close workspace"

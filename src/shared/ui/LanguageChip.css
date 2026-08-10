@@ -1,0 +1,40 @@
+/* Interface-language chip in the sidebar connection header (M31).
+   Built as a sibling of the close-workspace button it sits next to: the same
+   26px box, 6px radius and rest/hover structure as `.icon-btn.danger`
+   (toned border + toned label at rest, tinted fill on hover), in the neutral
+   tone instead of red. It carries a code rather than a glyph, so it is the one
+   button in that row that is wider than it is tall. */
+
+.lang-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  padding: 0 7px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--text-faint) 45%, transparent);
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s,
+    border-color 0.12s;
+  flex: none;
+}
+
+.lang-chip:hover,
+.lang-chip:focus-visible,
+/* Held in the hover state while its menu is open, so the chip reads as the
+   thing the dropdown belongs to (same idea as .mono-picker-btn.open). */
+.lang-chip.open {
+  background: var(--bg3);
+  color: var(--text);
+  border-color: var(--text-faint);
+  /* Own border treatment, never the UA's blue ring (same rule as .icon-btn). */
+  outline: none;
+}

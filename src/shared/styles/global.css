@@ -143,3 +143,77 @@ body:not(.bt-liga) {
 
 /* Row-hover tint in data grids is opt-out via .bt-no-rowhover; the grid
    surfaces read this hook (20.5). */
+
+/*
+ * Right-to-left (M31 Task 5). `html[dir]` drives everything — flex rows, grid
+ * columns and logical properties mirror themselves — so this block only has to
+ * fix the PHYSICAL properties that don't: divider borders, edge-anchored
+ * drawers, and the islands that must stay left-to-right.
+ *
+ * `body.bt-rtl` carries the same state for JS-side checks (SidebarResizer).
+ * Prefer logical properties (margin-inline-start, inset-inline, text-align:
+ * end) in new work rather than growing this block. The design's Neo4j
+ * inspector / Typesense facet + drawer rules arrive with those engines.
+ */
+
+/* Shell dividers. With dir=rtl the .workspace grid puts the sidebar column on
+   the right, so its divider moves to the inner (left) edge — and flips back
+   again when the sidebar-on-right setting is also on. */
+[dir="rtl"] .sidebar,
+[dir="rtl"] .redis-sidebar,
+[dir="rtl"] .ddb-sidebar {
+  border-right: none;
+  border-left: 1px solid var(--border);
+}
+[dir="rtl"] body.bt-sidebar-right .sidebar,
+[dir="rtl"] body.bt-sidebar-right .redis-sidebar,
+[dir="rtl"] body.bt-sidebar-right .ddb-sidebar {
+  border-left: none;
+  border-right: 1px solid var(--border);
+}
+[dir="rtl"] .set-nav {
+  border-right: none;
+  border-left: 1px solid var(--border);
+}
+
+/* Edge-anchored drawers slide in from the other side, shadow included. */
+[dir="rtl"] .ri-drawer,
+[dir="rtl"] .sq-drawer {
+  right: auto;
+  left: 0;
+  border-left: none;
+  border-right: 1px solid var(--border);
+  box-shadow: 18px 0 48px rgba(0, 0, 0, 0.45);
+  transform: translateX(-102%);
+}
+[dir="rtl"] .ri-drawer.open,
+[dir="rtl"] .sq-drawer.open {
+  transform: translateX(0);
+}
+
+/* Directional affordances only — pager chevrons, tab scrollers, tree
+   disclosure (tagged `.msym-dir` by the Icon component). Every other glyph
+   keeps its shape, and the graph canvas, charts and SQL editor gutter are
+   never mirrored. */
+[dir="rtl"] .msym-dir {
+  transform: scaleX(-1);
+}
+
+/* LTR islands: SQL, JSON, identifiers and cell values are data, not copy, and
+   must never be reordered by the paragraph direction. `unicode-bidi: isolate`
+   keeps them from bleeding into the surrounding RTL run either. */
+[dir="rtl"] pre,
+[dir="rtl"] code,
+[dir="rtl"] textarea,
+[dir="rtl"] input,
+[dir="rtl"] .mg-mono,
+[dir="rtl"] .dg-td,
+[dir="rtl"] .grid-cell,
+[dir="rtl"] .structure-table td,
+[dir="rtl"] .rcli-line,
+[dir="rtl"] .rcli-input,
+[dir="rtl"] .cm-editor {
+  direction: ltr;
+  text-align: left;
+  unicode-bidi: isolate;
+}

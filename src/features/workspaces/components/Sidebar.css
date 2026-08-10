@@ -131,10 +131,17 @@
   white-space: nowrap;
 }
 
+/* The popover sizes to its content, not to the trigger: since M28 added the
+   diff button the schema row's button is narrow enough that "Create schema"
+   (and a name + table count) no longer fits. It still starts at the trigger's
+   left edge and never spills past the sidebar's inner padding. */
 .schema-pop {
   position: absolute;
   left: 0;
-  right: 0;
+  right: auto;
+  width: max-content;
+  min-width: 100%;
+  max-width: calc(var(--sidebar-w, 248px) - 20px);
   top: calc(100% + 4px);
   z-index: 40;
   background: var(--bg2);
@@ -200,11 +207,16 @@
   flex: 1;
   /* React-port addition: buttons center text by default; divs didn't. */
   text-align: left;
+  /* Long schema names truncate rather than widen the popover past the sidebar. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .schema-pop-count {
   font-size: 10px;
   color: var(--text-faint);
+  flex: none;
 }
 
 /* React-port addition: the refresh IconBtn while re-introspecting — the

@@ -73,11 +73,8 @@
   font-family: var(--mono);
   word-break: break-all;
 }
-/* The keyspace popover must fit "Create keyspace…" — keyspace names are short, so
-   the default (selector-width) popover overflows. Widen it (scoped to Cassandra). */
-.cass-sidebar .schema-pop {
-  min-width: 210px;
-}
+/* The keyspace popover fits "Create keyspace…" via the shared `.schema-pop`
+   content sizing (Sidebar.css) — no Cassandra-specific min-width needed. */
 .cass-sidebar .schema-pop-item {
   white-space: nowrap;
 }

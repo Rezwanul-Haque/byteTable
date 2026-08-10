@@ -20,6 +20,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { isAppErrorPayload } from "../../../../shared/api/error";
 import { Icon } from "../../../../shared/ui/Icon";
 import { BuiltByCredit } from "../../../../shared/ui/BuiltByCredit";
+import { ResourceMeter } from "../../../app_metrics/ResourceMeter";
 import { SidebarResizer } from "../../../../shared/ui/SidebarResizer";
 import { ENV_COLOR } from "../../../../shared/ui/envColors";
 import { useTabMenu } from "../../../../shared/ui/useTabMenu";
@@ -516,6 +517,7 @@ export function TypesenseWorkspace({ workspace }: { workspace: Workspace }) {
           {nodes.length || 1} {(nodes.length || 1) === 1 ? "node" : "nodes"} ·{" "}
           {(stats?.healthy ?? nodes.every((n) => n.healthy)) ? "healthy" : "degraded"}
         </span>
+        <ResourceMeter />
         <BuiltByCredit className="status-dim" />
       </div>
     </div>

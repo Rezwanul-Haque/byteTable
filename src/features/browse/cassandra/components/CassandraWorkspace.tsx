@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { isAppErrorPayload } from "../../../../shared/api/error";
 import { ENV_COLOR } from "../../../../shared/ui/envColors";
 import { BuiltByCredit } from "../../../../shared/ui/BuiltByCredit";
+import { ResourceMeter } from "../../../app_metrics/ResourceMeter";
 import { Icon } from "../../../../shared/ui/Icon";
 import { useToast } from "../../../../shared/ui/toastContext";
 import { useTabMenu } from "../../../../shared/ui/useTabMenu";
@@ -444,6 +445,7 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
         </span>
         <div style={{ flex: 1 }} />
         {activeTab?.kind === "table" ? <span className="status-dim">{activeTab.table}</span> : null}
+        <ResourceMeter />
         <BuiltByCredit className="status-dim" />
       </div>
 

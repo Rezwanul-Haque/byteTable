@@ -6,6 +6,7 @@
 
 import { EnvTag } from "../../../../shared/ui/EnvTag";
 import { BuiltByCredit } from "../../../../shared/ui/BuiltByCredit";
+import { ResourceMeter } from "../../../app_metrics/ResourceMeter";
 import { Icon } from "../../../../shared/ui/Icon";
 import type { Env } from "../../../../shared/types";
 import type { KeyType } from "../api";
@@ -78,6 +79,7 @@ export function RedisStatusBar(props: RedisStatusBarProps) {
       >
         <Icon name="monitor_heart" size={13} /> clients
       </button>
+      <ResourceMeter />
       <BuiltByCredit className="status-dim" />
       <span className="status-dim">RESP{respVersion}</span>
     </div>

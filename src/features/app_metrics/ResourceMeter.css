@@ -1,0 +1,34 @@
+/* Status-bar resource chip (M33). Lives inside the 28px status bar, so it
+   inherits .status-dim's size/colour and adds only what the numbers need. */
+
+.status-metrics {
+  display: inline-flex;
+  align-items: center;
+  /* Wider than the 4px inside a pair, narrower than the bar's own 10px between
+     items: the CPU and memory readings then read as two values of one chip
+     rather than as two unrelated status items. */
+  gap: 7px;
+  /* The values change every 2s. Tabular figures keep each digit the same
+     width, so a 9→10 tick doesn't shove the neighbouring items sideways. */
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+}
+
+/* One icon + its number. The tight gap binds the glyph to the value it
+   labels — without it, even spacing would leave the icons floating between
+   two numbers and belonging to neither. */
+.status-metric {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Coverage caveat (macOS: the webview process can't be attributed, so this is
+   the main process only). A dotted underline is the standard "there is more in
+   the tooltip" affordance — enough to invite a hover without spending any of
+   the bar's very limited horizontal space on prose. */
+.status-metrics.partial {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--border);
+}

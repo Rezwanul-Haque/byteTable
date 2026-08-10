@@ -14,6 +14,7 @@
 // then it shows "— rows".
 
 import { connectionIsTunneled, connectionUser, tunnelTitle } from "../../connections/api";
+import { ResourceMeter } from "../../app_metrics/ResourceMeter";
 import { EnvTag } from "../../../shared/ui/EnvTag";
 import { BuiltByCredit } from "../../../shared/ui/BuiltByCredit";
 import { Icon } from "../../../shared/ui/Icon";
@@ -85,6 +86,7 @@ export function StatusBar({ workspace }: { workspace: Workspace }) {
       >
         <Icon name="monitor_heart" size={13} /> processes
       </button>
+      <ResourceMeter />
       <BuiltByCredit className="status-dim" />
       <span className="status-dim">UTF-8</span>
     </div>

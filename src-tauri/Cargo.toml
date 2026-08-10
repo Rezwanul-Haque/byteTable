@@ -186,6 +186,16 @@ reqwest = { version = "0.12", default-features = false, features = [
     "gzip",
 ] }
 tauri-plugin-os = "2"
+# ByteTable's own CPU + resident memory for the status-bar readout (M33).
+# `default-features = false` + `system` drops the disk / network / component /
+# user collectors we never read — the footer shows two numbers about this
+# process — leaving libc (plus a couple of Apple framework bindings on macOS)
+# and no system dependency, matching the tree's pure-Rust choices elsewhere.
+#
+# Held at the 0.38 line on purpose: 0.39 raised the MSRV to rustc 1.95, well
+# past this package's 1.89. 0.38.4's MSRV is 1.88, the newest line that still
+# builds on the pinned toolchain.
+sysinfo = { version = "0.38", default-features = false, features = ["system"] }
 
 [dev-dependencies]
 tempfile = "3"

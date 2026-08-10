@@ -13,6 +13,7 @@ import { ENV_COLOR } from "../../../../shared/ui/envColors";
 import { BuiltByCredit } from "../../../../shared/ui/BuiltByCredit";
 import { Icon } from "../../../../shared/ui/Icon";
 import { useBtCmd } from "../../../../shared/ui/btCmd";
+import { ResourceMeter } from "../../../app_metrics/ResourceMeter";
 import { ProcessesTab } from "../../../processes/ProcessesTab";
 import { useTabMenu } from "../../../../shared/ui/useTabMenu";
 import { connectionDetail } from "../../../connections/api";
@@ -457,6 +458,7 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
         >
           <Icon name="monitor_heart" size={13} /> processes
         </button>
+        <ResourceMeter />
         <BuiltByCredit className="status-dim" />
       </div>
 

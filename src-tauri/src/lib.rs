@@ -416,6 +416,11 @@ pub fn run() {
             // generation, keyed by the renderer's run id.
             app.manage(features::generate::commands::GenerateState::default());
 
+            // App-metrics slice (M33): the sampler behind the status-bar CPU /
+            // memory readout. Managed rather than built per call because CPU
+            // usage is a delta and needs the previous sample to exist.
+            app.manage(features::app_metrics::commands::AppMetricsState::default());
+
             // System tray: persistent ByteTable icon. Left-click toggles the
             // window; right-click opens the menu (Show / Quit). The app keeps
             // running in the tray when the window is closed (see CloseRequested
@@ -514,6 +519,7 @@ pub fn run() {
             features::structure::commands::alter_apply,
             features::processes::commands::process_list,
             features::processes::commands::process_kill,
+            features::app_metrics::commands::app_metrics_read,
             features::saved_queries::commands::saved_query_list,
             features::saved_queries::commands::saved_query_save,
             features::saved_queries::commands::saved_query_delete,

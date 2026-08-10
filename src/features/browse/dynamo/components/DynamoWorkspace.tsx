@@ -13,6 +13,7 @@ import { TerminalPanel } from "../../../console/TerminalPanel";
 import { shellLabel, usePanelStore } from "../../../console/state";
 import { ENV_COLOR } from "../../../../shared/ui/envColors";
 import { BuiltByCredit } from "../../../../shared/ui/BuiltByCredit";
+import { ResourceMeter } from "../../../app_metrics/ResourceMeter";
 import { Icon } from "../../../../shared/ui/Icon";
 import { useTabMenu } from "../../../../shared/ui/useTabMenu";
 import { useWorkspacesStore } from "../../../workspaces/state";
@@ -395,6 +396,7 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
             {descOf(activeTab.table)?.itemCount.toLocaleString()} items
           </span>
         ) : null}
+        <ResourceMeter className="ddb-status-dim" />
         <BuiltByCredit className="ddb-status-dim" />
       </div>
 

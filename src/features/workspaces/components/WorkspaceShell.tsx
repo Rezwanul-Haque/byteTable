@@ -20,6 +20,7 @@ import { PROC_SOURCES } from "../../processes/api";
 import { useWorkspacesStore } from "../state";
 import { useBtCmd } from "../../../shared/ui/btCmd";
 import type { Workspace } from "../types";
+import { homeSchema } from "../types";
 
 export function WorkspaceShell({ workspace }: { workspace: Workspace }) {
   const openSqlTab = useWorkspacesStore((state) => state.openSqlTab);
@@ -35,12 +36,15 @@ export function WorkspaceShell({ workspace }: { workspace: Workspace }) {
   useBtCmd("palette", () => setPaletteOpen(true));
   useBtCmd("new-query", () => openSqlTab());
   useBtCmd("toggle-terminal", () => togglePanel(workspace.id, shellLabel(workspace.saved.engine)));
-  useBtCmd("schema-map", () => {
-    const schema = workspace.schemas[0]?.name;
-    if (schema) openMapTab(schema);
-  });
+  // The schema this workspace defaults to (M32: a sub-workspace's own schema).
+  // Derived once as a STRING so the key-handler effect below depends on a
+  // stable primitive rather than the `workspace` object, which changes identity
+  // on every tab edit and would re-bind the listener each time.
+  const home = homeSchema(workspace) ?? "main";
+
+  useBtCmd("schema-map", () => openMapTab(home));
   useBtCmd("processes", () => {
-    openProcessesTab(workspace.schemas[0]?.name ?? "main");
+    openProcessesTab(home);
   });
 
   // §3.12: ⌘/Ctrl+K toggles the palette, ⌘/Ctrl+T opens a new SQL tab.
@@ -62,7 +66,7 @@ export function WorkspaceShell({ workspace }: { workspace: Workspace }) {
       // server process list, matching the tab-bar toggle's gating.
       if (event.shiftKey && key === "p" && workspace.saved.engine in PROC_SOURCES) {
         event.preventDefault();
-        openProcessesTab(workspace.schemas[0]?.name ?? "main");
+        openProcessesTab(home);
         return;
       }
       if (key === "k") {
@@ -90,7 +94,7 @@ export function WorkspaceShell({ workspace }: { workspace: Workspace }) {
     openProcessesTab,
     workspace.id,
     workspace.saved.engine,
-    workspace.schemas,
+    home,
     workspace.ui.activeTabId,
   ]);
 

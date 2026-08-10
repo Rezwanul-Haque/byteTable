@@ -20,6 +20,7 @@ import { ObjectViewer } from "../../db_objects/components/ObjectViewer";
 import { ObjectExplorer } from "../../db_objects/components/ObjectExplorer";
 import { useWorkspacesStore } from "../state";
 import type { Tab, Workspace } from "../types";
+import { homeSchema } from "../types";
 import { SqlEditorTab } from "./SqlEditorTab";
 import { TabBar } from "./TabBar";
 import { TableTab } from "./TableTab";
@@ -101,7 +102,7 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
 
   // Default schema for tab-title shortening (drop schema prefix on the
   // connection's first schema — SQLite: "main").
-  const defaultSchema = workspace.schemas[0]?.name ?? "main";
+  const defaultSchema = homeSchema(workspace) ?? "main";
 
   // Schema the Processes tab opens against — the active tab's schema when it
   // has one, else the workspace default. Mirrors StatusBar's "processes" btn.

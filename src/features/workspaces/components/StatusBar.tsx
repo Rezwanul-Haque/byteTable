@@ -20,6 +20,7 @@ import { Icon } from "../../../shared/ui/Icon";
 import { rowCountLabel, useTabMetaStore } from "../tabMeta";
 import { useWorkspacesStore } from "../state";
 import type { Workspace } from "../types";
+import { homeSchema } from "../types";
 import "../../processes/ProcessList.css";
 import "./StatusBar.css";
 
@@ -37,7 +38,7 @@ export function StatusBar({ workspace }: { workspace: Workspace }) {
   const schemaName =
     activeTab?.kind === "table" || activeTab?.kind === "map"
       ? activeTab.schema
-      : (workspace.ui.schemaName ?? workspace.schemas[0]?.name ?? "main");
+      : (workspace.ui.schemaName ?? homeSchema(workspace) ?? "main");
 
   // Context info: a table tab shows "N rows" (+ timing once the grid
   // reports it). Other tab kinds (sql/map placeholders this milestone) show

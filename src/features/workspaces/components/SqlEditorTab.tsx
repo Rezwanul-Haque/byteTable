@@ -38,6 +38,7 @@ import { selectQueriesForConnection, useSavedQueriesStore } from "../../saved_qu
 import { useWorkspacesStore } from "../state";
 import { useBtCmd } from "../../../shared/ui/btCmd";
 import type { SqlHistoryEntry, SqlRun, Tab, Workspace } from "../types";
+import { homeSchema } from "../types";
 import { ExecutionMinimap, ExplainPanel } from "./explain";
 import { detectedTable } from "./explainClauses";
 import { formatSql } from "./formatSql";
@@ -239,7 +240,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
     (workspace.ui.schemaName !== undefined &&
     workspace.schemas.some((s) => s.name === workspace.ui.schemaName)
       ? workspace.ui.schemaName
-      : workspace.schemas[0]?.name) ?? "main";
+      : homeSchema(workspace)) ?? "main";
 
   // Engine-specific starter chips, resolved to the active schema.
   const snippets = snippetsFor(workspace.info.engine, schemaName);

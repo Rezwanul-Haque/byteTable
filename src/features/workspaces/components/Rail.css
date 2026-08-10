@@ -8,7 +8,9 @@
   width: 56px;
   flex: none;
   background: var(--bg1);
-  border-right: 1px solid var(--border);
+  /* Logical: the separator belongs on the edge facing the content, and the
+     rail swaps sides under RTL (`.app-frame` is a flex row). */
+  border-inline-end: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -50,8 +52,8 @@
   align-items: center;
   overflow-y: auto;
   scrollbar-width: none;
-  /* Horizontal padding gives the active tile's left indicator bar (::before at
-     left:-7px) and its glow room INSIDE this scroll box. `overflow-y: auto`
+  /* Horizontal padding gives the active tile's outer indicator bar (::before at
+     inset-inline-start:-7px) and its glow room INSIDE this scroll box. `overflow-y: auto`
      forces overflow-x to compute to `auto` (CSS spec: a non-visible value on one
      axis makes `visible` on the other compute to `auto`), which would otherwise
      CLIP anything overflowing the tile horizontally — this is why the indicator
@@ -101,9 +103,10 @@
 .ws-tile.active::before {
   content: "";
   position: absolute;
-  /* -7px keeps the bar just inside the rail's left edge (tile is centered 8px
-     from the edge), so it isn't clipped by the window border on Linux. */
-  left: -7px;
+  /* -7px keeps the bar just inside the rail's outer edge (tile is centered 8px
+     from it), so it isn't clipped by the window border on Linux. Logical, so it
+     stays on the outer edge when the rail moves to the right under RTL. */
+  inset-inline-start: -7px;
   top: 50%;
   transform: translateY(-50%);
   width: 3px;
@@ -118,7 +121,7 @@
 
 .ws-tile-engine {
   position: absolute;
-  right: -4px;
+  inset-inline-end: -4px;
   bottom: -4px;
   font-family: var(--mono);
   font-size: 7.5px;
@@ -141,7 +144,7 @@
 .ws-tile-opts {
   position: absolute;
   top: -4px;
-  right: -4px;
+  inset-inline-end: -4px;
   z-index: 4;
   width: 18px;
   height: 18px;
@@ -241,7 +244,7 @@
 .rail-update-dot {
   position: absolute;
   top: 4px;
-  right: 4px;
+  inset-inline-end: 4px;
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -433,7 +436,8 @@
 
 .ws-edit-pop {
   position: fixed;
-  left: 62px;
+  /* Opens alongside the rail, on whichever side the rail is on. */
+  inset-inline-start: 62px;
   z-index: 70;
   width: 224px;
   background: var(--bg2);
@@ -533,4 +537,136 @@
 
 .ws-edit-remove:hover {
   background: #e06c7522;
+}
+
+/* ---- Schema sub-workspaces (M32) — ported from ByteTable.html ------------ */
+
+/* A child tile is inset to make room for the spine, and pulled up 2px so
+   consecutive children read as one group under their parent. */
+.ws-child {
+  margin-top: -2px;
+  /* Logical, not `padding-left`: `.app-frame` is a flex row, so the rail moves
+     to the right-hand side under RTL and the spine has to follow it. */
+  padding-inline-start: 9px;
+}
+
+/* The connector spine: one 2px segment per child, with a 7px elbow at its foot.
+   The geometry is load-bearing and deliberately has NO last-child rule:
+
+   - `top: -24px` reaches far enough up that consecutive segments OVERLAP, so a
+     run of children reads as one continuous trunk;
+   - `bottom: 50%` stops at the tile's midpoint, which is where the elbow meets
+     it — so the last child cannot leave a trailing stub below itself, and no
+     `:has(+ :not(.ws-child))` selector or JS `ws-child-last` class is needed;
+   - the part that overshoots up into the parent tile is covered by `.ws-tile`
+     (z-index 2, opaque) sitting over the spine (z-index 0). */
+/* The tile sits ABOVE the spine and is opaque, which is what hides the part of
+   the spine that overshoots up into the parent tile. Without this the trunk
+   would be drawn across the parent. */
+.ws-tile {
+  z-index: 2;
+}
+
+.ws-spine {
+  position: absolute;
+  inset-inline-start: 3px;
+  top: -24px;
+  bottom: 50%;
+  width: 2px;
+  border-radius: 2px;
+  opacity: 0.45;
+  z-index: 0;
+}
+
+.ws-spine::after {
+  content: "";
+  position: absolute;
+  /* Grows toward the inline end, so the elbow points at the tile in both
+     directions. */
+  inset-inline-start: 0;
+  bottom: 0;
+  width: 7px;
+  height: 2px;
+  border-radius: 2px;
+  background: inherit;
+}
+
+.ws-child .ws-spine {
+  z-index: 0;
+}
+
+/* Compact child tile: 32px against the parent's 40px, icon over a truncated
+   schema name. */
+.ws-tile.schema {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  gap: 0;
+  flex-direction: column;
+}
+
+.ws-tile.schema .ws-tile-schema-ic {
+  opacity: 0.8;
+  margin-bottom: -1px;
+}
+
+.ws-tile-schema-name {
+  font-size: 7.5px;
+  font-family: var(--mono);
+  letter-spacing: -0.01em;
+  max-width: 30px;
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+/* Temporary until kept. The dashed border is the ONLY temporary affordance —
+   an extra dot was tried in the design and removed as redundant noise. */
+.ws-tile.temp {
+  border-style: dashed;
+}
+
+/* Active child tiles use the ring + glow only: the parent's left indicator bar
+   sits exactly where the spine runs and collided with it. */
+.ws-tile.schema.active::before {
+  display: none;
+}
+
+.ws-tile.schema.active {
+  box-shadow:
+    0 0 0 1px var(--ws-color),
+    0 4px 14px color-mix(in oklab, var(--ws-color) 30%, transparent);
+}
+
+/* Popover schema variant: which connection and schema this tile scopes. */
+.ws-edit-schema-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 2px 0 6px;
+}
+
+.ws-edit-schema-note b {
+  color: var(--text);
+}
+
+.ws-edit-keep {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+  margin-bottom: 3px;
+}
+
+.ws-edit-keep:hover {
+  background: color-mix(in oklab, var(--accent) 22%, transparent);
 }

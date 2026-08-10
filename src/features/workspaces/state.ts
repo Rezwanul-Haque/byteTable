@@ -13,7 +13,7 @@ import { connectionClose } from "../connections/api";
 import { useIntrospectionStore } from "../introspection/state";
 import { useSettingsStore } from "../settings/state";
 import { newCondition } from "../browse/sql/filter";
-import { readSession } from "./session";
+import { readKeptSchemas, readSchemaColor, readSchemaSession, readSession } from "./session";
 import type { CellValue } from "../../shared/api/engine";
 import type { AlterOp, DbObjectInfo, DbObjectKind, SortSpec } from "../../shared/api/engine";
 import type {
@@ -27,6 +27,7 @@ import type {
   WorkspaceConnection,
   WorkspaceUiState,
 } from "./types";
+import { schemaWorkspaceId } from "./types";
 
 /** Per-tab SQL run-history cap (spec §3.7: "20 dedup"). */
 export const SQL_HISTORY_MAX = 20;
@@ -77,6 +78,19 @@ interface WorkspacesFeatureState {
    * backend connection (fire-and-forget).
    */
   closeWorkspace: (id: string) => void;
+  /**
+   * Open `schema` as a sub-workspace of `parentId` (M32) — create-or-focus.
+   *
+   * The child SHARES the parent's backend handle rather than opening a second
+   * connection: the whole point is to work across schemas without connecting
+   * repeatedly. `closeWorkspace` is refcounted accordingly.
+   *
+   * Nesting is one level: callers pass `ws.parentId ?? ws.id`, so opening a
+   * schema from inside a sub-workspace yields a sibling, never a grandchild.
+   */
+  openSchemaWorkspace: (parentId: string, schema: string) => void;
+  /** Clear a sub-workspace's `temp` flag so it survives its parent closing. */
+  keepWorkspace: (id: string) => void;
   setActive: (id: string) => void;
   /** Rail "+" tile: show the connect screen to open another workspace. */
   startAdding: () => void;
@@ -299,6 +313,22 @@ function patchWorkspace(
  * adding another workspace or none are open. Shared by App (which screen
  * renders) and the rail (which tile lights up).
  */
+/**
+ * A palette colour for a new schema sub-workspace (M32).
+ *
+ * Random, as asked — but never one already worn by the parent or a sibling of
+ * the same parent, because the whole reason to colour a sub-workspace is to
+ * tell it apart from them. Once every palette slot on that branch is taken the
+ * constraint is dropped rather than failing.
+ */
+function pickSchemaColor(parentColor: string, siblingColors: string[]): string {
+  const taken = new Set([parentColor, ...siblingColors]);
+  const free = WORKSPACE_COLORS.filter((color) => !taken.has(color));
+  const pool = free.length > 0 ? free : WORKSPACE_COLORS;
+  // The index is always in range; the ?? only satisfies noUncheckedIndexedAccess.
+  return pool[Math.floor(Math.random() * pool.length)] ?? WORKSPACE_COLORS[0];
+}
+
 export const selectShowConnect = (state: WorkspacesFeatureState): boolean =>
   state.adding || state.workspaces.length === 0;
 
@@ -338,37 +368,138 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
       // "Query N" numbering continues past the restored tabs instead of
       // colliding with them (the counter is keyed by the fresh workspace id).
       seedSqlCounter(workspace.id, workspace.ui.tabs ?? []);
+
+      // M32: bring back the schema sub-workspaces the user KEPT, nested under
+      // this parent. Temporary ones are deliberately not restored — that is
+      // what "temporary" means — so only `schemas` entries exist to read.
+      // They share the parent's handle, exactly as `openSchemaWorkspace` does.
+      const kept: Workspace[] = (restored ? readKeptSchemas(connection.saved.id) : []).map(
+        (schema) => {
+          const child: Workspace = {
+            ...connection,
+            id: schemaWorkspaceId(workspace.id, schema),
+            name: schema,
+            // The colour it was last seen wearing (its own pick, or a
+            // recolour); only fall back to a fresh pick if none was stored.
+            color:
+              readSchemaColor(connection.saved.id, schema) ?? pickSchemaColor(workspace.color, []),
+            parentId: workspace.id,
+            schema,
+            temp: false,
+            ui: readSchemaSession(connection.saved.id, schema) ?? { schemaName: schema },
+          };
+          seedSqlCounter(child.id, child.ui.tabs ?? []);
+          return child;
+        },
+      );
+
       return {
-        workspaces: [...state.workspaces, workspace],
+        // Children sit directly after their parent, matching the rail order
+        // `openSchemaWorkspace` maintains.
+        workspaces: [...state.workspaces, workspace, ...kept],
+        // Focus the parent, not a restored child: reconnecting should land
+        // where the user connected.
         activeWorkspaceId: workspace.id,
         adding: false,
         colorCursor: savedColor ? state.colorCursor : state.colorCursor + 1,
       };
     }),
 
+  openSchemaWorkspace: (parentId, schema) =>
+    set((state) => {
+      const parent = state.workspaces.find((ws) => ws.id === parentId);
+      if (!parent) return state;
+
+      const id = schemaWorkspaceId(parentId, schema);
+      // Create-or-focus: re-opening the same schema must not duplicate.
+      if (state.workspaces.some((ws) => ws.id === id)) {
+        return { activeWorkspaceId: id, adding: false };
+      }
+
+      const child: Workspace = {
+        // Inherits the connection wholesale — same handle, same schemas, same
+        // engine info — so no second connection is opened.
+        ...parent,
+        id,
+        name: schema,
+        // Its own palette colour rather than the parent's, so sibling schemas
+        // of one connection are distinguishable at a glance in the rail.
+        color: pickSchemaColor(
+          parent.color,
+          state.workspaces.filter((ws) => ws.parentId === parentId).map((ws) => ws.color),
+        ),
+        parentId,
+        schema,
+        temp: true,
+        // Its own tabs from the first frame: sharing the parent's `ui` object
+        // would make every tab action write to both.
+        ui: readSchemaSession(parent.saved.id, schema) ?? { schemaName: schema },
+      };
+      seedSqlCounter(child.id, child.ui.tabs ?? []);
+
+      // Children sit directly after their parent and after existing siblings,
+      // so the rail always reads parent, child, child, ..., next parent.
+      const parentIdx = state.workspaces.findIndex((ws) => ws.id === parentId);
+      let at = parentIdx + 1;
+      while (at < state.workspaces.length && state.workspaces[at]?.parentId === parentId) at++;
+
+      return {
+        workspaces: [...state.workspaces.slice(0, at), child, ...state.workspaces.slice(at)],
+        activeWorkspaceId: id,
+        adding: false,
+      };
+    }),
+
+  keepWorkspace: (id) =>
+    set((state) => ({
+      workspaces: state.workspaces.map((ws) => (ws.id === id ? { ...ws, temp: false } : ws)),
+    })),
+
   closeWorkspace: (id) => {
+    const before = get().workspaces;
+    const idx = before.findIndex((ws) => ws.id === id);
+    if (idx === -1) return;
+
+    // M32 cascade: closing a parent also closes its TEMPORARY children; kept
+    // children survive and are promoted to top level, so no workspace is ever
+    // left pointing at a parentId that no longer exists.
+    const dropped = new Set<string>([id]);
+    for (const ws of before) {
+      if (ws.parentId === id && ws.temp) dropped.add(ws.id);
+    }
+    const workspaces = before
+      .filter((ws) => !dropped.has(ws.id))
+      .map((ws) => (ws.parentId === id ? { ...ws, parentId: null, schema: ws.schema } : ws));
+
     // Release the backend connection fire-and-forget: the UI must not wait
     // on driver teardown, and races are benign — the backend treats closing
     // an unknown handle (already closed, or drained by shutdown's close_all)
     // as a no-op Ok, and errors here have no surface worth a toast.
-    const closing = get().workspaces.find((ws) => ws.id === id);
-    if (closing) {
-      connectionClose(closing.handleId).catch((err: unknown) => {
+    //
+    // REFCOUNTED since M32: a schema sub-workspace shares its parent's handle,
+    // so closing either one must not pull the connection out from under the
+    // other. Only handles no longer referenced by ANY surviving workspace are
+    // closed.
+    const stillUsed = new Set(workspaces.map((ws) => ws.handleId));
+    const releasing = new Set(before.filter((ws) => dropped.has(ws.id)).map((ws) => ws.handleId));
+    for (const handleId of releasing) {
+      if (stillUsed.has(handleId)) continue;
+      connectionClose(handleId).catch((err: unknown) => {
         console.warn("connection_close failed", err);
       });
       // Handles are never reused, so the introspection cache for this one
       // is dead weight — drop it (sanctioned cross-slice call: state.ts is
       // the introspection slice's public contract).
-      useIntrospectionStore.getState().invalidate(closing.handleId);
+      useIntrospectionStore.getState().invalidate(handleId);
     }
+
     set((state) => {
-      const idx = state.workspaces.findIndex((ws) => ws.id === id);
-      if (idx === -1) return state;
-      const workspaces = state.workspaces.filter((ws) => ws.id !== id);
       let activeWorkspaceId = state.activeWorkspaceId;
       let adding = state.adding;
-      if (activeWorkspaceId === id) {
-        const neighbour = workspaces[Math.max(0, idx - 1)];
+      // Focus moves only when the ACTIVE workspace was in the closed set —
+      // closing a background workspace must not steal focus.
+      if (activeWorkspaceId !== null && dropped.has(activeWorkspaceId)) {
+        const neighbour = workspaces[Math.max(0, Math.min(idx, workspaces.length - 1))];
         activeWorkspaceId = neighbour ? neighbour.id : null;
         // Closing the last workspace routes back to the connect screen
         // (prototype: setActiveWsId(null); setAdding(true)).

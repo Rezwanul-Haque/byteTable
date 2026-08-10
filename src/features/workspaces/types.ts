@@ -313,4 +313,51 @@ export interface Workspace extends WorkspaceConnection {
   /** Tile color, auto-assigned from the 8-color palette; user-recolorable. */
   color: string;
   ui: WorkspaceUiState;
+
+  // --- Schema sub-workspaces (M32) --------------------------------------
+  // Three optional fields; a workspace without them is an ordinary top-level
+  // one and behaves exactly as before. A sub-workspace scopes the SAME
+  // connection to one schema and nests under its parent in the rail.
+  /**
+   * The top-level workspace this one hangs off, or absent for a top-level
+   * workspace. Always a top-level id: nesting is **one level only**, so
+   * opening a schema from inside a sub-workspace attaches the new one to the
+   * same parent rather than creating a grandchild.
+   */
+  parentId?: string | null;
+  /**
+   * The schema this workspace is scoped to. Only the *initial* binding — the
+   * schema switcher stays enabled inside a sub-workspace, and switching does
+   * not rewrite this (the rail tile keeps its own name).
+   */
+  schema?: string | null;
+  /**
+   * True until the user keeps it. A temporary sub-workspace closes with its
+   * parent and is not restored on restart; keeping it clears this and
+   * promotes it to a first-class workspace.
+   */
+  temp?: boolean;
+}
+
+/** The deterministic id of a schema sub-workspace, so opening the same schema
+ *  twice focuses the existing one instead of duplicating it. */
+export function schemaWorkspaceId(parentId: string, schema: string): string {
+  return "ws-" + parentId + "-" + schema;
+}
+
+/**
+ * The schema a workspace should default to — its own `schema` for a sub-workspace
+ * (M32), otherwise the connection's first schema.
+ *
+ * This is the FALLBACK, not an override: `ui.schemaName` still wins, because the
+ * schema switcher stays enabled inside a sub-workspace and switching must stick.
+ * It only decides where a workspace lands when nothing has been chosen yet — a
+ * freshly opened child, or a restored session that never recorded one. Without
+ * it a child would boot on `schemas[0]` and need a manual switch to reach the
+ * schema it was opened for.
+ */
+export function homeSchema(workspace: Pick<Workspace, "schema" | "schemas">): string | undefined {
+  const own = workspace.schema;
+  if (own && workspace.schemas.some((s) => s.name === own)) return own;
+  return workspace.schemas[0]?.name;
 }

@@ -24,6 +24,7 @@ import { isDiffable } from "../../schema_diff/handles";
 import { selectQueriesForConnection, useSavedQueriesStore } from "../../saved_queries/state";
 import { useWorkspacesStore } from "../state";
 import type { Workspace } from "../types";
+import { homeSchema } from "../types";
 import "./CommandPalette.css";
 
 interface Command {
@@ -67,7 +68,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
     (workspace.ui.schemaName !== undefined &&
     workspace.schemas.some((s) => s.name === workspace.ui.schemaName)
       ? workspace.ui.schemaName
-      : workspace.schemas[0]?.name) ?? "main";
+      : homeSchema(workspace)) ?? "main";
 
   const commands = useMemo<Command[]>(() => {
     const tables = tablesMap[tablesKey(handleId, schemaName)]?.tables ?? [];

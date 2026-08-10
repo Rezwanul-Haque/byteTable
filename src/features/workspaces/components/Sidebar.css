@@ -140,7 +140,10 @@
   left: 0;
   right: auto;
   width: max-content;
-  min-width: 100%;
+  /* M32: 218px keeps every row — name, count and the split action — plus the
+     hint on ONE line. `max()` preserves the original "at least as wide as the
+     trigger" behaviour. */
+  min-width: max(218px, 100%);
   max-width: calc(var(--sidebar-w, 248px) - 20px);
   top: calc(100% + 4px);
   z-index: 40;
@@ -536,4 +539,55 @@
   height: 1px;
   background: var(--border);
   margin: 4px 6px;
+}
+
+/* ---- Schema sub-workspaces (M32) — ported from ByteTable.html ------------ */
+
+/* The per-row split action: hover-only until that schema HAS a workspace, at
+   which point it stays visible as a focus target. */
+.schema-pop-split {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  border-radius: 5px;
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 0.12s,
+    color 0.12s,
+    background 0.12s;
+}
+
+.schema-pop-item:hover .schema-pop-split,
+.schema-pop-split.opened,
+.schema-pop-split:focus-visible {
+  opacity: 1;
+}
+
+.schema-pop-split:hover {
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+}
+
+.schema-pop-split.opened {
+  color: var(--accent);
+}
+
+/* Two words, by design — see the note in Sidebar.tsx. */
+.schema-pop-hint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9.5px;
+  color: var(--text-faint);
+  padding: 6px 9px 2px;
+  border-top: 1px solid var(--border);
+  margin-top: 3px;
+  white-space: nowrap;
 }

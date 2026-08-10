@@ -41,6 +41,21 @@ interface StoredSession {
   ui: WorkspaceUiState;
   /** Epoch ms of the last write — the pruning order. */
   savedAt: number;
+  /**
+   * Schema sub-workspaces of this connection that the user KEPT (M32), and
+   * their own sessions. Nested under the connection rather than keyed
+   * separately so one entry still holds everything for one connection — the
+   * pruning above stays correct, and a child can never outlive its parent's
+   * entry.
+   *
+   * Temporary sub-workspaces are deliberately absent: not restoring them is
+   * what "temporary" means.
+   *
+   * The tile `color` rides along because a sub-workspace picks its own from the
+   * palette (and can be recoloured): without it a kept child would come back
+   * wearing its parent's colour, silently discarding the user's choice.
+   */
+  schemas?: Record<string, { ui: WorkspaceUiState; color?: string }>;
 }
 
 type StoredSessions = Record<string, StoredSession>;
@@ -123,6 +138,51 @@ export function readSession(connectionId: string): WorkspaceUiState | null {
   if (!connectionId) return null;
   const stored = readAll()[connectionId];
   return stored ? fromStorage(stored.ui) : null;
+}
+
+/** The kept schema sub-workspaces of a connection, in stored order (M32). */
+export function readKeptSchemas(connectionId: string): string[] {
+  if (!connectionId) return [];
+  return Object.keys(readAll()[connectionId]?.schemas ?? {});
+}
+
+/** One kept sub-workspace's own session, or `null`. */
+export function readSchemaSession(connectionId: string, schema: string): WorkspaceUiState | null {
+  if (!connectionId) return null;
+  const stored = readAll()[connectionId]?.schemas?.[schema];
+  return stored?.ui ? fromStorage(stored.ui) : null;
+}
+
+/** One kept sub-workspace's stored tile colour, or `null` to pick a fresh one. */
+export function readSchemaColor(connectionId: string, schema: string): string | null {
+  if (!connectionId) return null;
+  return readAll()[connectionId]?.schemas?.[schema]?.color ?? null;
+}
+
+/**
+ * Persist one connection's KEPT schema sub-workspaces, replacing whatever was
+ * stored. Passing an empty list clears them — which is what closing or
+ * un-keeping the last one should do.
+ */
+export function writeSchemaSessions(
+  connectionId: string,
+  schemas: { schema: string; ui: WorkspaceUiState; color: string }[],
+): void {
+  if (!connectionId) return;
+  const sessions = readAll();
+  const entry = sessions[connectionId];
+  // Nothing to attach to yet: the parent's own session is written first (both
+  // happen in the same flush), so this is only reachable for a connection with
+  // no id — already guarded above.
+  if (!entry) return;
+  if (schemas.length === 0) {
+    delete entry.schemas;
+  } else {
+    entry.schemas = Object.fromEntries(
+      schemas.map((s) => [s.schema, { ui: forStorage(s.ui), color: s.color }]),
+    );
+  }
+  writeAll(sessions);
 }
 
 /**

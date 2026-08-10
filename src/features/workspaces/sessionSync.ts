@@ -11,9 +11,9 @@
 // whole session on the typing path.
 
 import { useSettingsStore } from "../settings/state";
-import { clearSessions, writeSession } from "./session";
+import { clearSessions, writeSchemaSessions, writeSession } from "./session";
 import { useWorkspacesStore } from "./state";
-import type { Workspace } from "./types";
+import type { Workspace, WorkspaceUiState } from "./types";
 
 /** Quiet period after the last change before a write. */
 const DEBOUNCE_MS = 400;
@@ -24,10 +24,37 @@ let pending: Workspace[] = [];
 function flush(): void {
   timer = null;
   if (!useSettingsStore.getState().settings.restoreTabs) return;
+
+  // Parents first: a child's session is stored INSIDE its parent connection's
+  // entry, so that entry has to exist before `writeSchemaSessions` attaches to
+  // it. Children are also grouped per connection, because the write replaces
+  // the whole set — writing them one at a time would drop the others.
+  const keptByConnection = new Map<
+    string,
+    { schema: string; ui: WorkspaceUiState; color: string }[]
+  >();
   for (const ws of pending) {
     // A workspace with no registry id (an ad-hoc open that was not saved) has
     // nothing stable to key a session by.
-    if (ws.saved.id) writeSession(ws.saved.id, ws.ui);
+    if (!ws.saved.id) continue;
+    if (ws.parentId) {
+      // M32: only KEPT sub-workspaces persist. A temporary one is meant to
+      // disappear with its parent, and its schema shares the parent's
+      // connection id — writing it through `writeSession` would clobber the
+      // parent's own tabs.
+      if (ws.temp || !ws.schema) continue;
+      const list = keptByConnection.get(ws.saved.id) ?? [];
+      list.push({ schema: ws.schema, ui: ws.ui, color: ws.color });
+      keptByConnection.set(ws.saved.id, list);
+      continue;
+    }
+    writeSession(ws.saved.id, ws.ui);
+    // Seed an empty group so a connection whose last kept child just closed
+    // (or was un-kept) has its stored children cleared rather than stranded.
+    if (!keptByConnection.has(ws.saved.id)) keptByConnection.set(ws.saved.id, []);
+  }
+  for (const [connectionId, schemas] of keptByConnection) {
+    writeSchemaSessions(connectionId, schemas);
   }
   pending = [];
 }

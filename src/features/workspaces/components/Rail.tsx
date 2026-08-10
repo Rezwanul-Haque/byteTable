@@ -10,6 +10,7 @@ import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { Engine } from "../../../shared/types";
 import { BTLogo } from "../../../shared/ui/BTLogo";
 import { Icon } from "../../../shared/ui/Icon";
+import { useToast } from "../../../shared/ui/toastContext";
 import { selectShowConnect, useWorkspacesStore, WORKSPACE_COLORS } from "../state";
 import type { Workspace } from "../types";
 import "./Rail.css";
@@ -82,6 +83,8 @@ export function Rail({
   const renameWorkspace = useWorkspacesStore((state) => state.renameWorkspace);
   const recolorWorkspace = useWorkspacesStore((state) => state.recolorWorkspace);
   const closeWorkspace = useWorkspacesStore((state) => state.closeWorkspace);
+  const keepWorkspace = useWorkspacesStore((state) => state.keepWorkspace);
+  const toast = useToast();
 
   // Prototype `showConnect`: the "+" tile lights up and no workspace tile
   // renders active while the connect screen is showing.
@@ -106,7 +109,13 @@ export function Rail({
   useEffect(() => {
     if (!editPop) return;
     const onDown = (event: MouseEvent) => {
-      if (event.target instanceof Element && event.target.closest(".ws-edit-pop")) return;
+      // The trigger is excluded alongside the popover — matching the sidebar's
+      // schema popover, which lists `.schema-btn` for the same reason. Without
+      // it the ⋯ button could never CLOSE the popover: mousedown counted as an
+      // outside press and closed it, then the button's own click reopened it,
+      // so a second click just made it flicker and stay open.
+      if (event.target instanceof Element && event.target.closest(".ws-edit-pop, .ws-tile-opts"))
+        return;
       closeEdit();
     };
     const onKeyDown = (event: KeyboardEvent) => {
@@ -174,13 +183,44 @@ export function Rail({
         {workspaces.map((ws) => {
           const isActive = ws.id === activeWorkspaceId && !showConnect;
           const menuOpen = editPop?.id === ws.id;
+          const isChild = Boolean(ws.parentId);
+          // The spine keeps the PARENT's colour even though the tile has its
+          // own: consecutive segments overlap by design (see Rail.css), so
+          // colouring them per child would stack mismatched colours and the
+          // trunk would show whichever child happened to render last.
+          const spineColor = isChild
+            ? (workspaces.find((w) => w.id === ws.parentId)?.color ?? ws.color)
+            : ws.color;
           return (
-            <div key={ws.id} className="ws-tile-wrap">
+            // M32: a schema sub-workspace renders as a compact child tile with
+            // a connector spine. `ws-child-last` is deliberately NOT emitted —
+            // the spine's geometry (see Rail.css) makes it unnecessary, and the
+            // prototype's copy of that class has no CSS behind it.
+            <div key={ws.id} className={"ws-tile-wrap" + (isChild ? " ws-child" : "")}>
+              {isChild ? (
+                <span className="ws-spine" style={{ background: spineColor }} aria-hidden="true" />
+              ) : null}
               <button
                 type="button"
-                className={"ws-tile" + (isActive ? " active" : "") + (menuOpen ? " menu-open" : "")}
+                className={
+                  "ws-tile" +
+                  (isChild ? " schema" : "") +
+                  (ws.temp ? " temp" : "") +
+                  (isActive ? " active" : "") +
+                  (menuOpen ? " menu-open" : "")
+                }
                 style={{ "--ws-color": ws.color } as CSSProperties}
-                onClick={() => setActive(ws.id)}
+                onClick={(event) => {
+                  // ⌘/Ctrl-click keeps a temporary workspace; a plain click
+                  // always just focuses, so the gesture can never be hit by
+                  // accident.
+                  if ((event.metaKey || event.ctrlKey) && ws.temp) {
+                    keepWorkspace(ws.id);
+                    toast("Workspace kept — it will survive closing its parent", "ok");
+                    return;
+                  }
+                  setActive(ws.id);
+                }}
                 onContextMenu={(event) => {
                   event.preventDefault();
                   openEdit(event.currentTarget, ws);
@@ -188,18 +228,41 @@ export function Rail({
                 onKeyDown={(event) => onTileKeyDown(event, ws)}
                 aria-label={ws.name}
                 aria-current={isActive ? "true" : undefined}
-                title={ws.name + " · " + ENGINE_META[ws.saved.engine].label}
+                title={
+                  isChild
+                    ? "schema " + ws.name + (ws.temp ? " · temporary — ⌘-click to keep" : " · kept")
+                    : ws.name + " · " + ENGINE_META[ws.saved.engine].label
+                }
               >
-                <span className="ws-tile-initials">{wsInitials(ws.name)}</span>
-                <span className="ws-tile-engine">{ENGINE_META[ws.saved.engine].short}</span>
+                {isChild ? (
+                  <>
+                    <Icon name="schema" size={13} className="ws-tile-schema-ic" />
+                    <span className="ws-tile-schema-name">{ws.name.slice(0, 6)}</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="ws-tile-initials">{wsInitials(ws.name)}</span>
+                    <span className="ws-tile-engine">{ENGINE_META[ws.saved.engine].short}</span>
+                  </>
+                )}
               </button>
               {/* Hover (or focus) reveals a three-dot button that opens the edit
                   popover — the discoverable path alongside right-click. */}
               <button
                 type="button"
                 className="ws-tile-opts"
-                onClick={(event) => openEdit(event.currentTarget, ws)}
-                title="Edit workspace"
+                aria-haspopup="dialog"
+                aria-expanded={menuOpen}
+                onClick={(event) => {
+                  // Toggle for THIS tile; another tile's button switches the
+                  // popover over to it rather than closing.
+                  if (menuOpen) {
+                    closeEdit();
+                    return;
+                  }
+                  openEdit(event.currentTarget, ws);
+                }}
+                title={isChild ? "Schema workspace options" : "Edit workspace"}
                 aria-label={"Edit workspace " + ws.name}
               >
                 <Icon name="more_horiz" size={14} />
@@ -322,8 +385,18 @@ export function Rail({
             >
               {ENGINE_META[editingWs.saved.engine].short}
             </span>
-            <div className="ws-edit-title">Edit workspace</div>
+            <div className="ws-edit-title">
+              {editingWs.parentId ? "Schema workspace" : "Edit workspace"}
+            </div>
           </div>
+          {/* A schema workspace scopes an existing connection, so say which
+              connection and which schema — the tile only has room for six
+              characters of the name. */}
+          {editingWs.parentId ? (
+            <div className="ws-edit-schema-note">
+              {editingWs.saved.name} · {editingWs.schema}
+            </div>
+          ) : null}
           <div className="ws-edit-label">Name</div>
           <input
             className="ws-edit-input"
@@ -356,6 +429,20 @@ export function Rail({
             ))}
           </div>
           <div className="ws-edit-sep" />
+          {/* Only while temporary: once kept there is nothing left to do. */}
+          {editingWs.parentId && editingWs.temp ? (
+            <button
+              type="button"
+              className="ws-edit-keep"
+              onClick={() => {
+                keepWorkspace(editPop.id);
+                toast("Workspace kept — it will survive closing its parent", "ok");
+                closeEdit();
+              }}
+            >
+              <Icon name="push_pin" size={14} /> Keep this workspace
+            </button>
+          ) : null}
           <button
             type="button"
             className="ws-edit-remove"
@@ -364,7 +451,8 @@ export function Rail({
               closeEdit();
             }}
           >
-            <Icon name="delete" size={14} /> Remove workspace
+            <Icon name="delete" size={14} />{" "}
+            {editingWs.parentId ? "Close schema workspace" : "Remove workspace"}
           </button>
         </div>
       ) : null}

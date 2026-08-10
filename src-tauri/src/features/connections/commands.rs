@@ -142,17 +142,24 @@ pub async fn connection_delete(
 /// Test a connection using ONLY the transiently-typed secrets (`password` /
 /// `sshSecret`) — testing happens before save, so the keychain is not touched.
 #[tauri::command]
+/// `id` is the saved connection being edited, when there is one: it lets the
+/// test fall back to that entry's keychain secret, so testing an edit works
+/// without retyping the password (the modal leaves the field blank on purpose,
+/// meaning "keep the stored secret").
 pub async fn connection_test(
     state: State<'_, ConnectionsState>,
     settings: State<'_, SettingsState>,
     params: ConnectionParams,
+    id: Option<String>,
     password: Option<String>,
     ssh_secret: Option<String>,
 ) -> Result<EngineInfo, AppError> {
     let secrets = TransientSecrets::new(password, ssh_secret);
     application::test_connection(
         &state.registry,
+        state.secret_store.as_ref(),
         &params,
+        id.as_deref(),
         &secrets,
         connect_timeout(&settings),
     )

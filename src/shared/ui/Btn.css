@@ -52,6 +52,23 @@
   color: var(--text);
 }
 
+/* A destructive text button (the delete action in a row modal or a document
+   drawer). Not a `Btn` variant: it is always paired with a confirm or an
+   undoable target, so it stays visually quiet until hovered rather than
+   competing with the primary action beside it.
+
+   Used by the Cassandra row modal (M19) and the Typesense document drawer
+   (M30); the class was referenced by the former before it was defined here,
+   which left the delete button untinted. */
+.btn-danger-text {
+  color: var(--danger);
+  background: none;
+}
+
+.btn-danger-text:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--danger) 14%, transparent);
+}
+
 /* M1 addition: tonal/text buttons can be disabled too (connect screen's
    "Coming in M2" actions). The prototype only ever disabled filled buttons —
    same treatment (opacity .5, no hover effect), expressed as overrides so

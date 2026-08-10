@@ -61,8 +61,8 @@ export interface ProcSource {
 /**
  * Per-engine sources & kill statements (M26). Oracle is intentionally absent —
  * the Oracle engine is not built on this branch. An engine with no entry here
- * (SQLite, DynamoDB, Cassandra) has no server process list; the tab shows an
- * embedded/empty state.
+ * (SQLite, DynamoDB, Cassandra, Typesense) has no server process list; the tab
+ * shows an embedded/empty state.
  */
 export const PROC_SOURCES: Partial<Record<Engine, ProcSource>> = {
   mysql: {

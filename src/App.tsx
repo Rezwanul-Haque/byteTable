@@ -19,6 +19,7 @@ import { RedisWorkspace } from "./features/browse/redis/components/RedisWorkspac
 import { DynamoWorkspace } from "./features/browse/dynamo/components/DynamoWorkspace";
 import { MongoWorkspace } from "./features/browse/mongo/components/MongoWorkspace";
 import { CassandraWorkspace } from "./features/browse/cassandra/components/CassandraWorkspace";
+import { TypesenseWorkspace } from "./features/browse/typesense/components/TypesenseWorkspace";
 import { startSessionPersistence } from "./features/workspaces/sessionSync";
 import { selectShowConnect, useWorkspacesStore } from "./features/workspaces/state";
 import { useTrayWorkspaces } from "./features/workspaces/trayMenu";
@@ -307,6 +308,12 @@ export function App() {
                 // fifth sibling shell, the wide-column vertical slice). Mongo →
                 // MongoDB; document → DynamoDB; key-value → Redis; the rest → SQL.
                 <CassandraWorkspace key={activeWorkspace.id} workspace={activeWorkspace} />
+              ) : activeWorkspace.kind === "typesense" ? (
+                // M30: a Typesense connection renders the Typesense workspace (a
+                // sixth sibling shell, the search vertical slice). Collections
+                // replace databases and every read is a search call, so none of
+                // the table-store shells fit.
+                <TypesenseWorkspace key={activeWorkspace.id} workspace={activeWorkspace} />
               ) : (
                 <WorkspaceShell key={activeWorkspace.id} workspace={activeWorkspace} />
               )

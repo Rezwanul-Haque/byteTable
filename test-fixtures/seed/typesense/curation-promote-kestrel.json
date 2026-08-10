@@ -1,0 +1,17 @@
+{
+  "rule": {
+    "query": "keyboard",
+    "match": "contains"
+  },
+  "includes": [
+    {
+      "id": "p_121",
+      "position": 1
+    }
+  ],
+  "excludes": [
+    {
+      "id": "p_100"
+    }
+  ]
+}

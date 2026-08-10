@@ -49,6 +49,10 @@ export function shellLabel(engine: Engine): string {
       return "cqlsh";
     case "clickhouse":
       return "clickhouse-client";
+    // Typesense has no REPL — its console speaks raw HTTP against the search
+    // API, so the session is titled for the protocol rather than a CLI binary.
+    case "typesense":
+      return "http";
     case "postgres":
     default:
       return "psql";

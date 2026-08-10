@@ -1,0 +1,14 @@
+{
+  "type": "popular_queries",
+  "params": {
+    "source": {
+      "collections": [
+        "products"
+      ]
+    },
+    "destination": {
+      "collection": "product_queries"
+    },
+    "limit": 100
+  }
+}

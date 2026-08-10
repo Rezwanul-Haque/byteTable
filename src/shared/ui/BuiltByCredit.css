@@ -1,0 +1,30 @@
+/* "Built by" credit — a clickable button reset to inline-text styling; keeps
+   the label faint (inherited from the host bar's "dim" class), makes the name
+   pop (accent), opens the repo on click.
+
+   Lives with the component rather than in StatusBar.css so it also styles
+   correctly in a status bar that does not import that file — DynamoDB has its
+   own `.ddb-*` bar. */
+
+.status-credit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  /* Never squeezed by the flex row: it is two short words and a name, and
+     shrinking it is what broke the line in the first place. */
+  flex: none;
+}
+
+.status-credit b {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.status-credit:hover b {
+  text-decoration: underline;
+}

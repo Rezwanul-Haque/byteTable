@@ -33,6 +33,7 @@ import { Btn } from "../../../shared/ui/Btn";
 import { EngineBadge } from "../../../shared/ui/EngineBadge";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
+import { InfoHint } from "../../../shared/ui/InfoHint";
 import { ENV_COLOR, ENV_SWATCHES } from "../../../shared/ui/envColors";
 import { Modal, ModalActions, ModalTitle } from "../../../shared/ui/Modal";
 import { Select } from "../../../shared/ui/Select";
@@ -42,6 +43,7 @@ import {
   type ConnectionParams,
   type SavedConnection,
   type SshAuth,
+  type Protocol,
   type SshConfig,
   type TlsMode,
 } from "../api";
@@ -61,6 +63,7 @@ const ENGINES: { engine: Engine; label: string }[] = [
   { engine: "mongodb", label: "MongoDB" },
   { engine: "cassandra", label: "Cassandra" },
   { engine: "clickhouse", label: "ClickHouse" },
+  { engine: "typesense", label: "Typesense" },
 ];
 
 /** AWS regions offered in the DynamoDB connect form (prototype `AWS_REGIONS`). */
@@ -91,6 +94,8 @@ const DEFAULT_PORTS: Partial<Record<Engine, string>> = {
   // ClickHouse (M25): the HTTP interface (the adapter speaks HTTP, not native
   // TCP 9000). Kept standard so the local Docker fixture works as-is.
   clickhouse: "8123",
+  // Typesense (M30): the HTTP API port.
+  typesense: "8108",
 };
 
 // The conventional superuser each engine ships with — prefilled into the User
@@ -171,6 +176,13 @@ interface FormState {
   // reuses `db`, and the user/password/TLS fields are shared with the server
   // engines.
   datacenter: string;
+  // Typesense (M30). `protocol` replaces the TLS-mode dropdown (Typesense has no
+  // TLS negotiation, only an http/https scheme). The default collection reuses
+  // `db` and the API key reuses `password` — it is a transient secret bound for
+  // the keychain, exactly like a database password.
+  protocol: Protocol;
+  /** Typesense peers (comma-separated `host:port`) for the node table. */
+  tsNodes: string;
   // Transient secrets — sent to the backend, never part of saved params.
   password: string;
   // SSH tunnel.
@@ -214,6 +226,8 @@ const INITIAL: FormState = {
   mongoConnMode: "fields",
   mongoUri: "mongodb://localhost:27017",
   datacenter: "dc1",
+  protocol: "http",
+  tsNodes: "",
   password: "",
   useSsh: false,
   sshHost: "",
@@ -349,6 +363,19 @@ function formStateFromConnection(c: SavedConnection): FormState {
       db: String(p.dbIndex),
       user: p.user ?? "",
       tls: p.tlsMode,
+      ...sshFields,
+    };
+  }
+  // Typesense (M30): no user, no TLS mode. The API key is NOT prefilled — it
+  // lives in the keychain and the blank field means "keep the stored key".
+  if (p.engine === "typesense") {
+    return {
+      ...base,
+      protocol: p.protocol,
+      host: p.host,
+      port: String(p.port),
+      db: p.defaultCollection ?? "",
+      tsNodes: p.nodes ?? "",
       ...sshFields,
     };
   }
@@ -517,6 +544,8 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
     mongoConnMode,
     mongoUri,
     datacenter,
+    protocol,
+    tsNodes,
     password,
     useSsh,
     sshHost,
@@ -548,6 +577,7 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const sshToggleId = useId();
   const envLabelId = useId();
+  const protocolLabelId = useId();
 
   // Convenience: a params-relevant field edit (resets the verdict).
   const field = (patch: Partial<FormState>) => dispatch({ type: "field", patch });
@@ -585,6 +615,12 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
   // ClickHouse (M25): a columnar OLAP store over the shared host/port + SSH form
   // (like SQL Server); an OLAP form-note, a `default`-placeholder Database field.
   const isClickHouse = engine === "clickhouse";
+  // Typesense (M30): a search engine, so the generic SQL field set is wrong for
+  // it (Task 5b). Its General panel is its own — Protocol segmented control,
+  // Host, Port, Default collection, API key — with no User, Password or TLS
+  // mode. The SSH tunnel tab is shared, since private nodes are commonly
+  // reached through a bastion.
+  const isTypesense = engine === "typesense";
 
   const pickEngine = (next: Engine) => dispatch({ type: "engine", engine: next });
 
@@ -740,6 +776,23 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
       };
     }
 
+    // Typesense (M30): protocol + host + port + an optional default collection.
+    // No user and no TLS mode — the API key is a secret and travels via
+    // `secrets()`, never in params.
+    if (engine === "typesense") {
+      return {
+        params: {
+          engine: "typesense",
+          protocol,
+          host: host.trim(),
+          port: portNumber,
+          ...(db.trim() ? { defaultCollection: db.trim() } : {}),
+          ...(tsNodes.trim() ? { nodes: tsNodes.trim() } : {}),
+          ...(ssh ? { ssh } : {}),
+        },
+      };
+    }
+
     // Postgres and SQL Server each bind a connection to ONE database with no
     // in-session switch, so a blank database strands the user in the login's
     // default db (libpq's username-default for Postgres; `master` for SQL Server
@@ -783,7 +836,10 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
     }
     dispatch({ type: "test", test: { phase: "testing" } });
     try {
-      const info = await connectionTest(built.params, secrets());
+      // `edit?.id` lets the backend fall back to this entry's keychain secret:
+      // the secret field is intentionally blank in edit mode, so without it the
+      // test would authenticate with nothing.
+      const info = await connectionTest(built.params, secrets(), edit?.id);
       dispatch({ type: "test", test: { phase: "ok", serverVersion: info.serverVersion } });
     } catch (error) {
       if (isAppErrorPayload(error)) {
@@ -1352,107 +1408,209 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
             aria-labelledby={generalTabId}
             hidden={section !== "general"}
           >
-            <label>
-              Host
-              <input
-                value={host}
-                onChange={(e) => field({ host: e.target.value })}
-                spellCheck={false}
-              />
-            </label>
-            <div className="form-field">
-              <span className="form-field-label">TLS mode</span>
-              <Select
-                className="sel-block"
-                aria-label="TLS mode"
-                value={tls}
-                options={TLS_MODES.map((mode) => ({ value: mode, label: mode }))}
-                onChange={(v) => field({ tls: v })}
-              />
-            </div>
-            <label>
-              Port
-              <input
-                value={port}
-                onChange={(e) => field({ port: e.target.value, portTouched: true })}
-                spellCheck={false}
-              />
-            </label>
-            <label>
-              {isRedis ? (
-                "DB index"
-              ) : (
-                <span className="lbl-row">
-                  Database{" "}
-                  {engine === "postgres" || engine === "mssql" ? null : (
-                    <span className="opt-tag">optional</span>
+            {isTypesense ? (
+              // Typesense field set (M30 Task 5b). Deliberately shows NOTHING
+              // about users, passwords or TLS modes: Typesense has no user or
+              // password (one API key header) and no TLS negotiation (only a
+              // scheme). The two long explanatory form-notes the other engines
+              // use are replaced by InfoHint bubbles, so the panel stays short.
+              <>
+                {/* Protocol + Host + Port are one URL, so they read as one row
+                    rather than three. The scheme is a two-option toggle and was
+                    wasting a full-width row on its own. */}
+                <div className="span-2 ts-endpoint">
+                  <div className="form-field">
+                    <span className="form-field-label" id={protocolLabelId}>
+                      Protocol
+                    </span>
+                    {/* A segmented control, not a native select: with exactly
+                        two mutually-exclusive options a dropdown hides half the
+                        choice behind a click. */}
+                    <div
+                      className="seg proto-seg"
+                      role="radiogroup"
+                      aria-labelledby={protocolLabelId}
+                    >
+                      {(["http", "https"] as const).map((scheme) => (
+                        <button
+                          key={scheme}
+                          type="button"
+                          role="radio"
+                          aria-checked={protocol === scheme}
+                          className={"seg-btn" + (protocol === scheme ? " active" : "")}
+                          onClick={() => field({ protocol: scheme })}
+                        >
+                          {scheme}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <label>
+                    <span className="lbl-row">
+                      Host
+                      <InfoHint text="Typesense is an HTTP search API — point this at any node of the cluster. The default port is 8108. Collections replace databases, and there is no user or password: a single API key authenticates every request." />
+                    </span>
+                    <input
+                      value={host}
+                      onChange={(e) => field({ host: e.target.value })}
+                      placeholder="localhost"
+                      spellCheck={false}
+                    />
+                  </label>
+                  <label>
+                    Port
+                    <input
+                      value={port}
+                      onChange={(e) => field({ port: e.target.value, portTouched: true })}
+                      spellCheck={false}
+                    />
+                  </label>
+                </div>
+                <label>
+                  <span className="lbl-row">
+                    Default collection <span className="opt-tag">optional</span>
+                  </span>
+                  <input
+                    value={db}
+                    onChange={(e) => field({ db: e.target.value })}
+                    placeholder="products"
+                    spellCheck={false}
+                  />
+                </label>
+                <label>
+                  <span className="lbl-row">
+                    Other nodes <span className="opt-tag">optional</span>
+                    <InfoHint text="Comma-separated host:port of the other nodes in this cluster, shown in the dashboard's node table. Typesense has no cluster-membership endpoint, so a client can only display the peers it is told about — its own clients take the same list. Purely informational: every read and write still goes to the host above." />
+                  </span>
+                  <input
+                    value={tsNodes}
+                    onChange={(e) => field({ tsNodes: e.target.value })}
+                    placeholder="localhost:8118, localhost:8128"
+                    spellCheck={false}
+                  />
+                </label>
+                {/* The API key is sent transiently to test/open and stored in the
+                    OS keychain on Save — never in params, never re-rendered. In
+                    edit mode the field stays empty with a masked placeholder, so
+                    leaving it alone keeps the stored key. */}
+                <label className="span-2">
+                  <span className="lbl-row">
+                    API key <span className="qual-tag">X-TYPESENSE-API-KEY</span>
+                    <InfoHint text="Sent as a request header. An admin key unlocks the schema, curation and API-key views; a search-only key limits the workspace to querying the collections that key allows — and cannot list collections at all, so the default collection above becomes the only one shown." />
+                  </span>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => field({ password: e.target.value })}
+                    placeholder="••••••••••••"
+                  />
+                </label>
+              </>
+            ) : (
+              <>
+                <label>
+                  Host
+                  <input
+                    value={host}
+                    onChange={(e) => field({ host: e.target.value })}
+                    spellCheck={false}
+                  />
+                </label>
+                <div className="form-field">
+                  <span className="form-field-label">TLS mode</span>
+                  <Select
+                    className="sel-block"
+                    aria-label="TLS mode"
+                    value={tls}
+                    options={TLS_MODES.map((mode) => ({ value: mode, label: mode }))}
+                    onChange={(v) => field({ tls: v })}
+                  />
+                </div>
+                <label>
+                  Port
+                  <input
+                    value={port}
+                    onChange={(e) => field({ port: e.target.value, portTouched: true })}
+                    spellCheck={false}
+                  />
+                </label>
+                <label>
+                  {isRedis ? (
+                    "DB index"
+                  ) : (
+                    <span className="lbl-row">
+                      Database{" "}
+                      {engine === "postgres" || engine === "mssql" ? null : (
+                        <span className="opt-tag">optional</span>
+                      )}
+                    </span>
                   )}
-                </span>
-              )}
-              <input
-                value={db}
-                onChange={(e) => field({ db: e.target.value })}
-                placeholder={
-                  isRedis
-                    ? "0"
-                    : engine === "postgres"
-                      ? "postgres"
-                      : engine === "mssql"
-                        ? "byteshop"
-                        : isClickHouse
-                          ? "default"
-                          : "mysql"
-                }
-                spellCheck={false}
-              />
-            </label>
-            <label>
-              {isRedis ? (
-                "ACL user"
-              ) : (
-                <span className="lbl-row">
-                  User <span className="opt-tag">optional</span>
-                </span>
-              )}
-              <input
-                value={user}
-                onChange={(e) => field({ user: e.target.value, userTouched: true })}
-                placeholder={
-                  isRedis
-                    ? "default"
-                    : engine === "mssql"
-                      ? "sa"
-                      : engine === "postgres"
-                        ? "postgres"
-                        : isClickHouse
-                          ? "default"
-                          : "root"
-                }
-                spellCheck={false}
-              />
-            </label>
-            {/* The password is sent transiently to test/open and stored in the
+                  <input
+                    value={db}
+                    onChange={(e) => field({ db: e.target.value })}
+                    placeholder={
+                      isRedis
+                        ? "0"
+                        : engine === "postgres"
+                          ? "postgres"
+                          : engine === "mssql"
+                            ? "byteshop"
+                            : isClickHouse
+                              ? "default"
+                              : "mysql"
+                    }
+                    spellCheck={false}
+                  />
+                </label>
+                <label>
+                  {isRedis ? (
+                    "ACL user"
+                  ) : (
+                    <span className="lbl-row">
+                      User <span className="opt-tag">optional</span>
+                    </span>
+                  )}
+                  <input
+                    value={user}
+                    onChange={(e) => field({ user: e.target.value, userTouched: true })}
+                    placeholder={
+                      isRedis
+                        ? "default"
+                        : engine === "mssql"
+                          ? "sa"
+                          : engine === "postgres"
+                            ? "postgres"
+                            : isClickHouse
+                              ? "default"
+                              : "root"
+                    }
+                    spellCheck={false}
+                  />
+                </label>
+                {/* The password is sent transiently to test/open and stored in the
               OS keychain on Save (M12 Task 3); it is NEVER part of the saved
               params or the registry file. */}
-            <label>
-              <span className="lbl-row">
-                Password <span className="opt-tag">optional</span>
-              </span>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => field({ password: e.target.value })}
-                placeholder="••••••••"
-              />
-            </label>
-            {isClickHouse ? (
-              <div className="span-2 form-note">
-                <Icon name="bolt" size={14} /> ClickHouse is a columnar OLAP store. Use the HTTP
-                port (8123) or the secure HTTPS port (8443) with TLS. Databases group tables; there
-                are no foreign keys — tables use an <code>ENGINE</code> + <code>ORDER BY</code> sort
-                key.
-              </div>
-            ) : null}
+                <label>
+                  <span className="lbl-row">
+                    Password <span className="opt-tag">optional</span>
+                  </span>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => field({ password: e.target.value })}
+                    placeholder="••••••••"
+                  />
+                </label>
+                {isClickHouse ? (
+                  <div className="span-2 form-note">
+                    <Icon name="bolt" size={14} /> ClickHouse is a columnar OLAP store. Use the HTTP
+                    port (8123) or the secure HTTPS port (8443) with TLS. Databases group tables;
+                    there are no foreign keys — tables use an <code>ENGINE</code> +{" "}
+                    <code>ORDER BY</code> sort key.
+                  </div>
+                ) : null}
+              </>
+            )}
           </div>
           <div
             className="form-grid"

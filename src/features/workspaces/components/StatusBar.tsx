@@ -13,29 +13,15 @@
 // (tabMeta store): the grid reports totalRows + elapsedMs per fetch; until
 // then it shows "— rows".
 
-import { openUrl } from "@tauri-apps/plugin-opener";
-
 import { connectionIsTunneled, connectionUser, tunnelTitle } from "../../connections/api";
 import { EnvTag } from "../../../shared/ui/EnvTag";
+import { BuiltByCredit } from "../../../shared/ui/BuiltByCredit";
 import { Icon } from "../../../shared/ui/Icon";
 import { rowCountLabel, useTabMetaStore } from "../tabMeta";
 import { useWorkspacesStore } from "../state";
 import type { Workspace } from "../types";
 import "../../processes/ProcessList.css";
 import "./StatusBar.css";
-
-/** The project's source repository (opened from the "Built by" credit). */
-const REPO_URL = "https://github.com/rezwanul-Haque/byteTable";
-
-/** Open a URL in the OS default browser; falls back to window.open in plain
- *  browser dev (no Tauri IPC). Mirrors DonateModal's `openExternal`. */
-function openExternal(url: string): void {
-  if ("__TAURI_INTERNALS__" in window) {
-    void openUrl(url);
-    return;
-  }
-  window.open(url, "_blank", "noopener,noreferrer");
-}
 
 export function StatusBar({ workspace }: { workspace: Workspace }) {
   const openProcessesTab = useWorkspacesStore((state) => state.openProcessesTab);
@@ -98,14 +84,7 @@ export function StatusBar({ workspace }: { workspace: Workspace }) {
       >
         <Icon name="monitor_heart" size={13} /> processes
       </button>
-      <button
-        type="button"
-        className="status-dim status-credit"
-        title="View ByteTable source on GitHub"
-        onClick={() => openExternal(REPO_URL)}
-      >
-        Built by <b>Rezwanul-Haque</b>
-      </button>
+      <BuiltByCredit className="status-dim" />
       <span className="status-dim">UTF-8</span>
     </div>
   );

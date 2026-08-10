@@ -1,0 +1,1145 @@
+/* Typesense workspace (M30 Task 9) — ported from ByteTable.html's `.ts-*` rules.
+   Everything here is scoped to the `ts-`/`tsj-` prefixes; the workspace reuses
+   the shared chrome (.sidebar, .rdash, .structure-table, .table-footer, .pager)
+   rather than restyling it.
+
+   Uses the theme tokens, including `--warn` and `--change` (tokens.css) and the
+   runtime-set `--danger` (features/settings/apply.ts). */
+
+.ts-side-count {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+.ts-alias-target {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+.ts-cluster-pill {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  color: var(--text-dim);
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 5px 9px;
+  min-width: 0;
+}
+.ts-cluster-ver {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+.ts-health {
+  /* `inline-block` is load-bearing, not tidiness: this is an EMPTY span, and
+     width/height do not apply to a non-replaced inline element. It renders
+     inside the sidebar's `.ts-cluster-pill` (a flex container, which blockifies
+     its items) and inside a plain `<td>` in the dashboard's node table — where,
+     without this, it collapsed to zero size and the Health column looked empty. */
+  display: inline-block;
+  vertical-align: middle;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 22%, transparent);
+  flex: none;
+}
+.ts-health.bad {
+  background: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--danger) 22%, transparent);
+}
+.ts-raft {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+.ts-raft.leader {
+  color: var(--accent);
+  font-weight: 600;
+}
+.ts-side-nav {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 8px 10px 0;
+}
+.ts-nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--text-dim);
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 5px 8px;
+  cursor: pointer;
+}
+.ts-nav-btn:hover {
+  color: var(--text);
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+}
+.ts-nav-btn.active {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 55%, var(--border));
+  background: color-mix(in oklab, var(--accent) 10%, var(--bg0));
+}
+.ts-type {
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+.ts-off {
+  color: var(--text-faint);
+}
+.ts-search {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.ts-qbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.ts-qinput {
+  flex: 1;
+  font-family: inherit;
+  font-size: 19px;
+  font-weight: 500;
+  color: var(--text);
+  background: none;
+  border: none;
+  outline: none;
+  min-width: 0;
+}
+.ts-qinput::placeholder {
+  color: var(--text-faint);
+  font-weight: 400;
+}
+.ts-qclear {
+  display: flex;
+  border: none;
+  background: var(--bg2);
+  color: var(--text-dim);
+  border-radius: 50%;
+  padding: 3px;
+  cursor: pointer;
+}
+.ts-lat {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 11px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  white-space: nowrap;
+}
+.ts-lat b {
+  color: var(--text);
+  font-size: 12.5px;
+}
+.ts-lat-ms {
+  color: var(--accent);
+}
+.ts-hidden-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--warn);
+  background: color-mix(in oklab, var(--warn) 12%, transparent);
+  border: 1px solid color-mix(in oklab, var(--warn) 30%, transparent);
+  border-radius: 99px;
+  padding: 3px 9px;
+  cursor: pointer;
+}
+.ts-hidden-chip:hover {
+  background: color-mix(in oklab, var(--warn) 22%, transparent);
+}
+.ts-spark {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 1.5px;
+  height: 14px;
+}
+.ts-spark span {
+  width: 3px;
+  background: color-mix(in oklab, var(--accent) 55%, transparent);
+  border-radius: 1px;
+}
+.ts-ctlrow,
+.ts-filterrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 9px 18px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.ts-ctl-label {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+.ts-ctl-sep {
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+  margin: 0 3px;
+}
+.ts-ctl-spacer {
+  flex: 1;
+  min-width: 8px;
+}
+.ts-budget-warn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--warn);
+  background: color-mix(in oklab, var(--warn) 12%, transparent);
+  border: 1px solid color-mix(in oklab, var(--warn) 30%, transparent);
+  border-radius: 99px;
+  padding: 3px 9px;
+  cursor: help;
+}
+.ts-fpill {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 2px 4px 2px 2px;
+  color: var(--text);
+}
+.ts-fpill.off {
+  opacity: 0.42;
+}
+.ts-fpill-name {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 99px;
+}
+.ts-fpill-name:hover {
+  background: var(--bg2);
+}
+.ts-fpill b {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--accent);
+  min-width: 8px;
+  text-align: center;
+}
+.ts-fpill-w {
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0 3px;
+}
+.ts-fpill-w:hover:not(:disabled) {
+  color: var(--text);
+}
+.ts-fpill-w:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.ts-seg {
+  padding: 1px;
+}
+.ts-seg .seg-btn {
+  font-family: var(--mono);
+  padding: 3px 9px;
+  font-size: 10.5px;
+}
+.ts-ctl {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--text-dim);
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.ts-ctl:hover {
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+}
+.ts-ctl.on {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 55%, var(--border));
+  background: color-mix(in oklab, var(--accent) 10%, var(--bg1));
+}
+.ts-sort-pop {
+  left: auto;
+  right: 0;
+  top: calc(100% + 4px);
+  min-width: 170px;
+}
+.ts-chip-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in oklab, var(--accent) 40%, var(--border));
+  border-radius: 99px;
+  padding: 3px 5px 3px 9px;
+}
+.ts-chip-filter button {
+  display: flex;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  opacity: 0.7;
+}
+.ts-chip-filter button:hover {
+  opacity: 1;
+}
+.ts-clear-filters {
+  font-family: inherit;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.ts-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+.ts-results {
+  flex: 1;
+  overflow: auto;
+  padding: 10px 14px 20px;
+  min-width: 0;
+}
+.ts-note {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  color: var(--warn);
+  background: color-mix(in oklab, var(--warn) 10%, transparent);
+  border: 1px solid color-mix(in oklab, var(--warn) 30%, transparent);
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+}
+.ts-hit {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg1);
+  margin-bottom: 6px;
+  overflow: hidden;
+}
+.ts-hit:hover {
+  border-color: color-mix(in oklab, var(--accent) 35%, var(--border));
+}
+.ts-hit.open {
+  border-color: color-mix(in oklab, var(--accent) 55%, var(--border));
+}
+.ts-hit.pinned {
+  border-left: 3px solid var(--accent);
+}
+.ts-hit-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  font-family: inherit;
+  color: inherit;
+  padding: 11px 13px;
+  cursor: pointer;
+}
+.ts-rank {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  background: var(--bg0);
+  border-radius: 6px;
+  padding: 3px 6px;
+  flex: none;
+  margin-top: 1px;
+}
+.ts-hit-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.ts-hit-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.ts-mark {
+  background: color-mix(in oklab, var(--accent) 26%, transparent);
+  color: var(--text);
+  border-radius: 3px;
+  padding: 0 1px;
+}
+.ts-pin {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+  border-radius: 99px;
+  padding: 2px 7px;
+}
+.ts-typo-tag {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--warn);
+  background: color-mix(in oklab, var(--warn) 14%, transparent);
+  border-radius: 99px;
+  padding: 2px 7px;
+}
+.ts-hit-snip {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+.ts-hit-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+}
+.ts-hit-kv b {
+  color: var(--text-dim);
+  font-weight: 600;
+}
+.ts-hit-score {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex: none;
+  margin-top: 2px;
+}
+.ts-relbar {
+  display: block;
+  width: 54px;
+  height: 4px;
+  background: var(--bg2);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.ts-relbar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.ts-relnum {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+.ts-xray {
+  border-top: 1px dashed var(--border);
+  background: var(--bg0);
+  padding: 10px 13px 11px;
+}
+.ts-xray-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  font-weight: 600;
+  margin-bottom: 7px;
+}
+.ts-xray-tm {
+  font-family: var(--mono);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.ts-xray-tm b {
+  color: var(--text-dim);
+}
+.ts-xray-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ts-xray-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10.5px;
+  font-family: var(--mono);
+  color: var(--text-dim);
+}
+.ts-xray-tok {
+  color: var(--text);
+  font-weight: 600;
+  min-width: 72px;
+}
+.ts-xray-field {
+  color: var(--accent);
+}
+.ts-kind {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-radius: 99px;
+  padding: 1px 6px;
+}
+.ts-kind.exact {
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+}
+.ts-kind.prefix {
+  color: #c792ea;
+  background: color-mix(in oklab, #c792ea 16%, transparent);
+}
+.ts-kind.typo {
+  color: var(--warn);
+  background: color-mix(in oklab, var(--warn) 16%, transparent);
+}
+.ts-kind.syn {
+  color: #2dd4a7;
+  background: color-mix(in oklab, #2dd4a7 16%, transparent);
+}
+.ts-xray-w,
+.ts-xray-pos {
+  color: var(--text-faint);
+  font-size: 9.5px;
+}
+.ts-xray-bar {
+  flex: 1;
+  height: 3px;
+  background: var(--bg2);
+  border-radius: 99px;
+  overflow: hidden;
+  min-width: 40px;
+}
+.ts-xray-bar span {
+  display: block;
+  height: 100%;
+  background: color-mix(in oklab, var(--accent) 70%, transparent);
+}
+.ts-xray-none {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+}
+.ts-xray-foot {
+  margin-top: 8px;
+  font-size: 9.5px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+}
+.ts-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 60px 20px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.ts-empty-hint {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.ts-why {
+  text-align: left;
+  max-width: 620px;
+  margin: 4px 0 2px;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 11px 13px;
+}
+.ts-why-head {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  margin-bottom: 7px;
+}
+.ts-why-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 3px 0;
+}
+.ts-why-tok {
+  font-family: var(--mono);
+  font-weight: 600;
+  color: var(--text);
+}
+.ts-why-budget {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--warn);
+}
+.ts-why-budget b {
+  color: var(--warn);
+}
+.ts-why-near {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+.ts-why-term {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+  border: 1px solid color-mix(in oklab, var(--accent) 26%, transparent);
+  border-radius: 99px;
+  padding: 2px 9px;
+  cursor: pointer;
+}
+.ts-why-term:hover {
+  background: color-mix(in oklab, var(--accent) 22%, transparent);
+  border-color: color-mix(in oklab, var(--accent) 55%, transparent);
+}
+.ts-why-term i {
+  font-style: normal;
+  color: var(--text-faint);
+  margin-left: 6px;
+  font-size: 9.5px;
+}
+.ts-why-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+.ts-why-foot code {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  background: var(--bg0);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.ts-why-fix {
+  font-family: inherit;
+  font-size: 10.5px;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in oklab, var(--accent) 40%, var(--border));
+  border-radius: 99px;
+  padding: 3px 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ts-why-fix:hover {
+  background: color-mix(in oklab, var(--accent) 20%, transparent);
+}
+.ts-more {
+  text-align: center;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  padding: 10px 0 2px;
+}
+.ts-facets {
+  width: 232px;
+  flex: none;
+  border-left: 1px solid var(--border);
+  background: var(--bg1);
+  overflow: auto;
+  padding: 12px 13px 20px;
+}
+.ts-facets-head {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  font-weight: 600;
+  margin-bottom: 8px;
+  font-family: var(--mono);
+}
+.ts-facet {
+  margin-bottom: 14px;
+}
+.ts-facet-name {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+.ts-facet-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--text-dim);
+  background: none;
+  border: none;
+  border-radius: 6px;
+  padding: 3px 6px;
+  cursor: pointer;
+  overflow: hidden;
+}
+.ts-facet-row:hover {
+  color: var(--text);
+}
+.ts-facet-row.active {
+  color: var(--accent);
+}
+.ts-facet-bar {
+  position: absolute;
+  inset: 0;
+}
+.ts-facet-bar span {
+  display: block;
+  height: 100%;
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+}
+.ts-facet-row.active .ts-facet-bar span {
+  background: color-mix(in oklab, var(--accent) 24%, transparent);
+}
+.ts-facet-val {
+  position: relative;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ts-facet-cnt {
+  position: relative;
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+.ts-facet-none {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.ts-pop-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--text-dim);
+  background: none;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 6px;
+  cursor: pointer;
+}
+.ts-pop-row:hover {
+  background: var(--bg2);
+  color: var(--text);
+}
+.ts-pop-q {
+  font-family: var(--mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ts-pop-hits {
+  font-size: 9px;
+  color: var(--text-faint);
+}
+.ts-pop-hits.zero {
+  color: var(--danger);
+}
+.ts-pop-cnt {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+.ts-reqbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 14px;
+  border-top: 1px solid var(--border);
+  flex: none;
+  background: var(--bg1);
+}
+.ts-req-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.ts-req-toggle:hover {
+  color: var(--accent);
+}
+.ts-req-inline {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ts-req-panel {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg0);
+  padding: 12px 18px;
+  flex: none;
+  max-height: 28%;
+  overflow: auto;
+}
+.ts-req-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.ts-req-h {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  font-weight: 600;
+  margin-bottom: 5px;
+}
+.ts-req-pre {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ts-docs {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  position: relative;
+}
+.ts-docs-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 13px 18px 10px;
+  flex: none;
+}
+.ts-docs-head h2 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+}
+.ts-docs-search {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 10px;
+  width: 250px;
+}
+.ts-docs-search input {
+  flex: 1;
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--text);
+  background: none;
+  border: none;
+  outline: none;
+}
+.ts-docs-body {
+  flex: 1;
+  overflow: auto;
+  padding: 0 18px 18px;
+}
+.ts-docs-body tr {
+  cursor: pointer;
+}
+.ts-row-sel {
+  background: color-mix(in oklab, var(--accent) 10%, transparent) !important;
+}
+.ts-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 420px;
+  background: var(--bg1);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.18);
+}
+.ts-drawer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.ts-drawer-id {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.ts-drawer-json {
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  background: var(--bg0);
+  color: var(--text);
+  border: none;
+  outline: none;
+  padding: 12px 14px;
+  resize: none;
+}
+.ts-drawer-err {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  color: var(--danger);
+  font-family: var(--mono);
+  padding: 8px 14px;
+}
+.ts-drawer-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+}
+.ts-syn-chip {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-dim);
+  background: var(--bg2);
+  border-radius: 99px;
+  padding: 2px 7px;
+  margin: 1px 3px 1px 0;
+}
+.ts-syn-chip.hide {
+  color: var(--danger);
+  background: color-mix(in oklab, var(--danger) 12%, transparent);
+}
+.ts-syn-chip.admin {
+  color: var(--warn);
+  background: color-mix(in oklab, var(--warn) 14%, transparent);
+}
+.ts-key-mask {
+  color: var(--text-faint);
+  letter-spacing: 0.1em;
+  margin-left: 2px;
+}
+.ts-analytics {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.ts-an-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  background: none;
+  border: none;
+  border-radius: 7px;
+  padding: 5px 9px;
+  cursor: pointer;
+  overflow: hidden;
+}
+.ts-an-row:hover {
+  color: var(--text);
+}
+.ts-an-bar {
+  position: absolute;
+  inset: 0;
+}
+.ts-an-bar span {
+  display: block;
+  height: 100%;
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+}
+.ts-an-row.zero .ts-an-bar span {
+  background: color-mix(in oklab, var(--danger) 12%, transparent);
+}
+.ts-an-q {
+  position: relative;
+  font-family: var(--mono);
+}
+.ts-an-hits {
+  position: relative;
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+.ts-an-row.zero .ts-an-hits {
+  color: var(--danger);
+}
+.ts-an-cnt {
+  position: relative;
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+.ts-an-rules {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.ts-an-rule {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 3px 9px;
+}
+.ts-an-rule b {
+  color: var(--text-dim);
+}
+.ts-json {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  margin: 2px 0 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-dim);
+}
+.tsj-k {
+  color: var(--accent);
+}
+.tsj-s {
+  color: #98c379;
+}
+.tsj-n {
+  color: #e2b340;
+}
+.tsj-b {
+  color: #c792ea;
+}
+.tsj-p {
+  color: var(--text-faint);
+}
+/* Per-row action button in the dashboard / curation tables. The prototype reused
+   Neo4j's `.neo-row-graph`; that engine is not built here, so the Typesense
+   track carries its own copy under a name that says what it does. */
+.ts-row-act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  background: var(--bg0);
+  color: var(--text-faint);
+  border-radius: 6px;
+  padding: 3px 6px;
+  margin-left: 4px;
+  cursor: pointer;
+  transition:
+    color 0.1s,
+    border-color 0.1s;
+}
+.ts-row-act:hover {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+}
+
+/* The sidebar's alias list is a secondary list under the collections — it must
+   not compete for vertical space. */
+.ts-alias-list {
+  flex: none;
+  max-height: 18%;
+}
+
+/* Wide tables (the dashboard's collection list, the curation and key tables)
+   scroll horizontally INSIDE their panel rather than pushing the workspace
+   wider. `.rdash` is `overflow-y: auto` only and is shared with the other
+   engines' dashboards, so the containment is added here rather than there. */
+.ts-tablewrap {
+  overflow-x: auto;
+  max-width: 100%;
+}

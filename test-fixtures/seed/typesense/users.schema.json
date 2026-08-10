@@ -1,0 +1,34 @@
+{
+  "name": "users",
+  "default_sorting_field": "orders",
+  "fields": [
+    {
+      "name": "full_name",
+      "type": "string"
+    },
+    {
+      "name": "email",
+      "type": "string"
+    },
+    {
+      "name": "country",
+      "type": "string",
+      "facet": true
+    },
+    {
+      "name": "plan",
+      "type": "string",
+      "facet": true
+    },
+    {
+      "name": "orders",
+      "type": "int32",
+      "sort": true
+    },
+    {
+      "name": "joined_at",
+      "type": "int64",
+      "sort": true
+    }
+  ]
+}

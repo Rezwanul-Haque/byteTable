@@ -1,0 +1,9 @@
+{
+  "description": "search-only (fixture)",
+  "actions": [
+    "documents:search"
+  ],
+  "collections": [
+    "products"
+  ]
+}

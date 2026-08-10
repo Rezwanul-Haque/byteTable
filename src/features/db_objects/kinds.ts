@@ -47,6 +47,10 @@ export const ENGINE_OBJECTS: Record<Engine, ObjectClass[]> = {
   dynamodb: [],
   mongodb: [],
   cassandra: [],
+  // Typesense (M30): a search index has no SQL object catalog at all — its
+  // collections are browsed by the Typesense workspace's own sidebar, not the
+  // object explorer.
+  typesense: [],
 };
 
 /** The non-table object classes for an engine, in display order (the bottom
@@ -76,6 +80,7 @@ export const ENGINE_DIALECT: Record<Engine, string> = {
   dynamodb: "DynamoDB",
   mongodb: "MongoDB",
   cassandra: "Cassandra",
+  typesense: "Typesense",
 };
 
 /** Engine-aware `CREATE …` template for a new object (design Prompt 4). Opens

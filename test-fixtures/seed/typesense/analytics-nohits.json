@@ -1,0 +1,14 @@
+{
+  "type": "nohits_queries",
+  "params": {
+    "source": {
+      "collections": [
+        "products"
+      ]
+    },
+    "destination": {
+      "collection": "product_no_hits"
+    },
+    "limit": 100
+  }
+}

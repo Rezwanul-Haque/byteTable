@@ -14,7 +14,8 @@ export type Engine =
   | "dynamodb"
   | "mongodb"
   | "cassandra"
-  | "clickhouse";
+  | "clickhouse"
+  | "typesense";
 
 /**
  * Deployment environment a connection points at (drives the EnvTag tint).

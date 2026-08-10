@@ -1,0 +1,51 @@
+{
+  "name": "products",
+  "default_sorting_field": "popularity",
+  "fields": [
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "brand",
+      "type": "string",
+      "facet": true
+    },
+    {
+      "name": "categories",
+      "type": "string[]",
+      "facet": true
+    },
+    {
+      "name": "description",
+      "type": "string"
+    },
+    {
+      "name": "price",
+      "type": "float",
+      "facet": true,
+      "sort": true
+    },
+    {
+      "name": "rating",
+      "type": "float",
+      "facet": true,
+      "sort": true
+    },
+    {
+      "name": "popularity",
+      "type": "int32",
+      "sort": true
+    },
+    {
+      "name": "in_stock",
+      "type": "bool",
+      "facet": true
+    },
+    {
+      "name": "created_at",
+      "type": "int64",
+      "sort": true
+    }
+  ]
+}

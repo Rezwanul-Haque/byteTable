@@ -1,0 +1,13 @@
+{
+  "name": "product_no_hits",
+  "fields": [
+    {
+      "name": "q",
+      "type": "string"
+    },
+    {
+      "name": "count",
+      "type": "int32"
+    }
+  ]
+}

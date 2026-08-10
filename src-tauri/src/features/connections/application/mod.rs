@@ -103,7 +103,8 @@ impl ConnectionManager {
             Some(OpenConnection::Kv(_))
             | Some(OpenConnection::Document(_))
             | Some(OpenConnection::Mongo(_))
-            | Some(OpenConnection::WideColumn(_)) => Err(kind_mismatch("SQL")),
+            | Some(OpenConnection::WideColumn(_))
+            | Some(OpenConnection::Search(_)) => Err(kind_mismatch("SQL")),
             None => Err(not_open(handle)),
         }
     }
@@ -119,7 +120,8 @@ impl ConnectionManager {
             Some(OpenConnection::Sql(_))
             | Some(OpenConnection::Document(_))
             | Some(OpenConnection::Mongo(_))
-            | Some(OpenConnection::WideColumn(_)) => Err(kind_mismatch("key-value")),
+            | Some(OpenConnection::WideColumn(_))
+            | Some(OpenConnection::Search(_)) => Err(kind_mismatch("key-value")),
             None => Err(not_open(handle)),
         }
     }
@@ -135,7 +137,8 @@ impl ConnectionManager {
             Some(OpenConnection::Sql(_))
             | Some(OpenConnection::Kv(_))
             | Some(OpenConnection::Mongo(_))
-            | Some(OpenConnection::WideColumn(_)) => Err(kind_mismatch("document-store")),
+            | Some(OpenConnection::WideColumn(_))
+            | Some(OpenConnection::Search(_)) => Err(kind_mismatch("document-store")),
             None => Err(not_open(handle)),
         }
     }
@@ -151,7 +154,8 @@ impl ConnectionManager {
             Some(OpenConnection::Sql(_))
             | Some(OpenConnection::Kv(_))
             | Some(OpenConnection::Document(_))
-            | Some(OpenConnection::WideColumn(_)) => Err(kind_mismatch("MongoDB")),
+            | Some(OpenConnection::WideColumn(_))
+            | Some(OpenConnection::Search(_)) => Err(kind_mismatch("MongoDB")),
             None => Err(not_open(handle)),
         }
     }
@@ -170,7 +174,25 @@ impl ConnectionManager {
             Some(OpenConnection::Sql(_))
             | Some(OpenConnection::Kv(_))
             | Some(OpenConnection::Document(_))
-            | Some(OpenConnection::Mongo(_)) => Err(kind_mismatch("Cassandra")),
+            | Some(OpenConnection::Mongo(_))
+            | Some(OpenConnection::Search(_)) => Err(kind_mismatch("Cassandra")),
+            None => Err(not_open(handle)),
+        }
+    }
+
+    /// The Typesense search connection behind a handle (M30). A handle of any
+    /// other family is the symmetric §5 error.
+    pub async fn get_search(
+        &self,
+        handle: &ConnectionHandleId,
+    ) -> Result<Arc<dyn crate::shared::search::SearchConnection>, AppError> {
+        match self.open.read().await.get(handle) {
+            Some(OpenConnection::Search(conn)) => Ok(Arc::clone(conn)),
+            Some(OpenConnection::Sql(_))
+            | Some(OpenConnection::Kv(_))
+            | Some(OpenConnection::Document(_))
+            | Some(OpenConnection::Mongo(_))
+            | Some(OpenConnection::WideColumn(_)) => Err(kind_mismatch("Typesense")),
             None => Err(not_open(handle)),
         }
     }
@@ -190,7 +212,9 @@ impl ConnectionManager {
                 Some(OpenConnection::Sql(conn)) => Arc::clone(conn).as_process_reader(),
                 Some(OpenConnection::Kv(conn)) => Arc::clone(conn).as_process_reader(),
                 Some(OpenConnection::Mongo(conn)) => Arc::clone(conn).as_process_reader(),
-                Some(OpenConnection::Document(_)) | Some(OpenConnection::WideColumn(_)) => None,
+                Some(OpenConnection::Document(_))
+                | Some(OpenConnection::WideColumn(_))
+                | Some(OpenConnection::Search(_)) => None,
                 None => return Err(not_open(handle)),
             }
         };
@@ -229,6 +253,9 @@ impl ConnectionManager {
                     let _ = c.close().await;
                 }
                 OpenConnection::WideColumn(c) => {
+                    let _ = c.close().await;
+                }
+                OpenConnection::Search(c) => {
                     let _ = c.close().await;
                 }
             }
@@ -294,10 +321,6 @@ impl TransientSecrets {
             password: clean(password),
             ssh: clean(ssh),
         }
-    }
-
-    fn is_empty(&self) -> bool {
-        self.password.is_none() && self.ssh.is_none()
     }
 }
 
@@ -499,6 +522,14 @@ fn connect_target(params: &ConnectionParams) -> String {
         | ConnectionParams::Mssql { host, port, .. }
         | ConnectionParams::Redis { host, port, .. }
         | ConnectionParams::Clickhouse { host, port, .. } => format!("{host}:{port}"),
+        // Typesense is reached by URL, so name the scheme too — a wrong
+        // http/https choice is the likeliest cause of a timeout here.
+        ConnectionParams::Typesense {
+            protocol,
+            host,
+            port,
+            ..
+        } => format!("{}://{host}:{port}", protocol.as_scheme()),
         ConnectionParams::Mongodb {
             uri, host, port, ..
         } => uri.clone().unwrap_or_else(|| format!("{host}:{port}")),
@@ -513,13 +544,26 @@ fn connect_target(params: &ConnectionParams) -> String {
     }
 }
 
-pub async fn test_connection(
+pub async fn test_connection<S: SecretStore + ?Sized>(
     registry: &ConnectorRegistry,
+    secret_store: &S,
     params: &ConnectionParams,
+    saved_id: Option<&str>,
     secrets: &TransientSecrets,
     timeout: Duration,
 ) -> Result<EngineInfo, AppError> {
-    let secret = connect_secret_from(secrets);
+    // Same secret sourcing as `open_connection`: a typed secret wins, otherwise
+    // fall back to the keychain for a SAVED connection.
+    //
+    // Without the fallback, "Test connection" on an EDITED connection sent no
+    // password at all — the modal deliberately leaves the field blank (blank =
+    // "keep the stored secret"), so there was nothing transient to send and no
+    // id to look anything up by. Every engine was affected; it merely looked
+    // like a wrong password rather than a missing one. Typesense made it
+    // obvious, because its `/health` needs no key: the test reported
+    // "Connection OK" while every authenticated probe 401'd, so an admin key
+    // was mis-reported as search-only.
+    let secret = resolve_open_secret(secret_store, params, saved_id, secrets)?;
     let connector = registry.get(params.engine())?;
     within_connect_timeout(
         timeout,
@@ -527,19 +571,6 @@ pub async fn test_connection(
         connector.test_with_secret(params, secret.as_ref()),
     )
     .await
-}
-
-/// Build a [`ConnectSecret`] from transient secrets, or `None` when both are
-/// absent (so SQLite and direct passwordless connections pass `None`).
-fn connect_secret_from(secrets: &TransientSecrets) -> Option<ConnectSecret> {
-    if secrets.is_empty() {
-        None
-    } else {
-        Some(ConnectSecret::with_ssh(
-            secrets.password.clone(),
-            secrets.ssh.clone(),
-        ))
-    }
 }
 
 /// What `open_connection` opens: either a saved entry or ad-hoc parameters
@@ -660,6 +691,12 @@ pub async fn open_connection<R: ConnectionRepository + ?Sized, S: SecretStore + 
             // workspace fetches its keyspace + table list on mount (M19 §19.1); the
             // open result only carries the `kind` the renderer routes on.
             OpenConnection::WideColumn(_) => (Vec::new(), None),
+            // Typesense (M30): no SQL schemas, no Redis keyspace. The Typesense
+            // workspace fetches its collection list on mount via
+            // `typesense_collections` (or falls back to the configured default
+            // collection when the key is search-only); the open result only
+            // carries the `kind` the renderer routes on.
+            OpenConnection::Search(_) => (Vec::new(), None),
         };
         Ok((connection, schemas, keyspace))
     })
@@ -723,6 +760,7 @@ pub async fn close_connection(
         Some(OpenConnection::Document(connection)) => connection.close().await,
         Some(OpenConnection::Mongo(connection)) => connection.close().await,
         Some(OpenConnection::WideColumn(connection)) => connection.close().await,
+        Some(OpenConnection::Search(connection)) => connection.close().await,
         None => Ok(()),
     }
 }
@@ -965,12 +1003,46 @@ mod tests {
         }
     }
 
+    /// Testing an EDITED saved connection must reach that entry's keychain
+    /// secret, because the connect modal deliberately leaves the password field
+    /// blank (blank = "keep the stored secret") — so there is nothing transient
+    /// to send. Before this, `connection_test` took no id and could not look the
+    /// secret up at all: every engine tested an edit with NO password.
+    #[tokio::test]
+    async fn testing_a_saved_connection_falls_back_to_its_keychain_secret() {
+        let store = InMemorySecretStore::default();
+        store.set(&db_account("conn-1"), "stored-password").unwrap();
+        let params = postgres_params();
+
+        // With the saved id, the stored secret is found…
+        let resolved = resolve_open_secret(&store, &params, Some("conn-1"), &no_secrets()).unwrap();
+        assert_eq!(
+            resolved.as_ref().and_then(ConnectSecret::password),
+            Some("stored-password")
+        );
+
+        // …and without it, there is nothing to send — the old behaviour, and
+        // exactly why an edited connection tested unauthenticated.
+        let anonymous = resolve_open_secret(&store, &params, None, &no_secrets()).unwrap();
+        assert!(anonymous.is_none());
+
+        // A freshly typed secret still wins over the stored one.
+        let typed = TransientSecrets::new(Some("typed".into()), None);
+        let overridden = resolve_open_secret(&store, &params, Some("conn-1"), &typed).unwrap();
+        assert_eq!(
+            overridden.as_ref().and_then(ConnectSecret::password),
+            Some("typed")
+        );
+    }
+
     #[tokio::test]
     async fn a_test_that_never_answers_gives_up_at_the_timeout() {
         let registry = registry_with_hang();
         let err = test_connection(
             &registry,
+            &InMemorySecretStore::default(),
             &postgres_params(),
+            None,
             &no_secrets(),
             Duration::from_millis(30),
         )
@@ -1288,9 +1360,16 @@ mod tests {
             tls_mode: crate::shared::engine::TlsMode::Disable,
             ssh: None,
         };
-        let err = test_connection(&registry, &params, &no_secrets(), DEFAULT_CONNECT_TIMEOUT)
-            .await
-            .unwrap_err();
+        let err = test_connection(
+            &registry,
+            &InMemorySecretStore::default(),
+            &params,
+            None,
+            &no_secrets(),
+            DEFAULT_CONNECT_TIMEOUT,
+        )
+        .await
+        .unwrap_err();
         assert!(matches!(err, AppError::Unsupported(_)));
         assert_eq!(
             err.to_string(),

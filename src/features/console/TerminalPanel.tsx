@@ -26,6 +26,7 @@ import { DynamoPartiqlSession } from "./DynamoPartiqlSession";
 import { MongoShellSession } from "./MongoShellSession";
 import { RedisTerminalSession } from "./RedisTerminalSession";
 import { SqlTerminalTab } from "./SqlTerminalTab";
+import { TypesenseHttpSession } from "./TypesenseHttpSession";
 import {
   TERM_DEFAULT_HEIGHT,
   TERM_MIN_HEIGHT,
@@ -98,6 +99,11 @@ export function TerminalPanel({ workspace }: { workspace: Workspace }) {
     }
     if (workspace.saved.engine === "cassandra") {
       return <CassandraShellSession workspace={workspace} session={s} />;
+    }
+    // Typesense has no REPL — its console speaks raw HTTP against the search
+    // API (M30 Task 8).
+    if (workspace.saved.engine === "typesense") {
+      return <TypesenseHttpSession workspace={workspace} session={s} />;
     }
     return (
       <SqlTerminalTab

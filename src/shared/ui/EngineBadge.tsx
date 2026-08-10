@@ -30,6 +30,9 @@ const ENGINE_META: Record<Engine, { label: string; short: string; color: string 
   // ClickHouse (M25): the ClickHouse yellow (prototype ui.jsx ENGINE_META),
   // distinct from every other engine tint.
   clickhouse: { label: "ClickHouse", short: "CH", color: "#faff69" },
+  // Typesense (M30): the Typesense amber (prototype ui.jsx ENGINE_META),
+  // warmer than MySQL's gold and unlike ClickHouse's acid yellow.
+  typesense: { label: "Typesense", short: "Ts", color: "#e0a458" },
 };
 
 interface EngineBadgeProps {

@@ -1,21 +1,22 @@
 # ByteTable test databases — Postgres, MySQL, SQL Server, Redis, DynamoDB Local,
-# MongoDB, Cassandra. Ports are non-standard (offset) so they don't clash with
-# any local installs, EXCEPT DynamoDB Local (8000), MongoDB (27017) and Cassandra
-# (9042), which keep their standard ports so the connect modal's defaults work
-# as-is.
+# MongoDB, Cassandra, ClickHouse, Typesense. Ports are non-standard (offset) so
+# they don't clash with any local installs, EXCEPT DynamoDB Local (8000),
+# MongoDB (27017), Cassandra (9042) and Typesense (8108), which keep their
+# standard ports so the connect modal's defaults work as-is.
 #
 #   cd test-fixtures
-#   docker compose up -d          # start all seven
+#   docker compose up -d          # start them all
 #   ./seed/seed-redis.sh          # seed Redis
 #   ./seed/seed-dynamo.sh         # seed DynamoDB (creates tables + items)
 #   ./seed/seed-cassandra.sh      # seed Cassandra (after the node is ready)
 #   ./seed/seed-mssql.sh          # seed SQL Server (after it is ready)
+#   ./seed/seed-typesense.sh      # seed Typesense (collections + docs + curation)
 #   docker compose down -v        # stop + wipe (so a later `up` re-seeds)
 #
 # Credentials are in README.md. The Postgres + MySQL + Mongo seed files auto-run
 # only on FIRST init of an empty data volume; `down -v` clears the volume so the
-# next `up` re-seeds. Redis, DynamoDB, Cassandra and SQL Server have no auto-init
-# dir, so their seed scripts are run manually.
+# next `up` re-seeds. Redis, DynamoDB, Cassandra, SQL Server and Typesense have
+# no auto-init dir, so their seed scripts are run manually.
 
 services:
   postgres:
@@ -188,6 +189,87 @@ services:
       retries: 12
       start_period: 20s
 
+  # Typesense (M30) — a search engine, not a table store: collections replace
+  # databases and every read is a search call.
+  #
+  # A REAL 3-NODE RAFT CLUSTER (one leader, two followers), not three copies of
+  # a standalone server: the `--nodes` file lists all three peers, so they hold
+  # an election and replicate. That makes the dashboard's raft-state column and
+  # the leader/follower distinction genuinely exercisable — connect to 8108 vs
+  # 8118 and the same workspace reports a different node.
+  #
+  # Peers are addressed by fixed IP on a dedicated subnet because Typesense's
+  # nodes file wants `<peering-ip>:<peering-port>:<api-port>`; container names
+  # are not resolved for raft peering. API ports are mapped to distinct HOST
+  # ports (8108/8118/8128) so any node can be dialled from the app.
+  #
+  # `--enable-search-analytics` + a short flush interval turn on the analytics
+  # the dashboard's popular/no-hit panel reads; `seed-typesense.sh` creates the
+  # destination collection and the rules.
+  typesense: &typesense-node
+    image: typesense/typesense:29.0
+    container_name: bt-typesense
+    command: >-
+      --data-dir /data
+      --api-key=bytetable
+      --nodes=/nodes
+      --enable-search-analytics=true
+      --analytics-flush-interval=10
+      --enable-cors
+    ports:
+      - "8108:8108"
+    volumes:
+      - ./seed/typesense/nodes:/nodes:ro
+      - bt-typesense-data:/data
+    networks:
+      bt-typesense-net:
+        ipv4_address: 172.28.1.11
+    healthcheck:
+      # The Typesense image ships neither curl nor wget, so the check speaks
+      # HTTP over bash's /dev/tcp rather than shelling out to a client that
+      # isn't there (which silently marked the container unhealthy forever).
+      test:
+        - CMD
+        - bash
+        - -c
+        - 'exec 3<>/dev/tcp/127.0.0.1/8108 && printf "GET /health HTTP/1.0\r\n\r\n" >&3 && grep -qE ok.:true <&3'
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  typesense-2:
+    <<: *typesense-node
+    container_name: bt-typesense-2
+    ports:
+      - "8118:8108"
+    volumes:
+      - ./seed/typesense/nodes:/nodes:ro
+      - bt-typesense-2-data:/data
+    networks:
+      bt-typesense-net:
+        ipv4_address: 172.28.1.12
+
+  typesense-3:
+    <<: *typesense-node
+    container_name: bt-typesense-3
+    ports:
+      - "8128:8108"
+    volumes:
+      - ./seed/typesense/nodes:/nodes:ro
+      - bt-typesense-3-data:/data
+    networks:
+      bt-typesense-net:
+        ipv4_address: 172.28.1.13
+
+# Raft peering needs stable addresses, so the Typesense nodes get their own
+# subnet with fixed IPs rather than whatever the default bridge hands out.
+networks:
+  bt-typesense-net:
+    ipam:
+      config:
+        - subnet: 172.28.1.0/24
+
 volumes:
   bt-pg-data:
   bt-mysql-data:
@@ -197,3 +279,6 @@ volumes:
   bt-mongo-data:
   bt-cassandra-data:
   bt-clickhouse-data:
+  bt-typesense-data:
+  bt-typesense-2-data:
+  bt-typesense-3-data:

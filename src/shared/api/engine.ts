@@ -518,6 +518,9 @@ export const OBJECT_CAPS: Record<Engine, DbObjectKind[]> = {
   dynamodb: [],
   mongodb: [],
   cassandra: [],
+  // Typesense (M30): no SQL objects — no views, functions, procedures or
+  // triggers exist in a search index.
+  typesense: [],
 };
 
 /** Objects of one kind in a schema (the `list_objects` command). */

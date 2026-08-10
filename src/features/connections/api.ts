@@ -169,7 +169,40 @@ export type ConnectionParams =
       user?: string;
       tlsMode: TlsMode;
       ssh?: SshConfig;
+    }
+  | {
+      // Typesense (M30). A search engine reached over HTTP (default 8108).
+      // Deliberately unlike every other server variant: NO `user` and NO
+      // `tlsMode`. Typesense authenticates with a single API key sent as the
+      // `X-TYPESENSE-API-KEY` header — that key is a secret and lives in the OS
+      // keychain, never in params — and it has no TLS negotiation, only a
+      // `protocol` scheme choice. `defaultCollection` is optional and purely
+      // navigational: it picks the collection the workspace opens on and, with a
+      // search-only key (which cannot call `GET /collections`), is the only
+      // collection name the sidebar can show. SSH tunnel supported.
+      engine: "typesense";
+      protocol: Protocol;
+      host: string;
+      port: number;
+      defaultCollection?: string;
+      /**
+       * Peers of the same cluster, comma-separated `host:port`, for the
+       * dashboard's node table. Typesense exposes no cluster-membership
+       * endpoint, so a client can only show the cluster it is told about —
+       * which is exactly what the official Typesense clients require. Purely
+       * observational: every read and write still goes to `host`/`port`.
+       */
+      nodes?: string;
+      ssh?: SshConfig;
     };
+
+/**
+ * The URL scheme a Typesense node is reached over (M30) — mirrors Rust's
+ * `Protocol`. Typesense has no libpq-style TLS negotiation, so the granular
+ * {@link TlsMode} vocabulary is meaningless for it: the only real choice is
+ * `http` vs `https`. Rendered as a segmented control, not a dropdown.
+ */
+export type Protocol = "http" | "https";
 
 /**
  * DynamoDB credential mode (M17) — mirrors Rust's `DynamoAuth`, tagged with
@@ -211,7 +244,7 @@ export interface SavedConnection {
  * renderer routes on: `"sql"` → the relational workspace, `"kv"` → the Redis
  * workspace. Lowercase on the wire, mirroring Rust's `ConnectionKind`.
  */
-export type ConnectionKind = "sql" | "kv" | "document" | "mongo" | "cassandra";
+export type ConnectionKind = "sql" | "kv" | "document" | "mongo" | "cassandra" | "typesense";
 
 /**
  * Server identity for the Redis dashboard header — mirrors Rust's
@@ -339,15 +372,22 @@ export function connectionDelete(id: string): Promise<void> {
  * Probe the target without keeping a connection open ("Test connection").
  *
  * `password` / `sshSecret` are the transient secrets typed in the modal, sent
- * only for this call and never persisted. Testing happens before save, so the
- * keychain is not touched here. SQLite ignores both.
+ * only for this call and never persisted. SQLite ignores both.
+ *
+ * `id` is the saved connection being EDITED, when there is one. The modal
+ * deliberately leaves the secret field blank in edit mode (blank = "keep the
+ * stored secret"), so without the id there is nothing to authenticate with and
+ * the test runs anonymously — which is a silent failure for engines whose
+ * health check needs no credentials.
  */
 export function connectionTest(
   params: ConnectionParams,
   secrets?: { password?: string; sshSecret?: string },
+  id?: string,
 ): Promise<EngineInfo> {
   return invoke<EngineInfo>("connection_test", {
     params,
+    id,
     password: secrets?.password,
     sshSecret: secrets?.sshSecret,
   });
@@ -414,6 +454,13 @@ export function connectionDetail(params: ConnectionParams): string {
       : params.contactPoints + ":" + params.port;
     return params.keyspace ? points + " · " + params.keyspace : points;
   }
+  // Typesense: the node URL, plus the collection the workspace opens on. The
+  // scheme matters here (unlike the SQL engines, where the port implies it), so
+  // the detail line carries it: "http://localhost:8108 · products".
+  if (params.engine === "typesense") {
+    const url = params.protocol + "://" + params.host + ":" + params.port;
+    return params.defaultCollection ? url + " · " + params.defaultCollection : url;
+  }
   // database is optional now; omit the " · db" suffix when absent.
   return params.database
     ? params.host + ":" + params.port + " · " + params.database
@@ -473,7 +520,11 @@ export function tunnelTitle(params: ConnectionParams): string {
  * optional, and an empty string is absence, not a name.
  */
 export function connectionUser(params: ConnectionParams): string | null {
-  if (params.engine === "sqlite" || params.engine === "dynamodb") return null;
+  // Typesense joins the no-username set: it authenticates with a single API key
+  // header and has no user concept whatsoever.
+  if (params.engine === "sqlite" || params.engine === "dynamodb" || params.engine === "typesense") {
+    return null;
+  }
   const user = params.user?.trim();
   return user ? user : null;
 }

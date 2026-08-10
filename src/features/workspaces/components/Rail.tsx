@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
 
+import type { Engine } from "../../../shared/types";
 import { BTLogo } from "../../../shared/ui/BTLogo";
 import { Icon } from "../../../shared/ui/Icon";
 import { selectShowConnect, useWorkspacesStore, WORKSPACE_COLORS } from "../state";
@@ -26,7 +27,8 @@ const ENGINE_META = {
   mongodb: { label: "MongoDB", short: "Mg" },
   cassandra: { label: "Cassandra", short: "Cs" },
   clickhouse: { label: "ClickHouse", short: "CH" },
-} as const;
+  typesense: { label: "Typesense", short: "Ts" },
+} as const satisfies Record<Engine, { label: string; short: string }>;
 
 // Ported from rail.jsx wsInitials: two characters from the workspace name —
 // first letters of the first two words ("_-" count as separators), or the

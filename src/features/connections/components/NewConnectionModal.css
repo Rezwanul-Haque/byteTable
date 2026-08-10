@@ -85,6 +85,55 @@
   color: var(--text-faint);
 }
 
+/* A monospace qualifier on a field label, naming the exact wire spelling the
+   field maps to (M30: the Typesense API key's `X-TYPESENSE-API-KEY` header).
+   Unlike `.opt-tag` this is technical, not editorial, so it is mono, not
+   italic. */
+.qual-tag {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-faint);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 1px 6px;
+}
+
+/* Typesense endpoint row (M30): protocol + host + port are one URL, so they
+   share a row instead of the scheme toggle claiming a full-width row of its own.
+   The scheme and port are fixed-width (a two-option toggle and at most five
+   digits); the host takes whatever is left. Nested labels still pick up
+   `.form-grid label`'s flex-column layout, so each part keeps its own label. */
+.ts-endpoint {
+  display: grid;
+  /* Sized against the modal's fixed 480px: the scheme fits two mono segments
+     ("https" is the wider) and the port at most five digits, leaving the rest
+     to the host. `minmax(0, 1fr)` rather than `1fr` so the host shrinks instead
+     of overflowing the row — an input's min-content width would otherwise push
+     the grid wider than the modal. */
+  grid-template-columns: 132px minmax(0, 1fr) 80px;
+  gap: 12px;
+  align-items: start;
+}
+
+/* Typesense protocol segmented control (M30 Task 5b): two equal-width mono
+   segments replacing the TLS-mode dropdown. `.seg` is `flex: none` by default
+   (it sits in toolbars elsewhere), so the width is re-asserted here to fill the
+   form field — the same treatment `.ddb-mode-seg` needs. */
+.proto-seg {
+  width: 100%;
+  box-sizing: border-box;
+}
+.proto-seg .seg-btn {
+  flex: 1;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 6px 10px;
+}
+
 /* Inline "i" info button on a field label, with a hover/focus tooltip carrying a
    long note (keeps the form compact). The tooltip text comes from `data-tip`. */
 .lbl-info {

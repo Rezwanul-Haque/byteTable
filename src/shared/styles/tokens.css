@@ -29,6 +29,9 @@
   --success: #34d39e;
   --info: #61afef;
   --warn: #e2b340;
+  /* "Changed / differs from baseline" blue (M30 Task 9). Distinct from --info:
+     --info narrates, --change marks a delta the user may want to act on. */
+  --change: #61afef;
   --error: #e06c75;
   --purple: #c678dd;
   --string: #e5c07b;

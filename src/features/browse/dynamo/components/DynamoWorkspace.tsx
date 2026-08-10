@@ -12,6 +12,7 @@ import { connectionDetail } from "../../../connections/api";
 import { TerminalPanel } from "../../../console/TerminalPanel";
 import { shellLabel, usePanelStore } from "../../../console/state";
 import { ENV_COLOR } from "../../../../shared/ui/envColors";
+import { BuiltByCredit } from "../../../../shared/ui/BuiltByCredit";
 import { Icon } from "../../../../shared/ui/Icon";
 import { useTabMenu } from "../../../../shared/ui/useTabMenu";
 import { useWorkspacesStore } from "../../../workspaces/state";
@@ -394,6 +395,7 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
             {descOf(activeTab.table)?.itemCount.toLocaleString()} items
           </span>
         ) : null}
+        <BuiltByCredit className="ddb-status-dim" />
       </div>
 
       {exportJob ? (

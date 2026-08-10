@@ -17,6 +17,7 @@ use engines::mysql::MysqlConnector;
 use engines::postgres::PostgresConnector;
 use engines::redis::RedisConnector;
 use engines::sqlite::SqliteConnector;
+use engines::typesense::TypesenseConnector;
 use features::connections::application::{ConnectionManager, ConnectorRegistry};
 use features::connections::commands::ConnectionsState;
 use features::connections::infrastructure::JsonFileConnectionRepository;
@@ -384,6 +385,11 @@ pub fn run() {
             // catalog, `ALTER TABLE … UPDATE/DELETE` mutations). Reached over the
             // ClickHouse HTTP interface by the `reqwest`-based adapter.
             registry.register(Engine::Clickhouse, Arc::new(ClickhouseConnector));
+            // Typesense (M30): a search engine. Its connector returns an
+            // `OpenConnection::Search`, kept apart from every other family by
+            // the manager's `get_search` kind seam. Reached over the Typesense
+            // HTTP API by the `reqwest`-based adapter, like ClickHouse.
+            registry.register(Engine::Typesense, Arc::new(TypesenseConnector));
             app.manage(ConnectionsState::new(
                 Box::new(repository),
                 registry,
@@ -579,6 +585,23 @@ pub fn run() {
             features::cassandra::commands::cassandra_drop_mv,
             features::cassandra::commands::cassandra_create_keyspace,
             features::cassandra::commands::cassandra_create_table,
+            features::search::commands::typesense_capabilities,
+            features::search::commands::typesense_health,
+            features::search::commands::typesense_nodes,
+            features::search::commands::typesense_cluster_stats,
+            features::search::commands::typesense_collections,
+            features::search::commands::typesense_collection,
+            features::search::commands::typesense_aliases,
+            features::search::commands::typesense_api_keys,
+            features::search::commands::typesense_synonyms,
+            features::search::commands::typesense_curations,
+            features::search::commands::typesense_analytics,
+            features::search::commands::typesense_search,
+            features::search::commands::typesense_documents,
+            features::search::commands::typesense_diagnose,
+            features::search::commands::typesense_upsert_document,
+            features::search::commands::typesense_delete_document,
+            features::search::commands::typesense_raw_http,
             features::generate::commands::generate_preview,
             features::generate::commands::generate_run,
             features::generate::commands::generate_cancel,

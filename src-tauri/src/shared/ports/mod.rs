@@ -9,6 +9,7 @@
 //! - [`document`]   — DynamoDB items, `DocumentStoreConnection`
 //! - [`mongo`]      — MongoDB documents, `MongoConnection`
 //! - [`widecolumn`] — Cassandra wide-column, `WideColumnConnection`
+//! - [`search`]     — Typesense search index, `SearchConnection`
 //!
 //! `shared` re-exports each at its historical path (`crate::shared::engine` =
 //! [`sql`], `crate::shared::keyvalue`, …) so the grouping is physical only.
@@ -17,6 +18,7 @@ pub mod document;
 pub mod keyvalue;
 pub mod mongo;
 pub mod process;
+pub mod search;
 pub mod sql;
 pub mod widecolumn;
 
@@ -59,6 +61,8 @@ pub enum OpenConnection {
     Mongo(Arc<dyn crate::shared::mongo::MongoConnection>),
     /// A Cassandra wide-column connection (`Cassandra`, M19).
     WideColumn(Arc<dyn crate::shared::widecolumn::WideColumnConnection>),
+    /// A Typesense search connection (`Typesense`, M30).
+    Search(Arc<dyn search::SearchConnection>),
 }
 
 impl OpenConnection {
@@ -72,6 +76,7 @@ impl OpenConnection {
             Self::Document(_) => ConnectionKind::Document,
             Self::Mongo(_) => ConnectionKind::Mongo,
             Self::WideColumn(_) => ConnectionKind::WideColumn,
+            Self::Search(_) => ConnectionKind::Search,
         }
     }
 
@@ -83,6 +88,7 @@ impl OpenConnection {
             Self::Document(c) => c.engine_info(),
             Self::Mongo(c) => c.engine_info(),
             Self::WideColumn(c) => c.engine_info(),
+            Self::Search(c) => c.engine_info(),
         }
     }
 
@@ -114,13 +120,22 @@ impl OpenConnection {
         Self::WideColumn(Arc::new(connection))
     }
 
+    /// Wrap a Typesense search connection (the `engines::typesense` adapter).
+    pub fn search(connection: impl search::SearchConnection + 'static) -> Self {
+        Self::Search(Arc::new(connection))
+    }
+
     /// The SQL connection, consuming the enum, or `None` for a key-value one.
     /// Used by the SQL adapters' own tests, which open a connector and then
     /// exercise the [`EngineConnection`] surface directly.
     pub fn into_sql(self) -> Option<Arc<dyn EngineConnection>> {
         match self {
             Self::Sql(c) => Some(c),
-            Self::Kv(_) | Self::Document(_) | Self::Mongo(_) | Self::WideColumn(_) => None,
+            Self::Kv(_)
+            | Self::Document(_)
+            | Self::Mongo(_)
+            | Self::WideColumn(_)
+            | Self::Search(_) => None,
         }
     }
 
@@ -129,7 +144,11 @@ impl OpenConnection {
     pub fn into_kv(self) -> Option<Arc<dyn KeyValueConnection>> {
         match self {
             Self::Kv(c) => Some(c),
-            Self::Sql(_) | Self::Document(_) | Self::Mongo(_) | Self::WideColumn(_) => None,
+            Self::Sql(_)
+            | Self::Document(_)
+            | Self::Mongo(_)
+            | Self::WideColumn(_)
+            | Self::Search(_) => None,
         }
     }
 
@@ -138,7 +157,9 @@ impl OpenConnection {
     pub fn into_document(self) -> Option<Arc<dyn DocumentStoreConnection>> {
         match self {
             Self::Document(c) => Some(c),
-            Self::Sql(_) | Self::Kv(_) | Self::Mongo(_) | Self::WideColumn(_) => None,
+            Self::Sql(_) | Self::Kv(_) | Self::Mongo(_) | Self::WideColumn(_) | Self::Search(_) => {
+                None
+            }
         }
     }
 
@@ -147,7 +168,11 @@ impl OpenConnection {
     pub fn into_mongo(self) -> Option<Arc<dyn crate::shared::mongo::MongoConnection>> {
         match self {
             Self::Mongo(c) => Some(c),
-            Self::Sql(_) | Self::Kv(_) | Self::Document(_) | Self::WideColumn(_) => None,
+            Self::Sql(_)
+            | Self::Kv(_)
+            | Self::Document(_)
+            | Self::WideColumn(_)
+            | Self::Search(_) => None,
         }
     }
 
@@ -158,7 +183,22 @@ impl OpenConnection {
     ) -> Option<Arc<dyn crate::shared::widecolumn::WideColumnConnection>> {
         match self {
             Self::WideColumn(c) => Some(c),
-            Self::Sql(_) | Self::Kv(_) | Self::Document(_) | Self::Mongo(_) => None,
+            Self::Sql(_) | Self::Kv(_) | Self::Document(_) | Self::Mongo(_) | Self::Search(_) => {
+                None
+            }
+        }
+    }
+
+    /// The Typesense search connection, consuming the enum, or `None` otherwise.
+    /// Used by the `engines::typesense` integration tests.
+    pub fn into_search(self) -> Option<Arc<dyn search::SearchConnection>> {
+        match self {
+            Self::Search(c) => Some(c),
+            Self::Sql(_)
+            | Self::Kv(_)
+            | Self::Document(_)
+            | Self::Mongo(_)
+            | Self::WideColumn(_) => None,
         }
     }
 }
@@ -180,4 +220,8 @@ pub enum ConnectionKind {
     /// on the engine the user recognises, matching MILESTONE_19 §19.0.
     #[serde(rename = "cassandra")]
     WideColumn,
+    /// A Typesense search connection (M30) → the Typesense workspace. Like the
+    /// wide-column arm, the wire token is the engine the user recognises.
+    #[serde(rename = "typesense")]
+    Search,
 }

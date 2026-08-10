@@ -1,8 +1,8 @@
 # ByteTable
 
 A free, open-source, **local-first desktop database client** — a TablePlus / BeekeeperStudio
-like tool with first-class Linux, MacOS, Windows support, no pro tier, and no subscription. One window, Multiple workspace, eight engines:
-**SQLite · MySQL · PostgreSQL · SQL Server · Redis · DynamoDB · MongoDB · Cassandra · ClickHouse**. Many more engines to come.
+like tool with first-class Linux, MacOS, Windows support, no pro tier, and no subscription. One window, Multiple workspace, ten engines:
+**SQLite · MySQL · PostgreSQL · SQL Server · Redis · DynamoDB · MongoDB · Cassandra · ClickHouse · Typesense**. Many more engines to come.
 
 ![ByteTable](docs/byteTable.png)
 ![Data Explorer](docs/data_explorer.png)
@@ -52,7 +52,9 @@ each with its own tab set and sidebar state.
 
 **ClickHouse** — the columnar OLAP store as a first-class relational engine: the `analytics`/`default`/`system` database switcher, browse grid + filter builder + row inspector, a Structure tab that renders ENGINE + `ORDER BY` sort key + `PARTITION BY` with `Nullable(…)` wrapping and data-skipping (secondary) indexes as `ALTER TABLE … ADD INDEX`, an object browser (views / materialized views / SQL UDF functions — no procedures or triggers), inline edits as `ALTER TABLE … UPDATE` mutations, and a `clickhouse-client` terminal (`:)` prompt, PrettyCompact output). Spoken over the ClickHouse HTTP interface.
 
-**Shared** — a VS Code-style **docked terminal panel** (per-engine REPL: psql/mysql/sqlite3-style for SQL, `sqlcmd` for SQL Server, redis-cli for Redis, mongosh for MongoDB, `cqlsh` for Cassandra, `clickhouse-client` for ClickHouse; PartiQL for DynamoDB; `Ctrl+\``), command palette (`⌘K`), system tray, and live theming via the Settings modal.
+**Typesense** — a search workspace rather than a table browser, because Typesense is a search API: collections replace databases and every read is a search call. A **relevance playground** that makes ranking legible — live `query_by` field weights, typo budget with the `min_len` gate explained, prefix / synonym / curation toggles, a facet rail that writes `filter_by`, and a per-hit **relevance x-ray** built from the server's own `highlights` and `text_match_info`. When a query finds nothing it says _why_, naming the nearest indexed terms and offering one-click fixes. Plus a cluster dashboard (raft state, replication position, per-node request rate), schema and document tabs with JSON upsert/delete, curation (synonyms + pinned/hidden results), API keys (prefixes only — Typesense never returns a full key), and a forgiving **HTTP console** that runs a pasted `curl` unchanged. Search-only keys degrade gracefully instead of erroring.
+
+**Shared** — a VS Code-style **docked terminal panel** (per-engine REPL: psql/mysql/sqlite3-style for SQL, `sqlcmd` for SQL Server, redis-cli for Redis, mongosh for MongoDB, `cqlsh` for Cassandra, `clickhouse-client` for ClickHouse; PartiQL for DynamoDB; an HTTP console for Typesense; `Ctrl+\``), command palette (`⌘K`), system tray, and live theming via the Settings modal.
 
 ## Tech stack
 
@@ -116,7 +118,7 @@ compiles the Rust core, so it takes a few minutes; subsequent runs are fast.
 A ready-to-use set of throwaway databases lives in [`test-fixtures/`](test-fixtures/):
 
 ```sh
-make db-up          # Postgres + MySQL + SQL Server + Redis + DynamoDB + MongoDB + Cassandra + ClickHouse (seeded) on offset ports
+make db-up          # Postgres + MySQL + SQL Server + Redis + DynamoDB + MongoDB + Cassandra + ClickHouse + Typesense (seeded) on offset ports
 ```
 
 Then in the app's **New connection** modal (TLS: disable), use the credentials in

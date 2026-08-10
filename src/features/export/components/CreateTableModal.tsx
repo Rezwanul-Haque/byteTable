@@ -102,6 +102,9 @@ const TYPES_BY_ENGINE: Record<Engine, string[]> = {
   dynamodb: ["S"],
   mongodb: ["string"],
   cassandra: ["text"],
+  // Typesense (M30): collections are created through the Typesense schema API,
+  // not this SQL CREATE TABLE modal, which never opens for a search connection.
+  typesense: [],
 };
 
 /** The type a fresh column row defaults to per engine (the second-ish text type

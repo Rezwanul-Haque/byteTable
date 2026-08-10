@@ -1,0 +1,50 @@
+/* InfoHint — the chip is anchored in the layout; the bubble is portalled to
+   <body> and positioned `fixed` from a measured rect (see InfoHint.tsx for why).
+   That is the difference from ByteTable.html's original `.info-hint` rules,
+   which anchored the bubble absolutely inside the chip: an absolutely-positioned
+   box contributes to its ancestors' scrollable overflow even while hidden, which
+   gave the 480px connect modal a permanent horizontal scrollbar. */
+
+.info-hint {
+  display: inline-flex;
+  align-items: center;
+  /* `align-self` matters because the chip usually sits in a `.lbl-row`, which
+     is `align-items: baseline`. Baseline-aligning an icon-only inline-flex box
+     lines its glyph baseline up with the label's text, which rides the icon
+     visibly high; centring it on the line is what reads as aligned. The older
+     `.lbl-info` tooltip carries the same declaration for the same reason. */
+  align-self: center;
+  color: var(--text-faint);
+  cursor: help;
+  outline: none;
+}
+
+.info-hint:hover,
+.info-hint:focus-visible,
+.info-hint.open {
+  color: var(--accent);
+}
+
+.info-hint-bubble {
+  position: fixed;
+  z-index: 60;
+  width: 250px;
+  box-sizing: border-box;
+  background: var(--bg2);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 9px 11px;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.5;
+  /* The hint often sits inside a `.form-field-label` or a panel heading, which
+     are uppercased and letter-spaced — reset both so the bubble reads as prose. */
+  text-transform: none;
+  letter-spacing: 0;
+  text-align: left;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.4);
+  /* Inert: it must never intercept a click meant for the field beneath it, and
+     it must not keep itself open by sitting under the cursor. */
+  pointer-events: none;
+}

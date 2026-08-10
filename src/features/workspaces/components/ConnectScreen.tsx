@@ -606,7 +606,7 @@ export function ConnectScreen() {
 
       <div className="connect-footnote">
         SQLite · MySQL · PostgreSQL · SQL Server · Redis · DynamoDB · MongoDB · Cassandra ·
-        ClickHouse — more engines coming. Your credentials never leave this machine.
+        ClickHouse · Typesense — more engines coming. Your credentials never leave this machine.
       </div>
 
       {cardMenu.element}

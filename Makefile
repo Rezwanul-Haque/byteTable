@@ -105,8 +105,8 @@ tag: ## Bump the version on dev, merge dev → main, then tag + push the release
 	git checkout dev && \
 	echo "Released v$$v: dev → main merged, tagged + pushed — the release workflow will build + publish it."
 
-db-up: ## Start the test databases (Postgres/MySQL/SQL Server/Redis/DynamoDB/MongoDB/Cassandra/ClickHouse) + seed them
-	cd test-fixtures && docker compose up -d && ./seed/seed-redis.sh && ./seed/seed-dynamo.sh && ./seed/seed-cassandra.sh && ./seed/seed-mssql.sh
+db-up: ## Start the test databases (Postgres/MySQL/SQL Server/Redis/DynamoDB/MongoDB/Cassandra/ClickHouse/Typesense) + seed them
+	cd test-fixtures && docker compose up -d && ./seed/seed-redis.sh && ./seed/seed-dynamo.sh && ./seed/seed-cassandra.sh && ./seed/seed-mssql.sh && ./seed/seed-typesense.sh
 
 db-down: ## Stop and wipe the test databases
 	cd test-fixtures && docker compose down -v

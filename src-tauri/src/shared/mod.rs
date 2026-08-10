@@ -11,4 +11,4 @@ pub mod error;
 // physical only).
 mod ports;
 pub use ports::sql as engine;
-pub use ports::{document, keyvalue, mongo, process, widecolumn};
+pub use ports::{document, keyvalue, mongo, process, search, widecolumn};

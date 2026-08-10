@@ -38,7 +38,9 @@
 //! `mod.rs` (connector, connection, family-connection composition, shared
 //! helpers) + `reader.rs` + `writer.rs` + `error.rs` + `value.rs`. `redis`
 //! (keyvalue), `dynamo` (document), `mongo` and `cassandra` (widecolumn) all
-//! follow this. Their live suites stay in the crate-root `tests/` directory
+//! follow this, as does `typesense` (search), which swaps `value.rs` for
+//! `http.rs` (the reqwest transport) + `terms.rs` (the sampled term dictionary
+//! behind the empty-state diagnosis). Their live suites stay in the crate-root `tests/` directory
 //! (public-API integration), gated behind `BYTETABLE_TEST_*_URL`.
 
 pub mod cassandra;
@@ -51,3 +53,4 @@ pub mod postgres;
 pub mod redis;
 pub mod sqlite;
 pub mod ssh;
+pub mod typesense;

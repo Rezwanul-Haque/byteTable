@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { isAppErrorPayload } from "../../../../shared/api/error";
 import { ENV_COLOR } from "../../../../shared/ui/envColors";
+import { BuiltByCredit } from "../../../../shared/ui/BuiltByCredit";
 import { Icon } from "../../../../shared/ui/Icon";
 import { useBtCmd } from "../../../../shared/ui/btCmd";
 import { ProcessesTab } from "../../../processes/ProcessesTab";
@@ -456,6 +457,7 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
         >
           <Icon name="monitor_heart" size={13} /> processes
         </button>
+        <BuiltByCredit className="status-dim" />
       </div>
 
       {exportJob ? (

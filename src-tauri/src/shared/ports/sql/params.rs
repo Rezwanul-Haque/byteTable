@@ -53,6 +53,16 @@ pub enum Engine {
     /// mutations, `clickhouse-client` terminal). Reached over HTTP (8123) by the
     /// `clickhouse` crate in [`crate::engines::clickhouse`].
     Clickhouse,
+    /// Typesense (M30) — a **search engine**, not a table store. Collections
+    /// replace databases, documents are JSON, and every read is a search call
+    /// over an HTTP API (default 8108): no SQL, no transactions, no row cursor,
+    /// no user/password (a single API key travels as `X-TYPESENSE-API-KEY`). It
+    /// implements its own search port family in [`crate::shared::search`]; the
+    /// [`OpenConnection`] kind seam keeps it apart from SQL / key-value /
+    /// document / MongoDB / wide-column. Reached with `reqwest` — the same
+    /// pure-Rust HTTP transport the ClickHouse adapter uses — in
+    /// [`crate::engines::typesense`].
+    Typesense,
 }
 
 impl Engine {
@@ -68,6 +78,34 @@ impl Engine {
             Self::Mongodb => "MongoDB",
             Self::Cassandra => "Cassandra",
             Self::Clickhouse => "ClickHouse",
+            Self::Typesense => "Typesense",
+        }
+    }
+}
+
+/// The URL scheme a Typesense node is reached over (M30 Task 5b).
+///
+/// Typesense has no libpq-style TLS negotiation, so the granular [`TlsMode`]
+/// vocabulary (`prefer` / `require` / `verify-full`) is meaningless for it: the
+/// API is plain HTTP and the only real choice is whether the URL is `http://`
+/// or `https://`. The connect form renders this as a two-option segmented
+/// control rather than the TLS-mode dropdown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Protocol {
+    /// Plain HTTP — the default for a local / tunnelled node.
+    #[default]
+    Http,
+    /// HTTPS, validating the certificate chain (rustls).
+    Https,
+}
+
+impl Protocol {
+    /// The URL scheme token (`"http"` / `"https"`).
+    pub fn as_scheme(self) -> &'static str {
+        match self {
+            Self::Http => "http",
+            Self::Https => "https",
         }
     }
 }
@@ -344,6 +382,41 @@ pub enum ConnectionParams {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         ssh: Option<SshConfig>,
     },
+    /// Typesense (M30) — a search engine reached over HTTP (default 8108).
+    ///
+    /// Deliberately unlike every other server variant: there is **no `user`**
+    /// and **no `tls_mode`**. Typesense authenticates with a single API key sent
+    /// as the `X-TYPESENSE-API-KEY` header — that key is the secret and lives in
+    /// the OS keychain (account `{id}`), never here; and it has no TLS
+    /// negotiation, only a [`Protocol`] scheme choice. `default_collection` is
+    /// optional and purely navigational: it chooses which collection the
+    /// workspace opens on, and (for a search-only key, which cannot call
+    /// `GET /collections`) is the only collection the sidebar can show. An SSH
+    /// tunnel stays available — private Typesense nodes are commonly reached
+    /// through a bastion.
+    Typesense {
+        protocol: Protocol,
+        host: String,
+        port: u16,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        default_collection: Option<String>,
+        /// Peers of the same cluster, comma-separated `host:port`, for the
+        /// dashboard's node table.
+        ///
+        /// Typesense exposes **no cluster-membership endpoint** — peers are
+        /// configured out of band in the server's `--nodes` file, and every API
+        /// call answers only for the node you dialled. So a client that wants to
+        /// show the cluster has to be told its members, which is exactly what
+        /// the official Typesense clients do (`new Client({ nodes: [...] })`).
+        ///
+        /// Purely observational: all reads and writes still go to `host`/`port`
+        /// (followers proxy writes to the leader themselves). Absent for a
+        /// single-node server, which is the common case.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        nodes: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ssh: Option<SshConfig>,
+    },
 }
 
 impl ConnectionParams {
@@ -359,6 +432,7 @@ impl ConnectionParams {
             Self::Mongodb { .. } => Engine::Mongodb,
             Self::Cassandra { .. } => Engine::Cassandra,
             Self::Clickhouse { .. } => Engine::Clickhouse,
+            Self::Typesense { .. } => Engine::Typesense,
         }
     }
 
@@ -374,6 +448,7 @@ impl ConnectionParams {
             | Self::Postgres { ssh, .. }
             | Self::Mssql { ssh, .. }
             | Self::Clickhouse { ssh, .. }
+            | Self::Typesense { ssh, .. }
             | Self::Redis { ssh, .. } => ssh.as_ref(),
         }
     }
@@ -382,7 +457,9 @@ impl ConnectionParams {
     /// keychain. Server engines do; SQLite does not. DynamoDB only does for
     /// `Keys` auth (the secret access key) — `Profile` auth resolves from the
     /// shared credentials file, so it must NOT read the keychain (skipping the
-    /// needless OS access prompt, exactly like SQLite).
+    /// needless OS access prompt, exactly like SQLite). Typesense does: its
+    /// `X-TYPESENSE-API-KEY` is the secret and rides the same keychain slot a
+    /// database password would.
     pub fn uses_password(&self) -> bool {
         match self {
             Self::Sqlite { .. } => false,
@@ -649,6 +726,50 @@ impl<'de> Deserialize<'de> for ConnectionParams {
                     local_datacenter: opt_str("localDatacenter"),
                     user: opt_str("user"),
                     tls_mode,
+                })
+            }
+            "typesense" => {
+                // Typesense carries a `protocol` scheme instead of a `tlsMode`,
+                // an optional `defaultCollection` (the collection the workspace
+                // opens on) and an optional SSH tunnel. Deliberately NO `user`
+                // and no password field — the API key is a keychain secret. Port
+                // defaults to 8108, host to "localhost", protocol to `http`.
+                let host = value
+                    .get("host")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or("localhost")
+                    .to_string();
+                let port = value
+                    .get("port")
+                    .and_then(serde_json::Value::as_u64)
+                    .and_then(|p| u16::try_from(p).ok())
+                    .unwrap_or(8108);
+                let protocol = match value.get("protocol") {
+                    Some(p) => Protocol::deserialize(p.clone()).map_err(D::Error::custom)?,
+                    None => Protocol::default(),
+                };
+                let default_collection = value
+                    .get("defaultCollection")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string);
+                let ssh = match value.get("ssh") {
+                    Some(serde_json::Value::Null) | None => None,
+                    Some(s) => Some(SshConfig::deserialize(s.clone()).map_err(D::Error::custom)?),
+                };
+                let nodes = value
+                    .get("nodes")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.trim().is_empty())
+                    .map(str::to_string);
+                Ok(ConnectionParams::Typesense {
+                    protocol,
+                    host,
+                    port,
+                    default_collection,
+                    nodes,
+                    ssh,
                 })
             }
             other => Err(D::Error::custom(format!("unknown engine tag '{other}'"))),

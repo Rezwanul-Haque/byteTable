@@ -17,5 +17,6 @@ pub mod processes;
 pub mod saved_queries;
 pub mod schema_diff;
 pub mod schema_map;
+pub mod search;
 pub mod settings;
 pub mod structure;

@@ -1,0 +1,13 @@
+{
+  "name": "product_queries",
+  "fields": [
+    {
+      "name": "q",
+      "type": "string"
+    },
+    {
+      "name": "count",
+      "type": "int32"
+    }
+  ]
+}

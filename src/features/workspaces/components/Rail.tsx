@@ -11,6 +11,7 @@ import type { Engine } from "../../../shared/types";
 import { BTLogo } from "../../../shared/ui/BTLogo";
 import { Icon } from "../../../shared/ui/Icon";
 import { useToast } from "../../../shared/ui/toastContext";
+import { scopeNoun, scopeNounTitle } from "../scopes";
 import { selectShowConnect, useWorkspacesStore, WORKSPACE_COLORS } from "../state";
 import type { Workspace } from "../types";
 import "./Rail.css";
@@ -230,7 +231,10 @@ export function Rail({
                 aria-current={isActive ? "true" : undefined}
                 title={
                   isChild
-                    ? "schema " + ws.name + (ws.temp ? " · temporary — ⌘-click to keep" : " · kept")
+                    ? (scopeNoun(ws.saved.engine) ?? "schema") +
+                      " " +
+                      ws.name +
+                      (ws.temp ? " · temporary — ⌘-click to keep" : " · kept")
                     : ws.name + " · " + ENGINE_META[ws.saved.engine].label
                 }
               >
@@ -262,7 +266,11 @@ export function Rail({
                   }
                   openEdit(event.currentTarget, ws);
                 }}
-                title={isChild ? "Schema workspace options" : "Edit workspace"}
+                title={
+                  isChild
+                    ? (scopeNounTitle(ws.saved.engine) ?? "Schema") + " workspace options"
+                    : "Edit workspace"
+                }
                 aria-label={"Edit workspace " + ws.name}
               >
                 <Icon name="more_horiz" size={14} />
@@ -386,7 +394,14 @@ export function Rail({
               {ENGINE_META[editingWs.saved.engine].short}
             </span>
             <div className="ws-edit-title">
-              {editingWs.parentId ? "Schema workspace" : "Edit workspace"}
+              {/* M33: name the scope the way the engine does — a Cassandra
+                  child is a keyspace workspace, a Mongo/Redis one a database
+                  workspace. Falls back to "Schema" for an engine with no
+                  scope noun, which can only happen if a child somehow exists
+                  for one. */}
+              {editingWs.parentId
+                ? (scopeNounTitle(editingWs.saved.engine) ?? "Schema") + " workspace"
+                : "Edit workspace"}
             </div>
           </div>
           {/* A schema workspace scopes an existing connection, so say which
@@ -452,7 +467,9 @@ export function Rail({
             }}
           >
             <Icon name="delete" size={14} />{" "}
-            {editingWs.parentId ? "Close schema workspace" : "Remove workspace"}
+            {editingWs.parentId
+              ? "Close " + (scopeNoun(editingWs.saved.engine) ?? "schema") + " workspace"
+              : "Remove workspace"}
           </button>
         </div>
       ) : null}

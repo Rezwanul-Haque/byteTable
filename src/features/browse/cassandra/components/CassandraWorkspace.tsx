@@ -20,6 +20,7 @@ import { connectionDetail } from "../../../connections/api";
 import { TerminalPanel } from "../../../console/TerminalPanel";
 import { shellLabel, usePanelStore } from "../../../console/state";
 import { useWorkspacesStore } from "../../../workspaces/state";
+import { useScopeWorkspaces } from "../../../workspaces/scopes";
 import type { Workspace } from "../../../workspaces/types";
 import {
   cassClusterStatus,
@@ -110,6 +111,10 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
   const setActiveId = (id: string) => patchTabs(workspace.id, { activeId: id });
   const setKs = (k: string) => patchTabs(workspace.id, { ks: k });
 
+  // M33: keyspace sub-workspaces, the Cassandra counterpart of the SQL shell's
+  // schema split.
+  const { openedScopes, openScope } = useScopeWorkspaces(workspace);
+
   const [keyspaces, setKeyspaces] = useState<KeyspaceInfo[]>([]);
   const [tables, setTables] = useState<TableDescriptor[]>([]);
   const [cluster, setCluster] = useState<ClusterStatus | null>(null);
@@ -160,8 +165,14 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
           workspace.saved.params.engine === "cassandra"
             ? workspace.saved.params.keyspace
             : undefined;
+        // M33: a keyspace sub-workspace opens ON its keyspace. `stored` still
+        // wins, because the switcher stays enabled inside a sub-workspace and
+        // switching must stick — this only decides where a freshly opened (or
+        // restored) child lands, exactly like `homeSchema` does for SQL.
+        const own = workspace.schema;
         const target =
           stored ||
+          (own && kss.some((k) => k.name === own) ? own : "") ||
           (fromConn && kss.some((k) => k.name === fromConn) ? fromConn : kss[0]?.name) ||
           "";
         if (!stored && target) setKs(target);
@@ -318,6 +329,8 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
         tables={tables}
         activeTable={activeTab?.kind === "table" ? (activeTab.table ?? null) : null}
         onKsChange={switchKs}
+        openedScopes={openedScopes}
+        onOpenScopeWorkspace={openScope}
         onOpenTable={openTable}
         onOpenShell={openShell}
         onOpenDashboard={() => openKind("dashboard", "Dashboard")}

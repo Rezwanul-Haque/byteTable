@@ -297,3 +297,26 @@ export function kvCreateKey(
 export function kvCommand(handleId: string, db: number, args: string[]): Promise<RespReply> {
   return invoke<RespReply>("kv_command", { handleId, db, args });
 }
+
+/**
+ * Sub-workspace scope id for a Redis db (M33).
+ *
+ * The workspaces store keys a sub-workspace by an opaque scope STRING (a schema
+ * name for SQL, a keyspace for Cassandra), and uses it verbatim as the rail
+ * tile's name. Redis scopes are numeric, so they round-trip as `db3` rather
+ * than `3`: the tile then reads the way the rest of the Redis UI writes it, and
+ * the persisted session (which stores scope strings) needs no engine-specific
+ * handling.
+ */
+export function dbScopeId(index: number): string {
+  return "db" + index;
+}
+
+/** The db index behind a {@link dbScopeId}, or null if it isn't one. */
+export function dbScopeIndex(scope: string | null | undefined): number | null {
+  if (!scope) return null;
+  const match = /^db(\d+)$/.exec(scope);
+  if (!match?.[1]) return null;
+  const index = Number(match[1]);
+  return Number.isInteger(index) && index >= 0 ? index : null;
+}

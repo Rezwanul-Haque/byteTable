@@ -15,7 +15,7 @@
 // tab is a table tab for this schema+table. M7: "View structure" opens (or
 // focuses + switches) the table tab in structure mode (§3.6).
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 
 import { appErrorMessage } from "../../../shared/api/error";
@@ -48,6 +48,8 @@ import { ImportModal } from "../../import/components/ImportModal";
 import { SchemaImportModal } from "../../import/components/SchemaImportModal";
 import { tablesKey, columnsKey, useIntrospectionStore } from "../../introspection/state";
 import { useAutoRefresh } from "../../settings/useAutoRefresh";
+import { useScopeWorkspaces } from "../scopes";
+import { ScopeSplitAction, ScopeSplitHint } from "./ScopeSplitAction";
 import { useWorkspacesStore } from "../state";
 import { useTabMetaStore } from "../tabMeta";
 import type { Workspace } from "../types";
@@ -106,38 +108,11 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   const openSqlTab = useWorkspacesStore((state) => state.openSqlTab);
   const openMapTab = useWorkspacesStore((state) => state.openMapTab);
   const openDiffTab = useWorkspacesStore((state) => state.openDiffTab);
-  const openSchemaWorkspace = useWorkspacesStore((state) => state.openSchemaWorkspace);
 
-  // M32: nesting is ONE level, so a sub-workspace opens siblings under the same
-  // parent rather than grandchildren — hence `parentId ?? id`.
-  const railParentId = workspace.parentId ?? workspace.id;
-  // Which schemas of this connection already have their own workspace; drives
-  // the split action's focus variant.
-  //
-  // Selects the STABLE `workspaces` array and derives outside the selector.
-  // Returning `.filter().map()` straight from a zustand v5 selector hands
-  // `useSyncExternalStore` a new array identity on every call, so React sees the
-  // snapshot change on every render and loops until it tears the tree down —
-  // a blank window with nothing in the backend logs.
-  const allWorkspaces = useWorkspacesStore((state) => state.workspaces);
-  const openedSchemas = useMemo(
-    () =>
-      allWorkspaces
-        .filter((ws) => ws.parentId === railParentId && ws.schema)
-        .map((ws) => ws.schema as string),
-    [allWorkspaces, railParentId],
-  );
-  const onOpenSchemaWorkspace = (schema: string) => {
-    openSchemaWorkspace(railParentId, schema);
-    // Only announce the temporary state for a NEW workspace: re-opening an
-    // existing one just focuses it, and saying "temporary" then would be wrong.
-    if (!openedSchemas.includes(schema)) {
-      toast(
-        "Schema “" + schema + "” opened as a temporary workspace — ⌘-click its tile to keep it",
-        "ok",
-      );
-    }
-  };
+  // M32, shared engine-wide in M33: which schemas already have their own
+  // workspace, and the create-or-focus action behind the split icon.
+  const { openedScopes: openedSchemas, openScope: onOpenSchemaWorkspace } =
+    useScopeWorkspaces(workspace);
 
   const { handleId } = workspace;
   const engine = workspace.saved.engine;
@@ -497,50 +472,18 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                     <Icon name="schema" size={14} />
                     <span>{s.name}</span>
                     <span className="schema-pop-count">{count === null ? "—" : count}</span>
-                    {/* M32: the split action. The row keeps its existing
-                        click (switch in place); this opens the schema as its
-                        own workspace instead. Once that workspace exists the
-                        icon becomes a focus target and stops being hover-only,
-                        so an already-open schema is visible at a glance. */}
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      className={
-                        "schema-pop-split" + (openedSchemas.includes(s.name) ? " opened" : "")
-                      }
-                      title={
-                        openedSchemas.includes(s.name)
-                          ? "Focus the “" + s.name + "” workspace"
-                          : "Open “" + s.name + "” as its own workspace"
-                      }
-                      onClick={(event) => {
-                        // Never let this also switch schema in place.
-                        event.stopPropagation();
+                    <ScopeSplitAction
+                      scope={s.name}
+                      opened={openedSchemas.includes(s.name)}
+                      onOpen={(scope) => {
                         setSchemaOpen(false);
-                        onOpenSchemaWorkspace(s.name);
+                        onOpenSchemaWorkspace(scope);
                       }}
-                      onKeyDown={(event) => {
-                        if (event.key !== "Enter" && event.key !== " ") return;
-                        event.preventDefault();
-                        event.stopPropagation();
-                        setSchemaOpen(false);
-                        onOpenSchemaWorkspace(s.name);
-                      }}
-                    >
-                      <Icon
-                        name={openedSchemas.includes(s.name) ? "my_location" : "open_in_new"}
-                        size={13}
-                      />
-                    </span>
+                    />
                   </button>
                 );
               })}
-              {/* Two words on purpose: the popover is ~218px wide and prose
-                  wraps to several lines here. */}
-              <div className="schema-pop-hint">
-                <Icon name="open_in_new" size={12} />
-                <span>own workspace</span>
-              </div>
+              <ScopeSplitHint />
             </div>
           ) : null}
         </div>

@@ -20,6 +20,7 @@ import { connectionDetail } from "../../../connections/api";
 import { TerminalPanel } from "../../../console/TerminalPanel";
 import { shellLabel, usePanelStore } from "../../../console/state";
 import { useWorkspacesStore } from "../../../workspaces/state";
+import { useScopeWorkspaces } from "../../../workspaces/scopes";
 import type { Workspace } from "../../../workspaces/types";
 import { mongoListCollections, mongoListDatabases, type CollectionDescriptor } from "../api";
 import { MongoCollectionTab, type MongoTab } from "./MongoCollectionTab";
@@ -101,6 +102,9 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
   const setActiveId = (id: string) => patchTabs(workspace.id, { activeId: id });
   const setDb = (d: string) => patchTabs(workspace.id, { db: d });
 
+  // M33: database sub-workspaces, the Mongo counterpart of the SQL schema split.
+  const { openedScopes, openScope } = useScopeWorkspaces(workspace);
+
   const [dbNames, setDbNames] = useState<string[]>([]);
   const [collections, setCollections] = useState<CollectionDescriptor[]>([]);
   const [loading, setLoading] = useState(true);
@@ -152,7 +156,12 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
         if (!live) return;
         setDbNames(names);
         const stored = useMongoTabsStore.getState().byWorkspace[workspace.id]?.db ?? "";
-        const target = stored || names[0] || "";
+        // M33: a database sub-workspace opens ON its database. `stored` still
+        // wins — the switcher stays enabled inside a sub-workspace and
+        // switching must stick; this only places a freshly opened or restored
+        // child, exactly like `homeSchema` does for SQL.
+        const own = workspace.schema;
+        const target = stored || (own && names.includes(own) ? own : "") || names[0] || "";
         if (!stored && target) setDb(target);
         if (target) void loadCollections(target);
         else setLoading(false);
@@ -311,6 +320,8 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
         loading={loading}
         activeColl={activeTab?.kind === "collection" ? (activeTab as MongoTab).coll : null}
         onDbChange={switchDb}
+        openedScopes={openedScopes}
+        onOpenScopeWorkspace={openScope}
         onOpenColl={openColl}
         onOpenShell={openShell}
         onOpenDashboard={() => openSingleton("dashboard", "Dashboard")}

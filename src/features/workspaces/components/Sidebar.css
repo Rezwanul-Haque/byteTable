@@ -579,7 +579,10 @@
   color: var(--accent);
 }
 
-/* Two words, by design — see the note in Sidebar.tsx. */
+/* Two words, by design — see the note in ScopeSplitAction.tsx. Both this and
+   `.schema-pop-split` are keyed on `.schema-pop-item` alone, with no sidebar
+   ancestor, so the Cassandra / MongoDB / Redis switchers (which reuse that
+   markup) pick them up from this one stylesheet. */
 .schema-pop-hint {
   display: flex;
   align-items: center;

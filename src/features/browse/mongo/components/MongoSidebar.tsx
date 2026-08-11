@@ -13,6 +13,7 @@ import { Btn } from "../../../../shared/ui/Btn";
 import type { Env } from "../../../../shared/types";
 import { ENV_COLOR } from "../../../../shared/ui/envColors";
 import { LanguageChip } from "../../../../shared/ui/LanguageChip";
+import { ScopeSplitAction, ScopeSplitHint } from "../../../workspaces/components/ScopeSplitAction";
 import type { CollectionDescriptor } from "../api";
 
 interface CtxMenu {
@@ -33,6 +34,8 @@ export function MongoSidebar({
   loading,
   activeColl,
   onDbChange,
+  openedScopes,
+  onOpenScopeWorkspace,
   onOpenColl,
   onOpenShell,
   onOpenDashboard,
@@ -55,6 +58,10 @@ export function MongoSidebar({
   loading: boolean;
   activeColl: string | null;
   onDbChange: (db: string) => void;
+  /** Databases that already have their own workspace (M33 sub-workspaces). */
+  openedScopes: string[];
+  /** Open (or focus) a database as its own workspace, nested in the rail. */
+  onOpenScopeWorkspace: (db: string) => void;
   onOpenColl: (coll: string) => void;
   onOpenShell: () => void;
   onOpenDashboard: () => void;
@@ -146,8 +153,17 @@ export function MongoSidebar({
                 >
                   <Icon name="database" size={14} />
                   <span>{d}</span>
+                  <ScopeSplitAction
+                    scope={d}
+                    opened={openedScopes.includes(d)}
+                    onOpen={(scope) => {
+                      setDbOpen(false);
+                      onOpenScopeWorkspace(scope);
+                    }}
+                  />
                 </div>
               ))}
+              <ScopeSplitHint />
             </div>
           ) : null}
         </div>

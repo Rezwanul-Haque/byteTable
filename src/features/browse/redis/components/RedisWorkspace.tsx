@@ -17,8 +17,9 @@ import {
 import { TerminalPanel } from "../../../console/TerminalPanel";
 import { shellLabel, usePanelStore } from "../../../console/state";
 import { useWorkspacesStore } from "../../../workspaces/state";
+import { useScopeWorkspaces } from "../../../workspaces/scopes";
 import type { Workspace } from "../../../workspaces/types";
-import { kvKeyspace, type KeyType } from "../api";
+import { dbScopeIndex, kvKeyspace, type KeyType } from "../api";
 import { useRedisBrowseStore } from "../state";
 import { ENV_COLOR } from "../../../../shared/ui/envColors";
 import { useBtCmd } from "../../../../shared/ui/btCmd";
@@ -47,8 +48,13 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
   const handleId = workspace.handleId;
 
   // Initial db = the connection's configured dbIndex (params), else 0.
+  // M33: a db sub-workspace overrides both and opens ON its own db. Only the
+  // INITIAL placement — the db switcher stays enabled inside a sub-workspace
+  // and `ensure` keeps whatever the user switches to afterwards, matching
+  // `homeSchema` for SQL.
   const params = workspace.saved.params;
-  const initialDb = params.engine === "redis" ? params.dbIndex : 0;
+  const ownDb = dbScopeIndex(workspace.schema);
+  const initialDb = ownDb ?? (params.engine === "redis" ? params.dbIndex : 0);
 
   // Redis per-workspace UI (tabs + selected db + version), keyed by ws id.
   const wsId = workspace.id;
@@ -69,6 +75,9 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
   // Subscribe to this workspace's slice so tab/db/version changes re-render.
   const slice = useRedisBrowseStore((state) => state.byWorkspace[wsId]);
   const rs = slice ?? ensure(wsId, initialDb);
+
+  // M33: db sub-workspaces, the Redis counterpart of the SQL schema split.
+  const { openedScopes, openScope } = useScopeWorkspaces(workspace);
 
   const [paletteOpen, setPaletteOpen] = useState(false);
 
@@ -180,6 +189,8 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
         activeKey={activeKey}
         version={rs.version}
         onDbChange={(db) => setDbIndex(wsId, initialDb, db)}
+        openedScopes={openedScopes}
+        onOpenScopeWorkspace={openScope}
         onRefresh={() => bumpVersion(wsId, initialDb)}
         onOpenKey={(db, key, keyType) => openKeyTab(wsId, initialDb, db, key, keyType)}
         onOpenCli={() => openPanel(wsId, termLabel)}

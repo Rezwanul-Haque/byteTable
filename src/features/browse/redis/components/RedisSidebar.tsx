@@ -26,6 +26,7 @@ import { useToast } from "../../../../shared/ui/toastContext";
 import { LanguageChip } from "../../../../shared/ui/LanguageChip";
 import type { KvDbInfo } from "../../../connections/api";
 import {
+  dbScopeId,
   kvCommand,
   kvDeleteKey,
   kvGetKey,
@@ -34,6 +35,7 @@ import {
   type KeyEntry,
   type KvValue,
 } from "../api";
+import { ScopeSplitAction, ScopeSplitHint } from "../../../workspaces/components/ScopeSplitAction";
 import {
   buildNamespaceTree,
   countLeaves,
@@ -82,6 +84,10 @@ interface RedisSidebarProps {
   /** Re-scan trigger: bumps when the db/pattern/type change or a refresh fires. */
   version: number;
   onDbChange: (db: number) => void;
+  /** Db scope ids (`db3`) that already have their own workspace (M33). */
+  openedScopes: string[];
+  /** Open (or focus) a db as its own workspace, nested in the rail. */
+  onOpenScopeWorkspace: (scope: string) => void;
   onRefresh: () => void;
   onOpenKey: (db: number, key: string, keyType: KeyType) => void;
   onOpenCli: () => void;
@@ -104,6 +110,8 @@ export function RedisSidebar(props: RedisSidebarProps) {
     activeKey,
     version,
     onDbChange,
+    openedScopes,
+    onOpenScopeWorkspace,
     onRefresh,
     onOpenKey,
     onOpenCli,
@@ -567,8 +575,18 @@ export function RedisSidebar(props: RedisSidebarProps) {
                   <Icon name="storage" size={14} />
                   <span>db{index}</span>
                   <span className="schema-pop-count">{count}</span>
+                  <ScopeSplitAction
+                    scope={dbScopeId(index)}
+                    label={"db" + index}
+                    opened={openedScopes.includes(dbScopeId(index))}
+                    onOpen={(scope) => {
+                      setDbOpen(false);
+                      onOpenScopeWorkspace(scope);
+                    }}
+                  />
                 </button>
               ))}
+              <ScopeSplitHint />
             </div>
           ) : null}
         </div>

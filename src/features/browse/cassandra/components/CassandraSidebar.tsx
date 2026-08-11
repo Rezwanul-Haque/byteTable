@@ -11,6 +11,7 @@ import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { Btn } from "../../../../shared/ui/Btn";
 import { LanguageChip } from "../../../../shared/ui/LanguageChip";
+import { ScopeSplitAction, ScopeSplitHint } from "../../../workspaces/components/ScopeSplitAction";
 import type { Env } from "../../../../shared/types";
 import type { TableDescriptor } from "../api";
 
@@ -32,6 +33,10 @@ interface CassandraSidebarProps {
   tables: TableDescriptor[];
   activeTable: string | null;
   onKsChange: (ks: string) => void;
+  /** Keyspaces that already have their own workspace (M33 sub-workspaces). */
+  openedScopes: string[];
+  /** Open (or focus) a keyspace as its own workspace, nested in the rail. */
+  onOpenScopeWorkspace: (ks: string) => void;
   onOpenTable: (name: string) => void;
   onOpenShell: () => void;
   onOpenDashboard: () => void;
@@ -59,6 +64,8 @@ export function CassandraSidebar({
   tables,
   activeTable,
   onKsChange,
+  openedScopes,
+  onOpenScopeWorkspace,
   onOpenTable,
   onOpenShell,
   onOpenDashboard,
@@ -150,8 +157,17 @@ export function CassandraSidebar({
                 >
                   <Icon name="hub" size={14} />
                   <span>{d}</span>
+                  <ScopeSplitAction
+                    scope={d}
+                    opened={openedScopes.includes(d)}
+                    onOpen={(scope) => {
+                      setKsOpen(false);
+                      onOpenScopeWorkspace(scope);
+                    }}
+                  />
                 </div>
               ))}
+              <ScopeSplitHint />
               <div className="ctx-sep" />
               <div
                 className="schema-pop-item schema-pop-create"

@@ -415,6 +415,28 @@ pub trait EngineConnection: Send + Sync {
         format!("\"{}\"", ident.replace('"', "\"\""))
     }
 
+    /// Whether a SQL dump for THIS engine must spell out the schema in its
+    /// table names (`INSERT INTO "schema"."table"`) instead of leaving them
+    /// unqualified.
+    ///
+    /// A dump is meant to be re-importable into a DIFFERENT schema than it came
+    /// from, so the export use-cases emit **unqualified** names by default and
+    /// let the import session decide where they land: `execute_script` points
+    /// the session at the target schema first (MySQL `USE`, Postgres
+    /// `SET search_path`, SQLite's single `main`). Baking the source schema into
+    /// the statements defeats that — the rows go back where they came from,
+    /// which reads as a duplicate-key error rather than an import.
+    ///
+    /// Some engines have no session-schema mechanism to lean on: T-SQL has no
+    /// `USE <schema>` (an unqualified name resolves to the login's default
+    /// schema) and the ClickHouse HTTP interface takes its database from the
+    /// connection. There an unqualified dump would silently write to the wrong
+    /// place, so those adapters override this to `true` and accept that their
+    /// dumps only restore into the schema they were taken from.
+    fn dump_qualifies_schema(&self) -> bool {
+        false
+    }
+
     /// Render `hex` (lowercase hex digits, no `0x`/`X` prefix; may be empty) as
     /// an engine-correct binary literal for a SQL dump's INSERT values, so a
     /// binary column round-trips. Default: the SQL-standard `X'..'` blob literal

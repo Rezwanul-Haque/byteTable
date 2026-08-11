@@ -15,6 +15,16 @@
 //! SQL leaks into this layer. Value→CSV/SQL formatting lives in `domain` as
 //! pure helpers.
 //!
+//! # Schema portability — dumps name tables UNqualified
+//!
+//! A dump is meant to restore into a different schema than it came from, so both
+//! the `CREATE TABLE` and the `INSERT`s name the table without its schema and
+//! let the import session decide the destination (`execute_script` runs `USE` /
+//! `SET search_path` first). Qualifying with the SOURCE schema would send the
+//! rows back to the table they were read from — which surfaces as a duplicate-key
+//! error instead of an import. `EngineConnection::dump_qualifies_schema` opts an
+//! engine out where there is no session schema to point (MSSQL, ClickHouse).
+//!
 //! Perf/cap note (M15, documented backlog): the text is accumulated into one
 //! `String` in memory. For very large tables this is a large allocation;
 //! streaming straight to the destination file is a future enhancement. The
@@ -350,11 +360,19 @@ async fn export_table_sql_with_meta(
         .map(|c| crate::shared::engine::is_binary_type(&c.data_type))
         .collect();
 
-    let qualified = format!(
-        "{}.{}",
-        connection.quote_identifier(schema),
-        connection.quote_identifier(table)
-    );
+    // How the dump names this table. Unqualified by default so the dump can be
+    // re-imported into ANY schema — `execute_script` points the import session
+    // at the target first (MySQL `USE`, Postgres `search_path`), and a
+    // schema-qualified name would ignore that and write back into the source
+    // schema (a duplicate-key error, not an import). Engines with no
+    // session-schema mechanism keep the qualified form — see
+    // `EngineConnection::dump_qualifies_schema`.
+    let quoted_table = connection.quote_identifier(table);
+    let target = if connection.dump_qualifies_schema() {
+        format!("{}.{}", connection.quote_identifier(schema), quoted_table)
+    } else {
+        quoted_table.clone()
+    };
     let quoted_cols = columns
         .iter()
         .map(|c| connection.quote_identifier(c))
@@ -367,7 +385,18 @@ async fn export_table_sql_with_meta(
     if scope.includes_schema() {
         match &meta.ddl {
             Some(ddl) => {
-                out.push_str(ddl);
+                // The `CREATE TABLE` has to agree with the INSERTs about where
+                // the table lives, or the dump creates it in the target schema
+                // and then fills the source one. SQLite/MySQL report the DDL
+                // verbatim and unqualified already; Postgres assembles
+                // `CREATE TABLE "schema"."table"`, so drop that prefix when this
+                // engine's dumps are meant to be schema-portable.
+                let ddl = if connection.dump_qualifies_schema() {
+                    ddl.clone()
+                } else {
+                    unqualify_create(ddl, schema, table, connection)
+                };
+                out.push_str(&ddl);
                 // Terminate the CREATE statement so the dump is a valid,
                 // re-importable multi-statement script. Engines report the DDL
                 // verbatim WITHOUT a trailing `;` (SQLite's `sqlite_schema.sql`,
@@ -382,7 +411,7 @@ async fn export_table_sql_with_meta(
                     out.push('\n');
                 }
             }
-            None => out.push_str(&format!("-- (no DDL available for {qualified})\n")),
+            None => out.push_str(&format!("-- (no DDL available for {target})\n")),
         }
         out.push('\n');
     }
@@ -415,7 +444,7 @@ async fn export_table_sql_with_meta(
                     .collect::<Vec<_>>()
                     .join(", ");
                 out.push_str(&format!(
-                    "INSERT INTO {qualified} ({quoted_cols}) VALUES ({values});\n"
+                    "INSERT INTO {target} ({quoted_cols}) VALUES ({values});\n"
                 ));
                 wrote_any = true;
             }
@@ -433,6 +462,45 @@ async fn export_table_sql_with_meta(
     }
 
     Ok(out.trim_end().to_string() + "\n")
+}
+
+/// Drop the source schema from a `CREATE TABLE`'s table name so the statement
+/// lands wherever the import session points (see
+/// [`EngineConnection::dump_qualifies_schema`]). Postgres assembles
+/// `CREATE TABLE "public"."users" (…)`; this rewrites it to
+/// `CREATE TABLE "users" (…)`. SQLite/MySQL report the DDL unqualified already,
+/// so they pass through untouched.
+///
+/// Deliberately conservative: it replaces the FIRST `schema.table` occurrence,
+/// and only when that occurrence sits in the statement's header (before the
+/// column list's opening parenthesis). Anything else — a schema name inside the
+/// body, a DDL shape we do not recognise — is left exactly as the engine
+/// reported it. Both the engine-quoted and the bare spelling of the prefix are
+/// accepted, since an engine may or may not quote what it reports.
+fn unqualify_create(
+    ddl: &str,
+    schema: &str,
+    table: &str,
+    connection: &dyn EngineConnection,
+) -> String {
+    let quoted_schema = connection.quote_identifier(schema);
+    let quoted_table = connection.quote_identifier(table);
+    let header_end = ddl.find('(').unwrap_or(ddl.len());
+    // Longest spellings first so a quoted prefix is never half-matched.
+    let candidates = [
+        format!("{quoted_schema}.{quoted_table}"),
+        format!("{quoted_schema}.{table}"),
+        format!("{schema}.{quoted_table}"),
+        format!("{schema}.{table}"),
+    ];
+    for prefix in &candidates {
+        if let Some(at) = ddl.find(prefix.as_str()) {
+            if at < header_end {
+                return format!("{}{quoted_table}{}", &ddl[..at], &ddl[at + prefix.len()..]);
+            }
+        }
+    }
+    ddl.to_string()
 }
 
 /// Render one cell of a binary column for the SQL dump. A `0x`-hex value (from
@@ -651,10 +719,143 @@ mod tests {
         .unwrap();
         // The DDL is terminated with `;` so the dump re-imports cleanly.
         assert!(sql.starts_with("CREATE TABLE t (id INTEGER, name TEXT);\n\n"));
+        // Unqualified table name: the import session decides the schema.
+        assert!(sql.contains("INSERT INTO \"t\" (\"id\", \"name\") VALUES (1, 'O''Brien');"));
+        assert!(sql.contains("INSERT INTO \"t\" (\"id\", \"name\") VALUES (2, NULL);"));
         assert!(
-            sql.contains("INSERT INTO \"main\".\"t\" (\"id\", \"name\") VALUES (1, 'O''Brien');")
+            !sql.contains("\"main\".\"t\""),
+            "the source schema must not be baked into the dump: {sql}"
         );
-        assert!(sql.contains("INSERT INTO \"main\".\"t\" (\"id\", \"name\") VALUES (2, NULL);"));
+    }
+
+    /// A dump must be re-importable into a DIFFERENT schema, so neither the DDL
+    /// nor the INSERTs may name the schema they were read from — that is what
+    /// made an import write back into the source table.
+    #[tokio::test]
+    async fn sql_dump_never_names_the_source_schema() {
+        let conn = FakeTable {
+            columns: vec!["id".into()],
+            rows: vec![vec![serde_json::json!(1)]],
+            // A Postgres-shaped assembled DDL: schema-qualified.
+            ddl: Some("CREATE TABLE \"forestmw\".\"t\" (\n    \"id\" integer\n);".into()),
+        };
+        let (manager, handle) = manager_with(conn).await;
+        let sql = export_table(
+            &manager,
+            &handle,
+            "forestmw",
+            "t",
+            ExportFormat::Sql,
+            ExportScope::Both,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .unwrap();
+        assert!(
+            sql.starts_with("CREATE TABLE \"t\" ("),
+            "the CREATE must be unqualified: {sql}"
+        );
+        assert!(sql.contains("INSERT INTO \"t\" (\"id\") VALUES (1);"));
+        assert!(
+            !sql.contains("forestmw"),
+            "no trace of the source schema: {sql}"
+        );
+    }
+
+    /// The engines with no session schema to point an import at keep the
+    /// qualified form (see `EngineConnection::dump_qualifies_schema`).
+    #[tokio::test]
+    async fn sql_dump_keeps_the_schema_when_the_engine_needs_it() {
+        struct SchemaBound(FakeTable);
+        #[async_trait]
+        impl EngineConnection for SchemaBound {
+            fn engine_info(&self) -> EngineInfo {
+                self.0.engine_info()
+            }
+            fn dump_qualifies_schema(&self) -> bool {
+                true
+            }
+            async fn list_schemas(&self) -> Result<Vec<SchemaInfo>, AppError> {
+                self.0.list_schemas().await
+            }
+            async fn list_tables(&self, schema: &str) -> Result<Vec<TableInfo>, AppError> {
+                self.0.list_tables(schema).await
+            }
+            async fn table_meta(&self, schema: &str, table: &str) -> Result<TableMeta, AppError> {
+                self.0.table_meta(schema, table).await
+            }
+            async fn run_query(
+                &self,
+                sql: &str,
+                options: QueryOptions,
+            ) -> Result<QueryResult, AppError> {
+                self.0.run_query(sql, options).await
+            }
+            async fn fetch_rows(&self, req: FetchRowsRequest) -> Result<RowsPage, AppError> {
+                self.0.fetch_rows(req).await
+            }
+            async fn update_cell(&self, req: UpdateCellRequest) -> Result<UpdateResult, AppError> {
+                self.0.update_cell(req).await
+            }
+            async fn close(&self) -> Result<(), AppError> {
+                self.0.close().await
+            }
+        }
+
+        let conn = SchemaBound(FakeTable {
+            columns: vec!["id".into()],
+            rows: vec![vec![serde_json::json!(1)]],
+            ddl: Some("CREATE TABLE \"dbo\".\"t\" (\"id\" int)".into()),
+        });
+        let manager = ConnectionManager::new();
+        let handle = manager.insert(OpenConnection::sql(conn)).await;
+        let sql = export_table(
+            &manager,
+            &handle,
+            "dbo",
+            "t",
+            ExportFormat::Sql,
+            ExportScope::Both,
+            &|_: u64, _: u64| {},
+        )
+        .await
+        .unwrap();
+        assert!(sql.starts_with("CREATE TABLE \"dbo\".\"t\""));
+        assert!(sql.contains("INSERT INTO \"dbo\".\"t\" (\"id\") VALUES (1);"));
+    }
+
+    #[test]
+    fn unqualify_create_rewrites_only_the_header_prefix() {
+        let conn = FakeTable {
+            columns: vec![],
+            rows: vec![],
+            ddl: None,
+        };
+        // Quoted prefix (Postgres's assembled DDL).
+        assert_eq!(
+            unqualify_create("CREATE TABLE \"s\".\"t\" (\"id\" int);", "s", "t", &conn),
+            "CREATE TABLE \"t\" (\"id\" int);"
+        );
+        // Bare prefix (an engine that reports its DDL unquoted).
+        assert_eq!(
+            unqualify_create("CREATE TABLE s.t (id int)", "s", "t", &conn),
+            "CREATE TABLE \"t\" (id int)"
+        );
+        // Already unqualified (SQLite / MySQL verbatim) — untouched.
+        assert_eq!(
+            unqualify_create("CREATE TABLE `t` (`id` int)", "s", "t", &conn),
+            "CREATE TABLE `t` (`id` int)"
+        );
+        // A `schema.table` inside the BODY is not the header — left alone.
+        assert_eq!(
+            unqualify_create(
+                "CREATE TABLE t (x int DEFAULT nextval('s.t'))",
+                "s",
+                "t",
+                &conn
+            ),
+            "CREATE TABLE t (x int DEFAULT nextval('s.t'))"
+        );
     }
 
     #[tokio::test]
@@ -1105,7 +1306,7 @@ mod sqlite_integration {
         .expect("export sql");
         assert!(sql.contains("CREATE TABLE users"));
         assert_eq!(sql.matches("INSERT INTO").count(), 3);
-        assert!(sql.contains("INSERT INTO \"main\".\"users\" (\"id\", \"name\", \"note\")"));
+        assert!(sql.contains("INSERT INTO \"users\" (\"id\", \"name\", \"note\")"));
         // Apostrophe doubled in the SQL string literal.
         assert!(sql.contains("'O''Brien'"));
         // NULL note rendered as NULL.

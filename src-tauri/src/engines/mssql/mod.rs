@@ -394,6 +394,14 @@ impl EngineConnection for MssqlEngineConnection {
         quote_ident(ident)
     }
 
+    /// T-SQL has no `USE <schema>`, so `execute_script` cannot point the import
+    /// session at a target schema — an unqualified name would resolve to the
+    /// login's default schema. Dumps therefore keep `[schema].[table]` and
+    /// restore into the schema they came from.
+    fn dump_qualifies_schema(&self) -> bool {
+        true
+    }
+
     /// T-SQL binary literal: `0x` + hex digits (e.g. `0xDEADBEEF`; empty → `0x`).
     fn binary_literal(&self, hex: &str) -> String {
         format!("0x{hex}")

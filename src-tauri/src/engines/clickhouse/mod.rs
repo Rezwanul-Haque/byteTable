@@ -288,6 +288,14 @@ impl EngineConnection for ClickhouseEngineConnection {
         sql::quote_ident(ident)
     }
 
+    /// The ClickHouse HTTP interface takes its database from the connection, so
+    /// `execute_script` has no session-schema to redirect an import with (it
+    /// ignores its `schema` argument). Dumps therefore keep `db.table` and
+    /// restore into the database they came from.
+    fn dump_qualifies_schema(&self) -> bool {
+        true
+    }
+
     /// ClickHouse binary literal for a SQL dump: `unhex('..')` yields the bytes
     /// into a String/FixedString column (empty → `unhex('')`).
     fn binary_literal(&self, hex: &str) -> String {

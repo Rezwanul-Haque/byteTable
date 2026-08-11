@@ -839,6 +839,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
           handleId={handleId}
           schema={schemaName}
           table={exportJob.table}
+          env={workspace.saved.env}
           onClose={() => setExportJob(null)}
         />
       ) : null}

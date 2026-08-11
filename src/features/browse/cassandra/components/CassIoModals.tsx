@@ -2,12 +2,13 @@
 // format + contents pickers, target-table select, progress bars, preview grid.
 // Reuses the shared .export-* / .import-* / .ddb-io-* chrome.
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { useToast } from "../../../../shared/ui/toastContext";
+import { exportStamp } from "../../../export/exportFlow";
 import type { KeyspaceInfo, TableDescriptor } from "../api";
 import {
   applyImport,
@@ -35,6 +36,8 @@ export function CassExportModal({
   table,
   tables,
   handleId,
+  /** Connection's deployment env — goes into the filename (`exportStamp`). */
+  env,
   onClose,
 }: {
   scope: "table" | "all";
@@ -43,6 +46,7 @@ export function CassExportModal({
   table?: string;
   tables: TableDescriptor[];
   handleId: string;
+  env?: string;
   onClose: () => void;
 }) {
   const toast = useToast();
@@ -60,9 +64,13 @@ export function CassExportModal({
   const effMode: ExportMode = isCsv ? "data" : mode;
   const ext = isCsv ? "csv" : format === "json" ? "json" : "cql";
   const base = isAll ? ks + "_dump" : ks + "." + table;
+  // One stamp per modal (not per render) so the name shown while choosing is the
+  // name the file is downloaded under.
+  const stamp = useMemo(() => exportStamp(env), [env]);
   const fname =
     base +
     (effMode === "schema" ? "_schema" : effMode === "data" && !isCsv ? "_data" : "") +
+    stamp +
     "." +
     ext;
 

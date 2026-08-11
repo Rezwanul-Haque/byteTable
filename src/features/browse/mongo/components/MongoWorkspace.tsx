@@ -480,6 +480,7 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
           coll={exportJob.coll}
           handleId={handleId}
           collections={collections}
+          env={env}
           onClose={() => setExportJob(null)}
         />
       ) : null}

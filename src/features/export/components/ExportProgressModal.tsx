@@ -12,7 +12,7 @@
 // toast fires, and the modal auto-closes; on cancel the in-flight result is
 // discarded (no file written).
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { exportSave, type ExportScope } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
@@ -20,7 +20,14 @@ import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
 import { Modal, ModalActions, ModalTitle } from "../../../shared/ui/Modal";
 import { useToast } from "../../../shared/ui/toastContext";
-import { exportTarget, generate, saveDialog, scopeSuffix, type ExportKind } from "../exportFlow";
+import {
+  exportStamp,
+  exportTarget,
+  generate,
+  saveDialog,
+  scopeSuffix,
+  type ExportKind,
+} from "../exportFlow";
 import "./ExportProgressModal.css";
 
 /** The three scope options, mirroring the prototype's `EXPORT_CONTENTS`. */
@@ -48,12 +55,15 @@ export function ExportProgressModal({
   schema,
   /** Required for table exports; ignored for `schemaSql`. */
   table,
+  /** Connection's deployment env — goes into the filename (`exportStamp`). */
+  env,
   onClose,
 }: {
   kind: ExportKind;
   handleId: string;
   schema: string;
   table?: string;
+  env?: string;
   onClose: () => void;
 }) {
   const toast = useToast();
@@ -76,9 +86,13 @@ export function ExportProgressModal({
   // advances per table.
   const unit = kind === "schemaSql" ? "tables" : "rows";
   const baseName = kind === "schemaSql" ? schema : (table ?? "");
+  // One stamp for the modal's lifetime so the preview below and the name handed
+  // to the save dialog agree (a fresh `exportStamp()` per render would drift).
+  const stamp = useMemo(() => exportStamp(env), [env]);
   // Filename preview reflects the chosen scope's suffix (the actual saved name
   // can differ if the user edits it in the dialog — this is just the default).
-  const previewName = baseName + scopeSuffix(scope) + (kind === "tableCsv" ? ".csv" : ".sql");
+  const previewName =
+    baseName + scopeSuffix(scope) + stamp + (kind === "tableCsv" ? ".csv" : ".sql");
 
   const run = (chosenScope: ExportScope) => {
     // This run owns the cancel flag — start it clean so a fresh export is never
@@ -88,7 +102,7 @@ export function ExportProgressModal({
     setStage("building");
     void (async () => {
       try {
-        const { name, ext, label } = exportTarget(kind, schema, table, chosenScope);
+        const { name, ext, label } = exportTarget(kind, schema, table, chosenScope, stamp);
         let path: string | null;
         try {
           path = await saveDialog(name, ext, label);

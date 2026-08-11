@@ -18,6 +18,7 @@ import {
   type ExportScope,
   type ProgressFn,
 } from "../../shared/api/engine";
+import { normalizeEnv } from "../../shared/types";
 
 /** Which export the flow runs. */
 export type ExportKind = "tableCsv" | "tableSql" | "schemaSql";
@@ -46,6 +47,28 @@ export function scopeSuffix(scope: ExportScope | undefined): string {
 }
 
 /**
+ * The tail every export filename ends with: the connection's deployment
+ * environment, then a local-time stamp — `_production_20250211-143502`. The env
+ * says which deployment a dump came from (a production dump must never be
+ * mistaken for the dev one); the stamp keeps repeated dumps of the same
+ * table / schema from colliding and sorts them chronologically in a file
+ * listing. Local time — not UTC — because it reads back as the wall-clock time
+ * the user ran the export.
+ *
+ * `env` is the raw saved value (run through {@link normalizeEnv}, so pre-m15
+ * `"local"` reads as `dev`); an empty/unknown env is simply left out. Callers
+ * hold one stamp per export (the modals memoize it on mount) so the filename
+ * preview matches the name the save dialog and the written file end up with.
+ */
+export function exportStamp(env?: string, now: Date = new Date()): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  const date = `${now.getFullYear()}${p(now.getMonth() + 1)}${p(now.getDate())}`;
+  const time = `${p(now.getHours())}${p(now.getMinutes())}${p(now.getSeconds())}`;
+  const envPart = env ? `_${normalizeEnv(env)}` : "";
+  return `${envPart}_${date}-${time}`;
+}
+
+/**
  * Lazily import the dialog plugin so plain-browser dev (no Tauri) doesn't crash
  * at module load; the dynamic import rejects there and the caller shows an info
  * toast. Mirrors `schema_map`'s `saveDialog`. Returns the chosen path, or `null`
@@ -63,18 +86,21 @@ export async function saveDialog(
 /**
  * The default filename + extension + dialog filter label per export kind. SQL
  * exports get a scope suffix (`_schema` / `_data`; nothing for both), matching
- * the prototype's `export-progress.jsx`.
+ * the prototype's `export-progress.jsx`, then every kind gets the env + time
+ * tail (`stamp`, from `exportStamp`) so the default name says where the dump
+ * came from and is unique per run.
  */
 export function exportTarget(
   kind: ExportKind,
   schema: string,
   table: string | undefined,
   scope: ExportScope | undefined,
+  stamp: string = exportStamp(),
 ) {
-  const suffix = scopeSuffix(scope);
+  const suffix = scopeSuffix(scope) + stamp;
   switch (kind) {
     case "tableCsv":
-      return { name: `${table}.csv`, ext: "csv", label: "CSV file" };
+      return { name: `${table}${stamp}.csv`, ext: "csv", label: "CSV file" };
     case "tableSql":
       return { name: `${table}${suffix}.sql`, ext: "sql", label: "SQL file" };
     case "schemaSql":

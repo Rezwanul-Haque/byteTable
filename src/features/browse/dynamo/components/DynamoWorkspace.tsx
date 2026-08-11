@@ -407,6 +407,7 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
           handleId={handleId}
           tables={tables}
           region={region}
+          env={env}
           onClose={() => setExportJob(null)}
         />
       ) : null}

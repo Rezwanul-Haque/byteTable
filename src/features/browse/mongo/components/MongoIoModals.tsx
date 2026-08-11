@@ -5,7 +5,7 @@
 // grid. Ported from the prototype's mongo-io.jsx / mongo-export.js /
 // mongo-import.js; documents come from / go to the backend.
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { appErrorMessage } from "../../../../shared/api/error";
 import { Btn } from "../../../../shared/ui/Btn";
@@ -13,6 +13,7 @@ import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { Modal } from "../../../../shared/ui/Modal";
 import { useToast } from "../../../../shared/ui/toastContext";
+import { exportStamp } from "../../../export/exportFlow";
 import { mongoFind, mongoInsertMany, type CollectionDescriptor, type MongoDoc } from "../api";
 import { previewImport, toCSV, toShell, withIds, type ImportPreview } from "../helpers";
 import { MongoDocGrid } from "./MongoValue";
@@ -100,6 +101,8 @@ export function MongoExportModal({
   coll,
   handleId,
   collections,
+  /** Connection's deployment env — goes into the filename (`exportStamp`). */
+  env,
   onClose,
 }: {
   scope: "collection" | "all";
@@ -107,6 +110,7 @@ export function MongoExportModal({
   coll?: string;
   handleId: string;
   collections: CollectionDescriptor[];
+  env?: string;
   onClose: () => void;
 }) {
   const toast = useToast();
@@ -120,7 +124,10 @@ export function MongoExportModal({
   const effMode = isCsv ? "data" : mode;
   const ext = isCsv ? "csv" : format === "shell" ? "js" : "json";
   const base = isAll ? db + "_dump" : db + "." + coll;
-  const fname = base + (effMode === "data" && !isCsv ? "_docs" : "") + "." + ext;
+  // One stamp per modal (not per render) so the name shown while choosing is the
+  // name the file is downloaded under.
+  const stamp = useMemo(() => exportStamp(env), [env]);
+  const fname = base + (effMode === "data" && !isCsv ? "_docs" : "") + stamp + "." + ext;
 
   const descOf = (name: string) => collections.find((c) => c.name === name);
 

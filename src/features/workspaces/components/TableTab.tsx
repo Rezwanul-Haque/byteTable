@@ -646,6 +646,7 @@ export function TableTab({
           handleId={handleId}
           schema={tab.schema}
           table={tab.table}
+          env={env}
           onClose={() => setExportKind(null)}
         />
       ) : null}

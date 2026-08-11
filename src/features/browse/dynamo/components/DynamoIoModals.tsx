@@ -6,7 +6,7 @@
 // warning, and writes via chunked `BatchWriteItem` with progress. Ported from
 // `dynamo-io.jsx`.
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { isAppErrorPayload } from "../../../../shared/api/error";
 import { Btn } from "../../../../shared/ui/Btn";
@@ -14,6 +14,7 @@ import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { Modal, ModalActions, ModalTitle } from "../../../../shared/ui/Modal";
 import { useToast } from "../../../../shared/ui/toastContext";
+import { exportStamp } from "../../../export/exportFlow";
 import { dynamoBatchWrite, dynamoScan, type DynamoItem, type TableDescriptor } from "../api";
 import {
   attributeUnion,
@@ -58,6 +59,8 @@ interface ExportModalProps {
   handleId: string;
   tables: TableDescriptor[];
   region: string;
+  /** Connection's deployment env — goes into the filename (`exportStamp`). */
+  env?: string;
   onClose: () => void;
 }
 
@@ -93,6 +96,7 @@ export function DynamoExportModal({
   handleId,
   tables,
   region,
+  env,
   onClose,
 }: ExportModalProps) {
   const [stage, setStage] = useState<"choose" | "building" | "done">("choose");
@@ -112,7 +116,10 @@ export function DynamoExportModal({
   const ext = isCsv ? "csv" : "json";
   const suffix = effMode === "schema" ? "_schema" : effMode === "data" ? "_items" : "";
   const base = isAll ? region + "_export" : (table ?? "table");
-  const fname = base + suffix + (format === "ddb-json" ? ".ddb" : "") + "." + ext;
+  // One stamp per modal (not per render) so the name shown while choosing is the
+  // name the file is downloaded under.
+  const stamp = useMemo(() => exportStamp(env), [env]);
+  const fname = base + suffix + stamp + (format === "ddb-json" ? ".ddb" : "") + "." + ext;
 
   const descOf = (name: string) => tables.find((t) => t.name === name);
 

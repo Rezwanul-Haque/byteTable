@@ -514,6 +514,7 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
           table={exportJob.table}
           tables={tables}
           handleId={handleId}
+          env={env}
           onClose={() => setExportJob(null)}
         />
       ) : null}

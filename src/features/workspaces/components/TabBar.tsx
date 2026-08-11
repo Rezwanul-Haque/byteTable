@@ -39,13 +39,14 @@ function tabIcon(tab: Tab): string {
   return TAB_ICONS[tab.kind];
 }
 
-/** The visible label: `schema.table` for non-default schemas (the caller
- *  passes `defaultSchema` so we know when to drop it), the SQL "Query N"
- *  title, "schema · map", or the object's name. */
-function tabTitle(tab: Tab, defaultSchema: string): string {
+/** The visible label: just the table/object name while its schema is the one the
+ *  workspace is on (the caller passes `currentSchema` — what the sidebar's schema
+ *  switcher shows), `schema.name` for anything from another schema, the SQL
+ *  "Query N" title, "schema · map", or a fixed name. */
+function tabTitle(tab: Tab, currentSchema: string): string {
   switch (tab.kind) {
     case "table":
-      return tab.schema === defaultSchema ? tab.table : tab.schema + "." + tab.table;
+      return tab.schema === currentSchema ? tab.table : tab.schema + "." + tab.table;
     case "sql":
       return tab.title;
     case "map":
@@ -55,16 +56,30 @@ function tabTitle(tab: Tab, defaultSchema: string): string {
     case "diff":
       return "Schema diff";
     case "object":
-      return tab.schema === defaultSchema ? tab.name : tab.schema + "." + tab.name;
+      return tab.schema === currentSchema ? tab.name : tab.schema + "." + tab.name;
     case "objexplorer":
       return "Objects";
+  }
+}
+
+/** Hover/`aria` text — always fully qualified for a schema-scoped tab, so the
+ *  schema the shortened label drops is still one hover away. */
+function tabTooltip(tab: Tab, currentSchema: string): string {
+  switch (tab.kind) {
+    case "table":
+      return tab.schema + "." + tab.table;
+    case "object":
+      return tab.schema + "." + tab.name;
+    default:
+      return tabTitle(tab, currentSchema);
   }
 }
 
 interface TabBarProps {
   tabs: Tab[];
   activeTabId: string | null;
-  defaultSchema: string;
+  /** The schema the workspace is currently on — tabs in it show a bare name. */
+  currentSchema: string;
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
   onNewSql: () => void;
@@ -80,7 +95,7 @@ interface TabBarProps {
 export function TabBar({
   tabs,
   activeTabId,
-  defaultSchema,
+  currentSchema,
   onSelect,
   onClose,
   onNewSql,
@@ -103,7 +118,8 @@ export function TabBar({
       <div className="tabbar-tabs">
         {tabs.map((tab) => {
           const active = tab.id === activeTabId;
-          const title = tabTitle(tab, defaultSchema);
+          const title = tabTitle(tab, currentSchema);
+          const tooltip = tabTooltip(tab, currentSchema);
           const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
             if (event.target !== event.currentTarget) return;
             if (event.key === "Enter" || event.key === " ") {
@@ -133,7 +149,7 @@ export function TabBar({
               onKeyDown={onKeyDown}
               onMouseDown={onMouseDown}
               onContextMenu={(e) => menu.onContextMenu(e, tab.id)}
-              title={title}
+              title={tooltip}
             >
               <Icon
                 name={tabIcon(tab)}
@@ -149,7 +165,7 @@ export function TabBar({
                   onClose(tab.id);
                 }}
                 title="Close tab"
-                aria-label={"Close " + title}
+                aria-label={"Close " + tooltip}
               >
                 <Icon name="close" size={12} />
               </button>

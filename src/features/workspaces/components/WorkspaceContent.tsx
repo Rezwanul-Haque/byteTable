@@ -20,7 +20,7 @@ import { ObjectViewer } from "../../db_objects/components/ObjectViewer";
 import { ObjectExplorer } from "../../db_objects/components/ObjectExplorer";
 import { useWorkspacesStore } from "../state";
 import type { Tab, Workspace } from "../types";
-import { homeSchema } from "../types";
+import { selectedSchema } from "../types";
 import { SqlEditorTab } from "./SqlEditorTab";
 import { TabBar } from "./TabBar";
 import { TableTab } from "./TableTab";
@@ -43,15 +43,15 @@ function NoTabs() {
 function TabBody({
   tab,
   workspace,
-  defaultSchema,
+  currentSchema,
 }: {
   tab: Tab;
   workspace: Workspace;
-  defaultSchema: string;
+  currentSchema: string;
 }) {
   switch (tab.kind) {
     case "table":
-      return <TableTab tab={tab} handleId={workspace.handleId} defaultSchema={defaultSchema} />;
+      return <TableTab tab={tab} handleId={workspace.handleId} currentSchema={currentSchema} />;
     case "sql":
       return <SqlEditorTab workspace={workspace} tab={tab} />;
     case "map":
@@ -100,16 +100,17 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
   const activeTabId = workspace.ui.activeTabId ?? null;
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
 
-  // Default schema for tab-title shortening (drop schema prefix on the
-  // connection's first schema — SQLite: "main").
-  const defaultSchema = homeSchema(workspace) ?? "main";
+  // The schema this workspace is currently on — the same `selectedSchema` the
+  // sidebar's switcher displays. Tab titles and the Structure heading shorten
+  // against THIS, not the connection's first schema: a workspace parked on
+  // `forestmw` would otherwise prefix every tab with `forestmw.` just because
+  // another database happens to be listed first.
+  const currentSchema = selectedSchema(workspace) ?? "main";
 
   // Schema the Processes tab opens against — the active tab's schema when it
-  // has one, else the workspace default. Mirrors StatusBar's "processes" btn.
+  // has one, else the one the workspace is on. Mirrors StatusBar's "processes" btn.
   const procSchema =
-    activeTab?.kind === "table" || activeTab?.kind === "map"
-      ? activeTab.schema
-      : (workspace.ui.schemaName ?? defaultSchema);
+    activeTab?.kind === "table" || activeTab?.kind === "map" ? activeTab.schema : currentSchema;
   // Only engines with a server process list (PROC_SOURCES) get the toggle.
   const hasProcesses = workspace.saved.engine in PROC_SOURCES;
 
@@ -120,7 +121,7 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
       <TabBar
         tabs={tabs}
         activeTabId={activeTabId}
-        defaultSchema={defaultSchema}
+        currentSchema={currentSchema}
         onSelect={setActiveTab}
         onClose={closeTab}
         onNewSql={openSqlTab}
@@ -130,7 +131,7 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
       />
       <div className="tab-content">
         {activeTab ? (
-          <TabBody tab={activeTab} workspace={workspace} defaultSchema={defaultSchema} />
+          <TabBody tab={activeTab} workspace={workspace} currentSchema={currentSchema} />
         ) : null}
       </div>
     </>

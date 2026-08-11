@@ -53,7 +53,7 @@ import { ScopeSplitAction, ScopeSplitHint } from "./ScopeSplitAction";
 import { useWorkspacesStore } from "../state";
 import { useTabMetaStore } from "../tabMeta";
 import type { Workspace } from "../types";
-import { homeSchema } from "../types";
+import { selectedSchema } from "../types";
 import "./Sidebar.css";
 
 /** Stable default so the no-expansions case never re-triggers effects. */
@@ -121,11 +121,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   // the connection listed (SQLite: always "main"). If a refresh dropped the
   // selected schema (out-of-band DETACH), fall back rather than introspect
   // a ghost.
-  const uiSchema = workspace.ui.schemaName;
-  const schemaName =
-    (uiSchema !== undefined && workspace.schemas.some((s) => s.name === uiSchema)
-      ? uiSchema
-      : homeSchema(workspace)) ?? (engine === "sqlite" ? "main" : "");
+  const schemaName = selectedSchema(workspace) ?? (engine === "sqlite" ? "main" : "");
   const expandedTables = workspace.ui.expandedTables ?? NO_EXPANDED;
 
   // Active-table styling (§3.3/§3.4 restored): the sidebar row matching the

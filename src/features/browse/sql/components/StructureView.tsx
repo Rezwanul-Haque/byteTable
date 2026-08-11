@@ -58,8 +58,8 @@ interface StructureViewProps {
   tabId: string;
   schema: string;
   table: string;
-  /** Connection's first schema; the prefix is dropped for it (tab-title rule). */
-  defaultSchema: string;
+  /** The schema the workspace is on; the prefix is dropped for it (tab-title rule). */
+  currentSchema: string;
 }
 
 /** Normalize a typed column name the way the prototype did: trim, collapse
@@ -78,7 +78,7 @@ export function StructureView({
   tabId,
   schema,
   table,
-  defaultSchema,
+  currentSchema,
 }: StructureViewProps) {
   const toast = useToast();
   const [colQuery, setColQuery] = useState("");
@@ -443,7 +443,7 @@ export function StructureView({
     toast("Pending changes discarded");
   };
 
-  const qualified = schema === defaultSchema ? table : schema + "." + table;
+  const qualified = schema === currentSchema ? table : schema + "." + table;
   const inbound = meta?.referencedBy ?? [];
 
   const q = colQuery.trim().toLowerCase();

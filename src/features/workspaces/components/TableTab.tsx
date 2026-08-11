@@ -47,11 +47,11 @@ const PAGE_SIZE_OPTIONS = [50, 100, 300, 1000] as const;
 export function TableTab({
   tab,
   handleId,
-  defaultSchema,
+  currentSchema,
 }: {
   tab: TableTabModel;
   handleId: string;
-  defaultSchema: string;
+  currentSchema: string;
 }) {
   const setTableTabMode = useWorkspacesStore((state) => state.setTableTabMode);
   // Open the filter panel's generated query in a new SQL tab (Show query strip).
@@ -525,7 +525,7 @@ export function TableTab({
           tabId={tab.id}
           schema={tab.schema}
           table={tab.table}
-          defaultSchema={defaultSchema}
+          currentSchema={currentSchema}
         />
       ) : (
         <>

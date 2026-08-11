@@ -361,3 +361,22 @@ export function homeSchema(workspace: Pick<Workspace, "schema" | "schemas">): st
   if (own && workspace.schemas.some((s) => s.name === own)) return own;
   return workspace.schemas[0]?.name;
 }
+
+/**
+ * The schema a workspace is CURRENTLY on — what the sidebar's schema switcher
+ * shows: the user's `ui.schemaName` when it still exists on the connection
+ * (a refresh may have dropped it out-of-band, and introspecting a ghost is
+ * worse than falling back), else {@link homeSchema}.
+ *
+ * The sidebar and the tab strip must agree on this: tab titles drop the schema
+ * prefix for the selected schema, so if the two disagreed every tab would carry
+ * a redundant `schema.` prefix. Callers apply their own last-resort default
+ * (SQLite's "main"), which is why this can still return undefined.
+ */
+export function selectedSchema(
+  workspace: Pick<Workspace, "schema" | "schemas" | "ui">,
+): string | undefined {
+  const chosen = workspace.ui.schemaName;
+  if (chosen !== undefined && workspace.schemas.some((s) => s.name === chosen)) return chosen;
+  return homeSchema(workspace);
+}

@@ -75,9 +75,12 @@ interface CtxMenu {
 }
 
 // Approximate rendered size of the context menu, for clamping it inside the
-// viewport (min-width 190 + padding). M15 grew it to 7 items + a separator.
+// viewport (min-width 190 + padding). M15 grew it to 7 items + a separator;
+// "Open in new tab" adds one more `.ctx-item` (~31px: 12.5px text + 7px padding
+// each side), so a right-click near the bottom edge still lifts the whole menu
+// into view.
 const CTX_MENU_W = 200;
-const CTX_MENU_H = 280;
+const CTX_MENU_H = 312;
 
 /**
  * Roving-focus keyboard nav shared by the schema popover and the context
@@ -351,6 +354,11 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
 
   // M4 tab opens (store actions on the active workspace's ui).
   const openTable = (table: string) => openTableTab(schemaName, table);
+  // A SECOND data tab for a table that already has one, so it can be viewed
+  // under two filters / sorts / pages. ⌘/Ctrl-click and middle-click on a row
+  // are the accelerators for the context menu's "Open in new tab".
+  const openTableInNewTab = (table: string) =>
+    openTableTab(schemaName, table, "data", { newTab: true });
   // "View structure" (M7): open-or-focus the table tab in structure mode
   // (§3.6). On an already-open tab this switches it to structure mode.
   const openStructure = (table: string) => openTableTab(schemaName, table, "structure");
@@ -633,7 +641,18 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                     role="button"
                     tabIndex={0}
                     aria-current={isActive ? "true" : undefined}
-                    onClick={() => openTable(t.name)}
+                    // ⌘/Ctrl-click opens a second tab for the table (browser
+                    // convention); a plain click focuses the existing one.
+                    onClick={(event) =>
+                      event.metaKey || event.ctrlKey ? openTableInNewTab(t.name) : openTable(t.name)
+                    }
+                    // Middle-click — the other half of that convention. Nothing
+                    // else in the sidebar claims the middle button.
+                    onAuxClick={(event) => {
+                      if (event.button !== 1) return;
+                      event.preventDefault();
+                      openTableInNewTab(t.name);
+                    }}
                     onKeyDown={(event) => onRowKeyDown(event, t.name)}
                     onContextMenu={(event) => {
                       event.preventDefault();
@@ -742,6 +761,17 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
             }}
           >
             <Icon name="table" size={15} /> Open data
+          </button>
+          <button
+            type="button"
+            className="ctx-item"
+            role="menuitem"
+            onClick={() => {
+              openTableInNewTab(ctxMenu.table);
+              closeCtxMenu(true);
+            }}
+          >
+            <Icon name="open_in_new" size={15} /> Open in new tab
           </button>
           <button
             type="button"

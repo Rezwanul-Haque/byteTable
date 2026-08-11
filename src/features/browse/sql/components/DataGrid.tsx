@@ -546,15 +546,19 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [handleId, schema, table, sort, filterKey, refetchNonce, offset, pageSize]);
 
-  // Staging clears ONLY on table/schema identity change (NOT on sort/filter/
+  // Staging clears ONLY on connection/table identity change (NOT on sort/filter/
   // page/refresh — edits are keyed by pk and re-applied; new rows persist and
   // re-show on page 0). Mirrors the prototype's reset-on-table-change.
+  //
+  // Per-TAB isolation no longer relies on this: the tab body is keyed by tab id
+  // (`WorkspaceContent`), so each tab mounts its own grid and a switch cannot
+  // carry staged edits across. What is left is a live prop change on one tab —
+  // a reconnect handing this grid a new `handleId` — after which edits staged
+  // against the old session must not be committed to the new one.
   useEffect(() => {
     setPendingEdits(new Map());
     setNewRows([]);
     setSaveConfirmSql(null);
-    // Switching table/schema closes the inspector (the TableTab instance is
-    // reused across table switches, so this must be explicit — see spec Task 1).
     setInspect(null);
     setInspectDirty(false);
   }, [handleId, schema, table]);

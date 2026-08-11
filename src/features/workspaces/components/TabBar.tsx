@@ -10,6 +10,7 @@
 
 import {
   useEffect,
+  useMemo,
   useRef,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
@@ -113,13 +114,28 @@ export function TabBar({
   useEffect(() => {
     activeTabRef.current?.scrollIntoView({ inline: "nearest", block: "nearest" });
   }, [activeTabId]);
+  // "Open in new tab" puts the same table on the strip twice, which would render
+  // two identical labels; number the repeats (`benefits`, `benefits (2)`) in tab
+  // order so they can be told apart. Untouched when nothing repeats.
+  const labels = useMemo(() => {
+    const seen = new Map<string, number>();
+    return tabs.map((tab) => {
+      const base = tabTitle(tab, currentSchema);
+      const nth = (seen.get(base) ?? 0) + 1;
+      seen.set(base, nth);
+      const ordinal = nth > 1 ? " (" + nth + ")" : "";
+      return { title: base + ordinal, tooltip: tabTooltip(tab, currentSchema) + ordinal };
+    });
+  }, [tabs, currentSchema]);
   return (
     <div className="tabbar" role="tablist" aria-label="Open tabs">
       <div className="tabbar-tabs">
-        {tabs.map((tab) => {
+        {tabs.map((tab, index) => {
           const active = tab.id === activeTabId;
-          const title = tabTitle(tab, currentSchema);
-          const tooltip = tabTooltip(tab, currentSchema);
+          const { title, tooltip } = labels[index] ?? {
+            title: tabTitle(tab, currentSchema),
+            tooltip: tabTooltip(tab, currentSchema),
+          };
           const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
             if (event.target !== event.currentTarget) return;
             if (event.key === "Enter" || event.key === " ") {

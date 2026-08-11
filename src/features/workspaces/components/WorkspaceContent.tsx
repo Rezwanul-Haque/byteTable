@@ -131,7 +131,19 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
       />
       <div className="tab-content">
         {activeTab ? (
-          <TabBody tab={activeTab} workspace={workspace} currentSchema={currentSchema} />
+          // Keyed by tab id: only the ACTIVE tab is mounted, so without a key
+          // React reuses one TableTab/DataGrid instance across tab switches and
+          // everything that body keeps in local state (staged edits, the row
+          // cache, column widths, scroll, the row inspector) rides along to the
+          // next tab. That was papered over by resetting on schema/table change,
+          // which cannot tell two tabs on the SAME table apart — exactly what
+          // "Open in new tab" creates. One instance per tab, no bleed.
+          <TabBody
+            key={activeTab.id}
+            tab={activeTab}
+            workspace={workspace}
+            currentSchema={currentSchema}
+          />
         ) : null}
       </div>
     </>

@@ -47,6 +47,16 @@ export const WORKSPACE_COLORS = [
   "#8b93a3",
 ] as const;
 
+/** Extra behaviour for {@link WorkspacesFeatureState.openTableTab}. */
+export interface OpenTableTabOptions {
+  /**
+   * Open a SECOND tab for a table that already has one instead of focusing the
+   * existing tab — the sidebar's "Open in new tab" (and ⌘/middle-click). Lets
+   * one table be viewed under two different filters / sorts / pages at once.
+   */
+  newTab?: boolean;
+}
+
 interface WorkspacesFeatureState {
   workspaces: Workspace[];
   /** null → no active workspace → the connect screen is shown. */
@@ -118,11 +128,17 @@ interface WorkspacesFeatureState {
   /**
    * Open `schema.table` as a table tab and focus it. If a table tab for the
    * same schema+table is already open, focus it instead of duplicating
-   * (spec §3.4). `mode` is the view mode to open/switch to (default `'data'`);
-   * the sidebar's "View structure" passes `'structure'`, which also switches
-   * an already-open tab to structure mode.
+   * (spec §3.4) — pass `{ newTab: true }` to add a second copy anyway. `mode`
+   * is the view mode to open/switch to (default `'data'`); the sidebar's
+   * "View structure" passes `'structure'`, which also switches an already-open
+   * tab to structure mode.
    */
-  openTableTab: (schema: string, table: string, mode?: TableTabMode) => void;
+  openTableTab: (
+    schema: string,
+    table: string,
+    mode?: TableTabMode,
+    options?: OpenTableTabOptions,
+  ) => void;
   /**
    * Open (or focus) `schema.table` as a data tab and seed its filter with a
    * single applied `column = value` equality condition — the M10 "FK hop /
@@ -293,6 +309,27 @@ function patchActiveUi(
 /** A workspace-scoped unique tab id. */
 function newTabId(kind: Tab["kind"]): string {
   return "tab-" + kind + "-" + crypto.randomUUID();
+}
+
+/**
+ * The open tab showing `schema.table`, preferring the ACTIVE one when more than
+ * one is open (the sidebar's "Open in new tab" allows duplicates). Focus-or-open
+ * and the FK hop both resolve a table to a tab through this, so those actions
+ * land on the copy the user is looking at rather than the oldest one — the FK
+ * hop *replaces* the target's filter, which would be jarring on a tab that is
+ * not on screen.
+ */
+function findTableTab(
+  tabs: Tab[],
+  activeTabId: string | null | undefined,
+  schema: string,
+  table: string,
+): Tab | undefined {
+  const isMatch = (tab: Tab) =>
+    tab.kind === "table" && tab.schema === schema && tab.table === table;
+  const active = tabs.find((tab) => tab.id === activeTabId);
+  if (active && isMatch(active)) return active;
+  return tabs.find(isMatch);
 }
 
 /** Stringify an FK seed value for a UI filter condition (null → empty). */
@@ -537,13 +574,17 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
   setWorkspaceSchemas: (id, schemas) =>
     set((state) => ({ workspaces: patchWorkspace(state.workspaces, id, { schemas }) })),
 
-  openTableTab: (schema, table, mode = "data") =>
+  openTableTab: (schema, table, mode = "data", options) =>
     set((state) => ({
       workspaces: patchActiveUi(state, (ui) => {
         const tabs = ui.tabs ?? [];
-        const existing = tabs.find(
-          (t) => t.kind === "table" && t.schema === schema && t.table === table,
-        );
+        // `newTab` skips the focus-existing lookup, so the table opens a second
+        // (third, …) time. Everything that makes a tab a tab — filter, sort,
+        // hidden columns, paging, staged edits — is keyed by tab id, so the
+        // copies are fully independent.
+        const existing = options?.newTab
+          ? undefined
+          : findTableTab(tabs, ui.activeTabId, schema, table);
         if (existing) {
           // Focus the existing tab; switch its mode if the caller asked for a
           // specific one (e.g. "View structure" on an already-open data tab).
@@ -599,9 +640,7 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
         };
         const seeded: TabFilterState = { draft, applied: draft };
 
-        const existing = tabs.find(
-          (t) => t.kind === "table" && t.schema === schema && t.table === table,
-        );
+        const existing = findTableTab(tabs, ui.activeTabId, schema, table);
         if (existing) {
           // Focus it, force data mode, and replace its filter with the seed.
           const nextTabs = tabs.map((t) =>

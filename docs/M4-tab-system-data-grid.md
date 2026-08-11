@@ -130,10 +130,21 @@ synchronous — never touches the backend; the grid fetches lazily on mount.
   - `table` — `{ id, kind, schema, table, mode: "data" | "structure" }`.
   - `sql` — `{ id, kind, title } & SqlTabState` (M6; carries `text/result/error/history`).
   - `map` — `{ id, kind, schema }` (M9, one per schema).
-- **Focus-not-duplicate** (§3.4): `openTableTab(schema, table, mode?)` focuses
-  an existing `table` tab matching `schema`+`table` (optionally switching its
-  mode) instead of opening a second. `openMapTab(schema)` focuses an existing
+- **Focus-not-duplicate** (§3.4): `openTableTab(schema, table, mode?, options?)`
+  focuses an existing `table` tab matching `schema`+`table` (optionally switching
+  its mode) instead of opening a second. `openMapTab(schema)` focuses an existing
   map for the same schema. SQL tabs always open fresh ("Query N").
+  - **Opt out**: `{ newTab: true }` — the sidebar's "Open in new tab" / ⌘-click /
+    middle-click — appends a second tab for the same table so it can be held
+    under two filters / sorts / pages. The resolver (`findTableTab`) prefers the
+    ACTIVE match, so focus-or-open and the FK hop (which *replaces* the target's
+    filter) act on the copy on screen, not the oldest. `TabBar` numbers repeated
+    labels (`benefits`, `benefits (2)`).
+  - The tab body is keyed by tab id (`WorkspaceContent`), so each tab mounts its
+    own `TableTab`/`DataGrid`. Without that key React reuses one instance across
+    switches and its local state (staged edits, row cache, column widths, scroll,
+    row inspector) follows the user to the next tab — which no schema/table-based
+    reset can catch between two tabs on the same table.
 - **Order:** tabs render left-to-right in array order; new tabs append.
 - **Active:** `activeTabId` (always references a tab in `tabs`, or `null`).
   `closeTab` re-picks the left neighbour (else right, else `null` →

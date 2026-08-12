@@ -14,6 +14,26 @@
 
 import { create } from "zustand";
 
+import type { CellValue, ColumnMeta } from "../../shared/api/engine";
+
+/**
+ * A tab's last fetched page, kept so switching back to the tab paints from
+ * memory instead of flashing a loading line while the same query runs again.
+ *
+ * `key` is the identity the page was read under (connection + table + sort +
+ * filter + paging). The grid only seeds from a cache whose key still matches
+ * what it is about to show; anything else — a new sort, a filter, another page —
+ * is a different page and loads normally.
+ */
+export interface TabPageCache {
+  key: string;
+  columns: ColumnMeta[];
+  /** Rows in page order; the grid re-keys them by absolute index on seed. */
+  rows: CellValue[][];
+  offset: number;
+  totalRows: number | null;
+}
+
 /**
  * What the grid knows after a `rows_fetch` for a table tab. All fields
  * optional/null so a freshly opened tab (grid mounted, not yet fetched)
@@ -66,6 +86,13 @@ interface TabMetaState {
    */
   discardNonce: Record<string, number>;
   /**
+   * Last fetched page by tab id — the switch-back cache (see {@link TabPageCache}).
+   * Ephemeral like the rest of this store: it never persists, so a fresh session
+   * always reads from the database. One page per tab (≤ the tab's page size), so
+   * the ceiling is bounded by how many tabs are open.
+   */
+  pageCache: Record<string, TabPageCache>;
+  /**
    * Tabs whose close is waiting on a discard-unsaved confirm, in the order the
    * close would apply — or null when no confirm is open. Same declarative-seam
    * reasoning as `refetchNonce`: the close can be triggered from the tab's ×,
@@ -80,6 +107,8 @@ interface TabMetaState {
   setTabScrollTop: (tabId: string, scrollTop: number) => void;
   /** Toolbar → grid: bump a tab's refresh nonce. */
   requestRefetch: (tabId: string) => void;
+  /** Grid → seam: remember the page it just fetched, for the next switch back. */
+  setTabPage: (tabId: string, page: TabPageCache) => void;
   /** Tab bar → grid: drop these tabs' staged edits (after the confirm). */
   requestDiscard: (tabIds: string[]) => void;
   /** Close entry point → confirm dialog: ask before discarding these tabs. */
@@ -95,15 +124,27 @@ export const useTabMetaStore = create<TabMetaState>((set) => ({
   scrollTop: {},
   refetchNonce: {},
   discardNonce: {},
+  pageCache: {},
   closeRequest: null,
   setTabMeta: (tabId, meta) =>
     set((state) => ({ meta: { ...state.meta, [tabId]: { ...state.meta[tabId], ...meta } } })),
   setTabScrollTop: (tabId, scrollTop) =>
     set((state) => ({ scrollTop: { ...state.scrollTop, [tabId]: scrollTop } })),
   requestRefetch: (tabId) =>
-    set((state) => ({
-      refetchNonce: { ...state.refetchNonce, [tabId]: (state.refetchNonce[tabId] ?? 0) + 1 },
-    })),
+    set((state) => {
+      // A refresh request means "what you have is stale" — from the toolbar, or
+      // from a truncate/import/save that touched this table. Drop the cached
+      // page with it, so the tab (mounted or not) reloads for real instead of
+      // painting the old rows first.
+      const pageCache = { ...state.pageCache };
+      delete pageCache[tabId];
+      return {
+        refetchNonce: { ...state.refetchNonce, [tabId]: (state.refetchNonce[tabId] ?? 0) + 1 },
+        pageCache,
+      };
+    }),
+  setTabPage: (tabId, page) =>
+    set((state) => ({ pageCache: { ...state.pageCache, [tabId]: page } })),
   requestDiscard: (tabIds) =>
     set((state) => {
       const discardNonce = { ...state.discardNonce };
@@ -118,16 +159,19 @@ export const useTabMetaStore = create<TabMetaState>((set) => ({
       const hadScroll = tabId in state.scrollTop;
       const hadNonce = tabId in state.refetchNonce;
       const hadDiscard = tabId in state.discardNonce;
-      if (!hadMeta && !hadScroll && !hadNonce && !hadDiscard) return state;
+      const hadPage = tabId in state.pageCache;
+      if (!hadMeta && !hadScroll && !hadNonce && !hadDiscard && !hadPage) return state;
       const meta = { ...state.meta };
       const scrollTop = { ...state.scrollTop };
       const refetchNonce = { ...state.refetchNonce };
       const discardNonce = { ...state.discardNonce };
+      const pageCache = { ...state.pageCache };
       delete meta[tabId];
       delete scrollTop[tabId];
       delete refetchNonce[tabId];
       delete discardNonce[tabId];
-      return { meta, scrollTop, refetchNonce, discardNonce };
+      delete pageCache[tabId];
+      return { meta, scrollTop, refetchNonce, discardNonce, pageCache };
     }),
 }));
 

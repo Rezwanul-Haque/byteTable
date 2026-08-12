@@ -202,7 +202,23 @@ and high-frequency:
   rule), restored on remount → **scroll persists across workspace switches**.
 - `refetchNonce[tabId]` — monotonic; the toolbar's refresh + retry bump it, the
   mounted grid watches its own nonce and re-fetches (declarative seam, nothing
-  to unregister).
+  to unregister). A bump also **drops that tab's `pageCache` entry**: the request
+  means "what you have is stale", so the tab must reload for real rather than
+  paint the old rows first.
+- `discardNonce[tabId]` — same pattern for "drop this tab's staged batch" (the
+  tab bar's discard tool); the mounted grid holds staging in local state, so
+  clearing the store alone would be undone by its mirror effect.
+- `pageCache[tabId]: { key, columns, rows, offset, totalRows }` — the last page a
+  tab fetched, so **switching back paints from memory**. Only the active tab's
+  body is mounted, so a switch is an unmount + mount, and mount = one `rows_fetch`
+  (page `SELECT` + `COUNT(*)`); the loading line flashed even when nothing had
+  changed. `key` is the identity the page was read under (connection + table +
+  sort + filter + paging): the grid seeds `columns`/`rows`/`totalRows` from a
+  cache whose key still matches, starts with `loadingInitial = false`, and lets
+  the load effect revalidate **quietly** (rows stay on screen, generation still
+  advances so a superseded response is dropped). A key mismatch, a moved
+  `refetchNonce`, or a miss loads loudly as before. Ephemeral and one page per
+  tab, so the ceiling is bounded by how many tabs are open.
 - `rowCountLabel(meta)` — shared "N rows" / "n of N rows" / "— rows" formatter
   (toolbar + status bar use it so they never drift).
 - **Per-tab paging state** (`offset`, `pageSize`) is LOCAL to `TableTab` (not

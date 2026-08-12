@@ -75,7 +75,7 @@ import { useToast } from "../../../../shared/ui/toastContext";
 import { useIntrospectionStore } from "../../../introspection/state";
 import { storedTabGridEdits, useWorkspacesStore } from "../../../workspaces/state";
 import { useSettingsStore } from "../../../settings/state";
-import { useTabMetaStore } from "../../../workspaces/tabMeta";
+import { useTabMetaStore, type TabPageCache } from "../../../workspaces/tabMeta";
 import type { TabGridEdits } from "../../../workspaces/types";
 import { BinaryEditorModal } from "./BinaryEditorModal";
 import { isBinaryType, looksUuid, uuidToHex } from "../../shared/binaryCell";
@@ -423,9 +423,36 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   const loadColumns = useIntrospectionStore((s) => s.loadColumns);
   const [colMeta, setColMeta] = useState<Map<string, ColCellMeta>>(new Map());
 
+  // --- switch-back page cache ------------------------------------------
+  // The identity of the page this grid shows: connection + table + sort + filter
+  // + paging. Two tabs on the same table share it while those agree; any
+  // difference is a different page and must load normally.
+  const pageKey = [handleId, schema, table, JSON.stringify(sort), filterKey, offset, pageSize].join(
+    "\u0000",
+  );
+  const pageKeyRef = useRef(pageKey);
+  pageKeyRef.current = pageKey;
+  // Only the ACTIVE tab's body is mounted, so switching tabs used to mean a
+  // loading line plus a re-read of the page the user was looking at seconds ago.
+  // Seed from the tabMeta cache when it still describes this exact page, then
+  // revalidate quietly in the load effect: instant paint, still-fresh data.
+  // `undefined` = not resolved yet, `null` = miss (computed once, in render).
+  const seedRef = useRef<{ key: string; nonce: number; page: TabPageCache } | null | undefined>(
+    undefined,
+  );
+  if (seedRef.current === undefined) {
+    const seam = useTabMetaStore.getState();
+    const cached = seam.pageCache[tabId];
+    seedRef.current =
+      cached && cached.key === pageKey
+        ? { key: pageKey, nonce: seam.refetchNonce[tabId] ?? 0, page: cached }
+        : null;
+  }
+  const seed = seedRef.current;
+
   // --- result state ----------------------------------------------------
-  const [columns, setColumns] = useState<ColumnMeta[]>([]);
-  const [totalRows, setTotalRows] = useState<number | null>(null);
+  const [columns, setColumns] = useState<ColumnMeta[]>(() => seed?.page.columns ?? []);
+  const [totalRows, setTotalRows] = useState<number | null>(() => seed?.page.totalRows ?? null);
   // Manual column-width overrides (px), keyed by column name. Session-only (no
   // persistence); a value here wins over the auto-measured width. Cleared per
   // column by double-clicking its resize handle (back to auto-fit).
@@ -441,7 +468,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [initialError, setInitialError] = useState<string | null>(null);
-  const [loadingInitial, setLoadingInitial] = useState(true);
+  const [loadingInitial, setLoadingInitial] = useState(!seed);
 
   // --- inline edit -----------------------------------------------------
   const toast = useToast();
@@ -516,8 +543,10 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   const [inspectRefreshing, setInspectRefreshing] = useState(false);
 
   // The current page's rows, keyed by ABSOLUTE row index (`offset + i`).
-  const rowCacheRef = useRef<Map<number, CellValue[]>>(new Map());
-  const [pageRowCount, setPageRowCount] = useState(0);
+  const rowCacheRef = useRef<Map<number, CellValue[]>>(
+    new Map(seed?.page.rows.map((row, i) => [seed.page.offset + i, row])),
+  );
+  const [pageRowCount, setPageRowCount] = useState(seed?.page.rows.length ?? 0);
   const [cacheVersion, setCacheVersion] = useState(0);
   const generationRef = useRef(0);
 
@@ -567,10 +596,19 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         setCacheVersion((v) => v + 1);
         setLoadingInitial(false);
         filterCbRef.current.onFilterOk?.();
-        useTabMetaStore.getState().setTabMeta(tabId, {
+        const seam = useTabMetaStore.getState();
+        seam.setTabMeta(tabId, {
           totalRows: page.totalRows,
           elapsedMs: page.elapsedMs,
           shownRows: undefined,
+        });
+        // Keep the page for the next switch back to this tab.
+        seam.setTabPage(tabId, {
+          key: pageKeyRef.current,
+          columns: page.columns,
+          rows: page.rows,
+          offset: page.offset,
+          totalRows: page.totalRows,
         });
       })
       .catch((err: unknown) => {
@@ -587,8 +625,17 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   }, [handleId, schema, table, sort, tabId, offset, pageSize]);
 
   // Initial load + reload on identity / sort / filter / page / refresh changes.
+  //
+  // A mount seeded from the page cache revalidates QUIETLY: the seeded rows stay
+  // on screen while the same query re-runs, so switching back to a tab paints
+  // immediately instead of flashing "Loading …". Everything else — a new sort,
+  // filter, page, or the toolbar's refresh (`refetchNonce` moved) — is a real
+  // load and shows it. The generation still advances either way, so a response
+  // from a superseded fetch is discarded.
   useEffect(() => {
-    resetForLoad();
+    const quiet = seed !== null && seed.key === pageKey && seed.nonce === refetchNonce;
+    if (quiet) generationRef.current += 1;
+    else resetForLoad();
     committingRef.current = false;
     setEditing(null);
     fetchCurrentPage();

@@ -958,10 +958,16 @@ export function RowInspector({
   // drawer holds un-staged edits, save must stage those first). The grid's own
   // ⌘S window listener skips its `save()` when this drawer is open + dirty, so
   // the two never both fire for one keystroke.
+  //
+  // Both branches `preventDefault()`: an Escape we act on must not travel on to
+  // the window, or macOS reads it as "leave full screen" and one keypress both
+  // closes the drawer and drops the app out of full screen. Same reason the
+  // shared `Modal` swallows Escape.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        e.preventDefault();
         onClose();
       } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();

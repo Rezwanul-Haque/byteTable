@@ -19,6 +19,7 @@ import {
 import { Icon } from "../../../shared/ui/Icon";
 import { useTabMenu } from "../../../shared/ui/useTabMenu";
 import { OBJ_SECTIONS } from "../../db_objects/kinds";
+import { tabLabels } from "../tabLabels";
 import type { Tab } from "../types";
 import "./TabBar.css";
 
@@ -40,49 +41,18 @@ function tabIcon(tab: Tab): string {
   return TAB_ICONS[tab.kind];
 }
 
-/** The visible label: just the table/object name while its schema is the one the
- *  workspace is on (the caller passes `currentSchema` — what the sidebar's schema
- *  switcher shows), `schema.name` for anything from another schema, the SQL
- *  "Query N" title, "schema · map", or a fixed name. */
-function tabTitle(tab: Tab, currentSchema: string): string {
-  switch (tab.kind) {
-    case "table":
-      return tab.schema === currentSchema ? tab.table : tab.schema + "." + tab.table;
-    case "sql":
-      return tab.title;
-    case "map":
-      return tab.schema + " · map";
-    case "processes":
-      return "Processes";
-    case "diff":
-      return "Schema diff";
-    case "object":
-      return tab.schema === currentSchema ? tab.name : tab.schema + "." + tab.name;
-    case "objexplorer":
-      return "Objects";
-  }
-}
-
-/** Hover/`aria` text — always fully qualified for a schema-scoped tab, so the
- *  schema the shortened label drops is still one hover away. */
-function tabTooltip(tab: Tab, currentSchema: string): string {
-  switch (tab.kind) {
-    case "table":
-      return tab.schema + "." + tab.table;
-    case "object":
-      return tab.schema + "." + tab.name;
-    default:
-      return tabTitle(tab, currentSchema);
-  }
-}
-
 interface TabBarProps {
   tabs: Tab[];
   activeTabId: string | null;
   /** The schema the workspace is currently on — tabs in it show a bare name. */
   currentSchema: string;
+  /** Tabs with work that is not in the database yet (staged grid edits, pending
+   *  structure ops) — marked with an unsaved dot. */
+  unsavedTabIds: Set<string>;
   onSelect: (id: string) => void;
-  onClose: (id: string) => void;
+  /** Close these tabs — a set, because the strip's context menu closes many at
+   *  once and the caller confirms unsaved work for the whole batch. */
+  onClose: (ids: string[]) => void;
   onNewSql: () => void;
   /** True when the docked console panel is open (M14) — lights the toggle. */
   consoleOpen: boolean;
@@ -97,6 +67,7 @@ export function TabBar({
   tabs,
   activeTabId,
   currentSchema,
+  unsavedTabIds,
   onSelect,
   onClose,
   onNewSql,
@@ -106,7 +77,7 @@ export function TabBar({
 }: TabBarProps) {
   const menu = useTabMenu({
     ids: tabs.map((t) => t.id),
-    close: (ids) => ids.forEach(onClose),
+    close: onClose,
   });
   // Scroll the active tab into view when it changes — so a tab opened (and made
   // active) while the bar is scrolled past the edge isn't left hidden.
@@ -114,28 +85,15 @@ export function TabBar({
   useEffect(() => {
     activeTabRef.current?.scrollIntoView({ inline: "nearest", block: "nearest" });
   }, [activeTabId]);
-  // "Open in new tab" puts the same table on the strip twice, which would render
-  // two identical labels; number the repeats (`benefits`, `benefits (2)`) in tab
-  // order so they can be told apart. Untouched when nothing repeats.
-  const labels = useMemo(() => {
-    const seen = new Map<string, number>();
-    return tabs.map((tab) => {
-      const base = tabTitle(tab, currentSchema);
-      const nth = (seen.get(base) ?? 0) + 1;
-      seen.set(base, nth);
-      const ordinal = nth > 1 ? " (" + nth + ")" : "";
-      return { title: base + ordinal, tooltip: tabTooltip(tab, currentSchema) + ordinal };
-    });
-  }, [tabs, currentSchema]);
+  const labels = useMemo(() => tabLabels(tabs, currentSchema), [tabs, currentSchema]);
   return (
     <div className="tabbar" role="tablist" aria-label="Open tabs">
       <div className="tabbar-tabs">
         {tabs.map((tab, index) => {
           const active = tab.id === activeTabId;
-          const { title, tooltip } = labels[index] ?? {
-            title: tabTitle(tab, currentSchema),
-            tooltip: tabTooltip(tab, currentSchema),
-          };
+          const unsaved = unsavedTabIds.has(tab.id);
+          // `labels` is built from the same array, so the index always hits.
+          const { title, tooltip } = labels[index] ?? { title: tab.id, tooltip: tab.id };
           const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
             if (event.target !== event.currentTarget) return;
             if (event.key === "Enter" || event.key === " ") {
@@ -143,21 +101,21 @@ export function TabBar({
               onSelect(tab.id);
             } else if (event.key === "Delete" || event.key === "Backspace") {
               event.preventDefault();
-              onClose(tab.id);
+              onClose([tab.id]);
             }
           };
           const onMouseDown = (event: ReactMouseEvent<HTMLDivElement>) => {
             // Middle-click closes (spec §3.4 / §3.12).
             if (event.button === 1) {
               event.preventDefault();
-              onClose(tab.id);
+              onClose([tab.id]);
             }
           };
           return (
             <div
               key={tab.id}
               ref={active ? activeTabRef : undefined}
-              className={"tab" + (active ? " active" : "")}
+              className={"tab" + (active ? " active" : "") + (unsaved ? " unsaved" : "")}
               role="tab"
               aria-selected={active}
               tabIndex={active ? 0 : -1}
@@ -165,7 +123,7 @@ export function TabBar({
               onKeyDown={onKeyDown}
               onMouseDown={onMouseDown}
               onContextMenu={(e) => menu.onContextMenu(e, tab.id)}
-              title={tooltip}
+              title={unsaved ? tooltip + " — unsaved changes" : tooltip}
             >
               <Icon
                 name={tabIcon(tab)}
@@ -173,12 +131,16 @@ export function TabBar({
                 style={{ color: active ? "var(--accent)" : "var(--text-faint)" }}
               />
               <span className="tab-title">{title}</span>
+              {/* Unsaved marker: staged rows/cells or pending structure ops that
+                  closing the tab would throw away. Sits before the × so the
+                  close target does not move as the dot appears. */}
+              {unsaved ? <span className="tab-unsaved-dot" aria-hidden="true" /> : null}
               <button
                 type="button"
                 className="tab-close"
                 onClick={(event) => {
                   event.stopPropagation();
-                  onClose(tab.id);
+                  onClose([tab.id]);
                 }}
                 title="Close tab"
                 aria-label={"Close " + tooltip}

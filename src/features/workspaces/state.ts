@@ -22,6 +22,7 @@ import type {
   Tab,
   TableTabMode,
   TabFilterState,
+  TabGridEdits,
   TabViewState,
   Workspace,
   WorkspaceConnection,
@@ -224,6 +225,14 @@ interface WorkspacesFeatureState {
    * visibility survives a tab switch. Merged into the tab's view entry.
    */
   setTabHiddenCols: (tabId: string, hiddenCols: string[]) => void;
+  /**
+   * Persist a table tab's staged data-grid batch (uncommitted cell edits +
+   * staged new rows) so it survives the tab unmounting on a switch. `null` — or
+   * an empty batch — clears the entry, which is what a successful save and
+   * Discard do. The tab strip reads the presence of an entry to mark the tab
+   * unsaved.
+   */
+  setTabGridEdits: (tabId: string, edits: TabGridEdits | null) => void;
 
   // --- Structure editor (M8) ---------------------------------------------
   /**
@@ -789,7 +798,14 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
           tableViews = { ...tableViews };
           delete tableViews[tabId];
         }
-        return { tabs: next, activeTabId, filters, structureEdits, tableViews };
+        // Likewise its staged grid edits — closing a tab discards them (the
+        // strip's unsaved dot is the warning that they are there).
+        let gridEdits = ui.gridEdits;
+        if (gridEdits && tabId in gridEdits) {
+          gridEdits = { ...gridEdits };
+          delete gridEdits[tabId];
+        }
+        return { tabs: next, activeTabId, filters, structureEdits, tableViews, gridEdits };
       }),
     })),
 
@@ -866,6 +882,20 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
       }),
     })),
 
+  setTabGridEdits: (tabId, edits) =>
+    set((state) => ({
+      workspaces: patchActiveUi(state, (ui) => {
+        const empty = !edits || (edits.rows.length === 0 && edits.newRows.length === 0);
+        // Nothing staged and nothing stored: skip the write entirely, or the
+        // grid's mirroring effect would churn the store on every mount.
+        if (empty && !(ui.gridEdits && tabId in ui.gridEdits)) return {};
+        const next = { ...(ui.gridEdits ?? {}) };
+        if (empty) delete next[tabId];
+        else next[tabId] = edits;
+        return { gridEdits: next };
+      }),
+    })),
+
   setTabStructureOps: (tabId, ops) =>
     set((state) => ({
       workspaces: patchActiveUi(state, (ui) => {
@@ -923,6 +953,18 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
       })),
     })),
 }));
+
+/**
+ * The staged data-grid batch stored for `tabId`, or undefined when that tab has
+ * nothing staged. Reads the ACTIVE workspace, matching where `setTabGridEdits`
+ * writes. A one-shot read (not a hook): the data grid seeds its working `Map`s
+ * from this when it mounts and is itself the only writer, so subscribing would
+ * only feed it its own updates.
+ */
+export function storedTabGridEdits(tabId: string): TabGridEdits | undefined {
+  const state = useWorkspacesStore.getState();
+  return state.workspaces.find((ws) => ws.id === state.activeWorkspaceId)?.ui.gridEdits?.[tabId];
+}
 
 /**
  * Apply a partial-state update to one SQL tab on the active workspace's `ui`,

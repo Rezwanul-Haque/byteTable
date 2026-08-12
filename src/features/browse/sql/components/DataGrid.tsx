@@ -73,9 +73,10 @@ import { CopyButton } from "../../../../shared/ui/CopyButton";
 import { Modal, ModalActions, ModalTitle } from "../../../../shared/ui/Modal";
 import { useToast } from "../../../../shared/ui/toastContext";
 import { useIntrospectionStore } from "../../../introspection/state";
-import { useWorkspacesStore } from "../../../workspaces/state";
+import { storedTabGridEdits, useWorkspacesStore } from "../../../workspaces/state";
 import { useSettingsStore } from "../../../settings/state";
 import { useTabMetaStore } from "../../../workspaces/tabMeta";
+import type { TabGridEdits } from "../../../workspaces/types";
 import { BinaryEditorModal } from "./BinaryEditorModal";
 import { isBinaryType, looksUuid, uuidToHex } from "../../shared/binaryCell";
 import { highlightSql } from "../../shared/highlightSql";
@@ -145,6 +146,36 @@ interface PendingRow {
   pk: PkPredicate[];
   /** Column index → new value (only the changed cells). */
   cells: Map<number, CellValue>;
+}
+
+/** The working staging pair (edits to real rows + staged inserts) as the
+ *  JSON-shaped {@link TabGridEdits} the workspace store keeps per tab. */
+function toStoredEdits(pendingEdits: Map<string, PendingRow>, newRows: NewRow[]): TabGridEdits {
+  return {
+    rows: [...pendingEdits].map(([key, row]) => ({
+      key,
+      pk: row.pk,
+      cells: [...row.cells].map(([col, value]) => ({ col, value })),
+    })),
+    newRows: newRows.map((row) => ({ key: row.key, values: row.values })),
+  };
+}
+
+/** Inverse of {@link toStoredEdits} — rehydrate a stored batch into the `Map`s
+ *  the grid works with. Missing/absent entry → empty staging. */
+function fromStoredEdits(stored: TabGridEdits | undefined): {
+  pendingEdits: Map<string, PendingRow>;
+  newRows: NewRow[];
+} {
+  const pendingEdits = new Map<string, PendingRow>();
+  for (const row of stored?.rows ?? []) {
+    pendingEdits.set(row.key, {
+      pk: row.pk,
+      cells: new Map(row.cells.map((cell) => [cell.col, cell.value])),
+    });
+  }
+  const newRows = (stored?.newRows ?? []).map((row) => ({ key: row.key, values: [...row.values] }));
+  return { pendingEdits, newRows };
 }
 
 /** SQLite type-affinity buckets we coerce edit input into. Keyword-based, the
@@ -420,14 +451,27 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   const committingRef = useRef(false);
 
   // --- staged data editing (Prompts 1–3) -------------------------------
+  // Seeded from the workspace store: an inactive tab is unmounted, so staging
+  // held only in local state died on a tab switch — values the user had typed
+  // but not saved, silently gone. The store keeps one batch per TAB id, so two
+  // tabs on the same table stage independently.
+  // Lazily, once: a plain `useRef(fromStoredEdits(…))` would re-read the store
+  // and rebuild the Maps on every render (this grid re-renders per scroll frame)
+  // only to throw the result away.
+  const restoredStagingRef = useRef<ReturnType<typeof fromStoredEdits> | null>(null);
+  restoredStagingRef.current ??= fromStoredEdits(storedTabGridEdits(tabId));
+  const restoredStaging = restoredStagingRef.current;
   // Pending edits to existing rows, keyed by primary-key string. Self-contained
   // (carries the pk predicate + new values) so a save works even after the row
   // scrolled off the cached page.
-  const [pendingEdits, setPendingEdits] = useState<Map<string, PendingRow>>(new Map());
+  const [pendingEdits, setPendingEdits] = useState<Map<string, PendingRow>>(
+    () => restoredStaging.pendingEdits,
+  );
   // Staged new rows (ride at the top of page 0).
-  const [newRows, setNewRows] = useState<NewRow[]>([]);
-  // Monotonic id source for new-row keys (a ref — not render state).
-  const stagedKeySeq = useRef(0);
+  const [newRows, setNewRows] = useState<NewRow[]>(() => restoredStaging.newRows);
+  // Monotonic id source for new-row keys (a ref — not render state). Restored
+  // rows already own keys, so continue ABOVE the highest of them.
+  const stagedKeySeq = useRef(restoredStaging.newRows.reduce((max, r) => Math.max(max, r.key), 0));
   // Save-time production confirm: the batch SQL parked for review, or null.
   const [saveConfirmSql, setSaveConfirmSql] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -555,13 +599,32 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   // carry staged edits across. What is left is a live prop change on one tab —
   // a reconnect handing this grid a new `handleId` — after which edits staged
   // against the old session must not be committed to the new one.
+  //
+  // The first run is skipped: effects always fire on mount, which would throw
+  // away the batch just restored from the store (and, under StrictMode's
+  // double-mount, do it on the second pass too — hence comparing the identity
+  // rather than counting runs).
+  const stagingIdentity = useRef<string | null>(null);
   useEffect(() => {
+    const identity = [handleId, schema, table].join(" ");
+    if (stagingIdentity.current === identity) return;
+    const first = stagingIdentity.current === null;
+    stagingIdentity.current = identity;
+    if (first) return;
     setPendingEdits(new Map());
     setNewRows([]);
     setSaveConfirmSql(null);
     setInspect(null);
     setInspectDirty(false);
   }, [handleId, schema, table]);
+
+  // Mirror staging back into the workspace store (per tab id) so it survives
+  // this tab unmounting on a switch, and so the tab strip can mark the tab
+  // unsaved. The action drops the entry when the batch is empty and skips the
+  // write when there is nothing to change, so this stays quiet while browsing.
+  useEffect(() => {
+    useWorkspacesStore.getState().setTabGridEdits(tabId, toStoredEdits(pendingEdits, newRows));
+  }, [tabId, pendingEdits, newRows]);
 
   // The inspected row is addressed by absolute index / staged key; a page,
   // filter, or refetch rebuilds the row cache, so close the drawer to avoid it

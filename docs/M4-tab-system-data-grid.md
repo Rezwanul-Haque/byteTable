@@ -148,7 +148,32 @@ synchronous — never touches the backend; the grid fetches lazily on mount.
 - **Order:** tabs render left-to-right in array order; new tabs append.
 - **Active:** `activeTabId` (always references a tab in `tabs`, or `null`).
   `closeTab` re-picks the left neighbour (else right, else `null` →
-  EmptyState), and prunes the closed tab's `filters`/`structureEdits` entries.
+  EmptyState), and prunes the closed tab's
+  `filters`/`tableViews`/`structureEdits`/`gridEdits` entries.
+- **Staged grid edits survive a tab switch** — `ui.gridEdits[tabId]`
+  ({@link TabGridEdits}: edited rows by pk + staged inserts, JSON-shaped).
+  `DataGrid` seeds its working `Map`s from `storedTabGridEdits(tabId)` on mount
+  (lazily, once) and mirrors every change back via `setTabGridEdits`; a save or
+  Discard empties the batch, which drops the entry. Before this, staging lived
+  only in the grid's local state and an inactive tab is unmounted, so switching
+  tabs silently threw typed-but-unsaved values away. `forStorage` omits it — a
+  batch must not outlive the session it was typed in.
+- **Unsaved marker:** `unsavedTabIds(ui)` (types.ts) — the single definition of
+  "dirty", from `ui.gridEdits` + `ui.structureEdits`. `TabBar` renders
+  `.tab.unsaved` (accent dot + full-strength title, tooltip suffix "— unsaved
+  changes"). SQL tabs are never marked: their buffer is persisted, so nothing is
+  lost by leaving them.
+- **Confirm on close** (`CloseTabsModal`): closing a dirty tab discards its batch,
+  so every entry point — the tab's ×, Delete on a focused tab, middle-click, the
+  strip's context menu (which closes a whole set), ⌘W in `WorkspaceShell` — parks
+  its id set on `tabMeta.closeRequest` instead of prompting for itself;
+  `WorkspaceContent` owns the one dialog that answers. `TabBar.onClose` therefore
+  takes `string[]`. A batch confirms **once**: confirming closes the whole set
+  (clean tabs included), cancelling closes none. The prompt lists each dirty tab
+  by its strip label (`tabLabels`, ordinal included) with `unsavedSummary`'s
+  "2 edited rows, 1 new row". A parked set with nothing dirty left closes without
+  a prompt; the request is cleared when the strip unmounts, so it cannot resurface
+  in another workspace. Closing the whole WORKSPACE is not yet guarded.
 - **Per-tab SQL numbering:** module-local `sqlCounters` keyed by workspace id;
   only increments; pruned via a store subscription when a workspace closes
   (kept out of persisted `ui`).

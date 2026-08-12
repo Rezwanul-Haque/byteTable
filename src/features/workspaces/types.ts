@@ -8,9 +8,11 @@
 
 import type {
   AlterOp,
+  CellValue,
   Combinator,
   DbObjectKind,
   FilterOp,
+  PkPredicate,
   QueryResult,
   SortSpec,
 } from "../../shared/api/engine";
@@ -303,6 +305,69 @@ export interface WorkspaceUiState {
    * `closeTab` prunes it.
    */
   structureEdits?: Record<string, AlterOp[]>;
+  /**
+   * Per-table-tab staged data-grid edits (the save bar's uncommitted batch),
+   * keyed by tab id. Same survives-the-unmount rationale as `filters`, and it
+   * has teeth here: an inactive tab is unmounted, so typed-but-unsaved cell
+   * values held in the grid's local state were simply lost on a tab switch.
+   * Sparse — only tabs with staged changes; `closeTab` prunes the entry, as does
+   * a successful save or Discard.
+   */
+  gridEdits?: Record<string, TabGridEdits>;
+}
+
+/**
+ * One table tab's staged (uncommitted) data-grid changes — what the save bar
+ * would send. Deliberately JSON-shaped (arrays, not the grid's `Map`s) because
+ * this rides on {@link WorkspaceUiState}; the grid converts on the way in and
+ * out. Dropped by `forStorage`, so staged edits never outlive the app session —
+ * committing values typed against a previous session's rows would be a footgun.
+ */
+export interface TabGridEdits {
+  /**
+   * Staged edits to EXISTING rows. `key` is the row's primary-key string (the
+   * grid's own row identity), `pk` the predicate for the `UPDATE … WHERE`, and
+   * `cells` only the columns that actually changed, by column index.
+   */
+  rows: { key: string; pk: PkPredicate[]; cells: { col: number; value: CellValue }[] }[];
+  /** Staged inserts in display order (newest first — they ride atop page 0). */
+  newRows: { key: number; values: CellValue[] }[];
+}
+
+/**
+ * The tabs holding work that is not in the database yet: staged data-grid rows /
+ * cells ({@link WorkspaceUiState.gridEdits}) or a pending structure batch
+ * ({@link WorkspaceUiState.structureEdits}). Closing such a tab throws that work
+ * away, so this one definition drives both the strip's unsaved dot and the
+ * confirm-on-close. SQL tabs never qualify — their buffer is persisted, so
+ * closing one loses nothing.
+ */
+export function unsavedTabIds(ui: WorkspaceUiState): Set<string> {
+  const ids = new Set<string>();
+  for (const [tabId, edits] of Object.entries(ui.gridEdits ?? {})) {
+    if (edits.rows.length > 0 || edits.newRows.length > 0) ids.add(tabId);
+  }
+  for (const [tabId, ops] of Object.entries(ui.structureEdits ?? {})) {
+    if (ops.length > 0) ids.add(tabId);
+  }
+  return ids;
+}
+
+/**
+ * What closing tab `tabId` would discard, as a human phrase — "2 edited rows, 1
+ * new row", "3 structure changes". Empty string when the tab is clean. Used by
+ * the close confirm so the prompt says what is at stake rather than just
+ * "unsaved changes".
+ */
+export function unsavedSummary(ui: WorkspaceUiState, tabId: string): string {
+  const plural = (n: number, noun: string) => n + " " + noun + (n === 1 ? "" : "s");
+  const parts: string[] = [];
+  const grid = ui.gridEdits?.[tabId];
+  if (grid && grid.rows.length > 0) parts.push(plural(grid.rows.length, "edited row"));
+  if (grid && grid.newRows.length > 0) parts.push(plural(grid.newRows.length, "new row"));
+  const ops = ui.structureEdits?.[tabId]?.length ?? 0;
+  if (ops > 0) parts.push(plural(ops, "structure change"));
+  return parts.join(", ");
 }
 
 /** An open workspace — one per live connection the user has opened. */

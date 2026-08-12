@@ -80,6 +80,22 @@
   font-size: 11.5px;
 }
 
+/* Unsaved marker (staged grid edits / pending structure ops): a 6px accent dot
+   after the label. The title also brightens to full --text so the tab reads as
+   "has work in it" at a glance, not only by the dot — the same reason the save
+   bar is loud. Closing the tab discards the batch, so this is a warning. */
+.tab.unsaved .tab-title {
+  color: var(--text);
+}
+
+.tab-unsaved-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
 .tab-close {
   display: inline-flex;
   align-items: center;

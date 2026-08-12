@@ -56,12 +56,25 @@ interface TabMetaState {
    * not know whether a grid is mounted, and there is nothing to unregister.
    */
   refetchNonce: Record<string, number>;
+  /**
+   * Tabs whose close is waiting on a discard-unsaved confirm, in the order the
+   * close would apply — or null when no confirm is open. Same declarative-seam
+   * reasoning as `refetchNonce`: the close can be triggered from the tab's ×,
+   * its context menu (which closes a whole set) or ⌘W, and all of them just
+   * park the request here so ONE dialog answers for every entry point instead
+   * of each owning its own copy of the prompt.
+   */
+  closeRequest: string[] | null;
   /** Grid → seam: merge a tab's latest fetch result. */
   setTabMeta: (tabId: string, meta: TabResultMeta) => void;
   /** Grid → seam: remember a tab's scroll offset (on unmount). */
   setTabScrollTop: (tabId: string, scrollTop: number) => void;
   /** Toolbar → grid: bump a tab's refresh nonce. */
   requestRefetch: (tabId: string) => void;
+  /** Close entry point → confirm dialog: ask before discarding these tabs. */
+  requestTabClose: (tabIds: string[]) => void;
+  /** Confirm dialog → seam: the prompt is answered (either way). */
+  clearTabClose: () => void;
   /** Drop a tab's entry (tab closed). */
   clearTabMeta: (tabId: string) => void;
 }
@@ -70,6 +83,7 @@ export const useTabMetaStore = create<TabMetaState>((set) => ({
   meta: {},
   scrollTop: {},
   refetchNonce: {},
+  closeRequest: null,
   setTabMeta: (tabId, meta) =>
     set((state) => ({ meta: { ...state.meta, [tabId]: { ...state.meta[tabId], ...meta } } })),
   setTabScrollTop: (tabId, scrollTop) =>
@@ -78,6 +92,8 @@ export const useTabMetaStore = create<TabMetaState>((set) => ({
     set((state) => ({
       refetchNonce: { ...state.refetchNonce, [tabId]: (state.refetchNonce[tabId] ?? 0) + 1 },
     })),
+  requestTabClose: (tabIds) => set({ closeRequest: tabIds }),
+  clearTabClose: () => set({ closeRequest: null }),
   clearTabMeta: (tabId) =>
     set((state) => {
       const hadMeta = tabId in state.meta;

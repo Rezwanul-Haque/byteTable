@@ -18,9 +18,10 @@ import { TerminalPanel } from "../../console/TerminalPanel";
 import { shellLabel, usePanelStore } from "../../console/state";
 import { PROC_SOURCES } from "../../processes/api";
 import { useWorkspacesStore } from "../state";
+import { useTabMetaStore } from "../tabMeta";
 import { useBtCmd } from "../../../shared/ui/btCmd";
 import type { Workspace } from "../types";
-import { homeSchema } from "../types";
+import { homeSchema, unsavedTabIds } from "../types";
 
 export function WorkspaceShell({ workspace }: { workspace: Workspace }) {
   const openSqlTab = useWorkspacesStore((state) => state.openSqlTab);
@@ -28,6 +29,7 @@ export function WorkspaceShell({ workspace }: { workspace: Workspace }) {
   const openMapTab = useWorkspacesStore((state) => state.openMapTab);
   const openProcessesTab = useWorkspacesStore((state) => state.openProcessesTab);
   const togglePanel = usePanelStore((state) => state.togglePanel);
+  const requestTabClose = useTabMetaStore((state) => state.requestTabClose);
   const [paletteOpen, setPaletteOpen] = useState(false);
 
   // Title-bar app-menu commands (bt:cmd bus). The SQL workspace owns the
@@ -81,7 +83,11 @@ export function WorkspaceShell({ workspace }: { workspace: Workspace }) {
         const activeTabId = workspace.ui.activeTabId;
         if (activeTabId != null) {
           event.preventDefault();
-          closeTab(activeTabId);
+          // Same guard as the strip's ×: a tab with staged grid edits / pending
+          // structure ops asks first (WorkspaceContent owns the one dialog, so
+          // this only parks the request).
+          if (unsavedTabIds(workspace.ui).has(activeTabId)) requestTabClose([activeTabId]);
+          else closeTab(activeTabId);
         }
       }
     };
@@ -90,6 +96,8 @@ export function WorkspaceShell({ workspace }: { workspace: Workspace }) {
   }, [
     openSqlTab,
     closeTab,
+    requestTabClose,
+    workspace.ui,
     togglePanel,
     openProcessesTab,
     workspace.id,

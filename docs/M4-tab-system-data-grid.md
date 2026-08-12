@@ -163,7 +163,7 @@ synchronous — never touches the backend; the grid fetches lazily on mount.
   `.tab.unsaved` (accent dot + full-strength title, tooltip suffix "— unsaved
   changes"). SQL tabs are never marked: their buffer is persisted, so nothing is
   lost by leaving them.
-- **Confirm on close** (`CloseTabsModal`): closing a dirty tab discards its batch,
+- **Confirm on close** (`UnsavedTabsModal`, `intent="close"`): closing a dirty tab discards its batch,
   so every entry point — the tab's ×, Delete on a focused tab, middle-click, the
   strip's context menu (which closes a whole set), ⌘W in `WorkspaceShell` — parks
   its id set on `tabMeta.closeRequest` instead of prompting for itself;
@@ -174,6 +174,16 @@ synchronous — never touches the backend; the grid fetches lazily on mount.
   "2 edited rows, 1 new row". A parked set with nothing dirty left closes without
   a prompt; the request is cleared when the strip unmounts, so it cannot resurface
   in another workspace. Closing the whole WORKSPACE is not yet guarded.
+- **Discard-all tool** (`UnsavedTabsModal`, `intent="discard"`): a red `refresh`
+  button in `.tabbar-tools`, before Terminal, rendered **only while more than one
+  tab is dirty** (`onDiscardAll` omitted otherwise) — one dirty tab is the one on
+  screen and its own save bar already offers Discard; this is for the batch you
+  cannot see. Confirming runs three steps, because staging lives in two places:
+  `tabMeta.requestDiscard(ids)` bumps a per-tab nonce the MOUNTED grid watches
+  (its local `Map`s would otherwise be mirrored straight back),
+  `discardTabEdits(ids)` clears `gridEdits` + `structureEdits` for every id in one
+  update, and `requestRefetch` per id re-reads from the database — "reload", not
+  just "forget". Tabs stay open.
 - **Per-tab SQL numbering:** module-local `sqlCounters` keyed by workspace id;
   only increments; pruned via a store subscription when a workspace closes
   (kept out of persisted `ui`).

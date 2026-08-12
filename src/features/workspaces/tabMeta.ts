@@ -57,6 +57,15 @@ interface TabMetaState {
    */
   refetchNonce: Record<string, number>;
   /**
+   * Discard-staging trigger by tab id — same nonce pattern as `refetchNonce`,
+   * and needed for the same reason: the MOUNTED grid holds its staged batch in
+   * local state and mirrors it into `ui.gridEdits`, so clearing the store alone
+   * would be undone on the grid's next mirror. The grid watches its own tab's
+   * nonce and drops its staging when it changes. Unmounted tabs have no local
+   * copy, so clearing the store is enough for them.
+   */
+  discardNonce: Record<string, number>;
+  /**
    * Tabs whose close is waiting on a discard-unsaved confirm, in the order the
    * close would apply — or null when no confirm is open. Same declarative-seam
    * reasoning as `refetchNonce`: the close can be triggered from the tab's ×,
@@ -71,6 +80,8 @@ interface TabMetaState {
   setTabScrollTop: (tabId: string, scrollTop: number) => void;
   /** Toolbar → grid: bump a tab's refresh nonce. */
   requestRefetch: (tabId: string) => void;
+  /** Tab bar → grid: drop these tabs' staged edits (after the confirm). */
+  requestDiscard: (tabIds: string[]) => void;
   /** Close entry point → confirm dialog: ask before discarding these tabs. */
   requestTabClose: (tabIds: string[]) => void;
   /** Confirm dialog → seam: the prompt is answered (either way). */
@@ -83,6 +94,7 @@ export const useTabMetaStore = create<TabMetaState>((set) => ({
   meta: {},
   scrollTop: {},
   refetchNonce: {},
+  discardNonce: {},
   closeRequest: null,
   setTabMeta: (tabId, meta) =>
     set((state) => ({ meta: { ...state.meta, [tabId]: { ...state.meta[tabId], ...meta } } })),
@@ -92,6 +104,12 @@ export const useTabMetaStore = create<TabMetaState>((set) => ({
     set((state) => ({
       refetchNonce: { ...state.refetchNonce, [tabId]: (state.refetchNonce[tabId] ?? 0) + 1 },
     })),
+  requestDiscard: (tabIds) =>
+    set((state) => {
+      const discardNonce = { ...state.discardNonce };
+      for (const tabId of tabIds) discardNonce[tabId] = (discardNonce[tabId] ?? 0) + 1;
+      return { discardNonce };
+    }),
   requestTabClose: (tabIds) => set({ closeRequest: tabIds }),
   clearTabClose: () => set({ closeRequest: null }),
   clearTabMeta: (tabId) =>
@@ -99,14 +117,17 @@ export const useTabMetaStore = create<TabMetaState>((set) => ({
       const hadMeta = tabId in state.meta;
       const hadScroll = tabId in state.scrollTop;
       const hadNonce = tabId in state.refetchNonce;
-      if (!hadMeta && !hadScroll && !hadNonce) return state;
+      const hadDiscard = tabId in state.discardNonce;
+      if (!hadMeta && !hadScroll && !hadNonce && !hadDiscard) return state;
       const meta = { ...state.meta };
       const scrollTop = { ...state.scrollTop };
       const refetchNonce = { ...state.refetchNonce };
+      const discardNonce = { ...state.discardNonce };
       delete meta[tabId];
       delete scrollTop[tabId];
       delete refetchNonce[tabId];
-      return { meta, scrollTop, refetchNonce };
+      delete discardNonce[tabId];
+      return { meta, scrollTop, refetchNonce, discardNonce };
     }),
 }));
 

@@ -9,7 +9,7 @@
 // mount just the active one — simpler, and grid scroll persistence is the
 // grid's concern via the documented seam, Task 3).
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { PROC_SOURCES } from "../../processes/api";
 import { ProcessesTab } from "../../processes/ProcessesTab";
@@ -25,7 +25,7 @@ import { useTabMetaStore } from "../tabMeta";
 import type { Tab, Workspace } from "../types";
 import { selectedSchema, unsavedSummary, unsavedTabIds } from "../types";
 import { tabLabels } from "../tabLabels";
-import { CloseTabsModal, type UnsavedTab } from "./CloseTabsModal";
+import { UnsavedTabsModal, type UnsavedTab } from "./UnsavedTabsModal";
 import { SqlEditorTab } from "./SqlEditorTab";
 import { TabBar } from "./TabBar";
 import { TableTab } from "./TableTab";
@@ -105,6 +105,12 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
   const closeRequest = useTabMetaStore((state) => state.closeRequest);
   const requestTabClose = useTabMetaStore((state) => state.requestTabClose);
   const clearTabClose = useTabMetaStore((state) => state.clearTabClose);
+  const requestDiscard = useTabMetaStore((state) => state.requestDiscard);
+  const requestRefetch = useTabMetaStore((state) => state.requestRefetch);
+  const discardTabEdits = useWorkspacesStore((state) => state.discardTabEdits);
+  // The bar's discard prompt. Local (not on the seam like the close request):
+  // it has exactly one entry point, the button this component renders.
+  const [discardOpen, setDiscardOpen] = useState(false);
 
   // Memoised so the label/dirty derivations below have a stable dependency.
   const tabs = useMemo(() => workspace.ui.tabs ?? [], [workspace.ui.tabs]);
@@ -142,14 +148,18 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
   // Tabs still open + still dirty when the prompt renders, with the label the
   // strip shows them under (ordinal included, so "trees (2)" is unambiguous).
   const labels = useMemo(() => tabLabels(tabs, currentSchema), [tabs, currentSchema]);
+  const describe = (ids: string[]): UnsavedTab[] =>
+    ids
+      .filter((id) => unsaved.has(id))
+      .map((id) => ({
+        id,
+        label: labels[tabs.findIndex((t) => t.id === id)]?.title ?? id,
+        summary: unsavedSummary(workspace.ui, id),
+      }));
   const pendingClose = (closeRequest ?? []).filter((id) => tabs.some((t) => t.id === id));
-  const pendingUnsaved: UnsavedTab[] = pendingClose
-    .filter((id) => unsaved.has(id))
-    .map((id) => ({
-      id,
-      label: labels[tabs.findIndex((t) => t.id === id)]?.title ?? id,
-      summary: unsavedSummary(workspace.ui, id),
-    }));
+  const pendingUnsaved = describe(pendingClose);
+  // Dirty tabs in strip order — what the bar's reload button would sweep.
+  const dirtyTabs = describe(tabs.map((t) => t.id));
 
   // A parked request with nothing dirty left in it needs no prompt — honour the
   // close rather than dropping the user's gesture. (Reachable when the tabs went
@@ -184,6 +194,7 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
         consoleOpen={consoleOpen}
         onToggleConsole={() => togglePanel(workspace.id, shellLabel(workspace.saved.engine))}
         onOpenProcesses={hasProcesses ? () => openProcessesTab(procSchema) : undefined}
+        onDiscardAll={dirtyTabs.length > 1 ? () => setDiscardOpen(true) : undefined}
       />
       <div className="tab-content">
         {activeTab ? (
@@ -202,11 +213,12 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
           />
         ) : null}
       </div>
-      {/* Every close entry point funnels here (see `CloseTabsModal`). Rendered
+      {/* Every close entry point funnels here (see `UnsavedTabsModal`). Rendered
           when the parked set still contains a dirty tab — if the last one was
           saved while the prompt was open there is nothing left to warn about. */}
       {pendingUnsaved.length > 0 ? (
-        <CloseTabsModal
+        <UnsavedTabsModal
+          intent="close"
           unsaved={pendingUnsaved}
           total={pendingClose.length}
           onConfirm={() => {
@@ -214,6 +226,25 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
             clearTabClose();
           }}
           onCancel={clearTabClose}
+        />
+      ) : null}
+      {/* Discard-everything, from the bar's reload button. Clears the stored
+          batches AND nudges the mounted grid, which holds its own copy. */}
+      {discardOpen && dirtyTabs.length > 0 ? (
+        <UnsavedTabsModal
+          intent="discard"
+          unsaved={dirtyTabs}
+          total={dirtyTabs.length}
+          onConfirm={() => {
+            const ids = dirtyTabs.map((t) => t.id);
+            // Drop the mounted grid's local batch, drop every stored batch, then
+            // re-read from the database — "reload", not just "forget".
+            requestDiscard(ids);
+            discardTabEdits(ids);
+            ids.forEach(requestRefetch);
+            setDiscardOpen(false);
+          }}
+          onCancel={() => setDiscardOpen(false)}
         />
       ) : null}
     </>

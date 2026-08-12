@@ -233,6 +233,14 @@ interface WorkspacesFeatureState {
    * unsaved.
    */
   setTabGridEdits: (tabId: string, edits: TabGridEdits | null) => void;
+  /**
+   * Drop every staged batch — grid edits AND pending structure ops — for `tabIds`
+   * in one update (the tab bar's "discard staged changes", after its confirm).
+   * A mounted grid also holds its batch in local state, so the caller pairs this
+   * with `tabMeta.requestDiscard` to clear that copy; this alone is enough for
+   * the tabs that are not currently rendered.
+   */
+  discardTabEdits: (tabIds: string[]) => void;
 
   // --- Structure editor (M8) ---------------------------------------------
   /**
@@ -893,6 +901,26 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
         if (empty) delete next[tabId];
         else next[tabId] = edits;
         return { gridEdits: next };
+      }),
+    })),
+
+  discardTabEdits: (tabIds) =>
+    set((state) => ({
+      workspaces: patchActiveUi(state, (ui) => {
+        const gridEdits = { ...(ui.gridEdits ?? {}) };
+        const structureEdits = { ...(ui.structureEdits ?? {}) };
+        let touched = false;
+        for (const tabId of tabIds) {
+          if (tabId in gridEdits) {
+            delete gridEdits[tabId];
+            touched = true;
+          }
+          if (tabId in structureEdits) {
+            delete structureEdits[tabId];
+            touched = true;
+          }
+        }
+        return touched ? { gridEdits, structureEdits } : {};
       }),
     })),
 

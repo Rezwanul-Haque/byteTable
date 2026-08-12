@@ -523,6 +523,11 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
 
   // Refresh nonce from the tabMeta seam.
   const refetchNonce = useTabMetaStore((s) => s.refetchNonce[tabId] ?? 0);
+  // Discard-staging nonce from the same seam: the tab bar's "discard staged
+  // changes" sweeps tabs the user cannot see, and THIS tab (the mounted one)
+  // keeps its batch in local state — clearing only the store would be undone by
+  // the mirror effect below.
+  const discardNonce = useTabMetaStore((s) => s.discardNonce[tabId] ?? 0);
 
   const filterCbRef = useRef({ onFilterError, onFilterOk });
   filterCbRef.current = { onFilterError, onFilterOk };
@@ -617,6 +622,18 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     setInspect(null);
     setInspectDirty(false);
   }, [handleId, schema, table]);
+
+  // Sweep this tab's staging when the bar asks (nonce change only, never on
+  // mount — a fresh grid has just restored the batch it is meant to show).
+  const discardSeen = useRef(discardNonce);
+  useEffect(() => {
+    if (discardSeen.current === discardNonce) return;
+    discardSeen.current = discardNonce;
+    setEditing(null);
+    setPendingEdits(new Map());
+    setNewRows([]);
+    setSaveConfirmSql(null);
+  }, [discardNonce]);
 
   // Mirror staging back into the workspace store (per tab id) so it survives
   // this tab unmounting on a switch, and so the tab strip can mark the tab

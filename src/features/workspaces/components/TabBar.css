@@ -170,6 +170,17 @@
 .tabbar-tool-icon {
   padding: 5px 7px;
 }
+/* Destructive tool (discard staged changes): tinted so it does not read as an
+   ordinary refresh — it only appears while several tabs hold unsaved work, and
+   it throws that work away. */
+.tabbar-tool-warn {
+  color: var(--error);
+}
+.tabbar-tool-warn:hover {
+  color: var(--error);
+  background: color-mix(in oklab, var(--error) 14%, transparent);
+  border-color: color-mix(in oklab, var(--error) 38%, transparent);
+}
 .tabbar-tool:hover {
   color: var(--text);
   background: var(--bg2);

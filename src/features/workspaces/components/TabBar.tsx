@@ -61,6 +61,13 @@ interface TabBarProps {
   /** Open the Processes tab (M26). Omitted for engines with no server process
    *  list, which hides the button. */
   onOpenProcesses?: () => void;
+  /**
+   * Drop every tab's staged changes (after a confirm). Omitted — and the button
+   * hidden — unless MORE THAN ONE tab is dirty: a single dirty tab is the one on
+   * screen, and its own save bar already offers Discard. This button exists for
+   * the batch you cannot see from here.
+   */
+  onDiscardAll?: () => void;
 }
 
 export function TabBar({
@@ -74,6 +81,7 @@ export function TabBar({
   consoleOpen,
   onToggleConsole,
   onOpenProcesses,
+  onDiscardAll,
 }: TabBarProps) {
   const menu = useTabMenu({
     ids: tabs.map((t) => t.id),
@@ -155,6 +163,19 @@ export function TabBar({
         <Icon name="add" size={16} />
       </button>
       <div className="tabbar-tools">
+        {/* Sits before Terminal so the tools read left-to-right as
+            "undo the mess" → "open a shell". */}
+        {onDiscardAll ? (
+          <button
+            type="button"
+            className="tabbar-tool tabbar-tool-icon tabbar-tool-warn"
+            title={"Discard staged changes in " + unsavedTabIds.size + " tabs and reload"}
+            aria-label={"Discard staged changes in " + unsavedTabIds.size + " tabs and reload"}
+            onClick={onDiscardAll}
+          >
+            <Icon name="refresh" size={15} />
+          </button>
+        ) : null}
         <button
           type="button"
           className={"tabbar-tool" + (consoleOpen ? " active" : "")}

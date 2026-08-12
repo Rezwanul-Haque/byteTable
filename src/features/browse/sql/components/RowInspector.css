@@ -175,6 +175,17 @@ body[data-platform="macos"] .ri-drawer {
 .ri-field.dirty {
   border-left-color: var(--accent);
 }
+/* The field for the cell the drawer was opened from — the drawer's answer to the
+   grid's `cell-selected`, so a click on column 3 lands on column 3 here. Marked
+   with the existing border slot + an accent name rather than a background or an
+   outline: the editor inside already takes focus (and draws its own ring), and
+   nothing here changes the box, so moving the marker never shifts the layout. */
+.ri-field.focused {
+  border-left-color: color-mix(in oklab, var(--accent) 45%, transparent);
+}
+.ri-field.focused .ri-field-name {
+  color: var(--accent);
+}
 .ri-field-head {
   display: flex;
   align-items: center;

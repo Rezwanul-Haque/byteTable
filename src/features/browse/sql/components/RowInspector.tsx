@@ -407,6 +407,8 @@ function RiDateTime({
 
 function RowInspectorField({
   col,
+  index,
+  focused,
   value,
   draft,
   hasDraft,
@@ -416,6 +418,10 @@ function RowInspectorField({
   tableName,
 }: {
   col: InspectorColumn;
+  /** Column index — the drawer finds this field by it to focus the clicked cell. */
+  index: number;
+  /** True for the field matching the cell the drawer was opened from. */
+  focused: boolean;
   value: CellValue;
   draft: CellValue;
   hasDraft: boolean;
@@ -653,7 +659,10 @@ function RowInspectorField({
   }
 
   return (
-    <div className={"ri-field" + (dirty ? " dirty" : "")}>
+    <div
+      className={"ri-field" + (dirty ? " dirty" : "") + (focused ? " focused" : "")}
+      data-ri-field={index}
+    >
       <div className="ri-field-head">
         {col.pk ? (
           <Icon
@@ -783,6 +792,13 @@ interface RowInspectorProps {
   values: CellValue[] | null;
   /** Stable identity of the targeted row — resets drafts when it changes. */
   rowId: string;
+  /**
+   * Column index of the cell the drawer was opened from, or null when it was
+   * opened for the whole row (the row-number button). That field is highlighted,
+   * scrolled into view and given focus, so clicking a cell lands you on the same
+   * field here instead of at the top of the record.
+   */
+  focusColumn: number | null;
   isStagedNew: boolean;
   /** The pk = value subline body (composite keys joined), e.g. `id = 42`. */
   pkLabel: string;
@@ -813,6 +829,7 @@ export function RowInspector({
   columns,
   values,
   rowId,
+  focusColumn,
   isStagedNew,
   pkLabel,
   position,
@@ -880,6 +897,31 @@ export function RowInspector({
     window.addEventListener("click", onClickOutside);
     return () => window.removeEventListener("click", onClickOutside);
   }, [copyOpen]);
+
+  // Put the clicked cell's field under the user's hands: scroll it into view
+  // inside the scroller and focus its editor. Runs on open and whenever the
+  // target moves (another cell, or prev/next stepping to the next row with the
+  // same column), never on an unrelated re-render.
+  //
+  // The editors are queried by class rather than through a ref map because a
+  // field renders one of several bodies (text/number, JSON textarea, bool chips,
+  // binary/UUID buttons, the date-time trigger) — and the field HEAD also holds
+  // buttons (copy/revert), which a generic "first focusable" query would grab.
+  const bodyRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open || focusColumn === null) return;
+    const field = bodyRef.current?.querySelector<HTMLElement>(
+      '[data-ri-field="' + focusColumn + '"]',
+    );
+    if (!field) return;
+    field.scrollIntoView({ block: "nearest" });
+    // Preferred editors first; the fallbacks cover read-only pk chips and the
+    // bool row when neither chip is the current value.
+    const control =
+      field.querySelector<HTMLElement>(".ri-input, .ri-json-ta, .ri-bool-btn.on, .ri-bin-val") ??
+      field.querySelector<HTMLElement>(".ri-bool-btn, .ri-pk-binbtn, button");
+    control?.focus();
+  }, [open, rowId, focusColumn]);
 
   // What the drawer is showing right now: base row with the open drafts folded
   // in, so a copy matches the fields on screen rather than the stored row.
@@ -1023,11 +1065,13 @@ export function RowInspector({
               <Icon name="close" size={16} />
             </button>
           </div>
-          <div className="ri-body">
+          <div className="ri-body" ref={bodyRef}>
             {columns.map((c, ci) => (
               <RowInspectorField
                 key={c.name}
                 col={c}
+                index={ci}
+                focused={ci === focusColumn}
                 value={values[ci] ?? null}
                 draft={drafts.get(ci) ?? null}
                 hasDraft={drafts.has(ci)}

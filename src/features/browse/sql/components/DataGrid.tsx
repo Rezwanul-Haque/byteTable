@@ -537,6 +537,10 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   // The row open in the drawer (real row by absolute index, or a staged new
   // row), and whether it has un-staged edits (blocks row nav / retargeting).
   const [inspect, setInspect] = useState<EditTarget | null>(null);
+  // Which column the drawer was opened from — the cell the user clicked. The
+  // drawer highlights + focuses that field instead of opening at the top of the
+  // record. null when opened for the whole row (the row-number button).
+  const [inspectCol, setInspectCol] = useState<number | null>(null);
   const [inspectDirty, setInspectDirty] = useState(false);
   // True while the drawer's reload button re-reads its one row (see
   // `refreshInspect`) — the grid itself is left alone.
@@ -1112,9 +1116,12 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
 
   // Open / retarget the drawer for a row (blocked while it has un-staged edits).
   const openInspect = useCallback(
-    (target: EditTarget, rowKey: string) => {
-      setSelected({ rowKey, col: -1 });
-      if (!inspectDirty) setInspect(target);
+    (target: EditTarget, rowKey: string, col: number | null = null) => {
+      setSelected({ rowKey, col: col ?? -1 });
+      if (!inspectDirty) {
+        setInspect(target);
+        setInspectCol(col);
+      }
     },
     [inspectDirty],
   );
@@ -1268,7 +1275,9 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     }
     const target = (selected ? targetFromKey(selected.rowKey) : null) ?? inspectOrder[0];
     if (!target || !inspectValuesOf(target)) return;
-    openInspect(target, targetKey(target));
+    // ⌘E from a selected CELL focuses that field in the drawer; a row-level
+    // selection (col -1) or no selection at all opens at the top of the record.
+    openInspect(target, targetKey(target), selected && selected.col >= 0 ? selected.col : null);
   }, [inspect, selected, inspectOrder, inspectValuesOf, openInspect]);
 
   // Stage the drawer's changed cells into the grid's pending buffer.
@@ -1767,6 +1776,9 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         columns={inspectorColumns}
         values={inspectValues}
         rowId={inspect ? targetKey(inspect) : ""}
+        // Prev/next keeps the column, so stepping through rows stays on the same
+        // field — `gotoInspect` deliberately leaves `inspectCol` alone.
+        focusColumn={inspectCol}
         isStagedNew={inspect?.kind === "staged"}
         pkLabel={inspectValues ? pkLabelOf(inspectValues) : ""}
         position={inspectPos + 1}
@@ -2122,7 +2134,10 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
                         title={roReason ?? undefined}
                         onClick={() => {
                           setSelected({ rowKey, col: ci });
-                          if (!inspectDirty) setInspect(target);
+                          if (!inspectDirty) {
+                            setInspect(target);
+                            setInspectCol(ci);
+                          }
                         }}
                         onDoubleClick={() => {
                           clearPendingHop();

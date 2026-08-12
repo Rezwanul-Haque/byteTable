@@ -8,7 +8,7 @@
 // only mutate the draft (a dirty state) until Apply or Enter. The committed
 // draft is deep-cloned into `applied` so later draft edits don't leak in.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
@@ -191,8 +191,34 @@ export function FilterPanel({
     }
   };
 
+  // Focus what the user came here to type in, every time the panel OPENS — the
+  // Filters button, ⌘F/Ctrl+F and the toolbar chip all just flip `open`, so one
+  // effect covers them all. Raw mode gets the WHERE box; the builder gets the
+  // first condition's value field, falling back to its column picker when the
+  // leading operator takes no value (IS NULL). Deliberately NOT a plain
+  // "first input": that is the condition's enable checkbox, which is
+  // `opacity: 0` — focus landed on something invisible and typing went nowhere.
+  //
+  // Only on a closed→open transition, never on mount: a tab that was left with
+  // the panel open would otherwise steal focus the moment you switch back to it.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const wasOpen = useRef(open);
+  useEffect(() => {
+    const justOpened = open && !wasOpen.current;
+    wasOpen.current = open;
+    if (!justOpened) return;
+    const root = rootRef.current;
+    if (!root) return;
+    const target =
+      root.querySelector<HTMLElement>(".where-input, .filter-value") ??
+      root.querySelector<HTMLElement>(".filter-select .sel-trigger, .filter-add");
+    target?.focus();
+    // Typing replaces whatever was there, like re-opening a search box.
+    if (target instanceof HTMLInputElement && target.value !== "") target.select();
+  }, [open]);
+
   return (
-    <div className={"filter-panel" + (open ? "" : " hidden")}>
+    <div className={"filter-panel" + (open ? "" : " hidden")} ref={rootRef}>
       {draft.rawMode ? (
         <div className="filter-raw-row">
           <span className="where-label">WHERE</span>

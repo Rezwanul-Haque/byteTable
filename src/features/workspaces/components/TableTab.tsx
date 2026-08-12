@@ -219,13 +219,9 @@ export function TableTab({
       if (!filterState) {
         setTabFilter(tab.id, { draft: emptyDraft(columns[0]?.name ?? ""), applied: null });
       }
+      // The panel focuses its own value field when `open` flips — it knows which
+      // control that is (see FilterPanel), so nothing to chase from here.
       setPanelOpen(true);
-      // Wait for the panel to un-hide before focusing its first control.
-      requestAnimationFrame(() => {
-        const panel = document.querySelector(".filter-panel:not(.hidden)");
-        const ctrl = panel?.querySelector("input, select") as HTMLElement | null;
-        ctrl?.focus();
-      });
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

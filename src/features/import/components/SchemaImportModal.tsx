@@ -28,6 +28,7 @@ import { useIntrospectionStore } from "../../introspection/state";
 import { useWorkspacesStore } from "../../workspaces/state";
 import { useTabMetaStore } from "../../workspaces/tabMeta";
 import { isSchemaPreviewError, previewSchema, type SchemaPreviewResult } from "../parse";
+import { SqlPasteBox } from "./SqlPasteBox";
 import "./ImportModal.css";
 
 async function openSqlDialog(): Promise<string | null> {
@@ -158,15 +159,11 @@ export function SchemaImportModal({
         </Btn>
       </div>
 
-      <textarea
-        className="import-textarea"
+      <SqlPasteBox
         value={text}
-        spellCheck={false}
-        autoCapitalize="off"
-        autoComplete="off"
-        aria-label="SQL to import"
+        onChange={onText}
+        ariaLabel="SQL to import"
         placeholder={"Paste SQL here:\nCREATE TABLE …;\nINSERT INTO … VALUES (…);"}
-        onChange={(e) => onText(e.target.value)}
       />
 
       {prev !== null ? (

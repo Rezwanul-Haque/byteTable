@@ -34,6 +34,7 @@ import {
   type ImportFormat,
   type TablePreviewResult,
 } from "../parse";
+import { SqlPasteBox } from "./SqlPasteBox";
 import "./ImportModal.css";
 
 /** Lazily import the dialog plugin so plain-browser dev does not crash at load. */
@@ -238,18 +239,33 @@ export function ImportModal({
         </Btn>
       </div>
 
-      <textarea
-        className="import-textarea"
-        spellCheck="false"
-        aria-label="Import data"
-        placeholder={placeholder}
-        value={text}
-        onChange={(e) => {
-          setText(e.target.value);
-          runPreview(format, e.target.value);
-          setError(null);
-        }}
-      />
+      {/* SQL mode gets the highlighted box; CSV stays a plain textarea — running
+          a SQL highlighter over comma-separated data would colour it at random. */}
+      {format === "sql" ? (
+        <SqlPasteBox
+          value={text}
+          onChange={(sql) => {
+            setText(sql);
+            runPreview(format, sql);
+            setError(null);
+          }}
+          ariaLabel="Import data"
+          placeholder={placeholder}
+        />
+      ) : (
+        <textarea
+          className="import-textarea"
+          spellCheck="false"
+          aria-label="Import data"
+          placeholder={placeholder}
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            runPreview(format, e.target.value);
+            setError(null);
+          }}
+        />
+      )}
 
       {prev !== null ? (
         isPreviewError(prev) ? (

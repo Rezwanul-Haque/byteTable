@@ -31,6 +31,93 @@
   border-color: var(--accent);
 }
 
+/* Syntax-highlighted paste box (SqlPasteBox): the `<pre>` of highlighted markup
+   and the transparent-text `<textarea>` are stacked, so every metric that
+   affects glyph position — font, size, line-height, padding, wrapping — MUST
+   match between the two or the caret drifts from the text. Same recipe as the
+   row inspector's JSON editor (`.ri-json-*`). The wrapper carries the chrome
+   `.import-textarea` used to, and stays user-resizable: `resize` needs a
+   non-visible overflow, which the stacking already requires. */
+.sql-paste {
+  position: relative;
+  width: 100%;
+  height: 130px;
+  min-height: 60px;
+  resize: vertical;
+  overflow: hidden;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.sql-paste:focus-within {
+  border-color: var(--accent);
+}
+
+.sql-paste-hl,
+.sql-paste-ta {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 17px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.sql-paste-hl {
+  /* `hidden`, not `auto`: this layer is scrolled programmatically from the
+     textarea's onScroll (which `hidden` still allows), and an auto scrollbar
+     here would be painted over the textarea's own. */
+  overflow: hidden;
+  /* Clicks belong to the textarea above; this layer is decoration. */
+  pointer-events: none;
+  color: var(--text);
+}
+
+.sql-paste-ta {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: none;
+  outline: none;
+  resize: none;
+  /* The glyphs come from the layer below; only the caret and selection show. */
+  color: transparent;
+  caret-color: var(--text);
+}
+
+.sql-paste-ta::placeholder {
+  color: var(--text-faint);
+}
+
+/* The §3.7 highlight palette, scoped to this box. The unscoped copies live in
+   StructureView.css (the DDL <pre>) — restated here rather than relied upon
+   because those rules only reach the page once something imports that
+   stylesheet, and a dialog must not depend on the user having opened a
+   Structure view first. Keep the two in step (same precedent as the "shared
+   cell helpers duplicated from DataGrid.css" block there). */
+.sql-paste-hl .sql-kw {
+  color: var(--accent);
+  font-weight: 500;
+}
+.sql-paste-hl .sql-string {
+  color: #e5c07b;
+}
+.sql-paste-hl .sql-num {
+  color: #7fb8e8;
+}
+.sql-paste-hl .sql-func {
+  color: #c678dd;
+}
+.sql-paste-hl .sql-comment {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
 .import-err {
   display: flex;
   align-items: center;

@@ -47,6 +47,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type MouseEvent as ReactMouseEvent,
 } from "react";
 
 import type {
@@ -72,6 +73,7 @@ import { Icon } from "../../../../shared/ui/Icon";
 import { CopyButton } from "../../../../shared/ui/CopyButton";
 import { Modal, ModalActions, ModalTitle } from "../../../../shared/ui/Modal";
 import { useToast } from "../../../../shared/ui/toastContext";
+import { useContextMenu } from "../../../../shared/ui/useContextMenu";
 import { useIntrospectionStore } from "../../../introspection/state";
 import { storedTabGridEdits, useWorkspacesStore } from "../../../workspaces/state";
 import { useSettingsStore } from "../../../settings/state";
@@ -107,6 +109,14 @@ interface ColCellMeta {
  *  absolute cache index, or a staged new row keyed by its stable id (staged
  *  rows reorder as more are prepended, so an index would drift). */
 type EditTarget = { kind: "real"; rowIndex: number } | { kind: "staged"; stagedKey: number };
+
+/** What a right-click on the grid targets: the row, plus the column under the
+ *  pointer when the click landed on a cell (null from the gutter / checkbox,
+ *  where there is no single value to copy). */
+interface RowMenuSubject {
+  rowKey: string;
+  ci: number | null;
+}
 
 /** A stable primitive identity for an edit target (used as a render key and as
  *  the focus-effect dependency so it runs once per edit, not per keystroke). */
@@ -1177,93 +1187,141 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       });
   }, [inspect, handleId, schema, table, sort, toast]);
 
-  // Drawer copy-row: the inspected row as CSV (header + one data line, same
-  // escaping as the SQL result grid's export), a JSON object keyed by column,
-  // the bare values (one per line, nothing escaped), or a ready-to-run INSERT
-  // reusing the save batch's engine-aware literals (binary columns bind as
-  // hex/blob literals, not strings).
-  const copyInspectRow = useCallback(
-    (format: RowCopyFormat, values: CellValue[]) => {
-      // A JSON column arrives as the raw TEXT of the document. Re-parsing it
-      // lets the JSON copy nest the real object instead of stringifying the
-      // string (which would escape every inner quote as \").
-      const jsonValue = (v: CellValue, colName: string): unknown => {
-        if (typeof v !== "string" || !isJsonType(colMeta.get(colName)?.dataType)) return v;
-        try {
-          return JSON.parse(v) as unknown;
-        } catch {
-          return v; // not valid JSON — keep the text as-is
-        }
-      };
-      let text: string;
+  // A JSON column arrives as the raw TEXT of the document. Re-parsing it lets
+  // the JSON copy nest the real object instead of stringifying the string
+  // (which would escape every inner quote as \").
+  const jsonCellValue = useCallback(
+    (v: CellValue, colName: string): unknown => {
+      if (typeof v !== "string" || !isJsonType(colMeta.get(colName)?.dataType)) return v;
+      try {
+        return JSON.parse(v) as unknown;
+      } catch {
+        return v; // not valid JSON — keep the text as-is
+      }
+    },
+    [colMeta],
+  );
+
+  /** One cell as the text a "Copy value" would put on the clipboard: a JSON
+   *  column pretty-printed, NULL as an empty string, anything else verbatim. */
+  const cellText = useCallback(
+    (v: CellValue, colName: string): string => {
+      if (v === null || v === undefined) return "";
+      const parsed = jsonCellValue(v, colName);
+      return typeof parsed === "object" && parsed !== null
+        ? JSON.stringify(parsed, null, 2)
+        : String(v);
+    },
+    [jsonCellValue],
+  );
+
+  /**
+   * Serialize whole rows for the clipboard or a file. One row or many, in the
+   * four formats the row inspector already offered:
+   *
+   * - `csv`    — header line + one line per row.
+   * - `json`   — a single object for one row, an array for several.
+   * - `values` — bare values, one per line. Single row only (see below).
+   * - `sql`    — one ready-to-run INSERT per row, engine-aware literals.
+   *
+   * `cols` is the column set to emit: the clipboard copies carry every column
+   * (what the inspector has always done), while the file exports carry only the
+   * visible ones (what the selection bar has always done).
+   */
+  const serializeRows = useCallback(
+    (rows: CellValue[][], format: RowCopyFormat, cols: typeof columns): string => {
+      const at = (values: CellValue[], c: (typeof columns)[number]) =>
+        values[columns.indexOf(c)] ?? null;
+
       if (format === "csv") {
         const esc = (v: CellValue) => {
           if (v === null || v === undefined) return "";
-          const s = typeof v === "object" ? JSON.stringify(v) : String(v);
-          return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+          const t = typeof v === "object" ? JSON.stringify(v) : String(v);
+          return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
         };
         // JSON columns are re-serialized with SINGLE-quoted keys/strings before
         // the CSV escape: a double-quoted document would come out as a wall of
         // doubled quotes (`"{""bn"": ""x""}"`), which is valid CSV but unreadable
         // in the clipboard. The trade-off is that this form is no longer parsable
-        // JSON — the "Copy as JSON" / "Copy values only" items keep the real one.
+        // JSON — the JSON and values formats keep the real one.
         const cell = (v: CellValue, colName: string) => {
-          const parsed = jsonValue(v, colName);
+          const parsed = jsonCellValue(v, colName);
           return typeof parsed === "object" && parsed !== null
             ? esc(singleQuotedJson(parsed))
             : esc(v);
         };
-        text =
-          columns.map((c) => esc(c.name)).join(",") +
-          "\n" +
-          columns.map((c, ci) => cell(values[ci] ?? null, c.name)).join(",");
-      } else if (format === "json") {
-        const obj: Record<string, unknown> = {};
-        columns.forEach((c, ci) => {
-          obj[c.name] = jsonValue(values[ci] ?? null, c.name);
-        });
-        text = JSON.stringify(obj, null, 2);
-      } else if (format === "values") {
-        // Bare values, one per line, in column order — no names, no quoting,
-        // no escaping. A JSON column copies as its own pretty-printed document,
-        // NULL as an empty line.
-        text = columns
-          .map((c, ci) => {
-            const v = values[ci] ?? null;
-            if (v === null) return "";
-            const parsed = jsonValue(v, c.name);
-            return typeof parsed === "object" && parsed !== null
-              ? JSON.stringify(parsed, null, 2)
-              : String(v);
-          })
+        return [cols.map((c) => esc(c.name)).join(",")]
+          .concat(rows.map((values) => cols.map((c) => cell(at(values, c), c.name)).join(",")))
           .join("\n");
-      } else {
-        const qi = (n: string) => quoteIdent(n, engine);
-        const litCol = (v: CellValue, colName: string) =>
-          v !== null && isBinaryType(colMeta.get(colName)?.dataType)
-            ? binaryLiteral(v, engine)
-            : sqlLiteral(v, engine);
-        text =
-          "INSERT INTO " +
-          qi(schema) +
-          "." +
-          qi(table) +
-          " (" +
-          columns.map((c) => qi(c.name)).join(", ") +
-          ") VALUES (" +
-          columns.map((c, ci) => litCol(values[ci] ?? null, c.name)).join(", ") +
-          ");";
       }
+
+      if (format === "json") {
+        const objectFor = (values: CellValue[]) => {
+          const obj: Record<string, unknown> = {};
+          for (const c of cols) obj[c.name] = jsonCellValue(at(values, c), c.name);
+          return obj;
+        };
+        // One row copies as the object itself; several as an array. Wrapping a
+        // single row would make the common case awkward to paste anywhere.
+        const payload = rows.length === 1 ? objectFor(rows[0]!) : rows.map(objectFor);
+        return JSON.stringify(payload, null, 2);
+      }
+
+      if (format === "values") {
+        // Bare values, one per line, in column order — no names, no quoting, no
+        // escaping. A JSON column copies as its own pretty-printed document,
+        // NULL as an empty line.
+        //
+        // SINGLE ROW ONLY, and the caller enforces it: with nothing escaped
+        // there is no delimiter left that can separate rows unambiguously. A
+        // blank line does not work — a NULL cell and the end of a pretty-printed
+        // JSON document both already produce one. Callers that want many rows
+        // want CSV or JSON, which have a real record separator.
+        return cols.map((c) => cellText(at(rows[0] ?? [], c), c.name)).join("\n");
+      }
+
+      const qi = (n: string) => quoteIdent(n, engine);
+      const litCol = (v: CellValue, colName: string) =>
+        v !== null && isBinaryType(colMeta.get(colName)?.dataType)
+          ? binaryLiteral(v, engine)
+          : sqlLiteral(v, engine);
+      const head =
+        "INSERT INTO " +
+        qi(schema) +
+        "." +
+        qi(table) +
+        " (" +
+        cols.map((c) => qi(c.name)).join(", ");
+      return rows
+        .map(
+          (values) =>
+            head + ") VALUES (" + cols.map((c) => litCol(at(values, c), c.name)).join(", ") + ");",
+        )
+        .join("\n");
+    },
+    [columns, colMeta, engine, schema, table, jsonCellValue, cellText],
+  );
+
+  /** Put `text` on the clipboard, reporting either way. */
+  const copyToClipboard = useCallback(
+    (text: string, okMessage: string) => {
       void navigator.clipboard.writeText(text).then(
-        () =>
-          toast(
-            format === "values" ? "Row values copied" : "Row copied as " + format.toUpperCase(),
-            "ok",
-          ),
+        () => toast(okMessage, "ok"),
         () => toast("Couldn't copy to clipboard", "err"),
       );
     },
-    [columns, colMeta, engine, schema, table, toast],
+    [toast],
+  );
+
+  // Drawer copy-row: the inspected row in whichever format the drawer asked for.
+  const copyInspectRow = useCallback(
+    (format: RowCopyFormat, values: CellValue[]) => {
+      copyToClipboard(
+        serializeRows([values], format, columns),
+        format === "values" ? "Row values copied" : "Row copied as " + format.toUpperCase(),
+      );
+    },
+    [columns, serializeRows, copyToClipboard],
   );
 
   // ⌘/Ctrl+E: close the drawer when it's open, otherwise inspect the selected
@@ -1480,6 +1538,71 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     stagedKeySeq.current += 1;
     setNewRows((prev) => [{ key: stagedKeySeq.current, values }, ...prev]);
   }, [columns, colMeta, newRows, onAddRowReset]);
+
+  /**
+   * Duplicate rows (M34 row menu): stage a copy of each, at the top of page 0,
+   * exactly where {@link addRow} puts a blank one. Nothing reaches the database
+   * until the save bar commits — a duplicate is one Escape away from undone,
+   * and the batch SQL is reviewable first on a production connection.
+   *
+   * Every non-pk value is carried over verbatim. The primary key is the one
+   * thing that cannot be: copying it would collide on save. It follows
+   * `addRow`'s rule — an integer pk is bumped past the highest one in view, and
+   * anything else (UUID, natural or composite key) is left at its column
+   * default, i.e. usually blank for the user to fill. Blank is deliberate: a
+   * guessed key would either collide loudly or, worse, quietly insert a row
+   * that looks right and is not.
+   */
+  const duplicateRows = useCallback(
+    (sourceRows: CellValue[][]) => {
+      if (columns.length === 0 || sourceRows.length === 0) return;
+      onAddRowReset?.();
+      onSetSortRef.current(null);
+
+      // Seed the integer-pk counter from everything already in view, then keep
+      // bumping it so duplicating several rows at once does not self-collide.
+      const intPkNext = new Map<number, number>();
+      columns.forEach((c, ci) => {
+        const m = colMeta.get(c.name);
+        if (!m?.pk || affinityOf(m.dataType) !== "integer") return;
+        let max = 0;
+        for (const row of rowCacheRef.current.values()) {
+          const v = Number(row[ci]);
+          if (!Number.isNaN(v) && v > max) max = v;
+        }
+        for (const nr of newRows) {
+          const v = Number(nr.values[ci]);
+          if (!Number.isNaN(v) && v > max) max = v;
+        }
+        intPkNext.set(ci, max + 1);
+      });
+
+      const staged: NewRow[] = sourceRows.map((source) => {
+        const values: CellValue[] = columns.map((c, ci) => {
+          const m = colMeta.get(c.name);
+          if (m?.pk) {
+            const next = intPkNext.get(ci);
+            if (next !== undefined) {
+              intPkNext.set(ci, next + 1);
+              return next;
+            }
+            return parseDefault(m.default ?? null, affinityOf(m.dataType));
+          }
+          return source[ci] ?? null;
+        });
+        stagedKeySeq.current += 1;
+        return { key: stagedKeySeq.current, values };
+      });
+
+      setNewRows((prev) => [...staged, ...prev]);
+      toast(
+        staged.length === 1
+          ? "Row duplicated — staged, not saved yet"
+          : staged.length + " rows duplicated — staged, not saved yet",
+      );
+    },
+    [columns, colMeta, newRows, onAddRowReset, toast],
+  );
 
   // Escape's counterpart to ⌘I: drop the most recently staged new row (the top
   // one — `addRow` prepends), with any values typed into it. Repeated presses
@@ -1711,35 +1834,163 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     useTabMetaStore.getState().requestRefetch(tabId);
   }, [selectedRows, buildPk, handleId, schema, table, tabId, toast]);
 
-  const exportSelectedCsv = useCallback(async () => {
-    const idxs = [...selectedRows].map((k) => Number(k.slice(1))).sort((a, b) => a - b);
-    if (!idxs.length) return;
-    const visCols = columns.filter((c) => !isHidden(c.name));
-    const esc = (v: CellValue) => {
-      if (v === null || v === undefined) return "";
-      const s = typeof v === "object" ? JSON.stringify(v) : String(v);
-      return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-    };
-    const csv = [visCols.map((c) => c.name).join(",")]
-      .concat(
-        idxs.map((idx) => {
-          const row = rowCacheRef.current.get(idx);
-          return visCols.map((c) => esc(row ? (row[columns.indexOf(c)] ?? null) : null)).join(",");
-        }),
-      )
-      .join("\n");
-    try {
-      const path = await saveDialog({
-        defaultPath: `${table}-selection.csv`,
-        filters: [{ name: "CSV", extensions: ["csv"] }],
-      });
-      if (!path) return;
-      await exportSave(path, csv);
-      toast(`Exported ${idxs.length} row${idxs.length === 1 ? "" : "s"} to CSV`, "ok");
-    } catch (e) {
-      toast(appErrorMessage(e, "Could not export CSV"), "err");
-    }
-  }, [selectedRows, columns, isHidden, table, toast]);
+  /** The values behind a row key ("r"+absIndex, or "s"+stagedKey), if loaded. */
+  const valuesForKey = useCallback(
+    (rowKey: string): CellValue[] | null => {
+      if (rowKey.startsWith("s")) {
+        const staged = newRows.find((r) => r.key === Number(rowKey.slice(1)));
+        return staged ? staged.values : null;
+      }
+      return rowCacheRef.current.get(Number(rowKey.slice(1))) ?? null;
+    },
+    [newRows],
+  );
+
+  /** Row keys in page order — the menu must not emit rows in click order. */
+  const orderedKeys = useCallback(
+    (keys: string[]): string[] =>
+      [...keys].sort((a, b) => {
+        // Staged rows ride above the real ones, exactly as they render.
+        const rank = (k: string) => (k.startsWith("s") ? 0 : 1);
+        return rank(a) - rank(b) || Number(a.slice(1)) - Number(b.slice(1));
+      }),
+    [],
+  );
+
+  /** Copy whole rows to the clipboard in one of the four row formats. */
+  const copyRows = useCallback(
+    (keys: string[], format: RowCopyFormat) => {
+      const rows = orderedKeys(keys)
+        .map(valuesForKey)
+        .filter((v): v is CellValue[] => v !== null);
+      if (!rows.length) return;
+      const what = rows.length === 1 ? "Row" : rows.length + " rows";
+      copyToClipboard(
+        serializeRows(rows, format, columns),
+        format === "values"
+          ? what + " copied as values"
+          : what + " copied as " + format.toUpperCase(),
+      );
+    },
+    [orderedKeys, valuesForKey, serializeRows, columns, copyToClipboard],
+  );
+
+  /** Export whole rows to a file. Visible columns only, matching the selection
+   *  bar's long-standing behaviour (the clipboard copies carry every column). */
+  const exportRows = useCallback(
+    async (keys: string[], format: "csv" | "json") => {
+      const rows = orderedKeys(keys)
+        .map(valuesForKey)
+        .filter((v): v is CellValue[] => v !== null);
+      if (!rows.length) return;
+      const visCols = columns.filter((c) => !isHidden(c.name));
+      const text = serializeRows(rows, format, visCols);
+      try {
+        const path = await saveDialog({
+          defaultPath: `${table}-selection.${format}`,
+          filters: [{ name: format.toUpperCase(), extensions: [format] }],
+        });
+        if (!path) return;
+        await exportSave(path, text);
+        toast(
+          `Exported ${rows.length} row${rows.length === 1 ? "" : "s"} to ${format.toUpperCase()}`,
+          "ok",
+        );
+      } catch (e) {
+        toast(appErrorMessage(e, "Could not export " + format.toUpperCase()), "err");
+      }
+    },
+    [orderedKeys, valuesForKey, serializeRows, columns, isHidden, table, toast],
+  );
+
+  const exportSelectedCsv = useCallback(
+    () => exportRows([...selectedRows], "csv"),
+    [exportRows, selectedRows],
+  );
+
+  // --- row context menu (M34) ------------------------------------------
+  // Every action here already existed somewhere — the toolbar's ⋮ menu, the
+  // selection bar, the ⌘E inspector drawer. Right-click is where people look
+  // for them in a grid, so this is mostly a discoverability fix rather than
+  // new capability; only "Duplicate row" and "Copy value" are genuinely new.
+  //
+  // Selection-aware: right-clicking a row that is part of the checkbox
+  // selection acts on the WHOLE selection ("Copy 12 rows"); right-clicking
+  // anywhere else acts on just that row and deliberately leaves the checkbox
+  // selection alone. Silently clearing an explicit multi-select — which the
+  // user built click by click for a bulk delete — would be the worse surprise.
+  const rowMenu = useContextMenu<RowMenuSubject>((subject) => {
+    const inSelection = selectedRows.has(subject.rowKey);
+    const keys = inSelection ? [...selectedRows] : [subject.rowKey];
+    const n = keys.length;
+    const rowsWord = n === 1 ? "row" : n + " rows";
+
+    const cellName = subject.ci !== null ? (columns[subject.ci]?.name ?? null) : null;
+    const cellValue =
+      cellName !== null ? (valuesForKey(subject.rowKey)?.[subject.ci!] ?? null) : null;
+
+    return [
+      {
+        label: n === 1 ? "Duplicate row" : "Duplicate " + rowsWord,
+        icon: "content_copy",
+        // A staged row can be duplicated too; it just has nothing saved behind
+        // it yet. Only an unloaded row (still shimmering) has nothing to copy.
+        disabled: keys.every((k) => valuesForKey(k) === null),
+        onSelect: () => {
+          const rows = orderedKeys(keys)
+            .map(valuesForKey)
+            .filter((v): v is CellValue[] => v !== null);
+          duplicateRows(rows);
+        },
+      },
+      {
+        label: "Copy value",
+        icon: "content_paste",
+        separate: true,
+        disabled: cellName === null,
+        onSelect: () => {
+          if (cellName === null) return;
+          copyToClipboard(cellText(cellValue, cellName), cellName + " copied");
+        },
+      },
+      {
+        label: n === 1 ? "Copy row" : "Copy " + rowsWord,
+        icon: "content_copy",
+        children: [
+          { label: "as CSV", icon: "table_view", onSelect: () => copyRows(keys, "csv") },
+          { label: "as JSON", icon: "data_object", onSelect: () => copyRows(keys, "json") },
+          { label: "as INSERT", icon: "code", onSelect: () => copyRows(keys, "sql") },
+          {
+            label: "values only",
+            icon: "notes",
+            // Unescaped values have no record separator — see `serializeRows`.
+            disabled: n > 1,
+            onSelect: () => copyRows(keys, "values"),
+          },
+        ],
+      },
+      {
+        label: n === 1 ? "Export row to file" : "Export " + rowsWord + " to file",
+        icon: "download",
+        separate: true,
+        children: [
+          { label: "as CSV", icon: "table_view", onSelect: () => void exportRows(keys, "csv") },
+          { label: "as JSON", icon: "data_object", onSelect: () => void exportRows(keys, "json") },
+        ],
+      },
+    ];
+  });
+
+  /** Open the row menu, focusing the right-clicked cell the way a left-click
+   *  would — a menu that acts on a row the grid does not visibly highlight is
+   *  disorienting. */
+  const openRowMenu = useCallback(
+    (e: ReactMouseEvent, rowKey: string, ci: number | null) => {
+      setSelected({ rowKey, col: ci ?? -1 });
+      rowMenu.open(e, { rowKey, ci });
+    },
+    [rowMenu],
+  );
 
   // The save bar + production-confirm modal, shared by the populated and the
   // (staged-rows-only) empty render branches.
@@ -1771,6 +2022,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
 
   const popovers = (
     <>
+      {/* Portaled to <body>, so one instance covers every render branch. */}
+      {rowMenu.element}
       <RowInspector
         open={inspect != null && inspectValues != null}
         columns={inspectorColumns}
@@ -2073,6 +2326,11 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
                     (isStaged ? " row-staged" : "")
                   }
                   style={{ height: vr.size, transform: `translateY(${vr.start}px)` }}
+                  // Row-level fallback: a right-click that lands on the row's
+                  // own padding rather than a cell still gets the menu, just
+                  // without a column to copy a single value from. Cells
+                  // override this with their own handler (and stopPropagation).
+                  onContextMenu={(e) => openRowMenu(e, rowKey, null)}
                 >
                   {hasPk ? (
                     <div className="dg-check-c" onClick={(e) => e.stopPropagation()}>
@@ -2138,6 +2396,13 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
                             setInspect(target);
                             setInspectCol(ci);
                           }
+                        }}
+                        // The cell knows its column, which is what makes
+                        // "Copy value" possible; stop the row's own fallback
+                        // handler from firing after this one.
+                        onContextMenu={(e) => {
+                          e.stopPropagation();
+                          openRowMenu(e, rowKey, ci);
                         }}
                         onDoubleClick={() => {
                           clearPendingHop();

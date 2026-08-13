@@ -51,3 +51,31 @@
   background: color-mix(in oklab, var(--danger) 14%, transparent);
   color: var(--danger);
 }
+
+/* Submenus + grouping (M34 grid row menu). `.tabmenu-entry` exists so a
+   separator rule and its item move together, and so a parent can anchor its
+   flyout without the flyout inheriting the item's own padding. */
+.tabmenu-entry {
+  position: relative;
+}
+.tabmenu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+.tabmenu-chevron {
+  margin-left: auto;
+  color: var(--text-faint);
+}
+.tabmenu-parent:hover > .tabmenu-item:not(:disabled) {
+  background: var(--bg3, rgba(127, 127, 127, 0.14));
+}
+/* Opens to the right of its parent, overlapping the border by the panel's own
+   padding so the two read as one surface. `left: 100%` keeps it attached when
+   the root menu has been flipped away from the viewport edge. */
+.tabmenu-sub {
+  position: absolute;
+  left: calc(100% + 2px);
+  top: -4px;
+  min-width: 168px;
+}

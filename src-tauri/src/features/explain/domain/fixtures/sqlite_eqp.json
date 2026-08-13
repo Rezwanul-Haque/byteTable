@@ -1,0 +1,22 @@
+{
+  "join_group": {
+    "columns": ["id", "parent", "notused", "detail"],
+    "rows": [
+      [9, 0, 0, "SCAN o"],
+      [14, 0, 0, "SEARCH u USING INTEGER PRIMARY KEY (rowid=?)"],
+      [17, 0, 0, "USE TEMP B-TREE FOR GROUP BY"],
+      [57, 0, 0, "USE TEMP B-TREE FOR ORDER BY"]
+    ]
+  },
+  "derived": {
+    "columns": ["id", "parent", "notused", "detail"],
+    "rows": [
+      [2, 0, 0, "CO-ROUTINE s"],
+      [8, 2, 0, "SCAN orders"],
+      [10, 2, 0, "USE TEMP B-TREE FOR GROUP BY"],
+      [50, 0, 0, "SCAN s"],
+      [53, 0, 0, "SEARCH u USING INTEGER PRIMARY KEY (rowid=?)"],
+      [61, 0, 0, "USE TEMP B-TREE FOR ORDER BY"]
+    ]
+  }
+}

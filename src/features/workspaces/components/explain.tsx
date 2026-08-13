@@ -7,14 +7,15 @@
 //   How it runs  the clause-order teaching view, kept behind a mode
 //   Raw output   the engine's EXPLAIN printed verbatim (explainServer.ts)
 //
-// WHERE THE PLAN COMES FROM. Postgres, MySQL and SQLite are asked for their own
-// plan — `EXPLAIN (FORMAT JSON)` / `EXPLAIN FORMAT=JSON` / `EXPLAIN QUERY PLAN`
-// — and explainPlanParse.ts turns it into the node model, so the tree shows the
-// access paths and indexes the optimizer actually chose. It is the plan-only
-// form, which executes nothing, so this happens on production connections too.
-// Every other engine, and any plan that fails to parse, falls back to the tree
-// modelled from the statement (explainModel.ts). The summary strip says which,
-// because a table of node names reads as authoritative either way.
+// WHERE THE PLAN COMES FROM. The `explain_plan` command asks the engine for its
+// own plan and returns it in the node model; which statement each engine takes
+// and how to read its answer lives in Rust (`features/explain`), not here. So
+// the tree shows the access paths and indexes the optimizer actually chose. It
+// is the plan-only form, which executes nothing, so this happens on production
+// connections too. An engine with no machine-readable plan — and any plan the
+// backend could not read — falls back to the tree modelled from the statement
+// (explainModel.ts). The summary strip says which, because a table of node
+// names reads as authoritative either way.
 //
 // WHERE THE NUMBERS COME FROM. The summary figures — total time, rows returned,
 // rows read — are measured by running the statement (explainRun.ts). That
@@ -55,17 +56,17 @@ import {
   withServerPlan,
 } from "./explainModel";
 import { parseSelectShape } from "./explainParse";
-import { parseServerPlan, type ServerPlan } from "./explainPlanParse";
 import { measureQuery } from "./explainRun";
 import {
-  explainSupport,
-  fetchServerExplain,
-  fetchStructuredPlan,
+  explainCapabilities,
+  type ExplainCapabilities,
+  explainPlan,
+  explainRaw,
   numericColumns,
-  type ServerExplain,
-  serverPlanAscii,
-  serverPlanText,
-  structuredExplainStatement,
+  rawPlanAscii,
+  type RawPlan,
+  rawPlanTextOf,
+  type ServerPlan,
 } from "./explainServer";
 import { statementContextAt } from "./sqlStatement";
 
@@ -177,24 +178,27 @@ export function PsqlPlanView({
   handleId,
   schemaName,
   engine,
+  capabilities,
 }: {
   a: Analysis;
   sql: string;
   handleId: string;
   schemaName: string;
   engine: Engine;
+  /** Null while the backend is still being asked what this engine supports. */
+  capabilities: ExplainCapabilities | null;
 }) {
   const [analyze, setAnalyze] = useState(false);
   const [copied, setCopied] = useState(false);
   // Keyed by (connection, schema, form, statement) and kept per form, not
   // replaced: flipping back to EXPLAIN ANALYZE would otherwise re-execute the
   // query every time, which is exactly the cost that toggle is warning about.
-  const [plans, setPlans] = useState<Record<string, ServerExplain>>({});
+  const [plans, setPlans] = useState<Record<string, RawPlan>>({});
   const [failures, setFailures] = useState<Record<string, string>>({});
 
-  const support = explainSupport(engine);
+  const support = capabilities;
   const form = analyze ? "analyze" : "plan";
-  const available = analyze ? support.analyze : support.plan;
+  const available = support != null && (analyze ? support.analyze : support.plan);
   // ANALYZE executes, so it is never fetched until the user selects it.
   const key = handleId + " " + schemaName + " " + form + " " + sql;
   // Keys with a call in flight. There is deliberately no "already asked" latch
@@ -207,25 +211,28 @@ export function PsqlPlanView({
   const inflight = useRef(new Set<string>());
   const server = plans[key] ?? null;
   const error = failures[key] ?? null;
-  const loading = available && !server && !error;
+  // Still waiting on capabilities counts as loading: flashing the modelled
+  // fallback for a frame and then replacing it with the server's plan reads as
+  // a glitch, and briefly asserts the wrong provenance.
+  const loading = (support == null || available) && !server && !error;
 
   useEffect(() => {
     if (!available) return;
     if (plans[key] !== undefined || failures[key] !== undefined) return;
     if (inflight.current.has(key)) return;
     inflight.current.add(key);
-    fetchServerExplain(handleId, schemaName, engine, sql, analyze)
+    explainRaw(handleId, sql, schemaName, analyze)
       .then((data) => setPlans((p) => ({ ...p, [key]: data })))
       .catch((e: unknown) => {
         const message = appErrorMessage(e, "The server refused the EXPLAIN");
         setFailures((f) => ({ ...f, [key]: message }));
       })
       .finally(() => inflight.current.delete(key));
-  }, [available, key, handleId, schemaName, engine, sql, analyze, plans, failures]);
+  }, [available, key, handleId, schemaName, sql, analyze, plans, failures]);
 
   // Fall back to the modelled renderers whenever the server's plan is not
   // available — unsupported engine, or a failed call.
-  const modelled = !available || !!error;
+  const modelled = (support != null && !available) || !!error;
   const modelLines = psqlPlanLines(a, true);
   const modelWidth = Math.max(10, ...modelLines.map((r) => r.length));
 
@@ -235,8 +242,8 @@ export function PsqlPlanView({
   const copy = () => {
     const text = server
       ? server.text
-        ? serverPlanText(server)
-        : serverPlanAscii(server)
+        ? rawPlanTextOf(server)
+        : rawPlanAscii(server)
       : analyze
         ? psqlPlanText(a, true)
         : mysqlExplainText(a);
@@ -262,11 +269,11 @@ export function PsqlPlanView({
             type="button"
             className={"seg-btn" + (analyze ? " active" : "")}
             onClick={() => setAnalyze(true)}
-            disabled={!support.analyze}
+            disabled={!support?.analyze}
             title={
-              support.analyze
+              support?.analyze
                 ? "Runs the query and adds actual time, rows and loops per node"
-                : (support.note ?? "Not available on this engine")
+                : (support?.note ?? "Not available on this engine")
             }
           >
             EXPLAIN ANALYZE
@@ -387,10 +394,10 @@ export function PsqlPlanView({
           </div>
         </div>
       ) : null}
-      {modelled && !error && support.note ? (
+      {modelled && !error && support?.note ? (
         <div className="ex-warn ex-psql-note">
           <Icon name="info" size={13} />
-          <div>{support.note}</div>
+          <div>{support?.note}</div>
         </div>
       ) : null}
       <div className="explain-note">
@@ -423,8 +430,8 @@ export function PsqlPlanView({
  * row count. The count is the *line* count, since MySQL returns the whole tree
  * in one cell and "(1 row)" over eight lines would just look wrong.
  */
-function ServerTextPlan({ plan }: { plan: ServerExplain }) {
-  const lines = serverPlanText(plan).split("\n");
+function ServerTextPlan({ plan }: { plan: RawPlan }) {
+  const lines = rawPlanTextOf(plan).split("\n");
   const head = plan.columns[0] ?? "QUERY PLAN";
   const width = Math.max(head.length, ...lines.map((l) => l.length));
   const pad = " ".repeat(Math.max(0, Math.floor((width - head.length) / 2)));
@@ -514,6 +521,11 @@ export function ExplainPanel({
   const [asked, setAsked] = useState<string | null>(null);
   const [selected, setSelected] = useState<{ key: string; order: number } | null>(null);
   const [serverPlans, setServerPlans] = useState<Record<string, ServerPlan>>({});
+  // Per connection, not per statement: what an engine can be asked for does not
+  // change between queries. Fetched rather than derived, so the renderer never
+  // has to know a dialect.
+  const [caps, setCaps] = useState<Record<string, ExplainCapabilities>>({});
+  const capabilities = caps[handleId] ?? null;
 
   const key = handleId + " " + schemaName + " " + sql;
   const stats = result?.key === key ? result.stats : EMPTY_STATS;
@@ -569,19 +581,27 @@ export function ExplainPanel({
   // the plan-only form, so it executes nothing. A failure is not surfaced —
   // there is a complete modelled tree to fall back to, and an error card over a
   // working view would be noise.
+  useEffect(() => {
+    if (caps[handleId] !== undefined || inflight.current.has(handleId)) return;
+    inflight.current.add(handleId);
+    explainCapabilities(handleId)
+      .then((c) => setCaps((prev) => ({ ...prev, [handleId]: c })))
+      .catch(() => undefined)
+      .finally(() => inflight.current.delete(handleId));
+  }, [handleId, caps]);
+
   const planKey = "plan " + key;
   useEffect(() => {
-    if (!analyzable || structuredExplainStatement(engine, sql) === null) return;
+    if (!analyzable || !capabilities?.structured) return;
     if (serverPlans[key] !== undefined || inflight.current.has(planKey)) return;
     inflight.current.add(planKey);
-    fetchStructuredPlan(handleId, schemaName, engine, sql)
-      .then((explain) => {
-        const parsed = parseServerPlan(engine, explain);
-        if (parsed) setServerPlans((p) => ({ ...p, [key]: parsed }));
+    explainPlan(handleId, sql, schemaName)
+      .then((plan) => {
+        if (plan) setServerPlans((p) => ({ ...p, [key]: plan }));
       })
       .catch(() => undefined)
       .finally(() => inflight.current.delete(planKey));
-  }, [analyzable, engine, key, planKey, handleId, schemaName, sql, serverPlans]);
+  }, [analyzable, capabilities, key, planKey, handleId, schemaName, sql, serverPlans]);
 
   if (a.error) {
     return (
@@ -886,7 +906,14 @@ export function ExplainPanel({
           </div>
         </div>
       ) : mode === "psql" ? (
-        <PsqlPlanView a={a} sql={sql} handleId={handleId} schemaName={schemaName} engine={engine} />
+        <PsqlPlanView
+          a={a}
+          sql={sql}
+          handleId={handleId}
+          schemaName={schemaName}
+          engine={engine}
+          capabilities={capabilities}
+        />
       ) : (
         <div className="ex-steps-pane">
           <div className="explain-h">

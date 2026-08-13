@@ -1,177 +1,112 @@
-// The server's own EXPLAIN, fetched through the ordinary query path.
+// Wire types + invoke wrappers for the Rust explain slice
+// (`src-tauri/src/features/explain`).
 //
-// Everything else in the Explain panel is modelled client-side. This module is
-// the one place that asks the database what it will actually do, so the "Raw
-// output" view can show the plan verbatim — the same text you would get from
-// psql or the mysql client, index choices and all. Nothing here reformats or
-// reinterprets the result; the renderer prints whatever columns came back.
-//
-// No backend work is involved: `query_run` already runs arbitrary SQL, and an
-// EXPLAIN is just SQL. The engine differences are entirely in the statement.
+// Everything engine-specific about an EXPLAIN — which statement each engine
+// takes, and how to read its answer — lives in Rust, beside the other
+// per-engine SQL and covered by `cargo test` against output captured from real
+// servers. This file only crosses the wire; it must never learn a dialect.
 
-import { queryRun, type CellValue } from "../../../shared/api/engine";
+import { invoke } from "@tauri-apps/api/core";
+
+import type { CellValue } from "../../../shared/api/engine";
 import type { Engine } from "../../../shared/types";
 
-/** One server plan, exactly as the engine returned it. */
-export interface ServerExplain {
-  /** The statement that was sent, for the prompt line. */
-  statement: string;
-  columns: string[];
-  rows: CellValue[][];
+/** Mirrors Rust `explain::domain::NodeKind`. */
+export type NodeKind = "scan" | "join" | "agg" | "sort" | "unique" | "limit" | "other";
+
+/** What a node's headline figure and its share bar represent. */
+export type Share = "time" | "cost";
+
+/** The order the engine listed its nodes in. */
+export type Listing = "outermost-first" | "execution";
+
+/** One plan node. Mirrors Rust `explain::domain::PlanNode`. */
+export interface ServerPlanNode {
+  node: string;
+  kind: NodeKind;
+  rows: number | null;
+  detail: string;
+  /** Milliseconds, inclusive of children, when the engine measured them. */
+  ms: number | null;
+  depth: number;
+  scanned: number | null;
+  removed: number | null;
+  method: string | null;
+  rel: string | null;
+  alias: string | null;
+  /** The index the optimizer chose, when it reported one. */
+  index: string | null;
+  /** The planner's cost for this node, inclusive of children. */
+  cost: number | null;
+  subplan: boolean;
   /**
-   * True when the plan is a single text column (psql's `QUERY PLAN`, MySQL's
-   * `EXPLAIN ANALYZE`, ClickHouse's `explain`) rather than a real table. The
-   * renderer prints those as a preformatted block.
+   * This node's own share of the work, excluding children. Postgres reports
+   * time and cost inclusive of the subtree, so this is what the share bar ranks
+   * by; `ms` / `cost` stay inclusive to match what a terminal client prints.
    */
-  text: boolean;
+  selfWork: number | null;
 }
 
-/** What forms of EXPLAIN an engine can produce through a plain query. */
-export interface ExplainSupport {
+/** A plan tree as one engine reported it. */
+export interface ServerPlan {
+  nodes: ServerPlanNode[];
+  source: Engine;
+  totalMs: number | null;
+  share: Share | null;
+  listing: Listing;
+}
+
+/** What forms of EXPLAIN a connection's engine supports. */
+export interface ExplainCapabilities {
   /** `EXPLAIN` — plans only, executes nothing. */
   plan: boolean;
-  /** `EXPLAIN ANALYZE` — executes the statement and reports actual figures. */
+  /** `EXPLAIN ANALYZE` — executes the statement. */
   analyze: boolean;
-  /** Why a form is missing, phrased for the panel to show as-is. */
+  /** Whether a machine-readable plan is available for the plan tree. */
+  structured: boolean;
+  /** Why a form is missing, phrased to be shown as-is. */
   note: string | null;
 }
 
-/**
- * Per-engine capability.
- *
- * SQL Server and Oracle are absent on purpose rather than by omission: SQL
- * Server's plan comes from `SET SHOWPLAN_ALL ON` applied to a *later* batch on
- * the same session, and Oracle's needs `EXPLAIN PLAN FOR` followed by a second
- * query against `DBMS_XPLAN`. Neither survives a single pooled `query_run`, so
- * the panel keeps its modelled view for them and says so.
- */
-export function explainSupport(engine: Engine): ExplainSupport {
-  switch (engine) {
-    case "mysql":
-      return { plan: true, analyze: true, note: null };
-    case "postgres":
-      return { plan: true, analyze: true, note: null };
-    case "sqlite":
-      return {
-        plan: true,
-        analyze: false,
-        note: "SQLite has no EXPLAIN ANALYZE — `EXPLAIN QUERY PLAN` reports the access path only.",
-      };
-    case "clickhouse":
-      return {
-        plan: true,
-        analyze: false,
-        note: "ClickHouse's EXPLAIN describes the query pipeline; it has no ANALYZE form.",
-      };
-    case "mssql":
-      return {
-        plan: false,
-        analyze: false,
-        note: "SQL Server's showplan needs a session-wide SET applied to a following batch, which a pooled connection cannot guarantee.",
-      };
-    default:
-      return {
-        plan: false,
-        analyze: false,
-        note: "This engine has no SQL EXPLAIN that can be run as an ordinary statement.",
-      };
-  }
+/** A plan exactly as the engine printed it, for the "Raw output" view. */
+export interface RawPlan {
+  statement: string;
+  columns: string[];
+  rows: CellValue[][];
+  /** True when the plan is a single text column rather than a real table. */
+  text: boolean;
 }
 
-/** The statement to send, or null when the engine has no such form. */
-export function explainStatement(engine: Engine, sql: string, analyze: boolean): string | null {
-  // A trailing semicolon would land in the middle of the composed statement.
-  const body = sql.trim().replace(/;\s*$/, "");
-  if (!body) return null;
-  const support = explainSupport(engine);
-  if (analyze ? !support.analyze : !support.plan) return null;
-  switch (engine) {
-    case "mysql":
-      return (analyze ? "EXPLAIN ANALYZE " : "EXPLAIN ") + body;
-    case "postgres":
-      // BUFFERS is free once ANALYZE is on and turns "this is slow" into "this
-      // is slow because it read N blocks".
-      return (analyze ? "EXPLAIN (ANALYZE, BUFFERS) " : "EXPLAIN ") + body;
-    case "sqlite":
-      return "EXPLAIN QUERY PLAN " + body;
-    case "clickhouse":
-      return "EXPLAIN " + body;
-    default:
-      return null;
-  }
+/** Which forms this connection can be asked for, so the UI can disable the rest. */
+export function explainCapabilities(handleId: string): Promise<ExplainCapabilities> {
+  return invoke<ExplainCapabilities>("explain_capabilities", { handleId });
 }
 
 /**
- * The machine-readable form of the same plan, for the Plan tab's tree.
- *
- * Separate from {@link explainStatement} on purpose: that one produces what a
- * terminal client prints, for people to read; this one produces what parses,
- * for `explainPlanParse.ts`. Postgres and MySQL both offer JSON, which is worth
- * far more than scraping their text; SQLite's `EXPLAIN QUERY PLAN` is already
- * structured rows, so it is the same statement in both roles.
- *
- * Always the plan-only form — the Plan tab must not execute anything to draw a
- * tree. Actual per-node timings live behind Raw output's EXPLAIN ANALYZE.
+ * The engine's own plan, parsed into the node model. **Executes nothing.**
+ * `null` when the engine has no machine-readable plan or returned one the
+ * backend could not read — the panel then keeps its modelled tree.
  */
-export function structuredExplainStatement(engine: Engine, sql: string): string | null {
-  const body = sql.trim().replace(/;\s*$/, "");
-  if (!body) return null;
-  switch (engine) {
-    case "postgres":
-      return "EXPLAIN (FORMAT JSON) " + body;
-    case "mysql":
-      return "EXPLAIN FORMAT=JSON " + body;
-    case "sqlite":
-      return "EXPLAIN QUERY PLAN " + body;
-    default:
-      return null;
-  }
-}
-
-/** Fetch the machine-readable plan for the Plan tab. Never executes the query. */
-export async function fetchStructuredPlan(
+export function explainPlan(
   handleId: string,
-  schema: string,
-  engine: Engine,
   sql: string,
-): Promise<ServerExplain> {
-  const statement = structuredExplainStatement(engine, sql);
-  if (statement === null) throw new Error("This engine has no machine-readable EXPLAIN.");
-  const res = await queryRun(handleId, statement, { schema, rowLimit: 2000 });
-  return {
-    statement,
-    columns: res.columns.map((c) => c.name),
-    rows: res.rows,
-    text: res.columns.length === 1,
-  };
+  schema: string,
+): Promise<ServerPlan | null> {
+  return invoke<ServerPlan | null>("explain_plan", { handleId, sql, schema });
 }
 
 /**
- * Run the engine's EXPLAIN and return its result untouched.
- *
- * `analyze: false` is safe against any connection — the statement is planned,
- * not executed. `analyze: true` **does execute it**, which is why the panel
- * keeps it behind a deliberate toggle.
- *
- * Rejects with the driver's own message when the statement is invalid, so the
- * panel can show what the server said rather than a guess.
+ * The plan as the engine prints it. `analyze: false` plans without executing;
+ * **`analyze: true` runs the statement**, which is why it stays behind a
+ * deliberate toggle.
  */
-export async function fetchServerExplain(
+export function explainRaw(
   handleId: string,
-  schema: string,
-  engine: Engine,
   sql: string,
+  schema: string,
   analyze: boolean,
-): Promise<ServerExplain> {
-  const statement = explainStatement(engine, sql, analyze);
-  if (statement === null) throw new Error("This engine has no EXPLAIN for that form.");
-  const res = await queryRun(handleId, statement, { schema, rowLimit: 500 });
-  return {
-    statement,
-    columns: res.columns.map((c) => c.name),
-    rows: res.rows,
-    text: res.columns.length === 1,
-  };
+): Promise<RawPlan> {
+  return invoke<RawPlan>("explain_raw", { handleId, sql, schema, analyze });
 }
 
 /** A cell as the plan prints it; NULL is spelled out, the way clients do. */
@@ -181,17 +116,13 @@ function cellText(value: CellValue | undefined): string {
   return String(value);
 }
 
-/**
- * A text plan as one block. Engines differ in how they break it up — psql and
- * ClickHouse return one row per line, MySQL's EXPLAIN ANALYZE returns the whole
- * tree in a single cell — and joining on newlines handles both.
- */
-export function serverPlanText(plan: ServerExplain): string {
+/** A text plan as one block. */
+export function rawPlanTextOf(plan: RawPlan): string {
   return plan.rows.map((r) => cellText(r[0])).join("\n");
 }
 
 /** Right-align a column only when every value present in it is a number. */
-export function numericColumns(plan: ServerExplain): boolean[] {
+export function numericColumns(plan: RawPlan): boolean[] {
   return plan.columns.map((_, i) => {
     let seen = false;
     for (const row of plan.rows) {
@@ -207,7 +138,7 @@ export function numericColumns(plan: ServerExplain): boolean[] {
 }
 
 /** The tabular plan as a `+---+` ASCII table, ready to paste into a terminal. */
-export function serverPlanAscii(plan: ServerExplain): string {
+export function rawPlanAscii(plan: RawPlan): string {
   const cells = plan.rows.map((r) => plan.columns.map((_, i) => cellText(r[i])));
   const w = plan.columns.map((c, i) => Math.max(c.length, ...cells.map((r) => r[i]!.length), 0));
   const rule = "+" + w.map((n) => "-".repeat(n + 2)).join("+") + "+";

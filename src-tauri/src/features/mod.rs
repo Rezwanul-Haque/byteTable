@@ -6,6 +6,7 @@ pub mod browse;
 pub mod cassandra;
 pub mod connections;
 pub mod dynamo;
+pub mod explain;
 pub mod export;
 pub mod generate;
 pub mod insights;

@@ -19,6 +19,7 @@
 import type { Engine } from "../../../shared/types";
 import { EXEC_STEPS, type StepKey } from "./explainClauses";
 import type { JoinShape, SelectShape } from "./explainParse";
+import type { ServerPlan } from "./explainServer";
 
 /**
  * The operator kinds the plan can contain. Drives icon, colour and cost weight.
@@ -565,18 +566,19 @@ function spillWarning(plan: PlanNode[]): PlanWarning[] {
  * costs and no timings. The view labels its column from it rather than printing
  * a cost under a heading that says "Time".
  */
-export function withServerPlan(
-  a: Analysis,
-  server: {
-    nodes: PlanNode[];
-    source: Engine;
-    totalMs: number | null;
-    share: "time" | "cost" | null;
-    listing: "outermost-first" | "execution";
-  },
-): Analysis {
-  const plan = server.nodes;
-  if (plan.length === 0) return a;
+export function withServerPlan(a: Analysis, server: ServerPlan): Analysis {
+  if (server.nodes.length === 0) return a;
+  // The wire nodes carry no `pct` / `order` — those are presentation, worked
+  // out here from the figures the engine did report.
+  const plan: PlanNode[] = server.nodes.map((n) => ({
+    ...n,
+    method: n.method ?? undefined,
+    rel: n.rel ?? undefined,
+    alias: n.alias ?? undefined,
+    self: n.selfWork,
+    pct: 0,
+    order: 0,
+  }));
 
   const weightOf = (p: PlanNode) =>
     p.self ?? (server.share === "time" ? (p.ms ?? 0) : server.share === "cost" ? (p.cost ?? 0) : 0);

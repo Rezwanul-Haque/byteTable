@@ -272,19 +272,6 @@ export interface SelectShape {
    * that is quietly wrong — a clear refusal beats a misleading picture.
    */
   unsupported: string | null;
-  /**
-   * Source offsets used to build the row-count probes (explainRun.ts) by
-   * *slicing the statement the user wrote* rather than re-rendering it —
-   * aliases, schema qualification and quoting therefore come out exactly
-   * right, with no identifier quoting of our own.
-   *
-   * `fromStart` is the `FROM` keyword; `baseEnd` is just past the base
-   * relation and its alias (before any JOIN); `whereEnd` is just past the
-   * WHERE predicate (equal to `baseEnd` when there is no WHERE).
-   */
-  fromStart: number | null;
-  baseEnd: number | null;
-  whereEnd: number | null;
 }
 
 const EMPTY_SHAPE: SelectShape = {
@@ -306,9 +293,6 @@ const EMPTY_SHAPE: SelectShape = {
   limit: null,
   offset: null,
   unsupported: null,
-  fromStart: null,
-  baseEnd: null,
-  whereEnd: null,
 };
 
 /** Keywords that end a clause body at the top level. */
@@ -407,7 +391,6 @@ export function parseSelectShape(sql: string, depth = 0): SelectShape {
     .map((it) => ({ fn: it.fn!, arg: it.arg! }));
 
   if (fromIdx < 0) return shape;
-  shape.fromStart = toks[fromIdx]!.pos;
   p = fromIdx + 1;
 
   // --- FROM relation + alias ---
@@ -448,8 +431,6 @@ export function parseSelectShape(sql: string, depth = 0): SelectShape {
   const baseAliasStart = p;
   p = readAlias(p);
   if (p > baseAliasStart) shape.alias = aliasOf(p);
-  shape.baseEnd = at(p - 1)?.end ?? null;
-  shape.whereEnd = shape.baseEnd;
 
   // --- JOINs ---
   for (;;) {
@@ -501,7 +482,6 @@ export function parseSelectShape(sql: string, depth = 0): SelectShape {
   if (isKw(p, "where")) {
     const end = clauseEnd(p + 1);
     shape.whereText = textOf(p + 1, end);
-    shape.whereEnd = at(end - 1)?.end ?? shape.whereEnd;
     p = end;
   }
   if (isKw(p, "group")) {

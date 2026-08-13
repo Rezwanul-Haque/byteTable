@@ -6,7 +6,7 @@
 // Focus is trapped inside the top-most panel (Tab/Shift+Tab wrap) and
 // restored to the previously focused element on unmount.
 
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode, type RefObject } from "react";
 
 import "./Modal.css";
 
@@ -37,9 +37,17 @@ interface ModalProps {
   width?: number;
   /** Extra class(es) on the panel, e.g. the prototype's "donate-modal". */
   className?: string;
+  /**
+   * Take initial focus instead of the first tabbable element. A dialog whose
+   * point is a single input (the import sheet's textarea) wants the caret
+   * there, not on the close button that happens to come first in the title
+   * row. `autoFocus` cannot do this: child effects run before the parent's, so
+   * this component's focus call would overwrite it.
+   */
+  initialFocusRef?: RefObject<HTMLElement | null>;
 }
 
-export function Modal({ children, onClose, label, width, className }: ModalProps) {
+export function Modal({ children, onClose, label, width, className, initialFocusRef }: ModalProps) {
   const stackToken = useRef(Symbol("modal"));
   const mouseDownOnScrim = useRef(false);
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -54,21 +62,23 @@ export function Modal({ children, onClose, label, width, className }: ModalProps
     };
   }, []);
 
-  // Initial focus + restore: move focus into the panel on mount (first
-  // tabbable element, else the panel itself) and hand it back to whatever
-  // was focused before — e.g. the rail's donate button — on unmount. If the
-  // opener got removed from the DOM in the meantime, fall back to the body
-  // so focus does not silently stay on a detached node.
+  // Initial focus + restore: move focus into the panel on mount (whatever
+  // `initialFocusRef` names, else the first tabbable element, else the panel
+  // itself) and hand it back to whatever was focused before — e.g. the rail's
+  // donate button — on unmount. If the opener got removed from the DOM in the
+  // meantime, fall back to the body so focus does not silently stay on a
+  // detached node.
   useEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const panel = panelRef.current;
     const first = panel ? tabbablesIn(panel)[0] : undefined;
-    (first ?? panel)?.focus();
+    (initialFocusRef?.current ?? first ?? panel)?.focus();
     return () => {
       if (opener?.isConnected) opener.focus();
       else document.body.focus();
     };
-  }, []);
+    // A ref object is stable, so this stays a mount-only effect.
+  }, [initialFocusRef]);
 
   // Esc + Tab handling for the top-most modal only. Tab wraps within the
   // panel; if focus escaped (e.g. a scrim click focused the body), the next

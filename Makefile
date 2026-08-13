@@ -39,9 +39,10 @@ ensure-cargo: ## Install the Rust toolchain (rustup) if cargo is missing
 dev: install ensure-cargo ## Run the app in development (Tauri + Vite, hot reload)
 	$(PNPM) tauri dev
 
-test: install ensure-cargo ## Run the test suite (Rust unit/integration tests + TS typecheck)
+test: install ensure-cargo ## Run the test suite (Rust unit/integration tests + TS typecheck + TS self-checks)
 	$(CARGO) test --manifest-path $(MANIFEST)
 	$(PNPM) typecheck
+	$(PNPM) check:units
 
 lint: install ensure-cargo ## Lint everything (ESLint + clippy + rustfmt/prettier checks)
 	$(PNPM) lint

@@ -50,7 +50,7 @@ import {
 import { pickPrivateKeyFile, pickSqliteFile } from "../dialog";
 import { useConnectionsStore } from "../state";
 import type { ImportedConnection } from "../urlImport";
-import { ImportConnectionModal } from "./ImportConnectionModal";
+import { ImportUrlSheet } from "./ImportUrlSheet";
 import "./NewConnectionModal.css";
 
 // Picker cards in the prototype's ENGINE_META order (labels match the badge).
@@ -187,6 +187,11 @@ interface FormState {
   tsNodes: string;
   // Transient secrets — sent to the backend, never part of saved params.
   password: string;
+  // A password or API key that came in on an imported URL (M34). It is kept
+  // out of `password` so the input never displays a secret the user did not
+  // type; `secrets()` falls back to it, so it still reaches the keychain on
+  // save. Editing the password field clears it (see the `field` reducer case).
+  importedSecret: string;
   // SSH tunnel.
   useSsh: boolean;
   sshHost: string;
@@ -231,6 +236,7 @@ const INITIAL: FormState = {
   protocol: "http",
   tsNodes: "",
   password: "",
+  importedSecret: "",
   useSsh: false,
   sshHost: "",
   sshPort: "22",
@@ -289,8 +295,15 @@ function reducer(state: FormState, action: Action): FormState {
       };
     }
     // -- everything else is a params-relevant edit → reset the verdict ------
-    case "field":
-      return { ...state, ...action.patch, test: IDLE };
+    case "field": {
+      const next = { ...state, ...action.patch, test: IDLE };
+      // Typing in the password field replaces an imported secret: what the user
+      // can see always wins over what they cannot.
+      if ("password" in action.patch && !("importedSecret" in action.patch)) {
+        next.importedSecret = "";
+      }
+      return next;
+    }
   }
 }
 
@@ -549,6 +562,7 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
     protocol,
     tsNodes,
     password,
+    importedSecret,
     useSsh,
     sshHost,
     sshPort,
@@ -584,27 +598,51 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
   // Convenience: a params-relevant field edit (resets the verdict).
   const field = (patch: Partial<FormState>) => dispatch({ type: "field", patch });
 
-  // "Import URL": the paste dialog is a separate modal (it stacks on top of
+  // "Import URL": the paste sheet is a separate modal (it stacks on top of
   // this one), so this only holds whether it is open.
-  const [importing, setImporting] = useState(false);
+  const [impOpen, setImpOpen] = useState(false);
 
-  /** Fill the form from a parsed connection string (see `../urlImport`). */
-  const applyUrl = (parsed: ImportedConnection) => {
-    const { engine: next, port: urlPort, ...rest } = parsed;
+  /**
+   * Fill the form from a parsed connection string (see `../urlImport`).
+   *
+   * Only what the paste actually carried is written, so a partial URL never
+   * blanks a field the user already filled — and importing the same string
+   * twice is idempotent. The one value that does not land in a form field is
+   * the password: it goes to `importedSecret`, which reaches the keychain on
+   * save but is never rendered.
+   */
+  const applyImport = (p: ImportedConnection) => {
     // Switch the engine through its own action first, so the new engine's
-    // default user lands before the URL's own values overwrite it. The port is
-    // set explicitly (that action only re-defaults an untouched one, and an
-    // imported URL should never keep the previous engine's port).
-    const nextPort = urlPort ?? DEFAULT_PORTS[next];
-    dispatch({ type: "engine", engine: next });
+    // default user and port land before the URL's own values overwrite them.
+    dispatch({ type: "engine", engine: p.engine });
+    const secret = p.password ?? p.apiKey;
     field({
-      ...rest,
-      ...(nextPort ? { port: nextPort, portTouched: !!urlPort } : {}),
-      ...(rest.user ? { userTouched: true } : {}),
-      section: "general",
+      ...(p.host ? { host: p.host } : {}),
+      ...(p.port ? { port: p.port, portTouched: true } : {}),
+      ...(p.db ? { db: p.db } : {}),
+      ...(p.file ? { file: p.file } : {}),
+      ...(p.user ? { user: p.user, userTouched: true } : {}),
+      ...(p.tls ? { tls: p.tls } : {}),
+      ...(p.datacenter ? { datacenter: p.datacenter } : {}),
+      // Typesense has no TLS negotiation — the scheme *is* the protocol.
+      ...(p.engine === "typesense" ? { protocol: p.scheme === "https" ? "https" : "http" } : {}),
+      // Mongo keeps the URI verbatim, which only means anything in URI mode.
+      ...(p.uri ? { mongoUri: p.uri, mongoConnMode: "uri" as const } : {}),
+      // Secrets never enter the form as plaintext: the password input keeps
+      // showing whatever the user typed (nothing), and this rides along to the
+      // keychain instead. See `secrets()`.
+      ...(secret ? { importedSecret: secret } : {}),
       // Name it after what it points at, unless the user already named it.
-      ...(name.trim() ? {} : { name: rest.db || rest.host || "" }),
+      ...(name.trim() || !(p.db || p.host) ? {} : { name: p.db || p.host || "" }),
+      section: "general",
     });
+    toast(
+      "Filled from " +
+        (p.kv ? "connection string" : p.scheme + ":// URL") +
+        (p.password ? " · password held in the keychain" : "") +
+        (p.apiKey ? " · API key held in the keychain" : ""),
+      "ok",
+    );
   };
 
   // ARIA tabs wiring (tab ↔ tabpanel) plus refs for arrow-key focus moves.
@@ -848,7 +886,9 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
 
   /** The transient secrets to send with test/save (empty strings → omitted). */
   const secrets = (): { password?: string; sshSecret?: string } => ({
-    password: password || undefined,
+    // A typed password wins; an imported one is the fallback so a URL's
+    // credential still reaches the keychain without ever being displayed.
+    password: password || importedSecret || undefined,
     // The SSH secret only applies when tunnelling with password/key auth.
     sshSecret: useSsh && sshAuth === "password" ? sshPassword || undefined : undefined,
   });
@@ -960,13 +1000,17 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
       <Modal label={edit ? "Edit connection" : "New connection"} onClose={onClose}>
         <ModalTitle>
           <span>{edit ? t("connect.edit") : t("connect.new")}</span>
-          {/* Import URL + close share the right end of the title row. */}
-          <span className="import-open-row">
-            <Btn variant="tonal" small icon="input" onClick={() => setImporting(true)}>
-              Import URL
-            </Btn>
-            <IconBtn icon="close" onClick={onClose} title="Close" />
-          </span>
+          {/* A quiet trigger, not a form field: `margin-left: auto` parks it
+              next to the close button at the right end of the title row. */}
+          <button
+            type="button"
+            className="imp-trigger"
+            onClick={() => setImpOpen(true)}
+            title="Fill the form from a connection URL or connection string"
+          >
+            <Icon name="content_paste_go" size={13} /> Import From URL
+          </button>
+          <IconBtn icon="close" onClick={onClose} title="Close" />
         </ModalTitle>
 
         <div className="form-grid name-grid">
@@ -1796,9 +1840,7 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
       {/* Stacks on top of this modal (the Modal primitive keeps a stack, so Esc
           closes the import dialog first). A sibling, not a child, so it is not
           inside the connect panel's scroll container. */}
-      {importing ? (
-        <ImportConnectionModal onClose={() => setImporting(false)} onApply={applyUrl} />
-      ) : null}
+      {impOpen ? <ImportUrlSheet onClose={() => setImpOpen(false)} onApply={applyImport} /> : null}
     </>
   );
 }

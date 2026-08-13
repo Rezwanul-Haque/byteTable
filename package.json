@@ -13,6 +13,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc -b",
+    "check:units": "node src/features/connections/urlImport.check.ts",
     "tauri": "tauri",
     "devtools": "react-devtools",
     "prepare": "husky"

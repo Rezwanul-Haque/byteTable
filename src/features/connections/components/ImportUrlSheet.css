@@ -1,0 +1,260 @@
+/* Import connection sheet (M34) — ported from ByteTable.html's `.imp-*` rules.
+   The sheet is a second overlay above the connect modal, so the form the user
+   is filling stays visible (and readable) behind it. */
+
+/* The trigger in the connect modal's title row. `margin-left: auto` eats the
+   free space `.modal-title`'s space-between would otherwise distribute, so the
+   button lands next to the close control rather than centred. */
+.imp-trigger {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 3px 9px;
+  cursor: pointer;
+  font-family: var(--ui);
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+.imp-trigger:hover {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+  background: color-mix(in oklab, var(--accent) 8%, transparent);
+}
+.imp-trigger .msym {
+  flex: none;
+}
+.modal-title .imp-trigger + .icon-btn {
+  margin-left: 6px;
+}
+
+/* Above the connect modal's own scrim (z-index 50), and lighter, so the form
+   behind stays legible instead of double-darkened. */
+.modal-scrim:has(> .imp-sheet) {
+  z-index: 60;
+  background: color-mix(in oklab, var(--bg0) 55%, transparent);
+}
+
+/* `.modal.imp-sheet`, not `.imp-sheet`: every property here overrides one
+   `.modal` sets, and equal specificity would leave the winner up to whichever
+   stylesheet the bundler happened to emit last. The `overflow` matters most —
+   with `.modal`'s `overflow-y: auto` in force the body never becomes the
+   scroll container, the flex children shrink under the max-height, and the
+   field clips its own footer. */
+.modal.imp-sheet {
+  width: 480px;
+  gap: 12px;
+  padding: 18px;
+  max-height: min(680px, calc(100vh - 90px));
+  overflow: hidden;
+}
+/* The body scrolls, not the sheet: with the sheet itself scrolling, the flex
+   children shrink under `max-height` and the field clips its own footer. */
+.imp-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0 -8px;
+  padding: 0 8px;
+}
+.imp-field,
+.imp-map,
+.imp-support {
+  flex: none;
+}
+.imp-lede {
+  margin: -4px 0 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+/* One bordered field holding the textarea and the detection footer, so the
+   verdict reads as part of what you typed rather than a separate message. */
+.imp-field {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg0);
+  overflow: hidden;
+  transition: border-color 0.12s;
+}
+.imp-field:focus-within {
+  border-color: var(--accent);
+}
+.imp-field.good {
+  border-color: color-mix(in oklab, var(--accent) 55%, var(--border));
+}
+.imp-field.bad {
+  border-color: color-mix(in oklab, var(--error) 55%, var(--border));
+}
+.imp-field textarea {
+  display: block;
+  width: 100%;
+  resize: none;
+  border: none;
+  background: none;
+  padding: 11px 12px 8px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text);
+}
+.imp-field textarea:focus {
+  outline: none;
+}
+.imp-field textarea::placeholder {
+  color: var(--text-faint);
+}
+.imp-field-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 7px;
+  border-top: 1px solid var(--border);
+  background: var(--bg1);
+  min-height: 28px;
+}
+.imp-detect {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text);
+  min-width: 0;
+}
+.imp-detect code {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+.imp-detect em {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--warn);
+}
+.imp-detect.idle {
+  color: var(--text-faint);
+  font-size: 10.5px;
+}
+.imp-detect.err {
+  color: var(--error);
+  font-size: 10.5px;
+  line-height: 1.45;
+  align-items: flex-start;
+}
+.imp-detect.err .msym {
+  flex: none;
+  margin-top: 1px;
+}
+.imp-eng-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+.imp-clear {
+  margin-left: auto;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: var(--ui);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  flex: none;
+}
+.imp-clear:hover {
+  color: var(--text);
+}
+
+/* "Fields to fill" — what the paste will do to the form, before it does it. */
+.imp-map {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--accent) 5%, var(--bg1));
+  padding: 10px 12px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.imp-map-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.imp-map-head .msym {
+  color: var(--accent);
+}
+.imp-dl {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 5px 12px;
+  margin: 0;
+  align-items: baseline;
+}
+.imp-dl dt {
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+.imp-dl dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.imp-dl dd.secret {
+  color: var(--accent);
+  letter-spacing: 0.08em;
+}
+.imp-extra,
+.imp-support {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.imp-extra-lbl {
+  font-size: 9.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.imp-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.imp-tags code {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 2px 6px;
+}
+.imp-warn {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.imp-warn .msym {
+  color: var(--warn);
+  flex: none;
+  margin-top: 1px;
+}

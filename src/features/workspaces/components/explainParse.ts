@@ -250,6 +250,15 @@ export interface SelectShape {
   alias: string | null;
   /** True when FROM targets a derived table / subquery rather than a relation. */
   subquery: boolean;
+  /**
+   * The shape of that derived table's own SELECT, parsed recursively, so the
+   * plan can nest its nodes under a `Subquery Scan` instead of giving up. Null
+   * when FROM names a relation, when the derived SELECT could not be parsed,
+   * or past {@link MAX_DERIVED_DEPTH} levels of nesting.
+   */
+  derived: SelectShape | null;
+  /** The derived table's SQL, verbatim — what a probe would have to run. */
+  derivedSql: string | null;
   joins: JoinShape[];
   whereText: string | null;
   groupByText: string | null;
@@ -286,6 +295,8 @@ const EMPTY_SHAPE: SelectShape = {
   table: null,
   schema: null,
   alias: null,
+  derived: null,
+  derivedSql: null,
   subquery: false,
   joins: [],
   whereText: null,
@@ -317,11 +328,18 @@ const CLAUSE_END = new Set([
 ]);
 
 /**
+ * How many levels of derived table to descend. A plan nested deeper than this
+ * is unreadable anyway, and the cap is what stops a pathological statement from
+ * recursing without bound.
+ */
+const MAX_DERIVED_DEPTH = 4;
+
+/**
  * Parse the shape of a SELECT. Returns `isSelect: false` for anything that is
  * not one; never throws. Only paren-depth-0 keywords are recognised, so
  * subqueries in the select list or WHERE cannot be mistaken for clauses.
  */
-export function parseSelectShape(sql: string): SelectShape {
+export function parseSelectShape(sql: string, depth = 0): SelectShape {
   const src = sql || "";
   const toks = tokenize(src);
   const selIdx = toks.findIndex((t) => t.type === "kw" && t.value === "select" && t.depth === 0);
@@ -396,13 +414,28 @@ export function parseSelectShape(sql: string): SelectShape {
   const fromTok = at(p);
   if (fromTok?.type === "punct" && fromTok.value === "(") {
     shape.subquery = true;
+    const innerStart = fromTok.end;
+    let innerEnd = innerStart;
     let d = 1;
     p += 1;
     while (p < toks.length && d > 0) {
       const t = toks[p]!;
       if (t.type === "punct" && t.value === "(") d += 1;
-      else if (t.type === "punct" && t.value === ")") d -= 1;
+      else if (t.type === "punct" && t.value === ")") {
+        d -= 1;
+        if (d === 0) innerEnd = t.pos;
+      }
       p += 1;
+    }
+    // The derived table's own SELECT, parsed on its own terms: the plan nests
+    // its nodes under a `Subquery Scan` rather than refusing the whole query.
+    const inner = src.slice(innerStart, innerEnd).trim();
+    if (inner && depth < MAX_DERIVED_DEPTH) {
+      const innerShape = parseSelectShape(inner, depth + 1);
+      if (innerShape.isSelect) {
+        shape.derived = innerShape;
+        shape.derivedSql = inner;
+      }
     }
   } else if (fromTok?.type === "ident") {
     const parts = fromTok.parts ?? [fromTok.value];

@@ -5,21 +5,28 @@
 //
 //   Plan         a plan-node table beside a visual plan tree, plus warnings
 //   How it runs  the original clause-order teaching view, kept behind a mode
-//   Raw output   the server's own shapes — MySQL's tabular EXPLAIN or psql's
-//                QUERY PLAN text — with an EXPLAIN / EXPLAIN ANALYZE toggle
+//   Raw output   the plan the SERVER reports, with an EXPLAIN / EXPLAIN
+//                ANALYZE toggle (explainServer.ts)
 //
-// The plan's *shape* is parsed client-side (explainParse.ts); its *numbers*
-// are measured against the real connection (explainRun.ts). Measuring executes
-// the statement, so it happens automatically on dev/staging connections and
-// only on an explicit click for production ones. Until then the plan renders
-// with every numeric column reading "—" — the shape is still worth seeing, and
-// an invented number in a database client is worse than no number.
+// The first two are modelled here: the shape is parsed client-side
+// (explainParse.ts) and the numbers measured against the real connection
+// (explainRun.ts). Measuring executes the statement, so it happens
+// automatically on dev/staging connections and only on an explicit click for
+// production ones. Until then the plan renders with every numeric column
+// reading "—" — the shape is still worth seeing, and an invented number in a
+// database client is worse than no number.
+//
+// That model cannot know about indexes, so its scans always read as sequential.
+// Raw output exists for exactly that gap: it runs the engine's own EXPLAIN and
+// prints the result verbatim, index choices included. The boundary is
+// deliberate and stated in the UI — modelled views never claim to be the
+// server's, and the server's output is never reshaped into ours.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { appErrorMessage } from "../../../shared/api/error";
 import { Icon } from "../../../shared/ui/Icon";
-import { normalizeEnv } from "../../../shared/types";
+import { normalizeEnv, type Engine } from "../../../shared/types";
 import {
   clausePresent,
   detectClauses,
@@ -45,6 +52,14 @@ import {
 } from "./explainModel";
 import { parseSelectShape } from "./explainParse";
 import { measureQuery } from "./explainRun";
+import {
+  explainSupport,
+  fetchServerExplain,
+  numericColumns,
+  type ServerExplain,
+  serverPlanAscii,
+  serverPlanText,
+} from "./explainServer";
 import { statementContextAt } from "./sqlStatement";
 
 /**
@@ -113,27 +128,93 @@ function ShareBar({ pct, hot, small }: { pct: number; hot: boolean; small?: bool
 }
 
 /**
- * Raw server output: MySQL's tabular `EXPLAIN` (the default — it plans only
- * and executes nothing) or psql's `QUERY PLAN` text with actual timings. Copy
- * exports whichever is showing, as a terminal-pasteable ASCII table or text
- * block.
+ * Raw output — the plan the **server** produced, not ours.
+ *
+ * Every other view in this panel is modelled client-side, which is fine for
+ * teaching the shape of a query and useless for the questions people actually
+ * bring to an EXPLAIN: which index was chosen, why a scan is full, what the
+ * optimizer estimated. So this one asks the database and prints the answer
+ * verbatim — the same rows psql or the mysql client would show.
+ *
+ * `EXPLAIN` is the default because it plans without executing, which makes it
+ * safe on any connection, production included. `EXPLAIN ANALYZE` runs the
+ * statement, so it stays behind a deliberate click.
+ *
+ * Engines whose plan cannot be fetched as an ordinary statement (SQL Server,
+ * Oracle) fall back to the modelled rendering, labelled as such — a plan drawn
+ * from our own model is worth something as long as it does not pretend to have
+ * come from the server.
  */
-export function PsqlPlanView({ a, sql }: { a: Analysis; sql: string }) {
-  const oneLine =
-    String(sql || "")
-      .replace(/--[^\n]*/g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-      .replace(/;$/, "") + ";";
+export function PsqlPlanView({
+  a,
+  sql,
+  handleId,
+  schemaName,
+  engine,
+}: {
+  a: Analysis;
+  sql: string;
+  handleId: string;
+  schemaName: string;
+  engine: Engine;
+}) {
   const [analyze, setAnalyze] = useState(false);
   const [copied, setCopied] = useState(false);
-  const rows = psqlPlanLines(a, true);
-  const w = Math.max(10, ...rows.map((r) => r.length));
-  const mrows = mysqlExplainRows(a);
+  // Keyed by (connection, schema, form, statement) and kept per form, not
+  // replaced: flipping back to EXPLAIN ANALYZE would otherwise re-execute the
+  // query every time, which is exactly the cost that toggle is warning about.
+  const [plans, setPlans] = useState<Record<string, ServerExplain>>({});
+  const [failures, setFailures] = useState<Record<string, string>>({});
+
+  const support = explainSupport(engine);
+  const form = analyze ? "analyze" : "plan";
+  const available = analyze ? support.analyze : support.plan;
+  // ANALYZE executes, so it is never fetched until the user selects it.
+  const key = handleId + " " + schemaName + " " + form + " " + sql;
+  // Keys with a call in flight. There is deliberately no "already asked" latch
+  // and no live/cancelled flag: under StrictMode React mounts, tears down and
+  // remounts, so a latch set on the first mount blocks the second while the
+  // first call's result is thrown away by the cancelled flag — the plan then
+  // never arrives and the pane spins forever. Results are keyed by `key`
+  // instead, which makes a late result harmless: it is stored under its own key
+  // and simply not shown if the user has moved on.
+  const inflight = useRef(new Set<string>());
+  const server = plans[key] ?? null;
+  const error = failures[key] ?? null;
+  const loading = available && !server && !error;
+
+  useEffect(() => {
+    if (!available) return;
+    if (plans[key] !== undefined || failures[key] !== undefined) return;
+    if (inflight.current.has(key)) return;
+    inflight.current.add(key);
+    fetchServerExplain(handleId, schemaName, engine, sql, analyze)
+      .then((data) => setPlans((p) => ({ ...p, [key]: data })))
+      .catch((e: unknown) => {
+        const message = appErrorMessage(e, "The server refused the EXPLAIN");
+        setFailures((f) => ({ ...f, [key]: message }));
+      })
+      .finally(() => inflight.current.delete(key));
+  }, [available, key, handleId, schemaName, engine, sql, analyze, plans, failures]);
+
+  // Fall back to the modelled renderers whenever the server's plan is not
+  // available — unsupported engine, or a failed call.
+  const modelled = !available || !!error;
+  const modelLines = psqlPlanLines(a, true);
+  const modelWidth = Math.max(10, ...modelLines.map((r) => r.length));
+
+  const shown = server?.statement ?? (analyze ? "EXPLAIN ANALYZE " : "EXPLAIN ") + oneLine(sql);
+  const numeric = server ? numericColumns(server) : [];
 
   const copy = () => {
-    const t = analyze ? psqlPlanText(a, true) : mysqlExplainText(a);
-    void navigator.clipboard?.writeText(t);
+    const text = server
+      ? server.text
+        ? serverPlanText(server)
+        : serverPlanAscii(server)
+      : analyze
+        ? psqlPlanText(a, true)
+        : mysqlExplainText(a);
+    void navigator.clipboard?.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 1400);
   };
@@ -155,7 +236,12 @@ export function PsqlPlanView({ a, sql }: { a: Analysis; sql: string }) {
             type="button"
             className={"seg-btn" + (analyze ? " active" : "")}
             onClick={() => setAnalyze(true)}
-            title="Runs the query and adds actual time, rows and loops per node"
+            disabled={!support.analyze}
+            title={
+              support.analyze
+                ? "Runs the query and adds actual time, rows and loops per node"
+                : (support.note ?? "Not available on this engine")
+            }
           >
             EXPLAIN ANALYZE
           </button>
@@ -163,23 +249,62 @@ export function PsqlPlanView({ a, sql }: { a: Analysis; sql: string }) {
       </div>
       <div className="ex-psql-box">
         <div className="ex-psql-bar">
-          <code>
-            bytetable&gt; {analyze ? "EXPLAIN ANALYZE" : "EXPLAIN"}{" "}
-            {oneLine.length > 90 ? oneLine.slice(0, 90) + "…" : oneLine}
-          </code>
+          <code>bytetable&gt; {shown.length > 90 ? shown.slice(0, 90) + "…" : shown}</code>
           <button type="button" className="ex-copy" onClick={copy}>
             <Icon name={copied ? "check" : "content_copy"} size={12} /> {copied ? "Copied" : "Copy"}
           </button>
         </div>
-        {analyze ? (
+        {loading ? (
+          <div className="ex-psql-wait">
+            <span className="spinner" /> Asking the server for its plan…
+          </div>
+        ) : server ? (
+          server.text ? (
+            <ServerTextPlan plan={server} />
+          ) : (
+            <div className="ex-my-wrap">
+              <table className="ex-my">
+                <thead>
+                  <tr>
+                    {server.columns.map((c, i) => (
+                      <th key={i} className={numeric[i] ? "num" : ""}>
+                        {c}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {server.rows.map((row, i) => (
+                    <tr key={i}>
+                      {server.columns.map((_, j) => {
+                        const v = row[j] ?? null;
+                        return (
+                          <td
+                            key={j}
+                            className={(numeric[j] ? "num " : "") + (v === null ? "nul" : "")}
+                          >
+                            {v === null ? "NULL" : String(v)}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="ex-my-count">
+                ({server.rows.length} row{server.rows.length === 1 ? "" : "s"})
+              </div>
+            </div>
+          )
+        ) : analyze ? (
           <pre className="ex-psql">
             <span className="pq-head">
-              {" ".repeat(Math.max(0, Math.floor((w - 10) / 2))) + "QUERY PLAN"}
+              {" ".repeat(Math.max(0, Math.floor((modelWidth - 10) / 2))) + "QUERY PLAN"}
             </span>
             {"\n"}
-            <span className="pq-rule">{"-".repeat(w + 1)}</span>
+            <span className="pq-rule">{"-".repeat(modelWidth + 1)}</span>
             {"\n"}
-            {rows.map((r, i) => (
+            {modelLines.map((r, i) => (
               <span
                 key={i}
                 className={"pq-row" + (/^ (Planning|Execution) Time/.test(r) ? " pq-time" : "")}
@@ -188,7 +313,7 @@ export function PsqlPlanView({ a, sql }: { a: Analysis; sql: string }) {
               </span>
             ))}
             <span className="pq-count">
-              {"(" + rows.length + " row" + (rows.length === 1 ? "" : "s") + ")"}
+              {"(" + modelLines.length + " row" + (modelLines.length === 1 ? "" : "s") + ")"}
             </span>
           </pre>
         ) : (
@@ -207,7 +332,7 @@ export function PsqlPlanView({ a, sql }: { a: Analysis; sql: string }) {
                 </tr>
               </thead>
               <tbody>
-                {mrows.map((r, i) => (
+                {mysqlExplainRows(a).map((r, i) => (
                   <tr key={i}>
                     {MYSQL_COLS.map((c) => (
                       <td
@@ -224,14 +349,31 @@ export function PsqlPlanView({ a, sql }: { a: Analysis; sql: string }) {
                 ))}
               </tbody>
             </table>
-            <div className="ex-my-count">
-              ({mrows.length} row{mrows.length === 1 ? "" : "s"})
-            </div>
+            <div className="ex-my-count">({mysqlExplainRows(a).length} rows)</div>
           </div>
         )}
       </div>
+      {error ? (
+        <div className="ex-warn ex-psql-note">
+          <Icon name="error" size={13} />
+          <div>
+            <b>{engineLabel(engine)}</b> — {error}
+          </div>
+        </div>
+      ) : null}
+      {modelled && !error && support.note ? (
+        <div className="ex-warn ex-psql-note">
+          <Icon name="info" size={13} />
+          <div>{support.note}</div>
+        </div>
+      ) : null}
       <div className="explain-note">
-        {analyze ? (
+        {modelled ? (
+          <>
+            This plan is <b>modelled</b> by ByteTable from the statement, not reported by the server
+            — <code>type</code>, <code>possible_keys</code> and <code>key</code> are not known here.
+          </>
+        ) : analyze ? (
           <>
             <b>EXPLAIN ANALYZE</b> executes the query and prints the plan tree: each node carries
             estimates <i>and</i> actual time, rows and loops — compare the two to spot bad
@@ -239,14 +381,71 @@ export function PsqlPlanView({ a, sql }: { a: Analysis; sql: string }) {
           </>
         ) : (
           <>
-            <b>EXPLAIN</b> only plans the query — nothing is executed. One row per accessed table:{" "}
-            <code>type=ALL</code> means a full scan, <code>key</code> is the index actually chosen,{" "}
-            <code>filtered</code> is the % of scanned rows expected to survive the WHERE.
+            <b>EXPLAIN</b> only plans the query — nothing is executed. This is {engineLabel(engine)}
+            &rsquo;s own output, so the index columns are the ones it really chose.
           </>
         )}
       </div>
     </div>
   );
+}
+
+/**
+ * A single-text-column plan (psql's `QUERY PLAN`, MySQL's `EXPLAIN ANALYZE`,
+ * ClickHouse's `explain`), laid out the way a terminal client does: the column
+ * name centred over the widest line, a dashed rule, then the plan, then the
+ * row count. The count is the *line* count, since MySQL returns the whole tree
+ * in one cell and "(1 row)" over eight lines would just look wrong.
+ */
+function ServerTextPlan({ plan }: { plan: ServerExplain }) {
+  const lines = serverPlanText(plan).split("\n");
+  const head = plan.columns[0] ?? "QUERY PLAN";
+  const width = Math.max(head.length, ...lines.map((l) => l.length));
+  const pad = " ".repeat(Math.max(0, Math.floor((width - head.length) / 2)));
+  return (
+    <pre className="ex-psql">
+      <span className="pq-head">{pad + head}</span>
+      {"\n"}
+      <span className="pq-rule">{"-".repeat(width + 1)}</span>
+      {"\n"}
+      {lines.map((line, i) => (
+        <span
+          key={i}
+          className={
+            "pq-row" + (/(Planning|Execution) Time|actual time/.test(line) ? " pq-time" : "")
+          }
+        >
+          {line + "\n"}
+        </span>
+      ))}
+      <span className="pq-count">
+        {"(" + lines.length + " row" + (lines.length === 1 ? "" : "s") + ")"}
+      </span>
+    </pre>
+  );
+}
+
+/** The statement on one line, for the prompt echo. */
+function oneLine(sql: string): string {
+  return (
+    String(sql || "")
+      .replace(/--[^\n]*/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .replace(/;$/, "") + ";"
+  );
+}
+
+/** Engine name as the notes refer to it. */
+function engineLabel(engine: Engine): string {
+  const names: Partial<Record<Engine, string>> = {
+    mysql: "MySQL",
+    postgres: "Postgres",
+    sqlite: "SQLite",
+    mssql: "SQL Server",
+    clickhouse: "ClickHouse",
+  };
+  return names[engine] ?? engine;
 }
 
 interface ExplainPanelProps {
@@ -257,6 +456,8 @@ interface ExplainPanelProps {
   schemaName: string;
   /** Connection environment — production connections never auto-measure. */
   env: string;
+  /** Which engine to ask for the raw plan, and in what dialect. */
+  engine: Engine;
   /** Cached introspection row estimate for a table (no fetch is issued). */
   approxRows: (table: string) => number | null;
   /** Cached column count for the FROM relation, shown on the FROM step. */
@@ -273,6 +474,7 @@ export function ExplainPanel({
   handleId,
   schemaName,
   env,
+  engine,
   approxRows,
   columnCount = null,
 }: ExplainPanelProps) {
@@ -297,35 +499,37 @@ export function ExplainPanel({
 
   // Measuring executes the statement, so it runs on its own for dev and
   // staging connections and waits for the Measure button on production ones,
-  // where running someone's query unasked is not on. `doneKey` keeps the
-  // request idempotent across re-renders; the effect's cleanup drops a
-  // result that lands after the user moved to another statement.
+  // where running someone's query unasked is not on.
+  //
+  // `inflight` only stops two calls overlapping. It is deliberately not an
+  // "already asked" latch, and there is no cancelled flag: StrictMode mounts,
+  // tears down and remounts, so a latch would block the second mount while the
+  // cancelled flag discarded the first mount's result, and the numbers would
+  // never appear. Results carry their own key, so a late one is stored against
+  // the statement it belongs to and ignored if the user has moved on.
   const analyzable = a.error == null;
   const isProd = normalizeEnv(env) === "production";
   const shouldMeasure = analyzable && (!isProd || asked === key);
   const busy = shouldMeasure && result?.key !== key && failure?.key !== key;
-  const doneKey = useRef<string | null>(null);
+  const inflight = useRef(new Set<string>());
 
   const measure = () => {
-    doneKey.current = null;
+    setFailure((f) => (f?.key === key ? null : f));
     setAsked(key);
   };
 
   useEffect(() => {
-    if (!shouldMeasure || doneKey.current === key) return;
-    doneKey.current = key;
-    let live = true;
+    if (!shouldMeasure) return;
+    if (result?.key === key || failure?.key === key) return;
+    if (inflight.current.has(key)) return;
+    inflight.current.add(key);
     measureQuery(handleId, schemaName, sql, shape, approxRows)
-      .then((s) => {
-        if (live) setResult({ key, stats: s });
-      })
-      .catch((e: unknown) => {
-        if (live) setFailure({ key, message: appErrorMessage(e, "Could not analyze this query") });
-      });
-    return () => {
-      live = false;
-    };
-  }, [shouldMeasure, key, handleId, schemaName, sql, shape, approxRows]);
+      .then((s) => setResult({ key, stats: s }))
+      .catch((e: unknown) =>
+        setFailure({ key, message: appErrorMessage(e, "Could not analyze this query") }),
+      )
+      .finally(() => inflight.current.delete(key));
+  }, [shouldMeasure, key, handleId, schemaName, sql, shape, approxRows, result, failure]);
 
   if (a.error) {
     return (
@@ -561,14 +765,16 @@ export function ExplainPanel({
               {raw ? <pre className="explain-plan-tree">{rawPlanText(a)}</pre> : null}
               <div className="explain-note">
                 {a.measured
-                  ? "Row counts and the total time are measured against this connection; the per-node split distributes that total across nodes by relative work. A real planner also reports index usage, buffers and loops per node."
-                  : "No numbers yet — measuring runs the statement against this connection. The plan’s shape, nodes and order are read from the statement itself."}
+                  ? "Row counts and the total time are measured against this connection; the per-node split distributes that total across nodes by relative work."
+                  : "No numbers yet — measuring runs the statement against this connection."}{" "}
+                This tree is read from the statement, so it assumes a sequential scan per relation
+                and names no indexes. <b>Raw output</b> shows the plan the server actually chose.
               </div>
             </div>
           </div>
         </div>
       ) : mode === "psql" ? (
-        <PsqlPlanView a={a} sql={sql} />
+        <PsqlPlanView a={a} sql={sql} handleId={handleId} schemaName={schemaName} engine={engine} />
       ) : (
         <div className="ex-steps-pane">
           <div className="explain-h">

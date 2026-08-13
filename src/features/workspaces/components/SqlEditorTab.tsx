@@ -815,6 +815,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
                   handleId={workspace.handleId}
                   schemaName={schemaName}
                   env={workspace.saved.env}
+                  engine={workspace.info.engine}
                   approxRows={approxRows}
                   columnCount={columnCount}
                 />

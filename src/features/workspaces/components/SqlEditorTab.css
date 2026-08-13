@@ -901,6 +901,24 @@
   padding: 13px 16px 18px;
 }
 
+/* Waiting on the server's own EXPLAIN. Sized like a short plan so the box
+   doesn't collapse and jump when the rows land. */
+.ex-psql-wait {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 18px 14px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+/* The "why you're seeing a modelled plan" / driver-error note under the box.
+   Reuses .ex-warn's card, minus the amber tint for the informational case. */
+.ex-psql-note {
+  margin-top: 10px;
+}
+
 .ex-psql-modes {
   margin-left: auto;
 }

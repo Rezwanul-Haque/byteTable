@@ -50,6 +50,8 @@ export interface PlanNode {
   alias?: string;
   /** True on the inner side of a join — the row the join buffer feeds from. */
   joinSide?: boolean;
+  /** True for the nodes that make up a derived table's own plan. */
+  subplan?: boolean;
 }
 
 /** One entry of the "How it runs" clause list. */
@@ -83,8 +85,13 @@ export interface ExplainStats {
   scanned: number | null;
   /** Rows of the base relation surviving WHERE (single-table queries only). */
   kept: number | null;
-  /** Rows per joined relation, keyed by table name. */
-  joinRows: Record<string, number | null>;
+  /**
+   * Cached row estimates by relation name, for every relation the statement
+   * touches beyond the base one — joined tables and the relations inside a
+   * derived table. Free (the sidebar's introspection already holds them), and
+   * approximate, which is why they never feed a warning.
+   */
+  relationRows: Record<string, number | null>;
 }
 
 export const EMPTY_STATS: ExplainStats = {
@@ -93,7 +100,7 @@ export const EMPTY_STATS: ExplainStats = {
   truncated: false,
   scanned: null,
   kept: null,
-  joinRows: {},
+  relationRows: {},
 };
 
 /** The whole analysis: one object, three views. */
@@ -136,6 +143,181 @@ export const NODE_ICON: Record<NodeKind, string> = {
 };
 
 /**
+ * What the plan builder knows about one query level's row counts. The outer
+ * level gets measured numbers; a derived table's level gets whatever carries
+ * over (its output row count is the outer scan's input) plus cached relation
+ * estimates, and null everywhere else.
+ */
+interface PlanNumbers {
+  /** Rows read from the base relation. */
+  base: number | null;
+  /** Rows of the base relation surviving WHERE. */
+  afterWhere: number | null;
+  /** Rows leaving this query level before its LIMIT. */
+  beforeLimit: number | null;
+  /** Rows this query level returned. */
+  final: number | null;
+  /** Cached row estimate for a named relation. */
+  relation: (table: string) => number | null;
+}
+
+/**
+ * Append one query level's nodes to `out`, outermost first (Limit → Sort →
+ * Unique → Aggregate → joins → scans), the way psql prints them.
+ *
+ * When FROM is a derived table the base scan becomes a `Subquery Scan` and this
+ * recurses to lay the derived table's own plan out beneath it — that inner plan
+ * is what actually produces the rows, so refusing to draw it (as this used to)
+ * hid the expensive half of the query.
+ */
+function buildPlan(
+  shape: SelectShape,
+  n: PlanNumbers,
+  startDepth: number,
+  subplan: boolean,
+  out: PlanNode[],
+): void {
+  const table = shape.table ?? shape.alias ?? "subquery";
+  const baseAlias = shape.alias || table;
+  const hasAgg = shape.aggregates.length > 0;
+  const orderCols = shape.orderBy.map((o) => o.col + (o.dir === "desc" ? " ↓" : " ↑")).join(", ");
+  const aggText = shape.aggregates.map((a) => a.fn + "(" + a.arg + ")").join(", ");
+  const limitText =
+    (shape.offset != null ? "offset " + shape.offset + " · " : "") + "limit " + shape.limit;
+
+  let dep = startDepth;
+  const push = (node: Omit<PlanNode, "ms" | "pct" | "order" | "subplan">) => {
+    out.push({ ...node, subplan, ms: null, pct: 0, order: 0 });
+  };
+
+  if (shape.limit != null) {
+    push({ depth: dep++, node: "Limit", kind: "limit", rows: n.final, detail: limitText });
+  }
+  if (shape.orderBy.length) {
+    push({
+      depth: dep++,
+      node: "Sort",
+      kind: "sort",
+      rows: n.beforeLimit,
+      detail: "Sort Key: " + orderCols,
+      method: n.beforeLimit != null && n.beforeLimit > 500 ? "external merge" : "quicksort",
+    });
+  }
+  if (shape.distinct) {
+    push({
+      depth: dep++,
+      node: "Unique",
+      kind: "unique",
+      rows: n.beforeLimit,
+      detail: "de-duplicate projected rows",
+    });
+  }
+  if (shape.groupByText) {
+    push({
+      depth: dep++,
+      node: "HashAggregate",
+      kind: "agg",
+      rows: n.beforeLimit,
+      detail: "Group Key: " + shape.groupByText,
+    });
+  } else if (hasAgg) {
+    push({
+      depth: dep++,
+      node: "Aggregate",
+      kind: "agg",
+      rows: 1,
+      detail: aggText || "aggregate",
+    });
+  }
+  for (const j of shape.joins) {
+    push({
+      depth: dep++,
+      node: j.kind === "left" ? "Nested Loop Left Join" : "Nested Loop",
+      kind: "join",
+      rows: n.beforeLimit,
+      detail: "Join Filter: " + (j.onText || "cross product"),
+    });
+  }
+
+  // Both sides of the join sit at the depth *below* the join node.
+  const scanDepth = dep;
+  if (shape.derived) {
+    push({
+      depth: scanDepth,
+      node: "Subquery Scan on " + baseAlias,
+      kind: "scan",
+      rel: baseAlias,
+      alias: baseAlias,
+      rows: n.afterWhere != null ? n.afterWhere : n.base,
+      scanned: n.base,
+      removed:
+        shape.whereText && n.afterWhere != null && n.base != null ? n.base - n.afterWhere : null,
+      detail: shape.whereText
+        ? "Filter: " + shape.whereText
+        : "derived table — the plan below produces its rows",
+    });
+    // The derived table's output *is* what the scan above reads, so the one
+    // measured number carries down into the nested level.
+    buildPlan(
+      shape.derived,
+      {
+        base: shape.derived.table ? n.relation(shape.derived.table) : null,
+        afterWhere: null,
+        beforeLimit: n.base,
+        final: n.base,
+        relation: n.relation,
+      },
+      scanDepth + 1,
+      true,
+      out,
+    );
+  } else if (!shape.table) {
+    // No FROM at all — a projection over a single synthetic row, which is what
+    // psql calls a Result node. Reachable inside a derived table (`FROM (SELECT
+    // 1) t`); the top level refuses such a statement before it gets here.
+    push({
+      depth: scanDepth,
+      node: "Result",
+      kind: "scan",
+      rel: table,
+      alias: baseAlias,
+      rows: 1,
+      scanned: 1,
+      removed: null,
+      detail: "no FROM — one row from the select list",
+    });
+  } else {
+    push({
+      depth: scanDepth,
+      node: "Seq Scan on " + table + (shape.alias ? " " + shape.alias : ""),
+      kind: "scan",
+      rel: table,
+      alias: baseAlias,
+      rows: n.afterWhere != null ? n.afterWhere : n.base,
+      scanned: n.base,
+      removed:
+        shape.whereText && n.afterWhere != null && n.base != null ? n.base - n.afterWhere : null,
+      detail: shape.whereText ? "Filter: " + shape.whereText : "no filter — every row read",
+    });
+  }
+  for (const j of shape.joins) {
+    const rows = n.relation(j.table);
+    push({
+      depth: scanDepth,
+      node: "Seq Scan on " + j.table + (j.alias !== j.table ? " " + j.alias : ""),
+      kind: "scan",
+      rel: j.table,
+      alias: j.alias,
+      rows,
+      scanned: rows,
+      removed: null,
+      joinSide: true,
+      detail: j.onText ? "Join Key: " + j.onText : "cross join — no join key",
+    });
+  }
+}
+
+/**
  * Build the analysis for one parsed statement.
  *
  * The plan is written outermost-first (Limit → Sort → Unique → Aggregate →
@@ -167,24 +349,26 @@ export function analyzeQuery(shape: SelectShape, stats: ExplainStats): Analysis 
     };
   }
   if (shape.unsupported) return { ...empty, error: shape.unsupported };
-  if (shape.subquery) {
+  if (shape.subquery && !shape.derived) {
     return {
       ...empty,
       error:
-        "This SELECT reads from a derived table. Plans are built for queries whose FROM names a relation — analyze the inner SELECT on its own.",
+        "This SELECT reads from a derived table whose own SELECT could not be read. Analyze the inner query on its own to see its plan.",
     };
   }
-  if (!shape.table) {
+  if (!shape.table && !shape.derived) {
     return { ...empty, error: "No FROM clause — there is no relation to build a plan over." };
   }
 
-  const table = shape.table;
-  const baseAlias = shape.alias || table;
+  // A derived table is addressed by its alias; the relation it stands for is
+  // the inner plan nested beneath the Subquery Scan node.
+  const table = shape.table ?? shape.alias ?? "subquery";
   const joins = shape.joins;
   const hasAgg = shape.aggregates.length > 0;
   const base = stats.scanned;
   const afterWhere = shape.whereText && joins.length === 0 ? stats.kept : null;
   const final = stats.final;
+  const relation = (t: string) => stats.relationRows[t] ?? null;
 
   // Rows before LIMIT: equal to the result when nothing was capped, and equal
   // to the post-filter count when the filter is the only row-reducing step.
@@ -212,10 +396,11 @@ export function analyzeQuery(shape: SelectShape, stats: ExplainStats): Analysis 
     const def = stepDef(key);
     steps.push({ kw: def.kw, label: def.label, desc: def.desc, rows, extra });
   };
+  const fromLabel = shape.derived ? table + " (derived table)" : table;
   addStep(
     "from",
     base,
-    joins.length ? table + " + " + joins.map((j) => j.table).join(", ") : table,
+    joins.length ? fromLabel + " + " + joins.map((j) => j.table).join(", ") : fromLabel,
   );
   if (shape.whereText) addStep("where", afterWhere, shape.whereText);
   if (shape.groupByText) addStep("groupBy", beforeLimit, shape.groupByText);
@@ -235,86 +420,7 @@ export function analyzeQuery(shape: SelectShape, stats: ExplainStats): Analysis 
 
   // --- the plan tree, outermost → innermost, with explicit depths ---
   const plan: PlanNode[] = [];
-  let dep = 0;
-  const push = (n: Omit<PlanNode, "ms" | "pct" | "order">) => {
-    plan.push({ ...n, ms: null, pct: 0, order: 0 });
-  };
-  if (shape.limit != null) {
-    push({ depth: dep++, node: "Limit", kind: "limit", rows: final, detail: limitText });
-  }
-  if (shape.orderBy.length) {
-    push({
-      depth: dep++,
-      node: "Sort",
-      kind: "sort",
-      rows: beforeLimit,
-      detail: "Sort Key: " + orderCols,
-      method: beforeLimit != null && beforeLimit > 500 ? "external merge" : "quicksort",
-    });
-  }
-  if (shape.distinct) {
-    push({
-      depth: dep++,
-      node: "Unique",
-      kind: "unique",
-      rows: beforeLimit,
-      detail: "de-duplicate projected rows",
-    });
-  }
-  if (shape.groupByText) {
-    push({
-      depth: dep++,
-      node: "HashAggregate",
-      kind: "agg",
-      rows: beforeLimit,
-      detail: "Group Key: " + shape.groupByText,
-    });
-  } else if (hasAgg) {
-    push({
-      depth: dep++,
-      node: "Aggregate",
-      kind: "agg",
-      rows: 1,
-      detail: aggText || "aggregate",
-    });
-  }
-  for (const j of joins) {
-    push({
-      depth: dep++,
-      node: j.kind === "left" ? "Nested Loop Left Join" : "Nested Loop",
-      kind: "join",
-      rows: beforeLimit,
-      detail: "Join Filter: " + (j.onText || "cross product"),
-    });
-  }
-  // Both sides of the join sit at the depth *below* the join node.
-  const scanDepth = dep;
-  push({
-    depth: scanDepth,
-    node: "Seq Scan on " + table + (shape.alias ? " " + shape.alias : ""),
-    kind: "scan",
-    rel: table,
-    alias: baseAlias,
-    rows: afterWhere != null ? afterWhere : base,
-    scanned: base,
-    removed: shape.whereText && afterWhere != null && base != null ? base - afterWhere : null,
-    detail: shape.whereText ? "Filter: " + shape.whereText : "no filter — every row read",
-  });
-  for (const j of joins) {
-    const n = stats.joinRows[j.table] ?? null;
-    push({
-      depth: scanDepth,
-      node: "Seq Scan on " + j.table + (j.alias !== j.table ? " " + j.alias : ""),
-      kind: "scan",
-      rel: j.table,
-      alias: j.alias,
-      rows: n,
-      scanned: n,
-      removed: null,
-      joinSide: true,
-      detail: j.onText ? "Join Key: " + j.onText : "cross join — no join key",
-    });
-  }
+  buildPlan(shape, { base, afterWhere, beforeLimit, final, relation }, 0, false, plan);
 
   // --- distribute the measured total across nodes by relative work ---
   const weight = (p: PlanNode): number => {
@@ -358,7 +464,9 @@ export function analyzeQuery(shape: SelectShape, stats: ExplainStats): Analysis 
         "). An index on the filtered column would let the engine skip them.",
     });
   }
-  if (!shape.whereText && shape.limit == null && base != null && base > 200) {
+  // Not for a Subquery Scan: the rows it reads were produced by the plan
+  // nested under it, where the real reading (and any filter) happens.
+  if (!shape.derived && !shape.whereText && shape.limit == null && base != null && base > 200) {
     warnings.push({
       node: scanNode.node,
       text:
@@ -450,11 +558,16 @@ export type MysqlRow = Record<(typeof MYSQL_COLS)[number], string | null>;
  * One row per accessed table, derived from the plan: `Extra` from which
  * operators touch that table, `ref` from the left side of the join key,
  * `filtered` from rows-after-filter ÷ rows-scanned.
+ *
+ * `select_type` follows the client: `SIMPLE` for a plain statement, and
+ * `PRIMARY` / `DERIVED` once a derived table splits the query into an outer
+ * block and the block that materialises it. `id` numbers those blocks.
  */
 export function mysqlExplainRows(a: Analysis): MysqlRow[] {
   const scans = a.plan.filter((p) => p.kind === "scan");
   const sort = a.plan.find((p) => p.kind === "sort");
   const agg = a.plan.find((p) => p.kind === "agg");
+  const nested = scans.some((s) => s.subplan);
   return scans.map((s, i) => {
     const hasWhere = s.detail.startsWith("Filter:");
     const joinKey = s.detail.startsWith("Join Key:") ? s.detail.replace("Join Key: ", "") : null;
@@ -466,8 +579,8 @@ export function mysqlExplainRows(a: Analysis): MysqlRow[] {
     const filtered =
       s.scanned && s.rows != null ? (s.rows / s.scanned) * 100 : s.scanned == null ? null : 100;
     return {
-      id: "1",
-      select_type: "SIMPLE",
+      id: nested && s.subplan ? "2" : "1",
+      select_type: !nested ? "SIMPLE" : s.subplan ? "DERIVED" : "PRIMARY",
       table: s.alias || s.rel || "",
       partitions: null,
       type: "ALL",

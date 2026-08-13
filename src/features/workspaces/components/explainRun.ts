@@ -63,8 +63,16 @@ export async function measureQuery(
 ): Promise<ExplainStats> {
   const run = await queryRun(handleId, sql, { schema, rowLimit: ANALYZE_ROW_LIMIT });
 
-  const joinRows: Record<string, number | null> = {};
-  for (const j of shape.joins) joinRows[j.table] = approxRows(j.table);
+  // Estimates for every relation the plan will name below the base scan —
+  // joined tables, and everything inside a derived table, which the plan nests
+  // as its own subtree.
+  const relationRows: Record<string, number | null> = {};
+  const collect = (s: SelectShape) => {
+    if (s.table) relationRows[s.table] = approxRows(s.table);
+    for (const j of s.joins) relationRows[j.table] = approxRows(j.table);
+    if (s.derived) collect(s.derived);
+  };
+  collect(shape);
 
   const canProbe = shape.fromStart != null && shape.baseEnd != null;
   const wantsFiltered = !!shape.whereText && shape.joins.length === 0 && shape.whereEnd != null;
@@ -72,7 +80,10 @@ export async function measureQuery(
   // With a filter we probe both counts so `rows read` and `rows kept` come
   // from the same source — an approximate base against an exact filtered count
   // would make "discards N%" wrong, and that number drives a warning.
-  let scanned: number | null = wantsFiltered ? null : approxRows(shape.table ?? "");
+  // A derived table has no cached estimate — its row count only exists once
+  // something counts it, so always probe.
+  let scanned: number | null =
+    wantsFiltered || shape.derived ? null : approxRows(shape.table ?? "");
   let kept: number | null = null;
   if (canProbe && (wantsFiltered || scanned == null)) {
     const from = sql.slice(shape.fromStart!, shape.baseEnd!);
@@ -100,6 +111,6 @@ export async function measureQuery(
     truncated: run.truncated,
     scanned,
     kept,
-    joinRows,
+    relationRows,
   };
 }

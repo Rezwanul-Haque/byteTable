@@ -6,10 +6,23 @@ PNPM        := pnpm
 CARGO       := cargo
 MANIFEST    := src-tauri/Cargo.toml
 
+# Windows: make shells out to cmd.exe, which can't run the POSIX recipes below.
+# Git for Windows ships a real sh — reached via the 8.3 name so the space in
+# "Program Files" never has to be quoted. (A bash.exe on PATH is usually WSL's,
+# i.e. a different machine, so don't use that.) PATH stays Windows-style with
+# ';' so the msys runtime can convert it for the sub-shell.
+ifeq ($(OS),Windows_NT)
+SHELL       := C:/Progra~1/Git/usr/bin/sh.exe
+.SHELLFLAGS := -c
+# Git's usr/bin (grep/awk/sed/uname) goes LAST: it also holds an msys link.exe
+# that would shadow MSVC's linker and break cargo builds if it came first.
+export PATH := $(USERPROFILE)\.cargo\bin;$(PATH);C:\Progra~1\Git\usr\bin
+else
 # Put a rustup-installed toolchain on PATH for every recipe, so a cargo that
 # `ensure-cargo` just installed (into ~/.cargo/bin) is found without re-sourcing
 # a shell. `export` makes this visible to all recipe sub-shells.
 export PATH := $(HOME)/.cargo/bin:$(PATH)
+endif
 
 .DEFAULT_GOAL := help
 .PHONY: help install hooks ensure-cargo dev dev-cert test lint clippy fmt build build-debug run tag db-up db-down tunnel-up tunnel-down clean
@@ -26,12 +39,16 @@ hooks: install ## Install the git pre-commit hook (husky + lint-staged)
 
 ensure-cargo: ## Install the Rust toolchain (rustup) if cargo is missing
 	@command -v cargo >/dev/null 2>&1 && exit 0; \
-	echo "cargo not found — installing the Rust toolchain via rustup…"; \
+	echo "cargo not found…"; \
 	case "$$(uname -s)" in \
-	  Linux|Darwin|*BSD|MINGW*|MSYS*|CYGWIN*) \
+	  Linux|Darwin|*BSD) \
 	    command -v curl >/dev/null 2>&1 || { echo "ERROR: curl is required to install Rust. Install curl or Rust manually: https://rustup.rs"; exit 1; }; \
 	    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path; \
 	    ;; \
+	  MINGW*|MSYS*|CYGWIN*) \
+	    echo "ERROR: install Rust for Windows (the MSVC toolchain Tauri needs):"; \
+	    echo "  winget install --id Rustlang.Rustup -e   # or https://rustup.rs"; \
+	    echo "Then open a new shell and re-run make."; exit 1;; \
 	  *) echo "ERROR: unsupported OS for auto-install. Install Rust manually: https://rustup.rs"; exit 1;; \
 	esac; \
 	command -v cargo >/dev/null 2>&1 || { echo "ERROR: cargo still not on PATH after install — open a new shell or add ~/.cargo/bin to PATH."; exit 1; }

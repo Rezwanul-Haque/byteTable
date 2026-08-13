@@ -67,8 +67,8 @@ export const en = {
   "connect.filter": "Filter connections…",
   "connect.new": "New connection",
   "connect.edit": "Edit connection",
-  "connect.compare": "Compare schemas…",
-  "connect.openFile": "Open SQLite file…",
+  "connect.compare": "Compare schemas",
+  "connect.openFile": "Open SQLite file",
   "connect.allProjects": "All projects",
 
   "set.title": "Settings",

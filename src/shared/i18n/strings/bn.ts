@@ -59,8 +59,8 @@ export const bn: StringTable = {
   "connect.filter": "কানেকশন ফিল্টার করুন…",
   "connect.new": "নতুন কানেকশন",
   "connect.edit": "কানেকশন সম্পাদনা",
-  "connect.compare": "স্কিমা তুলনা করুন…",
-  "connect.openFile": "SQLite ফাইল খুলুন…",
+  "connect.compare": "স্কিমা তুলনা করুন",
+  "connect.openFile": "SQLite ফাইল খুলুন",
   "connect.allProjects": "সব প্রজেক্ট",
 
   "set.title": "সেটিংস",

@@ -98,10 +98,22 @@
   flex: 0 1 auto;
   min-height: 0;
   overflow-y: auto;
-  scrollbar-gutter: stable;
+  /* Deliberately NO `scrollbar-gutter: stable` here. A reserved gutter is
+     carved out of this box's content, so the project list rendered narrower
+     than the search field above it and the action row below — the three
+     sections of the panel disagreeing on where their right edge is. There is no
+     reliable way to compensate either: the reserved width is the engine's
+     scrollbar metric, which is not guaranteed to match the 10px we style
+     `::-webkit-scrollbar` to, so a negative margin would leave the list a few
+     pixels off in one direction or the other. Without the gutter this box's
+     content is exactly the panel's content width, so the list section always
+     matches the search field. The cost is a 10px squeeze while the *outer* list
+     scrolls — rare, since each project caps and scrolls inside itself. */
+  margin-block: 0;
   /* Room so card focus rings / shadows aren't clipped by the scroll edge. */
-  margin: 0 -4px;
-  padding: 0 4px;
+  margin-inline: -4px;
+  padding-block: 0;
+  padding-inline: 4px;
 }
 
 .connect-card {
@@ -447,7 +459,13 @@
   font-family: var(--mono);
 }
 .proj-acc-body {
-  padding: 4px 8px 8px;
+  padding-block: 4px 8px;
+  /* No inline-end padding: the reserved gutter below is itself that inset, and
+     stacking padding on top of it sat the cards visibly further from the
+     group's right edge than from its left. Unlike the list above, this box is
+     inside the group's border, so its gutter has no bearing on how wide the
+     section reads. */
+  padding-inline: 8px 0;
   display: flex;
   flex-direction: column;
   gap: 6px;

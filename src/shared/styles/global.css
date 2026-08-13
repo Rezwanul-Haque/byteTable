@@ -93,6 +93,9 @@ button:focus:not(:focus-visible),
   background: color-mix(in oklab, var(--accent) 35%, transparent);
 }
 
+/* Styling `::-webkit-scrollbar` opts out of the platform's overlay scrollbars:
+   ours take real layout space inside whatever box they scroll. Anything that
+   must line up with a scrolling box has to account for that. */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;

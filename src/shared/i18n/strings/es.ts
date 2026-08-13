@@ -58,8 +58,8 @@ export const es: StringTable = {
   "connect.filter": "Filtrar conexiones…",
   "connect.new": "Nueva conexión",
   "connect.edit": "Editar conexión",
-  "connect.compare": "Comparar esquemas…",
-  "connect.openFile": "Abrir archivo SQLite…",
+  "connect.compare": "Comparar esquemas",
+  "connect.openFile": "Abrir archivo SQLite",
   "connect.allProjects": "Todos los proyectos",
 
   "set.title": "Ajustes",

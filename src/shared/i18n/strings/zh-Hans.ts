@@ -59,8 +59,8 @@ export const zhHans: StringTable = {
   "connect.filter": "筛选连接…",
   "connect.new": "新建连接",
   "connect.edit": "编辑连接",
-  "connect.compare": "比较结构…",
-  "connect.openFile": "打开 SQLite 文件…",
+  "connect.compare": "比较结构",
+  "connect.openFile": "打开 SQLite 文件",
   "connect.allProjects": "所有项目",
 
   "set.title": "设置",

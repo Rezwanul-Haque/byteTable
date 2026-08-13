@@ -59,8 +59,8 @@ export const de: StringTable = {
   "connect.filter": "Verbindungen filtern…",
   "connect.new": "Neue Verbindung",
   "connect.edit": "Verbindung bearbeiten",
-  "connect.compare": "Schemas vergleichen…",
-  "connect.openFile": "SQLite-Datei öffnen…",
+  "connect.compare": "Schemas vergleichen",
+  "connect.openFile": "SQLite-Datei öffnen",
   "connect.allProjects": "Alle Projekte",
 
   "set.title": "Einstellungen",

@@ -59,8 +59,8 @@ export const zhHant: StringTable = {
   "connect.filter": "篩選連線…",
   "connect.new": "新增連線",
   "connect.edit": "編輯連線",
-  "connect.compare": "比較結構…",
-  "connect.openFile": "開啟 SQLite 檔案…",
+  "connect.compare": "比較結構",
+  "connect.openFile": "開啟 SQLite 檔案",
   "connect.allProjects": "所有專案",
 
   "set.title": "設定",

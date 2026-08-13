@@ -59,8 +59,8 @@ export const ar: StringTable = {
   "connect.filter": "تصفية الاتصالات…",
   "connect.new": "اتصال جديد",
   "connect.edit": "تعديل الاتصال",
-  "connect.compare": "مقارنة المخططات…",
-  "connect.openFile": "فتح ملف SQLite…",
+  "connect.compare": "مقارنة المخططات",
+  "connect.openFile": "فتح ملف SQLite",
   "connect.allProjects": "كل المشاريع",
 
   "set.title": "الإعدادات",

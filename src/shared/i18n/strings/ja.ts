@@ -59,8 +59,8 @@ export const ja: StringTable = {
   "connect.filter": "接続を絞り込む…",
   "connect.new": "新しい接続",
   "connect.edit": "接続を編集",
-  "connect.compare": "スキーマを比較…",
-  "connect.openFile": "SQLite ファイルを開く…",
+  "connect.compare": "スキーマを比較",
+  "connect.openFile": "SQLite ファイルを開く",
   "connect.allProjects": "すべてのプロジェクト",
 
   "set.title": "設定",

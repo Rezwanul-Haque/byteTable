@@ -10,11 +10,11 @@
 // The tree this file builds is a MODEL: read from the statement, it assumes a
 // sequential scan per relation and splits the measured total across nodes by
 // relative work. It is the fallback, and what every engine gets before its plan
-// arrives. `withServerPlan` swaps in the real thing (explainPlanParse.ts) for
-// the engines that can produce one, keeping the measured summary figures —
-// which is why `Analysis` carries `source` and `share`: the view has to say
-// which tree is on screen, and whether its per-node figure is a measured
-// millisecond or the planner's cost estimate.
+// arrives. `withServerPlan` swaps in the real thing — fetched and parsed by the
+// Rust explain slice, for the engines that can produce one — while keeping the
+// measured summary figures. That is why `Analysis` carries `source` and
+// `share`: the view has to say which tree is on screen, and whether its
+// per-node figure is a measured millisecond or the planner's cost estimate.
 
 import type { Engine } from "../../../shared/types";
 import { EXEC_STEPS, type StepKey } from "./explainClauses";

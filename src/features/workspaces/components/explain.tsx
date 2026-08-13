@@ -172,7 +172,7 @@ function ShareBar({ pct, hot, small }: { pct: number; hot: boolean; small?: bool
  * from our own model is worth something as long as it does not pretend to have
  * come from the server.
  */
-export function PsqlPlanView({
+function PsqlPlanView({
   a,
   sql,
   handleId,
@@ -236,7 +236,11 @@ export function PsqlPlanView({
   const modelLines = psqlPlanLines(a, true);
   const modelWidth = Math.max(10, ...modelLines.map((r) => r.length));
 
-  const shown = server?.statement ?? (analyze ? "EXPLAIN ANALYZE " : "EXPLAIN ") + oneLine(sql);
+  // Before the server answers there is no statement to echo, and guessing one
+  // would print a form the engine may not even take — SQLite's is `EXPLAIN
+  // QUERY PLAN`, Postgres' analyze is `EXPLAIN (ANALYZE, BUFFERS)`. Echo the
+  // query itself until the real statement comes back with the plan.
+  const shown = server?.statement ?? oneLine(sql);
   const numeric = server ? numericColumns(server) : [];
 
   const copy = () => {

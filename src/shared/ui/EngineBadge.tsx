@@ -5,35 +5,12 @@
 
 import type { Engine } from "../types";
 
+import { ENGINE_META } from "./engineMeta";
+
 import "./EngineBadge.css";
 
 // Re-exported for back-compat — Engine now lives in src/shared/types.ts.
 export type { Engine };
-
-const ENGINE_META: Record<Engine, { label: string; short: string; color: string }> = {
-  sqlite: { label: "SQLite", short: "SQ", color: "#56b6c2" },
-  mysql: { label: "MySQL", short: "My", color: "#e2b340" },
-  postgres: { label: "PostgreSQL", short: "Pg", color: "#61afef" },
-  // SQL Server (M21): crimson `MSS` badge (prototype ui.jsx ENGINE_META),
-  // distinct from Redis's vermilion and the production/error reds.
-  mssql: { label: "MS SQL Server", short: "MSS", color: "#d1495b" },
-  // Redis (M13, REDIS_SPEC §1): vermilion, deliberately distinct from the
-  // pinkish production/error red.
-  redis: { label: "Redis", short: "Rd", color: "#e8533d" },
-  // DynamoDB (M17): AWS-blue, distinct from Postgres's lighter blue.
-  dynamodb: { label: "DynamoDB", short: "Dy", color: "#4d77ff" },
-  // MongoDB (M18): MongoDB-green, distinct from every other engine tint.
-  mongodb: { label: "MongoDB", short: "Mg", color: "#13aa52" },
-  // Cassandra (M19): the Cassandra accent (prototype ui.jsx ENGINE_META),
-  // a cyan-blue distinct from Postgres/Dynamo blues and SQLite's teal.
-  cassandra: { label: "Cassandra", short: "Cs", color: "#1798c1" },
-  // ClickHouse (M25): the ClickHouse yellow (prototype ui.jsx ENGINE_META),
-  // distinct from every other engine tint.
-  clickhouse: { label: "ClickHouse", short: "CH", color: "#faff69" },
-  // Typesense (M30): the Typesense amber (prototype ui.jsx ENGINE_META),
-  // warmer than MySQL's gold and unlike ClickHouse's acid yellow.
-  typesense: { label: "Typesense", short: "Ts", color: "#e0a458" },
-};
 
 interface EngineBadgeProps {
   engine: Engine;

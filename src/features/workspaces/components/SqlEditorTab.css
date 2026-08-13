@@ -880,6 +880,21 @@
   margin-top: 12px;
 }
 
+/* Disclosure on the left, its copy button pushed to the far side by the
+   `margin-left: auto` `.ex-copy` already carries. */
+.ex-tree-foot-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Icon-only, so it needs less horizontal padding than the labelled `.ex-copy`
+   in the raw-output bar. */
+.ex-plan-copy {
+  padding: 2px 5px;
+  flex: none;
+}
+
 .ex-raw-toggle {
   display: flex;
   align-items: center;

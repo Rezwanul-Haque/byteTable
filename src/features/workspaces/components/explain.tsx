@@ -25,6 +25,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { appErrorMessage } from "../../../shared/api/error";
+import { CopyButton } from "../../../shared/ui/CopyButton";
 import { Icon } from "../../../shared/ui/Icon";
 import { normalizeEnv, type Engine } from "../../../shared/types";
 import {
@@ -759,9 +760,20 @@ export function ExplainPanel({
               ))}
             </div>
             <div className="ex-tree-foot">
-              <button type="button" className="ex-raw-toggle" onClick={() => setRaw((r) => !r)}>
-                <Icon name={raw ? "expand_less" : "expand_more"} size={13} /> Compact text plan
-              </button>
+              <div className="ex-tree-foot-bar">
+                <button type="button" className="ex-raw-toggle" onClick={() => setRaw((r) => !r)}>
+                  <Icon name={raw ? "expand_less" : "expand_more"} size={13} /> Compact text plan
+                </button>
+                {/* Only once the plan is showing — a copy button for content
+                    that is still collapsed invites copying something unseen. */}
+                {raw ? (
+                  <CopyButton
+                    className="ex-copy ex-plan-copy"
+                    label="Copy text plan"
+                    text={rawPlanText(a)}
+                  />
+                ) : null}
+              </div>
               {raw ? <pre className="explain-plan-tree">{rawPlanText(a)}</pre> : null}
               <div className="explain-note">
                 {a.measured

@@ -16,6 +16,7 @@ import {
 } from "../browse/cassandra/api";
 import type { Workspace } from "../workspaces/types";
 import type { TermSession } from "./state";
+import { focusPromptUnlessSelecting } from "./terminalBody";
 
 interface TextLine {
   cls: string;
@@ -127,7 +128,11 @@ export function CassandraShellSession({
 
   return (
     <div className="rcli term mg-shell">
-      <div className="rcli-body term-body" ref={bodyRef} onClick={() => inputRef.current?.focus()}>
+      <div
+        className="rcli-body term-body"
+        ref={bodyRef}
+        onClick={(e) => focusPromptUnlessSelecting(e.currentTarget, inputRef.current)}
+      >
         {lines.map((l, i) =>
           "kind" in l && l.kind === "nodes" ? (
             <NodeTable key={i} nodes={l.nodes} />

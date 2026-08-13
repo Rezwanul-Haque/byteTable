@@ -39,6 +39,7 @@ import {
 import { useRedisBrowseStore } from "../browse/redis/state";
 import type { Workspace } from "../workspaces/types";
 import { usePanelStore, type TermLine, type TermSession } from "./state";
+import { focusPromptUnlessSelecting } from "./terminalBody";
 import "./SqlTerminalTab.css";
 
 /** The redis-cli quick-command preset chips (ported verbatim from the
@@ -256,7 +257,11 @@ export function RedisTerminalSession({ workspace, session, embedded }: RedisTerm
           onClick={() => setLines([])}
         />
       </div>
-      <div className="rcli-body term-body" ref={bodyRef} onClick={() => inputRef.current?.focus()}>
+      <div
+        className="rcli-body term-body"
+        ref={bodyRef}
+        onClick={(e) => focusPromptUnlessSelecting(e.currentTarget, inputRef.current)}
+      >
         {session.lines.map((l, i) =>
           "kind" in l ? null : (
             <div key={i} className={"rcli-line " + l.cls}>

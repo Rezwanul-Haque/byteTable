@@ -21,6 +21,7 @@ import { helpText, parseConsoleCommand } from "../browse/typesense/httpConsole";
 import { useTsTabsStore } from "../browse/typesense/workspaceTabs";
 import type { Workspace } from "../workspaces/types";
 import type { TermSession } from "./state";
+import { focusPromptUnlessSelecting } from "./terminalBody";
 
 interface TextLine {
   kind: "text";
@@ -130,7 +131,11 @@ export function TypesenseHttpSession({
 
   return (
     <div className="rcli term mg-shell">
-      <div className="rcli-body term-body" ref={bodyRef} onClick={() => inputRef.current?.focus()}>
+      <div
+        className="rcli-body term-body"
+        ref={bodyRef}
+        onClick={(e) => focusPromptUnlessSelecting(e.currentTarget, inputRef.current)}
+      >
         {lines.map((l, i) =>
           l.kind === "json" ? (
             <TsJson key={i} value={l.value} />

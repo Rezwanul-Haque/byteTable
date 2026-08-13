@@ -18,7 +18,8 @@ export function CopyButton({
   /** The exact text to copy. The caller stringifies its value (objects → JSON,
    *  etc.) so this component stays agnostic to the source data shape. */
   text: string;
-  /** Accessible label (`aria-label`). */
+  /** Accessible label — used for both `aria-label` and the tooltip, so a
+   *  button that copies something other than a single cell can say so. */
   label?: string;
   /** Positioning class for the button at the call site (e.g. `dg-copy`). */
   className?: string;
@@ -30,7 +31,7 @@ export function CopyButton({
     <button
       type="button"
       className={className}
-      title="Copy value"
+      title={label}
       aria-label={label}
       onClick={(e) => {
         // Never let the copy click select the row / focus the terminal input.

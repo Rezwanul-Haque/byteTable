@@ -26,6 +26,7 @@ import type { Engine } from "../../shared/types";
 import { Icon } from "../../shared/ui/Icon";
 import { IconBtn } from "../../shared/ui/IconBtn";
 import { CopyButton } from "../../shared/ui/CopyButton";
+import { useToast } from "../../shared/ui/toastContext";
 import { columnsKey, tablesKey, useIntrospectionStore } from "../introspection/state";
 import {
   suggestSql,
@@ -36,6 +37,7 @@ import {
 import { useWorkspacesStore } from "../workspaces/state";
 import type { Workspace } from "../workspaces/types";
 import { usePanelStore, type TermLine, type TermSession, type TermTextLine } from "./state";
+import { focusPromptUnlessSelecting, gridToTsv, transcriptToText } from "./terminalBody";
 import "./SqlTerminalTab.css";
 
 // ---- engine-specific shell config (ported verbatim from termConfig) ----
@@ -197,6 +199,7 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
 
   const bodyRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const toast = useToast();
 
   // --- Autocomplete schema (shares the editor's suggester, sqlSuggest) -------
   // Same source as the SQL editor: the active connection's introspected schema
@@ -974,13 +977,29 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
         <div style={{ flex: 1 }} />
         {session.timing ? <span className="term-timing">timing on</span> : null}
         <IconBtn
+          icon="content_copy"
+          size={15}
+          title="Copy all output"
+          disabled={session.lines.length === 0}
+          onClick={() => {
+            void navigator.clipboard.writeText(transcriptToText(session.lines)).then(
+              () => toast("Output copied", "ok"),
+              () => toast("Couldn't copy to clipboard", "err"),
+            );
+          }}
+        />
+        <IconBtn
           icon="delete_sweep"
           size={15}
           title="Clear (Ctrl+L)"
           onClick={() => setLines([])}
         />
       </div>
-      <div className="rcli-body term-body" ref={bodyRef} onClick={() => inputRef.current?.focus()}>
+      <div
+        className="rcli-body term-body"
+        ref={bodyRef}
+        onClick={(e) => focusPromptUnlessSelecting(e.currentTarget, inputRef.current)}
+      >
         {session.lines.map((l, i) =>
           "kind" in l ? (
             <TermGrid key={i} columns={l.columns} rows={l.rows} />
@@ -1059,55 +1078,63 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
 // than the panel (.term-grid-wrap). Ported from the prototype's TermGrid;
 // adapted to positional CellValue rows.
 //
-// Each cell has a hover copy button (mirrors the browse DataGrid's `.dg-copy`):
-// the terminal refocuses its input on any body click, which collapses a text
-// selection, so dragging to select a value is unreliable — the copy button is
-// the dependable way to grab a single value.
+// Two copy affordances, because selecting text is not always what you want:
+// each cell has a hover copy button (mirrors the browse DataGrid's `.dg-copy`)
+// for grabbing a single value, and the result as a whole has one that yields
+// the header row plus tab-separated rows.
 function TermGrid({ columns, rows }: { columns: string[]; rows: CellValue[][] }) {
   if (columns.length === 0) return null;
   return (
-    <div className="term-grid-wrap">
-      <table className="term-grid">
-        <thead>
-          <tr>
-            {columns.map((c, i) => (
-              <th key={i}>{c}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length === 0 ? (
+    <div className="term-result">
+      <CopyButton
+        className="term-grid-copy"
+        label="Copy result"
+        size={13}
+        text={gridToTsv(columns, rows)}
+      />
+      <div className="term-grid-wrap">
+        <table className="term-grid">
+          <thead>
             <tr>
-              <td className="term-grid-empty" colSpan={columns.length}>
-                0 rows
-              </td>
+              {columns.map((c, i) => (
+                <th key={i}>{c}</th>
+              ))}
             </tr>
-          ) : (
-            rows.map((r, i) => (
-              <tr key={i}>
-                {columns.map((_, j) => {
-                  const v = r[j] ?? null;
-                  if (v === null || v === undefined) {
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td className="term-grid-empty" colSpan={columns.length}>
+                  0 rows
+                </td>
+              </tr>
+            ) : (
+              rows.map((r, i) => (
+                <tr key={i}>
+                  {columns.map((_, j) => {
+                    const v = r[j] ?? null;
+                    if (v === null || v === undefined) {
+                      return (
+                        <td key={j} className="term-grid-null">
+                          NULL
+                        </td>
+                      );
+                    }
+                    const isNum = typeof v === "number";
+                    const text = typeof v === "boolean" ? (v ? "t" : "f") : String(v);
                     return (
-                      <td key={j} className="term-grid-null">
-                        NULL
+                      <td key={j} className={isNum ? "term-grid-num" : ""}>
+                        <span className="term-cell-val">{text}</span>
+                        <CopyButton className="term-copy" text={text} />
                       </td>
                     );
-                  }
-                  const isNum = typeof v === "number";
-                  const text = typeof v === "boolean" ? (v ? "t" : "f") : String(v);
-                  return (
-                    <td key={j} className={isNum ? "term-grid-num" : ""}>
-                      <span className="term-cell-val">{text}</span>
-                      <CopyButton className="term-copy" text={text} />
-                    </td>
-                  );
-                })}
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+                  })}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

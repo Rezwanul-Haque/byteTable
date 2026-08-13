@@ -230,6 +230,52 @@
 }
 
 /* ---- terminal SELECT result as a real HTML table (ported from ByteTable.html) ---- */
+
+/* Anchor for the whole-result copy button. It has to sit outside
+   `.term-grid-wrap`, which is the horizontal scroller — pinned inside, the
+   button would slide away with the columns. */
+.term-result {
+  position: relative;
+}
+
+/* Copy the entire result (header + tab-separated rows). Revealed on hover like
+   the per-cell button, and kept reachable from the keyboard via :focus-visible.
+   Overlays the header row's right edge, so it carries the header background.
+
+   `top` centres the button on that header row rather than clearing it: the row
+   is the wrap's 1px border + the th's 5px padding + its ~18px line box + 5px
+   padding ≈ 29px tall, so a 22px button sits at (29 - 22) / 2 ≈ 4px. */
+.term-grid-copy {
+  position: absolute;
+  top: 4px;
+  right: 5px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--text-faint);
+  background: var(--bg2);
+  opacity: 0;
+  transition:
+    opacity 0.1s,
+    color 0.1s;
+}
+
+.term-result:hover .term-grid-copy,
+.term-grid-copy:focus-visible {
+  opacity: 1;
+}
+
+.term-grid-copy:hover {
+  color: var(--text);
+  border-color: var(--text-faint);
+}
+
 .term-grid-wrap {
   max-width: 100%;
   overflow-x: auto;

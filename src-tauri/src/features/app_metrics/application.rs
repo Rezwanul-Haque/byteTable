@@ -119,7 +119,18 @@ impl MetricsSampler {
     /// One refresh pass, widening to the whole process table only on the
     /// discovery tick (or before we know any PIDs at all).
     fn refresh(&mut self) {
-        let kind = ProcessRefreshKind::nothing().with_cpu().with_memory();
+        // `without_tasks` is load-bearing, not an optimization. On Linux sysinfo
+        // lists every *thread* as a process of its own (`/proc/<pid>/task/*`)
+        // whose parent is the owning process — so the discovery walk below
+        // adopted all ~50 of our threads, and `read()` added the process's whole
+        // RSS once per thread: a 104 MB app reported as 9.3 GB. macOS and
+        // Windows have no equivalent, which is why only Linux was wrong. It is
+        // also much cheaper: with tasks on, a discovery tick reads the task
+        // directory of every process on the machine.
+        let kind = ProcessRefreshKind::nothing()
+            .with_cpu()
+            .with_memory()
+            .without_tasks();
         let discovering = self.pids.is_empty() || self.ticks.is_multiple_of(DISCOVERY_EVERY);
 
         if discovering {
@@ -148,6 +159,13 @@ impl MetricsSampler {
         let mut pids = vec![self.self_pid];
         for (pid, process) in self.system.processes() {
             if *pid == self.self_pid {
+                continue;
+            }
+            // A thread shares its process's address space and reports that
+            // process's RSS, so counting one would double-count memory we have
+            // already added. `refresh` asks for no tasks, but the check stays:
+            // it is the invariant, and it costs nothing.
+            if process.thread_kind().is_some() {
                 continue;
             }
             let mut parent = process.parent();
@@ -196,5 +214,50 @@ mod tests {
         let mut sampler = MetricsSampler::new();
         let metrics = sampler.read();
         assert_eq!(metrics.webview_attributed, metrics.process_count > 1);
+    }
+
+    /// Threads must never enter the counted set. On Linux sysinfo reports each
+    /// thread as a process parented to ours, and every one of them reports the
+    /// whole process's RSS — so adopting them multiplied the memory readout by
+    /// the thread count. Live threads are held open here so the platform has
+    /// tasks to offer while the sampler discovers.
+    #[test]
+    fn threads_are_never_counted_as_processes() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        let stop = Arc::new(AtomicBool::new(false));
+        let threads: Vec<_> = (0..8)
+            .map(|_| {
+                let stop = Arc::clone(&stop);
+                std::thread::spawn(move || {
+                    while !stop.load(Ordering::Relaxed) {
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                })
+            })
+            .collect();
+
+        let mut sampler = MetricsSampler::new();
+        sampler.read();
+        let offenders: Vec<_> = sampler
+            .pids
+            .iter()
+            .filter(|pid| {
+                sampler
+                    .system
+                    .process(**pid)
+                    .is_some_and(|p| p.thread_kind().is_some())
+            })
+            .collect();
+
+        stop.store(true, Ordering::Relaxed);
+        for thread in threads {
+            let _ = thread.join();
+        }
+        assert!(
+            offenders.is_empty(),
+            "threads counted as processes: {offenders:?}"
+        );
     }
 }

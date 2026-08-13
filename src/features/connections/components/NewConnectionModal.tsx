@@ -49,6 +49,8 @@ import {
 } from "../api";
 import { pickPrivateKeyFile, pickSqliteFile } from "../dialog";
 import { useConnectionsStore } from "../state";
+import type { ImportedConnection } from "../urlImport";
+import { ImportConnectionModal } from "./ImportConnectionModal";
 import "./NewConnectionModal.css";
 
 // Picker cards in the prototype's ENGINE_META order (labels match the badge).
@@ -582,6 +584,29 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
   // Convenience: a params-relevant field edit (resets the verdict).
   const field = (patch: Partial<FormState>) => dispatch({ type: "field", patch });
 
+  // "Import URL": the paste dialog is a separate modal (it stacks on top of
+  // this one), so this only holds whether it is open.
+  const [importing, setImporting] = useState(false);
+
+  /** Fill the form from a parsed connection string (see `../urlImport`). */
+  const applyUrl = (parsed: ImportedConnection) => {
+    const { engine: next, port: urlPort, ...rest } = parsed;
+    // Switch the engine through its own action first, so the new engine's
+    // default user lands before the URL's own values overwrite it. The port is
+    // set explicitly (that action only re-defaults an untouched one, and an
+    // imported URL should never keep the previous engine's port).
+    const nextPort = urlPort ?? DEFAULT_PORTS[next];
+    dispatch({ type: "engine", engine: next });
+    field({
+      ...rest,
+      ...(nextPort ? { port: nextPort, portTouched: !!urlPort } : {}),
+      ...(rest.user ? { userTouched: true } : {}),
+      section: "general",
+      // Name it after what it points at, unless the user already named it.
+      ...(name.trim() ? {} : { name: rest.db || rest.host || "" }),
+    });
+  };
+
   // ARIA tabs wiring (tab ↔ tabpanel) plus refs for arrow-key focus moves.
   const tabsBaseId = useId();
   const generalTabId = tabsBaseId + "-tab-general";
@@ -931,591 +956,307 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
   };
 
   return (
-    <Modal label={edit ? "Edit connection" : "New connection"} onClose={onClose}>
-      <ModalTitle>
-        <span>{edit ? t("connect.edit") : t("connect.new")}</span>
-        <IconBtn icon="close" onClick={onClose} title="Close" />
-      </ModalTitle>
+    <>
+      <Modal label={edit ? "Edit connection" : "New connection"} onClose={onClose}>
+        <ModalTitle>
+          <span>{edit ? t("connect.edit") : t("connect.new")}</span>
+          {/* Import URL + close share the right end of the title row. */}
+          <span className="import-open-row">
+            <Btn variant="tonal" small icon="input" onClick={() => setImporting(true)}>
+              Import URL
+            </Btn>
+            <IconBtn icon="close" onClick={onClose} title="Close" />
+          </span>
+        </ModalTitle>
 
-      <div className="form-grid name-grid">
-        <label>
-          Name
-          <input
-            value={name}
-            onChange={(e) => field({ name: e.target.value })}
-            placeholder="my_database"
-            spellCheck={false}
-            autoFocus
+        <div className="form-grid name-grid">
+          <label>
+            Name
+            <input
+              value={name}
+              onChange={(e) => field({ name: e.target.value })}
+              placeholder="my_database"
+              spellCheck={false}
+              autoFocus
+            />
+          </label>
+          <ProjectField
+            value={project}
+            onChange={(v) => dispatch({ type: "project", project: v })}
+            known={knownProjects}
           />
-        </label>
-        <ProjectField
-          value={project}
-          onChange={(v) => dispatch({ type: "project", project: v })}
-          known={knownProjects}
-        />
-      </div>
-
-      <div className="ee-block">
-        <span className="form-section-label">Engine</span>
-        <div className="engine-picker" role="radiogroup" aria-label="Database engine">
-          {ENGINES.map((e) => (
-            <button
-              key={e.engine}
-              type="button"
-              role="radio"
-              aria-checked={engine === e.engine}
-              className={"engine-choice" + (engine === e.engine ? " active" : "")}
-              onClick={() => pickEngine(e.engine)}
-            >
-              <EngineBadge engine={e.engine} size={28} />
-              <span>{e.label}</span>
-            </button>
-          ))}
         </div>
-      </div>
 
-      <div className="ee-block">
-        <span className="form-section-label" id={envLabelId}>
-          Environment
-        </span>
-        <div className="env-seg" role="radiogroup" aria-labelledby={envLabelId}>
-          {CONN_ENVS.map((e) => {
-            const isActive = env === e.id;
-            return (
+        <div className="ee-block">
+          <span className="form-section-label">Engine</span>
+          <div className="engine-picker" role="radiogroup" aria-label="Database engine">
+            {ENGINES.map((e) => (
               <button
-                key={e.id}
+                key={e.engine}
                 type="button"
                 role="radio"
-                aria-checked={isActive}
-                className={"env-seg-btn" + (isActive ? " active" : "")}
-                style={{
-                  borderColor: isActive ? envColors[e.id] : "var(--border)",
-                  background: isActive ? envColors[e.id] + "16" : "var(--bg1)",
-                  color: isActive ? "var(--text)" : "var(--text-dim)",
-                }}
-                onClick={() => dispatch({ type: "env", env: e.id })}
+                aria-checked={engine === e.engine}
+                className={"engine-choice" + (engine === e.engine ? " active" : "")}
+                onClick={() => pickEngine(e.engine)}
               >
-                <span className="env-dot" style={{ background: envColors[e.id] }} />
-                <Icon name={e.icon} size={14} />
-                {e.label}
+                <EngineBadge engine={e.engine} size={28} />
+                <span>{e.label}</span>
               </button>
-            );
-          })}
+            ))}
+          </div>
         </div>
-        <div className="env-colors">
-          <span className="env-colors-label">Color</span>
-          {ENV_SWATCHES.map((c) => (
+
+        <div className="ee-block">
+          <span className="form-section-label" id={envLabelId}>
+            Environment
+          </span>
+          <div className="env-seg" role="radiogroup" aria-labelledby={envLabelId}>
+            {CONN_ENVS.map((e) => {
+              const isActive = env === e.id;
+              return (
+                <button
+                  key={e.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={isActive}
+                  className={"env-seg-btn" + (isActive ? " active" : "")}
+                  style={{
+                    borderColor: isActive ? envColors[e.id] : "var(--border)",
+                    background: isActive ? envColors[e.id] + "16" : "var(--bg1)",
+                    color: isActive ? "var(--text)" : "var(--text-dim)",
+                  }}
+                  onClick={() => dispatch({ type: "env", env: e.id })}
+                >
+                  <span className="env-dot" style={{ background: envColors[e.id] }} />
+                  <Icon name={e.icon} size={14} />
+                  {e.label}
+                </button>
+              );
+            })}
+          </div>
+          <div className="env-colors">
+            <span className="env-colors-label">Color</span>
+            {ENV_SWATCHES.map((c) => (
+              <button
+                key={c}
+                type="button"
+                className={"env-swatch" + (envColor === c ? " active" : "")}
+                style={{ background: c }}
+                title={c}
+                aria-label={"Set color " + c}
+                aria-pressed={envColor === c}
+                onClick={() => dispatch({ type: "envColor", color: c })}
+              />
+            ))}
+          </div>
+          {env === "production" ? (
+            <div className="env-warn" role="alert">
+              <Icon name="gpp_maybe" size={15} /> Production — destructive actions (DROP, DELETE,
+              TRUNCATE, FLUSHDB) will require confirmation.
+            </div>
+          ) : null}
+        </div>
+
+        {!isFileBased && !isDynamo && !isMongo && !isCassandra ? (
+          <div
+            className="modal-tabs"
+            role="tablist"
+            aria-label="Server connection settings"
+            onKeyDown={onTablistKeyDown}
+          >
             <button
-              key={c}
+              ref={generalTabRef}
               type="button"
-              className={"env-swatch" + (envColor === c ? " active" : "")}
-              style={{ background: c }}
-              title={c}
-              aria-label={"Set color " + c}
-              aria-pressed={envColor === c}
-              onClick={() => dispatch({ type: "envColor", color: c })}
-            />
-          ))}
-        </div>
-        {env === "production" ? (
-          <div className="env-warn" role="alert">
-            <Icon name="gpp_maybe" size={15} /> Production — destructive actions (DROP, DELETE,
-            TRUNCATE, FLUSHDB) will require confirmation.
+              role="tab"
+              id={generalTabId}
+              aria-selected={section === "general"}
+              aria-controls={generalPanelId}
+              tabIndex={section === "general" ? 0 : -1}
+              className={"modal-tab" + (section === "general" ? " active" : "")}
+              onClick={() => dispatch({ type: "section", section: "general" })}
+            >
+              General
+            </button>
+            <button
+              ref={tunnelTabRef}
+              type="button"
+              role="tab"
+              id={tunnelTabId}
+              aria-selected={section === "tunnel"}
+              aria-controls={tunnelPanelId}
+              tabIndex={section === "tunnel" ? 0 : -1}
+              className={"modal-tab" + (section === "tunnel" ? " active" : "")}
+              onClick={() => dispatch({ type: "section", section: "tunnel" })}
+            >
+              SSH tunnel {useSsh ? <span className="modal-tab-dot" /> : null}
+            </button>
           </div>
         ) : null}
-      </div>
 
-      {!isFileBased && !isDynamo && !isMongo && !isCassandra ? (
-        <div
-          className="modal-tabs"
-          role="tablist"
-          aria-label="Server connection settings"
-          onKeyDown={onTablistKeyDown}
-        >
-          <button
-            ref={generalTabRef}
-            type="button"
-            role="tab"
-            id={generalTabId}
-            aria-selected={section === "general"}
-            aria-controls={generalPanelId}
-            tabIndex={section === "general" ? 0 : -1}
-            className={"modal-tab" + (section === "general" ? " active" : "")}
-            onClick={() => dispatch({ type: "section", section: "general" })}
-          >
-            General
-          </button>
-          <button
-            ref={tunnelTabRef}
-            type="button"
-            role="tab"
-            id={tunnelTabId}
-            aria-selected={section === "tunnel"}
-            aria-controls={tunnelPanelId}
-            tabIndex={section === "tunnel" ? 0 : -1}
-            className={"modal-tab" + (section === "tunnel" ? " active" : "")}
-            onClick={() => dispatch({ type: "section", section: "tunnel" })}
-          >
-            SSH tunnel {useSsh ? <span className="modal-tab-dot" /> : null}
-          </button>
-        </div>
-      ) : null}
-
-      {isDynamo ? (
-        <div className="form-grid">
-          <div className="span-2 seg ddb-mode-seg">
-            <button
-              type="button"
-              className={"seg-btn" + (ddbMode === "aws" ? " active" : "")}
-              onClick={() => field({ ddbMode: "aws" })}
-            >
-              <Icon name="cloud" size={14} /> AWS
-            </button>
-            <button
-              type="button"
-              className={"seg-btn" + (ddbMode === "local" ? " active" : "")}
-              onClick={() => field({ ddbMode: "local" })}
-            >
-              <Icon name="hard_drive" size={14} /> Local endpoint
-            </button>
-          </div>
-          {ddbMode === "aws" ? (
-            <>
-              {/* Select fields use a div + span, NOT a <label>: a <label>
+        {isDynamo ? (
+          <div className="form-grid">
+            <div className="span-2 seg ddb-mode-seg">
+              <button
+                type="button"
+                className={"seg-btn" + (ddbMode === "aws" ? " active" : "")}
+                onClick={() => field({ ddbMode: "aws" })}
+              >
+                <Icon name="cloud" size={14} /> AWS
+              </button>
+              <button
+                type="button"
+                className={"seg-btn" + (ddbMode === "local" ? " active" : "")}
+                onClick={() => field({ ddbMode: "local" })}
+              >
+                <Icon name="hard_drive" size={14} /> Local endpoint
+              </button>
+            </div>
+            {ddbMode === "aws" ? (
+              <>
+                {/* Select fields use a div + span, NOT a <label>: a <label>
                   natively forwards an inner click to its first control (the
                   trigger), reopening the just-closed popover — React's synthetic
                   stopPropagation can't prevent that native behavior. Mirrors
                   ProjectField. */}
-              <div className="form-field span-2">
-                <span className="form-field-label">Region</span>
-                <Select
-                  className="sel-block"
-                  aria-label="AWS region"
-                  value={region}
-                  options={AWS_REGIONS.map((r) => ({ value: r, label: r }))}
-                  onChange={(v) => field({ region: v })}
-                />
-              </div>
-              <div className="form-field">
-                <span className="form-field-label">Credentials</span>
-                <Select
-                  className="sel-block"
-                  aria-label="Credential mode"
-                  value={awsAuth}
-                  options={[
-                    { value: "profile", label: "Shared profile" },
-                    { value: "keys", label: "Access keys" },
-                  ]}
-                  onChange={(v) => field({ awsAuth: v as "profile" | "keys" })}
-                />
-              </div>
-              {awsAuth === "profile" ? (
-                <label>
-                  Profile
-                  <input
-                    value={awsProfile}
-                    onChange={(e) => field({ awsProfile: e.target.value })}
-                    placeholder="default"
-                    spellCheck={false}
+                <div className="form-field span-2">
+                  <span className="form-field-label">Region</span>
+                  <Select
+                    className="sel-block"
+                    aria-label="AWS region"
+                    value={region}
+                    options={AWS_REGIONS.map((r) => ({ value: r, label: r }))}
+                    onChange={(v) => field({ region: v })}
                   />
-                </label>
-              ) : (
-                <label>
-                  Access key ID
-                  <input
-                    value={awsAccessKeyId}
-                    onChange={(e) => field({ awsAccessKeyId: e.target.value })}
-                    placeholder="AKIA…"
-                    spellCheck={false}
-                  />
-                </label>
-              )}
-              {awsAuth === "keys" ? (
-                // The secret access key is sent transiently and stored in the OS
-                // keychain on Save (like the SQL password) — never in params.
-                <label className="span-2">
-                  Secret access key
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => field({ password: e.target.value })}
-                    placeholder="••••••••••••"
-                  />
-                </label>
-              ) : null}
-              <div className="span-2 form-note">
-                <Icon name="cloud" size={14} />{" "}
-                <span>
-                  Connects to DynamoDB in {region}. Credentials are resolved from your{" "}
-                  {awsAuth === "profile" ? "~/.aws/credentials profile" : "access keys"} and never
-                  leave this machine.
-                </span>
-              </div>
-            </>
-          ) : (
-            <>
-              <label className="span-2">
-                Endpoint URL
-                <input
-                  value={ddbEndpoint}
-                  onChange={(e) => field({ ddbEndpoint: e.target.value })}
-                  placeholder="http://localhost:8000"
-                  spellCheck={false}
-                />
-              </label>
-              <div className="form-field span-2">
-                <span className="form-field-label">
-                  <span className="lbl-row">
-                    Region <span className="opt-tag">label only</span>
-                  </span>
-                </span>
-                <Select
-                  className="sel-block"
-                  aria-label="Region label"
-                  value={region}
-                  options={AWS_REGIONS.map((r) => ({ value: r, label: r }))}
-                  onChange={(v) => field({ region: v })}
-                />
-              </div>
-              <div className="span-2 form-note">
-                <Icon name="hard_drive" size={14} />{" "}
-                <span>
-                  DynamoDB Local / LocalStack — region is just a label; any access keys work.
-                </span>
-              </div>
-            </>
-          )}
-        </div>
-      ) : isMongo ? (
-        <div className="form-grid">
-          <div className="span-2 seg ddb-mode-seg">
-            <button
-              type="button"
-              className={"seg-btn" + (mongoConnMode === "fields" ? " active" : "")}
-              onClick={() => field({ mongoConnMode: "fields" })}
-            >
-              <Icon name="dns" size={14} /> Host / port
-            </button>
-            <button
-              type="button"
-              className={"seg-btn" + (mongoConnMode === "uri" ? " active" : "")}
-              onClick={() => field({ mongoConnMode: "uri" })}
-            >
-              <Icon name="link" size={14} /> Connection string
-            </button>
-          </div>
-          {mongoConnMode === "uri" ? (
-            <>
-              <label className="span-2">
-                Connection string
-                <input
-                  value={mongoUri}
-                  onChange={(e) => field({ mongoUri: e.target.value })}
-                  placeholder="mongodb+srv://user:pass@cluster.mongodb.net/byteshop"
-                  spellCheck={false}
-                />
-              </label>
-              <div className="span-2 form-note">
-                <Icon name="link" size={14} />{" "}
-                <span>
-                  Both <code>mongodb://</code> and <code>mongodb+srv://</code> (Atlas SRV) URIs are
-                  supported. Credentials are parsed locally and never leave this machine.
-                </span>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="form-field">
-                <span className="form-field-label">TLS mode</span>
-                <Select
-                  className="sel-block"
-                  aria-label="TLS mode"
-                  value={tls}
-                  options={TLS_MODES.map((mode) => ({ value: mode, label: mode }))}
-                  onChange={(v) => field({ tls: v })}
-                />
-              </div>
-              <label>
-                Host
-                <input
-                  value={host}
-                  onChange={(e) => field({ host: e.target.value })}
-                  spellCheck={false}
-                />
-              </label>
-              <label>
-                Port
-                <input
-                  value={port}
-                  onChange={(e) => field({ port: e.target.value, portTouched: true })}
-                  spellCheck={false}
-                />
-              </label>
-              <label>
-                <span className="lbl-row">
-                  Database <span className="opt-tag">optional</span>
-                </span>
-                <input
-                  value={db}
-                  onChange={(e) => field({ db: e.target.value })}
-                  placeholder="byteshop"
-                  spellCheck={false}
-                />
-              </label>
-              <label>
-                <span className="lbl-row">
-                  User <span className="opt-tag">optional</span>
-                </span>
-                <input
-                  value={user}
-                  onChange={(e) => field({ user: e.target.value, userTouched: true })}
-                  placeholder="admin"
-                  spellCheck={false}
-                />
-              </label>
-              <label>
-                <span className="lbl-row">
-                  Password <span className="opt-tag">optional</span>
-                </span>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => field({ password: e.target.value })}
-                  placeholder="••••••••"
-                />
-              </label>
-            </>
-          )}
-        </div>
-      ) : isCassandra ? (
-        <div className="form-grid">
-          <div className="form-field">
-            <span className="form-field-label">TLS mode</span>
-            <Select
-              className="sel-block"
-              aria-label="TLS mode"
-              value={tls}
-              options={TLS_MODES.map((mode) => ({ value: mode, label: mode }))}
-              onChange={(v) => field({ tls: v })}
-            />
-          </div>
-          <label>
-            <span className="lbl-row">
-              Host
-              <span
-                className="lbl-info"
-                tabIndex={0}
-                role="img"
-                aria-label="Cassandra connects to contact points and discovers the rest of the ring. Set the host(s), the native-protocol port (9042), and the local datacenter for token-aware routing."
-                data-tip="Cassandra connects to contact points and discovers the rest of the ring. Set the host(s), the native-protocol port (9042), and the local datacenter for token-aware routing."
-              >
-                <Icon name="info" size={13} />
-              </span>
-            </span>
-            <input
-              value={host}
-              onChange={(e) => field({ host: e.target.value })}
-              placeholder="127.0.0.1"
-              spellCheck={false}
-            />
-          </label>
-          <label>
-            Port
-            <input
-              value={port}
-              onChange={(e) => field({ port: e.target.value, portTouched: true })}
-              spellCheck={false}
-            />
-          </label>
-          <label>
-            <span className="lbl-row">
-              Keyspace <span className="opt-tag">optional</span>
-            </span>
-            <input
-              value={db}
-              onChange={(e) => field({ db: e.target.value })}
-              placeholder="byteshop"
-              spellCheck={false}
-            />
-          </label>
-          <label>
-            <span className="lbl-row">
-              Local datacenter <span className="opt-tag">optional</span>
-            </span>
-            <input
-              value={datacenter}
-              onChange={(e) => field({ datacenter: e.target.value })}
-              placeholder="dc1"
-              spellCheck={false}
-            />
-          </label>
-          <label>
-            <span className="lbl-row">
-              User <span className="opt-tag">optional</span>
-            </span>
-            <input
-              value={user}
-              onChange={(e) => field({ user: e.target.value, userTouched: true })}
-              placeholder="cassandra"
-              spellCheck={false}
-            />
-          </label>
-          <label>
-            <span className="lbl-row">
-              Password <span className="opt-tag">optional</span>
-            </span>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => field({ password: e.target.value })}
-              placeholder="••••••••"
-            />
-          </label>
-        </div>
-      ) : isFileBased ? (
-        <div className="form-grid">
-          <label className="span-2">
-            Database file
-            <div className="file-row">
-              <input
-                // Display the path with the home dir collapsed to `~`, but keep
-                // the absolute path as the stored value (expand on every edit) so
-                // save / test / connect all see a real filesystem path.
-                value={tildify(file, home)}
-                onChange={(e) => field({ file: expandTilde(e.target.value, home) })}
-                placeholder="~/path/to/database.db"
-                spellCheck={false}
-              />
-              <Btn variant="tonal" small onClick={() => void browseDatabaseFile()}>
-                Browse…
-              </Btn>
-            </div>
-          </label>
-          <div className="span-2 form-note">
-            <Icon name="hard_drive" size={14} /> SQLite is a local file — no network, tunnel, or TLS
-            needed.
-          </div>
-        </div>
-      ) : (
-        // Both server panels stay mounted; the inactive one is hidden via the
-        // `hidden` attribute so the controlled inputs keep focus/values across
-        // General ↔ SSH switches (the Modal focus trap skips hidden elements).
-        <>
-          <div
-            className="form-grid"
-            role="tabpanel"
-            id={generalPanelId}
-            aria-labelledby={generalTabId}
-            hidden={section !== "general"}
-          >
-            {isTypesense ? (
-              // Typesense field set (M30 Task 5b). Deliberately shows NOTHING
-              // about users, passwords or TLS modes: Typesense has no user or
-              // password (one API key header) and no TLS negotiation (only a
-              // scheme). The two long explanatory form-notes the other engines
-              // use are replaced by InfoHint bubbles, so the panel stays short.
-              <>
-                {/* Protocol + Host + Port are one URL, so they read as one row
-                    rather than three. The scheme is a two-option toggle and was
-                    wasting a full-width row on its own. */}
-                <div className="span-2 ts-endpoint">
-                  <div className="form-field">
-                    <span className="form-field-label" id={protocolLabelId}>
-                      Protocol
-                    </span>
-                    {/* A segmented control, not a native select: with exactly
-                        two mutually-exclusive options a dropdown hides half the
-                        choice behind a click. */}
-                    <div
-                      className="seg proto-seg"
-                      role="radiogroup"
-                      aria-labelledby={protocolLabelId}
-                    >
-                      {(["http", "https"] as const).map((scheme) => (
-                        <button
-                          key={scheme}
-                          type="button"
-                          role="radio"
-                          aria-checked={protocol === scheme}
-                          className={"seg-btn" + (protocol === scheme ? " active" : "")}
-                          onClick={() => field({ protocol: scheme })}
-                        >
-                          {scheme}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <label>
-                    <span className="lbl-row">
-                      Host
-                      <InfoHint text="Typesense is an HTTP search API — point this at any node of the cluster. The default port is 8108. Collections replace databases, and there is no user or password: a single API key authenticates every request." />
-                    </span>
-                    <input
-                      value={host}
-                      onChange={(e) => field({ host: e.target.value })}
-                      placeholder="localhost"
-                      spellCheck={false}
-                    />
-                  </label>
-                  <label>
-                    Port
-                    <input
-                      value={port}
-                      onChange={(e) => field({ port: e.target.value, portTouched: true })}
-                      spellCheck={false}
-                    />
-                  </label>
                 </div>
-                <label>
-                  <span className="lbl-row">
-                    Default collection <span className="opt-tag">optional</span>
-                  </span>
-                  <input
-                    value={db}
-                    onChange={(e) => field({ db: e.target.value })}
-                    placeholder="products"
-                    spellCheck={false}
+                <div className="form-field">
+                  <span className="form-field-label">Credentials</span>
+                  <Select
+                    className="sel-block"
+                    aria-label="Credential mode"
+                    value={awsAuth}
+                    options={[
+                      { value: "profile", label: "Shared profile" },
+                      { value: "keys", label: "Access keys" },
+                    ]}
+                    onChange={(v) => field({ awsAuth: v as "profile" | "keys" })}
                   />
-                </label>
-                <label>
-                  <span className="lbl-row">
-                    Other nodes <span className="opt-tag">optional</span>
-                    <InfoHint text="Comma-separated host:port of the other nodes in this cluster, shown in the dashboard's node table. Typesense has no cluster-membership endpoint, so a client can only display the peers it is told about — its own clients take the same list. Purely informational: every read and write still goes to the host above." />
+                </div>
+                {awsAuth === "profile" ? (
+                  <label>
+                    Profile
+                    <input
+                      value={awsProfile}
+                      onChange={(e) => field({ awsProfile: e.target.value })}
+                      placeholder="default"
+                      spellCheck={false}
+                    />
+                  </label>
+                ) : (
+                  <label>
+                    Access key ID
+                    <input
+                      value={awsAccessKeyId}
+                      onChange={(e) => field({ awsAccessKeyId: e.target.value })}
+                      placeholder="AKIA…"
+                      spellCheck={false}
+                    />
+                  </label>
+                )}
+                {awsAuth === "keys" ? (
+                  // The secret access key is sent transiently and stored in the OS
+                  // keychain on Save (like the SQL password) — never in params.
+                  <label className="span-2">
+                    Secret access key
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(e) => field({ password: e.target.value })}
+                      placeholder="••••••••••••"
+                    />
+                  </label>
+                ) : null}
+                <div className="span-2 form-note">
+                  <Icon name="cloud" size={14} />{" "}
+                  <span>
+                    Connects to DynamoDB in {region}. Credentials are resolved from your{" "}
+                    {awsAuth === "profile" ? "~/.aws/credentials profile" : "access keys"} and never
+                    leave this machine.
                   </span>
-                  <input
-                    value={tsNodes}
-                    onChange={(e) => field({ tsNodes: e.target.value })}
-                    placeholder="localhost:8118, localhost:8128"
-                    spellCheck={false}
-                  />
-                </label>
-                {/* The API key is sent transiently to test/open and stored in the
-                    OS keychain on Save — never in params, never re-rendered. In
-                    edit mode the field stays empty with a masked placeholder, so
-                    leaving it alone keeps the stored key. */}
-                <label className="span-2">
-                  <span className="lbl-row">
-                    API key <span className="qual-tag">X-TYPESENSE-API-KEY</span>
-                    <InfoHint text="Sent as a request header. An admin key unlocks the schema, curation and API-key views; a search-only key limits the workspace to querying the collections that key allows — and cannot list collections at all, so the default collection above becomes the only one shown." />
-                  </span>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => field({ password: e.target.value })}
-                    placeholder="••••••••••••"
-                  />
-                </label>
+                </div>
               </>
             ) : (
               <>
-                <label>
-                  Host
+                <label className="span-2">
+                  Endpoint URL
                   <input
-                    value={host}
-                    onChange={(e) => field({ host: e.target.value })}
+                    value={ddbEndpoint}
+                    onChange={(e) => field({ ddbEndpoint: e.target.value })}
+                    placeholder="http://localhost:8000"
                     spellCheck={false}
                   />
                 </label>
+                <div className="form-field span-2">
+                  <span className="form-field-label">
+                    <span className="lbl-row">
+                      Region <span className="opt-tag">label only</span>
+                    </span>
+                  </span>
+                  <Select
+                    className="sel-block"
+                    aria-label="Region label"
+                    value={region}
+                    options={AWS_REGIONS.map((r) => ({ value: r, label: r }))}
+                    onChange={(v) => field({ region: v })}
+                  />
+                </div>
+                <div className="span-2 form-note">
+                  <Icon name="hard_drive" size={14} />{" "}
+                  <span>
+                    DynamoDB Local / LocalStack — region is just a label; any access keys work.
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
+        ) : isMongo ? (
+          <div className="form-grid">
+            <div className="span-2 seg ddb-mode-seg">
+              <button
+                type="button"
+                className={"seg-btn" + (mongoConnMode === "fields" ? " active" : "")}
+                onClick={() => field({ mongoConnMode: "fields" })}
+              >
+                <Icon name="dns" size={14} /> Host / port
+              </button>
+              <button
+                type="button"
+                className={"seg-btn" + (mongoConnMode === "uri" ? " active" : "")}
+                onClick={() => field({ mongoConnMode: "uri" })}
+              >
+                <Icon name="link" size={14} /> Connection string
+              </button>
+            </div>
+            {mongoConnMode === "uri" ? (
+              <>
+                <label className="span-2">
+                  Connection string
+                  <input
+                    value={mongoUri}
+                    onChange={(e) => field({ mongoUri: e.target.value })}
+                    placeholder="mongodb+srv://user:pass@cluster.mongodb.net/byteshop"
+                    spellCheck={false}
+                  />
+                </label>
+                <div className="span-2 form-note">
+                  <Icon name="link" size={14} />{" "}
+                  <span>
+                    Both <code>mongodb://</code> and <code>mongodb+srv://</code> (Atlas SRV) URIs
+                    are supported. Credentials are parsed locally and never leave this machine.
+                  </span>
+                </div>
+              </>
+            ) : (
+              <>
                 <div className="form-field">
                   <span className="form-field-label">TLS mode</span>
                   <Select
@@ -1527,6 +1268,14 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
                   />
                 </div>
                 <label>
+                  Host
+                  <input
+                    value={host}
+                    onChange={(e) => field({ host: e.target.value })}
+                    spellCheck={false}
+                  />
+                </label>
+                <label>
                   Port
                   <input
                     value={port}
@@ -1535,61 +1284,27 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
                   />
                 </label>
                 <label>
-                  {isRedis ? (
-                    "DB index"
-                  ) : (
-                    <span className="lbl-row">
-                      Database{" "}
-                      {engine === "postgres" || engine === "mssql" ? null : (
-                        <span className="opt-tag">optional</span>
-                      )}
-                    </span>
-                  )}
+                  <span className="lbl-row">
+                    Database <span className="opt-tag">optional</span>
+                  </span>
                   <input
                     value={db}
                     onChange={(e) => field({ db: e.target.value })}
-                    placeholder={
-                      isRedis
-                        ? "0"
-                        : engine === "postgres"
-                          ? "postgres"
-                          : engine === "mssql"
-                            ? "byteshop"
-                            : isClickHouse
-                              ? "default"
-                              : "mysql"
-                    }
+                    placeholder="byteshop"
                     spellCheck={false}
                   />
                 </label>
                 <label>
-                  {isRedis ? (
-                    "ACL user"
-                  ) : (
-                    <span className="lbl-row">
-                      User <span className="opt-tag">optional</span>
-                    </span>
-                  )}
+                  <span className="lbl-row">
+                    User <span className="opt-tag">optional</span>
+                  </span>
                   <input
                     value={user}
                     onChange={(e) => field({ user: e.target.value, userTouched: true })}
-                    placeholder={
-                      isRedis
-                        ? "default"
-                        : engine === "mssql"
-                          ? "sa"
-                          : engine === "postgres"
-                            ? "postgres"
-                            : isClickHouse
-                              ? "default"
-                              : "root"
-                    }
+                    placeholder="admin"
                     spellCheck={false}
                   />
                 </label>
-                {/* The password is sent transiently to test/open and stored in the
-              OS keychain on Save (M12 Task 3); it is NEVER part of the saved
-              params or the registry file. */}
                 <label>
                   <span className="lbl-row">
                     Password <span className="opt-tag">optional</span>
@@ -1601,164 +1316,489 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
                     placeholder="••••••••"
                   />
                 </label>
-                {isClickHouse ? (
-                  <div className="span-2 form-note">
-                    <Icon name="bolt" size={14} /> ClickHouse is a columnar OLAP store. Use the HTTP
-                    port (8123) or the secure HTTPS port (8443) with TLS. Databases group tables;
-                    there are no foreign keys — tables use an <code>ENGINE</code> +{" "}
-                    <code>ORDER BY</code> sort key.
-                  </div>
-                ) : null}
               </>
             )}
           </div>
-          <div
-            className="form-grid"
-            role="tabpanel"
-            id={tunnelPanelId}
-            aria-labelledby={tunnelTabId}
-            hidden={section !== "tunnel"}
-          >
-            <div className="span-2 ssh-toggle-row">
-              <label className="switch-label" htmlFor={sshToggleId}>
-                <input
-                  id={sshToggleId}
-                  type="checkbox"
-                  checked={useSsh}
-                  onChange={(e) => field({ useSsh: e.target.checked })}
-                  className="switch-input"
-                />
-                <span className={"switch" + (useSsh ? " on" : "")}>
-                  <span className="switch-knob" />
-                </span>
-                Connect through an SSH tunnel
-              </label>
+        ) : isCassandra ? (
+          <div className="form-grid">
+            <div className="form-field">
+              <span className="form-field-label">TLS mode</span>
+              <Select
+                className="sel-block"
+                aria-label="TLS mode"
+                value={tls}
+                options={TLS_MODES.map((mode) => ({ value: mode, label: mode }))}
+                onChange={(v) => field({ tls: v })}
+              />
             </div>
-            {useSsh ? (
-              <>
-                <label>
-                  SSH host
-                  <input
-                    value={sshHost}
-                    onChange={(e) => field({ sshHost: e.target.value })}
-                    placeholder="bastion.example.com"
-                    spellCheck={false}
-                  />
-                </label>
-                <label>
-                  SSH port
-                  <input
-                    value={sshPort}
-                    onChange={(e) => field({ sshPort: e.target.value })}
-                    spellCheck={false}
-                  />
-                </label>
-                <label>
-                  SSH user
-                  <input
-                    value={sshUser}
-                    onChange={(e) => field({ sshUser: e.target.value })}
-                    placeholder="deploy"
-                    spellCheck={false}
-                  />
-                </label>
-                <div className="form-field">
-                  <span className="form-field-label">Auth method</span>
-                  <Select
-                    className="sel-block"
-                    aria-label="Auth method"
-                    value={sshAuth}
-                    options={[
-                      { value: "key", label: "Private key" },
-                      { value: "password", label: "Password" },
-                      { value: "agent", label: "SSH agent" },
-                    ]}
-                    onChange={(v) => field({ sshAuth: v as SshAuthMethod })}
-                  />
-                </div>
-                {sshAuth === "key" ? (
-                  <label className="span-2">
-                    Private key
-                    <div className="file-row">
+            <label>
+              <span className="lbl-row">
+                Host
+                <span
+                  className="lbl-info"
+                  tabIndex={0}
+                  role="img"
+                  aria-label="Cassandra connects to contact points and discovers the rest of the ring. Set the host(s), the native-protocol port (9042), and the local datacenter for token-aware routing."
+                  data-tip="Cassandra connects to contact points and discovers the rest of the ring. Set the host(s), the native-protocol port (9042), and the local datacenter for token-aware routing."
+                >
+                  <Icon name="info" size={13} />
+                </span>
+              </span>
+              <input
+                value={host}
+                onChange={(e) => field({ host: e.target.value })}
+                placeholder="127.0.0.1"
+                spellCheck={false}
+              />
+            </label>
+            <label>
+              Port
+              <input
+                value={port}
+                onChange={(e) => field({ port: e.target.value, portTouched: true })}
+                spellCheck={false}
+              />
+            </label>
+            <label>
+              <span className="lbl-row">
+                Keyspace <span className="opt-tag">optional</span>
+              </span>
+              <input
+                value={db}
+                onChange={(e) => field({ db: e.target.value })}
+                placeholder="byteshop"
+                spellCheck={false}
+              />
+            </label>
+            <label>
+              <span className="lbl-row">
+                Local datacenter <span className="opt-tag">optional</span>
+              </span>
+              <input
+                value={datacenter}
+                onChange={(e) => field({ datacenter: e.target.value })}
+                placeholder="dc1"
+                spellCheck={false}
+              />
+            </label>
+            <label>
+              <span className="lbl-row">
+                User <span className="opt-tag">optional</span>
+              </span>
+              <input
+                value={user}
+                onChange={(e) => field({ user: e.target.value, userTouched: true })}
+                placeholder="cassandra"
+                spellCheck={false}
+              />
+            </label>
+            <label>
+              <span className="lbl-row">
+                Password <span className="opt-tag">optional</span>
+              </span>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => field({ password: e.target.value })}
+                placeholder="••••••••"
+              />
+            </label>
+          </div>
+        ) : isFileBased ? (
+          <div className="form-grid">
+            <label className="span-2">
+              Database file
+              <div className="file-row">
+                <input
+                  // Display the path with the home dir collapsed to `~`, but keep
+                  // the absolute path as the stored value (expand on every edit) so
+                  // save / test / connect all see a real filesystem path.
+                  value={tildify(file, home)}
+                  onChange={(e) => field({ file: expandTilde(e.target.value, home) })}
+                  placeholder="~/path/to/database.db"
+                  spellCheck={false}
+                />
+                <Btn variant="tonal" small onClick={() => void browseDatabaseFile()}>
+                  Browse…
+                </Btn>
+              </div>
+            </label>
+            <div className="span-2 form-note">
+              <Icon name="hard_drive" size={14} /> SQLite is a local file — no network, tunnel, or
+              TLS needed.
+            </div>
+          </div>
+        ) : (
+          // Both server panels stay mounted; the inactive one is hidden via the
+          // `hidden` attribute so the controlled inputs keep focus/values across
+          // General ↔ SSH switches (the Modal focus trap skips hidden elements).
+          <>
+            <div
+              className="form-grid"
+              role="tabpanel"
+              id={generalPanelId}
+              aria-labelledby={generalTabId}
+              hidden={section !== "general"}
+            >
+              {isTypesense ? (
+                // Typesense field set (M30 Task 5b). Deliberately shows NOTHING
+                // about users, passwords or TLS modes: Typesense has no user or
+                // password (one API key header) and no TLS negotiation (only a
+                // scheme). The two long explanatory form-notes the other engines
+                // use are replaced by InfoHint bubbles, so the panel stays short.
+                <>
+                  {/* Protocol + Host + Port are one URL, so they read as one row
+                    rather than three. The scheme is a two-option toggle and was
+                    wasting a full-width row on its own. */}
+                  <div className="span-2 ts-endpoint">
+                    <div className="form-field">
+                      <span className="form-field-label" id={protocolLabelId}>
+                        Protocol
+                      </span>
+                      {/* A segmented control, not a native select: with exactly
+                        two mutually-exclusive options a dropdown hides half the
+                        choice behind a click. */}
+                      <div
+                        className="seg proto-seg"
+                        role="radiogroup"
+                        aria-labelledby={protocolLabelId}
+                      >
+                        {(["http", "https"] as const).map((scheme) => (
+                          <button
+                            key={scheme}
+                            type="button"
+                            role="radio"
+                            aria-checked={protocol === scheme}
+                            className={"seg-btn" + (protocol === scheme ? " active" : "")}
+                            onClick={() => field({ protocol: scheme })}
+                          >
+                            {scheme}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <label>
+                      <span className="lbl-row">
+                        Host
+                        <InfoHint text="Typesense is an HTTP search API — point this at any node of the cluster. The default port is 8108. Collections replace databases, and there is no user or password: a single API key authenticates every request." />
+                      </span>
                       <input
-                        value={sshKey}
-                        onChange={(e) => field({ sshKey: e.target.value })}
+                        value={host}
+                        onChange={(e) => field({ host: e.target.value })}
+                        placeholder="localhost"
                         spellCheck={false}
                       />
-                      <Btn variant="tonal" small onClick={() => void browseKeyFile()}>
-                        Browse…
-                      </Btn>
-                    </div>
+                    </label>
+                    <label>
+                      Port
+                      <input
+                        value={port}
+                        onChange={(e) => field({ port: e.target.value, portTouched: true })}
+                        spellCheck={false}
+                      />
+                    </label>
+                  </div>
+                  <label>
+                    <span className="lbl-row">
+                      Default collection <span className="opt-tag">optional</span>
+                    </span>
+                    <input
+                      value={db}
+                      onChange={(e) => field({ db: e.target.value })}
+                      placeholder="products"
+                      spellCheck={false}
+                    />
                   </label>
-                ) : sshAuth === "password" ? (
-                  // Sent transiently + stored in the keychain on Save, same as
-                  // the database password above.
+                  <label>
+                    <span className="lbl-row">
+                      Other nodes <span className="opt-tag">optional</span>
+                      <InfoHint text="Comma-separated host:port of the other nodes in this cluster, shown in the dashboard's node table. Typesense has no cluster-membership endpoint, so a client can only display the peers it is told about — its own clients take the same list. Purely informational: every read and write still goes to the host above." />
+                    </span>
+                    <input
+                      value={tsNodes}
+                      onChange={(e) => field({ tsNodes: e.target.value })}
+                      placeholder="localhost:8118, localhost:8128"
+                      spellCheck={false}
+                    />
+                  </label>
+                  {/* The API key is sent transiently to test/open and stored in the
+                    OS keychain on Save — never in params, never re-rendered. In
+                    edit mode the field stays empty with a masked placeholder, so
+                    leaving it alone keeps the stored key. */}
                   <label className="span-2">
-                    SSH password
+                    <span className="lbl-row">
+                      API key <span className="qual-tag">X-TYPESENSE-API-KEY</span>
+                      <InfoHint text="Sent as a request header. An admin key unlocks the schema, curation and API-key views; a search-only key limits the workspace to querying the collections that key allows — and cannot list collections at all, so the default collection above becomes the only one shown." />
+                    </span>
                     <input
                       type="password"
-                      value={sshPassword}
-                      onChange={(e) => field({ sshPassword: e.target.value })}
+                      value={password}
+                      onChange={(e) => field({ password: e.target.value })}
+                      placeholder="••••••••••••"
+                    />
+                  </label>
+                </>
+              ) : (
+                <>
+                  <label>
+                    Host
+                    <input
+                      value={host}
+                      onChange={(e) => field({ host: e.target.value })}
+                      spellCheck={false}
+                    />
+                  </label>
+                  <div className="form-field">
+                    <span className="form-field-label">TLS mode</span>
+                    <Select
+                      className="sel-block"
+                      aria-label="TLS mode"
+                      value={tls}
+                      options={TLS_MODES.map((mode) => ({ value: mode, label: mode }))}
+                      onChange={(v) => field({ tls: v })}
+                    />
+                  </div>
+                  <label>
+                    Port
+                    <input
+                      value={port}
+                      onChange={(e) => field({ port: e.target.value, portTouched: true })}
+                      spellCheck={false}
+                    />
+                  </label>
+                  <label>
+                    {isRedis ? (
+                      "DB index"
+                    ) : (
+                      <span className="lbl-row">
+                        Database{" "}
+                        {engine === "postgres" || engine === "mssql" ? null : (
+                          <span className="opt-tag">optional</span>
+                        )}
+                      </span>
+                    )}
+                    <input
+                      value={db}
+                      onChange={(e) => field({ db: e.target.value })}
+                      placeholder={
+                        isRedis
+                          ? "0"
+                          : engine === "postgres"
+                            ? "postgres"
+                            : engine === "mssql"
+                              ? "byteshop"
+                              : isClickHouse
+                                ? "default"
+                                : "mysql"
+                      }
+                      spellCheck={false}
+                    />
+                  </label>
+                  <label>
+                    {isRedis ? (
+                      "ACL user"
+                    ) : (
+                      <span className="lbl-row">
+                        User <span className="opt-tag">optional</span>
+                      </span>
+                    )}
+                    <input
+                      value={user}
+                      onChange={(e) => field({ user: e.target.value, userTouched: true })}
+                      placeholder={
+                        isRedis
+                          ? "default"
+                          : engine === "mssql"
+                            ? "sa"
+                            : engine === "postgres"
+                              ? "postgres"
+                              : isClickHouse
+                                ? "default"
+                                : "root"
+                      }
+                      spellCheck={false}
+                    />
+                  </label>
+                  {/* The password is sent transiently to test/open and stored in the
+              OS keychain on Save (M12 Task 3); it is NEVER part of the saved
+              params or the registry file. */}
+                  <label>
+                    <span className="lbl-row">
+                      Password <span className="opt-tag">optional</span>
+                    </span>
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(e) => field({ password: e.target.value })}
                       placeholder="••••••••"
                     />
                   </label>
-                ) : (
-                  <div className="span-2 form-note">
-                    <Icon name="key" size={14} /> Keys are read from your local ssh-agent. Nothing
-                    is stored.
-                  </div>
-                )}
-                <div className="span-2 form-note">
-                  <Icon name="vpn_lock" size={14} /> The tunnel is opened locally:{" "}
-                  {sshUser || "user"}@{sshHost || "bastion"} → {host}:{port}
-                </div>
-              </>
-            ) : (
-              <div className="span-2 form-note">
-                <Icon name="info" size={14} /> Enable this when the database is only reachable
-                through a bastion / jump host.
+                  {isClickHouse ? (
+                    <div className="span-2 form-note">
+                      <Icon name="bolt" size={14} /> ClickHouse is a columnar OLAP store. Use the
+                      HTTP port (8123) or the secure HTTPS port (8443) with TLS. Databases group
+                      tables; there are no foreign keys — tables use an <code>ENGINE</code> +{" "}
+                      <code>ORDER BY</code> sort key.
+                    </div>
+                  ) : null}
+                </>
+              )}
+            </div>
+            <div
+              className="form-grid"
+              role="tabpanel"
+              id={tunnelPanelId}
+              aria-labelledby={tunnelTabId}
+              hidden={section !== "tunnel"}
+            >
+              <div className="span-2 ssh-toggle-row">
+                <label className="switch-label" htmlFor={sshToggleId}>
+                  <input
+                    id={sshToggleId}
+                    type="checkbox"
+                    checked={useSsh}
+                    onChange={(e) => field({ useSsh: e.target.checked })}
+                    className="switch-input"
+                  />
+                  <span className={"switch" + (useSsh ? " on" : "")}>
+                    <span className="switch-knob" />
+                  </span>
+                  Connect through an SSH tunnel
+                </label>
               </div>
-            )}
-          </div>
-        </>
-      )}
+              {useSsh ? (
+                <>
+                  <label>
+                    SSH host
+                    <input
+                      value={sshHost}
+                      onChange={(e) => field({ sshHost: e.target.value })}
+                      placeholder="bastion.example.com"
+                      spellCheck={false}
+                    />
+                  </label>
+                  <label>
+                    SSH port
+                    <input
+                      value={sshPort}
+                      onChange={(e) => field({ sshPort: e.target.value })}
+                      spellCheck={false}
+                    />
+                  </label>
+                  <label>
+                    SSH user
+                    <input
+                      value={sshUser}
+                      onChange={(e) => field({ sshUser: e.target.value })}
+                      placeholder="deploy"
+                      spellCheck={false}
+                    />
+                  </label>
+                  <div className="form-field">
+                    <span className="form-field-label">Auth method</span>
+                    <Select
+                      className="sel-block"
+                      aria-label="Auth method"
+                      value={sshAuth}
+                      options={[
+                        { value: "key", label: "Private key" },
+                        { value: "password", label: "Password" },
+                        { value: "agent", label: "SSH agent" },
+                      ]}
+                      onChange={(v) => field({ sshAuth: v as SshAuthMethod })}
+                    />
+                  </div>
+                  {sshAuth === "key" ? (
+                    <label className="span-2">
+                      Private key
+                      <div className="file-row">
+                        <input
+                          value={sshKey}
+                          onChange={(e) => field({ sshKey: e.target.value })}
+                          spellCheck={false}
+                        />
+                        <Btn variant="tonal" small onClick={() => void browseKeyFile()}>
+                          Browse…
+                        </Btn>
+                      </div>
+                    </label>
+                  ) : sshAuth === "password" ? (
+                    // Sent transiently + stored in the keychain on Save, same as
+                    // the database password above.
+                    <label className="span-2">
+                      SSH password
+                      <input
+                        type="password"
+                        value={sshPassword}
+                        onChange={(e) => field({ sshPassword: e.target.value })}
+                        placeholder="••••••••"
+                      />
+                    </label>
+                  ) : (
+                    <div className="span-2 form-note">
+                      <Icon name="key" size={14} /> Keys are read from your local ssh-agent. Nothing
+                      is stored.
+                    </div>
+                  )}
+                  <div className="span-2 form-note">
+                    <Icon name="vpn_lock" size={14} /> The tunnel is opened locally:{" "}
+                    {sshUser || "user"}@{sshHost || "bastion"} → {host}:{port}
+                  </div>
+                </>
+              ) : (
+                <div className="span-2 form-note">
+                  <Icon name="info" size={14} /> Enable this when the database is only reachable
+                  through a bastion / jump host.
+                </div>
+              )}
+            </div>
+          </>
+        )}
 
-      <ModalActions>
-        {edit ? (
-          <Btn
-            variant="text"
-            className={"conn-delete" + (confirmDelete ? " armed" : "")}
-            icon={confirmDelete ? "warning" : "delete"}
-            disabled={saving}
-            onClick={() => (confirmDelete ? void remove() : setConfirmDelete(true))}
-            onBlur={() => setConfirmDelete(false)}
-          >
-            {confirmDelete ? "Confirm delete" : "Delete"}
+        <ModalActions>
+          {edit ? (
+            <Btn
+              variant="text"
+              className={"conn-delete" + (confirmDelete ? " armed" : "")}
+              icon={confirmDelete ? "warning" : "delete"}
+              disabled={saving}
+              onClick={() => (confirmDelete ? void remove() : setConfirmDelete(true))}
+              onBlur={() => setConfirmDelete(false)}
+            >
+              {confirmDelete ? "Confirm delete" : "Delete"}
+            </Btn>
+          ) : null}
+          <div className="test-result" aria-live="polite">
+            {testState.phase === "testing" ? (
+              <>
+                <span className="spinner" /> Testing…
+              </>
+            ) : null}
+            {testState.phase === "ok" ? (
+              <>
+                <Icon name="check_circle" size={15} style={{ color: "var(--accent)" }} /> Connection
+                OK · {testState.serverVersion}
+              </>
+            ) : null}
+            {testState.phase === "err" ? (
+              <span className="test-result-err">{testState.message}</span>
+            ) : null}
+          </div>
+          <Btn variant="text" disabled={testState.phase === "testing"} onClick={() => void test()}>
+            Test connection
           </Btn>
-        ) : null}
-        <div className="test-result" aria-live="polite">
-          {testState.phase === "testing" ? (
-            <>
-              <span className="spinner" /> Testing…
-            </>
-          ) : null}
-          {testState.phase === "ok" ? (
-            <>
-              <Icon name="check_circle" size={15} style={{ color: "var(--accent)" }} /> Connection
-              OK · {testState.serverVersion}
-            </>
-          ) : null}
-          {testState.phase === "err" ? (
-            <span className="test-result-err">{testState.message}</span>
-          ) : null}
-        </div>
-        <Btn variant="text" disabled={testState.phase === "testing"} onClick={() => void test()}>
-          Test connection
-        </Btn>
-        <Btn variant="filled" disabled={saving} onClick={() => void save()}>
-          Save
-        </Btn>
-      </ModalActions>
-    </Modal>
+          <Btn variant="filled" disabled={saving} onClick={() => void save()}>
+            Save
+          </Btn>
+        </ModalActions>
+      </Modal>
+
+      {/* Stacks on top of this modal (the Modal primitive keeps a stack, so Esc
+          closes the import dialog first). A sibling, not a child, so it is not
+          inside the connect panel's scroll container. */}
+      {importing ? (
+        <ImportConnectionModal onClose={() => setImporting(false)} onApply={applyUrl} />
+      ) : null}
+    </>
   );
 }

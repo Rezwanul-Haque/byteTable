@@ -319,6 +319,14 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   const invalidateObjects = useIntrospectionStore((s) => s.invalidateObjects);
   const tableEntries = tablesCache[tablesKey(workspace.handleId, schemaName)]?.tables;
 
+  // Cached row estimates for the Explain panel's joined relations — read from
+  // the same introspection entry, so no fetch is issued. Stable identity: the
+  // panel keys its (single) measuring run off this callback.
+  const approxRows = useMemo(() => {
+    const byName = new Map((tableEntries ?? []).map((t) => [t.name, t.approxRowCount]));
+    return (table: string) => byName.get(table) ?? null;
+  }, [tableEntries]);
+
   // Ensure the table list exists even if the sidebar hasn't fetched it yet
   // (cache-first — a no-op once warmed).
   useEffect(() => {
@@ -804,7 +812,10 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
               {resultsMin ? null : (
                 <ExplainPanel
                   sql={activeExplainSql}
+                  handleId={workspace.handleId}
                   schemaName={schemaName}
+                  env={workspace.saved.env}
+                  approxRows={approxRows}
                   columnCount={columnCount}
                 />
               )}

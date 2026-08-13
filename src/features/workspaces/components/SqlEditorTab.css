@@ -467,8 +467,594 @@
 }
 
 .explain-note b {
+  color: var(--text-dim);
+  font-weight: 600;
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.explain-note i {
+  font-style: italic;
+}
+
+.explain-note code {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+
+/* ---------- M33: summary strip, plan table, plan tree, raw output ---------- */
+
+.ex-summary {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg1);
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  flex-wrap: wrap;
+}
+
+.ex-sum-sp {
+  flex: 1;
+}
+
+.ex-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ex-stat span {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-faint);
+}
+
+.ex-stat b {
+  font-family: var(--mono);
+  font-size: 12.5px;
   color: var(--text);
   font-weight: 600;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.ex-stat b.warn {
+  color: var(--warn);
+}
+
+.ex-stat b i {
+  font-family: var(--ui);
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--text-faint);
+}
+
+/* Measure action — the port's own control: measuring executes the statement,
+   so production connections wait for this click instead of auto-running. */
+.ex-measure {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg2);
+  color: var(--text-dim);
+  font-family: var(--ui);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.ex-measure:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+}
+
+.ex-measure:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.ex-modes .seg-btn {
+  font-size: 11px;
+}
+
+.ex-cols {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  align-items: start;
+}
+
+.ex-pane {
+  padding: 13px 16px 16px;
+  min-width: 0;
+}
+
+.ex-treepane {
+  border-left: 1px solid var(--border);
+}
+
+.ex-h-note {
+  margin-left: auto;
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--text-faint);
+  font-weight: 400;
+}
+
+.ex-table-wrap {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--bg1);
+}
+
+.ex-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+}
+
+.ex-table th {
+  text-align: left;
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-faint);
+  font-weight: 600;
+  padding: 7px 10px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+}
+
+.ex-table th.num,
+.ex-table td.num {
+  text-align: right;
+}
+
+.ex-table th.share {
+  width: 150px;
+}
+
+.ex-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.ex-table tr:last-child td {
+  border-bottom: none;
+}
+
+.ex-table tbody tr {
+  cursor: pointer;
+}
+
+.ex-table tbody tr:hover {
+  background: var(--bg2);
+}
+
+.ex-table tbody tr.sel {
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+}
+
+.ex-ord {
+  font-family: var(--mono);
+  color: var(--text-faint);
+  width: 26px;
+}
+
+.ex-node-cell {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ex-nic {
+  flex: none;
+  margin-top: 1px;
+  color: var(--accent);
+}
+
+.ex-nic.scan {
+  color: var(--warn);
+}
+
+.ex-nic.sort {
+  color: #c792ea;
+}
+
+.ex-nic.agg {
+  color: #e2b340;
+}
+
+.ex-node-name {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text);
+}
+
+.ex-node-detail {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  margin-top: 2px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.ex-rows {
+  font-family: var(--mono);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.ex-rows i {
+  font-style: normal;
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.ex-ms {
+  font-family: var(--mono);
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.ex-ms small {
+  color: var(--text-faint);
+  font-size: 9.5px;
+  margin-left: 2px;
+}
+
+.ex-table td.share {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ex-table td.share em {
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  width: 30px;
+  text-align: right;
+}
+
+.ex-bar {
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--bg2);
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.ex-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+.ex-bar span.hot {
+  background: var(--warn);
+}
+
+.ex-bar.sm {
+  height: 4px;
+  max-width: 90px;
+}
+
+.ex-warns {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 11px;
+}
+
+.ex-warn {
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  background: color-mix(in oklab, var(--warn) 9%, transparent);
+  border: 1px solid color-mix(in oklab, var(--warn) 26%, transparent);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.ex-warn .msym {
+  color: var(--warn);
+  flex: none;
+  margin-top: 1px;
+}
+
+.ex-warn b {
+  font-family: var(--mono);
+  font-weight: 500;
+  color: var(--text);
+}
+
+.ex-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ex-tnode-row {
+  position: relative;
+}
+
+.ex-tlink {
+  position: absolute;
+  left: -8px;
+  top: -8px;
+  bottom: 50%;
+  width: 8px;
+  border-left: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  border-bottom-left-radius: 6px;
+}
+
+.ex-tnode {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition:
+    border-color 0.12s,
+    background 0.12s;
+}
+
+.ex-tnode:hover {
+  background: var(--bg2);
+}
+
+.ex-tnode.sel {
+  border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+}
+
+.ex-tnode-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ex-tnode-name {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ex-tnode-ms {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  flex: none;
+}
+
+.ex-tnode-detail {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  margin: 3px 0 6px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.ex-tnode-foot {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.ex-tnode-rows {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.ex-tree-foot {
+  margin-top: 12px;
+}
+
+.ex-raw-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: var(--ui);
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+
+.ex-raw-toggle:hover {
+  color: var(--text);
+}
+
+.ex-psql-pane {
+  padding: 13px 16px 18px;
+}
+
+.ex-psql-modes {
+  margin-left: auto;
+}
+
+.ex-psql-modes .seg-btn {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.ex-psql-box {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--bg1);
+}
+
+.ex-psql-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+}
+
+.ex-psql-bar code {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.ex-copy {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 7px;
+  cursor: pointer;
+  font-family: var(--ui);
+  font-size: 10px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.ex-copy:hover {
+  color: var(--text);
+  border-color: var(--text-faint);
+}
+
+.ex-psql {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.65;
+  margin: 0;
+  padding: 11px 13px;
+  overflow-x: auto;
+  color: var(--text-dim);
+  white-space: pre;
+}
+
+.pq-head {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.pq-rule {
+  color: var(--text-faint);
+}
+
+.pq-time {
+  color: var(--accent);
+}
+
+.pq-count {
+  color: var(--text-faint);
+}
+
+.ex-my-wrap {
+  overflow-x: auto;
+  padding: 12px 13px 10px;
+}
+
+.ex-my {
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.ex-my th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text);
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  white-space: nowrap;
+  background: var(--bg2);
+}
+
+.ex-my td {
+  padding: 6px 12px;
+  border-right: 1px solid var(--border);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.ex-my th:last-child,
+.ex-my td:last-child {
+  border-right: none;
+}
+
+.ex-my th.num,
+.ex-my td.num {
+  text-align: right;
+}
+
+.ex-my td.nul {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.ex-my-count {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-style: italic;
+  margin-top: 8px;
+}
+
+.ex-steps-pane {
+  padding: 13px 16px 18px;
+}
+
+.ex-steps-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  gap: 4px 26px;
+}
+
+@media (max-width: 1080px) {
+  .ex-cols {
+    grid-template-columns: 1fr;
+  }
+  .ex-treepane {
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
 }
 
 .sql-cm .cm-editor {

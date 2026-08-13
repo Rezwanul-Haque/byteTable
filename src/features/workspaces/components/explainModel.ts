@@ -7,16 +7,26 @@
 // before a measurement lands, the plan still renders with its nodes, depths and
 // details, and only the numeric columns read "—".
 //
-// Per-node milliseconds are *modelled*, not measured — the measured total is
-// distributed across the nodes by relative work, and the panel's footnote says
-// so. The field names match what a server's `actual time` would fill in, so the
-// views stay unchanged the day those numbers arrive from a real plan.
+// The tree this file builds is a MODEL: read from the statement, it assumes a
+// sequential scan per relation and splits the measured total across nodes by
+// relative work. It is the fallback, and what every engine gets before its plan
+// arrives. `withServerPlan` swaps in the real thing (explainPlanParse.ts) for
+// the engines that can produce one, keeping the measured summary figures —
+// which is why `Analysis` carries `source` and `share`: the view has to say
+// which tree is on screen, and whether its per-node figure is a measured
+// millisecond or the planner's cost estimate.
 
+import type { Engine } from "../../../shared/types";
 import { EXEC_STEPS, type StepKey } from "./explainClauses";
 import type { JoinShape, SelectShape } from "./explainParse";
 
-/** The operator kinds the plan can contain. Drives icon, colour and cost. */
-export type NodeKind = "scan" | "join" | "agg" | "sort" | "unique" | "limit";
+/**
+ * The operator kinds the plan can contain. Drives icon, colour and cost weight.
+ * New kinds belong here, never as ad-hoc strings in the view — `other` is the
+ * catch-all for the operators a real server reports that have no counterpart in
+ * the modelled plan (Hash, Materialize, Gather, …).
+ */
+export type NodeKind = "scan" | "join" | "agg" | "sort" | "unique" | "limit" | "other";
 
 /** One node of the plan, shared by the table, the tree and the raw views. */
 export interface PlanNode {
@@ -52,6 +62,24 @@ export interface PlanNode {
   joinSide?: boolean;
   /** True for the nodes that make up a derived table's own plan. */
   subplan?: boolean;
+  /** The index the server chose for this node, when it reported one. */
+  index?: string | null;
+  /**
+   * The planner's own cost for this node. Only ever set from a real server
+   * plan — it is the honest stand-in for per-node timing when the plan was
+   * produced without executing anything.
+   */
+  cost?: number | null;
+  /**
+   * This node's own share of the work, excluding its children.
+   *
+   * Postgres reports time and cost *inclusive* of the subtree, so ranking nodes
+   * by the displayed figure would always crown the root. `ms` / `cost` stay
+   * inclusive, to match what psql prints and what Raw output shows; this is
+   * what the share bar and "slowest node" rank by. Unset where the reported
+   * figure is already per-node (MySQL, and the modelled plan).
+   */
+  self?: number | null;
 }
 
 /** One entry of the "How it runs" clause list. */
@@ -122,6 +150,15 @@ export interface Analysis {
   slowest: PlanNode | null;
   /** True once real numbers back the plan. */
   measured: boolean;
+  /**
+   * Where the plan tree came from: `"modelled"` means ByteTable derived it from
+   * the statement (node names are assumed, not reported), anything else is the
+   * engine that produced it. The view says which, because a table of node names
+   * reads as authoritative whether or not it is.
+   */
+  source: "modelled" | Engine;
+  /** What the per-node figure and its bar represent. Null = neither is known. */
+  share: "time" | "cost" | null;
 }
 
 const stepDef = (key: StepKey) => EXEC_STEPS.find((s) => s.key === key)!;
@@ -140,6 +177,7 @@ export const NODE_ICON: Record<NodeKind, string> = {
   agg: "functions",
   unique: "filter_alt",
   limit: "vertical_align_bottom",
+  other: "more_horiz",
 };
 
 /**
@@ -339,6 +377,8 @@ export function analyzeQuery(shape: SelectShape, stats: ExplainStats): Analysis 
     joins: [],
     slowest: null,
     measured: false,
+    source: "modelled",
+    share: null,
   };
 
   if (!shape.isSelect) {
@@ -475,22 +515,15 @@ export function analyzeQuery(shape: SelectShape, stats: ExplainStats): Analysis 
         " rows — add WHERE or LIMIT before this runs against production volumes.",
     });
   }
-  const sortNode = plan.find((p) => p.kind === "sort");
-  if (sortNode && sortNode.method === "external merge" && sortNode.rows != null) {
-    warnings.push({
-      node: "Sort",
-      text:
-        "Sorting " +
-        sortNode.rows.toLocaleString() +
-        " rows spills past a comfortable in-memory quicksort. An index matching the ORDER BY can remove this node entirely.",
-    });
-  }
+  warnings.push(...spillWarning(plan));
 
   return {
     error: null,
     plan,
     steps,
     warnings,
+    source: "modelled",
+    share: stats.ms != null ? "time" : null,
     ms: stats.ms,
     final,
     base,
@@ -500,6 +533,111 @@ export function analyzeQuery(shape: SelectShape, stats: ExplainStats): Analysis 
     joins,
     slowest,
     measured: stats.ms != null,
+  };
+}
+
+/** A sort that spilled to disk, reported the same way from either plan source. */
+function spillWarning(plan: PlanNode[]): PlanWarning[] {
+  const sort = plan.find((p) => p.kind === "sort" && /external/i.test(p.method ?? ""));
+  if (!sort) return [];
+  return [
+    {
+      node: sort.node,
+      text:
+        (sort.rows != null
+          ? "Sorting " + sort.rows.toLocaleString() + " rows spills"
+          : "This sort spills") +
+        " past a comfortable in-memory sort. An index matching the ORDER BY can remove this node entirely.",
+    },
+  ];
+}
+
+/**
+ * Replace the modelled tree with the one the server reported.
+ *
+ * The clause list ("How it runs") and the summary keep their measured figures —
+ * those come from actually running the statement and are not something a plan
+ * can tell us. Everything about the *tree* becomes the engine's: node names,
+ * access paths, chosen indexes, and its own row estimates. Warnings are
+ * recomputed from those nodes, so they now fire on facts rather than guesses.
+ *
+ * `share` records what the per-node figure means, since a plan-only EXPLAIN has
+ * costs and no timings. The view labels its column from it rather than printing
+ * a cost under a heading that says "Time".
+ */
+export function withServerPlan(
+  a: Analysis,
+  server: {
+    nodes: PlanNode[];
+    source: Engine;
+    totalMs: number | null;
+    share: "time" | "cost" | null;
+    listing: "outermost-first" | "execution";
+  },
+): Analysis {
+  const plan = server.nodes;
+  if (plan.length === 0) return a;
+
+  const weightOf = (p: PlanNode) =>
+    p.self ?? (server.share === "time" ? (p.ms ?? 0) : server.share === "cost" ? (p.cost ?? 0) : 0);
+  const sum = plan.reduce((acc, p) => acc + weightOf(p), 0);
+  plan.forEach((p, i) => {
+    p.pct = sum > 0 ? (weightOf(p) / sum) * 100 : 0;
+    // Numbered so #1 is what runs first, whichever way round the engine listed
+    // its nodes.
+    p.order = server.listing === "execution" ? i + 1 : plan.length - i;
+  });
+  const slowest =
+    sum > 0
+      ? plan.reduce<PlanNode | null>(
+          (x, y) => (x == null || weightOf(y) > weightOf(x) ? y : x),
+          null,
+        )
+      : null;
+
+  // Without actual timings every figure here is the planner's estimate, and a
+  // warning that states an estimate as fact is how you send someone indexing a
+  // table that turns out to hold four rows.
+  const guess = server.share !== "time";
+  const warnings: PlanWarning[] = [];
+  for (const p of plan) {
+    if (p.kind !== "scan") continue;
+    const scanned = p.scanned ?? null;
+    if (p.removed != null && scanned != null && scanned > 0 && p.removed / scanned > 0.6) {
+      warnings.push({
+        node: p.node,
+        text:
+          (guess ? "Filter is expected to discard " : "Filter discards ") +
+          Math.round((p.removed / scanned) * 100) +
+          "% of rows read (" +
+          p.removed.toLocaleString() +
+          " of " +
+          scanned.toLocaleString() +
+          "). An index on the filtered column would let the engine skip them.",
+      });
+    }
+    // Only worth saying when the engine did not reach for an index itself.
+    if (!p.index && !p.detail.startsWith("Filter:") && scanned != null && scanned > 200) {
+      warnings.push({
+        node: p.node,
+        text:
+          (guess ? "Full scan of an estimated " : "Full scan of ") +
+          scanned.toLocaleString() +
+          " rows with no index and no filter — add a WHERE or an index before this meets production volumes.",
+      });
+    }
+  }
+  warnings.push(...spillWarning(plan));
+
+  return {
+    ...a,
+    plan,
+    warnings,
+    slowest,
+    source: server.source,
+    share: server.share,
+    ms: server.totalMs ?? a.ms,
+    measured: a.measured || server.totalMs != null,
   };
 }
 

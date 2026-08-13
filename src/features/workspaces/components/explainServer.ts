@@ -102,6 +102,51 @@ export function explainStatement(engine: Engine, sql: string, analyze: boolean):
 }
 
 /**
+ * The machine-readable form of the same plan, for the Plan tab's tree.
+ *
+ * Separate from {@link explainStatement} on purpose: that one produces what a
+ * terminal client prints, for people to read; this one produces what parses,
+ * for `explainPlanParse.ts`. Postgres and MySQL both offer JSON, which is worth
+ * far more than scraping their text; SQLite's `EXPLAIN QUERY PLAN` is already
+ * structured rows, so it is the same statement in both roles.
+ *
+ * Always the plan-only form — the Plan tab must not execute anything to draw a
+ * tree. Actual per-node timings live behind Raw output's EXPLAIN ANALYZE.
+ */
+export function structuredExplainStatement(engine: Engine, sql: string): string | null {
+  const body = sql.trim().replace(/;\s*$/, "");
+  if (!body) return null;
+  switch (engine) {
+    case "postgres":
+      return "EXPLAIN (FORMAT JSON) " + body;
+    case "mysql":
+      return "EXPLAIN FORMAT=JSON " + body;
+    case "sqlite":
+      return "EXPLAIN QUERY PLAN " + body;
+    default:
+      return null;
+  }
+}
+
+/** Fetch the machine-readable plan for the Plan tab. Never executes the query. */
+export async function fetchStructuredPlan(
+  handleId: string,
+  schema: string,
+  engine: Engine,
+  sql: string,
+): Promise<ServerExplain> {
+  const statement = structuredExplainStatement(engine, sql);
+  if (statement === null) throw new Error("This engine has no machine-readable EXPLAIN.");
+  const res = await queryRun(handleId, statement, { schema, rowLimit: 2000 });
+  return {
+    statement,
+    columns: res.columns.map((c) => c.name),
+    rows: res.rows,
+    text: res.columns.length === 1,
+  };
+}
+
+/**
  * Run the engine's EXPLAIN and return its result untouched.
  *
  * `analyze: false` is safe against any connection — the statement is planned,

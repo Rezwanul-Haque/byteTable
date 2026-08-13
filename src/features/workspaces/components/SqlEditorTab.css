@@ -563,6 +563,28 @@
   cursor: default;
 }
 
+/* Where the plan tree came from. Accent-tinted for a real server plan, muted
+   for the modelled one — the distinction matters more than the decoration. */
+.ex-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in oklab, var(--accent) 30%, transparent);
+  white-space: nowrap;
+}
+
+.ex-source.modelled {
+  color: var(--text-faint);
+  background: var(--bg2);
+  border-color: var(--border);
+}
+
 .ex-modes .seg-btn {
   font-size: 11px;
 }
@@ -861,6 +883,12 @@
   margin: 3px 0 6px;
   line-height: 1.45;
   word-break: break-word;
+}
+
+/* The index the server chose — the single most useful fact on a scan node, so
+   it is tinted rather than left in the same grey as the condition text. */
+.ex-tnode-index {
+  color: var(--accent);
 }
 
 .ex-tnode-foot {

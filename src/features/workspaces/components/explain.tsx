@@ -4,23 +4,24 @@
 // Three views over ONE analysis, chosen from the summary strip:
 //
 //   Plan         a plan-node table beside a visual plan tree, plus warnings
-//   How it runs  the original clause-order teaching view, kept behind a mode
-//   Raw output   the plan the SERVER reports, with an EXPLAIN / EXPLAIN
-//                ANALYZE toggle (explainServer.ts)
+//   How it runs  the clause-order teaching view, kept behind a mode
+//   Raw output   the engine's EXPLAIN printed verbatim (explainServer.ts)
 //
-// The first two are modelled here: the shape is parsed client-side
-// (explainParse.ts) and the numbers measured against the real connection
-// (explainRun.ts). Measuring executes the statement, so it happens
-// automatically on dev/staging connections and only on an explicit click for
-// production ones. Until then the plan renders with every numeric column
-// reading "—" — the shape is still worth seeing, and an invented number in a
-// database client is worse than no number.
+// WHERE THE PLAN COMES FROM. Postgres, MySQL and SQLite are asked for their own
+// plan — `EXPLAIN (FORMAT JSON)` / `EXPLAIN FORMAT=JSON` / `EXPLAIN QUERY PLAN`
+// — and explainPlanParse.ts turns it into the node model, so the tree shows the
+// access paths and indexes the optimizer actually chose. It is the plan-only
+// form, which executes nothing, so this happens on production connections too.
+// Every other engine, and any plan that fails to parse, falls back to the tree
+// modelled from the statement (explainModel.ts). The summary strip says which,
+// because a table of node names reads as authoritative either way.
 //
-// That model cannot know about indexes, so its scans always read as sequential.
-// Raw output exists for exactly that gap: it runs the engine's own EXPLAIN and
-// prints the result verbatim, index choices included. The boundary is
-// deliberate and stated in the UI — modelled views never claim to be the
-// server's, and the server's output is never reshaped into ours.
+// WHERE THE NUMBERS COME FROM. The summary figures — total time, rows returned,
+// rows read — are measured by running the statement (explainRun.ts). That
+// executes, so it is automatic on dev/staging and waits for the Measure button
+// on production. Per-node figures come from the plan: actual milliseconds if it
+// came from an ANALYZE, the planner's cost if not, and nothing at all for
+// SQLite, which reports neither. The column heading follows.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -47,19 +48,24 @@ import {
   mysqlExplainRows,
   mysqlExplainText,
   NODE_ICON,
+  type PlanNode,
   psqlPlanLines,
   psqlPlanText,
   rawPlanText,
+  withServerPlan,
 } from "./explainModel";
 import { parseSelectShape } from "./explainParse";
+import { parseServerPlan, type ServerPlan } from "./explainPlanParse";
 import { measureQuery } from "./explainRun";
 import {
   explainSupport,
   fetchServerExplain,
+  fetchStructuredPlan,
   numericColumns,
   type ServerExplain,
   serverPlanAscii,
   serverPlanText,
+  structuredExplainStatement,
 } from "./explainServer";
 import { statementContextAt } from "./sqlStatement";
 
@@ -116,6 +122,25 @@ export function ExecutionMinimap({ sql, caret = 0 }: { sql: string; caret?: numb
         can’t.
       </div>
     </div>
+  );
+}
+
+/**
+ * The per-node figure: measured milliseconds where a plan reported them, the
+ * planner's own cost where it only estimated, and "—" where the engine gives
+ * neither (SQLite reports no numbers at all). Never a millisecond value under a
+ * heading that says Cost, or the reverse.
+ */
+function NodeCost({ node, share }: { node: PlanNode; share: "time" | "cost" | null }) {
+  if (share === "cost") {
+    return node.cost == null ? <>—</> : <>{node.cost.toLocaleString()}</>;
+  }
+  if (node.ms == null) return <>—</>;
+  return (
+    <>
+      {fmtMs(node.ms)}
+      <small>ms</small>
+    </>
   );
 }
 
@@ -488,6 +513,7 @@ export function ExplainPanel({
   const [failure, setFailure] = useState<{ key: string; message: string } | null>(null);
   const [asked, setAsked] = useState<string | null>(null);
   const [selected, setSelected] = useState<{ key: string; order: number } | null>(null);
+  const [serverPlans, setServerPlans] = useState<Record<string, ServerPlan>>({});
 
   const key = handleId + " " + schemaName + " " + sql;
   const stats = result?.key === key ? result.stats : EMPTY_STATS;
@@ -496,7 +522,14 @@ export function ExplainPanel({
   const setSel = (order: number | null) => setSelected(order == null ? null : { key, order });
 
   const shape = useMemo(() => parseSelectShape(sql), [sql]);
-  const a = useMemo(() => analyzeQuery(shape, stats), [shape, stats]);
+  const modelledPlan = useMemo(() => analyzeQuery(shape, stats), [shape, stats]);
+  // The server's tree replaces the modelled one wherever we can get it; the
+  // measured summary figures on `modelledPlan` carry over either way.
+  const serverPlan = serverPlans[key] ?? null;
+  const a = useMemo(
+    () => (serverPlan ? withServerPlan(modelledPlan, serverPlan) : modelledPlan),
+    [modelledPlan, serverPlan],
+  );
 
   // Measuring executes the statement, so it runs on its own for dev and
   // staging connections and waits for the Measure button on production ones,
@@ -531,6 +564,24 @@ export function ExplainPanel({
       )
       .finally(() => inflight.current.delete(key));
   }, [shouldMeasure, key, handleId, schemaName, sql, shape, approxRows, result, failure]);
+
+  // The structured plan is fetched unconditionally, production included: it is
+  // the plan-only form, so it executes nothing. A failure is not surfaced —
+  // there is a complete modelled tree to fall back to, and an error card over a
+  // working view would be noise.
+  const planKey = "plan " + key;
+  useEffect(() => {
+    if (!analyzable || structuredExplainStatement(engine, sql) === null) return;
+    if (serverPlans[key] !== undefined || inflight.current.has(planKey)) return;
+    inflight.current.add(planKey);
+    fetchStructuredPlan(handleId, schemaName, engine, sql)
+      .then((explain) => {
+        const parsed = parseServerPlan(engine, explain);
+        if (parsed) setServerPlans((p) => ({ ...p, [key]: parsed }));
+      })
+      .catch(() => undefined)
+      .finally(() => inflight.current.delete(planKey));
+  }, [analyzable, engine, key, planKey, handleId, schemaName, sql, serverPlans]);
 
   if (a.error) {
     return (
@@ -592,13 +643,31 @@ export function ExplainPanel({
           </b>
         </div>
         <div className="ex-stat">
-          <span>Slowest node</span>
+          <span>{a.share === "cost" ? "Costliest node" : "Slowest node"}</span>
           <b>
             {a.slowest ? a.slowest.node.replace(/ on .*/, "") : "—"}
-            {a.slowest ? <i> {Math.round(a.slowest.pct)}% of time</i> : null}
+            {a.slowest ? (
+              <i>
+                {" "}
+                {Math.round(a.slowest.pct)}% of {a.share}
+              </i>
+            ) : null}
           </b>
         </div>
         <div className="ex-sum-sp" />
+        {/* Which tree is on screen is the first thing to know about it, so it
+            is stated here rather than only in the footnote below the fold. */}
+        <span
+          className={"ex-source" + (a.source === "modelled" ? " modelled" : "")}
+          title={
+            a.source === "modelled"
+              ? "Derived from the statement — node types are assumed, not reported by the server"
+              : "Fetched from " + engineLabel(a.source) + " with EXPLAIN; nothing was executed"
+          }
+        >
+          <Icon name={a.source === "modelled" ? "draw" : "dns"} size={12} />
+          {a.source === "modelled" ? "modelled plan" : engineLabel(a.source) + " plan"}
+        </span>
         {!a.measured ? (
           <button
             type="button"
@@ -655,8 +724,8 @@ export function ExplainPanel({
                     <th className="num">#</th>
                     <th>Node</th>
                     <th className="num">Rows out</th>
-                    <th className="num">Time</th>
-                    <th className="share">Share of time</th>
+                    <th className="num">{a.share === "cost" ? "Cost" : "Time"}</th>
+                    <th className="share">{a.share === null ? "Share" : "Share of " + a.share}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -693,18 +762,17 @@ export function ExplainPanel({
                           ) : null}
                         </td>
                         <td className="num ex-ms">
-                          {p.ms == null ? (
-                            "—"
-                          ) : (
-                            <>
-                              {fmtMs(p.ms)}
-                              <small>ms</small>
-                            </>
-                          )}
+                          <NodeCost node={p} share={a.share} />
                         </td>
                         <td className="share">
-                          <ShareBar pct={p.pct} hot={p === a.slowest} />
-                          <em>{Math.round(p.pct)}%</em>
+                          {a.share === null ? (
+                            <em>—</em>
+                          ) : (
+                            <>
+                              <ShareBar pct={p.pct} hot={p === a.slowest} />
+                              <em>{Math.round(p.pct)}%</em>
+                            </>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -743,17 +811,33 @@ export function ExplainPanel({
                       <Icon name={NODE_ICON[p.kind]} size={13} className={"ex-nic " + p.kind} />
                       <span className="ex-tnode-name">{p.node}</span>
                       <span className="ex-tnode-ms">
-                        {p.ms == null ? "—" : fmtMs(p.ms) + " ms"}
+                        {a.share === "cost"
+                          ? p.cost == null
+                            ? "—"
+                            : "cost " + p.cost.toLocaleString()
+                          : p.ms == null
+                            ? "—"
+                            : fmtMs(p.ms) + " ms"}
                       </span>
                     </div>
-                    <div className="ex-tnode-detail">{p.detail}</div>
+                    <div className="ex-tnode-detail">
+                      {p.detail}
+                      {p.index ? (
+                        <>
+                          {p.detail ? " · " : ""}
+                          <span className="ex-tnode-index">index {p.index}</span>
+                        </>
+                      ) : null}
+                    </div>
                     <div className="ex-tnode-foot">
                       <span className="ex-tnode-rows">
                         {p.rows == null
                           ? "— rows out"
                           : p.rows.toLocaleString() + " row" + (p.rows === 1 ? "" : "s") + " out"}
                       </span>
-                      <ShareBar pct={p.pct} hot={p === a.slowest} small />
+                      {a.share === null ? null : (
+                        <ShareBar pct={p.pct} hot={p === a.slowest} small />
+                      )}
                     </div>
                   </button>
                 </div>
@@ -776,11 +860,27 @@ export function ExplainPanel({
               </div>
               {raw ? <pre className="explain-plan-tree">{rawPlanText(a)}</pre> : null}
               <div className="explain-note">
-                {a.measured
-                  ? "Row counts and the total time are measured against this connection; the per-node split distributes that total across nodes by relative work."
-                  : "No numbers yet — measuring runs the statement against this connection."}{" "}
-                This tree is read from the statement, so it assumes a sequential scan per relation
-                and names no indexes. <b>Raw output</b> shows the plan the server actually chose.
+                {a.source === "modelled" ? (
+                  <>
+                    {a.measured
+                      ? "Row counts and the total time are measured against this connection; the per-node split distributes that total across nodes by relative work."
+                      : "No numbers yet — measuring runs the statement against this connection."}{" "}
+                    This tree is read from the statement, so it assumes a sequential scan per
+                    relation and names no indexes. <b>Raw output</b> shows the plan the server
+                    actually chose.
+                  </>
+                ) : (
+                  <>
+                    This tree is <b>{engineLabel(a.source)}</b>&rsquo;s own plan, from{" "}
+                    <code>EXPLAIN</code> — node types, access paths and indexes are the ones it
+                    chose.{" "}
+                    {a.share === "cost"
+                      ? "Rows and cost are its estimates, not measurements; EXPLAIN ANALYZE under Raw output executes the query and reports actual time per node."
+                      : a.share === "time"
+                        ? "Rows and times are actuals from an executed plan."
+                        : "This engine reports no row or cost figures with its plan, so those columns stay empty rather than being filled in from somewhere else."}
+                  </>
+                )}
               </div>
             </div>
           </div>

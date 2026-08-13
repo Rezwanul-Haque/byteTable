@@ -114,6 +114,31 @@ pub async fn create_schema(http: &ClickHouseHttp, schema: &str) -> Result<(), Ap
         .await
 }
 
+/// Remove the database itself (M34 delete-schema) — `DROP DATABASE`, without
+/// the recreate [`drop_schema`] does.
+///
+/// Refuses ClickHouse's own databases, and the one this connection points at:
+/// every request carries that database as its default, so deleting it would
+/// leave the workspace issuing queries against something that no longer exists.
+pub async fn delete_schema(http: &ClickHouseHttp, schema: &str) -> Result<(), AppError> {
+    if schema.eq_ignore_ascii_case("system")
+        || schema.eq_ignore_ascii_case("information_schema")
+        || schema.eq_ignore_ascii_case("default")
+    {
+        return Err(AppError::Unsupported(format!(
+            "'{schema}' is a ClickHouse system database and cannot be deleted."
+        )));
+    }
+    if http.database == schema {
+        return Err(AppError::Unsupported(format!(
+            "'{schema}' is the database this connection is using, so it cannot be \
+             deleted from under itself. Switch to another schema first, then delete it."
+        )));
+    }
+    http.execute(&format!("DROP DATABASE {}", quote_ident(schema)), &[])
+        .await
+}
+
 /// Run a multi-statement SQL script into `schema`. The ClickHouse HTTP interface
 /// runs one statement per request, so the script is split (quote/comment-aware)
 /// and each statement executed in order; a mid-script failure leaves the earlier
@@ -217,4 +242,30 @@ fn validate_full_pk(pk: &[PkPredicate], pk_cols: &[String], table: &str) -> Resu
         )));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn system_databases_are_not_deletable() {
+        // Mirrors the guard in `delete_schema`; ClickHouse spells its
+        // information schema in both cases, hence the case-insensitive match.
+        let refused = |s: &str| {
+            s.eq_ignore_ascii_case("system")
+                || s.eq_ignore_ascii_case("information_schema")
+                || s.eq_ignore_ascii_case("default")
+        };
+        for s in [
+            "system",
+            "SYSTEM",
+            "information_schema",
+            "INFORMATION_SCHEMA",
+            "default",
+        ] {
+            assert!(refused(s), "{s} should be refused");
+        }
+        for s in ["byteshop", "analytics", "defaults", "systemd"] {
+            assert!(!refused(s), "{s} should be deletable");
+        }
+    }
 }

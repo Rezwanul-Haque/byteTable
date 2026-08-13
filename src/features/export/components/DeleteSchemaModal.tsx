@@ -1,24 +1,27 @@
-// Drop-schema confirm modal (M15 SQL enhancements) — ported from the
-// prototype's `schema-import.jsx` `DropSchemaModal`, on the shared Modal
-// (focus trap + Esc + scrim) and the same `.truncate-modal` family the
-// TruncateModal uses.
+// Delete-schema confirm modal (M34) — the destructive sibling of
+// {@link EmptySchemaModal}, on the same shared Modal + `.truncate-modal`
+// family.
 //
-// Destructive + env-aware: it drops EVERY table in the schema and leaves an
-// empty schema (Postgres DROP+CREATE SCHEMA atomic; MySQL DROP+CREATE DATABASE
-// non-atomic; SQLite drops all user tables). A non-production connection gets a
-// simple confirm; a `production` connection requires the user to TYPE the
-// schema name to arm the destructive button (the M11 production-confirm rigor).
+// The distinction the two modals exist to make: "Empty schema" removes the
+// tables and leaves the schema standing; this removes the schema itself. Until
+// M34 only the first existed, which meant a schema created from the UI could
+// never be removed from it.
 //
-// It shows the table list (name + row count) and the DROP/CREATE SQL preview.
-// On confirm it calls the `dropSchema` wrapper, then on success toasts,
-// refreshes the sidebar (invalidate + force-reload the now-empty table list),
-// and bumps any open data grid for a table in this schema (those tabs will
-// error on refetch since the table is gone — acceptable; the schema is empty).
-// A backend error is surfaced inside the modal and the dialog stays open.
+// Because the schema is gone afterward — not merely empty — this one always
+// requires the name to be typed, not just on production connections: there is
+// nothing to re-import into if it was the wrong schema. The env tag still
+// escalates the visual weight on a production connection.
+//
+// On confirm it calls `deleteSchema`, then hands control back to the caller via
+// `onDeleted` (the sidebar re-introspects and switches to a surviving schema —
+// this modal cannot leave the workspace pointing at something that no longer
+// exists). A backend error is surfaced inside the modal and the dialog stays
+// open; the engine refuses system schemas and, on MySQL/ClickHouse, the
+// database the connection is currently using.
 
 import { useState } from "react";
 
-import { dropSchema, type TableInfo } from "../../../shared/api/engine";
+import { deleteSchema, type TableInfo } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
 import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
@@ -34,23 +37,23 @@ import "./TruncateModal.css";
 
 const DANGER = "#e06c75";
 
-export function DropSchemaModal({
+export function DeleteSchemaModal({
   handleId,
   schemaName,
   tables,
   env,
   onClose,
-  onDone,
+  onDeleted,
 }: {
   handleId: string;
   schemaName: string;
   /** The schema's current tables (for the list + total-row summary). */
   tables: TableInfo[];
-  /** Connection deployment env; `production` triggers the type-to-confirm gate. */
+  /** Connection deployment env; `production` escalates the visual weight. */
   env: string;
   onClose: () => void;
-  /** Called after a successful drop so callers can react (e.g. close tabs). */
-  onDone?: () => void;
+  /** Called after a successful delete so the caller can move off this schema. */
+  onDeleted: (deleted: string) => void;
 }) {
   const toast = useToast();
   const [typed, setTyped] = useState("");
@@ -60,8 +63,8 @@ export function DropSchemaModal({
   const normEnv = normalizeEnv(env);
   const isProd = normEnv === "production";
   const envColor = ENV_COLOR[normEnv];
-  // Production gate: the typed name must match exactly. Else always armed.
-  const armed = !isProd || typed.trim() === schemaName;
+  // Always type-to-confirm: unlike emptying, this cannot be re-imported into.
+  const armed = typed.trim() === schemaName;
 
   const tableCount = tables.length;
   const totalRows = tables.reduce((n, t) => n + (t.approxRowCount ?? 0), 0);
@@ -72,15 +75,11 @@ export function DropSchemaModal({
     setError(null);
     void (async () => {
       try {
-        await dropSchema(handleId, schemaName);
-        // Refresh the sidebar: drop this schema's cached lists/metas, then
-        // force-reload (it is empty now).
-        const introspection = useIntrospectionStore.getState();
-        introspection.invalidate(handleId, schemaName);
-        void introspection.loadTables(handleId, schemaName, { force: true });
-        // Bump any open data grid for a table in this schema — the table is
-        // gone, so the grid will surface a §5 on refetch (acceptable; the
-        // schema is now empty).
+        await deleteSchema(handleId, schemaName);
+        // Drop this schema's cached lists/metas. Nothing re-loads them: the
+        // schema is gone, and the caller is about to switch away from it.
+        useIntrospectionStore.getState().invalidate(handleId, schemaName);
+        // Any open grid for a table in this schema now points at nothing.
         const { workspaces } = useWorkspacesStore.getState();
         const { requestRefetch } = useTabMetaStore.getState();
         for (const ws of workspaces) {
@@ -89,33 +88,36 @@ export function DropSchemaModal({
             if (tab.kind === "table" && tab.schema === schemaName) requestRefetch(tab.id);
           }
         }
-        toast("Dropped schema " + schemaName + " — emptied", "ok");
-        onDone?.();
+        toast("Deleted schema " + schemaName, "ok");
+        onDeleted(schemaName);
         onClose();
       } catch (err) {
-        setError(appErrorMessage(err, "Could not drop the schema."));
+        setError(appErrorMessage(err, "Could not delete the schema."));
         setBusy(false);
       }
     })();
   };
 
   return (
-    <Modal onClose={onClose} label="Drop schema" width={480} className="truncate-modal">
+    <Modal onClose={onClose} label="Delete schema" width={480} className="truncate-modal">
       <ModalTitle>
-        <Icon name="warning" size={18} style={{ color: DANGER }} /> Drop schema
+        <Icon name="warning" size={18} style={{ color: DANGER }} /> Delete schema
       </ModalTitle>
       <div className="truncate-body">
         <p>
-          This drops{" "}
-          <b>
-            all {tableCount} table{tableCount === 1 ? "" : "s"}
-          </b>{" "}
-          in <code>{schemaName}</code> and their <b>{totalRows.toLocaleString()} rows</b>, then
-          leaves an empty schema ready to recreate &amp; re-import. This cannot be undone.
+          This removes the schema <code>{schemaName}</code> itself
+          {tableCount > 0 ? (
+            <>
+              , along with{" "}
+              <b>
+                all {tableCount} table{tableCount === 1 ? "" : "s"}
+              </b>{" "}
+              in it and their <b>{totalRows.toLocaleString()} rows</b>
+            </>
+          ) : null}
+          . Nothing is left to re-import into. This cannot be undone.
         </p>
-        <pre className="truncate-sql">
-          DROP SCHEMA {schemaName} CASCADE;{"\n"}CREATE SCHEMA {schemaName};
-        </pre>
+        <pre className="truncate-sql">DROP SCHEMA {schemaName} CASCADE;</pre>
         {tableCount > 0 ? (
           <div className="schema-import-list">
             {tables.map((t) => (
@@ -129,8 +131,8 @@ export function DropSchemaModal({
             ))}
           </div>
         ) : null}
-        {isProd ? (
-          <div className="truncate-prod">
+        <div className="truncate-prod">
+          {isProd ? (
             <div
               className="truncate-prod-tag"
               style={{
@@ -141,19 +143,19 @@ export function DropSchemaModal({
             >
               <Icon name="public" size={13} /> production
             </div>
-            <label>
-              Type <b>{schemaName}</b> to confirm
-              <input
-                value={typed}
-                onChange={(e) => setTyped(e.target.value)}
-                placeholder={schemaName}
-                spellCheck="false"
-                autoFocus
-                aria-label={"Type " + schemaName + " to confirm"}
-              />
-            </label>
-          </div>
-        ) : null}
+          ) : null}
+          <label>
+            Type <b>{schemaName}</b> to confirm
+            <input
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              placeholder={schemaName}
+              spellCheck="false"
+              autoFocus
+              aria-label={"Type " + schemaName + " to confirm"}
+            />
+          </label>
+        </div>
         {error ? <div className="truncate-error">{error}</div> : null}
       </div>
       <ModalActions>
@@ -167,7 +169,7 @@ export function DropSchemaModal({
           onClick={confirm}
         >
           <Icon name="delete_forever" size={16} />
-          <span>{busy ? "Dropping…" : "Drop schema"}</span>
+          <span>{busy ? "Deleting…" : "Delete schema"}</span>
         </button>
       </ModalActions>
     </Modal>

@@ -38,7 +38,8 @@ import {
 } from "../../connections/api";
 import { CreateSchemaModal } from "../../export/components/CreateSchemaModal";
 import { CreateTableModal } from "../../export/components/CreateTableModal";
-import { DropSchemaModal } from "../../export/components/DropSchemaModal";
+import { DeleteSchemaModal } from "../../export/components/DeleteSchemaModal";
+import { EmptySchemaModal } from "../../export/components/EmptySchemaModal";
 import { ExportProgressModal } from "../../export/components/ExportProgressModal";
 import { TruncateModal } from "../../export/components/TruncateModal";
 import { GenerateModal } from "../../generate/components/GenerateModal";
@@ -166,8 +167,11 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   const [schemaMenu, setSchemaMenu] = useState(false);
   const [importTarget, setImportTarget] = useState<string | null>(null);
   const [schemaImportOpen, setSchemaImportOpen] = useState(false);
-  // M15 SQL enhancements: the destructive drop-schema confirm (null when closed).
-  const [dropSchemaOpen, setDropSchemaOpen] = useState(false);
+  // M15 SQL enhancements: the destructive empty-schema confirm (drops every
+  // table, keeps the schema). M34: and the delete-schema one, which removes the
+  // schema itself.
+  const [emptySchemaOpen, setEmptySchemaOpen] = useState(false);
+  const [deleteSchemaOpen, setDeleteSchemaOpen] = useState(false);
   // M16: open the Generate-data modal for this (handle, schema).
   const openGenerate = useGenerateStore((s) => s.openModal);
   // Create-schema modal (from the schema switcher's "Create schema" item).
@@ -287,6 +291,26 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
         /* keep the stale list — we still switch to the new schema below */
       }
       setSchema(newName);
+    })();
+  };
+
+  // After deleting a schema (M34): re-introspect, then switch to a survivor.
+  // The workspace cannot be left pointing at a schema that no longer exists —
+  // the table list would just error. Prefer the connection's conventional
+  // default, else the first remaining schema; if nothing is left, "" puts the
+  // sidebar in its no-schema state rather than a broken one.
+  const onSchemaDeleted = (deleted: string) => {
+    void (async () => {
+      let remaining = workspace.schemas.filter((s) => s.name !== deleted).map((s) => s.name);
+      try {
+        const fresh = await connectionSchemas(handleId);
+        setWorkspaceSchemas(workspace.id, fresh);
+        remaining = fresh.map((s) => s.name).filter((n) => n !== deleted);
+      } catch {
+        /* keep the locally-filtered list — we still have to switch below */
+      }
+      const preferred = remaining.find((n) => n === "public" || n === "dbo");
+      setSchema(preferred ?? remaining[0] ?? "");
     })();
   };
 
@@ -605,10 +629,21 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                 role="menuitem"
                 onClick={() => {
                   setSchemaMenu(false);
-                  setDropSchemaOpen(true);
+                  setEmptySchemaOpen(true);
                 }}
               >
-                <Icon name="delete_forever" size={15} /> Drop schema…
+                <Icon name="delete_sweep" size={15} /> Empty schema…
+              </button>
+              <button
+                type="button"
+                className="ctx-item danger"
+                role="menuitem"
+                onClick={() => {
+                  setSchemaMenu(false);
+                  setDeleteSchemaOpen(true);
+                }}
+              >
+                <Icon name="delete_forever" size={15} /> Delete schema…
               </button>
             </div>
           ) : null}
@@ -911,15 +946,29 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
         />
       ) : null}
 
-      {/* Drop schema (M15): destructive, env-aware. Drops every table and
+      {/* Empty schema (M15): destructive, env-aware. Drops every table and
           leaves the schema empty. Refreshes the (now-empty) sidebar itself. */}
-      {dropSchemaOpen ? (
-        <DropSchemaModal
+      {emptySchemaOpen ? (
+        <EmptySchemaModal
           handleId={handleId}
           schemaName={schemaName}
           tables={tables ?? []}
           env={workspace.saved.env}
-          onClose={() => setDropSchemaOpen(false)}
+          onClose={() => setEmptySchemaOpen(false)}
+        />
+      ) : null}
+
+      {/* Delete schema (M34): removes the schema itself, not just its contents.
+          On success the switcher has to move off a schema that no longer
+          exists, so this one re-introspects and picks a survivor. */}
+      {deleteSchemaOpen ? (
+        <DeleteSchemaModal
+          handleId={handleId}
+          schemaName={schemaName}
+          tables={tables ?? []}
+          env={workspace.saved.env}
+          onClose={() => setDeleteSchemaOpen(false)}
+          onDeleted={onSchemaDeleted}
         />
       ) : null}
 

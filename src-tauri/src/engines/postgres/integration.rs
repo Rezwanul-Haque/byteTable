@@ -883,6 +883,52 @@ async fn drop_schema_empties_throwaway_schema_and_leaves_it() {
     drop_fixture(&pool, schema, other).await;
 }
 
+/// delete_schema removes the schema ITSELF (M34) — the difference from
+/// `drop_schema`, which recreates it empty. Neighbouring schemas survive,
+/// a nonexistent schema is a §5 error, and system schemas are refused.
+#[tokio::test]
+async fn delete_schema_removes_the_schema_itself() {
+    let Some((params, secret)) = gate("delete_schema_removes_the_schema_itself") else {
+        return;
+    };
+    let pool = raw_pool(&params, &secret).await;
+    let (schema, other) = ("bt_it_delschema", "bt_it_delschema_other");
+    setup_fixture(&pool, schema, other).await;
+    let conn = open_conn(&params, &secret).await;
+
+    conn.delete_schema(schema).await.expect("delete schema");
+
+    // Gone — not recreated empty, which is what drop_schema would have done.
+    let schema_exists: Option<i32> =
+        sqlx::query_scalar("SELECT 1 FROM pg_namespace WHERE nspname = $1")
+            .bind(schema)
+            .fetch_optional(&pool)
+            .await
+            .unwrap();
+    assert!(schema_exists.is_none(), "schema itself must be removed");
+
+    // The OTHER throwaway schema is untouched.
+    let other_tables: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM information_schema.tables WHERE table_schema = $1",
+    )
+    .bind(other)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(other_tables, 1, "delete must not touch other schemas");
+
+    // A nonexistent schema is a §5 error.
+    let err = conn.delete_schema("bt_it_nope_xyz").await.unwrap_err();
+    assert!(matches!(err, AppError::Database(_)));
+    assert!(err.to_string().contains("does not exist"));
+
+    // System schemas are refused before any SQL runs.
+    let err = conn.delete_schema("pg_catalog").await.unwrap_err();
+    assert!(matches!(err, AppError::Unsupported(_)));
+
+    drop_fixture(&pool, schema, other).await;
+}
+
 #[tokio::test]
 async fn export_csv_and_sql_against_live_postgres() {
     use crate::features::connections::application::ConnectionManager;

@@ -273,6 +273,10 @@ impl EngineConnection for ClickhouseEngineConnection {
         mutate::create_schema(&self.http, schema).await
     }
 
+    async fn delete_schema(&self, schema: &str) -> Result<(), AppError> {
+        mutate::delete_schema(&self.http, schema).await
+    }
+
     async fn execute_script(
         &self,
         schema: &str,

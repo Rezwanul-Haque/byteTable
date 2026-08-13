@@ -193,6 +193,52 @@ pub(super) async fn truncate_table(
     Ok(prior.max(0) as u64)
 }
 
+/// The four MySQL system databases, which `list_schemas` already hides and
+/// which must never be deletable.
+fn is_system_schema(schema: &str) -> bool {
+    schema.eq_ignore_ascii_case("mysql")
+        || schema.eq_ignore_ascii_case("information_schema")
+        || schema.eq_ignore_ascii_case("performance_schema")
+        || schema.eq_ignore_ascii_case("sys")
+}
+
+/// Remove the database itself (M34 delete-schema) — `DROP DATABASE \`x\``.
+///
+/// Refuses the connection's OWN default database. Every read path fully
+/// qualifies its names, so an already-open session would keep working, but the
+/// pool is configured with `database(x)`: the moment it needs a fresh
+/// connection it would fail to open one, leaving the workspace half-alive in a
+/// way that is hard to diagnose. Better a §5 error telling the user to switch
+/// schema first — the switcher lists every database they can see.
+pub(super) async fn delete_schema(pool: &MySqlPool, schema: &str) -> Result<(), AppError> {
+    if is_system_schema(schema) {
+        return Err(AppError::Unsupported(format!(
+            "'{schema}' is a MySQL system database and cannot be deleted."
+        )));
+    }
+    ensure_schema_exists(pool, schema).await?;
+
+    // `DATABASE()` is the session's current default — the one the pool opens
+    // every connection with. The CAST is required: MySQL types the bare
+    // function as VARBINARY, which will not decode into a String.
+    let current: Option<String> = sqlx::query_scalar("SELECT CAST(DATABASE() AS CHAR)")
+        .fetch_one(pool)
+        .await
+        .map_err(map_query_error)?;
+    if current.as_deref() == Some(schema) {
+        return Err(AppError::Unsupported(format!(
+            "'{schema}' is the database this connection is using, so it cannot be \
+             deleted from under itself. Switch to another schema first, then delete it."
+        )));
+    }
+
+    sqlx::query(&format!("DROP DATABASE {}", quote_ident(schema)))
+        .execute(pool)
+        .await
+        .map_err(map_query_error)?;
+    Ok(())
+}
+
 /// Drop every table in `schema` and leave the schema empty (M15 drop-schema).
 ///
 /// In MySQL a schema IS a database, so this runs `DROP DATABASE \`x\`;
@@ -397,6 +443,26 @@ pub(super) fn sql_literal(value: &serde_json::Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn system_databases_are_not_deletable() {
+        // MySQL treats database names case-insensitively on some platforms, so
+        // the guard has to as well.
+        for s in [
+            "mysql",
+            "MySQL",
+            "information_schema",
+            "INFORMATION_SCHEMA",
+            "performance_schema",
+            "sys",
+            "SYS",
+        ] {
+            assert!(is_system_schema(s), "{s} should be refused");
+        }
+        for s in ["byteshop", "system", "mysql_backup", "sysops"] {
+            assert!(!is_system_schema(s), "{s} should be deletable");
+        }
+    }
 
     #[test]
     fn validate_pk_predicates_enforces_full_pk() {

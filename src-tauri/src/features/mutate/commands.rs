@@ -89,3 +89,21 @@ pub async fn create_schema(
 ) -> Result<(), AppError> {
     application::create_schema(state.manager(), &handle_id, &schema).await
 }
+
+/// Remove a schema/database and everything in it (M34 `delete_schema` command).
+/// **Mutates user data — destructive**, and unlike [`drop_schema`] the schema
+/// itself is gone afterward, so the caller must stop pointing at it.
+///
+/// Engine-aware in the adapter (Postgres `DROP SCHEMA … CASCADE`; MySQL /
+/// ClickHouse `DROP DATABASE`, refusing the connection's own default database;
+/// SQL Server empties then `DROP SCHEMA`; SQLite unsupported). System schemas
+/// are refused. Unknown schema surfaces as a `{ kind, message }` §5 error. The
+/// production-confirm dialog is renderer-side.
+#[tauri::command]
+pub async fn delete_schema(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+    schema: String,
+) -> Result<(), AppError> {
+    application::delete_schema(state.manager(), &handle_id, &schema).await
+}

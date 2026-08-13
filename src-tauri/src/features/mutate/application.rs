@@ -88,6 +88,15 @@ pub async fn create_schema(
     manager.get_sql(handle).await?.create_schema(schema).await
 }
 
+/// Remove a schema/database and everything in it (M34; SQLite is unsupported).
+pub async fn delete_schema(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    schema: &str,
+) -> Result<(), AppError> {
+    manager.get_sql(handle).await?.delete_schema(schema).await
+}
+
 #[cfg(test)]
 mod tests {
     use async_trait::async_trait;

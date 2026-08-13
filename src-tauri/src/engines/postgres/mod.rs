@@ -92,7 +92,9 @@ use sql::quote_ident;
 use bulk::{bulk_insert, fetch_pk_pool};
 use error::{map_connect_error, map_query_error};
 use introspect::{list_schemas, list_tables, table_meta};
-use mutate::{delete_rows, drop_schema, execute_script, truncate_table, update_cell};
+use mutate::{
+    delete_rows, delete_schema, drop_schema, execute_script, truncate_table, update_cell,
+};
 use query::{column_stats, fetch_row_by_key, fetch_rows, run_query};
 use structure::alter_table;
 
@@ -283,6 +285,10 @@ impl EngineConnection for PostgresEngineConnection {
             .await
             .map_err(map_query_error)?;
         Ok(())
+    }
+
+    async fn delete_schema(&self, schema: &str) -> Result<(), AppError> {
+        delete_schema(&self.pool, schema).await
     }
 
     async fn execute_script(

@@ -513,6 +513,7 @@ pub fn run() {
             features::mutate::commands::truncate_table,
             features::mutate::commands::drop_schema,
             features::mutate::commands::create_schema,
+            features::mutate::commands::delete_schema,
             features::export::commands::export_table,
             features::export::commands::export_schema,
             features::export::commands::export_save,

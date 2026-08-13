@@ -70,7 +70,9 @@ use sql::quote_ident;
 use bulk::{bulk_insert, fetch_pk_pool};
 use error::{map_connect_error, map_query_error};
 use introspect::{list_schemas, list_tables, table_meta};
-use mutate::{delete_rows, drop_schema, execute_script, truncate_table, update_cell};
+use mutate::{
+    delete_rows, delete_schema, drop_schema, execute_script, truncate_table, update_cell,
+};
 use query::{column_stats, fetch_row_by_key, fetch_rows, run_query};
 use structure::alter_table;
 
@@ -342,6 +344,11 @@ impl EngineConnection for MssqlEngineConnection {
     async fn drop_schema(&self, schema: &str) -> Result<(), AppError> {
         let mut client = self.client.lock().await;
         drop_schema(&mut client, schema).await
+    }
+
+    async fn delete_schema(&self, schema: &str) -> Result<(), AppError> {
+        let mut client = self.client.lock().await;
+        delete_schema(&mut client, schema).await
     }
 
     async fn create_schema(&self, schema: &str) -> Result<(), AppError> {

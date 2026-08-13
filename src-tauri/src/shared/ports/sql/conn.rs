@@ -508,6 +508,32 @@ pub trait EngineConnection: Send + Sync {
         ))
     }
 
+    /// Remove the schema/database itself, contents and all (M34) — the
+    /// counterpart to [`create_schema`](Self::create_schema), and the thing
+    /// [`drop_schema`](Self::drop_schema) deliberately does NOT do.
+    ///
+    /// - **Postgres**: `DROP SCHEMA "x" CASCADE` — the connection is bound to a
+    ///   *database*, not a schema, so the session survives.
+    /// - **MySQL / ClickHouse**: `DROP DATABASE` — but the connection's own
+    ///   default database cannot be removed from under it (new pool connections
+    ///   would fail to open), so the adapter refuses with a §5 error telling the
+    ///   user to switch schema first.
+    /// - **SQL Server**: `DROP SCHEMA` requires the schema to be empty, so the
+    ///   adapter drops the dependent FKs and tables first, then the schema.
+    /// - **SQLite**: stays `Unsupported` — `main` is the database file itself,
+    ///   and deleting the user's file is not this command's job.
+    ///
+    /// Every adapter refuses the engine's own system schemas. Afterwards the
+    /// schema is gone, so the caller must move off it (the sidebar re-introspects
+    /// and picks a survivor).
+    ///
+    /// Default impl: `Unsupported` — only engines that implement it override it.
+    async fn delete_schema(&self, _schema: &str) -> Result<(), AppError> {
+        Err(AppError::Unsupported(
+            "Deleting a schema is not supported for this engine.".into(),
+        ))
+    }
+
     /// Run a whole multi-statement SQL script (a dump: `CREATE TABLE` + `INSERT`
     /// + …) into the given schema (M15 import — the I/O counterpart of export).
     ///

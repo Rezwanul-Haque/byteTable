@@ -270,6 +270,37 @@ pub(super) async fn truncate_table(
 /// the schema itself in place and empty (M15 drop-schema). SQL Server has no
 /// `DROP SCHEMA … CASCADE`, so we drop FK constraints first, then the tables,
 /// inside one transaction (SQL Server DDL is transactional → atomic).
+/// SQL Server schemas that ship with every database and must stay put: `dbo`
+/// (the default), the catalog ones, and the fixed database-role schemas.
+fn is_system_schema(schema: &str) -> bool {
+    schema.eq_ignore_ascii_case("dbo")
+        || schema.eq_ignore_ascii_case("sys")
+        || schema.eq_ignore_ascii_case("guest")
+        || schema.eq_ignore_ascii_case("INFORMATION_SCHEMA")
+        || schema.to_ascii_lowercase().starts_with("db_")
+}
+
+/// Remove the schema itself (M34 delete-schema).
+///
+/// SQL Server's `DROP SCHEMA` refuses a schema that still owns objects, so this
+/// reuses [`drop_schema`] to clear the dependent FKs and tables first, then
+/// drops the (now empty) schema. A schema owning something else — a view, a
+/// procedure, a sequence — surfaces the engine's own §5 error, which names the
+/// object; that is more useful than anything we could invent.
+///
+/// The connection is bound to a *database*, and a schema is one level below
+/// that, so unlike MySQL there is no deleting-from-under-ourselves case.
+pub(super) async fn delete_schema(client: &mut TdsClient, schema: &str) -> Result<(), AppError> {
+    if is_system_schema(schema) {
+        return Err(AppError::Unsupported(format!(
+            "'{schema}' is a SQL Server system schema and cannot be deleted."
+        )));
+    }
+    drop_schema(client, schema).await?;
+    exec_batch(client, format!("DROP SCHEMA {}", quote_ident(schema))).await?;
+    Ok(())
+}
+
 pub(super) async fn drop_schema(client: &mut TdsClient, schema: &str) -> Result<(), AppError> {
     ensure_schema_exists(client, schema).await?;
 
@@ -364,4 +395,30 @@ pub(super) async fn execute_script(
     }
     exec_batch(client, "COMMIT").await?;
     Ok(ImportResult { statements: total })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn system_schemas_are_not_deletable() {
+        // SQL Server identifiers are case-insensitive under the default
+        // collation, and the fixed database-role schemas all start `db_`.
+        for s in [
+            "dbo",
+            "DBO",
+            "sys",
+            "guest",
+            "INFORMATION_SCHEMA",
+            "information_schema",
+            "db_owner",
+            "db_datareader",
+        ] {
+            assert!(is_system_schema(s), "{s} should be refused");
+        }
+        for s in ["byteshop", "sales", "dbextra", "system"] {
+            assert!(!is_system_schema(s), "{s} should be deletable");
+        }
+    }
 }

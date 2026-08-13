@@ -862,8 +862,10 @@ export function truncateTable(
  * CREATE DATABASE` (NOT atomic — DDL auto-commits); SQLite drops every user
  * table in a transaction (the file IS the schema). Resolves on success; the
  * schema is empty afterward. Unknown schema surfaces as a `{ kind, message }`
- * §5 error. The production-confirm dialog (DropSchemaModal) is the caller's
+ * §5 error. The production-confirm dialog (EmptySchemaModal) is the caller's
  * responsibility.
+ *
+ * To remove the schema itself, see {@link deleteSchema}.
  */
 export function dropSchema(handleId: string, schema: string): Promise<void> {
   return invoke<void>("drop_schema", { handleId, schema });
@@ -877,6 +879,24 @@ export function dropSchema(handleId: string, schema: string): Promise<void> {
  */
 export function createSchema(handleId: string, schema: string): Promise<void> {
   return invoke<void>("create_schema", { handleId, schema });
+}
+
+/**
+ * Remove a schema/database and everything in it (M34 `delete_schema` command) —
+ * the counterpart to {@link createSchema}, and what {@link dropSchema} does NOT
+ * do. **Mutates user data — destructive**, and the schema is gone afterward, so
+ * the caller must move off it.
+ *
+ * Engine-aware server-side: Postgres `DROP SCHEMA … CASCADE`; MySQL and
+ * ClickHouse `DROP DATABASE`, which **refuse the database the connection is
+ * using** (switch schema first — the error says so); SQL Server empties the
+ * schema then `DROP SCHEMA`; **SQLite is unsupported** (`main` is the file).
+ * System schemas are refused. Errors surface as `{ kind, message }` §5 errors.
+ * The production-confirm dialog (DeleteSchemaModal) is the caller's
+ * responsibility.
+ */
+export function deleteSchema(handleId: string, schema: string): Promise<void> {
+  return invoke<void>("delete_schema", { handleId, schema });
 }
 
 // ---------------------------------------------------------------------------

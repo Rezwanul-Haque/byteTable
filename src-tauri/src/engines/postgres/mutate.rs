@@ -225,6 +225,36 @@ pub(super) async fn drop_schema(pool: &PgPool, schema: &str) -> Result<(), AppEr
     Ok(())
 }
 
+/// Postgres schemas the user must never be able to delete: the catalog and the
+/// information schema, plus the `pg_toast*` / `pg_temp*` families. `public` is
+/// deliberately NOT here — it is an ordinary, droppable schema in Postgres, and
+/// the confirm dialog (which types-to-confirm on production) is the gate.
+fn is_system_schema(schema: &str) -> bool {
+    matches!(schema, "pg_catalog" | "information_schema")
+        || schema.starts_with("pg_toast")
+        || schema.starts_with("pg_temp")
+}
+
+/// Remove the schema itself, contents and all (M34 delete-schema).
+///
+/// `DROP SCHEMA "x" CASCADE` — the same CASCADE as [`drop_schema`], without the
+/// `CREATE SCHEMA` that puts it back. The connection is bound to a *database*,
+/// not a schema, so nothing about the session breaks; the caller just has to
+/// stop pointing at a schema that no longer exists.
+pub(super) async fn delete_schema(pool: &PgPool, schema: &str) -> Result<(), AppError> {
+    if is_system_schema(schema) {
+        return Err(AppError::Unsupported(format!(
+            "'{schema}' is a system schema and cannot be deleted."
+        )));
+    }
+    ensure_schema_exists(pool, schema).await?;
+    sqlx::query(&format!("DROP SCHEMA {} CASCADE", quote_ident(schema)))
+        .execute(pool)
+        .await
+        .map_err(map_query_error)?;
+    Ok(())
+}
+
 /// Run a whole multi-statement SQL script (a dump) into `schema` (M15 import).
 ///
 /// Atomicity: the whole dump runs inside one explicit sqlx transaction
@@ -355,6 +385,24 @@ pub(super) fn sql_literal(value: &serde_json::Value) -> String {
 mod tests {
     use super::*;
     use crate::shared::engine::PkPredicate;
+
+    #[test]
+    fn system_schemas_are_not_deletable() {
+        for s in [
+            "pg_catalog",
+            "information_schema",
+            "pg_toast",
+            "pg_toast_temp_1",
+            "pg_temp_3",
+        ] {
+            assert!(is_system_schema(s), "{s} should be refused");
+        }
+        // `public` is an ordinary droppable schema in Postgres — the confirm
+        // dialog is the gate, not this guard.
+        for s in ["public", "byteshop", "pgx", "temp_stuff", "information"] {
+            assert!(!is_system_schema(s), "{s} should be deletable");
+        }
+    }
 
     #[test]
     fn validate_pk_predicates_enforces_full_pk() {

@@ -976,6 +976,72 @@ async fn drop_schema_recreates_throwaway_database_empty() {
     drop_fixture(&pool, schema, other).await;
 }
 
+/// delete_schema removes the database ITSELF (M34), and refuses the one the
+/// connection is bound to — dropping that would leave the pool unable to open
+/// a fresh session. System databases are refused too.
+#[tokio::test]
+async fn delete_schema_removes_database_but_refuses_the_connected_one() {
+    let Some((params, secret)) =
+        gate("delete_schema_removes_database_but_refuses_the_connected_one")
+    else {
+        return;
+    };
+    let pool = raw_pool(&params, &secret).await;
+    let (schema, other) = ("bt_it_delschema", "bt_it_delschema_other");
+    setup_fixture(&pool, schema, other).await;
+    let conn = open_conn(&params, &secret).await;
+
+    conn.delete_schema(schema).await.expect("delete schema");
+
+    // Gone — not recreated empty, which is what drop_schema would have done.
+    // `SELECT 1`, not `schema_name`: MySQL types the catalog's name columns as
+    // VARBINARY, which will not decode into a String.
+    let exists: Option<i32> =
+        sqlx::query_scalar("SELECT 1 FROM information_schema.schemata WHERE schema_name = ?")
+            .bind(schema)
+            .fetch_optional(&pool)
+            .await
+            .unwrap();
+    assert!(exists.is_none(), "database itself must be removed");
+
+    // The OTHER throwaway database is untouched.
+    let other_tables: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM information_schema.tables WHERE table_schema = ?")
+            .bind(other)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(other_tables, 1, "delete must not touch other databases");
+
+    // The connection's own default database is refused, not dropped.
+    // CAST: MySQL types the bare `DATABASE()` as VARBINARY (the same trap the
+    // adapter's own guard has to avoid).
+    let current: Option<String> = sqlx::query_scalar("SELECT CAST(DATABASE() AS CHAR)")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    if let Some(current) = current {
+        let err = conn.delete_schema(&current).await.unwrap_err();
+        assert!(matches!(err, AppError::Unsupported(_)), "got {err:?}");
+        assert!(err.to_string().contains("Switch to another schema first"));
+        // …and it really is still there.
+        let still: Option<i32> =
+            sqlx::query_scalar("SELECT 1 FROM information_schema.schemata WHERE schema_name = ?")
+                .bind(&current)
+                .fetch_optional(&pool)
+                .await
+                .unwrap();
+        assert!(still.is_some(), "the connected database must survive");
+    }
+
+    // System databases are refused before any SQL runs.
+    let err = conn.delete_schema("mysql").await.unwrap_err();
+    assert!(matches!(err, AppError::Unsupported(_)));
+
+    conn.close().await.expect("close");
+    drop_fixture(&pool, schema, other).await;
+}
+
 #[tokio::test]
 async fn export_csv_and_sql_against_live_mysql() {
     use crate::features::connections::application::ConnectionManager;

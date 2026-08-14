@@ -781,7 +781,10 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
   // within the live line). null result closes the popup.
   const computeAc = (value: string, caret: number, explicit: boolean) => {
     const prefix = session.buffer ? session.buffer + "\n" : "";
-    const res = suggestSql(prefix + value, prefix.length + caret, schemaRef.current, { explicit });
+    const res = suggestSql(prefix + value, prefix.length + caret, schemaRef.current, {
+      explicit,
+      engine,
+    });
     if (!res) {
       setAc(null);
       return;

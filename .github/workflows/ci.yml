@@ -78,8 +78,8 @@ jobs:
       - name: Typecheck (tsc)
         run: pnpm typecheck
 
-      - name: Self-checks (renderer)
-        run: pnpm check:units
+      - name: Unit tests (Vitest)
+        run: pnpm test
 
       - name: Build renderer (Vite)
         run: pnpm build

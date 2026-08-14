@@ -13,9 +13,17 @@
 //   - Otherwise suggest COLUMN names first, prioritising columns of tables
 //     already referenced in the current statement (each carries its source
 //     table and a pk flag), then table names, then SQL keywords and functions.
-//   - Matching is case-insensitive PREFIX match on the current word; ordering
-//     is the array order returned here (no fuzzy re-sort downstream).
+//   - Matching is case-insensitive PREFIX match on the current word — or on the
+//     multi-word phrase ending at the caret, so "ON DUP" still finds ON
+//     DUPLICATE KEY UPDATE. Ordering is the array order returned here (no fuzzy
+//     re-sort downstream).
+//   - Keywords/functions are DIALECT-SPECIFIC (sqlKeywords.ts, keyed by the
+//     caller's `engine`): Postgres offers RETURNING/ILIKE, ClickHouse PREWHERE
+//     and its camelCase functions, Cassandra a CQL-only set with no joins.
 
+import type { Engine } from "../../../shared/types";
+
+import { functionsFor, keywordsFor } from "./sqlKeywords";
 import { statementRangeAt } from "./sqlStatement";
 
 /** One column the engine can suggest (subset of the introspected ColumnInfo). */
@@ -70,67 +78,22 @@ export const SUGGEST_KIND_LABEL: Record<SuggestKind, string> = {
   fn: "fn",
 };
 
-/** Curated SQL keywords offered as completions (multi-word phrases included so
- *  e.g. "gro" → "GROUP BY"). Uppercased on insert to match SQL house style. */
-const KEYWORDS = [
-  "SELECT",
-  "FROM",
-  "WHERE",
-  "GROUP BY",
-  "ORDER BY",
-  "HAVING",
-  "LIMIT",
-  "OFFSET",
-  "JOIN",
-  "LEFT JOIN",
-  "RIGHT JOIN",
-  "INNER JOIN",
-  "OUTER JOIN",
-  "ON",
-  "AS",
-  "AND",
-  "OR",
-  "NOT",
-  "IN",
-  "IS NULL",
-  "IS NOT NULL",
-  "LIKE",
-  "BETWEEN",
-  "EXISTS",
-  "DISTINCT",
-  "UNION",
-  "UNION ALL",
-  "ASC",
-  "DESC",
-  "INSERT INTO",
-  "VALUES",
-  "UPDATE",
-  "SET",
-  "DELETE FROM",
-  "CREATE TABLE",
-  "ALTER TABLE",
-  "DROP TABLE",
-];
-
-/** Aggregate / scalar functions. The trailing `(` is part of the insert, and
- *  the caret lands inside the parens (no trailing space — per the spec). */
-const FUNCTIONS = [
-  "COUNT(",
-  "SUM(",
-  "AVG(",
-  "MIN(",
-  "MAX(",
-  "COALESCE(",
-  "NOW(",
-  "LENGTH(",
-  "LOWER(",
-  "UPPER(",
-  "ABS(",
-  "ROUND(",
-];
-
 /** Hard cap on rows returned — keeps the popup scroll bounded on wide schemas. */
 const MAX_OPTIONS = 60;
+
+/**
+ * Rows RESERVED for keyword/function matches inside {@link MAX_OPTIONS}.
+ *
+ * WHY: schema rows are pushed first, so on a wide schema a common prefix ("co",
+ * "de") could match enough columns to fill the cap and silently drop every
+ * keyword — `COUNT(` / `CREATE TABLE` would just never appear. Columns+tables
+ * are therefore trimmed to leave room for whatever keywords matched.
+ */
+const KEYWORD_SLOTS = 20;
+
+/** How many words back a phrase match may reach (the longest keyword phrases —
+ *  ON CONFLICT DO UPDATE SET, CREATE TABLE IF NOT EXISTS — are five words). */
+const MAX_PHRASE_WORDS = 4;
 
 /** Material Symbols glyph per kind (matches the sidebar's table/key icons). */
 const ICON: Record<SuggestKind, string> = {
@@ -193,12 +156,15 @@ function functionSuggestion(fn: string): Suggestion {
  * and the ordered suggestions, or `null` when nothing should pop up. With no
  * partial word and no table context, returns null unless `opts.explicit`
  * (manual trigger — Ctrl/Cmd+Space), so plain whitespace never opens the popup.
+ *
+ * `opts.engine` selects the keyword/function vocabulary; omitted, the shared
+ * ANSI core is used (no dialect extras).
  */
 export function suggestSql(
   text: string,
   caret: number,
   schema: EditorSchema,
-  opts?: { explicit?: boolean },
+  opts?: { explicit?: boolean; engine?: Engine },
 ): SuggestResult | null {
   // Scope context to the statement the caret sits in (multi-statement buffers).
   const range = statementRangeAt(text, caret) ?? { from: 0, to: text.length };
@@ -211,6 +177,23 @@ export function suggestSql(
   const from = caret - word.length;
   const wl = word.toLowerCase();
   const prefix = (s: string): boolean => s.toLowerCase().startsWith(wl);
+
+  // Starts of the multi-word phrases ending at the caret, LONGEST FIRST — so a
+  // half-typed PHRASE still finds its keyword: "ON DUP" → ON DUPLICATE KEY
+  // UPDATE, "CREATE TABLE IF" → CREATE TABLE IF NOT EXISTS. Without this only
+  // the FIRST word of a phrase matches and everything past it dead-ends.
+  // Every suffix is a candidate (in "FROM t ON DUP" the phrase is "ON DUP", not
+  // the whole tail), and the longest one that matches something wins.
+  // Separators are spaces/tabs only — never a newline — which keeps the replace
+  // range inside the caret's line, as the SQL terminal maps `from` back into
+  // its live input line.
+  const phraseStarts: number[] = [];
+  for (let i = from, n = 0; n < MAX_PHRASE_WORDS; n++) {
+    const sep = /[\w$]+[ \t]+$/.exec(text.slice(stmtStart, i));
+    if (!sep) break;
+    i -= sep[0].length;
+    phraseStarts.unshift(i);
+  }
 
   // Table context: caret right after FROM/JOIN/INTO/UPDATE — allowing a
   // partly-typed name and comma-separated table lists (`FROM a, b█`).
@@ -239,17 +222,56 @@ export function suggestSql(
         if (prefix(c.name)) bucket.push(columnSuggestion(c, t.name));
       }
     }
-    items.push(...refCols, ...otherCols);
-    // Then tables, then keywords + functions.
+    // Then tables, then the dialect's keywords + functions.
+    const schemaItems = [...refCols, ...otherCols];
     for (const t of schema.tables) {
-      if (prefix(t.name)) items.push(tableSuggestion(t.name));
+      if (prefix(t.name)) schemaItems.push(tableSuggestion(t.name));
     }
-    for (const kw of KEYWORDS) {
-      if (prefix(kw)) items.push(keywordSuggestion(kw));
+    // Keywords matched as a PHRASE (longest candidate that hits anything).
+    // These lead the list: they account for more of what the user typed than a
+    // single-word match does.
+    const keywords = keywordsFor(opts?.engine);
+    const phraseItems: Suggestion[] = [];
+    let phraseFrom = from;
+    for (const start of phraseStarts) {
+      const pl = text
+        .slice(start, caret)
+        .toLowerCase()
+        .replace(/[ \t]+/g, " ");
+      for (const kw of keywords) {
+        if (kw.toLowerCase().startsWith(pl)) phraseItems.push(keywordSuggestion(kw));
+      }
+      if (phraseItems.length > 0) {
+        phraseFrom = start;
+        break;
+      }
     }
-    for (const fn of FUNCTIONS) {
-      if (prefix(fn)) items.push(functionSuggestion(fn));
+    // Then the plain single-word matches — SUPPRESSED when a phrase matched:
+    // re-basing them onto the wider range would spell nonsense ("IS " + "NOT
+    // IN") or duplicate a phrase row ("LEFT " + "ARRAY JOIN").
+    const wordItems: Suggestion[] = [];
+    if (phraseItems.length === 0) {
+      for (const kw of keywords) {
+        if (prefix(kw)) wordItems.push(keywordSuggestion(kw));
+      }
+      for (const fn of functionsFor(opts?.engine)) {
+        if (prefix(fn)) wordItems.push(functionSuggestion(fn));
+      }
     }
+    // Trim schema rows (never the keywords) so the reserved slots survive the
+    // MAX_OPTIONS slice below — see KEYWORD_SLOTS.
+    const kwCount = phraseItems.length + wordItems.length;
+    const schemaRows = schemaItems.slice(0, MAX_OPTIONS - Math.min(kwCount, KEYWORD_SLOTS));
+    // A phrase match replaces MORE text than a column row does, and a result
+    // carries ONE range — so widen the range to the phrase and re-base the
+    // schema inserts onto it by re-attaching the words it spans ("ON " + col).
+    if (phraseItems.length > 0) {
+      const lead = text.slice(phraseFrom, from);
+      for (const it of schemaRows) it.insert = lead + it.insert;
+    }
+    items.push(...phraseItems, ...schemaRows, ...wordItems);
+    if (items.length === 0) return null;
+    return { from: phraseFrom, to: caret, items: items.slice(0, MAX_OPTIONS) };
   }
 
   if (items.length === 0) return null;

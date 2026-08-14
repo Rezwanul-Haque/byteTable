@@ -14,6 +14,17 @@ import {
   type CompletionContext,
   type CompletionResult,
 } from "@codemirror/autocomplete";
+import {
+  Cassandra,
+  MSSQL,
+  MySQL,
+  PostgreSQL,
+  SQLite,
+  StandardSQL,
+  type SQLDialect,
+} from "@codemirror/lang-sql";
+
+import type { Engine } from "../../../shared/types";
 
 import { suggestSql, SUGGEST_KIND_LABEL, type EditorSchema, type Suggestion } from "./sqlSuggest";
 
@@ -43,14 +54,40 @@ function toCompletion(s: Suggestion): BtCompletion {
 }
 
 /**
- * Build the CompletionSource. `getSchema` is read on every invocation so the
- * source always sees the latest cached schema (columns stream in as the tab
- * warms them) without re-creating the editor's extensions.
+ * CM parser dialect per engine — drives SYNTAX HIGHLIGHTING only (completions
+ * come from our own source below). ClickHouse has no CM dialect; StandardSQL is
+ * the closest fit. Unknown / non-SQL engines fall back to StandardSQL too.
  */
-export function makeSqlCompletionSource(getSchema: () => EditorSchema) {
+export function sqlDialectFor(engine: Engine | undefined): SQLDialect {
+  switch (engine) {
+    case "postgres":
+      return PostgreSQL;
+    case "mysql":
+      return MySQL;
+    case "mssql":
+      return MSSQL;
+    case "sqlite":
+      return SQLite;
+    case "cassandra":
+      return Cassandra;
+    default:
+      return StandardSQL;
+  }
+}
+
+/**
+ * Build the CompletionSource. `getSchema` and `getEngine` are read on every
+ * invocation so the source always sees the latest cached schema (columns stream
+ * in as the tab warms them) without re-creating the editor's extensions.
+ */
+export function makeSqlCompletionSource(
+  getSchema: () => EditorSchema,
+  getEngine: () => Engine | undefined,
+) {
   return (context: CompletionContext): CompletionResult | null => {
     const result = suggestSql(context.state.doc.toString(), context.pos, getSchema(), {
       explicit: context.explicit,
+      engine: getEngine(),
     });
     if (!result) return null;
     // filter:false — we already prefix-filtered and ordered; CM must not

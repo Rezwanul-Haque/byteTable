@@ -28,7 +28,7 @@ import {
   startCompletion,
 } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
-import { sql, SQLite } from "@codemirror/lang-sql";
+import { sql } from "@codemirror/lang-sql";
 import {
   bracketMatching,
   HighlightStyle,
@@ -48,11 +48,14 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
+import type { Engine } from "../../../shared/types";
+
 import {
   completionAddToOptions,
   completionOptionClass,
   completionTooltipClass,
   makeSqlCompletionSource,
+  sqlDialectFor,
   type EditorSchema,
 } from "./sqlCompletion";
 import { statementRangeAt } from "./sqlStatement";
@@ -200,11 +203,17 @@ interface SqlCodeEditorProps {
    * editor never re-mounts as columns stream into the cache. Defaults to empty.
    */
   schema?: EditorSchema;
+  /**
+   * Engine this buffer targets. Picks the autocomplete's keyword/function
+   * vocabulary (sqlKeywords) AND the parser dialect used for highlighting.
+   * Omitted (or a non-SQL engine) falls back to the ANSI core / StandardSQL.
+   */
+  engine?: Engine;
 }
 
 export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>(
   function SqlCodeEditor(
-    { value, onChange, onRun, onRunBatch, onFormat, onCaret, onAllSelected, schema },
+    { value, onChange, onRun, onRunBatch, onFormat, onCaret, onAllSelected, schema, engine },
     ref,
   ) {
     const hostRef = useRef<HTMLDivElement>(null);
@@ -224,6 +233,10 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
     // Latest schema, read by the completion source on each keystroke (so columns
     // streaming into the cache appear without re-mounting the editor).
     const schemaRef = useRef<EditorSchema>(schema ?? { tables: [] });
+    // Engine backing the completion vocabulary. Also read live — the prop is
+    // fixed for a mounted tab in practice, but a ref keeps the source honest
+    // without re-creating the extensions.
+    const engineRef = useRef<Engine | undefined>(engine);
     onChangeRef.current = onChange;
     onRunRef.current = onRun;
     onRunBatchRef.current = onRunBatch;
@@ -231,6 +244,7 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
     onCaretRef.current = onCaret;
     onAllSelectedRef.current = onAllSelected;
     schemaRef.current = schema ?? { tables: [] };
+    engineRef.current = engine;
 
     // The Run/Explain buttons resolve the statement at the caret through this
     // handle — the same logic as ⌘/Ctrl+Enter. Falls back to the buffer (or "")
@@ -335,7 +349,12 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
             // closeOnBlur (default) dismisses on blur; activateOnTyping pops it as
             // the user types (and right after FROM/JOIN/INTO/UPDATE).
             autocompletion({
-              override: [makeSqlCompletionSource(() => schemaRef.current)],
+              override: [
+                makeSqlCompletionSource(
+                  () => schemaRef.current,
+                  () => engineRef.current,
+                ),
+              ],
               icons: false,
               tooltipClass: completionTooltipClass,
               optionClass: completionOptionClass,
@@ -346,7 +365,10 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
             // inserts a newline when the popup is closed).
             keymap.of(completionKeymap),
             keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap]),
-            sql({ dialect: SQLite }),
+            // Parser dialect for HIGHLIGHTING (completions come from the source
+            // above). Resolved at mount: a tab's engine never changes, so there
+            // is nothing to reconfigure.
+            sql({ dialect: sqlDialectFor(engineRef.current) }),
             syntaxHighlighting(sqlHighlight),
             sqlTheme,
             // Font size lives in a compartment so Mod-+/- can reconfigure it

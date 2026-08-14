@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 
@@ -37,5 +38,12 @@ export default defineConfig({
       // 3. tell Vite to ignore watching `src-tauri`
       ignored: ["**/src-tauri/**"],
     },
+  },
+
+  // Vitest reads this file too. The suites are PURE LOGIC (`*.test.ts` next to
+  // the module they cover) — no components, no DOM — so the default `node`
+  // environment is right; a component test would have to opt into jsdom.
+  test: {
+    include: ["src/**/*.test.ts"],
   },
 });

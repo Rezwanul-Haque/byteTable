@@ -713,6 +713,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
             onCaret={setCaret}
             onAllSelected={setAllSelected}
             schema={editorSchema}
+            engine={workspace.info.engine}
           />
         </div>
         <ExecutionMinimap sql={text} caret={caret} />

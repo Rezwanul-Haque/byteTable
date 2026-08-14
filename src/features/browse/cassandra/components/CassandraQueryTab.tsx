@@ -184,6 +184,7 @@ export function CassandraQueryTab({ handleId, ks, tables }: CassandraQueryTabPro
             onFormat={format}
             onAllSelected={setAllSelected}
             schema={schema}
+            engine="cassandra"
           />
         </div>
       </div>

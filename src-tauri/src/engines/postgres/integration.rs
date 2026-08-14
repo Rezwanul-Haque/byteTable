@@ -980,7 +980,9 @@ async fn export_csv_and_sql_against_live_postgres() {
     )
     .await
     .expect("export sql");
-    assert!(sql.contains(&format!("INSERT INTO \"{schema}\".\"books\"")));
+    // Unqualified table name, per `dump_qualifies_schema` (b6c8269): a Postgres
+    // dump omits the schema so it imports into whichever schema the user picks.
+    assert!(sql.contains("INSERT INTO \"books\""));
     assert_eq!(sql.matches("INSERT INTO").count(), 4);
     assert!(sql.contains("NULL")); // the null note book
 
@@ -1302,4 +1304,119 @@ async fn ssh_tunnel_bad_auth_is_a_clean_error() {
         .await
         .unwrap_err();
     assert!(matches!(err, AppError::Database(_)), "got {err:?}");
+}
+
+/// A `uuid` column has to work end to end, because it is very often the primary
+/// key: it must DECODE to its canonical text (sqlx asks for the binary result
+/// format and has no String decode for uuid — without the explicit arm every
+/// uuid cell read as NULL), and a bound parameter compared with it must be cast
+/// (Postgres has no `uuid = text` operator, so edit / delete / lookup / filter
+/// on a uuid-keyed table failed outright).
+#[tokio::test]
+async fn uuid_columns_decode_and_are_editable() {
+    let Some((params, secret)) = gate("uuid_columns_decode_and_are_editable") else {
+        return;
+    };
+    let pool = raw_pool(&params, &secret).await;
+    let schema = "bt_it_uuid";
+    let one = "01a00150-ba94-7472-8cba-2d7d9672f421";
+    let two = "01a00150-ba94-7472-8cba-2d7d9672f422";
+    for stmt in [
+        format!("DROP SCHEMA IF EXISTS {schema} CASCADE"),
+        format!("CREATE SCHEMA {schema}"),
+        format!("CREATE TABLE {schema}.t (id uuid PRIMARY KEY, name text NOT NULL)"),
+        format!("INSERT INTO {schema}.t VALUES ('{one}', 'ada'), ('{two}', 'grace')"),
+    ] {
+        sqlx::query(&stmt)
+            .execute(&pool)
+            .await
+            .unwrap_or_else(|e| panic!("fixture stmt failed: {stmt}\n{e}"));
+    }
+    let conn = open_conn(&params, &secret).await;
+
+    let fetch = |filter: Option<FilterSpec>| FetchRowsRequest {
+        schema: schema.into(),
+        table: "t".into(),
+        offset: 0,
+        limit: 100,
+        sort: None,
+        filter,
+    };
+
+    // 1. Decode: the cell is the uuid text, not NULL.
+    let page = conn.fetch_rows(fetch(None)).await.expect("fetch rows");
+    assert_eq!(page.rows.len(), 2);
+    let ids: Vec<&serde_json::Value> = page.rows.iter().map(|r| &r[0]).collect();
+    assert!(
+        ids.iter().any(|v| *v == &serde_json::json!(one)),
+        "uuid cell must decode to its text form, got {ids:?}"
+    );
+
+    // 2. Filter: `id = <uuid>` compiles to a comparison Postgres accepts.
+    let filtered = conn
+        .fetch_rows(fetch(Some(FilterSpec::Conditions {
+            items: vec![Condition {
+                column: "id".into(),
+                op: FilterOp::Eq,
+                value: Some(FilterValue::Scalar(serde_json::json!(one))),
+                binary: false,
+            }],
+            combinator: Combinator::And,
+        })))
+        .await
+        .expect("filter on a uuid column");
+    assert_eq!(filtered.total_rows, Some(1));
+
+    // 3. Row lookup (row inspector / FK peek).
+    let lookup = conn
+        .fetch_row_by_key(RowLookupRequest {
+            schema: schema.into(),
+            table: "t".into(),
+            column: "id".into(),
+            value: serde_json::json!(one),
+            binary: false,
+        })
+        .await
+        .expect("lookup by uuid");
+    assert_eq!(lookup.match_count, 1);
+
+    // 4. Edit a cell on a uuid-keyed row.
+    let updated = conn
+        .update_cell(UpdateCellRequest {
+            schema: schema.into(),
+            table: "t".into(),
+            column: "name".into(),
+            value: serde_json::json!("ada lovelace"),
+            pk: vec![PkPredicate {
+                column: "id".into(),
+                value: serde_json::json!(one),
+                binary: false,
+            }],
+            binary: false,
+        })
+        .await
+        .expect("update by uuid pk");
+    assert_eq!(updated.affected, 1);
+
+    // 5. Delete by uuid pk.
+    let deleted = conn
+        .delete_rows(DeleteRowsRequest {
+            schema: schema.into(),
+            table: "t".into(),
+            rows: vec![vec![PkPredicate {
+                column: "id".into(),
+                value: serde_json::json!(two),
+                binary: false,
+            }]],
+        })
+        .await
+        .expect("delete by uuid pk");
+    assert_eq!(deleted.deleted, 1);
+
+    let left = conn.fetch_rows(fetch(None)).await.expect("fetch after");
+    assert_eq!(left.total_rows, Some(1));
+
+    let _ = sqlx::query(&format!("DROP SCHEMA IF EXISTS {schema} CASCADE"))
+        .execute(&pool)
+        .await;
 }

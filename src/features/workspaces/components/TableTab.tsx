@@ -497,7 +497,7 @@ export function TableTab({
                       setImportOpen(true);
                     }}
                   >
-                    <Icon name="upload" size={15} /> Import data…
+                    <Icon name="upload" size={15} /> Import data
                   </button>
                   <div className="ctx-sep" />
                   <button
@@ -509,7 +509,7 @@ export function TableTab({
                       setTruncateOpen(true);
                     }}
                   >
-                    <Icon name="delete_sweep" size={15} /> Truncate table…
+                    <Icon name="delete_sweep" size={15} /> Truncate table
                   </button>
                   <button
                     type="button"
@@ -520,7 +520,7 @@ export function TableTab({
                       setDropOpen(true);
                     }}
                   >
-                    <Icon name="delete_forever" size={15} /> Drop table…
+                    <Icon name="delete_forever" size={15} /> Drop table
                   </button>
                 </div>
               ) : null}

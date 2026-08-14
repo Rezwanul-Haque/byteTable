@@ -22,7 +22,7 @@ export const zhHans: StringTable = {
   "menu.query": "查询",
   "menu.help": "帮助",
 
-  "menu.file.newConnection": "新建连接…",
+  "menu.file.newConnection": "新建连接",
   "menu.file.newQuery": "新建查询标签页",
   "menu.file.openSqlFile": "打开 .sql 文件",
   "menu.file.closeWorkspace": "关闭工作区",

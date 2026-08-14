@@ -177,7 +177,7 @@ export function CassandraSidebar({
                 }}
               >
                 <Icon name="add" size={14} style={{ color: "var(--accent)" }} />
-                <span style={{ color: "var(--accent)" }}>Create keyspace…</span>
+                <span style={{ color: "var(--accent)" }}>Create keyspace</span>
               </div>
             </div>
           ) : null}
@@ -321,7 +321,7 @@ export function CassandraSidebar({
                   onCreateTable();
                 }}
               >
-                <Icon name="add" size={15} /> Create table…
+                <Icon name="add" size={15} /> Create table
               </div>
               <div className="ctx-sep" />
               <div
@@ -331,7 +331,7 @@ export function CassandraSidebar({
                   onImportTable(null);
                 }}
               >
-                <Icon name="upload" size={15} /> Import into table…
+                <Icon name="upload" size={15} /> Import into table
               </div>
               <div
                 className="ctx-item"
@@ -340,7 +340,7 @@ export function CassandraSidebar({
                   onExportAll();
                 }}
               >
-                <Icon name="download" size={15} /> Export keyspace (CQL dump)…
+                <Icon name="download" size={15} /> Export keyspace (CQL dump)
               </div>
               <div className="ctx-sep" />
               <div
@@ -371,7 +371,7 @@ export function CassandraSidebar({
                   setCtxMenu(null);
                 }}
               >
-                <Icon name="bolt" size={15} /> Add index / materialized view…
+                <Icon name="bolt" size={15} /> Add index / materialized view
               </div>
               <div
                 className="ctx-item"
@@ -391,7 +391,7 @@ export function CassandraSidebar({
                   if (t) onExportTable(t);
                 }}
               >
-                <Icon name="download" size={15} /> Export table…
+                <Icon name="download" size={15} /> Export table
               </div>
               <div
                 className="ctx-item"
@@ -401,7 +401,7 @@ export function CassandraSidebar({
                   if (t) onImportTable(t);
                 }}
               >
-                <Icon name="upload" size={15} /> Import rows…
+                <Icon name="upload" size={15} /> Import rows
               </div>
             </>
           )}

@@ -22,7 +22,7 @@ export const bn: StringTable = {
   "menu.query": "কোয়েরি",
   "menu.help": "সহায়তা",
 
-  "menu.file.newConnection": "নতুন কানেকশন…",
+  "menu.file.newConnection": "নতুন কানেকশন",
   "menu.file.newQuery": "নতুন কোয়েরি ট্যাব",
   "menu.file.openSqlFile": ".sql ফাইল খুলুন",
   "menu.file.closeWorkspace": "ওয়ার্কস্পেস বন্ধ করুন",

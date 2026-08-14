@@ -80,7 +80,14 @@ import { useSettingsStore } from "../../../settings/state";
 import { useTabMetaStore, type TabPageCache } from "../../../workspaces/tabMeta";
 import type { TabGridEdits } from "../../../workspaces/types";
 import { BinaryEditorModal } from "./BinaryEditorModal";
-import { isBinaryType, looksUuid, uuidToHex } from "../../shared/binaryCell";
+import {
+  binaryBytes,
+  generateUuidV7,
+  isBinaryType,
+  isUuidType,
+  looksUuid,
+  uuidToHex,
+} from "../../shared/binaryCell";
 import { highlightSql } from "../../shared/highlightSql";
 import { ColumnInsights, type InsightsAnchor } from "./ColumnInsights";
 import { FkPeek, type FkPeekAnchor } from "./FkPeek";
@@ -291,7 +298,33 @@ function binaryLiteral(value: CellValue, engine: Engine | undefined): string {
   if (hex.length % 2 !== 0 || !/^[0-9a-f]*$/i.test(hex)) return sqlLiteral(value, engine);
   hex = hex.toUpperCase();
   if (engine === "postgres") return "decode('" + hex + "', 'hex')";
+  // T-SQL has no X'..' form; its binary literal is a bare 0x constant.
+  if (engine === "mssql") return "0x" + hex;
   return "X'" + hex + "'"; // MySQL + SQLite hex/blob literal
+}
+
+/**
+ * A fresh primary key for a staged new row, when the type has an obvious
+ * generator and the ENGINE will not produce one: a UUID/uniqueidentifier
+ * column, or the binary form of the same thing — `binary(16)`, or a
+ * length-less `bytea`/`blob`, which the binary cell helpers already read as
+ * 16 UUID bytes. Binary gets the `0x`-hex wire form the backend sends for the
+ * rows already on screen, so the staged row renders identically.
+ *
+ * v7 for the reason the UUID editor defaults to it: a time-ordered key keeps
+ * index inserts sequential, where random v4 scatters them.
+ *
+ * Returns null — leave the cell NULL — when the column has ANY default
+ * expression: `gen_random_uuid()` / `newid()` / `uuid()` belong to the
+ * database, and a NULL cell is left out of the INSERT so the default applies.
+ * Integer keys are not this function's business (see `addRow`).
+ */
+function generatedPkValue(meta: ColCellMeta | undefined): CellValue | null {
+  if (!meta?.pk || meta.autoIncrement || meta.default !== null) return null;
+  if (isUuidType(meta.dataType)) return generateUuidV7();
+  if (isBinaryType(meta.dataType) && (binaryBytes(meta.dataType) ?? 16) === 16)
+    return "0x" + uuidToHex(generateUuidV7());
+  return null;
 }
 
 /** A parsed JSON document re-serialized with single quotes around keys and
@@ -1544,7 +1577,9 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         }
         return max + 1;
       }
-      return parseDefault(m?.default ?? null, affinity);
+      // A UUID / binary(16) key has no "next" to count to, but it does have a
+      // generator — fill it in rather than leaving the user to paste one.
+      return generatedPkValue(m) ?? parseDefault(m?.default ?? null, affinity);
     });
     stagedKeySeq.current += 1;
     setNewRows((prev) => [{ key: stagedKeySeq.current, values }, ...prev]);
@@ -1558,11 +1593,11 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
    *
    * Every non-pk value is carried over verbatim. The primary key is the one
    * thing that cannot be: copying it would collide on save. It follows
-   * `addRow`'s rule — an integer pk is bumped past the highest one in view, and
-   * anything else (UUID, natural or composite key) is left at its column
-   * default, i.e. usually blank for the user to fill. Blank is deliberate: a
-   * guessed key would either collide loudly or, worse, quietly insert a row
-   * that looks right and is not.
+   * `addRow`'s rule — an integer pk is bumped past the highest one in view, a
+   * UUID / binary(16) pk gets a freshly generated one, and anything else (a
+   * natural or composite key) is left at its column default, i.e. usually blank
+   * for the user to fill. Blank is deliberate there: a guessed key would either
+   * collide loudly or, worse, quietly insert a row that looks right and is not.
    */
   const duplicateRows = useCallback(
     (sourceRows: CellValue[][]) => {
@@ -1597,7 +1632,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
               intPkNext.set(ci, next + 1);
               return next;
             }
-            return parseDefault(m.default ?? null, affinityOf(m.dataType));
+            // Each duplicate gets its OWN generated key (called per row).
+            return generatedPkValue(m) ?? parseDefault(m.default ?? null, affinityOf(m.dataType));
           }
           return source[ci] ?? null;
         });

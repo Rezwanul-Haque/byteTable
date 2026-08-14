@@ -486,7 +486,7 @@ export function DynamoTableTab({
                   onExport(t.name);
                 }}
               >
-                <Icon name="download" size={15} /> Export table…
+                <Icon name="download" size={15} /> Export table
               </button>
               <button
                 type="button"
@@ -496,7 +496,7 @@ export function DynamoTableTab({
                   onImport(t.name);
                 }}
               >
-                <Icon name="upload" size={15} /> Import items…
+                <Icon name="upload" size={15} /> Import items
               </button>
             </div>
           ) : null}

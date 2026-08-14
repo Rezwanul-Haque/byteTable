@@ -79,7 +79,7 @@ interface CtxMenu {
 // Approximate rendered size of the context menu, for clamping it inside the
 // viewport (min-width 190 + padding). M15 grew it to 7 items + a separator;
 // "Open in new tab" adds one more `.ctx-item` (~31px: 12.5px text + 7px padding
-// each side), and "Drop table…" one more again, so a right-click near the
+// each side), and "Drop table" one more again, so a right-click near the
 // bottom edge still lifts the whole menu into view.
 const CTX_MENU_W = 200;
 const CTX_MENU_H = 343;
@@ -180,7 +180,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   const openGenerate = useGenerateStore((s) => s.openModal);
   // Create-schema modal (from the schema switcher's "Create schema" item).
   const [createSchemaOpen, setCreateSchemaOpen] = useState(false);
-  // Create-table modal (from the schema-actions menu's "Create table…" item).
+  // Create-table modal (from the schema-actions menu's "Create table" item).
   const [createTableOpen, setCreateTableOpen] = useState(false);
   const secActionsRef = useRef<HTMLDivElement | null>(null);
   const secActionsBtnRef = useRef<HTMLButtonElement | null>(null);
@@ -591,7 +591,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                   setCreateTableOpen(true);
                 }}
               >
-                <Icon name="add" size={15} /> Create table…
+                <Icon name="add" size={15} /> Create table
               </button>
               <button
                 type="button"
@@ -602,7 +602,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                   setSchemaImportOpen(true);
                 }}
               >
-                <Icon name="upload" size={15} /> Import SQL dump…
+                <Icon name="upload" size={15} /> Import SQL dump
               </button>
               <button
                 type="button"
@@ -624,7 +624,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                   openGenerate(handleId, schemaName, workspace.saved.env);
                 }}
               >
-                <Icon name="auto_awesome" size={15} /> Generate data…
+                <Icon name="auto_awesome" size={15} /> Generate data
               </button>
               <div className="ctx-sep" />
               <button
@@ -636,7 +636,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                   setEmptySchemaOpen(true);
                 }}
               >
-                <Icon name="delete_sweep" size={15} /> Empty schema…
+                <Icon name="delete_sweep" size={15} /> Empty schema
               </button>
               <button
                 type="button"
@@ -647,7 +647,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                   setDeleteSchemaOpen(true);
                 }}
               >
-                <Icon name="delete_forever" size={15} /> Delete schema…
+                <Icon name="delete_forever" size={15} /> Delete schema
               </button>
             </div>
           ) : null}
@@ -878,7 +878,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
               setImportTarget(t);
             }}
           >
-            <Icon name="upload" size={15} /> Import data…
+            <Icon name="upload" size={15} /> Import data
           </button>
           <div className="ctx-sep" />
           <button
@@ -891,7 +891,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
               setTruncateTarget(t);
             }}
           >
-            <Icon name="delete_sweep" size={15} /> Truncate table…
+            <Icon name="delete_sweep" size={15} /> Truncate table
           </button>
           <button
             type="button"
@@ -903,7 +903,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
               setDropTarget(t);
             }}
           >
-            <Icon name="delete_forever" size={15} /> Drop table…
+            <Icon name="delete_forever" size={15} /> Drop table
           </button>
         </div>
       ) : null}

@@ -9,7 +9,7 @@ use crate::shared::error::AppError;
 use super::error::map_query_error;
 use super::introspect::{ensure_schema_exists, table_meta};
 use super::query::bind_all;
-use super::sql::{qualified, quote_ident, validate_column, BoundValue};
+use super::sql::{param_cast, qualified, quote_ident, uuid_columns, validate_column, BoundValue};
 
 // ---------------------------------------------------------------------------
 // update_cell
@@ -37,6 +37,11 @@ pub(super) async fn update_cell(
 
     let qualified = qualified(&req.schema, &req.table);
     let set_col = quote_ident(&req.column);
+    // Parameters compared with / assigned to a uuid column need a cast — see
+    // `param_cast`. Without it Postgres rejects `uuid = text` outright, which
+    // made every cell edit on a uuid-keyed table fail.
+    let uuids = uuid_columns(&meta.columns);
+    let set_cast = param_cast(&uuids, &req.column);
 
     // $1 = SET value; $2.. = each pk value in predicate order. Binary columns
     // (req.binary / predicate.binary) bind their `0x`-hex / UUID value as raw
@@ -58,10 +63,15 @@ pub(super) async fn update_cell(
         } else {
             BoundValue::from_json_operand(&predicate.value)?
         });
-        where_fragments.push(format!("{} = ${}", quote_ident(&predicate.column), i + 2));
+        where_fragments.push(format!(
+            "{} = ${}{}",
+            quote_ident(&predicate.column),
+            i + 2,
+            param_cast(&uuids, &predicate.column)
+        ));
     }
     let where_sql = where_fragments.join(" AND ");
-    let update_sql = format!("UPDATE {qualified} SET {set_col} = $1 WHERE {where_sql}");
+    let update_sql = format!("UPDATE {qualified} SET {set_col} = $1{set_cast} WHERE {where_sql}");
 
     let mut tx = pool.begin().await.map_err(map_query_error)?;
     let result = bind_all(sqlx::query(&update_sql), &params)
@@ -121,6 +131,8 @@ pub(super) async fn delete_rows(
         .map(|c| c.name.as_str())
         .collect();
     let qualified = qualified(&req.schema, &req.table);
+    // Same uuid-parameter cast as `update_cell`.
+    let uuids = uuid_columns(&meta.columns);
 
     let mut tx = pool.begin().await.map_err(map_query_error)?;
     let mut deleted: u64 = 0;
@@ -138,7 +150,12 @@ pub(super) async fn delete_rows(
             } else {
                 BoundValue::from_json_operand(&predicate.value)?
             });
-            where_fragments.push(format!("{} = ${}", quote_ident(&predicate.column), i + 1));
+            where_fragments.push(format!(
+                "{} = ${}{}",
+                quote_ident(&predicate.column),
+                i + 1,
+                param_cast(&uuids, &predicate.column)
+            ));
         }
         let where_sql = where_fragments.join(" AND ");
         let delete_sql = format!("DELETE FROM {qualified} WHERE {where_sql}");

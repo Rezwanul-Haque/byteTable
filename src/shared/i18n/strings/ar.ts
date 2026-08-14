@@ -22,7 +22,7 @@ export const ar: StringTable = {
   "menu.query": "استعلام",
   "menu.help": "مساعدة",
 
-  "menu.file.newConnection": "اتصال جديد…",
+  "menu.file.newConnection": "اتصال جديد",
   "menu.file.newQuery": "علامة تبويب استعلام جديدة",
   "menu.file.openSqlFile": "فتح ملف .sql",
   "menu.file.closeWorkspace": "إغلاق مساحة العمل",

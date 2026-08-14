@@ -294,7 +294,7 @@ export function MongoSidebar({
                   onImportColl(null);
                 }}
               >
-                <Icon name="upload" size={15} /> Import into collection…
+                <Icon name="upload" size={15} /> Import into collection
               </div>
               <div
                 className="ctx-item"
@@ -303,7 +303,7 @@ export function MongoSidebar({
                   onExportAll();
                 }}
               >
-                <Icon name="download" size={15} /> Export database (mongodump)…
+                <Icon name="download" size={15} /> Export database (mongodump)
               </div>
               <div className="ctx-sep" />
               <div
@@ -354,7 +354,7 @@ export function MongoSidebar({
                   if (c) onExportColl(c);
                 }}
               >
-                <Icon name="download" size={15} /> Export collection…
+                <Icon name="download" size={15} /> Export collection
               </div>
               <div
                 className="ctx-item"
@@ -364,7 +364,7 @@ export function MongoSidebar({
                   if (c) onImportColl(c);
                 }}
               >
-                <Icon name="upload" size={15} /> Import documents…
+                <Icon name="upload" size={15} /> Import documents
               </div>
             </>
           )}

@@ -22,7 +22,7 @@ export const de: StringTable = {
   "menu.query": "Abfrage",
   "menu.help": "Hilfe",
 
-  "menu.file.newConnection": "Neue Verbindung…",
+  "menu.file.newConnection": "Neue Verbindung",
   "menu.file.newQuery": "Neuer Abfrage-Tab",
   "menu.file.openSqlFile": ".sql-Datei öffnen",
   "menu.file.closeWorkspace": "Arbeitsbereich schließen",

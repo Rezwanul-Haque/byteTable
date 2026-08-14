@@ -22,7 +22,7 @@ export const ja: StringTable = {
   "menu.query": "クエリ",
   "menu.help": "ヘルプ",
 
-  "menu.file.newConnection": "新しい接続…",
+  "menu.file.newConnection": "新しい接続",
   "menu.file.newQuery": "新しいクエリタブ",
   "menu.file.openSqlFile": ".sql ファイルを開く",
   "menu.file.closeWorkspace": "ワークスペースを閉じる",

@@ -24,7 +24,7 @@
 use sqlx::postgres::{PgConnectOptions, PgSslMode};
 
 use crate::shared::engine::{
-    Condition, ConnectionParams, FilterOp, FilterSpec, FilterValue, SortSpec,
+    ColumnInfo, Condition, ConnectionParams, FilterOp, FilterSpec, FilterValue, SortSpec,
 };
 use crate::shared::error::AppError;
 
@@ -98,6 +98,40 @@ pub fn display_type(format_type_out: &str) -> String {
         _ => base.as_str(),
     };
     format!("{alias}{modifier}{array_suffix}")
+}
+
+/// The `::type` cast a bound parameter needs to be comparable with `column`.
+///
+/// Postgres has no `uuid = text` operator, and sqlx binds a JSON string as
+/// text — so `WHERE id = $1` against a `uuid` column fails with "operator does
+/// not exist: uuid = text" (every edit, delete, row lookup and filter on a
+/// uuid-keyed table). Casting the PARAMETER (`id = $1::uuid`) fixes it and
+/// keeps the comparison uuid = uuid, so the index is still used; casting the
+/// column instead (`id::text = $1`) would work too but forces a scan.
+///
+/// `uuid_columns` is the caller's list of uuid-typed column names, taken from
+/// the introspected table meta.
+pub fn param_cast(uuid_columns: &[String], column: &str) -> &'static str {
+    if uuid_columns.iter().any(|c| c == column) {
+        "::uuid"
+    } else {
+        ""
+    }
+}
+
+/// True for the Postgres `uuid` type (as `display_type` spells it). Used to
+/// collect the `uuid_columns` list [`param_cast`] consults.
+pub fn is_uuid_type(data_type: &str) -> bool {
+    data_type.trim().eq_ignore_ascii_case("uuid")
+}
+
+/// The uuid-typed column names of a table, for [`param_cast`].
+pub fn uuid_columns(columns: &[ColumnInfo]) -> Vec<String> {
+    columns
+        .iter()
+        .filter(|c| is_uuid_type(&c.data_type))
+        .map(|c| c.name.clone())
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -218,6 +252,7 @@ impl WhereClause {
 /// adapter and the M6 query editor).
 pub fn where_clause(
     valid_columns: &[String],
+    uuid_columns: &[String],
     table: &str,
     filter: &FilterSpec,
 ) -> Result<WhereClause, AppError> {
@@ -236,7 +271,8 @@ pub fn where_clause(
             let mut fragments: Vec<String> = Vec::with_capacity(items.len());
             let mut params: Vec<BoundValue> = Vec::new();
             for condition in items {
-                let fragment = condition_sql(valid_columns, table, condition, &mut params)?;
+                let fragment =
+                    condition_sql(valid_columns, uuid_columns, table, condition, &mut params)?;
                 fragments.push(fragment);
             }
             if fragments.is_empty() {
@@ -257,12 +293,15 @@ pub fn where_clause(
 /// bound, never interpolated.
 fn condition_sql(
     valid_columns: &[String],
+    uuid_columns: &[String],
     table: &str,
     condition: &Condition,
     params: &mut Vec<BoundValue>,
 ) -> Result<String, AppError> {
     validate_column(valid_columns, table, &condition.column)?;
     let col = quote_ident(&condition.column);
+    // A parameter compared with a uuid column has to be cast (see `param_cast`).
+    let cast = param_cast(uuid_columns, &condition.column);
 
     match condition.op {
         FilterOp::IsNull => Ok(format!("{col} IS NULL")),
@@ -289,11 +328,10 @@ fn condition_sql(
                 FilterOp::Lte => "<=",
                 _ => unreachable!("comparison arm"),
             };
-            // Cast the column to text for the operand-bound comparison? No — we
-            // bind the operand with its native type in mod.rs, so a direct
-            // comparison works for the common cases. (mod.rs binds Text via a
-            // form Postgres can coerce to the column type.)
-            Ok(format!("{col} {operator} ${placeholder}"))
+            // The operand binds with its native type (see `bind_value`), so a
+            // direct comparison works for the common cases; `cast` covers the
+            // types Postgres will not compare with text (uuid).
+            Ok(format!("{col} {operator} ${placeholder}{cast}"))
         }
         FilterOp::Contains | FilterOp::NotContains | FilterOp::BeginsWith | FilterOp::EndsWith => {
             let value = require_scalar(condition)?;
@@ -343,7 +381,7 @@ fn condition_sql(
                 } else {
                     BoundValue::from_json_operand(value)?
                 });
-                placeholders.push(format!("${}", params.len()));
+                placeholders.push(format!("${}{cast}", params.len()));
             }
             Ok(format!("{col} IN ({})", placeholders.join(", ")))
         }
@@ -785,7 +823,7 @@ mod tests {
             items: vec![],
             combinator: Combinator::And,
         };
-        let wc = where_clause(&cols(), "t", &spec).unwrap();
+        let wc = where_clause(&cols(), &[], "t", &spec).unwrap();
         assert_eq!(wc.sql, None);
         assert!(wc.params.is_empty());
         assert_eq!(wc.next_index(), 1);
@@ -802,7 +840,7 @@ mod tests {
             }],
             combinator: Combinator::And,
         };
-        let wc = where_clause(&cols(), "t", &spec).unwrap();
+        let wc = where_clause(&cols(), &[], "t", &spec).unwrap();
         assert_eq!(wc.sql.as_deref(), Some("\"qty\" >= $1"));
         assert_eq!(wc.params, vec![BoundValue::Int(10)]);
         assert_eq!(wc.next_index(), 2);
@@ -874,7 +912,7 @@ mod tests {
                 }],
                 combinator: Combinator::And,
             };
-            let wc = where_clause(&cols(), "t", &spec).unwrap();
+            let wc = where_clause(&cols(), &[], "t", &spec).unwrap();
             assert_eq!(wc.sql.as_deref(), Some(expected), "op {op:?}");
             assert_eq!(wc.params.len(), 1, "op {op:?} binds one value");
         }
@@ -893,7 +931,7 @@ mod tests {
                 }],
                 combinator: Combinator::And,
             };
-            let wc = where_clause(&cols(), "t", &spec).unwrap();
+            let wc = where_clause(&cols(), &[], "t", &spec).unwrap();
             assert_eq!(wc.sql.as_deref(), Some(expected));
             assert!(wc.params.is_empty());
         }
@@ -914,7 +952,7 @@ mod tests {
             }],
             combinator: Combinator::And,
         };
-        let wc = where_clause(&cols(), "t", &spec).unwrap();
+        let wc = where_clause(&cols(), &[], "t", &spec).unwrap();
         assert_eq!(wc.sql.as_deref(), Some("\"id\" IN ($1, $2, $3)"));
         assert_eq!(
             wc.params,
@@ -951,7 +989,7 @@ mod tests {
             ],
             combinator: Combinator::And,
         };
-        let wc = where_clause(&cols(), "t", &spec).unwrap();
+        let wc = where_clause(&cols(), &[], "t", &spec).unwrap();
         assert_eq!(
             wc.sql.as_deref(),
             Some("\"name\" = $1 AND \"id\" IN ($2, $3) AND \"qty\" > $4")
@@ -987,7 +1025,7 @@ mod tests {
             ],
             combinator: Combinator::Or,
         };
-        let wc = where_clause(&cols(), "t", &spec).unwrap();
+        let wc = where_clause(&cols(), &[], "t", &spec).unwrap();
         assert_eq!(wc.sql.as_deref(), Some("\"id\" = $1 OR \"id\" = $2"));
     }
 
@@ -1002,7 +1040,7 @@ mod tests {
             }],
             combinator: Combinator::And,
         };
-        let err = where_clause(&cols(), "t", &spec).unwrap_err();
+        let err = where_clause(&cols(), &[], "t", &spec).unwrap_err();
         assert!(matches!(err, AppError::Database(_)));
         assert!(err.to_string().contains("ghost"));
     }
@@ -1012,11 +1050,11 @@ mod tests {
         let spec = FilterSpec::Raw {
             sql: "qty > 100 AND name = 'ada'".into(),
         };
-        let wc = where_clause(&cols(), "t", &spec).unwrap();
+        let wc = where_clause(&cols(), &[], "t", &spec).unwrap();
         assert_eq!(wc.sql.as_deref(), Some("(qty > 100 AND name = 'ada')"));
         assert!(wc.params.is_empty());
         // An empty raw clause is "no filter", not an error.
-        let empty = where_clause(&cols(), "t", &FilterSpec::Raw { sql: "  ".into() }).unwrap();
+        let empty = where_clause(&cols(), &[], "t", &FilterSpec::Raw { sql: "  ".into() }).unwrap();
         assert_eq!(empty.sql, None);
     }
 
@@ -1035,7 +1073,7 @@ mod tests {
             }],
             combinator: Combinator::And,
         };
-        let wc = where_clause(&cols(), "t", &spec).unwrap();
+        let wc = where_clause(&cols(), &[], "t", &spec).unwrap();
         assert_eq!(wc.sql.as_deref(), Some("\"name\" = $1"));
         assert_eq!(
             wc.params,

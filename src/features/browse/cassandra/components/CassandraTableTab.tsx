@@ -415,7 +415,7 @@ export function CassandraTableTab({
                   onExport(tableName);
                 }}
               >
-                <Icon name="download" size={15} /> Export table…
+                <Icon name="download" size={15} /> Export table
               </div>
               <div
                 className="ctx-item"
@@ -424,7 +424,7 @@ export function CassandraTableTab({
                   onImport(tableName);
                 }}
               >
-                <Icon name="upload" size={15} /> Import rows…
+                <Icon name="upload" size={15} /> Import rows
               </div>
             </div>
           ) : null}

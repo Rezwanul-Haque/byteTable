@@ -247,7 +247,7 @@ export function DynamoSidebar({
                   onExportAll();
                 }}
               >
-                <Icon name="download" size={15} /> Export all tables…
+                <Icon name="download" size={15} /> Export all tables
               </button>
               <button
                 type="button"
@@ -303,7 +303,7 @@ export function DynamoSidebar({
                   if (tbl) onExportTable(tbl);
                 }}
               >
-                <Icon name="download" size={15} /> Export table…
+                <Icon name="download" size={15} /> Export table
               </button>
               <button
                 type="button"
@@ -314,7 +314,7 @@ export function DynamoSidebar({
                   if (tbl) onImportTable(tbl);
                 }}
               >
-                <Icon name="upload" size={15} /> Import items…
+                <Icon name="upload" size={15} /> Import items
               </button>
             </>
           )}

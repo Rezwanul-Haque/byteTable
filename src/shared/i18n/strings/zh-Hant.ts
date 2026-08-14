@@ -22,7 +22,7 @@ export const zhHant: StringTable = {
   "menu.query": "查詢",
   "menu.help": "說明",
 
-  "menu.file.newConnection": "新增連線…",
+  "menu.file.newConnection": "新增連線",
   "menu.file.newQuery": "新增查詢分頁",
   "menu.file.openSqlFile": "開啟 .sql 檔案",
   "menu.file.closeWorkspace": "關閉工作區",

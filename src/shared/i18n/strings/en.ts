@@ -28,7 +28,7 @@ export const en = {
   // Menu items. `{app}` is the product name — never translate the brand, and
   // never concatenate it, since it does not sit in the same place in every
   // language. Keyboard hints (⌘T) are key names, not copy, and stay as they are.
-  "menu.file.newConnection": "New Connection…",
+  "menu.file.newConnection": "New Connection",
   "menu.file.newQuery": "New Query Tab",
   "menu.file.openSqlFile": "Open .sql File",
   "menu.file.closeWorkspace": "Close Workspace",

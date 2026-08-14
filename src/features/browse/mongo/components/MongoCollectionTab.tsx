@@ -340,7 +340,7 @@ export function MongoCollectionTab({
                   onExport(coll);
                 }}
               >
-                <Icon name="download" size={15} /> Export collection…
+                <Icon name="download" size={15} /> Export collection
               </div>
               <div
                 className="ctx-item"
@@ -349,7 +349,7 @@ export function MongoCollectionTab({
                   onImport(coll);
                 }}
               >
-                <Icon name="upload" size={15} /> Import documents…
+                <Icon name="upload" size={15} /> Import documents
               </div>
             </div>
           ) : null}

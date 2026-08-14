@@ -21,7 +21,7 @@ export const es: StringTable = {
   "menu.query": "Consulta",
   "menu.help": "Ayuda",
 
-  "menu.file.newConnection": "Nueva conexión…",
+  "menu.file.newConnection": "Nueva conexión",
   "menu.file.newQuery": "Nueva pestaña de consulta",
   "menu.file.openSqlFile": "Abrir archivo .sql",
   "menu.file.closeWorkspace": "Cerrar espacio de trabajo",

@@ -12,8 +12,8 @@ use crate::shared::error::AppError;
 use super::error::map_query_error;
 use super::introspect::table_meta;
 use super::sql::{
-    is_numeric_type, order_by_clause, qualified, quote_ident, validate_column, where_clause,
-    BoundValue, WhereClause, JS_MAX_SAFE_INTEGER,
+    is_numeric_type, order_by_clause, param_cast, qualified, quote_ident, uuid_columns,
+    validate_column, where_clause, BoundValue, WhereClause, JS_MAX_SAFE_INTEGER,
 };
 
 /// Page-size ceiling for `fetch_rows` (mirrors the SQLite adapter and the
@@ -120,7 +120,12 @@ pub(super) async fn fetch_rows(pool: &PgPool, req: FetchRowsRequest) -> Result<R
         }
     };
     let where_clause = match &req.filter {
-        Some(filter) => where_clause(&column_names, &req.table, filter)?,
+        Some(filter) => where_clause(
+            &column_names,
+            &uuid_columns(&meta.columns),
+            &req.table,
+            filter,
+        )?,
         None => WhereClause::default(),
     };
     let where_sql = match &where_clause.sql {
@@ -223,8 +228,10 @@ pub(super) async fn fetch_row_by_key(
 
     let qualified = qualified(&req.schema, &req.table);
     let col = quote_ident(&req.column);
+    // `uuid = $1` needs the parameter cast — see `param_cast`.
+    let cast = param_cast(&uuid_columns(&meta.columns), &req.column);
 
-    let row_sql = format!("SELECT * FROM {qualified} WHERE {col} = $1 LIMIT 1");
+    let row_sql = format!("SELECT * FROM {qualified} WHERE {col} = $1{cast} LIMIT 1");
     let row = bind_value(sqlx::query(&row_sql), &bound)
         .fetch_optional(pool)
         .await
@@ -234,7 +241,7 @@ pub(super) async fn fetch_row_by_key(
     let match_count = if row.is_none() {
         0
     } else {
-        let count_sql = format!("SELECT count(*) AS n FROM {qualified} WHERE {col} = $1");
+        let count_sql = format!("SELECT count(*) AS n FROM {qualified} WHERE {col} = $1{cast}");
         let n: i64 = bind_value(sqlx::query(&count_sql), &bound)
             .fetch_one(pool)
             .await
@@ -369,9 +376,20 @@ pub(super) fn decode_value(row: &PgRow, index: usize) -> serde_json::Value {
             .or_else(|| get_as_text(row, index))
             .map(Value::String)
             .unwrap_or(Value::Null),
-        // Text-like and everything else (uuid, timetz, interval, arrays, enums,
-        // …): the column's text form. sqlx decodes most of these as String
-        // directly; arrays/unknowns fall through to the text cast.
+        // uuid decodes to `sqlx::types::Uuid`, NOT String (sqlx asks for binary
+        // result format, and there is no text decode to fall back on) — without
+        // this arm every uuid cell reads as NULL, the same shape as the
+        // "timestamps don't show" bug above.
+        "UUID" => match row.try_get::<Option<sqlx::types::Uuid>, _>(index) {
+            Ok(Some(u)) => Value::String(u.to_string()),
+            Ok(None) => Value::Null,
+            Err(_) => get_as_text(row, index)
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+        },
+        // Text-like and everything else (timetz, interval, arrays, enums, …):
+        // the column's text form. sqlx decodes text/varchar/name/char as String
+        // directly; types with no String decode still come back NULL.
         _ => get_as_text(row, index)
             .map(Value::String)
             .unwrap_or(Value::Null),
@@ -493,7 +511,12 @@ pub(super) async fn column_stats(
     let col = quote_ident(&req.column);
 
     let where_clause = match &req.filter {
-        Some(filter) => where_clause(&column_names, &req.table, filter)?,
+        Some(filter) => where_clause(
+            &column_names,
+            &uuid_columns(&meta.columns),
+            &req.table,
+            filter,
+        )?,
         None => WhereClause::default(),
     };
     let where_sql = match &where_clause.sql {

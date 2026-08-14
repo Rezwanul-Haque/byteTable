@@ -29,6 +29,17 @@ const GROUPS: Group[] = [
     ],
   },
   {
+    // Multi-cursor gets its own group: two of the four are mouse gestures, and
+    // the feature is invisible until you know the modifier.
+    title: "Multi-cursor (query editor)",
+    rows: [
+      { keys: "⌥ + click", label: "Add a cursor" },
+      { keys: "⌥ + drag", label: "Rectangular selection" },
+      { keys: "⌘⌥↑ / ⌘⌥↓", label: "Add cursor above / below" },
+      { keys: "Esc", label: "Back to a single cursor" },
+    ],
+  },
+  {
     title: "Grid",
     rows: [
       { keys: "⌘E", label: "Toggle row inspector" },

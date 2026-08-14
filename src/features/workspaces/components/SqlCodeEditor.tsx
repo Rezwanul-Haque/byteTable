@@ -14,6 +14,11 @@
 // The visual is matched via a custom theme + HighlightStyle so the editor
 // area looks like the prototype.
 //
+// MULTI-CURSOR (Sublime / VS Code style): ⌥-click adds a cursor, ⌥-drag selects
+// a rectangular block, ⌘/Ctrl+⌥+↑/↓ stacks cursors by line, Escape collapses
+// back to one. See the `allowMultipleSelections` block in the extensions below
+// for the Linux Alt+click caveat.
+//
 // React integration is imperative (the documented CM pattern): one EditorView
 // instance per mount, created in a layout effect. The buffer is controlled by
 // the parent (the SQL tab's store-backed `text`): `value` prop changes that
@@ -36,7 +41,14 @@ import {
   syntaxHighlighting,
 } from "@codemirror/language";
 import { Compartment, EditorState } from "@codemirror/state";
-import { EditorView, keymap, drawSelection, lineNumbers } from "@codemirror/view";
+import {
+  EditorView,
+  crosshairCursor,
+  drawSelection,
+  keymap,
+  lineNumbers,
+  rectangularSelection,
+} from "@codemirror/view";
 import { tags as t } from "@lezer/highlight";
 import {
   forwardRef,
@@ -328,6 +340,24 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
             history(),
             drawSelection(),
             bracketMatching(),
+            // Multi-cursor (Sublime / VS Code style). CodeMirror collapses a
+            // multi-range selection to its main range unless this facet opts in
+            // — which is why `defaultKeymap`'s ⌘/Ctrl+⌥+↑/↓ (addCursorAbove /
+            // addCursorBelow) and Escape (simplifySelection) already existed but
+            // did nothing. `drawSelection` above is what paints the extra
+            // cursors; the browser only ever renders one.
+            EditorState.allowMultipleSelections.of(true),
+            // ⌥/Alt-click drops an extra cursor — the VS Code / Sublime binding.
+            // NOTE for Linux: several window managers swallow Alt+click to drag
+            // windows, so it may never reach us there (VS Code has the same
+            // caveat and makes the modifier configurable). Nothing else in the
+            // editor claims Alt+click — the ⇧⌥F format shortcut is a keydown.
+            EditorView.clickAddsSelectionRange.of((event) => event.altKey),
+            // ⌥/Alt-drag selects a rectangular block (one cursor per line);
+            // crosshairCursor swaps the pointer while Alt is held so the mode is
+            // visible before the drag starts.
+            rectangularSelection(),
+            crosshairCursor(),
             // Mod-Enter must win over any default binding; indentWithTab makes
             // Tab insert indentation (configured to two spaces below).
             runKeymap,

@@ -51,6 +51,9 @@
   border: 1px solid var(--border);
   border-radius: 5px;
   padding: 2px 7px;
+  /* The longer combos ("⌘⌥↑ / ⌘⌥↓", "⌥ + click") must stay on one line — a
+     wrapped keycap reads as two shortcuts. */
+  white-space: nowrap;
 }
 
 .shortcuts-note {

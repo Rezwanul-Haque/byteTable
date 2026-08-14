@@ -8,7 +8,7 @@ use crate::shared::engine::*;
 use crate::shared::error::AppError;
 
 use super::error::map_query_error;
-use super::sql::{qualified, quote_ident};
+use super::sql::{display_type, qualified, quote_ident};
 
 /// Extracted from the `EngineConnection` impl (canonical layout: the impl
 /// delegates; the SQL lives in the concern module).
@@ -137,12 +137,26 @@ pub(super) async fn table_meta(
 
     // Columns from information_schema.columns; udt_name carries the canonical
     // type (int4/int8/bool/numeric/_text/jsonb/…) we use for numeric detection.
+    //
+    // `data_type` alone is not enough for DISPLAY: it drops the type modifier,
+    // so a `VARCHAR(50)` column reports a bare "character varying" and the
+    // length vanishes from the Structure view (and from the assembled DDL). The
+    // pg_attribute join adds `format_type`, which keeps the modifier and spells
+    // arrays properly ("text[]" rather than the internal "_text"); `data_type`
+    // stays as the fallback for anything the join cannot resolve.
     let col_rows = sqlx::query(
-        "SELECT column_name, data_type, udt_name, is_nullable, column_default, is_identity, \
-            col_description(format('%I.%I', table_schema, table_name)::regclass, ordinal_position) AS comment \
-         FROM information_schema.columns \
-         WHERE table_schema = $1 AND table_name = $2 \
-         ORDER BY ordinal_position",
+        "SELECT c.column_name, c.data_type, c.udt_name, c.is_nullable, c.column_default, \
+            c.is_identity, \
+            col_description(format('%I.%I', c.table_schema, c.table_name)::regclass, c.ordinal_position) AS comment, \
+            format_type(a.atttypid, a.atttypmod) AS full_type \
+         FROM information_schema.columns c \
+         LEFT JOIN pg_attribute a \
+             ON a.attrelid = format('%I.%I', c.table_schema, c.table_name)::regclass \
+            AND a.attname = c.column_name \
+            AND a.attnum > 0 \
+            AND NOT a.attisdropped \
+         WHERE c.table_schema = $1 AND c.table_name = $2 \
+         ORDER BY c.ordinal_position",
     )
     .bind(schema)
     .bind(table)
@@ -159,6 +173,7 @@ pub(super) async fn table_meta(
         let is_nullable: String = row.get("is_nullable");
         let default_value: Option<String> = row.try_get("column_default").unwrap_or(None);
         let comment: Option<String> = row.try_get("comment").unwrap_or(None);
+        let full_type: Option<String> = row.try_get("full_type").unwrap_or(None);
         // Both identity columns (GENERATED … AS IDENTITY) and the legacy serial
         // types (a `nextval(…)` default over a sequence) auto-assign on insert.
         let is_identity: String = row.try_get("is_identity").unwrap_or_default();
@@ -173,13 +188,15 @@ pub(super) async fn table_meta(
             auto_increment,
             name,
             comment,
-            // Display `data_type` (information_schema's readable form, e.g.
-            // "integer", "timestamp with time zone"). For ARRAY columns
-            // data_type is just "ARRAY"; prefer the udt_name (e.g. "_text").
-            data_type: if data_type == "ARRAY" {
-                udt_name
-            } else {
-                data_type
+            // Display the `format_type` form (`varchar(50)`, `numeric(10,2)`,
+            // `text[]`) — the declared type WITH its modifier, aliased by
+            // `display_type`. Falls back to information_schema's `data_type`
+            // (and, for an ARRAY, the udt_name, since data_type is just
+            // "ARRAY" there) if the pg_attribute row was not resolvable.
+            data_type: match full_type {
+                Some(t) if !t.is_empty() => display_type(&t),
+                _ if data_type == "ARRAY" => udt_name,
+                _ => data_type,
             },
             nullable: is_nullable.eq_ignore_ascii_case("YES"),
             default_value,

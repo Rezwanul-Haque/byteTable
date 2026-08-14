@@ -50,6 +50,56 @@ pub fn qualified(schema: &str, table: &str) -> String {
     format!("{}.{}", quote_ident(schema), quote_ident(table))
 }
 
+/// Turn Postgres' own `format_type(atttypid, atttypmod)` output into the label
+/// the Structure view shows — the type WITH its modifier, spelled the way the
+/// type menu (and everyone writing DDL) spells it.
+///
+/// `information_schema.columns.data_type` alone loses the modifier: a
+/// `VARCHAR(50)` column reports "character varying", so the length the user just
+/// set disappeared the moment the view re-introspected. `format_type` keeps it
+/// ("character varying(50)"), and this maps the SQL-standard long spellings to
+/// their common aliases, modifier and array suffix intact:
+///
+/// - `character varying(50)` → `varchar(50)`
+/// - `character(4)` → `char(4)`
+/// - `timestamp(3) with time zone` → `timestamptz(3)`
+/// - `time without time zone` → `time`
+/// - `bit varying(8)` → `varbit(8)`
+///
+/// Everything else passes through as Postgres wrote it (`integer`, `bigint`,
+/// `numeric(10,2)`, `jsonb`, `text[]`). The result is valid DDL, which matters:
+/// the assembled `CREATE TABLE` in the DDL panel is built from these labels.
+pub fn display_type(format_type_out: &str) -> String {
+    let trimmed = format_type_out.trim();
+    // Array-ness rides at the very end ("text[]", "numeric(10,2)[]").
+    let (head, array_suffix) = match trimmed.find("[]") {
+        Some(at) => (&trimmed[..at], &trimmed[at..]),
+        None => (trimmed, ""),
+    };
+    // The modifier can sit mid-string ("timestamp(3) with time zone"), so it is
+    // lifted out, the remaining words are matched as the base name, and it goes
+    // back on the end.
+    let (base, modifier) = match (head.find('('), head.rfind(')')) {
+        (Some(open), Some(close)) if close > open => (
+            format!("{} {}", &head[..open], &head[close + 1..]),
+            &head[open..=close],
+        ),
+        _ => (head.to_string(), ""),
+    };
+    let base = base.split_whitespace().collect::<Vec<_>>().join(" ");
+    let alias = match base.to_ascii_lowercase().as_str() {
+        "character varying" => "varchar",
+        "character" => "char",
+        "timestamp without time zone" => "timestamp",
+        "timestamp with time zone" => "timestamptz",
+        "time without time zone" => "time",
+        "time with time zone" => "timetz",
+        "bit varying" => "varbit",
+        _ => base.as_str(),
+    };
+    format!("{alias}{modifier}{array_suffix}")
+}
+
 // ---------------------------------------------------------------------------
 // Bound values
 // ---------------------------------------------------------------------------
@@ -535,6 +585,36 @@ mod tests {
     use crate::shared::engine::{
         Combinator, Condition, FilterOp, FilterSpec, FilterValue, SortDirection,
     };
+
+    #[test]
+    fn display_type_keeps_the_modifier_and_uses_the_common_alias() {
+        // The bug this exists for: information_schema reported "character
+        // varying" and the (50) the user had just set was gone.
+        assert_eq!(display_type("character varying(50)"), "varchar(50)");
+        assert_eq!(display_type("character varying"), "varchar");
+        assert_eq!(display_type("character(4)"), "char(4)");
+        assert_eq!(display_type("bit varying(8)"), "varbit(8)");
+        // A modifier in the middle of the name moves to the end.
+        assert_eq!(
+            display_type("timestamp(3) with time zone"),
+            "timestamptz(3)"
+        );
+        assert_eq!(display_type("timestamp without time zone"), "timestamp");
+        assert_eq!(display_type("time with time zone"), "timetz");
+    }
+
+    #[test]
+    fn display_type_passes_everything_else_through() {
+        assert_eq!(display_type("integer"), "integer");
+        assert_eq!(display_type("bigint"), "bigint");
+        assert_eq!(display_type("numeric(10,2)"), "numeric(10,2)");
+        assert_eq!(display_type("jsonb"), "jsonb");
+        assert_eq!(display_type("public.my_enum"), "public.my_enum");
+        // Arrays keep their suffix, alias and modifier included.
+        assert_eq!(display_type("text[]"), "text[]");
+        assert_eq!(display_type("character varying(20)[]"), "varchar(20)[]");
+        assert_eq!(display_type(""), "");
+    }
 
     #[test]
     fn pg_multi_insert_sql_uses_numbered_params() {

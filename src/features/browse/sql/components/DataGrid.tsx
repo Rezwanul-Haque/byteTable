@@ -103,6 +103,10 @@ interface ColCellMeta {
   nullable: boolean;
   /** The column's DEFAULT expression verbatim, or null. Seeds new staged rows. */
   default: string | null;
+  /** True when the engine assigns the value on insert (SERIAL / identity /
+   *  AUTO_INCREMENT / SQLite rowid alias). Such a column is left OUT of a
+   *  staged row's INSERT; every other column is sent. */
+  autoIncrement: boolean;
 }
 
 /** What an active edit / cell-modal targets: an existing (real) row keyed by
@@ -725,6 +729,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           dataType: c.dataType,
           nullable: c.nullable,
           default: c.default ?? null,
+          autoIncrement: c.autoIncrement ?? false,
         });
       setColMeta(map);
     });
@@ -1380,10 +1385,13 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           const v = nr.values[ci] ?? null;
           if (v === null) return; // let the DB apply NULL / its default
           const m = colMeta.get(c.name);
-          // Skip an integer primary key so SERIAL / AUTOINCREMENT assigns it
-          // (the displayed value is a hint only); a non-int / user-typed pk is
-          // kept (it is non-null here).
-          if (m?.pk && affinityOf(m.dataType) === "integer") return;
+          // Skip a primary key the ENGINE fills in — SERIAL / identity /
+          // AUTO_INCREMENT / SQLite's rowid alias — so it assigns the value and
+          // the one on screen stays the hint it is. A pk the engine does NOT
+          // generate (a plain `bigint PRIMARY KEY`, a natural or composite key)
+          // is sent: omitting it would insert NULL and trip the not-null
+          // constraint, which is what an integer-affinity test used to do.
+          if (m?.pk && m.autoIncrement) return;
           cols.push(qi(c.name));
           vals.push(litCol(v, c.name));
         });
@@ -1519,7 +1527,10 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       const m = colMeta.get(c.name);
       const affinity = affinityOf(m?.dataType ?? "");
       if (m?.pk && affinity === "integer") {
-        // Auto-increment: max over the cached page + the staged rows, + 1.
+        // Next integer key: max over the cached page + the staged rows, + 1.
+        // On an engine-generated pk this is only a hint (the INSERT omits the
+        // column); on a plain integer pk it is the value that gets inserted,
+        // and the cell is editable if the user wants another.
         let max = 0;
         for (const row of rowCacheRef.current.values()) {
           const ci = columns.indexOf(c);

@@ -32,6 +32,7 @@ import { Icon } from "../../../shared/ui/Icon";
 import { normalizeEnv, type Engine } from "../../../shared/types";
 import {
   clausePresent,
+  NESTED_IN_WRITTEN,
   detectClauses,
   RUN_ORDER,
   type StepKey,
@@ -81,19 +82,29 @@ export function ExecutionMinimap({ sql, caret = 0 }: { sql: string; caret?: numb
   const stmt = statementContextAt(sql, caret);
   const c = detectClauses(stmt.text);
 
-  const renderCol = (label: string, sub: string, orderKeys: StepKey[]) => {
+  // `nest` marks the column where a nested clause (JOIN … ON, written inside
+  // FROM) is shown indented and unnumbered — it is not a top-level clause there.
+  // In the run column it is a step like any other and takes its own number.
+  const renderCol = (label: string, sub: string, orderKeys: StepKey[], nest: boolean) => {
     let n = 0;
     return (
       <div className="exec-mini-col">
         <div className="exec-mini-collabel">{label}</div>
         <div className="exec-mini-colsub">{sub}</div>
         {orderKeys.map((key) => {
+          const nested = nest && NESTED_IN_WRITTEN.has(key);
           const on = clausePresent(c, key);
-          if (on) n += 1;
+          if (on && !nested) n += 1;
           const def = stepByKey(key);
           return (
-            <div key={key} className={"exec-mini-step" + (on ? " on" : "")} title={def.desc}>
-              <span className="exec-mini-num">{on ? n : "·"}</span>
+            <div
+              key={key}
+              className={
+                "exec-mini-step" + (on ? " on" : "") + (nested ? " exec-mini-step-nested" : "")
+              }
+              title={def.desc}
+            >
+              <span className="exec-mini-num">{nested ? "↳" : on ? n : "·"}</span>
               <span className="exec-mini-kw">{def.kw}</span>
             </div>
           );
@@ -115,12 +126,21 @@ export function ExecutionMinimap({ sql, caret = 0 }: { sql: string; caret?: numb
         </div>
       ) : null}
       <div className="exec-mini-cols">
-        {renderCol("Written", "how you type it", WRITTEN_ORDER)}
-        {renderCol("Run", "how it executes", RUN_ORDER)}
+        {renderCol("Written", "how you type it", WRITTEN_ORDER, true)}
+        {renderCol("Run", "how it executes", RUN_ORDER, false)}
       </div>
       <div className="exec-mini-foot">
-        SELECT is written 1st but runs 5th — that’s why ORDER BY can use its aliases but WHERE
-        can’t.
+        {c.outerJoin ? (
+          <>
+            ON runs with the JOIN, WHERE runs after it — so a WHERE on the joined table drops the
+            NULL rows an OUTER JOIN just added, making it an inner join.
+          </>
+        ) : (
+          <>
+            SELECT is written 1st but runs 5th — that’s why ORDER BY can use its aliases but WHERE
+            can’t.
+          </>
+        )}
       </div>
     </div>
   );

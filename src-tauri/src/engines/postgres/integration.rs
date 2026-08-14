@@ -1420,3 +1420,94 @@ async fn uuid_columns_decode_and_are_editable() {
         .execute(&pool)
         .await;
 }
+
+/// Types sqlx has no binary decoder for used to read as NULL in the grid —
+/// silently pretending the row was empty. `select_list` now asks Postgres for
+/// their text form, so every one of them shows its value, while the column
+/// header keeps reporting the REAL type rather than the `text` of the cast.
+#[tokio::test]
+async fn undecodable_types_come_back_as_text_with_their_real_type_hint() {
+    let Some((params, secret)) =
+        gate("undecodable_types_come_back_as_text_with_their_real_type_hint")
+    else {
+        return;
+    };
+    let pool = raw_pool(&params, &secret).await;
+    let schema = "bt_it_types";
+    for stmt in [
+        format!("DROP SCHEMA IF EXISTS {schema} CASCADE"),
+        format!("CREATE SCHEMA {schema}"),
+        format!("CREATE TYPE {schema}.mood AS ENUM ('ok', 'bad')"),
+        format!(
+            "CREATE TABLE {schema}.t (id int PRIMARY KEY, ip inet, iv interval, tz timetz, \
+             arr text[], nums int[], m {schema}.mood, mac macaddr, bits bit(8), rng int4range)"
+        ),
+        format!(
+            "INSERT INTO {schema}.t VALUES (1, '10.0.0.1', '1 day', '10:00:00+02', \
+             ARRAY['a','b'], ARRAY[1,2], 'ok', '08:00:2b:01:02:03', B'10101010', '[1,5)')"
+        ),
+    ] {
+        sqlx::query(&stmt)
+            .execute(&pool)
+            .await
+            .unwrap_or_else(|e| panic!("fixture stmt failed: {stmt}\n{e}"));
+    }
+    let conn = open_conn(&params, &secret).await;
+
+    let page = conn
+        .fetch_rows(FetchRowsRequest {
+            schema: schema.into(),
+            table: "t".into(),
+            offset: 0,
+            limit: 10,
+            sort: None,
+            filter: None,
+        })
+        .await
+        .expect("fetch rows");
+    assert_eq!(page.rows.len(), 1);
+    let row = &page.rows[0];
+    let by_name = |name: &str| {
+        let i = page
+            .columns
+            .iter()
+            .position(|c| c.name == name)
+            .unwrap_or_else(|| panic!("no column {name}"));
+        (&row[i], page.columns[i].type_hint.clone())
+    };
+
+    // Every one of these was `Null` before the cast.
+    for (name, expected) in [
+        // Postgres' own text form for inet carries the netmask.
+        ("ip", "10.0.0.1/32"),
+        ("iv", "1 day"),
+        ("arr", "{a,b}"),
+        ("nums", "{1,2}"),
+        ("m", "ok"),
+        ("mac", "08:00:2b:01:02:03"),
+        ("bits", "10101010"),
+        ("rng", "[1,5)"),
+    ] {
+        let (value, _) = by_name(name);
+        assert_eq!(
+            value,
+            &serde_json::json!(expected),
+            "{name} should decode as its text form"
+        );
+    }
+    // timetz formatting varies by server settings — just prove it is not NULL.
+    let (tz, _) = by_name("tz");
+    assert!(tz.is_string(), "timetz should decode, got {tz:?}");
+
+    // The header still describes the column, not the cast.
+    assert_eq!(by_name("ip").1, "inet");
+    assert_eq!(by_name("arr").1, "text[]");
+    assert_eq!(by_name("m").1, format!("{schema}.mood"));
+    // An untouched column keeps the live result type.
+    let (_, id_hint) = by_name("id");
+    assert!(!id_hint.is_empty());
+
+    let _ = sqlx::query(&format!("DROP SCHEMA IF EXISTS {schema} CASCADE"))
+        .execute(&pool)
+        .await;
+}

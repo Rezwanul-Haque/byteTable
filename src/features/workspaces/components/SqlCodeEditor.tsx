@@ -61,6 +61,7 @@ import {
 import { createPortal } from "react-dom";
 
 import type { Engine } from "../../../shared/types";
+import { clearActiveCodeEditor, setActiveCodeEditor } from "../../../shared/ui/activeCodeEditor";
 
 import {
   completionAddToOptions,
@@ -365,6 +366,10 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
             // Option-char-independent, so it fires on macOS where Option+F would
             // otherwise insert a special char instead of triggering the keymap.
             EditorView.domEventHandlers({
+              focus: (_e, v) => {
+                setActiveCodeEditor(v);
+                return false;
+              },
               keydown: (e) => {
                 if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === "KeyF") {
                   e.preventDefault();
@@ -430,7 +435,12 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
         }),
       });
       viewRef.current = view;
+      // Register as the editor window-level commands act on (title bar
+      // Edit ▸ Undo / Redo) — by the time a menu item runs, focus has left the
+      // editor, so those commands need a handle rather than document.focus.
+      if (view.hasFocus) setActiveCodeEditor(view);
       return () => {
+        clearActiveCodeEditor(view);
         view.destroy();
         viewRef.current = null;
       };

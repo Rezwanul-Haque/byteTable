@@ -10,8 +10,9 @@
 //     Updates, About, Keyboard Shortcuts, Zoom) — App.tsx owns that state.
 //  2. `emitCmd(id)` onto the bt:cmd bus — claimed by the active workspace /
 //     query tab surface (see btCmd.ts). Gated on that surface being present.
-//  3. `execEdit(cmd)` → document.execCommand against whatever is focused,
-//     failing silently if nothing is.
+//  3. `execEdit(cmd)` → the last-focused CodeMirror editor for undo/redo (see
+//     activeCodeEditor.ts), else document.execCommand against whatever is
+//     focused, failing silently if nothing is.
 //
 // Every label — the five menus and all their items — is localized (M31
 // `menu.*`). Because they are read at build time, the title bar re-runs this on
@@ -20,6 +21,7 @@
 // the sentence, and the shortcut hints (⌘T), which are key names.
 
 import { t } from "../i18n";
+import { runCodeEditorHistory } from "./activeCodeEditor";
 import { emitCmd } from "./btCmd";
 
 /** The product name. Interpolated into labels rather than translated. */
@@ -70,10 +72,15 @@ export interface Menu {
   items: MenuItem[];
 }
 
-/** Standard editing commands against the focused element; silent no-op if none. */
+/** Standard editing commands against the focused element; silent no-op if none.
+ *
+ *  Undo/redo go to the last-focused SQL editor first: CodeMirror keeps its own
+ *  history, and clicking this menu item has already moved focus out of the
+ *  editor, so `execCommand` would find nothing to act on. Plain inputs and
+ *  textareas (and the clipboard commands) still take the execCommand path,
+ *  which remains the only synchronous hook into the browser's native stacks. */
 export function execEdit(cmd: "undo" | "redo" | "cut" | "copy" | "paste"): void {
-  // execCommand remains the only synchronous hook into the browser's native
-  // undo/clipboard stack for whatever element has focus.
+  if ((cmd === "undo" || cmd === "redo") && runCodeEditorHistory(cmd)) return;
   document.execCommand(cmd);
 }
 

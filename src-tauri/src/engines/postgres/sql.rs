@@ -100,6 +100,76 @@ pub fn display_type(format_type_out: &str) -> String {
     format!("{alias}{modifier}{array_suffix}")
 }
 
+/// Types `decode_value` reads natively from Postgres' BINARY result format.
+/// Everything else has to be asked for as text — see [`needs_text_cast`].
+const NATIVE_TYPES: &[&str] = &[
+    "bool",
+    "boolean",
+    "smallint",
+    "int2",
+    "integer",
+    "int",
+    "int4",
+    "bigint",
+    "int8",
+    "oid",
+    "real",
+    "float4",
+    "double precision",
+    "float8",
+    "numeric",
+    "decimal",
+    "money",
+    "bytea",
+    "json",
+    "jsonb",
+    "date",
+    "timestamp",
+    "timestamptz",
+    "timestamp without time zone",
+    "timestamp with time zone",
+    "time",
+    "time without time zone",
+    "uuid",
+    "text",
+    "varchar",
+    "character varying",
+    "char",
+    "bpchar",
+    "character",
+    "name",
+];
+
+/// True when a column has to be selected as `col::text` for its value to
+/// survive the trip.
+///
+/// sqlx asks Postgres for results in the BINARY format and decodes them with
+/// per-type Rust decoders. For a type it has no decoder for — `inet`, `interval`,
+/// `timetz`, arrays, enums, `macaddr`, `bit`, ranges, composites, PostGIS
+/// geometry, … — the decode fails and the cell reads as **NULL**, silently
+/// pretending the row is empty. Casting in the SELECT makes Postgres render its
+/// own text form (exactly what psql prints), which always decodes.
+///
+/// The cast is only applied to the value: the column's real type is still
+/// reported to the renderer, so the grid header keeps saying `inet`, not `text`.
+///
+/// `display_type` is the label [`display_type`] produced, so it may carry a
+/// modifier (`varchar(50)`) or an array suffix (`text[]`). An array ALWAYS
+/// casts — sqlx decodes only arrays of types it knows, and the text form
+/// (`{a,b}`) is what the grid should show anyway.
+pub fn needs_text_cast(display_type: &str) -> bool {
+    let t = display_type.trim();
+    if t.ends_with("[]") {
+        return true;
+    }
+    let base = match t.find('(') {
+        Some(open) => &t[..open],
+        None => t,
+    };
+    let base = base.trim().to_ascii_lowercase();
+    !NATIVE_TYPES.contains(&base.as_str())
+}
+
 /// The `::type` cast a bound parameter needs to be comparable with `column`.
 ///
 /// Postgres has no `uuid = text` operator, and sqlx binds a JSON string as
@@ -623,6 +693,56 @@ mod tests {
     use crate::shared::engine::{
         Combinator, Condition, FilterOp, FilterSpec, FilterValue, SortDirection,
     };
+
+    #[test]
+    fn needs_text_cast_leaves_the_natively_decoded_types_alone() {
+        for t in [
+            "integer",
+            "bigint",
+            "boolean",
+            "numeric(10,2)",
+            "double precision",
+            "text",
+            "varchar(50)",
+            "char(4)",
+            "bytea",
+            "jsonb",
+            "timestamptz",
+            "timestamp without time zone",
+            "date",
+            "uuid",
+            "money",
+        ] {
+            assert!(
+                !needs_text_cast(t),
+                "{t} decodes natively, must not be cast"
+            );
+        }
+    }
+
+    #[test]
+    fn needs_text_cast_catches_everything_sqlx_cannot_decode() {
+        // Each of these read as NULL in the grid before the cast.
+        for t in [
+            "inet",
+            "cidr",
+            "interval",
+            "timetz",
+            "macaddr",
+            "bit(8)",
+            "text[]",
+            "integer[]",
+            "public.mood",
+            "tsvector",
+            "int4range",
+            "geometry",
+        ] {
+            assert!(
+                needs_text_cast(t),
+                "{t} has no decoder, must be cast to text"
+            );
+        }
+    }
 
     #[test]
     fn display_type_keeps_the_modifier_and_uses_the_common_alias() {

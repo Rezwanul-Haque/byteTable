@@ -7,13 +7,19 @@
 // regexes can never match inside quoted text or comments — robust on the same
 // multi-line SQL the editor runs.
 
-/** The 8 logical clauses, in *execution* order (how the engine runs them). */
+/** The 9 logical clauses, in *execution* order (how the engine runs them). */
 export const EXEC_STEPS = [
   {
     key: "from",
     kw: "FROM",
     label: "Read source",
-    desc: "Scan the table named in FROM (and any JOINs) to build the working set of rows. Everything else operates on this.",
+    desc: "Scan the table named in FROM to build the working set of rows. Everything else operates on this.",
+  },
+  {
+    key: "join",
+    kw: "JOIN … ON",
+    label: "Join",
+    desc: "Match rows against the joined table using ON, then — for an OUTER join — add back the rows that matched nothing, with NULLs. ON runs HERE; a WHERE on the joined table runs later and drops those NULL rows, quietly turning an outer join into an inner one.",
   },
   {
     key: "where",
@@ -64,6 +70,9 @@ export type StepKey = (typeof EXEC_STEPS)[number]["key"];
 export interface DetectedClauses {
   table: string | null;
   from: boolean;
+  join: boolean;
+  /** A LEFT / RIGHT / FULL join — the one the WHERE-vs-ON trap applies to. */
+  outerJoin: boolean;
   where: boolean;
   groupBy: boolean;
   having: boolean;
@@ -85,6 +94,10 @@ export function detectClauses(sql: string): DetectedClauses {
   return {
     table: fromM ? (fromM[1] ?? null) : null,
     from: !!fromM,
+    // An explicit JOIN, or the old comma form (`FROM a, b`) — which is an inner
+    // join written differently, and runs at the same point.
+    join: /\bjoin\b/i.test(s) || /\bfrom\s+[a-z_][\w.]*(?:\s+(?:as\s+)?[a-z_]\w*)?\s*,/i.test(s),
+    outerJoin: /\b(left|right|full)\s+(outer\s+)?join\b/i.test(s),
     where: /\bwhere\b/i.test(s),
     groupBy: /\bgroup\s+by\b/i.test(s),
     having: /\bhaving\b/i.test(s),
@@ -101,6 +114,10 @@ export function clausePresent(c: DetectedClauses, key: StepKey): boolean {
   return c[key];
 }
 
+/** Written-order keys that are nested inside the clause above them (JOIN … ON
+ *  lives inside FROM), so the minimap can indent them and skip their number. */
+export const NESTED_IN_WRITTEN: ReadonlySet<StepKey> = new Set<StepKey>(["join"]);
+
 export const stepByKey = (key: StepKey) => EXEC_STEPS.find((s) => s.key === key)!;
 
 /** The canonical WRITTEN (syntax) order — how you type the clauses. */
@@ -108,6 +125,10 @@ export const WRITTEN_ORDER: StepKey[] = [
   "select",
   "distinct",
   "from",
+  // JOIN … ON is not a top-level clause — it is written INSIDE the FROM clause,
+  // which is why the minimap renders it indented under FROM and leaves it out of
+  // the written numbering. On the run side it IS its own step.
+  "join",
   "where",
   "groupBy",
   "having",

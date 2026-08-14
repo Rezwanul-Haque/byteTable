@@ -12,8 +12,8 @@ use crate::shared::error::AppError;
 use super::error::map_query_error;
 use super::introspect::table_meta;
 use super::sql::{
-    is_numeric_type, order_by_clause, param_cast, qualified, quote_ident, uuid_columns,
-    validate_column, where_clause, BoundValue, WhereClause, JS_MAX_SAFE_INTEGER,
+    is_numeric_type, needs_text_cast, order_by_clause, param_cast, qualified, quote_ident,
+    uuid_columns, validate_column, where_clause, BoundValue, WhereClause, JS_MAX_SAFE_INTEGER,
 };
 
 /// Page-size ceiling for `fetch_rows` (mirrors the SQLite adapter and the
@@ -151,7 +151,7 @@ pub(super) async fn fetch_rows(pool: &PgPool, req: FetchRowsRequest) -> Result<R
     // Page query: WHERE, ORDER BY, then LIMIT/OFFSET as the next $N binds.
     let limit_placeholder = where_clause.next_index();
     let offset_placeholder = limit_placeholder + 1;
-    let mut page_sql = format!("SELECT * FROM {qualified}{where_sql}");
+    let mut page_sql = format!("SELECT {} FROM {qualified}{where_sql}", select_list(&meta));
     if let Some(clause) = &order_by {
         page_sql.push_str(&format!(" ORDER BY {clause}"));
     }
@@ -168,8 +168,10 @@ pub(super) async fn fetch_rows(pool: &PgPool, req: FetchRowsRequest) -> Result<R
     let rows = page_query.fetch_all(pool).await.map_err(map_query_error)?;
 
     // Column metadata: prefer the live result shape; fall back to the
-    // introspected columns when the page is empty.
-    let columns = if let Some(first) = rows.first() {
+    // introspected columns when the page is empty. A column `select_list` cast
+    // to text reports back as `text`, so its real type is restored — the header
+    // describes the COLUMN, not the transport.
+    let mut columns = if let Some(first) = rows.first() {
         column_meta(first)
     } else {
         meta.columns
@@ -180,6 +182,7 @@ pub(super) async fn fetch_rows(pool: &PgPool, req: FetchRowsRequest) -> Result<R
             })
             .collect()
     };
+    restore_cast_type_hints(&mut columns, &meta);
 
     let out_rows: Vec<Vec<serde_json::Value>> = rows.iter().map(decode_row).collect();
 
@@ -231,7 +234,10 @@ pub(super) async fn fetch_row_by_key(
     // `uuid = $1` needs the parameter cast — see `param_cast`.
     let cast = param_cast(&uuid_columns(&meta.columns), &req.column);
 
-    let row_sql = format!("SELECT * FROM {qualified} WHERE {col} = $1{cast} LIMIT 1");
+    let row_sql = format!(
+        "SELECT {} FROM {qualified} WHERE {col} = $1{cast} LIMIT 1",
+        select_list(&meta)
+    );
     let row = bind_value(sqlx::query(&row_sql), &bound)
         .fetch_optional(pool)
         .await
@@ -276,6 +282,45 @@ pub(super) fn bind_value<'q>(
         BoundValue::Float(f) => query.bind(*f),
         BoundValue::Text(s) => query.bind(s.as_str()),
         BoundValue::Bytes(b) => query.bind(b.as_slice()),
+    }
+}
+
+/// The SELECT list for a table page: every column by name, with the ones sqlx
+/// cannot decode from the binary protocol cast to text (see
+/// [`needs_text_cast`]). Falls back to `*` for a table we somehow have no
+/// columns for, so a page never fails to render.
+///
+/// Aliased back to the column's own name (`"ip"::text AS "ip"`) so the result
+/// shape — names and order — is identical to `SELECT *`.
+fn select_list(meta: &TableMeta) -> String {
+    if meta.columns.is_empty() {
+        return "*".to_string();
+    }
+    meta.columns
+        .iter()
+        .map(|c| {
+            let quoted = quote_ident(&c.name);
+            if needs_text_cast(&c.data_type) {
+                format!("{quoted}::text AS {quoted}")
+            } else {
+                quoted
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Put the introspected type back on any column [`select_list`] cast to text,
+/// so the grid header still reads `inet` / `text[]` / the enum's name rather
+/// than the `text` the cast produced. Matched by name — the select list keeps
+/// the column's own name as its alias.
+fn restore_cast_type_hints(columns: &mut [ColumnMeta], meta: &TableMeta) {
+    for column in columns.iter_mut() {
+        if let Some(introspected) = meta.columns.iter().find(|c| c.name == column.name) {
+            if needs_text_cast(&introspected.data_type) {
+                column.type_hint = introspected.data_type.clone();
+            }
+        }
     }
 }
 

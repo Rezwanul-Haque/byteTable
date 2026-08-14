@@ -395,6 +395,7 @@
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Ten engines supported, side by side</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>MongoDB connection-string parsing, incl. Atlas <code>mongodb+srv://</code></li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Open a SQLite file straight from disk</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Paste a connection URL or ODBC string and have the fields filled in</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>AWS profile, static-key or local-endpoint auth for DynamoDB</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Secrets in the OS keychain — never in a config file</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Project folders for connections, drag cards between them</li>
@@ -429,6 +430,8 @@
         <ul>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Code highlighting (CodeMirror 6)</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Schema-aware autocomplete — tables, columns, keys</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Per-engine SQL dialect — keywords, functions and highlighting match the connection</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Multi-cursor editing — <code>⌥</code>-click for extra cursors, <code>⌥</code>-drag for a column selection</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Run the statement at the caret, the selection, or the whole buffer</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>One-click SQL formatter</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Per-tab query history</li>
@@ -455,6 +458,8 @@
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Insights respect the filter you're looking at, not the whole table</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Output data formatting: JSON tree editor, <code>BINARY(16)</code> as UUID, date/time pickers</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Row inspector, and copy any cell value</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Right-click any row to duplicate, copy or export just that row</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>New rows come pre-keyed — auto-increment, UUID or <code>BINARY(16)</code></li>
         </ul>
       </div>
 
@@ -468,7 +473,10 @@
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Create &amp; edit indexes</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Create &amp; edit relations</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Object explorer: views, materialized views, functions, procedures, triggers</li>
-          <li><span class="msym"><svg><use href="#chk"/></svg></span>Bulk-drop objects, and truncate behind a confirm</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Bulk-drop objects from the explorer</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Empty a table or drop it outright, behind a confirm that shows the SQL</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Opt in to your engine's foreign-key override — <code>CASCADE</code>, or checks off for the statement</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Empty a schema, or delete the schema itself — type its name to arm it</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Interactive schema map: draggable ER diagram, movable FK edges, zoom</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Export the schema map to PNG or SVG</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Schema diff for PostgreSQL, MySQL &amp; SQLite — compare two connections, or two schemas in one</li>

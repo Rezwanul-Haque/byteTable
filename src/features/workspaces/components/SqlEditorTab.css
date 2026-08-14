@@ -224,6 +224,23 @@
   color: var(--text);
 }
 
+/* JOIN … ON in the WRITTEN column: it is written inside FROM, not beside it, so
+   it sits indented with a ↳ marker instead of a step number. The run column
+   renders the same clause as an ordinary numbered step. */
+.exec-mini-step-nested {
+  padding-left: 12px;
+}
+
+.exec-mini-step-nested .exec-mini-num {
+  background: none;
+  color: var(--text-faint);
+}
+
+.exec-mini-step-nested.on .exec-mini-num {
+  background: none;
+  color: var(--accent);
+}
+
 .exec-mini-foot {
   padding: 7px 10px 9px;
   font-size: 11.5px;

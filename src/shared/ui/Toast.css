@@ -3,6 +3,9 @@
 
 .toasts {
   position: fixed;
+  /* 40px clears the 28px status bar. When a save / pending bar is on screen,
+     ToastProvider measures it and overrides this inline — the bars vary in
+     height, so a second constant here would just be wrong differently. */
   bottom: 40px;
   right: 16px;
   z-index: 80;

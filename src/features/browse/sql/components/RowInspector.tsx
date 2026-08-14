@@ -446,6 +446,11 @@ function RowInspectorField({
   // no native bool — its value is the integer 0/1 — so it renders as a number.
   const boolCol = typeof value === "boolean" || /^(bool|boolean)$/i.test((col.type || "").trim());
   const numCol = typeof value === "number";
+  // Numeric fields keep the exact keystrokes ("15.", "1.50", "1e") alongside the
+  // parsed draft: the draft is a Number, and String(15) would swallow the dot the
+  // user just typed, making a decimal impossible to enter. Only trusted while it
+  // still parses to the field's own draft — a revert or row-nav drops it.
+  const [numText, setNumText] = useState<string | null>(null);
 
   // Copy the field's current value to the clipboard. Binary copies `0x`-hex —
   // NOT the UUID display form — so it matches the grid's copy button and pastes
@@ -629,7 +634,8 @@ function RowInspectorField({
       </div>
     );
   } else {
-    const text = isNull ? "" : String(cur);
+    const raw = numCol && hasDraft && numText !== null && Number(numText) === cur ? numText : null;
+    const text = raw ?? (isNull ? "" : String(cur));
     const long = text.length > 48 || text.includes("\n");
     body = long ? (
       <textarea
@@ -648,11 +654,12 @@ function RowInspectorField({
         spellCheck={false}
         inputMode={numCol ? "decimal" : undefined}
         onChange={(e) => {
-          const raw = e.target.value;
-          if (raw === "") return onDraft(null);
-          if (numCol && raw.trim() !== "" && !Number.isNaN(Number(raw)))
-            return onDraft(Number(raw));
-          onDraft(raw);
+          const typed = e.target.value;
+          if (numCol) setNumText(typed);
+          if (typed === "") return onDraft(null);
+          if (numCol && typed.trim() !== "" && !Number.isNaN(Number(typed)))
+            return onDraft(Number(typed));
+          onDraft(typed);
         }}
       />
     );

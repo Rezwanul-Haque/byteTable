@@ -39,6 +39,10 @@ const GROUPS: Group[] = [
     ],
   },
   {
+    title: "Structure",
+    rows: [{ keys: "⌘S", label: "Apply pending changes" }],
+  },
+  {
     title: "View",
     rows: [
       { keys: "⌘+", label: "Zoom in" },

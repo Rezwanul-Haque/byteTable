@@ -23,7 +23,7 @@
 // and bump this tab's grid refetch nonce so the data grid re-fetches with the
 // new columns when the user returns to Data mode.
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { highlightSql } from "../../shared/highlightSql";
 import { useIntrospectionStore, tableMetaKey, tablesKey } from "../../../introspection/state";
@@ -442,6 +442,36 @@ export function StructureView({
     setAutoEditName(null);
     toast("Pending changes discarded");
   };
+
+  // ⌘/Ctrl+S applies the pending batch — the same keystroke that commits the
+  // data grid's staged rows, so both halves of the table tab behave alike (the
+  // pending bar says changes are staged; ⌘S is what "staged" means everywhere
+  // else in the app). Only one of the two views is mounted at a time, so this
+  // listener and the grid's never compete.
+  //
+  // The handler is held in a ref, and re-read after the open cell editor is
+  // blurred: that blur is what commits an in-progress rename/type/default into
+  // the batch, and it lands via setState, so applying in the same turn would
+  // miss it. Deferring by a turn applies the batch the user can see.
+  const applyRef = useRef(applyPending);
+  applyRef.current = applyPending;
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== "s") return;
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+      // Nothing staged and nothing being typed — leave the keystroke alone.
+      if ((ops.length === 0 && editingCell === null) || applying || ddlOpen) return;
+      event.preventDefault();
+      if (editingCell !== null) {
+        (document.activeElement as HTMLElement | null)?.blur();
+        setTimeout(() => void applyRef.current(), 0);
+        return;
+      }
+      void applyRef.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [ops.length, editingCell, applying, ddlOpen]);
 
   const qualified = schema === currentSchema ? table : schema + "." + table;
   const inbound = meta?.referencedBy ?? [];
@@ -898,7 +928,7 @@ export function StructureView({
               Discard
             </Btn>
             <Btn variant="filled" icon="check" small onClick={applyPending} disabled={applying}>
-              {applying ? "Applying…" : "Apply changes"}
+              {applying ? "Applying…" : "Apply changes · ⌘S"}
             </Btn>
           </div>
         </div>

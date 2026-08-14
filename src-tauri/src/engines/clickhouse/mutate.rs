@@ -99,6 +99,13 @@ pub async fn truncate_table(
     Ok(prior)
 }
 
+/// Drop one table outright — structure and rows (drop-table). No `force`
+/// counterpart: ClickHouse has no foreign keys and no CASCADE.
+pub async fn drop_table(http: &ClickHouseHttp, schema: &str, table: &str) -> Result<(), AppError> {
+    http.execute(&format!("DROP TABLE {}", qualified(schema, table)), &[])
+        .await
+}
+
 /// Drop + recreate a database (ClickHouse "schema"), leaving it empty.
 pub async fn drop_schema(http: &ClickHouseHttp, schema: &str) -> Result<(), AppError> {
     let db = quote_ident(schema);

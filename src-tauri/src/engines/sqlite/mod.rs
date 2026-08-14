@@ -119,8 +119,8 @@ use bulk::{bulk_insert_blocking, fetch_pk_pool_blocking};
 use error::driver_message;
 use introspect::{list_schemas_blocking, list_tables_blocking, table_meta_blocking};
 use mutate::{
-    delete_rows_blocking, drop_schema_blocking, execute_script_blocking, truncate_table_blocking,
-    update_cell_blocking,
+    delete_rows_blocking, drop_schema_blocking, drop_table_blocking, execute_script_blocking,
+    truncate_table_blocking, update_cell_blocking,
 };
 use query::{
     column_stats_blocking, fetch_row_by_key_blocking, fetch_rows_blocking, run_query_blocking,
@@ -264,10 +264,22 @@ impl EngineConnection for SqliteEngineConnection {
         quote_ident(ident)
     }
 
-    async fn truncate_table(&self, schema: &str, table: &str) -> Result<u64, AppError> {
+    async fn truncate_table(
+        &self,
+        schema: &str,
+        table: &str,
+        force: bool,
+    ) -> Result<u64, AppError> {
         let schema = schema.to_string();
         let table = table.to_string();
-        self.with_conn(move |conn| truncate_table_blocking(conn, &schema, &table))
+        self.with_conn(move |conn| truncate_table_blocking(conn, &schema, &table, force))
+            .await
+    }
+
+    async fn drop_table(&self, schema: &str, table: &str, force: bool) -> Result<(), AppError> {
+        let schema = schema.to_string();
+        let table = table.to_string();
+        self.with_conn(move |conn| drop_table_blocking(conn, &schema, &table, force))
             .await
     }
 

@@ -172,10 +172,16 @@ pub(super) fn no_row_matched_error() -> AppError {
 /// first and return that as the number removed (0 for an already-empty table).
 /// The table must exist (reuse `table_meta` for the §5 "Table 'x' does not
 /// exist…" message).
+///
+/// `force` runs the TRUNCATE with `FOREIGN_KEY_CHECKS = 0`: MySQL otherwise
+/// refuses outright ("Cannot truncate a table referenced in a foreign key
+/// constraint"), and disabling the check is the only way through — MySQL has no
+/// `TRUNCATE … CASCADE`. The referencing rows are left behind, now orphaned.
 pub(super) async fn truncate_table(
     pool: &MySqlPool,
     schema: &str,
     table: &str,
+    force: bool,
 ) -> Result<u64, AppError> {
     table_meta(pool, schema, table).await?;
     let qualified = qualified(schema, table);
@@ -185,12 +191,63 @@ pub(super) async fn truncate_table(
         .await
         .map_err(map_query_error)?;
 
-    sqlx::query(&format!("TRUNCATE TABLE {qualified}"))
-        .execute(pool)
-        .await
-        .map_err(map_query_error)?;
+    let statement = format!("TRUNCATE TABLE {qualified}");
+    if force {
+        without_fk_checks(pool, &statement).await?;
+    } else {
+        sqlx::query(&statement)
+            .execute(pool)
+            .await
+            .map_err(map_query_error)?;
+    }
 
     Ok(prior.max(0) as u64)
+}
+
+/// Drop one table outright — structure and rows (drop-table).
+///
+/// `force` is the same `FOREIGN_KEY_CHECKS = 0` escape as in
+/// [`truncate_table`]: MySQL has no `DROP TABLE … CASCADE`, and refuses to drop
+/// a table another table's foreign key references. With the check off the drop
+/// goes through and the referencing constraints are left pointing at a table
+/// that no longer exists (MySQL's own semantics — the confirm dialog says so).
+pub(super) async fn drop_table(
+    pool: &MySqlPool,
+    schema: &str,
+    table: &str,
+    force: bool,
+) -> Result<(), AppError> {
+    table_meta(pool, schema, table).await?;
+    let statement = format!("DROP TABLE {}", qualified(schema, table));
+    if force {
+        without_fk_checks(pool, &statement).await?;
+    } else {
+        sqlx::query(&statement)
+            .execute(pool)
+            .await
+            .map_err(map_query_error)?;
+    }
+    Ok(())
+}
+
+/// Run one statement with `FOREIGN_KEY_CHECKS` disabled.
+///
+/// `FOREIGN_KEY_CHECKS` is a SESSION variable, so the disable, the statement and
+/// the restore must all run on the SAME pooled connection — set on the pool
+/// surface, each could land on a different session and the statement would still
+/// see the checks on. The restore runs even when the statement fails, so the
+/// connection never returns to the pool with checks silently off.
+async fn without_fk_checks(pool: &MySqlPool, statement: &str) -> Result<(), AppError> {
+    use sqlx::Executor as _;
+    let mut conn = pool.acquire().await.map_err(map_query_error)?;
+    conn.execute("SET FOREIGN_KEY_CHECKS = 0")
+        .await
+        .map_err(map_query_error)?;
+    let result = conn.execute(statement).await;
+    let restored = conn.execute("SET FOREIGN_KEY_CHECKS = 1").await;
+    result.map_err(map_query_error)?;
+    restored.map_err(map_query_error)?;
+    Ok(())
 }
 
 /// The four MySQL system databases, which `list_schemas` already hides and

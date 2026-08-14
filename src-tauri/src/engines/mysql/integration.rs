@@ -894,7 +894,7 @@ async fn truncate_empties_table_and_reports_prior_count() {
 
     // books (the child of the FK) has 4 rows; truncating the child is safe.
     let affected = conn
-        .truncate_table(schema, "books")
+        .truncate_table(schema, "books", false)
         .await
         .expect("truncate books");
     assert_eq!(affected, 4);
@@ -905,12 +905,15 @@ async fn truncate_empties_table_and_reports_prior_count() {
     assert_eq!(after, 0);
 
     let again = conn
-        .truncate_table(schema, "books")
+        .truncate_table(schema, "books", false)
         .await
         .expect("re-truncate");
     assert_eq!(again, 0);
 
-    let err = conn.truncate_table(schema, "ghost").await.unwrap_err();
+    let err = conn
+        .truncate_table(schema, "ghost", false)
+        .await
+        .unwrap_err();
     assert!(matches!(err, AppError::Database(_)));
     assert!(err.to_string().contains("does not exist"));
 
@@ -1112,7 +1115,7 @@ async fn export_csv_and_sql_against_live_mysql() {
         .get_sql(&handle)
         .await
         .unwrap()
-        .truncate_table(schema, "books")
+        .truncate_table(schema, "books", false)
         .await
         .expect("truncate");
     let empty_sql = export_table(

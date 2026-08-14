@@ -38,20 +38,43 @@ pub async fn delete_rows(
 /// user data.** The adapter is engine-aware (Postgres/MySQL `TRUNCATE TABLE`;
 /// SQLite `DELETE` in a transaction), validates the table exists, and quotes
 /// identifiers per engine (see `EngineConnection::truncate_table`). Returns the
-/// number of rows removed. The production-confirm dialog is renderer-side
-/// (Task 2); this use-case only routes the request.
+/// number of rows removed. `force` relaxes foreign-key enforcement for the
+/// statement (Postgres `CASCADE`; MySQL/SQLite FK checks off; SQL Server
+/// disables the referencing constraints). The production-confirm dialog is
+/// renderer-side (Task 2); this use-case only routes the request.
 pub async fn truncate_table(
     manager: &ConnectionManager,
     handle: &ConnectionHandleId,
     schema: &str,
     table: &str,
+    force: bool,
 ) -> Result<TruncateResult, AppError> {
     let affected = manager
         .get_sql(handle)
         .await?
-        .truncate_table(schema, table)
+        .truncate_table(schema, table, force)
         .await?;
     Ok(TruncateResult { affected })
+}
+
+/// Drop a table outright — structure and rows (the destructive sibling of
+/// [`truncate_table`]). **Mutates user data — destructive.** `force` asks the
+/// adapter for the engine's way past a referencing foreign key (Postgres
+/// `CASCADE`; MySQL/SQLite FK checks off for the statement; SQL Server drops the
+/// referencing constraints first; ClickHouse has no FKs). The confirm dialog is
+/// renderer-side; this use-case only routes the request.
+pub async fn drop_table(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    schema: &str,
+    table: &str,
+    force: bool,
+) -> Result<(), AppError> {
+    manager
+        .get_sql(handle)
+        .await?
+        .drop_table(schema, table, force)
+        .await
 }
 
 /// The outcome of a `truncate_table` call: the number of rows removed
@@ -164,7 +187,12 @@ mod tests {
             })
         }
 
-        async fn truncate_table(&self, schema: &str, table: &str) -> Result<u64, AppError> {
+        async fn truncate_table(
+            &self,
+            schema: &str,
+            table: &str,
+            _force: bool,
+        ) -> Result<u64, AppError> {
             // Echo a deterministic count derived from the names so the use-case
             // wiring (and the TruncateResult mapping) is observable.
             Ok((schema.len() + table.len()) as u64)
@@ -221,7 +249,7 @@ mod tests {
         let handle = manager
             .insert(crate::shared::engine::OpenConnection::sql(FakeConnection))
             .await;
-        let result = truncate_table(&manager, &handle, "main", "users")
+        let result = truncate_table(&manager, &handle, "main", "users", false)
             .await
             .expect("truncate");
         // "main" (4) + "users" (5) = 9 from the fake.
@@ -255,7 +283,7 @@ mod tests {
     async fn truncate_on_a_closed_handle_is_a_not_found() {
         let manager = ConnectionManager::new();
         let handle = ConnectionHandleId("ghost".into());
-        let err = truncate_table(&manager, &handle, "main", "users")
+        let err = truncate_table(&manager, &handle, "main", "users", false)
             .await
             .unwrap_err();
         assert!(matches!(err, AppError::NotFound(_)));

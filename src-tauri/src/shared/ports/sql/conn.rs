@@ -457,10 +457,55 @@ pub trait EngineConnection: Send + Sync {
     /// so the adapter counts the rows first and returns that (0 for an
     /// already-empty table).
     ///
+    /// `force` relaxes foreign-key enforcement for the statement, engine-aware:
+    /// Postgres `TRUNCATE … CASCADE` (which empties the referencing tables too);
+    /// MySQL `FOREIGN_KEY_CHECKS = 0`; SQLite `PRAGMA foreign_keys = OFF`; SQL
+    /// Server disables the referencing constraints and re-enables them untrusted;
+    /// ClickHouse ignores it (no foreign keys). Without it, an engine that
+    /// refuses to truncate a referenced table surfaces its own §5 error.
+    ///
     /// Default impl: `Unsupported` — only engines that implement it override it.
-    async fn truncate_table(&self, _schema: &str, _table: &str) -> Result<u64, AppError> {
+    async fn truncate_table(
+        &self,
+        _schema: &str,
+        _table: &str,
+        _force: bool,
+    ) -> Result<u64, AppError> {
         Err(AppError::Unsupported(
             "Truncating tables is not supported for this engine yet.".into(),
+        ))
+    }
+
+    /// Drop ONE table outright — rows, structure and all (the destructive
+    /// sibling of [`truncate_table`](Self::truncate_table), which keeps the
+    /// structure).
+    ///
+    /// **Mutates user data — destructive.** `force` asks the engine to get the
+    /// table out of the way even when something references it; what that means
+    /// is engine-shaped, because the engines genuinely differ:
+    ///
+    /// - **Postgres**: `DROP TABLE … CASCADE` — the referencing foreign keys
+    ///   (and views) go with it. Without `force` it is a plain `DROP TABLE`,
+    ///   which Postgres refuses while a dependent exists.
+    /// - **MySQL**: `SET FOREIGN_KEY_CHECKS = 0` around the drop, on ONE pooled
+    ///   session (the variable is per-session), restored afterwards. The
+    ///   referencing constraints are left behind pointing at a table that no
+    ///   longer exists — MySQL's own semantics for this, and why the modal
+    ///   spells it out.
+    /// - **SQLite**: `PRAGMA foreign_keys = OFF` around the drop (restored
+    ///   after), since a `DROP TABLE` with FKs on performs an implicit
+    ///   `DELETE FROM` that trips the referencing rows.
+    /// - **SQL Server**: no `CASCADE` for tables, so the adapter drops the
+    ///   referencing FK constraints first, then the table, in one transaction.
+    /// - **ClickHouse**: no foreign keys at all — `force` changes nothing.
+    ///
+    /// The adapter validates the table exists (a §5 error otherwise) and quotes
+    /// both identifiers. The confirm dialog is renderer-side.
+    ///
+    /// Default impl: `Unsupported` — only engines that implement it override it.
+    async fn drop_table(&self, _schema: &str, _table: &str, _force: bool) -> Result<(), AppError> {
+        Err(AppError::Unsupported(
+            "Dropping tables is not supported for this engine yet.".into(),
         ))
     }
 

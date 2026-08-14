@@ -211,10 +211,16 @@ pub(super) fn delete_rows_blocking(
 /// already-empty table). The table must exist (a §5 error otherwise) — we
 /// reuse `table_meta_blocking` for the same "Table 'x' does not exist…"
 /// message the rest of the adapter produces.
+///
+/// `force` turns foreign-key enforcement off for the duration (see
+/// [`without_fk_checks`]): SQLite otherwise rejects the DELETE while another
+/// table's rows still reference these, and it has no `TRUNCATE … CASCADE` to
+/// offer instead.
 pub(super) fn truncate_table_blocking(
     conn: &Connection,
     schema: &str,
     table: &str,
+    force: bool,
 ) -> Result<u64, AppError> {
     // Existence + schema validation, identical message vocabulary to update.
     table_meta_blocking(conn, schema, table)?;
@@ -222,19 +228,76 @@ pub(super) fn truncate_table_blocking(
     let qualified = format!("{}.{}", quote_ident(schema), quote_ident(table));
     let delete_sql = format!("DELETE FROM {qualified}");
 
-    let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
-    conn.execute_batch("BEGIN")
-        .map_err(|err| map_query_error(conn, err))?;
-    let affected = match conn.execute(&delete_sql, []) {
-        Ok(affected) => affected as u64,
-        Err(err) => {
-            let _ = conn.execute_batch("ROLLBACK");
-            return Err(map_query_error(conn, err));
-        }
-    };
-    conn.execute_batch("COMMIT")
-        .map_err(|err| map_query_error(conn, err))?;
-    Ok(affected)
+    without_fk_checks(conn, force, || {
+        let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
+        conn.execute_batch("BEGIN")
+            .map_err(|err| map_query_error(conn, err))?;
+        let affected = match conn.execute(&delete_sql, []) {
+            Ok(affected) => affected as u64,
+            Err(err) => {
+                let _ = conn.execute_batch("ROLLBACK");
+                return Err(map_query_error(conn, err));
+            }
+        };
+        conn.execute_batch("COMMIT")
+            .map_err(|err| map_query_error(conn, err))?;
+        Ok(affected)
+    })
+}
+
+/// Drop one table outright — structure and rows (drop-table). The table must
+/// exist (a §5 error otherwise); a single `DROP TABLE` is atomic on its own, so
+/// there is no explicit transaction here.
+///
+/// `force` turns foreign-key enforcement off for the drop: with FKs on, SQLite
+/// performs an implicit `DELETE FROM` first, which fails while another table
+/// still references these rows. SQLite has no `DROP TABLE … CASCADE`.
+pub(super) fn drop_table_blocking(
+    conn: &Connection,
+    schema: &str,
+    table: &str,
+    force: bool,
+) -> Result<(), AppError> {
+    table_meta_blocking(conn, schema, table)?;
+    let drop_sql = format!("DROP TABLE {}.{}", quote_ident(schema), quote_ident(table));
+    without_fk_checks(conn, force, || {
+        let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
+        conn.execute_batch(&drop_sql)
+            .map_err(|err| map_query_error(conn, err))
+    })
+}
+
+/// Run `body` with `PRAGMA foreign_keys = OFF` when `off` is set, restoring the
+/// connection's previous setting afterwards (including on failure) — the
+/// connection is pooled and long-lived, so it must never be left with FK
+/// enforcement silently disabled.
+///
+/// It has to be `foreign_keys`, not the `defer_foreign_keys` the drop-schema
+/// path uses: deferring only moves the check to COMMIT, and here the referencing
+/// rows are still there at COMMIT time. `PRAGMA foreign_keys` is a no-op inside
+/// a transaction, which is why this wraps the transaction rather than sitting
+/// inside it.
+fn without_fk_checks<T>(
+    conn: &Connection,
+    off: bool,
+    body: impl FnOnce() -> Result<T, AppError>,
+) -> Result<T, AppError> {
+    if !off {
+        return body();
+    }
+    let was_on: bool = conn
+        .query_row("PRAGMA foreign_keys", [], |row| row.get::<_, i64>(0))
+        .map(|v| v != 0)
+        .unwrap_or(false);
+    if was_on {
+        conn.execute_batch("PRAGMA foreign_keys = OFF")
+            .map_err(|err| map_query_error(conn, err))?;
+    }
+    let result = body();
+    if was_on {
+        let _ = conn.execute_batch("PRAGMA foreign_keys = ON");
+    }
+    result
 }
 
 /// Drop every user table in `schema`, leaving an empty schema (M15 drop-schema).
@@ -940,7 +1003,7 @@ mod tests {
         let conn = open_fixture(&dir).await;
         // users has 3 rows.
         let affected = conn
-            .truncate_table("main", "users")
+            .truncate_table("main", "users", false)
             .await
             .expect("truncate");
         assert_eq!(affected, 3);
@@ -965,7 +1028,7 @@ mod tests {
         let conn = open_fixture(&dir).await;
         // orders is created empty.
         let affected = conn
-            .truncate_table("main", "orders")
+            .truncate_table("main", "orders", false)
             .await
             .expect("truncate");
         assert_eq!(affected, 0);
@@ -975,12 +1038,93 @@ mod tests {
     async fn truncate_unknown_table_is_a_human_error() {
         let dir = tempfile::tempdir().expect("tempdir");
         let conn = open_fixture(&dir).await;
-        let err = conn.truncate_table("main", "ghost").await.unwrap_err();
+        let err = conn
+            .truncate_table("main", "ghost", false)
+            .await
+            .unwrap_err();
         assert!(matches!(err, AppError::Database(_)));
         assert!(err.to_string().contains("does not exist"));
     }
 
     // ---- M15 drop-schema (drop every user table; the file IS the schema) ----
+
+    // -- drop_table --------------------------------------------------------
+
+    #[test]
+    fn drop_table_removes_only_that_table() {
+        let conn = mem_db(
+            "CREATE TABLE users (id INTEGER PRIMARY KEY); \
+             CREATE TABLE orders (id INTEGER PRIMARY KEY); \
+             INSERT INTO users VALUES (1), (2);",
+        );
+        drop_table_blocking(&conn, "main", "users", false).expect("drop users");
+
+        let names: Vec<String> = {
+            let mut stmt = conn
+                .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name")
+                .expect("prepare");
+            stmt.query_map([], |row| row.get::<_, String>(0))
+                .and_then(Iterator::collect::<Result<Vec<String>, _>>)
+                .expect("collect")
+        };
+        assert_eq!(names, vec!["orders".to_string()]);
+    }
+
+    #[test]
+    fn drop_table_unknown_table_is_a_human_error() {
+        let conn = mem_db("CREATE TABLE users (id INTEGER PRIMARY KEY);");
+        let err = drop_table_blocking(&conn, "main", "ghost", false).unwrap_err();
+        let message = format!("{err}");
+        assert!(
+            message.contains("ghost") && message.contains("users"),
+            "expected a §5 message naming the table and the alternatives, got: {message}"
+        );
+    }
+
+    /// The force flag's whole point: with FK enforcement ON, dropping a parent
+    /// row-set fails; with the flag it goes through, and enforcement is restored
+    /// afterwards (the connection is long-lived and must not be left relaxed).
+    #[test]
+    fn drop_table_force_gets_past_foreign_keys_and_restores_the_pragma() {
+        let conn = mem_db(
+            "CREATE TABLE authors (id INTEGER PRIMARY KEY); \
+             CREATE TABLE books (id INTEGER PRIMARY KEY, author_id INTEGER REFERENCES authors(id)); \
+             INSERT INTO authors VALUES (1); \
+             INSERT INTO books VALUES (10, 1);",
+        );
+        conn.execute_batch("PRAGMA foreign_keys = ON")
+            .expect("fk on");
+
+        let refused = drop_table_blocking(&conn, "main", "authors", false).unwrap_err();
+        assert!(
+            format!("{refused}").to_lowercase().contains("foreign key"),
+            "expected the FK violation to surface, got: {refused}"
+        );
+
+        drop_table_blocking(&conn, "main", "authors", true).expect("forced drop");
+
+        let still_on: i64 = conn
+            .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
+            .expect("read pragma");
+        assert_eq!(still_on, 1, "FK enforcement must be restored");
+    }
+
+    #[test]
+    fn truncate_force_gets_past_foreign_keys() {
+        let conn = mem_db(
+            "CREATE TABLE authors (id INTEGER PRIMARY KEY); \
+             CREATE TABLE books (id INTEGER PRIMARY KEY, author_id INTEGER REFERENCES authors(id)); \
+             INSERT INTO authors VALUES (1); \
+             INSERT INTO books VALUES (10, 1);",
+        );
+        conn.execute_batch("PRAGMA foreign_keys = ON")
+            .expect("fk on");
+
+        assert!(truncate_table_blocking(&conn, "main", "authors", false).is_err());
+        let affected =
+            truncate_table_blocking(&conn, "main", "authors", true).expect("forced truncate");
+        assert_eq!(affected, 1);
+    }
 
     #[tokio::test]
     async fn drop_schema_drops_every_user_table_and_keeps_the_file() {

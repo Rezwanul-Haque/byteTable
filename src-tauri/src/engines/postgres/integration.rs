@@ -796,7 +796,7 @@ async fn truncate_empties_table_and_reports_prior_count() {
 
     // books has 4 seeded rows.
     let affected = conn
-        .truncate_table(schema, "books")
+        .truncate_table(schema, "books", false)
         .await
         .expect("truncate books");
     assert_eq!(affected, 4);
@@ -808,13 +808,16 @@ async fn truncate_empties_table_and_reports_prior_count() {
 
     // Truncating an already-empty table reports 0.
     let again = conn
-        .truncate_table(schema, "books")
+        .truncate_table(schema, "books", false)
         .await
         .expect("re-truncate");
     assert_eq!(again, 0);
 
     // Unknown table is a §5 error.
-    let err = conn.truncate_table(schema, "ghost").await.unwrap_err();
+    let err = conn
+        .truncate_table(schema, "ghost", false)
+        .await
+        .unwrap_err();
     assert!(matches!(err, AppError::Database(_)));
     assert!(err.to_string().contains("does not exist"));
 
@@ -1178,7 +1181,7 @@ async fn conn_truncate(
         .get_sql(handle)
         .await
         .expect("handle")
-        .truncate_table(schema, table)
+        .truncate_table(schema, table, false)
         .await
         .expect("truncate");
 }

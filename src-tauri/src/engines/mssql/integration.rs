@@ -406,7 +406,7 @@ async fn mssql_mutation_roundtrip() {
 
     // Truncate leaves the table empty.
     let removed = conn
-        .truncate_table("dbo", "bt_it_books")
+        .truncate_table("dbo", "bt_it_books", false)
         .await
         .expect("truncate");
     assert!(removed >= 4, "truncate removed prior rows: {removed}");

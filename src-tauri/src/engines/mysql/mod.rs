@@ -98,7 +98,8 @@ use bulk::{bulk_insert, fetch_pk_pool};
 use error::{map_connect_error, map_query_error};
 use introspect::{list_schemas, list_tables, table_meta};
 use mutate::{
-    delete_rows, delete_schema, drop_schema, execute_script, truncate_table, update_cell,
+    delete_rows, delete_schema, drop_schema, drop_table, execute_script, truncate_table,
+    update_cell,
 };
 use query::{column_stats, fetch_row_by_key, fetch_rows, run_batch, run_query};
 use structure::alter_table;
@@ -266,8 +267,17 @@ impl EngineConnection for MysqlEngineConnection {
         quote_ident(ident)
     }
 
-    async fn truncate_table(&self, schema: &str, table: &str) -> Result<u64, AppError> {
-        truncate_table(&self.pool, schema, table).await
+    async fn truncate_table(
+        &self,
+        schema: &str,
+        table: &str,
+        force: bool,
+    ) -> Result<u64, AppError> {
+        truncate_table(&self.pool, schema, table, force).await
+    }
+
+    async fn drop_table(&self, schema: &str, table: &str, force: bool) -> Result<(), AppError> {
+        drop_table(&self.pool, schema, table, force).await
     }
 
     async fn drop_schema(&self, schema: &str) -> Result<(), AppError> {

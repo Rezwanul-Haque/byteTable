@@ -261,8 +261,19 @@ impl EngineConnection for ClickhouseEngineConnection {
         mutate::delete_rows(&self.http, &req).await
     }
 
-    async fn truncate_table(&self, schema: &str, table: &str) -> Result<u64, AppError> {
+    async fn truncate_table(
+        &self,
+        schema: &str,
+        table: &str,
+        _force: bool,
+    ) -> Result<u64, AppError> {
+        // ClickHouse has no foreign keys, so there is nothing for `force` to
+        // relax — a truncate never has a dependent to trip over.
         mutate::truncate_table(&self.http, schema, table).await
+    }
+
+    async fn drop_table(&self, schema: &str, table: &str, _force: bool) -> Result<(), AppError> {
+        mutate::drop_table(&self.http, schema, table).await
     }
 
     async fn drop_schema(&self, schema: &str) -> Result<(), AppError> {

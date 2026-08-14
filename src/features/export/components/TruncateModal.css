@@ -89,6 +89,44 @@
   border-color: #e06c75;
 }
 
+/* The foreign-key override row, shared with the drop-table modal: a checkbox
+   that arms the engine's way past a referencing FK (CASCADE / checks off). Sits
+   above the production gate, styled as a quiet card so it reads as an option
+   rather than a second warning. */
+.truncate-fk {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg0);
+  cursor: pointer;
+}
+.truncate-fk.on {
+  border-color: #e06c7540;
+  background: #e06c750a;
+}
+.truncate-fk input {
+  margin: 2px 0 0;
+  accent-color: #e06c75;
+  cursor: pointer;
+}
+.truncate-fk-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.truncate-fk-label {
+  font-size: 12.5px;
+  color: var(--text);
+}
+.truncate-fk-hint {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  line-height: 1.45;
+}
+
 /* React-port addition: an inline error row when the backend refuses the
    truncate (e.g. FK-parent table) — the modal stays open. */
 .truncate-error {

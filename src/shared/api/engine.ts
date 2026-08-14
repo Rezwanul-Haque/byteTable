@@ -846,13 +846,41 @@ export function executeScriptText(
  * SQLite `DELETE` in a transaction). Returns `{ affected }`, the number of rows
  * removed. Unknown schema/table surface as `{ kind, message }` §5 errors. The
  * production-confirm dialog (TruncateModal) is the caller's responsibility.
+ *
+ * `force` relaxes foreign-key enforcement for the statement, engine-aware:
+ * Postgres `TRUNCATE … CASCADE` (which empties the referencing tables too),
+ * MySQL `FOREIGN_KEY_CHECKS = 0`, SQLite `PRAGMA foreign_keys = OFF`, SQL Server
+ * disables the referencing constraints and re-enables them untrusted. Without
+ * it, an engine that refuses to truncate a referenced table says so.
  */
 export function truncateTable(
   handleId: string,
   schema: string,
   table: string,
+  force = false,
 ): Promise<TruncateResult> {
-  return invoke<TruncateResult>("truncate_table", { handleId, schema, table });
+  return invoke<TruncateResult>("truncate_table", { handleId, schema, table, force });
+}
+
+/**
+ * Drop a table outright — structure and rows (`drop_table` command). **Mutates
+ * user data — destructive**, and unlike {@link truncateTable} the table itself
+ * is gone afterward, so the caller must close what points at it.
+ *
+ * `force` is the same foreign-key escape as on {@link truncateTable}, in its
+ * drop form: Postgres `DROP TABLE … CASCADE`, MySQL `FOREIGN_KEY_CHECKS = 0`,
+ * SQLite `PRAGMA foreign_keys = OFF`, SQL Server drops the referencing
+ * constraints first; ClickHouse has no foreign keys, so it changes nothing.
+ * Unknown schema/table surface as `{ kind, message }` §5 errors. The
+ * confirm dialog (DropTableModal) is the caller's responsibility.
+ */
+export function dropTable(
+  handleId: string,
+  schema: string,
+  table: string,
+  force = false,
+): Promise<void> {
+  return invoke<void>("drop_table", { handleId, schema, table, force });
 }
 
 /**

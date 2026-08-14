@@ -22,6 +22,7 @@ import { FilterPanel } from "../../browse/sql/components/FilterPanel";
 import { StructureView } from "../../browse/sql/components/StructureView";
 import { appliedDisplaySql, compileToSpec, emptyDraft } from "../../browse/sql/filter";
 import { ExportProgressModal } from "../../export/components/ExportProgressModal";
+import { DropTableModal } from "../../export/components/DropTableModal";
 import { TruncateModal } from "../../export/components/TruncateModal";
 import { ImportModal } from "../../import/components/ImportModal";
 import { useIntrospectionStore, columnsKey } from "../../introspection/state";
@@ -66,6 +67,11 @@ export function TableTab({
     useWorkspacesStore(
       (state) => state.workspaces.find((ws) => ws.handleId === handleId)?.saved.env,
     ) ?? "";
+  // Engine — shapes the foreign-key override the truncate / drop modals offer.
+  const engine = useWorkspacesStore(
+    (state) => state.workspaces.find((ws) => ws.handleId === handleId)?.saved.engine,
+  );
+  const closeTab = useWorkspacesStore((state) => state.closeTab);
 
   // --- filter state (per-tab, persisted in workspace ui) ---------------
   const setTabFilter = useWorkspacesStore((state) => state.setTabFilter);
@@ -123,6 +129,7 @@ export function TableTab({
   const [colOpen, setColOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [truncateOpen, setTruncateOpen] = useState(false);
+  const [dropOpen, setDropOpen] = useState(false);
   // The export-in-progress kind (drives the progress modal); null = closed.
   const [exportKind, setExportKind] = useState<"tableCsv" | "tableSql" | null>(null);
   const [importOpen, setImportOpen] = useState(false);
@@ -504,6 +511,17 @@ export function TableTab({
                   >
                     <Icon name="delete_sweep" size={15} /> Truncate table…
                   </button>
+                  <button
+                    type="button"
+                    className="ctx-item danger"
+                    role="menuitem"
+                    onClick={() => {
+                      setActionsOpen(false);
+                      setDropOpen(true);
+                    }}
+                  >
+                    <Icon name="delete_forever" size={15} /> Drop table…
+                  </button>
                 </div>
               ) : null}
             </div>
@@ -628,9 +646,25 @@ export function TableTab({
           handleId={handleId}
           schemaName={tab.schema}
           table={tab.table}
+          engine={engine}
           env={env}
           onClose={() => setTruncateOpen(false)}
           onDone={() => requestRefetch(tab.id)}
+        />
+      ) : null}
+
+      {/* Drop table: the table itself goes, so this tab has nothing left to
+          show — it closes itself once the drop lands. */}
+      {dropOpen ? (
+        <DropTableModal
+          handleId={handleId}
+          schemaName={tab.schema}
+          table={tab.table}
+          engine={engine}
+          env={env}
+          rowCount={meta?.totalRows ?? null}
+          onClose={() => setDropOpen(false)}
+          onDropped={() => closeTab(tab.id)}
         />
       ) : null}
 

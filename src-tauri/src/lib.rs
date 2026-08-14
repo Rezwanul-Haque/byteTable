@@ -511,6 +511,7 @@ pub fn run() {
             features::mutate::commands::row_update,
             features::mutate::commands::rows_delete,
             features::mutate::commands::truncate_table,
+            features::mutate::commands::drop_table,
             features::mutate::commands::drop_schema,
             features::mutate::commands::create_schema,
             features::mutate::commands::delete_schema,

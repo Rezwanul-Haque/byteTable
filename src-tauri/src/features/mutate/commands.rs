@@ -50,8 +50,9 @@ pub async fn rows_delete(
 
 /// Empty a table of all rows, keeping its structure (M15 `truncate_table`
 /// command). **Mutates user data.** Engine-aware in the adapter (Postgres/MySQL
-/// `TRUNCATE`, SQLite `DELETE` in a transaction). Returns `{ affected }`, the
-/// number of rows removed. Unknown schema/table surface as `{ kind, message }`
+/// `TRUNCATE`, SQLite `DELETE` in a transaction). `force` relaxes foreign-key
+/// enforcement for the statement. Returns `{ affected }`, the number of rows
+/// removed. Unknown schema/table surface as `{ kind, message }`
 /// §5 errors. The production-confirm dialog is renderer-side (Task 2).
 #[tauri::command]
 pub async fn truncate_table(
@@ -59,8 +60,29 @@ pub async fn truncate_table(
     handle_id: ConnectionHandleId,
     schema: String,
     table: String,
+    force: bool,
 ) -> Result<TruncateResult, AppError> {
-    application::truncate_table(state.manager(), &handle_id, &schema, &table).await
+    application::truncate_table(state.manager(), &handle_id, &schema, &table, force).await
+}
+
+/// Drop a table outright — structure and rows (`drop_table` command).
+/// **Mutates user data — destructive**, and unlike [`truncate_table`] the table
+/// itself is gone afterward, so the caller must close what points at it.
+///
+/// `force` asks the adapter to get past a referencing foreign key, engine-aware
+/// (Postgres `DROP TABLE … CASCADE`; MySQL `FOREIGN_KEY_CHECKS = 0`; SQLite
+/// `PRAGMA foreign_keys = OFF`; SQL Server drops the referencing constraints
+/// first; ClickHouse has no foreign keys). Unknown schema/table surface as
+/// `{ kind, message }` §5 errors. The confirm dialog is renderer-side.
+#[tauri::command]
+pub async fn drop_table(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+    schema: String,
+    table: String,
+    force: bool,
+) -> Result<(), AppError> {
+    application::drop_table(state.manager(), &handle_id, &schema, &table, force).await
 }
 
 /// Drop every table in a schema, leaving it empty (M15 `drop_schema` command).

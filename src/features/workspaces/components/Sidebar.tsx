@@ -39,6 +39,7 @@ import {
 import { CreateSchemaModal } from "../../export/components/CreateSchemaModal";
 import { CreateTableModal } from "../../export/components/CreateTableModal";
 import { DeleteSchemaModal } from "../../export/components/DeleteSchemaModal";
+import { DropTableModal } from "../../export/components/DropTableModal";
 import { EmptySchemaModal } from "../../export/components/EmptySchemaModal";
 import { ExportProgressModal } from "../../export/components/ExportProgressModal";
 import { TruncateModal } from "../../export/components/TruncateModal";
@@ -78,10 +79,10 @@ interface CtxMenu {
 // Approximate rendered size of the context menu, for clamping it inside the
 // viewport (min-width 190 + padding). M15 grew it to 7 items + a separator;
 // "Open in new tab" adds one more `.ctx-item` (~31px: 12.5px text + 7px padding
-// each side), so a right-click near the bottom edge still lifts the whole menu
-// into view.
+// each side), and "Drop table…" one more again, so a right-click near the
+// bottom edge still lifts the whole menu into view.
 const CTX_MENU_W = 200;
-const CTX_MENU_H = 312;
+const CTX_MENU_H = 343;
 
 /**
  * Roving-focus keyboard nav shared by the schema popover and the context
@@ -112,6 +113,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   const openSqlTab = useWorkspacesStore((state) => state.openSqlTab);
   const openMapTab = useWorkspacesStore((state) => state.openMapTab);
   const openDiffTab = useWorkspacesStore((state) => state.openDiffTab);
+  const closeTab = useWorkspacesStore((state) => state.closeTab);
 
   // M32, shared engine-wide in M33: which schemas already have their own
   // workspace, and the create-or-focus action behind the split icon.
@@ -154,8 +156,10 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
   const [schemaOpen, setSchemaOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  // M15 Task 2: which table the truncate modal targets (null when closed).
+  // M15 Task 2: which table the truncate modal targets (null when closed), and
+  // the same for the drop-table modal (which removes the table outright).
   const [truncateTarget, setTruncateTarget] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
   // The export-in-progress (drives the progress modal): the kind + (for a table
   // export) its name. null = no export open.
   const [exportJob, setExportJob] = useState<{
@@ -889,6 +893,18 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
           >
             <Icon name="delete_sweep" size={15} /> Truncate table…
           </button>
+          <button
+            type="button"
+            className="ctx-item danger"
+            role="menuitem"
+            onClick={() => {
+              const t = ctxMenu.table;
+              closeCtxMenu(false);
+              setDropTarget(t);
+            }}
+          >
+            <Icon name="delete_forever" size={15} /> Drop table…
+          </button>
         </div>
       ) : null}
 
@@ -912,6 +928,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
           handleId={handleId}
           schemaName={schemaName}
           table={truncateTarget}
+          engine={engine}
           env={workspace.saved.env}
           onClose={() => setTruncateTarget(null)}
           onDone={() => {
@@ -921,6 +938,27 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
               if (t.kind === "table" && t.schema === schemaName && t.table === target) {
                 useTabMetaStore.getState().requestRefetch(t.id);
               }
+            }
+          }}
+        />
+      ) : null}
+
+      {/* Drop table: removes the table itself, not just its rows. On success the
+          sidebar row is gone, so any tab still pointing at it is closed. */}
+      {dropTarget ? (
+        <DropTableModal
+          handleId={handleId}
+          schemaName={schemaName}
+          table={dropTarget}
+          engine={engine}
+          env={workspace.saved.env}
+          rowCount={tables?.find((t) => t.name === dropTarget)?.approxRowCount ?? null}
+          onClose={() => setDropTarget(null)}
+          onDropped={() => {
+            const target = dropTarget;
+            for (const t of tabs) {
+              if (t.kind === "table" && t.schema === schemaName && t.table === target)
+                closeTab(t.id);
             }
           }}
         />

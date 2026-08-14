@@ -172,10 +172,16 @@ pub(super) async fn delete_rows(
 /// count, so we `COUNT(*)` first and return that as the number removed (0 for
 /// an already-empty table). The table must exist (reuse `table_meta` for the
 /// §5 "Table 'x' does not exist…" message).
+///
+/// `force` adds Postgres' `CASCADE`: without it the engine refuses to truncate a
+/// table another table's foreign key points at; with it the referencing tables
+/// are emptied too. The returned count is still this table's prior row count —
+/// the rows CASCADE removes elsewhere are not counted.
 pub(super) async fn truncate_table(
     pool: &PgPool,
     schema: &str,
     table: &str,
+    force: bool,
 ) -> Result<u64, AppError> {
     table_meta(pool, schema, table).await?;
     let qualified = qualified(schema, table);
@@ -185,12 +191,35 @@ pub(super) async fn truncate_table(
         .await
         .map_err(map_query_error)?;
 
-    sqlx::query(&format!("TRUNCATE TABLE {qualified}"))
+    let cascade = if force { " CASCADE" } else { "" };
+    sqlx::query(&format!("TRUNCATE TABLE {qualified}{cascade}"))
         .execute(pool)
         .await
         .map_err(map_query_error)?;
 
     Ok(prior.max(0) as u64)
+}
+
+/// Drop one table outright — structure and rows (drop-table).
+///
+/// `force` maps to Postgres' own `CASCADE`, which drops the objects that depend
+/// on the table (referencing foreign keys, views). Without it the statement is a
+/// plain `DROP TABLE`, i.e. the implicit `RESTRICT`: Postgres refuses while a
+/// dependent exists, and the §5 error names it. The table must exist (reuse
+/// `table_meta` for the "Table 'x' does not exist…" message).
+pub(super) async fn drop_table(
+    pool: &PgPool,
+    schema: &str,
+    table: &str,
+    force: bool,
+) -> Result<(), AppError> {
+    table_meta(pool, schema, table).await?;
+    let cascade = if force { " CASCADE" } else { "" };
+    sqlx::query(&format!("DROP TABLE {}{cascade}", qualified(schema, table)))
+        .execute(pool)
+        .await
+        .map_err(map_query_error)?;
+    Ok(())
 }
 
 /// Drop every table in `schema` and leave the schema empty (M15 drop-schema).

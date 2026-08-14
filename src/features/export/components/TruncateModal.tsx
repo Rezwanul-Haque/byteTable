@@ -10,6 +10,11 @@
 // so the open data grid re-fetches; the modal then closes. A backend error
 // (e.g. MySQL TRUNCATE on an FK-parent table) is surfaced inside the modal and
 // the dialog stays open.
+//
+// Foreign keys: an FK-parent table is the usual reason the engine refuses, so
+// the modal offers the engine's own way through (Postgres CASCADE, MySQL/SQLite
+// FK checks off, SQL Server disabled constraints) as an opt-in checkbox — see
+// `fkOverride.ts` for the per-engine copy and the previewed SQL.
 
 import { useState } from "react";
 
@@ -19,8 +24,10 @@ import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
 import { Modal, ModalActions, ModalTitle } from "../../../shared/ui/Modal";
 import { useToast } from "../../../shared/ui/toastContext";
+import type { Engine } from "../../../shared/types";
 import { useIntrospectionStore } from "../../introspection/state";
 import { useSettingsStore } from "../../settings/state";
+import { truncateFkOverride, truncateSql } from "../fkOverride";
 import "./TruncateModal.css";
 
 const DANGER = "#e06c75";
@@ -29,6 +36,7 @@ export function TruncateModal({
   handleId,
   schemaName,
   table,
+  engine,
   env,
   onClose,
   onDone,
@@ -36,6 +44,8 @@ export function TruncateModal({
   handleId: string;
   schemaName: string;
   table: string;
+  /** Connection engine — shapes the FK-override copy and the previewed SQL. */
+  engine?: Engine;
   /** Connection deployment env; `production` triggers the type-to-confirm gate. */
   env: string;
   onClose: () => void;
@@ -47,6 +57,10 @@ export function TruncateModal({
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Opt-in FK override, off by default: the plain truncate is the safe one, and
+  // the engine's refusal is information the user should see before overriding.
+  const [force, setForce] = useState(false);
+  const fk = truncateFkOverride(engine);
 
   // M20: the production type-to-confirm gate is opt-out via Settings →
   // Behavior ("Confirm writes on production"). When off, even a prod
@@ -62,7 +76,7 @@ export function TruncateModal({
     setError(null);
     void (async () => {
       try {
-        const { affected } = await truncateTable(handleId, schemaName, table);
+        const { affected } = await truncateTable(handleId, schemaName, table, force && !!fk);
         // Refresh sidebar counts (force drops the schema's cached lists/metas)
         // and let the caller re-fetch the open grid for this table.
         void loadTables(handleId, schemaName, { force: true });
@@ -90,7 +104,21 @@ export function TruncateModal({
           </code>
           . The table structure is kept. This cannot be undone.
         </p>
-        <pre className="truncate-sql">TRUNCATE TABLE {table};</pre>
+        <pre className="truncate-sql">{truncateSql(engine, table, force && !!fk)}</pre>
+        {fk ? (
+          <label className={"truncate-fk" + (force ? " on" : "")}>
+            <input
+              type="checkbox"
+              checked={force}
+              onChange={(e) => setForce(e.target.checked)}
+              disabled={busy}
+            />
+            <span className="truncate-fk-text">
+              <span className="truncate-fk-label">{fk.label}</span>
+              <span className="truncate-fk-hint">{fk.hint}</span>
+            </span>
+          </label>
+        ) : null}
         {isProd ? (
           <div className="truncate-prod">
             <div

@@ -244,10 +244,19 @@ pub(super) fn sql_literal(value: &serde_json::Value) -> String {
 // truncate / schema ops (M15)
 // ---------------------------------------------------------------------------
 
+/// Empty a table, keeping its structure (M15 truncate). `TRUNCATE TABLE` reports
+/// no affected-row count, so we `COUNT_BIG(*)` first and return that.
+///
+/// `force` disables the foreign keys that reference this table for the duration
+/// (see [`referencing_fks`]): SQL Server refuses to truncate a table an enabled
+/// FK points at, and has no `TRUNCATE … CASCADE`. The constraints are put back
+/// afterwards **untrusted** (`CHECK CONSTRAINT`, not `WITH CHECK CHECK`) — the
+/// rows left behind are now orphans, so re-validating them would fail.
 pub(super) async fn truncate_table(
     client: &mut TdsClient,
     schema: &str,
     table: &str,
+    force: bool,
 ) -> Result<u64, AppError> {
     table_meta(client, schema, table).await?;
     let q = qualified(schema, table);
@@ -262,8 +271,134 @@ pub(super) async fn truncate_table(
         .first()
         .and_then(|r| r.try_get::<i64, _>("n").ok().flatten())
         .unwrap_or(0);
-    exec_batch(client, format!("TRUNCATE TABLE {q}")).await?;
+    let fks = if force {
+        referencing_fks(client, schema, table).await?
+    } else {
+        Vec::new()
+    };
+    for fk in &fks {
+        exec_batch(client, fk.disable()).await?;
+    }
+    let truncated = exec_batch(client, format!("TRUNCATE TABLE {q}")).await;
+    for fk in &fks {
+        // Best-effort re-enable: the truncate's own error is the one worth
+        // surfacing, and a failure here cannot un-truncate anything.
+        let _ = exec_batch(client, fk.enable()).await;
+    }
+    truncated?;
     Ok(prior.max(0) as u64)
+}
+
+/// Drop one table outright — structure and rows (drop-table).
+///
+/// SQL Server has no `DROP TABLE … CASCADE` either, so `force` drops the
+/// referencing foreign-key constraints outright (they cannot outlive the table
+/// they point at) before dropping the table, both inside one transaction — SQL
+/// Server DDL is transactional, so a failure leaves everything as it was.
+pub(super) async fn drop_table(
+    client: &mut TdsClient,
+    schema: &str,
+    table: &str,
+    force: bool,
+) -> Result<(), AppError> {
+    table_meta(client, schema, table).await?;
+    let mut statements: Vec<String> = Vec::new();
+    if force {
+        statements.extend(
+            referencing_fks(client, schema, table)
+                .await?
+                .iter()
+                .map(Fk::drop),
+        );
+    }
+    statements.push(format!("DROP TABLE {}", qualified(schema, table)));
+
+    exec_batch(client, "BEGIN TRANSACTION").await?;
+    for stmt in statements {
+        if let Err(err) = exec_batch(client, stmt).await {
+            let _ = exec_batch(client, "ROLLBACK").await;
+            return Err(err);
+        }
+    }
+    exec_batch(client, "COMMIT").await?;
+    Ok(())
+}
+
+/// One foreign key pointing AT the table being truncated/dropped, named by the
+/// child table that owns it (that is the table the ALTER has to address).
+struct Fk {
+    schema: String,
+    table: String,
+    name: String,
+}
+
+impl Fk {
+    fn alter(&self) -> String {
+        format!(
+            "ALTER TABLE {}.{}",
+            quote_ident(&self.schema),
+            quote_ident(&self.table)
+        )
+    }
+    fn disable(&self) -> String {
+        format!(
+            "{} NOCHECK CONSTRAINT {}",
+            self.alter(),
+            quote_ident(&self.name)
+        )
+    }
+    /// Re-enable WITHOUT re-validating the existing rows (`CHECK CONSTRAINT`,
+    /// not `WITH CHECK CHECK CONSTRAINT`): after a forced truncate the child
+    /// rows are orphans and a validating enable would just fail. The constraint
+    /// comes back as "not trusted", which is the honest state.
+    fn enable(&self) -> String {
+        format!(
+            "{} CHECK CONSTRAINT {}",
+            self.alter(),
+            quote_ident(&self.name)
+        )
+    }
+    fn drop(&self) -> String {
+        format!(
+            "{} DROP CONSTRAINT {}",
+            self.alter(),
+            quote_ident(&self.name)
+        )
+    }
+}
+
+/// The foreign keys other tables have pointing at `schema.table`.
+async fn referencing_fks(
+    client: &mut TdsClient,
+    schema: &str,
+    table: &str,
+) -> Result<Vec<Fk>, AppError> {
+    let mut q = Query::new(
+        "SELECT fk.name AS fk, ps.name AS psch, pt.name AS ptbl \
+         FROM sys.foreign_keys fk \
+         JOIN sys.tables pt ON pt.object_id = fk.parent_object_id \
+         JOIN sys.schemas ps ON ps.schema_id = pt.schema_id \
+         JOIN sys.tables rt ON rt.object_id = fk.referenced_object_id \
+         JOIN sys.schemas rs ON rs.schema_id = rt.schema_id \
+         WHERE rs.name = @P1 AND rt.name = @P2",
+    );
+    q.bind(schema.to_string());
+    q.bind(table.to_string());
+    let rows = q
+        .query(client)
+        .await
+        .map_err(map_query_error)?
+        .into_first_result()
+        .await
+        .map_err(map_query_error)?;
+    Ok(rows
+        .iter()
+        .map(|r| Fk {
+            schema: get_str(r, "psch"),
+            table: get_str(r, "ptbl"),
+            name: get_str(r, "fk"),
+        })
+        .collect())
 }
 
 /// Drop every table (and the FK constraints touching them) in `schema`, leaving

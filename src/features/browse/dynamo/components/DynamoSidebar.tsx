@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 
 import { Btn } from "../../../../shared/ui/Btn";
 import { EngineBadge } from "../../../../shared/ui/EngineBadge";
+import { dropWordSelection } from "../../../../shared/ui/dropWordSelection";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { LanguageChip } from "../../../../shared/ui/LanguageChip";
@@ -172,6 +173,7 @@ export function DynamoSidebar({
                 onClick={() => onOpenTable(t.name)}
                 onContextMenu={(e) => {
                   e.preventDefault();
+                  dropWordSelection(e.currentTarget);
                   setCtxMenu({ x: e.clientX, y: e.clientY, table: t.name });
                 }}
                 title={t.name}

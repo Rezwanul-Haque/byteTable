@@ -11,6 +11,7 @@
 import { useEffect, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
+import { dropWordSelection } from "./dropWordSelection";
 import { Icon } from "./Icon";
 import "./TabMenu.css";
 
@@ -35,15 +36,7 @@ export function useTabMenu({ ids, close, canClose }: TabMenuOptions) {
   const onContextMenu = (e: ReactMouseEvent, id: string) => {
     e.preventDefault();
     e.stopPropagation();
-    // WebKit selects the word under the cursor on a right-button press, and it
-    // does that BEFORE `contextmenu` fires — `user-select: none` on the tab
-    // (TabBar.css) does not stop it, so the tab label sat highlighted behind
-    // the menu. Collapse that selection, but only when it is inside the tab we
-    // just opened on: a selection the user made elsewhere is theirs to keep.
-    const selection = window.getSelection();
-    if (selection && !selection.isCollapsed && e.currentTarget.contains(selection.anchorNode)) {
-      selection.removeAllRanges();
-    }
+    dropWordSelection(e.currentTarget);
     setMenu({ x: e.clientX, y: e.clientY, id });
   };
   const closeMenu = () => setMenu(null);

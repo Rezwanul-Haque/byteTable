@@ -244,6 +244,42 @@ export function cassDropMv(handleId: string, keyspace: string, name: string): Pr
   return invoke("cassandra_drop_mv", { handleId, keyspace, name });
 }
 
+/**
+ * `DROP TABLE ks.name` — the table, its secondary indexes and every row.
+ *
+ * `dropViews` opts in to dropping the materialized views built on the table
+ * first. Cassandra refuses the drop while one exists and has no CASCADE, so
+ * without the flag a table that has views fails with an error naming them.
+ */
+export function cassDropTable(
+  handleId: string,
+  keyspace: string,
+  name: string,
+  dropViews = false,
+): Promise<void> {
+  return invoke("cassandra_drop_table", { handleId, keyspace, name, dropViews });
+}
+
+/** `DROP KEYSPACE ks` — the keyspace and every table in it. The backend
+ *  refuses Cassandra's own `system*` keyspaces. */
+export function cassDropKeyspace(handleId: string, keyspace: string): Promise<void> {
+  return invoke("cassandra_drop_keyspace", { handleId, keyspace });
+}
+
+/**
+ * `TRUNCATE TABLE ks.name` — every row, keeping the table and its indexes.
+ * Runs at consistency ALL, so it fails outright if any replica is unreachable.
+ */
+export function cassTruncateTable(handleId: string, keyspace: string, name: string): Promise<void> {
+  return invoke("cassandra_truncate_table", { handleId, keyspace, name });
+}
+
+/** Drop every table in the keyspace, keeping the keyspace + its replication
+ *  settings. Resolves with how many tables were dropped. */
+export function cassEmptyKeyspace(handleId: string, keyspace: string): Promise<number> {
+  return invoke("cassandra_empty_keyspace", { handleId, keyspace });
+}
+
 export function cassCreateKeyspace(
   handleId: string,
   name: string,

@@ -220,6 +220,62 @@ pub async fn create_keyspace(
         .await
 }
 
+/// Drop a table outright — structure, indexes and rows. `drop_views` is the
+/// explicit opt-in to take dependent materialized views with it.
+pub async fn drop_table(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    keyspace: &str,
+    name: &str,
+    drop_views: bool,
+) -> Result<(), AppError> {
+    manager
+        .get_wide_column(handle)
+        .await?
+        .drop_table(keyspace, name, drop_views)
+        .await
+}
+
+/// Drop a keyspace and everything in it (system keyspaces are refused).
+pub async fn drop_keyspace(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    keyspace: &str,
+) -> Result<(), AppError> {
+    manager
+        .get_wide_column(handle)
+        .await?
+        .drop_keyspace(keyspace)
+        .await
+}
+
+/// Empty a table, keeping its schema and indexes.
+pub async fn truncate_table(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    keyspace: &str,
+    name: &str,
+) -> Result<(), AppError> {
+    manager
+        .get_wide_column(handle)
+        .await?
+        .truncate_table(keyspace, name)
+        .await
+}
+
+/// Drop every table in a keyspace, keeping the keyspace itself.
+pub async fn empty_keyspace(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    keyspace: &str,
+) -> Result<u64, AppError> {
+    manager
+        .get_wide_column(handle)
+        .await?
+        .empty_keyspace(keyspace)
+        .await
+}
+
 /// Create a table (M19 §19.6).
 pub async fn create_table(
     manager: &ConnectionManager,

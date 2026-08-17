@@ -28,6 +28,7 @@
 import { useEffect, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
+import { dropWordSelection } from "./dropWordSelection";
 import { Icon } from "./Icon";
 import "./TabMenu.css";
 
@@ -65,6 +66,7 @@ export function useContextMenu<T>(itemsFor: (subject: T) => ContextMenuItem[]) {
   const open = (e: ReactMouseEvent, subject: T) => {
     e.preventDefault();
     e.stopPropagation();
+    dropWordSelection(e.currentTarget);
     setOpenSub(null);
     setMenu({ x: e.clientX, y: e.clientY, subject });
   };

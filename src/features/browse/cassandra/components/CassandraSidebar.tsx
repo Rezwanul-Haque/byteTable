@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 
 import { EngineBadge } from "../../../../shared/ui/EngineBadge";
+import { dropWordSelection } from "../../../../shared/ui/dropWordSelection";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { Btn } from "../../../../shared/ui/Btn";
@@ -47,6 +48,14 @@ interface CassandraSidebarProps {
   onCreateKeyspace: () => void;
   onCreateTable: () => void;
   onAddIndex: (table: string) => void;
+  /** Confirm + empty one table, keeping its schema. */
+  onTruncateTable: (table: string) => void;
+  /** Confirm + drop one table (its 2i indexes go with it). */
+  onDropTable: (table: string) => void;
+  /** Confirm + drop every table, keeping the keyspace itself. */
+  onEmptyKeyspace: () => void;
+  /** Confirm + drop the whole keyspace. */
+  onDropKeyspace: () => void;
   onRefresh: () => void;
   /** Spin the refresh icon while an auto-refresh tick is in flight. */
   refreshing?: boolean;
@@ -76,6 +85,10 @@ export function CassandraSidebar({
   onCreateKeyspace,
   onCreateTable,
   onAddIndex,
+  onTruncateTable,
+  onDropTable,
+  onEmptyKeyspace,
+  onDropKeyspace,
   onRefresh,
   refreshing,
   onCloseWorkspace,
@@ -240,6 +253,7 @@ export function CassandraSidebar({
                 onClick={() => onOpenTable(t.name)}
                 onContextMenu={(e) => {
                   e.preventDefault();
+                  dropWordSelection(e.currentTarget);
                   setCtxMenu({ x: e.clientX, y: e.clientY, table: t.name });
                 }}
                 title={t.comment || t.name}
@@ -293,7 +307,12 @@ export function CassandraSidebar({
             </div>
           );
         })}
-        {filtered.length === 0 ? (
+        {/* Two different empty states. Only the filter one quotes the query —
+            with no filter typed it rendered as the literal `No tables match “”`
+            (reachable since "Empty keyspace", and on any new keyspace). */}
+        {tables.length === 0 ? (
+          <div className="sidebar-nomatch">No tables in this keyspace yet.</div>
+        ) : filtered.length === 0 ? (
           <div className="sidebar-nomatch">No tables match “{q}”</div>
         ) : null}
       </div>
@@ -326,7 +345,6 @@ export function CassandraSidebar({
               >
                 <Icon name="add" size={15} /> Create table
               </div>
-              <div className="ctx-sep" />
               <div
                 className="ctx-item"
                 onClick={() => {
@@ -347,13 +365,22 @@ export function CassandraSidebar({
               </div>
               <div className="ctx-sep" />
               <div
-                className="ctx-item"
+                className="ctx-item danger"
                 onClick={() => {
                   setCtxMenu(null);
-                  onRefresh();
+                  onEmptyKeyspace();
                 }}
               >
-                <Icon name="refresh" size={15} /> Refresh
+                <Icon name="delete_sweep" size={15} /> Empty keyspace
+              </div>
+              <div
+                className="ctx-item danger"
+                onClick={() => {
+                  setCtxMenu(null);
+                  onDropKeyspace();
+                }}
+              >
+                <Icon name="delete_forever" size={15} /> Drop keyspace
               </div>
             </>
           ) : (
@@ -405,6 +432,27 @@ export function CassandraSidebar({
                 }}
               >
                 <Icon name="upload" size={15} /> Import rows
+              </div>
+              <div className="ctx-sep" />
+              <div
+                className="ctx-item danger"
+                onClick={() => {
+                  const t = ctxMenu.table;
+                  setCtxMenu(null);
+                  if (t) onTruncateTable(t);
+                }}
+              >
+                <Icon name="delete_sweep" size={15} /> Truncate table
+              </div>
+              <div
+                className="ctx-item danger"
+                onClick={() => {
+                  const t = ctxMenu.table;
+                  setCtxMenu(null);
+                  if (t) onDropTable(t);
+                }}
+              >
+                <Icon name="delete_forever" size={15} /> Drop table
               </div>
             </>
           )}

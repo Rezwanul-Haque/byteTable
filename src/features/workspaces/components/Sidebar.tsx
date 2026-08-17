@@ -21,6 +21,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { appErrorMessage } from "../../../shared/api/error";
 import { Btn } from "../../../shared/ui/Btn";
 import { EngineBadge } from "../../../shared/ui/EngineBadge";
+import { dropWordSelection } from "../../../shared/ui/dropWordSelection";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { ENV_COLOR } from "../../../shared/ui/envColors";
@@ -790,6 +791,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                     onKeyDown={(event) => onRowKeyDown(event, t.name)}
                     onContextMenu={(event) => {
                       event.preventDefault();
+                      dropWordSelection(event.currentTarget);
                       openCtxMenu(event.clientX, event.clientY, t.name, event.currentTarget);
                     }}
                     title={t.name}

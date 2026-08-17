@@ -424,6 +424,41 @@
   white-space: pre-wrap;
   line-height: 1.55;
 }
+/* Copy affordance on the generated CQL, top-right inside the block. The extra
+   right padding keeps a long first line from running under the button. */
+.cass-cql-wrap {
+  position: relative;
+}
+.cass-cql-wrap .cass-cql-preview {
+  padding-right: 40px;
+}
+.cass-cql-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--text-faint);
+  /* Visible at rest, not hover-only: the block is read-only output, so the one
+     thing you can do with it should not be hidden. */
+  opacity: 0.55;
+  transition:
+    opacity 0.12s,
+    color 0.12s,
+    background 0.12s;
+}
+.cass-cql-wrap:hover .cass-cql-copy,
+.cass-cql-copy:focus-visible {
+  opacity: 1;
+}
+.cass-cql-copy:hover {
+  color: var(--accent);
+  background: var(--bg2);
+}
 .cass-consistency {
   display: inline-flex;
   align-items: center;
@@ -653,7 +688,43 @@
 .cass-field-grid {
   display: flex;
   gap: 14px;
-  align-items: flex-start;
+  /* `stretch` (not `flex-start`) so the two cards are the same height. Their
+     controls are matched at 32px below, so this is only a backstop — but
+     without it any future difference in content height would show up as two
+     boxes of visibly different size sitting side by side. */
+  align-items: stretch;
+}
+/* The strategy card takes the whole leftover width and its two chips split it
+   evenly, so nothing is left empty inside the card. The replicas card sizes to
+   its own label + stepper. `width: auto` is required on both — as flex items
+   they resolve their basis from `.cass-field`'s `width: 100%`, so without it
+   each card claims the entire row. */
+.cass-field-grid > .cass-field-strategy {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+.cass-field-grid > .cass-field-rf {
+  flex: 0 0 auto;
+  width: auto;
+  /* Wide enough for the longer of the two labels, so switching strategy
+     neither wraps the label nor resizes the card under the cursor. */
+  min-width: 168px;
+}
+.cass-field-rf .form-section-label {
+  white-space: nowrap;
+}
+/* Fill the card, 32px to match `.cass-stepper` (the chips are only ~27px tall
+   on their own, which left the strategy card the shorter of the two). */
+.cass-field-strategy .seg {
+  width: 100%;
+  height: 32px;
+}
+/* Equal halves — the two strategy names differ a lot in length, and chips
+   sized to their own text made the control look lopsided. */
+.cass-field-strategy .seg-btn {
+  flex: 1;
+  justify-content: center;
 }
 .cass-stepper {
   display: flex;
@@ -725,34 +796,96 @@
   color: var(--text-faint);
   padding: 0 2px;
 }
+/* ORDER cell — the header, the `—` placeholder and the `↑ ASC` button it turns
+   into all sit on the column's right edge, so the three states line up. The
+   padding is the breathing room the neighbouring columns get for free from
+   their input borders: bare text against the grid's 6px gap left the dash
+   almost touching the remove button. */
+.cass-ct-head > span:nth-child(4),
+.cass-ct-dash,
+.cass-ct-row .cass-qb-allow {
+  padding-right: 10px;
+}
+.cass-ct-head > span:nth-child(4) {
+  text-align: right;
+}
 .cass-ct-dash {
-  text-align: center;
+  text-align: right;
+  justify-self: stretch;
   color: var(--text-faint);
   font-family: var(--mono);
 }
-.cass-role-partition_key {
+.cass-ct-row .cass-qb-allow {
+  justify-content: flex-end;
+}
+/* The shared `.card-drop` (StructureView.css) rests at opacity 0 and is
+   revealed by `.structure-card:hover` — an ancestor this modal does not have,
+   so the remove button was invisible here (rendered and clickable, but
+   unfindable). Keep it quiet, not hidden: a form where you have just added a
+   dozen rows has to show how to take one back. */
+.cass-ct-row .card-drop {
+  opacity: 0.5;
+}
+.cass-ct-row:hover .card-drop,
+.cass-ct-row .card-drop:focus-visible {
+  opacity: 1;
+}
+/* The last remaining column cannot be removed — read as disabled, not faint. */
+.cass-ct-row .card-drop:disabled {
+  opacity: 0.15;
+  cursor: default;
+}
+.cass-ct-row .card-drop:disabled:hover {
+  color: var(--text-faint);
+  background: none;
+}
+/* The shared custom <Select> replaces the native dropdowns in the create
+   modals. Match `.cass-field`'s radius / padding / size so a row of inputs and
+   dropdowns reads as one set of controls. */
+.cass-ct-select .sel-trigger {
+  border-radius: 7px;
+  padding: 6px 7px 6px 9px;
+}
+.cass-ct-select .sel-label {
+  font-size: 12px;
+}
+/* Role tint. These used to sit on the native <select> element itself; the
+   Select puts `className` on its wrapper, so they target the trigger inside. */
+.cass-role-partition_key .sel-trigger {
   color: var(--accent);
   border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
 }
-.cass-role-clustering {
+.cass-role-clustering .sel-trigger {
   color: #61afef;
   border-color: color-mix(in oklab, #61afef 45%, var(--border));
 }
-.cass-role-static {
+.cass-role-static .sel-trigger {
   color: #e2b340;
 }
+/* Prose, NOT a flex row. As `display: flex` every inline child — each `<code>`
+   and each run of text between them — became its own flex item and got its own
+   narrow column, so a note with any markup in it rendered as a shredded grid
+   instead of a sentence. Block flow lets it wrap like text; the icon rides
+   along inline. (The old `.micon` rule below matched nothing: `Icon` renders
+   `.msym`.) */
 .cass-create-note {
-  display: flex;
-  align-items: flex-start;
-  gap: 7px;
   font-size: 11.5px;
   line-height: 1.5;
   color: var(--text-faint);
   margin: -2px 0 0;
 }
-.cass-create-note .micon {
-  margin-top: 1px;
-  flex: none;
+.cass-create-note > .msym {
+  vertical-align: -2px;
+  margin-right: 5px;
+}
+/* Replica-vs-nodes advice in the create-keyspace modal. `warn` = the keyspace
+   is under-replicated but usable; `err` = a QUORUM can never be met, which is
+   the setting that reads as fine here and fails later on the first query. */
+.cass-create-note.cass-note-warn {
+  color: #e5a458;
+}
+.cass-create-note.cass-note-err {
+  color: #e06c75;
 }
 .cass-create-note code {
   font-family: var(--mono);

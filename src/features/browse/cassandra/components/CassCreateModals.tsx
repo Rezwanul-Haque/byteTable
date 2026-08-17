@@ -4,20 +4,25 @@
 // selection with order, live CQL preview), and CassAddIndexModal (the sidebar's
 // secondary-index / materialized-view add — reuses the §19.4 DDL backend).
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { isAppErrorPayload } from "../../../../shared/api/error";
 import { Btn } from "../../../../shared/ui/Btn";
+import { CopyButton } from "../../../../shared/ui/CopyButton";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
+import { Select } from "../../../../shared/ui/Select";
 import { useToast } from "../../../../shared/ui/toastContext";
+import { highlightSql } from "../../shared/highlightSql";
 import {
+  cassClusterStatus,
   cassCreateIndex,
   cassCreateKeyspace,
   cassCreateMv,
   cassCreateTable,
   keyColumns,
   type ColumnKind,
+  type NodeStatus,
   type TableDescriptor,
 } from "../api";
 
@@ -78,14 +83,84 @@ export function CassCreateKeyspaceModal({
   const [durable, setDurable] = useState(true);
   const [busy, setBusy] = useState(false);
 
+  // The live ring, for the replica advice below and for the DATACENTER name —
+  // `dc1` was hardcoded, which silently produces a keyspace with no replicas
+  // anywhere on a cluster whose DC is called something else (`datacenter1` is
+  // Cassandra's own default). Unknown ring → fall back to the old constant and
+  // say nothing.
+  const [nodes, setNodes] = useState<NodeStatus[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    void cassClusterStatus(handleId)
+      .then((s) => live && setNodes(s.nodes))
+      .catch(() => live && setNodes([]));
+    return () => {
+      live = false;
+    };
+  }, [handleId]);
+
+  const dc = nodes?.find((n) => n.dc)?.dc ?? "dc1";
+  // NetworkTopologyStrategy counts replicas per datacenter; SimpleStrategy
+  // spreads them over the whole ring.
+  const available =
+    nodes === null
+      ? null
+      : strategy === "SimpleStrategy"
+        ? nodes.length
+        : nodes.filter((n) => n.dc === dc).length;
+
   const clean = cassIdent(name);
   const dupe = !!clean && existing.includes(clean);
   const ok = !!clean && !dupe && rf >= 1;
 
-  const repObj =
+  // The replication map is printed one entry per line rather than inline: on a
+  // 540px modal the single-line form wrapped mid-map, breaking the quoted keys
+  // across rows. Cassandra ignores the whitespace.
+  const repEntries =
     strategy === "SimpleStrategy"
-      ? "{'class': 'SimpleStrategy', 'replication_factor': " + rf + "}"
-      : "{'class': 'NetworkTopologyStrategy', 'dc1': " + rf + "}";
+      ? [
+          ["'class'", "'SimpleStrategy'"],
+          ["'replication_factor'", String(rf)],
+        ]
+      : [
+          ["'class'", "'NetworkTopologyStrategy'"],
+          ["'" + dc + "'", String(rf)],
+        ];
+  const repObj = "{\n" + repEntries.map(([k, v]) => "    " + k + ": " + v).join(",\n") + "\n  }";
+
+  // Replica advice. Cassandra happily creates a keyspace asking for more
+  // replicas than the cluster has nodes — the failure only shows up later, on
+  // the first QUORUM read, in another tab ("Not enough nodes are alive to
+  // satisfy required consistency level"). A QUORUM needs floor(RF/2)+1 replicas
+  // reachable, so RF 2 or 3 on a single node can never be read at the app's
+  // default LOCAL_QUORUM. Advisory only: asking for RF 3 before adding the
+  // other two nodes is legitimate.
+  const quorum = Math.floor(rf / 2) + 1;
+  const nodeLabel = (n: number) => n + (n === 1 ? " node" : " nodes");
+  const advice =
+    available === null || available === 0
+      ? null
+      : quorum > available
+        ? {
+            tone: "err" as const,
+            text:
+              rf +
+              " replicas, " +
+              nodeLabel(available) +
+              " — a QUORUM needs " +
+              quorum +
+              " of them, so reads and writes at QUORUM / LOCAL_QUORUM will fail until the cluster grows.",
+          }
+        : rf > available
+          ? {
+              tone: "warn" as const,
+              text:
+                rf +
+                " replicas, " +
+                nodeLabel(available) +
+                " — the extra copies have nowhere to live until more nodes join. QUORUM still works.",
+            }
+          : null;
   const ddl =
     "CREATE KEYSPACE " +
     (clean || "keyspace_name") +
@@ -102,7 +177,7 @@ export function CassCreateKeyspaceModal({
       const replication: Record<string, string | number> =
         strategy === "SimpleStrategy"
           ? { class: "SimpleStrategy", replication_factor: rf }
-          : { class: "NetworkTopologyStrategy", dc1: rf };
+          : { class: "NetworkTopologyStrategy", [dc]: rf };
       await cassCreateKeyspace(handleId, clean, replication, durable);
       toast("CREATE KEYSPACE " + clean + " — applied", "ok");
       onCreated(clean);
@@ -136,14 +211,16 @@ export function CassCreateKeyspaceModal({
         </div>
 
         <div className="cass-field-grid">
-          <div className="cass-field">
+          {/* Sizing lives in Cassandra.css: the strategy card fills the row
+              with two equal chips, the replicas card is wide enough for its
+              longer label ("Replication factor") to stay on one line. */}
+          <div className="cass-field cass-field-strategy">
             <span className="form-section-label">Replication strategy</span>
-            <div className="seg" style={{ width: "100%" }}>
+            <div className="seg">
               {(["NetworkTopologyStrategy", "SimpleStrategy"] as const).map((s) => (
                 <button
                   key={s}
                   className={"seg-btn" + (strategy === s ? " active" : "")}
-                  style={{ flex: 1, justifyContent: "center" }}
                   onClick={() => setStrategy(s)}
                 >
                   {s.replace("Strategy", "")}
@@ -151,9 +228,9 @@ export function CassCreateKeyspaceModal({
               ))}
             </div>
           </div>
-          <div className="cass-field" style={{ maxWidth: 140 }}>
+          <div className="cass-field cass-field-rf">
             <span className="form-section-label">
-              {strategy === "SimpleStrategy" ? "Replication factor" : "dc1 replicas"}
+              {strategy === "SimpleStrategy" ? "Replication factor" : dc + " replicas"}
             </span>
             <div className="cass-stepper">
               <button onClick={() => setRf((n) => Math.max(1, n - 1))} disabled={rf <= 1}>
@@ -178,7 +255,20 @@ export function CassCreateKeyspaceModal({
           </span>
         </button>
 
-        <pre className="cass-cql-preview">{ddl}</pre>
+        {advice ? (
+          <p className={"cass-create-note cass-note-" + advice.tone}>
+            <Icon name={advice.tone === "err" ? "error" : "warning"} size={13} />
+            {advice.text}
+          </p>
+        ) : null}
+
+        <div className="cass-cql-wrap">
+          <pre
+            className="cass-cql-preview"
+            dangerouslySetInnerHTML={{ __html: highlightSql(ddl) }}
+          />
+          <CopyButton className="cass-cql-copy" text={ddl} label="Copy CQL" size={13} />
+        </div>
         {dupe ? <p className="cass-create-note">Keyspace “{clean}” already exists</p> : null}
 
         <div className="modal-actions">
@@ -334,28 +424,24 @@ export function CassCreateTableModal({
                 spellCheck={false}
                 onChange={(e) => patch(c.id, { name: e.target.value })}
               />
-              <select
-                className="filter-select"
+              <Select
+                className="sel-block cass-ct-select"
+                aria-label="Column type"
                 value={c.type}
-                onChange={(e) => patch(c.id, { type: e.target.value })}
-              >
-                {[...new Set([c.type, ...CASS_CQL_TYPES])].map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-              <select
-                className={"filter-select cass-role-" + c.role}
+                options={[...new Set([c.type, ...CASS_CQL_TYPES])].map((ty) => ({
+                  value: ty,
+                  label: ty,
+                }))}
+                onChange={(ty) => patch(c.id, { type: ty })}
+              />
+              <Select<ColumnKind>
+                className={"sel-block cass-ct-select cass-role-" + c.role}
+                aria-label="Column role"
+                mono={false}
                 value={c.role}
-                onChange={(e) => patch(c.id, { role: e.target.value as ColumnKind })}
-              >
-                {CASS_ROLES.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.label}
-                  </option>
-                ))}
-              </select>
+                options={CASS_ROLES.map((r) => ({ value: r.id, label: r.label }))}
+                onChange={(role) => patch(c.id, { role })}
+              />
               {c.role === "clustering" ? (
                 <button
                   className="cass-qb-allow on"
@@ -390,7 +476,13 @@ export function CassCreateTableModal({
           />
         </div>
 
-        <pre className="cass-cql-preview">{ddl}</pre>
+        <div className="cass-cql-wrap">
+          <pre
+            className="cass-cql-preview"
+            dangerouslySetInnerHTML={{ __html: highlightSql(ddl) }}
+          />
+          <CopyButton className="cass-cql-copy" text={ddl} label="Copy CQL" size={13} />
+        </div>
         {dupe ? (
           <p className="cass-create-note">Table “{clean}” already exists</p>
         ) : !partition.length && validCols.length ? (
@@ -516,18 +608,16 @@ export function CassAddIndexModal({
           <>
             <div className="cass-field">
               <span className="form-section-label">Index column</span>
-              <select
-                className="filter-select"
-                style={{ width: "100%" }}
+              <Select
+                className="sel-block cass-ct-select"
+                aria-label="Index column"
                 value={target}
-                onChange={(e) => setTarget(e.target.value)}
-              >
-                {table.columns.map((c) => (
-                  <option key={c.name} value={c.name}>
-                    {c.name} · {c.type}
-                  </option>
-                ))}
-              </select>
+                options={table.columns.map((c) => ({
+                  value: c.name,
+                  label: c.name + " · " + c.type,
+                }))}
+                onChange={setTarget}
+              />
             </div>
             <p className="cass-create-note">
               <Icon name="info" size={13} /> A 2i lets you filter by <code>{target}</code> without{" "}
@@ -547,18 +637,13 @@ export function CassAddIndexModal({
             </div>
             <div className="cass-field">
               <span className="form-section-label">New partition key</span>
-              <select
-                className="filter-select"
-                style={{ width: "100%" }}
+              <Select
+                className="sel-block cass-ct-select"
+                aria-label="New partition key"
                 value={mvPk}
-                onChange={(e) => setMvPk(e.target.value)}
-              >
-                {allCols.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
+                options={allCols.map((c) => ({ value: c, label: c }))}
+                onChange={setMvPk}
+              />
             </div>
             <p className="cass-create-note">
               <Icon name="info" size={13} /> Re-partitions <code>{table.name}</code> by{" "}
@@ -571,7 +656,18 @@ export function CassAddIndexModal({
           </>
         )}
 
-        <pre className="cass-cql-preview">{kind === "index" ? idxDDL : mvDDL}</pre>
+        <div className="cass-cql-wrap">
+          <pre
+            className="cass-cql-preview"
+            dangerouslySetInnerHTML={{ __html: highlightSql(kind === "index" ? idxDDL : mvDDL) }}
+          />
+          <CopyButton
+            className="cass-cql-copy"
+            text={kind === "index" ? idxDDL : mvDDL}
+            label="Copy CQL"
+            size={13}
+          />
+        </div>
 
         <div className="modal-actions">
           <div style={{ flex: 1 }} />

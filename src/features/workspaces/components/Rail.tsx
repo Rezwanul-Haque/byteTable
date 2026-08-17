@@ -9,6 +9,7 @@ import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
 
 import type { Engine } from "../../../shared/types";
 import { BTLogo } from "../../../shared/ui/BTLogo";
+import { dropWordSelection } from "../../../shared/ui/dropWordSelection";
 import { Icon } from "../../../shared/ui/Icon";
 import { useToast } from "../../../shared/ui/toastContext";
 import { scopeNoun, scopeNounTitle } from "../scopes";
@@ -224,6 +225,7 @@ export function Rail({
                 }}
                 onContextMenu={(event) => {
                   event.preventDefault();
+                  dropWordSelection(event.currentTarget);
                   openEdit(event.currentTarget, ws);
                 }}
                 onKeyDown={(event) => onTileKeyDown(event, ws)}

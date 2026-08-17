@@ -36,6 +36,12 @@ import {
   CassCreateTableModal,
 } from "./CassCreateModals";
 import { CassandraDashboard } from "./CassandraDashboard";
+import {
+  CassDropKeyspaceModal,
+  CassDropTableModal,
+  CassEmptyKeyspaceModal,
+  CassTruncateTableModal,
+} from "./CassDropModals";
 import { CassExportModal, CassImportModal } from "./CassIoModals";
 import { CassandraQueryTab } from "./CassandraQueryTab";
 import { CassandraSchemaMap } from "./CassandraSchemaMap";
@@ -123,23 +129,48 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
   const [createKs, setCreateKs] = useState(false);
   const [createTbl, setCreateTbl] = useState(false);
   const [addIdxTable, setAddIdxTable] = useState<string | null>(null);
+  const [truncTblName, setTruncTblName] = useState<string | null>(null);
+  // Bumped per table after a truncate: the table tab loads its rows once on
+  // mount, so remounting it (via the key below) is what makes the grid show
+  // the now-empty table instead of the rows it read before.
+  const [reloaded, setReloaded] = useState<Record<string, number>>({});
+  const [dropTblName, setDropTblName] = useState<string | null>(null);
+  const [dropKsOpen, setDropKsOpen] = useState(false);
+  const [emptyKsOpen, setEmptyKsOpen] = useState(false);
   const [exportJob, setExportJob] = useState<{ scope: "table" | "all"; table?: string } | null>(
     null,
   );
   const [importTarget, setImportTarget] = useState<{ table: string | null } | null>(null);
 
+  /**
+   * Re-list the keyspace's tables.
+   *
+   * `silent` is the auto-refresh path: it leaves `loading` / `error` alone and
+   * only swaps the data in. Toggling `loading` on a background tick made the
+   * dashboard flicker — its "No tables in this keyspace." row is gated on
+   * `!loading`, so it blinked out and back every few seconds — and a failed
+   * tick would have wiped a good table list to an error screen under the user.
+   * A tick that fails keeps the last good data; the manual sync button (and
+   * `refresh`) is the loud path that reports problems.
+   */
   const loadTables = useCallback(
-    async (keyspace: string) => {
-      setLoading(true);
-      setError(null);
+    async (keyspace: string, opts?: { silent?: boolean }) => {
+      const silent = opts?.silent ?? false;
+      if (!silent) {
+        setLoading(true);
+        setError(null);
+      }
       try {
         const list = await cassListTables(handleId, keyspace);
         setTables(list);
+        // A tick that succeeds clears a stale error from an earlier failure.
+        if (silent) setError(null);
       } catch (e) {
+        if (silent) return;
         setError(isAppErrorPayload(e) ? e.message : "Could not list tables (desktop app required)");
         setTables([]);
       } finally {
-        setLoading(false);
+        if (!silent) setLoading(false);
       }
     },
     [handleId],
@@ -264,10 +295,11 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
     toast("Schema refreshed", "ok");
   };
 
-  // Settings-driven auto-refresh of the sidebar table list (silent — no toast).
-  // The returned flag spins the sidebar's refresh icon once per tick.
+  // Settings-driven auto-refresh of the sidebar table list (silent — no toast,
+  // no loading state). The returned flag spins the sidebar's refresh icon once
+  // per tick; that is the only visible sign a tick happened.
   const refreshSpinning = useAutoRefresh(() => {
-    if (ks) void loadTables(ks);
+    if (ks) void loadTables(ks, { silent: true });
   });
 
   const openShell = () => openPanel(workspace.id, termLabel);
@@ -341,6 +373,10 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
         onCreateKeyspace={() => setCreateKs(true)}
         onCreateTable={() => setCreateTbl(true)}
         onAddIndex={(table) => setAddIdxTable(table)}
+        onTruncateTable={(table) => setTruncTblName(table)}
+        onDropTable={(table) => setDropTblName(table)}
+        onEmptyKeyspace={() => setEmptyKsOpen(true)}
+        onDropKeyspace={() => setDropKsOpen(true)}
         onRefresh={refresh}
         refreshing={refreshSpinning}
         onCloseWorkspace={() => closeWorkspace(workspace.id)}
@@ -413,6 +449,10 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
                   const descriptor = tables.find((d) => d.name === t.table);
                   return descriptor ? (
                     <CassandraTableTab
+                      // The nonce remounts the tab after a truncate so its
+                      // one-shot initial query runs again against the now-empty
+                      // table; without it the grid keeps the rows it first read.
+                      key={t.id + ":" + (reloaded[descriptor.name] ?? 0)}
                       handleId={handleId}
                       ks={ks}
                       descriptor={descriptor}
@@ -506,6 +546,85 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
             ) : null;
           })()
         : null}
+      {truncTblName
+        ? (() => {
+            const descriptor = tables.find((d) => d.name === truncTblName);
+            return descriptor ? (
+              <CassTruncateTableModal
+                handleId={handleId}
+                ks={ks}
+                table={descriptor}
+                env={env}
+                onClose={() => setTruncTblName(null)}
+                onTruncated={(name) => {
+                  setTruncTblName(null);
+                  setReloaded((r) => ({ ...r, [name]: (r[name] ?? 0) + 1 }));
+                }}
+              />
+            ) : null;
+          })()
+        : null}
+      {dropTblName
+        ? (() => {
+            const descriptor = tables.find((d) => d.name === dropTblName);
+            return descriptor ? (
+              <CassDropTableModal
+                handleId={handleId}
+                ks={ks}
+                table={descriptor}
+                env={env}
+                onClose={() => setDropTblName(null)}
+                onDropped={(dropped) => {
+                  setDropTblName(null);
+                  // Any tab open on the table now points at nothing.
+                  for (const tab of peekTabs()) {
+                    if (tab.kind === "table" && tab.table === dropped) closeTab(tab.id);
+                  }
+                  if (ks) void loadTables(ks);
+                }}
+              />
+            ) : null;
+          })()
+        : null}
+      {emptyKsOpen ? (
+        <CassEmptyKeyspaceModal
+          handleId={handleId}
+          ks={ks}
+          tables={tables}
+          env={env}
+          onClose={() => setEmptyKsOpen(false)}
+          onEmptied={() => {
+            setEmptyKsOpen(false);
+            // Every table tab now points at something that no longer exists.
+            for (const tab of peekTabs()) {
+              if (tab.kind === "table") closeTab(tab.id);
+            }
+            if (ks) void loadTables(ks);
+          }}
+        />
+      ) : null}
+      {dropKsOpen ? (
+        <CassDropKeyspaceModal
+          handleId={handleId}
+          ks={ks}
+          tables={tables}
+          env={env}
+          onClose={() => setDropKsOpen(false)}
+          onDropped={(dropped) => {
+            setDropKsOpen(false);
+            // The workspace cannot be left pointing at a keyspace that no
+            // longer exists — re-list and move to a survivor (or to nothing,
+            // which shows the empty state rather than a broken table list).
+            void cassListKeyspaces(handleId)
+              .then((list) => {
+                setKeyspaces(list);
+                const survivor = list.find((k) => k.name !== dropped);
+                switchKs(survivor?.name ?? "");
+              })
+              .catch(() => switchKs(""));
+          }}
+        />
+      ) : null}
       {exportJob ? (
         <CassExportModal
           scope={exportJob.scope}

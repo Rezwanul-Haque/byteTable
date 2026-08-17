@@ -460,6 +460,36 @@ pub trait WideColumnWriter: Send + Sync {
 
     /// `CREATE TABLE …` (M19 §19.6).
     async fn create_table(&self, req: CassCreateTable) -> Result<(), AppError>;
+
+    /// `DROP TABLE ks.name` — the table, its secondary indexes and every row.
+    ///
+    /// Cassandra REFUSES the drop while a materialized view is built on the
+    /// table and offers no CASCADE. `drop_views` is the caller's explicit
+    /// opt-in to take those views down first; without it a table that has one
+    /// is a §5 error naming the views, not a silent cascade.
+    async fn drop_table(
+        &self,
+        keyspace: &str,
+        name: &str,
+        drop_views: bool,
+    ) -> Result<(), AppError>;
+
+    /// `DROP KEYSPACE ks` — the keyspace and every table inside it. Adapters
+    /// MUST refuse Cassandra's own `system*` keyspaces.
+    async fn drop_keyspace(&self, keyspace: &str) -> Result<(), AppError>;
+
+    /// `TRUNCATE TABLE ks.name` — every row, keeping the table, its schema and
+    /// its indexes. Cassandra runs this at consistency ALL (every replica has
+    /// to be reachable, or the data would come back), and with the default
+    /// `auto_snapshot: true` it leaves a `truncated-*` snapshot behind, so the
+    /// disk is not reclaimed until that is cleared. Rows in a materialized view
+    /// built on the table go too — the server does that itself.
+    async fn truncate_table(&self, keyspace: &str, name: &str) -> Result<(), AppError>;
+
+    /// Drop every table in `keyspace` and leave the (empty) keyspace standing,
+    /// with its replication settings intact. Returns how many tables went.
+    /// Same system-keyspace guard as [`Self::drop_keyspace`].
+    async fn empty_keyspace(&self, keyspace: &str) -> Result<u64, AppError>;
 }
 
 /// A live Cassandra connection: the read + write ports bundled, plus the shared

@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 
 import { EngineBadge } from "../../../../shared/ui/EngineBadge";
+import { dropWordSelection } from "../../../../shared/ui/dropWordSelection";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { Btn } from "../../../../shared/ui/Btn";
@@ -224,6 +225,7 @@ export function MongoSidebar({
                 onClick={() => onOpenColl(c.name)}
                 onContextMenu={(e) => {
                   e.preventDefault();
+                  dropWordSelection(e.currentTarget);
                   setCtxMenu({ x: e.clientX, y: e.clientY, coll: c.name });
                 }}
                 title={c.name}

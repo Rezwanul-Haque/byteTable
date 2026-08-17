@@ -72,6 +72,19 @@ export function InfoHint({ text, icon = "info" }: { text: string; icon?: string 
     );
   };
 
+  /**
+   * Focus opens the bubble only for KEYBOARD focus. A programmatic `.focus()`
+   * — most visibly `Modal`'s "focus the first tabbable element" on open, which
+   * lands here whenever the chip is the first one in the dialog — would
+   * otherwise pop the help bubble the instant the dialog appeared, with no
+   * pointer anywhere near it. `:focus-visible` is exactly the "the user is
+   * navigating by keyboard" signal we want, and it keeps the hint reachable by
+   * Tab, which is why the chip is focusable in the first place.
+   */
+  const showOnFocus = () => {
+    if (ref.current?.matches(":focus-visible")) show();
+  };
+
   const hide = () => setAt(null);
 
   useEffect(() => {
@@ -101,7 +114,7 @@ export function InfoHint({ text, icon = "info" }: { text: string; icon?: string 
         aria-label={text}
         onMouseEnter={show}
         onMouseLeave={hide}
-        onFocus={show}
+        onFocus={showOnFocus}
         onBlur={hide}
       >
         <Icon name={icon} size={13} />

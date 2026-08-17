@@ -177,6 +177,52 @@ pub async fn cassandra_create_keyspace(
 }
 
 #[tauri::command]
+pub async fn cassandra_drop_table(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+    keyspace: String,
+    name: String,
+    drop_views: Option<bool>,
+) -> Result<(), AppError> {
+    application::drop_table(
+        state.manager(),
+        &handle_id,
+        &keyspace,
+        &name,
+        drop_views.unwrap_or(false),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn cassandra_drop_keyspace(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+    keyspace: String,
+) -> Result<(), AppError> {
+    application::drop_keyspace(state.manager(), &handle_id, &keyspace).await
+}
+
+#[tauri::command]
+pub async fn cassandra_truncate_table(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+    keyspace: String,
+    name: String,
+) -> Result<(), AppError> {
+    application::truncate_table(state.manager(), &handle_id, &keyspace, &name).await
+}
+
+#[tauri::command]
+pub async fn cassandra_empty_keyspace(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+    keyspace: String,
+) -> Result<u64, AppError> {
+    application::empty_keyspace(state.manager(), &handle_id, &keyspace).await
+}
+
+#[tauri::command]
 pub async fn cassandra_create_table(
     state: State<'_, ConnectionsState>,
     handle_id: ConnectionHandleId,

@@ -15,8 +15,11 @@
 // already-emitted span. The returned string is safe to inject via
 // dangerouslySetInnerHTML.
 
+// `with`, `true` and `false` are plain SQL; `keyspace` and `materialized` are
+// CQL, which shares this highlighter (the Cassandra DDL previews). `with` is
+// word-bounded, so it does not steal the `without` of WITHOUT ROWID.
 const SQL_KEYWORDS =
-  /\b(select|from|where|and|or|not|order|group|by|asc|desc|limit|offset|like|in|is|null|as|distinct|insert|update|delete|set|values|join|left|right|inner|on|having|union|create|table|drop|alter|primary|key|foreign|references|default|unique|index|constraint|check|collate|autoincrement|without|rowid|integer|text|real|blob|numeric|boolean|date|timestamp|varchar|char|bigint|cascade|restrict|action|deferrable)\b/gi;
+  /\b(select|from|where|and|or|not|order|group|by|asc|desc|limit|offset|like|in|is|null|as|distinct|insert|update|delete|set|values|join|left|right|inner|on|having|union|create|table|drop|alter|primary|key|foreign|references|default|unique|index|constraint|check|collate|autoincrement|without|with|rowid|integer|text|real|blob|numeric|boolean|date|timestamp|varchar|char|bigint|cascade|restrict|action|deferrable|keyspace|materialized|view|true|false)\b/gi;
 const SQL_FUNCS = /\b(count|sum|avg|min|max|coalesce|now|length|lower|upper|abs|round)\s*(?=\()/gi;
 
 // Control-char placeholder delimiters (NUL = U+0000, SOH = U+0001).

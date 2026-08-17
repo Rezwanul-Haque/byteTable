@@ -414,8 +414,14 @@ export function connectionClose(handleId: string): Promise<void> {
   return invoke("connection_close", { handleId });
 }
 
-export function connectionSchemas(handleId: string): Promise<SchemaInfo[]> {
-  return invoke<SchemaInfo[]>("connection_schemas", { handleId });
+/**
+ * Schemas on an open SQL connection. `includeSystem` appends the engine's
+ * server-internal schemas (`mysql`, `pg_catalog`, `sys`, …) after the user
+ * ones, each with `isSystem: true` — what the sidebar's "Show system schemas"
+ * toggle passes. Engines without internals to expose (SQLite) ignore it.
+ */
+export function connectionSchemas(handleId: string, includeSystem = false): Promise<SchemaInfo[]> {
+  return invoke<SchemaInfo[]>("connection_schemas", { handleId, includeSystem });
 }
 
 export function connectionTables(handleId: string, schema: string): Promise<TableInfo[]> {

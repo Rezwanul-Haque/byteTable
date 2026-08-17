@@ -833,6 +833,16 @@ export function SettingsModal({ tab: initialTab, onClose }: SettingsModalProps) 
                   ]}
                 />
               </SetRow>
+              <div className="set-section-label">{t("set.sec.objects")}</div>
+              <SetRow
+                label="Show system schemas"
+                hint="List the server's own schemas (mysql, pg_catalog, sys, …) in the schema switcher. Also toggleable from the switcher itself."
+              >
+                <SetToggle
+                  on={settings.showSystemSchemas}
+                  onChange={(v) => setSetting("showSystemSchemas", v)}
+                />
+              </SetRow>
               <div className="set-section-label">{t("set.sec.session")}</div>
               <SetRow
                 label="Restore tabs when reconnecting"

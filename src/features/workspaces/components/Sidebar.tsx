@@ -49,6 +49,7 @@ import { type ExportKind } from "../../export/exportFlow";
 import { ImportModal } from "../../import/components/ImportModal";
 import { SchemaImportModal } from "../../import/components/SchemaImportModal";
 import { tablesKey, columnsKey, useIntrospectionStore } from "../../introspection/state";
+import { useSettingsStore } from "../../settings/state";
 import { useAutoRefresh } from "../../settings/useAutoRefresh";
 import { useScopeWorkspaces } from "../scopes";
 import { ScopeSplitAction, ScopeSplitHint } from "./ScopeSplitAction";
@@ -60,6 +61,15 @@ import "./Sidebar.css";
 
 /** Stable default so the no-expansions case never re-triggers effects. */
 const NO_EXPANDED: string[] = [];
+
+/**
+ * Engines whose server internals the switcher's "Show system schemas" toggle
+ * can reveal — the ones with a `list_system_schemas` impl on the Rust side.
+ * SQLite has no such schemas; SQL Server has them but keeps them in the hidden
+ * Resource database, out of reach of the catalog views the adapter reads. The
+ * toggle is not offered for either.
+ */
+const SYSTEM_SCHEMA_ENGINES = new Set<string>(["mysql", "postgres", "clickhouse"]);
 
 /** Engine display labels for the connection header's detail line. */
 const ENGINE_LABEL: Record<string, string> = {
@@ -122,6 +132,12 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
 
   const { handleId } = workspace;
   const engine = workspace.saved.engine;
+
+  // "Show system schemas" (a persisted setting, toggled from the switcher):
+  // whether the schema list also carries the server's own schemas.
+  const showSystemSchemas = useSettingsStore((s) => s.settings.showSystemSchemas);
+  const setSetting = useSettingsStore((s) => s.setSetting);
+  const canShowSystemSchemas = SYSTEM_SCHEMA_ENGINES.has(engine);
 
   // Selected schema: per-workspace ui state, defaulting to the first schema
   // the connection listed (SQLite: always "main"). If a refresh dropped the
@@ -198,6 +214,25 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
     void loadTables(handleId, schemaName);
   }, [handleId, schemaName, loadTables]);
 
+  // Reconcile the schema list with the "Show system schemas" toggle: the
+  // payload `connection_open` returned never carries system schemas, and
+  // flipping the setting has to reach every workspace already open. Keyed off
+  // a ref rather than "does the list contain a system schema?" — the latter
+  // never settles on an engine that reports none.
+  const syncedSystemRef = useRef(false);
+  useEffect(() => {
+    if (syncedSystemRef.current === showSystemSchemas) return;
+    syncedSystemRef.current = showSystemSchemas;
+    if (!canShowSystemSchemas) return;
+    void (async () => {
+      try {
+        setWorkspaceSchemas(workspace.id, await connectionSchemas(handleId, showSystemSchemas));
+      } catch {
+        /* keep the current list — the switcher stays usable either way */
+      }
+    })();
+  }, [showSystemSchemas, canShowSystemSchemas, handleId, workspace.id, setWorkspaceSchemas]);
+
   // Settings-driven auto-refresh: refetch the table list so new / dropped
   // tables show up, but KEEP column/meta caches (keepColumnCaches) so an open
   // Structure view isn't evicted + reloaded on every tick. Sidebar list only —
@@ -273,6 +308,14 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
       ?.focus();
   }, [schemaMenu]);
 
+  // The switcher lists user schemas first, then the server's own behind a
+  // separator. A system schema is browsable but never writable from here:
+  // `schemaIsSystem` drops the schema- and table-level write actions, which
+  // the engines refuse anyway (mutate.rs `is_system_schema`).
+  const userSchemas = workspace.schemas.filter((s) => !s.isSystem);
+  const systemSchemas = workspace.schemas.filter((s) => s.isSystem);
+  const schemaIsSystem = systemSchemas.some((s) => s.name === schemaName);
+
   const tables = tablesEntry?.tables ?? null;
   const tablesError = errorsMap[tKey];
   const trimmed = query.trim().toLowerCase();
@@ -290,7 +333,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   const onSchemaCreated = (newName: string) => {
     void (async () => {
       try {
-        setWorkspaceSchemas(workspace.id, await connectionSchemas(handleId));
+        setWorkspaceSchemas(workspace.id, await connectionSchemas(handleId, showSystemSchemas));
       } catch {
         /* keep the stale list — we still switch to the new schema below */
       }
@@ -305,11 +348,16 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   // sidebar in its no-schema state rather than a broken one.
   const onSchemaDeleted = (deleted: string) => {
     void (async () => {
-      let remaining = workspace.schemas.filter((s) => s.name !== deleted).map((s) => s.name);
+      let remaining = workspace.schemas
+        .filter((s) => !s.isSystem && s.name !== deleted)
+        .map((s) => s.name);
       try {
-        const fresh = await connectionSchemas(handleId);
+        const fresh = await connectionSchemas(handleId, showSystemSchemas);
         setWorkspaceSchemas(workspace.id, fresh);
-        remaining = fresh.map((s) => s.name).filter((n) => n !== deleted);
+        remaining = fresh
+          .filter((s) => !s.isSystem)
+          .map((s) => s.name)
+          .filter((n) => n !== deleted);
       } catch {
         /* keep the locally-filtered list — we still have to switch below */
       }
@@ -343,7 +391,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
       let failure: string | null = null;
       try {
         const [schemas, fresh] = await Promise.all([
-          connectionSchemas(handleId),
+          connectionSchemas(handleId, showSystemSchemas),
           loadTables(handleId, schemaName, { force: true }),
         ]);
         setWorkspaceSchemas(workspace.id, schemas);
@@ -418,6 +466,37 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   const schemaTableCount = (schema: SchemaInfo): number | null =>
     tablesMap[tablesKey(handleId, schema.name)]?.tables.length ?? schema.tableCount;
 
+  /** One row of the switcher — same shape for user and system schemas. */
+  const renderSchemaItem = (s: SchemaInfo) => {
+    const count = schemaTableCount(s);
+    return (
+      <button
+        key={s.name}
+        type="button"
+        className={
+          "schema-pop-item" +
+          (s.name === schemaName ? " active" : "") +
+          (s.isSystem ? " system" : "")
+        }
+        role="menuitemradio"
+        aria-checked={s.name === schemaName}
+        onClick={() => setSchema(s.name)}
+      >
+        <Icon name={s.isSystem ? "lock" : "schema"} size={14} />
+        <span>{s.name}</span>
+        <span className="schema-pop-count">{count === null ? "—" : count}</span>
+        <ScopeSplitAction
+          scope={s.name}
+          opened={openedSchemas.includes(s.name)}
+          onOpen={(scope) => {
+            setSchemaOpen(false);
+            onOpenSchemaWorkspace(scope);
+          }}
+        />
+      </button>
+    );
+  };
+
   return (
     <aside className="sidebar">
       <div className="sidebar-conn" title={connectionDetail(workspace.saved.params)}>
@@ -490,31 +569,36 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                 <span>Create schema</span>
               </button>
               <div className="schema-pop-sep" />
-              {workspace.schemas.map((s) => {
-                const count = schemaTableCount(s);
-                return (
+              {userSchemas.map(renderSchemaItem)}
+              {/* The server's own schemas, opt-in: a labelled group after the
+                  user ones so the list never opens on `information_schema`
+                  where a database used to be. */}
+              {canShowSystemSchemas && showSystemSchemas && systemSchemas.length > 0 ? (
+                <>
+                  <div className="schema-pop-sep" />
+                  <div className="schema-pop-group">System</div>
+                  {systemSchemas.map(renderSchemaItem)}
+                </>
+              ) : null}
+              {canShowSystemSchemas ? (
+                <>
+                  <div className="schema-pop-sep" />
                   <button
-                    key={s.name}
                     type="button"
-                    className={"schema-pop-item" + (s.name === schemaName ? " active" : "")}
-                    role="menuitemradio"
-                    aria-checked={s.name === schemaName}
-                    onClick={() => setSchema(s.name)}
+                    className="schema-pop-sys"
+                    role="menuitemcheckbox"
+                    aria-checked={showSystemSchemas}
+                    title="List the server's own schemas (mysql, pg_catalog, sys, …) here too"
+                    onClick={() => setSetting("showSystemSchemas", !showSystemSchemas)}
                   >
-                    <Icon name="schema" size={14} />
-                    <span>{s.name}</span>
-                    <span className="schema-pop-count">{count === null ? "—" : count}</span>
-                    <ScopeSplitAction
-                      scope={s.name}
-                      opened={openedSchemas.includes(s.name)}
-                      onOpen={(scope) => {
-                        setSchemaOpen(false);
-                        onOpenSchemaWorkspace(scope);
-                      }}
+                    <Icon
+                      name={showSystemSchemas ? "check_box" : "check_box_outline_blank"}
+                      size={14}
                     />
+                    <span>Show system schemas</span>
                   </button>
-                );
-              })}
+                </>
+              ) : null}
               <ScopeSplitHint />
             </div>
           ) : null}
@@ -582,28 +666,32 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
               onKeyDown={onMenuKeyDown}
             >
               <div className="ctx-menu-label">Schema · {schemaName}</div>
-              <button
-                type="button"
-                className="ctx-item ctx-item-accent"
-                role="menuitem"
-                onClick={() => {
-                  setSchemaMenu(false);
-                  setCreateTableOpen(true);
-                }}
-              >
-                <Icon name="add" size={15} /> Create table
-              </button>
-              <button
-                type="button"
-                className="ctx-item"
-                role="menuitem"
-                onClick={() => {
-                  setSchemaMenu(false);
-                  setSchemaImportOpen(true);
-                }}
-              >
-                <Icon name="upload" size={15} /> Import SQL dump
-              </button>
+              {!schemaIsSystem ? (
+                <>
+                  <button
+                    type="button"
+                    className="ctx-item ctx-item-accent"
+                    role="menuitem"
+                    onClick={() => {
+                      setSchemaMenu(false);
+                      setCreateTableOpen(true);
+                    }}
+                  >
+                    <Icon name="add" size={15} /> Create table
+                  </button>
+                  <button
+                    type="button"
+                    className="ctx-item"
+                    role="menuitem"
+                    onClick={() => {
+                      setSchemaMenu(false);
+                      setSchemaImportOpen(true);
+                    }}
+                  >
+                    <Icon name="upload" size={15} /> Import SQL dump
+                  </button>
+                </>
+              ) : null}
               <button
                 type="button"
                 className="ctx-item"
@@ -615,40 +703,47 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
               >
                 <Icon name="download" size={15} /> Export schema (.sql)
               </button>
-              <button
-                type="button"
-                className="ctx-item"
-                role="menuitem"
-                onClick={() => {
-                  setSchemaMenu(false);
-                  openGenerate(handleId, schemaName, workspace.saved.env);
-                }}
-              >
-                <Icon name="auto_awesome" size={15} /> Generate data
-              </button>
-              <div className="ctx-sep" />
-              <button
-                type="button"
-                className="ctx-item danger"
-                role="menuitem"
-                onClick={() => {
-                  setSchemaMenu(false);
-                  setEmptySchemaOpen(true);
-                }}
-              >
-                <Icon name="delete_sweep" size={15} /> Empty schema
-              </button>
-              <button
-                type="button"
-                className="ctx-item danger"
-                role="menuitem"
-                onClick={() => {
-                  setSchemaMenu(false);
-                  setDeleteSchemaOpen(true);
-                }}
-              >
-                <Icon name="delete_forever" size={15} /> Delete schema
-              </button>
+              {/* A system schema is read-only from the sidebar: the engines
+                  refuse to drop or rewrite their own catalog anyway, so the
+                  write actions would only ever produce an error toast. */}
+              {!schemaIsSystem ? (
+                <>
+                  <button
+                    type="button"
+                    className="ctx-item"
+                    role="menuitem"
+                    onClick={() => {
+                      setSchemaMenu(false);
+                      openGenerate(handleId, schemaName, workspace.saved.env);
+                    }}
+                  >
+                    <Icon name="auto_awesome" size={15} /> Generate data
+                  </button>
+                  <div className="ctx-sep" />
+                  <button
+                    type="button"
+                    className="ctx-item danger"
+                    role="menuitem"
+                    onClick={() => {
+                      setSchemaMenu(false);
+                      setEmptySchemaOpen(true);
+                    }}
+                  >
+                    <Icon name="delete_sweep" size={15} /> Empty schema
+                  </button>
+                  <button
+                    type="button"
+                    className="ctx-item danger"
+                    role="menuitem"
+                    onClick={() => {
+                      setSchemaMenu(false);
+                      setDeleteSchemaOpen(true);
+                    }}
+                  >
+                    <Icon name="delete_forever" size={15} /> Delete schema
+                  </button>
+                </>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -868,43 +963,49 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
           >
             <Icon name="code" size={15} /> Export as SQL
           </button>
-          <button
-            type="button"
-            className="ctx-item"
-            role="menuitem"
-            onClick={() => {
-              const t = ctxMenu.table;
-              closeCtxMenu(false);
-              setImportTarget(t);
-            }}
-          >
-            <Icon name="upload" size={15} /> Import data
-          </button>
-          <div className="ctx-sep" />
-          <button
-            type="button"
-            className="ctx-item danger"
-            role="menuitem"
-            onClick={() => {
-              const t = ctxMenu.table;
-              closeCtxMenu(false);
-              setTruncateTarget(t);
-            }}
-          >
-            <Icon name="delete_sweep" size={15} /> Truncate table
-          </button>
-          <button
-            type="button"
-            className="ctx-item danger"
-            role="menuitem"
-            onClick={() => {
-              const t = ctxMenu.table;
-              closeCtxMenu(false);
-              setDropTarget(t);
-            }}
-          >
-            <Icon name="delete_forever" size={15} /> Drop table
-          </button>
+          {/* Same read-only rule as the schema menu: a catalog table is
+              browsable and exportable, never writable from here. */}
+          {!schemaIsSystem ? (
+            <>
+              <button
+                type="button"
+                className="ctx-item"
+                role="menuitem"
+                onClick={() => {
+                  const t = ctxMenu.table;
+                  closeCtxMenu(false);
+                  setImportTarget(t);
+                }}
+              >
+                <Icon name="upload" size={15} /> Import data
+              </button>
+              <div className="ctx-sep" />
+              <button
+                type="button"
+                className="ctx-item danger"
+                role="menuitem"
+                onClick={() => {
+                  const t = ctxMenu.table;
+                  closeCtxMenu(false);
+                  setTruncateTarget(t);
+                }}
+              >
+                <Icon name="delete_sweep" size={15} /> Truncate table
+              </button>
+              <button
+                type="button"
+                className="ctx-item danger"
+                role="menuitem"
+                onClick={() => {
+                  const t = ctxMenu.table;
+                  closeCtxMenu(false);
+                  setDropTarget(t);
+                }}
+              >
+                <Icon name="delete_forever" size={15} /> Drop table
+              </button>
+            </>
+          ) : null}
         </div>
       ) : null}
 

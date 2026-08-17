@@ -24,6 +24,12 @@ export interface SchemaInfo {
   name: string;
   /** Number of user tables, when cheaply known (`null` otherwise). */
   tableCount: number | null;
+  /**
+   * A server-internal schema (`mysql`, `pg_catalog`, `sys`, …) rather than
+   * user data. Only ever true when the schema list was fetched with
+   * `includeSystem` — the switcher groups these apart and de-emphasises them.
+   */
+  isSystem: boolean;
 }
 
 /** A table within a schema. */

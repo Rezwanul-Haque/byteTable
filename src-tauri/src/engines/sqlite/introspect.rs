@@ -22,7 +22,11 @@ pub(super) fn list_schemas_blocking(conn: &Connection) -> Result<Vec<SchemaInfo>
         // Best effort: a count failure (e.g. detached race) downgrades to
         // None rather than failing the whole listing.
         let table_count = count_tables(conn, &name).ok();
-        schemas.push(SchemaInfo { name, table_count });
+        schemas.push(SchemaInfo {
+            name,
+            table_count,
+            is_system: false,
+        });
     }
     Ok(schemas)
 }

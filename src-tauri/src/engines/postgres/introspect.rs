@@ -10,38 +10,65 @@ use crate::shared::error::AppError;
 use super::error::map_query_error;
 use super::sql::{display_type, qualified, quote_ident};
 
+/// The two system schemas the switcher can reveal (`list_system_schemas`).
+/// `pg_toast*` / `pg_temp*` stay hidden either way: they hold no browsable
+/// base tables, and the temp ones are per-session noise.
+const SYSTEM_SCHEMAS: &str = "'pg_catalog', 'information_schema'";
+
 /// Extracted from the `EngineConnection` impl (canonical layout: the impl
 /// delegates; the SQL lives in the concern module).
 pub(super) async fn list_schemas(pool: &PgPool) -> Result<Vec<SchemaInfo>, AppError> {
     // User schemas only (system schemas excluded), each with a cheap table
     // count from the catalog.
-    let rows = sqlx::query(
+    let rows = sqlx::query(&format!(
         "SELECT n.nspname AS name, \
             count(c.oid) FILTER (WHERE c.relkind = 'r') AS table_count \
          FROM pg_namespace n \
          LEFT JOIN pg_class c ON c.relnamespace = n.oid \
-         WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') \
+         WHERE n.nspname NOT IN ({SYSTEM_SCHEMAS}) \
            AND n.nspname NOT LIKE 'pg_toast%' \
            AND n.nspname NOT LIKE 'pg_temp%' \
            AND n.nspname NOT LIKE 'pg_toast_temp%' \
          GROUP BY n.nspname \
          ORDER BY n.nspname",
-    )
+    ))
     .fetch_all(pool)
     .await
     .map_err(map_query_error)?;
 
-    Ok(rows
-        .into_iter()
-        .map(|row| {
-            let name: String = row.get("name");
-            let count: i64 = row.try_get("table_count").unwrap_or(0);
-            SchemaInfo {
-                name,
-                table_count: Some(count.max(0) as u64),
-            }
-        })
-        .collect())
+    Ok(rows.into_iter().map(|row| schema_row(row, false)).collect())
+}
+
+/// The system schemas `list_schemas` hides, behind the switcher's toggle.
+/// Same base-table count as the user listing, so the number matches what the
+/// sidebar's Tables group will show (`information_schema` is all views, and
+/// legitimately counts 0 — its views land in the Views group).
+pub(super) async fn list_system_schemas(pool: &PgPool) -> Result<Vec<SchemaInfo>, AppError> {
+    let rows = sqlx::query(&format!(
+        "SELECT n.nspname AS name, \
+            count(c.oid) FILTER (WHERE c.relkind = 'r') AS table_count \
+         FROM pg_namespace n \
+         LEFT JOIN pg_class c ON c.relnamespace = n.oid \
+         WHERE n.nspname IN ({SYSTEM_SCHEMAS}) \
+         GROUP BY n.nspname \
+         ORDER BY n.nspname",
+    ))
+    .fetch_all(pool)
+    .await
+    .map_err(map_query_error)?;
+
+    Ok(rows.into_iter().map(|row| schema_row(row, true)).collect())
+}
+
+/// One `(name, table_count)` catalog row as a [`SchemaInfo`].
+fn schema_row(row: sqlx::postgres::PgRow, is_system: bool) -> SchemaInfo {
+    let name: String = row.get("name");
+    let count: i64 = row.try_get("table_count").unwrap_or(0);
+    SchemaInfo {
+        name,
+        table_count: Some(count.max(0) as u64),
+        is_system,
+    }
 }
 
 /// Extracted from the `EngineConnection` impl (canonical layout: the impl

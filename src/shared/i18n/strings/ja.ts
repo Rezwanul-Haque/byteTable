@@ -79,6 +79,7 @@ export const ja: StringTable = {
   "set.sec.rowLayout": "行レイアウト",
   "set.sec.queryDefaults": "クエリの既定値",
   "set.sec.liveData": "ライブデータ",
+  "set.sec.objects": "データベースオブジェクト",
   "set.sec.safety": "安全性",
   "set.sec.connecting": "接続",
   "set.sec.session": "セッション",

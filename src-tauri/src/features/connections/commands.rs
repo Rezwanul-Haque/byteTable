@@ -239,8 +239,10 @@ pub async fn connection_close(
 pub async fn connection_schemas(
     state: State<'_, ConnectionsState>,
     handle_id: ConnectionHandleId,
+    include_system: Option<bool>,
 ) -> Result<Vec<SchemaInfo>, AppError> {
-    application::connection_schemas(&state.manager, &handle_id).await
+    application::connection_schemas(&state.manager, &handle_id, include_system.unwrap_or(false))
+        .await
 }
 
 #[tauri::command]

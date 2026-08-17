@@ -274,6 +274,82 @@ async fn schemas_tables_and_counts() {
     for sys in SYSTEM_SCHEMAS {
         assert!(!names.contains(&sys), "system db {sys} excluded");
     }
+    assert!(
+        schemas.iter().all(|s| !s.is_system),
+        "the user listing flags nothing as system"
+    );
+
+    // …and available on the switcher's opt-in path instead. Every one this
+    // login can see comes back flagged; the user databases never do.
+    let system = conn
+        .list_system_schemas()
+        .await
+        .expect("list system schemas");
+    let sys_names: Vec<&str> = system.iter().map(|s| s.name.as_str()).collect();
+    assert!(
+        sys_names.contains(&"information_schema"),
+        "information_schema is visible to every login: {sys_names:?}"
+    );
+    assert!(system.iter().all(|s| s.is_system), "all flagged system");
+    assert!(
+        !sys_names.contains(&schema),
+        "no user database leaks into the system listing"
+    );
+
+    // `information_schema` is browsable behind the toggle — its tables are
+    // SYSTEM VIEW, not BASE TABLE, so the listing has to accept both.
+    let info_tables = conn
+        .list_tables("information_schema")
+        .await
+        .expect("list information_schema tables");
+    assert!(
+        info_tables
+            .iter()
+            .any(|t| t.name.eq_ignore_ascii_case("TABLES")),
+        "information_schema.TABLES listed"
+    );
+
+    // …and OPENABLE, not just listed: `table_meta` and `fetch_rows` reach the
+    // same SYSTEM VIEW rows, so clicking a catalog table in the sidebar does
+    // not land on "Table 'x' does not exist".
+    for table in ["TRIGGERS", "TABLES", "COLUMNS"] {
+        let meta = conn
+            .table_meta("information_schema", table)
+            .await
+            .unwrap_or_else(|e| panic!("meta for information_schema.{table}: {e}"));
+        assert!(
+            !meta.columns.is_empty(),
+            "information_schema.{table} reports columns"
+        );
+        let page = conn
+            .fetch_rows(FetchRowsRequest {
+                schema: "information_schema".into(),
+                table: table.into(),
+                sort: None,
+                filter: None,
+                offset: 0,
+                limit: 5,
+            })
+            .await
+            .unwrap_or_else(|e| panic!("rows for information_schema.{table}: {e}"));
+        assert!(
+            page.columns.len() == meta.columns.len(),
+            "the grid's columns match the metadata for {table}"
+        );
+    }
+
+    // The §5 listing for a genuinely missing catalog table names its siblings
+    // rather than reporting an empty schema.
+    let err = conn
+        .table_meta("information_schema", "NO_SUCH_CATALOG_TABLE")
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("does not exist"), "{err}");
+    assert!(
+        !err.contains("(none)"),
+        "available tables are listed: {err}"
+    );
 
     let tables = conn.list_tables(schema).await.expect("list tables");
     let tnames: Vec<&str> = tables.iter().map(|t| t.name.as_str()).collect();

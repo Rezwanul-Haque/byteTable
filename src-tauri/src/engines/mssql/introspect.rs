@@ -10,9 +10,9 @@ use super::error::map_query_error;
 use super::sql::qualified;
 use super::TdsClient;
 
-/// Schemas hidden from `list_schemas` / the schema switcher: the SQL Server
-/// system schema, the ANSI views schema, and the fixed database roles that own a
-/// schema of the same name. User schemas (`dbo`, `sales`, `audit`, …) remain.
+/// Schemas hidden from `list_schemas`: the SQL Server system schema, the ANSI
+/// views schema, and the fixed database roles that own a schema of the same
+/// name. User schemas (`dbo`, `sales`, `audit`, …) remain.
 const SYSTEM_SCHEMAS: &[&str] = &[
     "sys",
     "INFORMATION_SCHEMA",
@@ -28,17 +28,47 @@ const SYSTEM_SCHEMAS: &[&str] = &[
     "db_denydatawriter",
 ];
 
+/// The system schemas the switcher's toggle can reveal — the two that hold
+/// browsable objects. The fixed database roles above stay hidden either way:
+/// they own no objects, so listing a dozen empty schemas would be pure noise.
+pub(super) const REVEALABLE_SYSTEM_SCHEMAS: &[&str] = &["sys", "INFORMATION_SCHEMA"];
+
 /// Extracted from the `EngineConnection` impl (canonical layout: the impl
 /// locks the client and delegates; the SQL lives in the concern module).
 pub(super) async fn list_schemas(client: &mut TdsClient) -> Result<Vec<SchemaInfo>, AppError> {
+    let predicate = format!("s.name NOT IN ({})", system_schema_list());
+    schema_listing(client, &predicate, false).await
+}
+
+/// The system schemas `list_schemas` hides, behind the switcher's toggle.
+pub(super) async fn list_system_schemas(
+    client: &mut TdsClient,
+) -> Result<Vec<SchemaInfo>, AppError> {
+    let predicate = format!("s.name IN ({})", quoted_list(REVEALABLE_SYSTEM_SCHEMAS));
+    schema_listing(client, &predicate, true).await
+}
+
+/// The shared `sys.schemas` listing; `predicate` selects the user or the
+/// system side (built from constant names — no injection surface).
+async fn schema_listing(
+    client: &mut TdsClient,
+    predicate: &str,
+    is_system: bool,
+) -> Result<Vec<SchemaInfo>, AppError> {
+    // A system schema's objects are all `is_ms_shipped = 1` by definition, so
+    // the user-table filter would report a flat 0 for every one of them.
+    let shipped = if is_system {
+        ""
+    } else {
+        " AND t.is_ms_shipped = 0"
+    };
     let sql = format!(
         "SELECT s.name AS name, \
             (SELECT COUNT(*) FROM sys.tables t \
-             WHERE t.schema_id = s.schema_id AND t.is_ms_shipped = 0) AS table_count \
+             WHERE t.schema_id = s.schema_id{shipped}) AS table_count \
          FROM sys.schemas s \
-         WHERE s.name NOT IN ({}) \
+         WHERE {predicate} \
          ORDER BY s.name",
-        system_schema_list()
     );
     let rows = client
         .simple_query(sql.as_str())
@@ -60,6 +90,7 @@ pub(super) async fn list_schemas(client: &mut TdsClient) -> Result<Vec<SchemaInf
             SchemaInfo {
                 name,
                 table_count: Some(count.max(0) as u64),
+                is_system,
             }
         })
         .collect())
@@ -80,15 +111,21 @@ pub(super) async fn list_tables(
     // `is_ms_shipped = 0` hides the engine's own tables — notably the legacy
     // `spt_fallback_*` / `spt_monitor` / `MSreplication_options` tables that
     // ship in `master` (empty, deprecated) — so only user tables are listed.
-    let sql = "SELECT t.name AS name, \
+    // Inside a system schema everything is ms-shipped, so the filter is lifted
+    // there: otherwise browsing `sys` (behind the switcher's toggle) would
+    // always show an empty table list.
+    let sql = format!(
+        "SELECT t.name AS name, \
             CAST(ISNULL(SUM(p.rows), 0) AS bigint) AS est \
          FROM sys.tables t \
          JOIN sys.schemas s ON s.schema_id = t.schema_id \
          LEFT JOIN sys.partitions p ON p.object_id = t.object_id AND p.index_id IN (0, 1) \
-         WHERE s.name = @P1 AND t.is_ms_shipped = 0 \
+         WHERE s.name = @P1 AND (t.is_ms_shipped = 0 OR s.name IN ({})) \
          GROUP BY t.name \
-         ORDER BY t.name";
-    let mut query = Query::new(sql);
+         ORDER BY t.name",
+        quoted_list(REVEALABLE_SYSTEM_SCHEMAS)
+    );
+    let mut query = Query::new(sql.as_str());
     query.bind(schema.to_string());
     let rows = query
         .query(&mut *client)
@@ -510,7 +547,12 @@ pub(super) fn is_balanced(s: &str) -> bool {
 /// The system-schema exclusion list as a SQL literal `'a', 'b', …` (constant
 /// names, no injection surface).
 pub(super) fn system_schema_list() -> String {
-    SYSTEM_SCHEMAS
+    quoted_list(SYSTEM_SCHEMAS)
+}
+
+/// `names` as a SQL `IN` list literal — callers pass constants only.
+fn quoted_list(names: &[&str]) -> String {
+    names
         .iter()
         .map(|s| format!("'{s}'"))
         .collect::<Vec<_>>()

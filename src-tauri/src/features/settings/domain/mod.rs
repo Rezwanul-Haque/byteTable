@@ -210,6 +210,12 @@ pub struct Settings {
     /// databases through a bastion or a slow link.
     #[serde(default = "default_connect_timeout_sec")]
     pub connect_timeout_sec: u32,
+    /// List the engine's server-internal schemas (`mysql`, `pg_catalog`,
+    /// `sys`, …) in the sidebar's schema switcher alongside user schemas.
+    /// On by default — the switcher groups them apart and marks them
+    /// read-only, so nothing is hidden that the login can already see.
+    #[serde(default = "default_true")]
+    pub show_system_schemas: bool,
     /// Which side the object-list sidebar renders on. Left by default.
     #[serde(default = "default_sidebar_side")]
     pub sidebar_side: SidebarSide,
@@ -252,6 +258,7 @@ impl Default for Settings {
             auto_refresh: true,
             auto_refresh_sec: default_auto_refresh_sec(),
             connect_timeout_sec: default_connect_timeout_sec(),
+            show_system_schemas: true,
             sidebar_side: default_sidebar_side(),
             titlebar_position: default_titlebar_position(),
             mac_chrome: default_mac_chrome(),
@@ -332,6 +339,7 @@ mod tests {
             auto_refresh: false,
             auto_refresh_sec: 30,
             connect_timeout_sec: 30,
+            show_system_schemas: false,
             sidebar_side: SidebarSide::Right,
             titlebar_position: TitlebarPosition::BottomRightIcon,
             mac_chrome: MacChrome::Frameless,

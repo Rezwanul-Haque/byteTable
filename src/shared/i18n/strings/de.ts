@@ -79,6 +79,7 @@ export const de: StringTable = {
   "set.sec.rowLayout": "Zeilenlayout",
   "set.sec.queryDefaults": "Abfrage-Standards",
   "set.sec.liveData": "Live-Daten",
+  "set.sec.objects": "Datenbankobjekte",
   "set.sec.safety": "Sicherheit",
   "set.sec.connecting": "Verbindung",
   "set.sec.session": "Sitzung",

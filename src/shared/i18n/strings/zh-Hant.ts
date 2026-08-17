@@ -79,6 +79,7 @@ export const zhHant: StringTable = {
   "set.sec.rowLayout": "列版面",
   "set.sec.queryDefaults": "查詢預設值",
   "set.sec.liveData": "即時資料",
+  "set.sec.objects": "資料庫物件",
   "set.sec.safety": "安全",
   "set.sec.connecting": "連線",
   "set.sec.session": "工作階段",

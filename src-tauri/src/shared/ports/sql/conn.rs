@@ -150,7 +150,22 @@ pub trait EngineConnection: Send + Sync {
     }
 
     /// Schemas visible on this connection (SQLite: `main` + attached).
+    ///
+    /// Server internals are NOT included — see [`Self::list_system_schemas`].
     async fn list_schemas(&self) -> Result<Vec<SchemaInfo>, AppError>;
+
+    /// The server-internal schemas [`Self::list_schemas`] deliberately hides,
+    /// each with `is_system: true`. Behind the schema switcher's "Show system
+    /// schemas" toggle, so the default listing stays user data only.
+    ///
+    /// Default impl reports none — an engine with internals to expose (MySQL,
+    /// Postgres, ClickHouse) overrides it. SQLite has none, and SQL Server
+    /// keeps its catalog in the hidden Resource database, where `sys.tables` /
+    /// `sys.objects` cannot reach it: revealing `sys` there would only produce
+    /// an empty schema, so it deliberately keeps the default.
+    async fn list_system_schemas(&self) -> Result<Vec<SchemaInfo>, AppError> {
+        Ok(Vec::new())
+    }
 
     /// User tables in the given schema.
     async fn list_tables(&self, schema: &str) -> Result<Vec<TableInfo>, AppError>;

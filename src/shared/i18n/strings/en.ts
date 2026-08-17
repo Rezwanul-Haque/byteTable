@@ -87,6 +87,7 @@ export const en = {
   "set.sec.rowLayout": "Row layout",
   "set.sec.queryDefaults": "Query defaults",
   "set.sec.liveData": "Live data",
+  "set.sec.objects": "Database objects",
   "set.sec.safety": "Safety",
   "set.sec.connecting": "Connecting",
   "set.sec.session": "Session",

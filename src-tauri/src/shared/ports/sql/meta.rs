@@ -20,6 +20,12 @@ pub struct SchemaInfo {
     pub name: String,
     /// Number of user tables, when cheaply known.
     pub table_count: Option<u64>,
+    /// A server-internal schema (MySQL's `mysql`/`performance_schema`,
+    /// Postgres' `pg_catalog`, …) rather than user data. Only ever `true` for
+    /// entries from [`EngineConnection::list_system_schemas`], so the schema
+    /// switcher can group and de-emphasise them behind its opt-in toggle.
+    #[serde(default)]
+    pub is_system: bool,
 }
 
 /// A table within a schema.

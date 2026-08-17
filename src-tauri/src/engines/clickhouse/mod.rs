@@ -187,6 +187,10 @@ impl EngineConnection for ClickhouseEngineConnection {
         introspect::list_schemas(&self.http).await
     }
 
+    async fn list_system_schemas(&self) -> Result<Vec<SchemaInfo>, AppError> {
+        introspect::list_system_schemas(&self.http).await
+    }
+
     async fn list_tables(&self, schema: &str) -> Result<Vec<TableInfo>, AppError> {
         introspect::list_tables(&self.http, schema).await
     }

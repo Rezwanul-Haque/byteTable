@@ -252,6 +252,11 @@ impl EngineConnection for MssqlEngineConnection {
         list_schemas(&mut client).await
     }
 
+    async fn list_system_schemas(&self) -> Result<Vec<SchemaInfo>, AppError> {
+        let mut client = self.client.lock().await;
+        introspect::list_system_schemas(&mut client).await
+    }
+
     async fn list_tables(&self, schema: &str) -> Result<Vec<TableInfo>, AppError> {
         let mut client = self.client.lock().await;
         list_tables(&mut client, schema).await

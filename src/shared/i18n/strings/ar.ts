@@ -79,6 +79,7 @@ export const ar: StringTable = {
   "set.sec.rowLayout": "تنسيق الصفوف",
   "set.sec.queryDefaults": "إعدادات الاستعلام",
   "set.sec.liveData": "البيانات الحية",
+  "set.sec.objects": "كائنات قاعدة البيانات",
   "set.sec.safety": "السلامة",
   "set.sec.connecting": "الاتصال",
   "set.sec.session": "الجلسة",

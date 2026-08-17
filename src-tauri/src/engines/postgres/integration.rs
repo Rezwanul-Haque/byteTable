@@ -175,6 +175,27 @@ async fn schemas_tables_and_counts() {
     // System schemas excluded.
     assert!(!names.iter().any(|n| n.starts_with("pg_")));
     assert!(!names.contains(&"information_schema"));
+    assert!(schemas.iter().all(|s| !s.is_system));
+
+    // …and available on the switcher's opt-in path instead: exactly the two
+    // browsable catalogs, both flagged, no `pg_toast` / `pg_temp` noise.
+    let system = conn
+        .list_system_schemas()
+        .await
+        .expect("list system schemas");
+    let sys_names: Vec<&str> = system.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(sys_names, vec!["information_schema", "pg_catalog"]);
+    assert!(system.iter().all(|s| s.is_system), "all flagged system");
+
+    // pg_catalog is browsable behind the toggle.
+    let catalog = conn
+        .list_tables("pg_catalog")
+        .await
+        .expect("list pg_catalog tables");
+    assert!(
+        catalog.iter().any(|t| t.name == "pg_class"),
+        "pg_catalog.pg_class listed"
+    );
 
     let tables = conn.list_tables(schema).await.expect("list tables");
     let tnames: Vec<&str> = tables.iter().map(|t| t.name.as_str()).collect();

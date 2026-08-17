@@ -66,6 +66,12 @@ export interface Settings {
    * TLS handshake included — so raise it for bastions or slow links.
    */
   connectTimeoutSec: ConnectTimeoutSec;
+  /**
+   * List the engine's server-internal schemas (`mysql`, `pg_catalog`, `sys`,
+   * …) in the sidebar's schema switcher. On by default — they are grouped
+   * apart and read-only there. Toggled from the switcher itself.
+   */
+  showSystemSchemas: boolean;
   sidebarSide: SidebarSide;
   titlebarPosition: TitlebarPosition;
   /** macOS-only: which custom-titlebar chrome to use. */
@@ -96,6 +102,7 @@ export const DEFAULTS: Settings = {
   autoRefresh: true,
   autoRefreshSec: 10,
   connectTimeoutSec: 5,
+  showSystemSchemas: true,
   sidebarSide: "left",
   titlebarPosition: "topLeftIcon",
   macChrome: "native",

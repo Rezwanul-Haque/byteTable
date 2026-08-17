@@ -191,6 +191,10 @@ impl EngineConnection for MysqlEngineConnection {
         list_schemas(&self.pool).await
     }
 
+    async fn list_system_schemas(&self) -> Result<Vec<SchemaInfo>, AppError> {
+        introspect::list_system_schemas(&self.pool).await
+    }
+
     async fn list_tables(&self, schema: &str) -> Result<Vec<TableInfo>, AppError> {
         list_tables(&self.pool, schema).await
     }

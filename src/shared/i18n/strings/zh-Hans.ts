@@ -79,6 +79,7 @@ export const zhHans: StringTable = {
   "set.sec.rowLayout": "行布局",
   "set.sec.queryDefaults": "查询默认值",
   "set.sec.liveData": "实时数据",
+  "set.sec.objects": "数据库对象",
   "set.sec.safety": "安全",
   "set.sec.connecting": "连接",
   "set.sec.session": "会话",

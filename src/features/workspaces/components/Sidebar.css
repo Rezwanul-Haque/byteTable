@@ -222,6 +222,54 @@
   flex: none;
 }
 
+/* ---------- system schemas (opt-in) ---------- */
+
+/* Group heading above the server's own schemas. */
+.schema-pop-group {
+  padding: 4px 9px 3px;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* A system schema reads one step back from a user one — it is browsable, but
+   it is not what the switcher is for. */
+.schema-pop-item.system {
+  color: var(--text-faint);
+}
+.schema-pop-item.system:hover,
+.schema-pop-item.system:focus-visible {
+  color: var(--text-dim);
+}
+.schema-pop-item.system.active {
+  color: var(--accent);
+}
+
+/* The "Show system schemas" checkbox pinned to the bottom of the switcher. */
+.schema-pop-sys {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 9px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.schema-pop-sys:hover,
+.schema-pop-sys:focus-visible {
+  background: var(--bg3);
+  color: var(--text-dim);
+  outline: none;
+}
+.schema-pop-sys[aria-checked="true"] {
+  color: var(--text-dim);
+}
+
 /* React-port addition: the refresh IconBtn while re-introspecting — the
    prototype applies this inline (animation 'spin .7s linear infinite');
    @keyframes spin lives in ConnectScreen.css (same bundle). */

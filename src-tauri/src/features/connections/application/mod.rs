@@ -766,11 +766,22 @@ pub async fn close_connection(
 }
 
 /// Schemas visible on an open connection (SQL only).
+///
+/// `include_system` appends the engine's server-internal schemas (MySQL's
+/// `mysql`/`performance_schema`, Postgres' `pg_catalog`, …) AFTER the user
+/// schemas, each flagged `is_system` — the schema switcher's "Show system
+/// schemas" toggle. Engines with no internals to expose ignore it.
 pub async fn connection_schemas(
     manager: &ConnectionManager,
     handle: &ConnectionHandleId,
+    include_system: bool,
 ) -> Result<Vec<SchemaInfo>, AppError> {
-    manager.get_sql(handle).await?.list_schemas().await
+    let connection = manager.get_sql(handle).await?;
+    let mut schemas = connection.list_schemas().await?;
+    if include_system {
+        schemas.extend(connection.list_system_schemas().await?);
+    }
+    Ok(schemas)
 }
 
 /// Tables in one schema of an open connection (SQL only).
@@ -881,6 +892,7 @@ mod tests {
             Ok(vec![SchemaInfo {
                 name: "main".into(),
                 table_count: Some(0),
+                is_system: false,
             }])
         }
 
@@ -1403,7 +1415,7 @@ mod tests {
         assert_eq!(manager.open_count().await, 1);
 
         // The handle works for follow-up calls.
-        let schemas = connection_schemas(&manager, &opened.handle_id)
+        let schemas = connection_schemas(&manager, &opened.handle_id, false)
             .await
             .expect("schemas");
         assert_eq!(schemas[0].name, "main");
@@ -1415,7 +1427,7 @@ mod tests {
         assert_eq!(manager.open_count().await, 0);
 
         // Using a closed handle is a NotFound with a human message.
-        let err = connection_schemas(&manager, &opened.handle_id)
+        let err = connection_schemas(&manager, &opened.handle_id, false)
             .await
             .unwrap_err();
         assert!(matches!(err, AppError::NotFound(_)));

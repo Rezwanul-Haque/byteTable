@@ -79,6 +79,7 @@ export const bn: StringTable = {
   "set.sec.rowLayout": "সারির বিন্যাস",
   "set.sec.queryDefaults": "কোয়েরি ডিফল্ট",
   "set.sec.liveData": "লাইভ ডেটা",
+  "set.sec.objects": "ডাটাবেস অবজেক্ট",
   "set.sec.safety": "নিরাপত্তা",
   "set.sec.connecting": "সংযোগ",
   "set.sec.session": "সেশন",

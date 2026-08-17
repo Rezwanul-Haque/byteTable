@@ -20,6 +20,9 @@ const BASE_TABLE_FILTER: &str =
     "engine NOT IN ('View', 'MaterializedView') AND name NOT LIKE '.inner%' \
      AND name NOT LIKE '.inner_id%' AND NOT is_temporary";
 
+/// ClickHouse's two SQL-standard compatibility databases, as an `IN` list.
+const INFO_SCHEMA_DBS: &str = "'INFORMATION_SCHEMA', 'information_schema'";
+
 /// List databases (ClickHouse "schemas") with a cheap user-table count.
 pub async fn list_schemas(http: &ClickHouseHttp) -> Result<Vec<SchemaInfo>, AppError> {
     // Per-database user-table counts (databases with zero tables are absent here
@@ -42,11 +45,11 @@ pub async fn list_schemas(http: &ClickHouseHttp) -> Result<Vec<SchemaInfo>, AppE
 
     // ClickHouse ships TWO information-schema databases — `INFORMATION_SCHEMA`
     // and its lowercase alias `information_schema` (SQL-standard compatibility
-    // duplicates, both empty). Hide both from the switcher; keep `system`.
+    // duplicates). Hide both from the switcher; keep `system`, which is where
+    // ClickHouse's own introspection actually lives and is routinely queried.
     let dbs = http
         .query(
-            "SELECT name FROM system.databases \
-             WHERE name NOT IN ('INFORMATION_SCHEMA', 'information_schema') ORDER BY name",
+            &format!("SELECT name FROM system.databases WHERE name NOT IN ({INFO_SCHEMA_DBS}) ORDER BY name"),
             &[],
         )
         .await?;
@@ -56,7 +59,34 @@ pub async fn list_schemas(http: &ClickHouseHttp) -> Result<Vec<SchemaInfo>, AppE
         .filter_map(|row| row.first().map(as_string))
         .map(|name| {
             let table_count = count_by_db.get(&name).copied();
-            SchemaInfo { name, table_count }
+            SchemaInfo {
+                name,
+                table_count,
+                is_system: false,
+            }
+        })
+        .collect())
+}
+
+/// The information-schema databases `list_schemas` hides, behind the
+/// switcher's toggle. `system` is not here — it stays in the normal listing.
+pub async fn list_system_schemas(http: &ClickHouseHttp) -> Result<Vec<SchemaInfo>, AppError> {
+    let dbs = http
+        .query(
+            &format!(
+                "SELECT name FROM system.databases WHERE name IN ({INFO_SCHEMA_DBS}) ORDER BY name"
+            ),
+            &[],
+        )
+        .await?;
+    Ok(dbs
+        .data
+        .into_iter()
+        .filter_map(|row| row.first().map(as_string))
+        .map(|name| SchemaInfo {
+            name,
+            table_count: None,
+            is_system: true,
         })
         .collect())
 }

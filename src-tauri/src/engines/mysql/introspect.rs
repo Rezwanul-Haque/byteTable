@@ -23,13 +23,29 @@ pub(super) async fn list_schemas(pool: &MySqlPool) -> Result<Vec<SchemaInfo>, Ap
     // information_schema string columns are VARBINARY-flavoured in MySQL 8
     // and their labels come back UPPERCASE; CAST(... AS CHAR) makes them
     // decodable as String and the lowercase alias fixes the label.
+    schema_listing(pool, false).await
+}
+
+/// The four system databases `list_schemas` hides, behind the schema
+/// switcher's "Show system schemas" toggle. Only the ones this login can
+/// actually see: `information_schema.schemata` is privilege-filtered, so a
+/// user without access to `mysql` simply gets fewer rows.
+pub(super) async fn list_system_schemas(pool: &MySqlPool) -> Result<Vec<SchemaInfo>, AppError> {
+    schema_listing(pool, true).await
+}
+
+/// The shared catalog listing: `system` picks which side of the system-DB
+/// exclusion list to return, and becomes each row's `is_system`.
+async fn schema_listing(pool: &MySqlPool, system: bool) -> Result<Vec<SchemaInfo>, AppError> {
     let placeholders = vec!["?"; SYSTEM_SCHEMAS.len()].join(", ");
+    let test = if system { "IN" } else { "NOT IN" };
     let listing_sql = format!(
         "SELECT CAST(s.schema_name AS CHAR) AS name, \
             (SELECT count(*) FROM information_schema.tables t \
-             WHERE t.table_schema = s.schema_name AND t.table_type = 'BASE TABLE') AS table_count \
+             WHERE t.table_schema = s.schema_name \
+               AND t.table_type IN ('BASE TABLE', 'SYSTEM VIEW')) AS table_count \
          FROM information_schema.schemata s \
-         WHERE s.schema_name NOT IN ({placeholders}) \
+         WHERE s.schema_name {test} ({placeholders}) \
          ORDER BY s.schema_name"
     );
     let mut query = sqlx::query(&listing_sql);
@@ -46,6 +62,7 @@ pub(super) async fn list_schemas(pool: &MySqlPool) -> Result<Vec<SchemaInfo>, Ap
             SchemaInfo {
                 name,
                 table_count: Some(count.max(0) as u64),
+                is_system: system,
             }
         })
         .collect())
@@ -59,11 +76,14 @@ pub(super) async fn list_tables(
 ) -> Result<Vec<TableInfo>, AppError> {
     ensure_schema_exists(pool, schema).await?;
     // Base tables in the database, with the storage engine's row ESTIMATE
-    // (table_rows — approximate for InnoDB; module docs).
+    // (table_rows — approximate for InnoDB; module docs). SYSTEM VIEW is
+    // included so `information_schema` is browsable when the switcher's
+    // system-schema toggle is on — that type occurs nowhere else, so a user
+    // database's listing is unchanged.
     let rows = sqlx::query(
         "SELECT CAST(table_name AS CHAR) AS name, table_rows AS est \
          FROM information_schema.tables \
-         WHERE table_schema = ? AND table_type = 'BASE TABLE' \
+         WHERE table_schema = ? AND table_type IN ('BASE TABLE', 'SYSTEM VIEW') \
          ORDER BY table_name",
     )
     .bind(schema)
@@ -129,11 +149,14 @@ pub(super) async fn table_meta(
 ) -> Result<TableMeta, AppError> {
     ensure_schema_exists(pool, schema).await?;
 
-    // Existence: a base table or view in the database.
+    // Existence: a base table, view, or catalog table in the database.
+    // SYSTEM VIEW is what `information_schema`'s own tables report — they are
+    // browsable behind the switcher's system-schema toggle, so the listing
+    // (`list_tables`) and this check have to agree on what counts as a table.
     let exists: Option<i32> = sqlx::query_scalar(
         "SELECT 1 FROM information_schema.tables \
          WHERE table_schema = ? AND table_name = ? \
-           AND table_type IN ('BASE TABLE', 'VIEW')",
+           AND table_type IN ('BASE TABLE', 'VIEW', 'SYSTEM VIEW')",
     )
     .bind(schema)
     .bind(table)
@@ -465,7 +488,8 @@ pub(super) async fn show_create_table(
 pub(super) async fn missing_table_error(pool: &MySqlPool, schema: &str, table: &str) -> AppError {
     let names: Vec<String> = sqlx::query_scalar(
         "SELECT CAST(table_name AS CHAR) FROM information_schema.tables \
-         WHERE table_schema = ? AND table_type = 'BASE TABLE' ORDER BY table_name",
+         WHERE table_schema = ? AND table_type IN ('BASE TABLE', 'SYSTEM VIEW') \
+         ORDER BY table_name",
     )
     .bind(schema)
     .fetch_all(pool)

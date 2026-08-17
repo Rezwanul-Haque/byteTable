@@ -78,6 +78,7 @@ export const es: StringTable = {
   "set.sec.rowLayout": "Diseño de filas",
   "set.sec.queryDefaults": "Valores de consulta",
   "set.sec.liveData": "Datos en vivo",
+  "set.sec.objects": "Objetos de base de datos",
   "set.sec.safety": "Seguridad",
   "set.sec.connecting": "Conexión",
   "set.sec.session": "Sesión",

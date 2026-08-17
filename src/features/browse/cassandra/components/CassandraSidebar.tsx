@@ -146,6 +146,20 @@ export function CassandraSidebar({
           </button>
           {ksOpen ? (
             <div className="schema-pop" onClick={(e) => e.stopPropagation()}>
+              {/* Create sits at the TOP, like the SQL schema switcher — the
+                  keyspace list grows, and the action should not drift down
+                  with it. */}
+              <div
+                className="schema-pop-create"
+                onClick={() => {
+                  setKsOpen(false);
+                  onCreateKeyspace();
+                }}
+              >
+                <Icon name="add" size={14} />
+                <span>Create keyspace</span>
+              </div>
+              <div className="schema-pop-sep" />
               {keyspaces.map((d) => (
                 <div
                   key={d}
@@ -168,17 +182,6 @@ export function CassandraSidebar({
                 </div>
               ))}
               <ScopeSplitHint />
-              <div className="ctx-sep" />
-              <div
-                className="schema-pop-item schema-pop-create"
-                onClick={() => {
-                  setKsOpen(false);
-                  onCreateKeyspace();
-                }}
-              >
-                <Icon name="add" size={14} style={{ color: "var(--accent)" }} />
-                <span style={{ color: "var(--accent)" }}>Create keyspace</span>
-              </div>
             </div>
           ) : null}
         </div>

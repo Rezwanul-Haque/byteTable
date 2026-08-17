@@ -679,7 +679,12 @@
 .cass-stepper button:disabled {
   opacity: 0.3;
 }
-.cass-stepper span {
+/* Direct child only — the value between the two buttons. A bare
+   `.cass-stepper span` also matched the `.msym` spans INSIDE the buttons and
+   out-specified `.msym` (0,1,1 vs 0,1,0), swapping Material Symbols for the
+   mono font: the −/+ glyphs came out as the literal ligature names "remove"
+   and "add", which then overflowed the stepper. */
+.cass-stepper > span {
   flex: 1;
   text-align: center;
   font-family: var(--mono);

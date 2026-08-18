@@ -23,6 +23,9 @@ interface DynamoSidebarProps {
   loading: boolean;
   activeTable: string | null;
   onOpenTable: (name: string) => void;
+  /** A SECOND tab for a table that already has one — the context menu's "Open
+   *  in new tab", plus ⌘/Ctrl-click and middle-click on the row. */
+  onOpenTableInNewTab: (name: string) => void;
   onOpenPartiql: () => void;
   onOpenDashboard: () => void;
   showDashboard?: boolean;
@@ -58,6 +61,7 @@ export function DynamoSidebar({
   loading,
   activeTable,
   onOpenTable,
+  onOpenTableInNewTab,
   onOpenPartiql,
   onOpenDashboard,
   onOpenMap,
@@ -176,7 +180,19 @@ export function DynamoSidebar({
             <div key={t.name}>
               <div
                 className={"ddb-table-item" + (t.name === activeTable ? " active" : "")}
-                onClick={() => onOpenTable(t.name)}
+                // ⌘/Ctrl-click opens a second tab for the table (the browser
+                // convention the SQL sidebar follows); a plain click focuses the
+                // existing one.
+                onClick={(e) =>
+                  e.metaKey || e.ctrlKey ? onOpenTableInNewTab(t.name) : onOpenTable(t.name)
+                }
+                // Middle-click — the other half of that convention. Nothing else
+                // in this sidebar claims the middle button.
+                onAuxClick={(e) => {
+                  if (e.button !== 1) return;
+                  e.preventDefault();
+                  onOpenTableInNewTab(t.name);
+                }}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   dropWordSelection(e.currentTarget);
@@ -294,6 +310,17 @@ export function DynamoSidebar({
                 }}
               >
                 <Icon name="table_chart" size={15} /> Open data
+              </button>
+              <button
+                type="button"
+                className="ddb-ctx-item"
+                onClick={() => {
+                  const tbl = ctxMenu.table;
+                  setCtxMenu(null);
+                  if (tbl) onOpenTableInNewTab(tbl);
+                }}
+              >
+                <Icon name="open_in_new" size={15} /> Open in new tab
               </button>
               <button
                 type="button"

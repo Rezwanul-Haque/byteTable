@@ -25,7 +25,7 @@ import {
   dynamoListTables,
   type TableDescriptor,
 } from "../api";
-import { useDynamoTabsStore, type DynamoWorkspaceTab } from "../workspaceTabs";
+import { dynamoTabTitles, useDynamoTabsStore, type DynamoWorkspaceTab } from "../workspaceTabs";
 import { DynamoDashboard } from "./DynamoDashboard";
 import {
   DynamoCreateTableModal,
@@ -162,8 +162,18 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
   const refreshSpinning = useAutoRefresh(() => void refreshTables());
 
   const activeTab = tabs.find((t) => t.id === activeId);
+  // Two tabs on the same table would otherwise render the same label; repeats
+  // are numbered, so "Open in new tab" stays legible.
+  const tabTitles = dynamoTabTitles(tabs);
 
-  const openTable = async (name: string) => {
+  /**
+   * Open a table's data tab. `newTab` opens a SECOND tab for a table that
+   * already has one instead of focusing the existing tab — the sidebar's "Open
+   * in new tab" (and ⌘/middle-click), so one table can be read under two
+   * different scans, queries or projections at once. Mirrors the SQL sidebar's
+   * `openTableInNewTab`.
+   */
+  const openTable = async (name: string, newTab = false) => {
     const existing = tables.find((t) => t.name === name);
     if (!isLocal && existing && !existing.keySchema.pk) {
       try {
@@ -173,7 +183,7 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
         // stay with the partial descriptor
       }
     }
-    const ex = tabs.find((t) => t.kind === "table" && t.table === name);
+    const ex = newTab ? undefined : tabs.find((t) => t.kind === "table" && t.table === name);
     if (ex) {
       setActiveId(ex.id);
       return;
@@ -268,6 +278,7 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
         loading={tablesLoading}
         activeTable={activeTab?.kind === "table" ? (activeTab.table ?? null) : null}
         onOpenTable={openTable}
+        onOpenTableInNewTab={(name) => void openTable(name, true)}
         onOpenPartiql={openPartiql}
         showDashboard={isLocal}
         onOpenDashboard={() => openSingleton("dashboard", "Dashboard")}
@@ -286,7 +297,7 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
       <main className="main-col ddb-main">
         <div className="ddb-tabbar">
           <div className="ddb-tabbar-tabs">
-            {tabs.map((t) => (
+            {tabs.map((t, i) => (
               <div
                 key={t.id}
                 ref={t.id === activeId ? activeTabRef : undefined}
@@ -299,14 +310,14 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
                   }
                 }}
                 onContextMenu={(e) => tabMenu.onContextMenu(e, t.id)}
-                title={t.title}
+                title={tabTitles[i]}
               >
                 <Icon
                   name={TAB_ICON[t.kind]}
                   size={14}
                   style={{ color: t.id === activeId ? "var(--accent)" : "var(--text-faint)" }}
                 />
-                <span className="ddb-tab-title">{t.title}</span>
+                <span className="ddb-tab-title">{tabTitles[i]}</span>
                 {t.kind !== "dashboard" ? (
                   <button
                     type="button"

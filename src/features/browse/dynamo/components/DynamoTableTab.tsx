@@ -518,8 +518,10 @@ export function DynamoTableTab({
   }, []);
 
   const clearSelection = () => setSelected(new Set());
-  // Stable identities so the memoised DynamoItemGrid doesn't re-render (and
-  // re-reconcile its many cells) on unrelated parent state changes.
+  // Stable identities so the memoised DynamoItemGrid (see its own note) doesn't
+  // re-render — and re-reconcile its many cells — on unrelated parent state
+  // changes, of which a tab switch is one: every tab in this workspace stays
+  // mounted, so an unmemoised grid re-rendered even while hidden.
   const toggleRow = useCallback(
     (i: number) =>
       setSelected((s) => {

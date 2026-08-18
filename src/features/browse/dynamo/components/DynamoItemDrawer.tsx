@@ -48,6 +48,32 @@ interface AttrRow {
 /** The two shapes the preview can render the item in. */
 type JsonFormat = "plain" | "ddb";
 
+/** Clipboard shapes offered by the header's copy menu. */
+type ItemCopyFormat = "json" | "ddb" | "csv" | "cli" | "key";
+
+/**
+ * DynamoDB's useful clipboard shapes. The SQL inspector offers CSV / JSON / SQL
+ * INSERT / values — the two middle ones carry over, `SQL INSERT` has no meaning
+ * here, and the two that replace it are the ones this engine actually needs: the
+ * type-tagged wire form, and a runnable CLI call. "Just the key" is worth its own
+ * row because every targeted DynamoDB operation — GetItem, DeleteItem, a Query —
+ * takes the key and nothing else.
+ */
+const ITEM_COPY_ITEMS: { format: ItemCopyFormat; label: string; icon: string }[] = [
+  { format: "json", label: "Copy as JSON", icon: "data_object" },
+  { format: "ddb", label: "Copy as DynamoDB JSON", icon: "code_blocks" },
+  { format: "csv", label: "Copy as CSV", icon: "table_view" },
+  { format: "cli", label: "Copy as AWS CLI put-item", icon: "terminal" },
+  { format: "key", label: "Copy the primary key", icon: "vpn_key" },
+];
+
+/** One CSV field: objects serialise to JSON, and anything risky gets quoted. */
+function csvField(v: unknown): string {
+  const text =
+    v === null || v === undefined ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
+  return /[",\n\r]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
+}
+
 const JSON_FORMATS: { id: JsonFormat; label: string; hint: string }[] = [
   { id: "plain", label: "JSON", hint: "The item as plain JSON" },
   {
@@ -426,6 +452,68 @@ export function DynamoItemDrawer({
     return n;
   }, [rows, item, create]);
 
+  // Copy menu, anchored under its button in the header.
+  const [copyOpen, setCopyOpen] = useState(false);
+  const copyRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!copyOpen) return;
+    const onClickOutside = (e: MouseEvent) => {
+      if (copyRef.current && !copyRef.current.contains(e.target as Node)) setCopyOpen(false);
+    };
+    window.addEventListener("click", onClickOutside);
+    return () => window.removeEventListener("click", onClickOutside);
+  }, [copyOpen]);
+
+  /**
+   * The item in one of the offered shapes. Built from `draft` — what the drawer
+   * is SHOWING, edits folded in — so a copy matches the fields on screen rather
+   * than the stored item, matching the SQL inspector's contract.
+   */
+  const copyAs = (format: ItemCopyFormat): string => {
+    const names = Object.keys(draft);
+    switch (format) {
+      case "ddb":
+        return JSON.stringify(marshalItem(draft), null, 2);
+      case "csv":
+        return (
+          names.map(csvField).join(",") + "\n" + names.map((n) => csvField(draft[n])).join(",")
+        );
+      case "cli":
+        // Single-quoted for a POSIX shell; the JSON itself cannot contain a
+        // single quote without breaking that, so those are escaped the only way
+        // a shell allows — close, escape, reopen.
+        return (
+          "aws dynamodb put-item --table-name " +
+          table.name +
+          " --item '" +
+          JSON.stringify(marshalItem(draft)).replace(/'/g, "'\\''") +
+          "'"
+        );
+      case "key": {
+        const key: DynamoItem = { [table.keySchema.pk]: draft[table.keySchema.pk] };
+        if (table.keySchema.sk) key[table.keySchema.sk] = draft[table.keySchema.sk];
+        return JSON.stringify(key, null, 2);
+      }
+      default:
+        return JSON.stringify(draft, null, 2);
+    }
+  };
+
+  /** One field's value, as it reads in the editor. */
+  const copyValue = (raw: string) => {
+    void navigator.clipboard.writeText(raw).then(
+      () => toast("Copied", "ok"),
+      () => toast("Couldn't copy to clipboard", "err"),
+    );
+  };
+
+  const copyItem = (format: ItemCopyFormat, label: string) => {
+    void navigator.clipboard.writeText(copyAs(format)).then(
+      () => toast(label.replace(/^Copy /, "Copied "), "ok"),
+      () => toast("Couldn't copy to clipboard", "err"),
+    );
+  };
+
   const copyJson = async () => {
     try {
       await navigator.clipboard.writeText(shownJson);
@@ -454,6 +542,35 @@ export function DynamoItemDrawer({
           </span>
         </div>
         {dirty ? <span className="ri-dot" title="Unsaved changes" /> : null}
+        {/* Copy this item to the clipboard in one of the DynamoDB-shaped forms. */}
+        <div className="ri-copyrow" ref={copyRef}>
+          <button
+            type="button"
+            className={"ri-close" + (copyOpen ? " on" : "")}
+            title="Copy this item to the clipboard"
+            aria-label="Copy item"
+            onClick={() => setCopyOpen(!copyOpen)}
+          >
+            <Icon name="content_copy" size={16} />
+          </button>
+          {copyOpen ? (
+            <div className="ri-copyrow-menu">
+              {ITEM_COPY_ITEMS.map((it) => (
+                <div
+                  key={it.format}
+                  className="ri-copyrow-item"
+                  onClick={() => {
+                    setCopyOpen(false);
+                    copyItem(it.format, it.label);
+                  }}
+                >
+                  <Icon name={it.icon} size={13} />
+                  {it.label}
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
         {onDelete ? (
           <button
             type="button"
@@ -508,6 +625,19 @@ export function DynamoItemDrawer({
                   />
                 )}
                 <div style={{ flex: 1 }} />
+                {/* Per-field copy, always visible — the same affordance every
+                    field gets in the SQL row inspector. Copies the value as it
+                    reads in the editor, so a map, a list or a set copies as the
+                    JSON on screen and a NULL copies an empty string. */}
+                <button
+                  type="button"
+                  className="ri-mini-btn ri-copy"
+                  title="Copy value"
+                  aria-label={"Copy " + r.name + " value"}
+                  onClick={() => copyValue(r.raw)}
+                >
+                  <Icon name="content_copy" size={12} />
+                </button>
                 {keyRow ? null : (
                   <button
                     type="button"

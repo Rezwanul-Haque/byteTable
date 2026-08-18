@@ -10,9 +10,9 @@
 // also keeps re-renders cheap (only ~20 rows reconcile), so button clicks stay
 // responsive while a large result is on screen.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { observeElementRect, useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
 
 import { Icon } from "../../../../shared/ui/Icon";
 import { useToast } from "../../../../shared/ui/toastContext";
@@ -20,6 +20,32 @@ import type { DynamoItem, KeySchema } from "../api";
 import { attributeUnion, dynamoFmt } from "../helpers";
 // The shared column-resize handle styling (.dg-col-resize / body.dg-col-resizing).
 import "../../shared/DataGrid.css";
+
+/**
+ * Rect observer that ignores a 0×0 measurement and keeps the last real one.
+ *
+ * THE FLICKER THIS FIXES: the DynamoDB workspace keeps every tab mounted and
+ * hides the inactive ones with `display: none`, so a hidden grid's scroll
+ * element measures 0×0. The virtualizer then believes it has no viewport and
+ * drops every row. Switching back re-lays-out the element, but the
+ * ResizeObserver only reports the real size AFTER the next paint — so there is
+ * one frame showing an empty grid before the rows return. That frame is the
+ * flicker.
+ *
+ * Suppressing the zero keeps the last honest viewport while hidden, so the
+ * window of rows is already correct when the tab comes back and nothing has to
+ * be recomputed. A genuinely 0×0 grid (collapsed pane) just keeps a stale size
+ * until a real one arrives, which costs nothing since it is not being painted.
+ */
+function observeRectIgnoringHidden<T extends Element>(
+  instance: Virtualizer<T, Element>,
+  cb: (rect: { width: number; height: number }) => void,
+) {
+  return observeElementRect(instance, (rect) => {
+    if (rect.width === 0 && rect.height === 0) return;
+    cb(rect);
+  });
+}
 
 /** The raw, copyable text of a cell value (objects → JSON, null → empty). */
 function copyText(v: unknown): string {
@@ -71,7 +97,7 @@ interface DynamoItemGridProps {
   stagedNew?: Set<number>;
 }
 
-export function DynamoItemGrid({
+function DynamoItemGridInner({
   items,
   keySchema,
   onOpenItem,
@@ -188,6 +214,7 @@ export function DynamoItemGrid({
     getScrollElement: () => scrollRef.current,
     estimateSize: (i) => colWidths[i] ?? COL_MIN_PX,
     overscan: COL_OVERSCAN,
+    observeElementRect: observeRectIgnoringHidden,
   });
   const colWidthSig = colWidths.join(",");
   useEffect(() => {
@@ -228,6 +255,7 @@ export function DynamoItemGrid({
     getScrollElement: () => scrollRef.current,
     estimateSize: () => ROW_H,
     overscan: ROW_OVERSCAN,
+    observeElementRect: observeRectIgnoringHidden,
   });
 
   if (!items.length) return <div className="ddb-grid-empty">No items</div>;
@@ -401,3 +429,22 @@ export function DynamoItemGrid({
     </div>
   );
 }
+
+/**
+ * Memoised, and the reason matters: this workspace keeps EVERY tab mounted (only
+ * hidden with `display: none`) so switching tabs preserves their state. Without
+ * memo, one tab switch re-rendered every mounted grid — each up to ~100 items ×
+ * ~100 attributes — including the ones nobody can see. With two tabs on the same
+ * table that was double the reconciliation per switch, which is what showed as
+ * flicker.
+ *
+ * The SQL shell solves the same class of problem differently (mount only the
+ * active tab, keyed by id — `WorkspaceContent`), which cannot be copied here: a
+ * remount would re-run the scan on every tab switch, and a DynamoDB scan is
+ * billed. Memoising keeps the tabs mounted and their pages paid for once.
+ *
+ * Every prop the table tab passes is already a stable identity (`items` /
+ * `staged` / `stagedNew` come from one `useMemo`, the callbacks from
+ * `useCallback`), so the default shallow compare is enough.
+ */
+export const DynamoItemGrid = memo(DynamoItemGridInner);

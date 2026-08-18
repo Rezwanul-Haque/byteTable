@@ -27,6 +27,11 @@ import {
 } from "../api";
 import { useDynamoTabsStore, type DynamoWorkspaceTab } from "../workspaceTabs";
 import { DynamoDashboard } from "./DynamoDashboard";
+import {
+  DynamoCreateTableModal,
+  DynamoDeleteTableModal,
+  DynamoTruncateTableModal,
+} from "./DynamoDdlModals";
 import { DynamoExportModal, DynamoImportModal } from "./DynamoIoModals";
 import { DynamoQueryTab } from "./DynamoQueryTab";
 import { DynamoSchemaMap } from "./DynamoSchemaMap";
@@ -101,6 +106,11 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
     null,
   );
   const [importTarget, setImportTarget] = useState<string | null>(null);
+  // Table DDL: the create form, and the two destructive confirms keyed by the
+  // table they act on.
+  const [creatingTable, setCreatingTable] = useState(false);
+  const [truncateTarget, setTruncateTarget] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   // PartiQL docks as the shared bottom terminal panel (keyed by workspace id).
   const termLabel = shellLabel(workspace.saved.engine);
@@ -265,6 +275,9 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
         onExportTable={(t) => setExportJob({ scope: "table", table: t })}
         onImportTable={(t) => setImportTarget(t)}
         onExportAll={() => setExportJob({ scope: "all" })}
+        onCreateTable={() => setCreatingTable(true)}
+        onTruncateTable={(t) => setTruncateTarget(t)}
+        onDeleteTable={(t) => setDeleteTarget(t)}
         onRefresh={() => void refreshTables()}
         refreshing={refreshSpinning}
         onCloseWorkspace={() => closeWorkspace(workspace.id)}
@@ -348,6 +361,7 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
                   tables={tables}
                   handleId={handleId}
                   isProduction={isProduction}
+                  active={t.id === activeId}
                   version={dataVersion}
                   table={t.table ?? ""}
                   onTableChange={(name) => updateTab(t.id, { table: name })}
@@ -355,17 +369,22 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
                   onModeChange={(mode) => updateTab(t.id, { mode })}
                   onExport={(tbl) => setExportJob({ scope: "table", table: tbl })}
                   onImport={(tbl) => setImportTarget(tbl)}
+                  onTruncate={(tbl) => setTruncateTarget(tbl)}
+                  onDelete={(tbl) => setDeleteTarget(tbl)}
                 />
               ) : t.table && descOf(t.table) ? (
                 <DynamoTableTab
                   table={descOf(t.table) as TableDescriptor}
                   handleId={handleId}
                   isProduction={isProduction}
+                  active={t.id === activeId}
                   mode={t.mode ?? "scan"}
                   onModeChange={(mode) => updateTab(t.id, { mode })}
                   version={dataVersion}
                   onExport={(tbl) => setExportJob({ scope: "table", table: tbl })}
                   onImport={(tbl) => setImportTarget(tbl)}
+                  onTruncate={(tbl) => setTruncateTarget(tbl)}
+                  onDelete={(tbl) => setDeleteTarget(tbl)}
                 />
               ) : (
                 <div className="ddb-dash-empty">Table “{t.table}” is no longer available.</div>
@@ -420,6 +439,59 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
           onDone={() => {
             setImportTarget(null);
             setDataVersion((v) => v + 1);
+            void refreshTables();
+          }}
+        />
+      ) : null}
+      {creatingTable ? (
+        <DynamoCreateTableModal
+          handleId={handleId}
+          existing={tables.map((t) => t.name)}
+          onClose={() => setCreatingTable(false)}
+          onCreated={(desc) => {
+            // Seed the list from the descriptor we already have so the new
+            // table is there to open immediately, then refresh for real.
+            setTables((prev) => [...prev, desc].sort((a, b) => a.name.localeCompare(b.name)));
+            void refreshTables();
+            void openTable(desc.name);
+          }}
+        />
+      ) : null}
+      {truncateTarget ? (
+        <DynamoTruncateTableModal
+          handleId={handleId}
+          table={truncateTarget}
+          count={descOf(truncateTarget)?.itemCount ?? null}
+          env={env}
+          onClose={() => setTruncateTarget(null)}
+          onTruncated={() => {
+            setDataVersion((v) => v + 1);
+            void refreshTables();
+          }}
+        />
+      ) : null}
+      {deleteTarget ? (
+        <DynamoDeleteTableModal
+          handleId={handleId}
+          table={deleteTarget}
+          count={descOf(deleteTarget)?.itemCount ?? null}
+          indexes={[
+            ...(descOf(deleteTarget)?.gsis ?? []).map((g) => g.name),
+            ...(descOf(deleteTarget)?.lsis ?? []).map((l) => l.name),
+          ]}
+          env={env}
+          onClose={() => setDeleteTarget(null)}
+          onDeleted={(name) => {
+            // Its tabs point at a table that no longer exists — close them
+            // rather than leave the "no longer available" placeholder behind.
+            setTabs((ts) => {
+              const next = ts.filter((t) => !(t.kind === "table" && t.table === name));
+              if (next.length !== ts.length && !next.some((t) => t.id === activeId)) {
+                setActiveId(next[next.length - 1]?.id ?? "");
+              }
+              return next;
+            });
+            setTables((prev) => prev.filter((t) => t.name !== name));
             void refreshTables();
           }}
         />

@@ -4,7 +4,7 @@
 // view. Backed by the real `dynamo_scan` / `dynamo_query` commands (bounded
 // pages). Ported from the prototype's `DynamoTableTab` / `DynamoStructure`.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { exportSave } from "../../../../shared/api/engine";
 import { isAppErrorPayload } from "../../../../shared/api/error";
@@ -14,6 +14,7 @@ import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { Select } from "../../../../shared/ui/Select";
 import { useToast } from "../../../../shared/ui/toastContext";
 import {
+  dynamoBatchWrite,
   dynamoQuery,
   dynamoScan,
   type DynamoItem,
@@ -22,10 +23,10 @@ import {
   type SortKeyOp,
   type TableDescriptor,
 } from "../api";
-import { attributeUnion } from "../helpers";
+import { attributeUnion, itemKeyOf } from "../helpers";
 import { DynamoDeleteModal } from "./DynamoDeleteModal";
 import { DynamoItemGrid } from "./DynamoItemGrid";
-import { DynamoItemModal } from "./DynamoItemModal";
+import { DynamoItemDrawer } from "./DynamoItemDrawer";
 
 const DEFAULT_LIMIT = 100;
 const PAGE_SIZES = [25, 50, 100, 200, 500];
@@ -42,6 +43,16 @@ interface DynamoTableTabProps {
   version: number;
   onExport: (table: string) => void;
   onImport: (table: string) => void;
+  onTruncate: (table: string) => void;
+  onDelete: (table: string) => void;
+  /**
+   * Whether this tab is the visible one. The workspace keeps every tab mounted
+   * (under `display: none`) to preserve its state, so this component cannot tell
+   * from its own render whether anyone can see it — and two things depend on the
+   * answer: the keyboard shortcuts, and the item drawer, which portals to
+   * `document.body` and so is NOT hidden by the wrapper.
+   */
+  active: boolean;
 }
 
 export function DynamoTableTab({
@@ -53,6 +64,9 @@ export function DynamoTableTab({
   version,
   onExport,
   onImport,
+  onTruncate,
+  onDelete,
+  active,
 }: DynamoTableTabProps) {
   const t = table;
   // Projection — chosen via a checkbox picker of the attributes seen so far
@@ -73,12 +87,103 @@ export function DynamoTableTab({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [itemView, setItemView] = useState<DynamoItem | null>(null);
+  // Which grid row the open drawer belongs to, so the gutter can mark it and the
+  // row can be tinted while the drawer is up.
+  const [inspectingRow, setInspectingRow] = useState<number | null>(null);
+  // The attribute the drawer should land on — the column that was clicked, or
+  // null when the row was opened from the gutter (start at the top).
+  const [inspectingAttr, setInspectingAttr] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   // Multi-select (by current-page row index); cleared on any (re)fetch.
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [deleteOpen, setDeleteOpen] = useState(false);
+  // One item queued for deletion from the drawer's header button, kept separate
+  // from the grid's multi-select so the two cannot be confused for each other.
+  const [deleteItem, setDeleteItem] = useState<DynamoItem | null>(null);
+  // The key condition that produced the rows on screen, or null when they came
+  // from a scan. Drives the footer's source label and the stale-source banner,
+  // both of which would otherwise read `sourceRef` during render — a ref the
+  // fetch mutates without re-rendering, so the label could lag the data.
+  const [shownQuery, setShownQuery] = useState<string | null>(null);
+  // Un-committed item writes, keyed by primary key — the same two-stage contract
+  // the SQL and Cassandra grids use: the drawer stages, the save bar commits.
+  // A whole ITEM is the unit, not a cell, because DynamoDB's only write is
+  // PutItem, which replaces the item entirely.
+  const [staged, setStaged] = useState<Map<string, { item: DynamoItem; isNew: boolean }>>(
+    new Map(),
+  );
+  const [savingEdits, setSavingEdits] = useState(false);
   const toast = useToast();
+
+  // ⌘I / Ctrl+I opens the new-item editor and ⌘F / Ctrl+F goes to Query with the
+  // partition key focused — the same bindings the SQL, Cassandra and data-file
+  // grids use for "add row" and "find rows".
+  //
+  // ⌘F means "narrow this down", and DynamoDB's answer to that is a Query on the
+  // partition key, not a client-side filter over a scanned page — so the
+  // shortcut switches modes and drops the caret where the condition goes.
+  //
+  // ⌘S commits whatever the drawer has staged, and ⌘E toggles the inspector.
+  // All four are gated on `active` — every tab stays mounted, so an ungated
+  // listener would fire on all of them at once.
+  const pkRef = useRef<HTMLInputElement | null>(null);
+  // ⌘S commits the staged batch. Read through a ref so the key listener does not
+  // need re-binding every time the buffer changes.
+  const saveStagedRef = useRef<() => void>(() => {});
+  // True while the item drawer is up — it takes ⌘S for staging (see below).
+  const drawerOpenRef = useRef(false);
+  // ⌘E toggles the inspector; read through a ref so the listener is bound once
+  // rather than re-bound whenever the page changes.
+  const toggleInspectorRef = useRef<() => void>(() => {});
+  // The row ⌘E should reopen on — the last one inspected, so the key is a real
+  // toggle rather than "close, then jump back to the top". Survives the close
+  // that `inspectingRow` does not, and is reset by a fetch (see `fetchAt`).
+  const lastInspectedRef = useRef(0);
+  // Bumped by ⌘F; the focus itself waits for the effect below, because the
+  // query bar does not exist yet on the render that requests it.
+  const [focusPk, setFocusPk] = useState(0);
+  useEffect(() => {
+    // Every tab stays mounted, so without this gate one keypress would act on
+    // all of them at once, all but one invisible.
+    if (!active) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      const key = e.key.toLowerCase();
+      if (key !== "i" && key !== "f" && key !== "s" && key !== "e") return;
+      if (key === "f") {
+        e.preventDefault();
+        onModeChange("query");
+        setFocusPk((n) => n + 1);
+        return;
+      }
+      if (key === "e") {
+        e.preventDefault();
+        toggleInspectorRef.current();
+        return;
+      }
+      if (key === "s") {
+        e.preventDefault();
+        // The drawer owns ⌘S while it is open: its edits must be staged before
+        // there is anything worth committing, so one keystroke never both stages
+        // and commits.
+        if (!drawerOpenRef.current) saveStagedRef.current();
+        return;
+      }
+      // Indexes is a read-only view of the schema; nothing to add an item to.
+      if (mode === "structure") return;
+      e.preventDefault();
+      setCreating(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [active, mode, onModeChange]);
+
+  useEffect(() => {
+    if (focusPk === 0 || mode !== "query") return;
+    pkRef.current?.focus();
+    pkRef.current?.select();
+  }, [focusPk, mode]);
 
   // Cursor paging. DynamoDB is cursor-only (LastEvaluatedKey) — there is no
   // offset and no exact total, so the grid pages forward by continuation token
@@ -119,6 +224,11 @@ export function DynamoTableTab({
       setLoading(true);
       setError(null);
       setSelected(new Set());
+      // The gutter marker is a row INDEX, and a new page renumbers everything —
+      // keeping it would highlight whichever item happened to land in that slot.
+      // The drawer itself stays open; it identifies its item by key, not index.
+      setInspectingRow(null);
+      lastInspectedRef.current = 0;
       try {
         const page =
           src.kind === "scan"
@@ -154,6 +264,7 @@ export function DynamoTableTab({
   // Start a fresh scan from page 0 (resets the cursor stack).
   const runScan = useCallback(() => {
     sourceRef.current = { kind: "scan", query: null };
+    setShownQuery(null);
     setTokens([undefined]);
     void fetchAt(0, undefined, sourceRef.current);
   }, [fetchAt]);
@@ -162,6 +273,13 @@ export function DynamoTableTab({
   useEffect(() => {
     runScan();
   }, [runScan, version]);
+
+  // Nothing else in this tab starts a scan. A scan reads every item in the
+  // table and is billed for it, so apart from the one page on open, every read
+  // is the user's decision: switching modes, opening the Indexes view or coming
+  // back from a Query all leave the current page alone. The banner below the
+  // toolbar is what keeps that honest — it names the rows' real source instead
+  // of quietly re-reading the table to make the label true.
 
   // Start a fresh query from page 0 with the current inputs (frozen for paging).
   const runQuery = () => {
@@ -179,6 +297,12 @@ export function DynamoTableTab({
       projection: projectionRef.current.trim() || undefined,
     };
     sourceRef.current = { kind: "query", query };
+    // Describe the condition for the banner while the inputs are still to hand
+    // — the index (and so the key attribute names) can change afterwards.
+    const keyName = useIndex
+      ? (t.gsis.concat(t.lsis).find((i) => i.name === useIndex)?.pk ?? useIndex)
+      : t.keySchema.pk;
+    setShownQuery(keyName + " = " + JSON.stringify(pkVal.trim()));
     setTokens([undefined]);
     void fetchAt(0, undefined, sourceRef.current);
   };
@@ -256,7 +380,143 @@ export function DynamoTableTab({
     void fetchAt(pageIndex + 1, tok, sourceRef.current);
   };
 
-  const items = result?.items ?? [];
+  // The page with staged writes folded over it: an edited item shows its edited
+  // form, and a staged-new item is appended so it is visible before it exists.
+  // Nothing here has been written — the save bar is what commits.
+  const { items, stagedRows, stagedNewRows } = useMemo(() => {
+    const fetched = result?.items ?? [];
+    if (staged.size === 0) {
+      return { items: fetched, stagedRows: new Set<number>(), stagedNewRows: new Set<number>() };
+    }
+    const rows: DynamoItem[] = [];
+    const edited = new Set<number>();
+    const fresh = new Set<number>();
+    const usedKeys = new Set<string>();
+    for (const it of fetched) {
+      const k = itemKeyOf(it, t.keySchema);
+      const st = staged.get(k);
+      if (st) {
+        edited.add(rows.length);
+        usedKeys.add(k);
+        rows.push(st.item);
+      } else {
+        rows.push(it);
+      }
+    }
+    // Anything staged that is not on this page is appended so it stays visible:
+    // a brand-new item, or an edit to an item the pager has since moved past.
+    // The stored `isNew` flag decides which marker it gets — "not on this page"
+    // is not the same claim as "does not exist in the table".
+    for (const [k, st] of staged) {
+      if (usedKeys.has(k)) continue;
+      (st.isNew ? fresh : edited).add(rows.length);
+      rows.push(st.item);
+    }
+    return { items: rows, stagedRows: edited, stagedNewRows: fresh };
+  }, [result, staged, t.keySchema]);
+
+  const stageItem = useCallback(
+    (item: DynamoItem, isNew: boolean) => {
+      const k = itemKeyOf(item, t.keySchema);
+      setStaged((prev) => {
+        const next = new Map(prev);
+        next.set(k, { item, isNew: prev.get(k)?.isNew ?? isNew });
+        return next;
+      });
+    },
+    [t.keySchema],
+  );
+  const discardStaged = () => setStaged(new Map());
+
+  // Commit every staged item in one chunked BatchWriteItem. PutItem replaces the
+  // whole item, which is exactly what the drawer staged, so a batch write and a
+  // per-item loop have identical semantics — the batch is simply fewer calls.
+  const saveStaged = useCallback(async () => {
+    if (staged.size === 0 || savingEdits) return;
+    const list = [...staged.values()];
+    if (
+      isProduction &&
+      !window.confirm(
+        "This connection is a PRODUCTION environment.\n\nWrite " +
+          list.length +
+          " item(s) to " +
+          t.name +
+          "? Existing items with these keys will be overwritten.",
+      )
+    ) {
+      return;
+    }
+    setSavingEdits(true);
+    try {
+      const res = await dynamoBatchWrite(
+        handleId,
+        t.name,
+        list.map((s) => s.item),
+      );
+      if (res.unprocessed > 0) {
+        // Partial success is real: DynamoDB returns what it could not write.
+        // Keep the whole batch staged rather than guess which ones landed.
+        toast(
+          res.written + " item(s) written · " + res.unprocessed + " could not be — still staged",
+          "err",
+        );
+      } else {
+        toast(res.written + " item" + (res.written === 1 ? "" : "s") + " saved", "ok");
+        setStaged(new Map());
+      }
+      // Re-read page 0 so the grid shows what the table now holds, not what we
+      // hoped it would. Inlined rather than calling `refetchCurrent` below: that
+      // const is declared further down the component, and reaching forward to it
+      // from a callback works only by closure timing.
+      setTokens([undefined]);
+      void fetchAt(0, undefined, sourceRef.current);
+    } catch (e) {
+      toast(isAppErrorPayload(e) ? e.message : "Saving items requires the desktop app", "err");
+    } finally {
+      setSavingEdits(false);
+    }
+  }, [staged, savingEdits, isProduction, handleId, t.name, toast, fetchAt]);
+
+  useEffect(() => {
+    saveStagedRef.current = () => void saveStaged();
+  }, [saveStaged]);
+
+  useEffect(() => {
+    drawerOpenRef.current = itemView !== null || creating;
+  }, [itemView, creating]);
+
+  // ⌘E: close the inspector if it is open, else open it on the first item with
+  // no attribute focused — "show me this record", the same toggle the SQL and
+  // data-file grids give the key. It deliberately ignores the NEW-item drawer:
+  // silently discarding a half-composed item is not a toggle.
+  useEffect(() => {
+    toggleInspectorRef.current = () => {
+      if (creating) return;
+      if (itemView) {
+        setItemView(null);
+        setInspectingRow(null);
+        setInspectingAttr(null);
+        return;
+      }
+      // Reopen where the user left off. Clamped, because the remembered index
+      // can outlive the page it referred to (a shorter page, or a truncate).
+      const row = Math.min(lastInspectedRef.current, items.length - 1);
+      const target = items[row];
+      if (!target) return;
+      lastInspectedRef.current = row;
+      setItemView(target);
+      setInspectingRow(row);
+      setInspectingAttr(null);
+    };
+  }, [creating, itemView, items]);
+
+  const openInspector = useCallback((item: DynamoItem, index: number, attr?: string) => {
+    lastInspectedRef.current = index;
+    setItemView(item);
+    setInspectingRow(index);
+    setInspectingAttr(attr ?? null);
+  }, []);
+
   const clearSelection = () => setSelected(new Set());
   // Stable identities so the memoised DynamoItemGrid doesn't re-render (and
   // re-reconcile its many cells) on unrelated parent state changes.
@@ -369,6 +629,7 @@ export function DynamoTableTab({
           <button
             type="button"
             className={"seg-btn" + (mode === "query" ? " active" : "")}
+            title="Query — narrow by partition key (⌘F / Ctrl+F)"
             onClick={() => onModeChange("query")}
           >
             <Icon name="search" size={14} /> Query
@@ -455,21 +716,27 @@ export function DynamoTableTab({
           </div>
         ) : null}
         {mode === "scan" ? (
-          <>
-            <span className="ddb-scan-note">
-              <Icon name="warning" size={12} style={{ color: "#e2b340" }} /> Scan reads every item
-            </span>
-            <Btn icon="refresh" variant="tonal" small onClick={() => void runScan()}>
-              Run scan
-            </Btn>
-          </>
-        ) : (
-          <div style={{ flex: 1 }} />
-        )}
-        {mode !== "structure" ? (
-          <IconBtn icon="add_box" title="New item" onClick={() => setCreating(true)} />
+          <span className="ddb-scan-note">
+            <Icon name="warning" size={12} style={{ color: "#e2b340" }} /> Scan reads every item
+          </span>
         ) : null}
-        <div className="ddb-table-actions" style={{ position: "relative", marginLeft: "auto" }}>
+        {/* Everything below is the toolbar's action cluster — run, new item,
+            table actions — held together at the right edge. The spacer is what
+            separates it from the mode/projection controls on the left. */}
+        <div style={{ flex: 1 }} />
+        {mode === "scan" ? (
+          <Btn icon="play_arrow" variant="tonal" small onClick={() => void runScan()}>
+            Run scan
+          </Btn>
+        ) : null}
+        {mode !== "structure" ? (
+          <IconBtn
+            icon="add_box"
+            title="New item (⌘I / Ctrl+I)"
+            onClick={() => setCreating(true)}
+          />
+        ) : null}
+        <div className="ddb-table-actions" style={{ position: "relative" }}>
           <IconBtn
             icon="more_vert"
             title="Table actions"
@@ -497,6 +764,29 @@ export function DynamoTableTab({
                 }}
               >
                 <Icon name="upload" size={15} /> Import items
+              </button>
+              {/* Destructive last, behind a separator — same order as the
+                  sidebar's per-table menu. */}
+              <div className="ddb-ctx-sep" />
+              <button
+                type="button"
+                className="ddb-ctx-item danger"
+                onClick={() => {
+                  setActionsOpen(false);
+                  onTruncate(t.name);
+                }}
+              >
+                <Icon name="delete_sweep" size={15} /> Empty table
+              </button>
+              <button
+                type="button"
+                className="ddb-ctx-item danger"
+                onClick={() => {
+                  setActionsOpen(false);
+                  onDelete(t.name);
+                }}
+              >
+                <Icon name="delete_forever" size={15} /> Delete table
               </button>
             </div>
           ) : null}
@@ -528,6 +818,7 @@ export function DynamoTableTab({
               <span className="ddb-key-badge pk">PK</span> {idxPk} =
             </span>
             <input
+              ref={pkRef}
               className="ddb-where-input"
               placeholder="partition key value"
               value={pkVal}
@@ -609,6 +900,19 @@ export function DynamoTableTab({
               <IconBtn icon="close" title="Clear selection" size={16} onClick={clearSelection} />
             </div>
           ) : null}
+          {/* The rows on screen outlive a mode switch, because re-reading the
+              table to make the toolbar's label true would bill the user for a
+              scan they did not ask for. Say what they actually are instead. */}
+          {mode === "scan" && shownQuery && !loading ? (
+            <div className="ddb-stale-src">
+              <Icon name="filter_alt" size={14} />
+              {/* No Run scan button here — the toolbar's own sits directly
+                  above it, and a scan is not an action to offer twice. */}
+              <span>
+                These rows came from a Query on <code>{shownQuery}</code> — not a scan of the table.
+              </span>
+            </div>
+          ) : null}
           {error ? (
             <div className="ddb-tab-error">
               <Icon name="error" size={16} /> {error}
@@ -617,16 +921,41 @@ export function DynamoTableTab({
             <DynamoItemGrid
               items={items}
               keySchema={t.keySchema}
-              onOpenItem={setItemView}
+              onOpenItem={openInspector}
+              inspectingRow={inspectingRow}
               selected={selected}
               onToggleRow={toggleRow}
               onToggleAll={toggleAll}
+              staged={stagedRows}
+              stagedNew={stagedNewRows}
             />
           )}
+          {staged.size > 0 ? (
+            <div className="save-bar">
+              <Icon name="edit_note" size={16} style={{ color: "var(--accent)" }} />
+              <span className="save-bar-count">
+                {staged.size} item{staged.size === 1 ? "" : "s"} edited · unsaved
+              </span>
+              <span className="save-bar-hint">nothing is written to DynamoDB until you save</span>
+              <div style={{ flex: 1 }} />
+              <Btn variant="text" small onClick={discardStaged} disabled={savingEdits}>
+                Discard
+              </Btn>
+              <Btn
+                variant="filled"
+                small
+                icon="save"
+                disabled={savingEdits}
+                onClick={() => void saveStaged()}
+              >
+                {savingEdits ? "Saving…" : "Save · ⌘S"}
+              </Btn>
+            </div>
+          ) : null}
           <div className="ddb-table-foot">
             <span className="ddb-table-hint">
-              {loading ? "Loading…" : sourceRef.current.kind === "scan" ? "Scan" : "Query"} · click
-              any item to view &amp; edit · keys are immutable
+              {loading ? "Loading…" : shownQuery ? "Query" : "Scan"} · click any item to view &amp;
+              edit · ⌘E inspect · ⌘I add · ⌘S save · keys are immutable
             </span>
             <div style={{ flex: 1 }} />
             {result ? (
@@ -670,29 +999,33 @@ export function DynamoTableTab({
         </>
       )}
 
-      {itemView ? (
-        <DynamoItemModal
+      {/* Gated on `active`: the drawer portals to document.body, so the
+          `display: none` that hides an inactive tab does not reach it — without
+          this it stayed on screen over whichever table you switched to. Its
+          STATE is kept, like everything else in a hidden tab, so switching back
+          restores the drawer and any edits composed in it. */}
+      {active && itemView ? (
+        <DynamoItemDrawer
           item={itemView}
           table={t}
-          handleId={handleId}
-          isProduction={isProduction}
-          onClose={() => setItemView(null)}
-          onSaved={() => void runScan()}
+          focusAttr={inspectingAttr}
+          onDelete={() => setDeleteItem(itemView)}
+          onClose={() => {
+            setItemView(null);
+            setInspectingRow(null);
+            setInspectingAttr(null);
+          }}
+          onStage={(item) => stageItem(item, false)}
         />
       ) : null}
 
-      {creating ? (
-        <DynamoItemModal
+      {active && creating ? (
+        <DynamoItemDrawer
           item={{}}
           table={t}
-          handleId={handleId}
-          isProduction={isProduction}
           create
           onClose={() => setCreating(false)}
-          onSaved={() => {
-            setCreating(false);
-            refetchCurrent();
-          }}
+          onStage={(item) => stageItem(item, true)}
         />
       ) : null}
 
@@ -705,6 +1038,32 @@ export function DynamoTableTab({
           onClose={() => setDeleteOpen(false)}
           onDone={() => {
             clearSelection();
+            refetchCurrent();
+          }}
+        />
+      ) : null}
+
+      {/* The drawer's own delete — the same confirm, with a single key. */}
+      {deleteItem ? (
+        <DynamoDeleteModal
+          handleId={handleId}
+          table={t.name}
+          isProduction={isProduction}
+          keys={[keyOf(deleteItem)]}
+          onClose={() => setDeleteItem(null)}
+          onDone={() => {
+            // The item is gone, so the drawer showing it has to go too.
+            setDeleteItem(null);
+            setItemView(null);
+            setInspectingRow(null);
+            setInspectingAttr(null);
+            // Drop any staged edit to it — writing it back would resurrect the
+            // item the user just deleted.
+            setStaged((prev) => {
+              const next = new Map(prev);
+              next.delete(itemKeyOf(deleteItem, t.keySchema));
+              return next;
+            });
             refetchCurrent();
           }}
         />

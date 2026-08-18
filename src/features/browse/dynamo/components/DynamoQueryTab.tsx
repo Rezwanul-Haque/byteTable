@@ -21,6 +21,10 @@ interface DynamoQueryTabProps {
   onModeChange: (mode: "scan" | "query" | "structure") => void;
   onExport: (table: string) => void;
   onImport: (table: string) => void;
+  onTruncate: (table: string) => void;
+  onDelete: (table: string) => void;
+  /** Whether this tab is the visible one — forwarded to the table tab. */
+  active: boolean;
 }
 
 export function DynamoQueryTab({
@@ -34,6 +38,9 @@ export function DynamoQueryTab({
   onModeChange,
   onExport,
   onImport,
+  onTruncate,
+  onDelete,
+  active,
 }: DynamoQueryTabProps) {
   const desc = tables.find((t) => t.name === table);
   const options = [
@@ -74,6 +81,9 @@ export function DynamoQueryTab({
           version={version}
           onExport={onExport}
           onImport={onImport}
+          onTruncate={onTruncate}
+          onDelete={onDelete}
+          active={active}
         />
       ) : (
         <div className="ddb-qb-empty">

@@ -8,7 +8,8 @@ use serde_json::Value;
 
 use crate::features::connections::application::{ConnectionHandleId, ConnectionManager};
 use crate::shared::document::{
-    BatchWriteResult, ItemPage, QueryRequest, ScanRequest, StatementResult, TableDescriptor,
+    BatchWriteResult, CreateTableSpec, ItemPage, QueryRequest, ScanRequest, StatementResult,
+    TableDescriptor,
 };
 use crate::shared::error::AppError;
 
@@ -150,5 +151,41 @@ pub async fn execute_statement(
         .get_document(handle)
         .await?
         .execute_statement(statement, next_token)
+        .await
+}
+
+/// `CreateTable` with a primary key and a billing mode; waits for ACTIVE.
+pub async fn create_table(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    spec: CreateTableSpec,
+) -> Result<TableDescriptor, AppError> {
+    manager.get_document(handle).await?.create_table(spec).await
+}
+
+/// `DeleteTable` — the table with its items and secondary indexes.
+pub async fn delete_table(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    table: &str,
+) -> Result<(), AppError> {
+    manager
+        .get_document(handle)
+        .await?
+        .delete_table(table)
+        .await
+}
+
+/// Delete every item, keeping the table and its indexes (DynamoDB has no
+/// native TRUNCATE — this is a key-only scan paged into batch deletes).
+pub async fn truncate_table(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    table: &str,
+) -> Result<u64, AppError> {
+    manager
+        .get_document(handle)
+        .await?
+        .truncate_table(table)
         .await
 }

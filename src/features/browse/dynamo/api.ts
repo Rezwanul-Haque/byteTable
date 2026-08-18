@@ -101,6 +101,27 @@ export interface BatchWriteResult {
   unprocessed: number;
 }
 
+/** A key attribute's declared type: string, number or binary. */
+export type KeyAttrType = "S" | "N" | "B";
+
+/**
+ * Everything `CreateTable` needs — mirrors Rust's `CreateTableSpec`. Only the
+ * primary key is declared: DynamoDB is schemaless outside it, and secondary
+ * indexes carry decisions that belong to their own surface.
+ */
+export interface CreateTableSpec {
+  name: string;
+  pk: string;
+  pkType: KeyAttrType;
+  sk?: string;
+  skType?: KeyAttrType;
+  /** `PAY_PER_REQUEST` (on-demand) or `PROVISIONED`. */
+  billing: "PAY_PER_REQUEST" | "PROVISIONED";
+  /** Required by the API on `PROVISIONED`, ignored on-demand. */
+  rcu?: number;
+  wcu?: number;
+}
+
 // -- invoke wrappers --------------------------------------------------------
 
 /** `ListTables` — returns only table names (no `DescribeTable` per table). */
@@ -172,6 +193,27 @@ export function dynamoBatchDelete(
   keys: DynamoItem[],
 ): Promise<BatchWriteResult> {
   return invoke<BatchWriteResult>("dynamo_batch_delete", { handleId, table, keys });
+}
+
+/** `CreateTable`. DynamoDB's DDL is asynchronous, so this resolves once the
+ *  table is ACTIVE (or the backend's wait runs out) — read `status` to tell. */
+export function dynamoCreateTable(
+  handleId: string,
+  spec: CreateTableSpec,
+): Promise<TableDescriptor> {
+  return invoke<TableDescriptor>("dynamo_create_table", { handleId, spec });
+}
+
+/** **Destructive.** `DeleteTable` — the table, its items and its indexes. */
+export function dynamoDeleteTable(handleId: string, table: string): Promise<void> {
+  return invoke("dynamo_delete_table", { handleId, table });
+}
+
+/** **Destructive.** Delete every item, keeping the table and its indexes.
+ *  DynamoDB has no TRUNCATE: this is a key-only scan paged into batch deletes,
+ *  so it costs a write unit per item. Resolves to the count deleted. */
+export function dynamoTruncateTable(handleId: string, table: string): Promise<number> {
+  return invoke<number>("dynamo_truncate_table", { handleId, table });
 }
 
 /** `ExecuteStatement` (PartiQL). `nextToken` paginates a prior statement. */

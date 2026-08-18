@@ -9,17 +9,48 @@ import type { DynamoItem, SecondaryIndex, TableDescriptor } from "./api";
 /** Compact cell display for the grid: objects collapse to `[n]` / `{…}`. */
 export function dynamoFmt(v: unknown): string | null {
   if (v === null || v === undefined) return null;
+  // A set is a tagged object on the wire, so without this it would read as the
+  // generic "{…}" a map gets — and the whole point of the tag is that a set is
+  // not a map. Shown as its own type + size, e.g. `SS[3]`.
+  const set = setTypeOf(v);
+  if (set) return set + "[" + setMembers(v).length + "]";
   if (typeof v === "object") return Array.isArray(v) ? "[" + v.length + "]" : "{…}";
   return String(v);
 }
 
-/** Infer the DynamoDB attribute type token (S/N/BOOL/L/M/NULL) of a value. */
+/**
+ * The wire tags the Rust adapter wraps DynamoDB's set types in
+ * (`engines/dynamo/value.rs`). Sets have no JSON counterpart, so without a tag
+ * they arrive as bare arrays — indistinguishable from an `L`, which is how
+ * reading and re-saving an item used to turn every set into a list.
+ */
+export const SET_TAG: Record<string, string> = { SS: "$ss", NS: "$ns", BS: "$bs" };
+const TAG_TYPE: Record<string, string> = { $ss: "SS", $ns: "NS", $bs: "BS" };
+
+/** The set type of a tagged value (`SS`/`NS`/`BS`), or null if it is not one. */
+export function setTypeOf(v: unknown): string | null {
+  if (v === null || typeof v !== "object" || Array.isArray(v)) return null;
+  const keys = Object.keys(v as object);
+  if (keys.length !== 1) return null;
+  const type = TAG_TYPE[keys[0] as string];
+  if (!type) return null;
+  return Array.isArray((v as Record<string, unknown>)[keys[0] as string]) ? type : null;
+}
+
+/** The members of a tagged set. */
+export function setMembers(v: unknown): unknown[] {
+  const type = setTypeOf(v);
+  if (!type) return [];
+  return ((v as Record<string, unknown>)[SET_TAG[type] as string] as unknown[]) ?? [];
+}
+
+/** Infer the DynamoDB attribute type token (S/N/BOOL/L/M/SS/NS/BS/NULL). */
 export function ddbType(v: unknown): string {
   if (v === null || v === undefined) return "NULL";
   if (typeof v === "number") return "N";
   if (typeof v === "boolean") return "BOOL";
   if (Array.isArray(v)) return "L";
-  if (typeof v === "object") return "M";
+  if (typeof v === "object") return setTypeOf(v) ?? "M";
   return "S";
 }
 
@@ -40,17 +71,50 @@ export function attributeUnion(items: DynamoItem[]): string[] {
 
 // -- Item editor coercion (dynamo.jsx) --------------------------------------
 
-export const DDB_TYPES = ["S", "N", "BOOL", "M", "L", "NULL"] as const;
+export const DDB_TYPES = ["S", "N", "BOOL", "M", "L", "SS", "NS", "BS", "NULL"] as const;
+
+/** True for the three set types, which share one editor and one validation. */
+export function isSetType(type: string): boolean {
+  return type === "SS" || type === "NS" || type === "BS";
+}
 
 /** A value's raw editable string representation. */
 export function ddbRawOf(v: unknown): string {
   if (v === null || v === undefined) return "";
+  // A set edits as its members, not as the tag wrapper — the type selector
+  // already says which set it is, so showing `{"$ss": [...]}` would be noise the
+  // user could break by editing.
+  if (setTypeOf(v)) return JSON.stringify(setMembers(v), null, 2);
   if (typeof v === "object") return JSON.stringify(v, null, 2);
   if (typeof v === "boolean") return v ? "true" : "false";
   return String(v);
 }
 
-/** Coerce an edited (type, raw) pair back to a typed value; throws on bad M/L JSON. */
+/**
+ * Why a set's members are unusable, or null when they are fine. DynamoDB is
+ * strict here in ways JSON is not, and a rejected write is a worse way to find
+ * out than a message beside the field.
+ */
+export function setError(type: string, members: unknown[]): string | null {
+  if (members.length === 0) return "A DynamoDB set cannot be empty.";
+  const seen = new Set<string>();
+  for (const m of members) {
+    if (type === "NS") {
+      if (typeof m !== "number" && !(typeof m === "string" && m.trim() !== "" && !isNaN(Number(m))))
+        return "Every member of a number set must be a number.";
+    } else if (typeof m !== "string") {
+      return type === "BS"
+        ? "Every member of a binary set must be a base64 string."
+        : "Every member of a string set must be a string.";
+    }
+    const key = String(m);
+    if (seen.has(key)) return "A set cannot contain the same value twice — “" + key + "” repeats.";
+    seen.add(key);
+  }
+  return null;
+}
+
+/** Coerce an edited (type, raw) pair back to a typed value; throws on bad JSON. */
 export function ddbCoerce(type: string, raw: string): unknown {
   switch (type) {
     case "N": {
@@ -64,9 +128,34 @@ export function ddbCoerce(type: string, raw: string): unknown {
     case "M":
     case "L":
       return JSON.parse(raw);
+    case "SS":
+    case "NS":
+    case "BS": {
+      // Edited as a bare array of members; re-wrapped in the tag the adapter
+      // needs to rebuild an actual set rather than a list.
+      const members: unknown = JSON.parse(raw);
+      if (!Array.isArray(members)) throw new SyntaxError("a set must be a JSON array");
+      const problem = setError(type, members);
+      if (problem) throw new SyntaxError(problem);
+      return { [SET_TAG[type] as string]: members };
+    }
     default:
       return raw;
   }
+}
+
+/**
+ * A stable identity string for an item, built from its primary key — the key by
+ * which staged edits are held and folded back over a fetched page.
+ *
+ * JSON-encodes each part rather than concatenating: DynamoDB key values are
+ * user data and may contain any separator you could pick, so `"a#b" + "c"` and
+ * `"a" + "#bc"` must not collide.
+ */
+export function itemKeyOf(item: DynamoItem, keySchema: { pk: string; sk?: string }): string {
+  const parts = [JSON.stringify(item[keySchema.pk] ?? null)];
+  if (keySchema.sk) parts.push(JSON.stringify(item[keySchema.sk] ?? null));
+  return parts.join("|");
 }
 
 // -- DynamoDB-typed JSON marshalling (dynamo-export.js / dynamo-import.js) ---
@@ -89,6 +178,14 @@ export function marshal(v: unknown): TypedValue {
       for (const k of Object.keys(v as object)) m[k] = marshal((v as Record<string, unknown>)[k]);
       return { M: m };
     }
+    // A set's members are carried as strings on the wire, numbers included —
+    // DynamoDB's `NS` is a list of numeric STRINGS, exactly like a lone `N`.
+    case "SS":
+      return { SS: setMembers(v).map(String) };
+    case "NS":
+      return { NS: setMembers(v).map(String) };
+    case "BS":
+      return { BS: setMembers(v).map(String) };
     default:
       return { S: String(v) };
   }
@@ -117,8 +214,11 @@ export function unmarshal(v: unknown): unknown {
     for (const k of Object.keys(m)) r[k] = unmarshal(m[k]);
     return r;
   }
-  if ("SS" in o) return o.SS;
-  if ("NS" in o) return (o.NS as string[]).map(Number);
+  // Tagged, not bare: a bare array here would be re-marshalled as an `L`, which
+  // is the round-trip loss the tags exist to prevent.
+  if ("SS" in o) return { [SET_TAG.SS as string]: o.SS };
+  if ("NS" in o) return { [SET_TAG.NS as string]: (o.NS as string[]).map(Number) };
+  if ("BS" in o) return { [SET_TAG.BS as string]: o.BS };
   return v;
 }
 

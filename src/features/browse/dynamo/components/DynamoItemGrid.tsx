@@ -56,12 +56,19 @@ const WIDTH_SAMPLE_ROWS = 40;
 interface DynamoItemGridProps {
   items: DynamoItem[];
   keySchema: KeySchema;
-  onOpenItem?: (item: DynamoItem) => void;
+  /** `attr` is the clicked column, so the drawer can land on that field. */
+  onOpenItem?: (item: DynamoItem, index: number, attr?: string) => void;
+  /** Row index whose inspector is open — marked in the gutter and highlighted. */
+  inspectingRow?: number | null;
   /** Row indices currently selected. Presence of `onToggleRow` enables the
    *  checkbox column. */
   selected?: Set<number>;
   onToggleRow?: (index: number) => void;
   onToggleAll?: () => void;
+  /** Row indices holding un-committed edits — tinted until the save bar commits. */
+  staged?: Set<number>;
+  /** Of those, the ones that do not exist in the table yet. */
+  stagedNew?: Set<number>;
 }
 
 export function DynamoItemGrid({
@@ -71,6 +78,9 @@ export function DynamoItemGrid({
   selected,
   onToggleRow,
   onToggleAll,
+  staged,
+  stagedNew,
+  inspectingRow,
 }: DynamoItemGridProps) {
   const toast = useToast();
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -285,7 +295,12 @@ export function DynamoItemGrid({
             return (
               <div
                 key={ri}
-                className={"ddb-vg-row ddb-vg-body-row" + (sel.has(ri) ? " selected" : "")}
+                className={
+                  "ddb-vg-row ddb-vg-body-row" +
+                  (sel.has(ri) ? " selected" : "") +
+                  (inspectingRow === ri ? " inspecting" : "") +
+                  (stagedNew?.has(ri) ? " staged-new" : staged?.has(ri) ? " staged" : "")
+                }
                 style={{
                   position: "absolute",
                   top: 0,
@@ -293,7 +308,7 @@ export function DynamoItemGrid({
                   height: vr.size,
                   transform: `translateY(${vr.start}px)`,
                 }}
-                onClick={() => onOpenItem?.(it)}
+                onClick={() => onOpenItem?.(it, ri)}
                 role={onOpenItem ? "button" : undefined}
               >
                 {selectable ? (
@@ -307,7 +322,26 @@ export function DynamoItemGrid({
                     />
                   </div>
                 ) : null}
-                <div className="ddb-vg-rownum">{ri + 1}</div>
+                {/* Two layers, like the SQL grid's gutter: the row number, which
+                    the CSS swaps on row-hover for the accent reader pill, and the
+                    pill itself. A staged row shows ✱ in place of its number. */}
+                <div
+                  className={"ddb-vg-rownum" + (inspectingRow === ri ? " inspecting" : "")}
+                  title={onOpenItem ? "Inspect item (⌘E / Ctrl+E)" : undefined}
+                >
+                  {onOpenItem ? (
+                    <>
+                      <span className="ddb-vg-rownum-n">
+                        {staged?.has(ri) || stagedNew?.has(ri) ? "✱" : ri + 1}
+                      </span>
+                      <span className="ddb-vg-rownum-eye">
+                        <Icon name="chrome_reader_mode" size={13} />
+                      </span>
+                    </>
+                  ) : (
+                    ri + 1
+                  )}
+                </div>
                 {virtualizeCols ? <div className="ddb-vg-pad" aria-hidden /> : null}
                 {winIdx.map((ci) => {
                   const c = ordered[ci]!;
@@ -315,7 +349,20 @@ export function DynamoItemGrid({
                   const disp = dynamoFmt(v);
                   const isObj = typeof v === "object" && v !== null;
                   return (
-                    <div key={c} className="ddb-vg-cell" title={isObj ? JSON.stringify(v) : ""}>
+                    <div
+                      key={c}
+                      className="ddb-vg-cell"
+                      title={isObj ? JSON.stringify(v) : ""}
+                      // Clicking a cell opens the drawer ON THAT ATTRIBUTE. The
+                      // row's own handler stays as the fallback for the gutter
+                      // and any dead space, so this one stops propagating rather
+                      // than letting both run.
+                      onClick={(e) => {
+                        if (!onOpenItem) return;
+                        e.stopPropagation();
+                        onOpenItem(it, ri, c);
+                      }}
+                    >
                       {disp === null ? (
                         <span className="ddb-cell-null">—</span>
                       ) : isObj ? (

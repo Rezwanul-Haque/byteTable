@@ -16,7 +16,8 @@ use tauri::State;
 use crate::features::connections::application::ConnectionHandleId;
 use crate::features::connections::commands::ConnectionsState;
 use crate::shared::document::{
-    BatchWriteResult, ItemPage, QueryRequest, ScanRequest, StatementResult, TableDescriptor,
+    BatchWriteResult, CreateTableSpec, ItemPage, QueryRequest, ScanRequest, StatementResult,
+    TableDescriptor,
 };
 use crate::shared::error::AppError;
 
@@ -125,4 +126,38 @@ pub async fn dynamo_execute_statement(
     next_token: Option<String>,
 ) -> Result<StatementResult, AppError> {
     application::execute_statement(state.manager(), &handle_id, &statement, next_token).await
+}
+
+/// Create a table from a primary key and a billing mode. DynamoDB's DDL is
+/// asynchronous, so this returns once the table is ACTIVE (or the wait runs
+/// out) — the descriptor it resolves to carries the real status either way.
+#[tauri::command]
+pub async fn dynamo_create_table(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+    spec: CreateTableSpec,
+) -> Result<TableDescriptor, AppError> {
+    application::create_table(state.manager(), &handle_id, spec).await
+}
+
+/// **Destructive.** Drop a table with its items and secondary indexes.
+#[tauri::command]
+pub async fn dynamo_delete_table(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+    table: String,
+) -> Result<(), AppError> {
+    application::delete_table(state.manager(), &handle_id, &table).await
+}
+
+/// **Destructive.** Delete every item but keep the table, its key schema and
+/// its indexes — DynamoDB's answer to TRUNCATE, at one write unit per item.
+/// Returns the count deleted.
+#[tauri::command]
+pub async fn dynamo_truncate_table(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+    table: String,
+) -> Result<u64, AppError> {
+    application::truncate_table(state.manager(), &handle_id, &table).await
 }

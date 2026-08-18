@@ -216,6 +216,41 @@ pub struct BatchWriteResult {
     pub unprocessed: u64,
 }
 
+/// Everything `CreateTable` needs, in the renderer's vocabulary.
+///
+/// Only the primary key is declared, deliberately: DynamoDB is schemaless
+/// outside the key, and secondary indexes carry decisions (projection, extra
+/// capacity) that belong to a later, dedicated surface rather than to "make me
+/// a table". `PAY_PER_REQUEST` is the default because it is the one billing
+/// mode that needs no capacity numbers to be a sane choice.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateTableSpec {
+    pub name: String,
+    /// Partition-key attribute name.
+    pub pk: String,
+    /// Its declared type: `S`, `N` or `B`.
+    pub pk_type: String,
+    /// Sort-key attribute name; `None` for a partition-only table.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sk: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sk_type: Option<String>,
+    /// `PAY_PER_REQUEST` (on-demand) or `PROVISIONED`.
+    #[serde(default = "default_billing")]
+    pub billing: String,
+    /// Provisioned read/write capacity — required by the API when, and only
+    /// when, `billing` is `PROVISIONED`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rcu: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wcu: Option<u64>,
+}
+
+fn default_billing() -> String {
+    "PAY_PER_REQUEST".into()
+}
+
 // ---------------------------------------------------------------------------
 // Port traits
 // ---------------------------------------------------------------------------
@@ -280,6 +315,28 @@ pub trait DocumentStoreWriter: Send + Sync {
         table: &str,
         keys: Vec<Value>,
     ) -> Result<BatchWriteResult, AppError>;
+
+    /// `CreateTable`. DynamoDB creates asynchronously (the table is `CREATING`
+    /// when the call returns), so the adapter waits a bounded while for
+    /// `ACTIVE` before handing back the descriptor — the caller would otherwise
+    /// get a table it cannot yet scan. On timeout it returns the descriptor as
+    /// it stands, `status` and all, rather than failing a table that is fine.
+    async fn create_table(&self, spec: CreateTableSpec) -> Result<TableDescriptor, AppError>;
+
+    /// **Destructive.** `DeleteTable` — the table, its items, and its secondary
+    /// indexes. Also asynchronous; the adapter waits a bounded while for the
+    /// table to disappear so a refresh right after does not still list it.
+    async fn delete_table(&self, table: &str) -> Result<(), AppError>;
+
+    /// **Destructive.** Delete every item but keep the table, its key schema,
+    /// its indexes and its TTL/tags.
+    ///
+    /// DynamoDB has no TRUNCATE: this is a key-only `Scan` paged into
+    /// `BatchWriteItem` deletes, so it costs one write unit per item and takes
+    /// time proportional to the item count. The alternative — drop and recreate
+    /// — is one cheap call but silently loses every GSI, LSI, TTL setting and
+    /// tag on the table, so it is not what this does. Returns the count deleted.
+    async fn truncate_table(&self, table: &str) -> Result<u64, AppError>;
 }
 
 /// A live document-store connection: the read + write ports bundled, plus the
@@ -319,6 +376,27 @@ mod tests {
         let req: ScanRequest = serde_json::from_str("{}").unwrap();
         assert_eq!(req.limit, 100);
         assert!(req.next_token.is_none());
+    }
+
+    #[test]
+    fn create_table_spec_defaults_to_on_demand_with_no_sort_key() {
+        let spec: CreateTableSpec =
+            serde_json::from_str(r#"{"name":"Orders","pk":"PK","pkType":"S"}"#).unwrap();
+        assert_eq!(spec.billing, "PAY_PER_REQUEST");
+        assert!(spec.sk.is_none());
+        assert!(spec.rcu.is_none() && spec.wcu.is_none());
+    }
+
+    #[test]
+    fn create_table_spec_reads_a_composite_key() {
+        let spec: CreateTableSpec = serde_json::from_str(
+            r#"{"name":"Orders","pk":"PK","pkType":"S","sk":"SK","skType":"N",
+                "billing":"PROVISIONED","rcu":5,"wcu":5}"#,
+        )
+        .unwrap();
+        assert_eq!(spec.sk.as_deref(), Some("SK"));
+        assert_eq!(spec.sk_type.as_deref(), Some("N"));
+        assert_eq!(spec.rcu, Some(5));
     }
 
     #[test]

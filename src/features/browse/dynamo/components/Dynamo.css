@@ -369,12 +369,54 @@
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
 }
+
+/* Every control on this row comes from a different component with its own
+   intrinsic height — the segmented control lands at 31px, the projection
+   trigger at 32px, `.btn-small` at ~27px and `.icon-btn` at a fixed 26px — so
+   the row reads as ragged even though the items are centered. Level them all on
+   the tallest (the projection trigger's 32px) rather than shrinking it, and
+   square the icon buttons to match so their hover fill is not a short pill.
+   Scoped to direct children: the projection popover lives inside the toolbar
+   and its own buttons must keep their sizes. */
+.ddb-table-toolbar > .seg,
+.ddb-table-toolbar > .btn,
+.ddb-table-toolbar > .icon-btn,
+.ddb-table-toolbar > .ddb-table-actions > .icon-btn {
+  height: 32px;
+  box-sizing: border-box;
+}
+.ddb-table-toolbar > .icon-btn,
+.ddb-table-toolbar > .ddb-table-actions > .icon-btn {
+  width: 32px;
+}
 .ddb-scan-note {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   font-size: 11.5px;
   color: var(--text-dim);
+}
+/* Sits between the toolbar and the grid when the visible rows came from a Query
+   but the toolbar says Scan. Amber, not red: nothing is wrong: the rows are
+   real, they are simply narrower than "Scan" implies. */
+.ddb-stale-src {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in oklab, #e2b340 10%, transparent);
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.ddb-stale-src .msym {
+  color: #e2b340;
+  flex: none;
+}
+.ddb-stale-src code {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11.5px;
+  color: var(--text);
 }
 .ddb-rowcount {
   font-size: 11.5px;
@@ -826,48 +868,66 @@
 .ddb-ctx-item:hover {
   background: var(--bg3);
 }
+/* Destructive + create items, matching `.ctx-item.danger` /
+   `.ctx-item.ctx-item-accent` in Sidebar.css — the ddb menu is its own class
+   tree, so the two modifiers are repeated here rather than shared. */
+.ddb-ctx-item.danger {
+  color: #e06c75;
+}
+.ddb-ctx-item.danger:hover {
+  background: #e06c7518;
+}
+.ddb-ctx-item.ctx-item-accent {
+  color: var(--accent);
+}
+.ddb-ctx-item.ctx-item-accent:hover {
+  background: color-mix(in oklab, var(--accent) 14%, var(--bg3));
+}
 .ddb-ctx-sep {
   height: 1px;
   background: var(--border);
   margin: 4px 0;
 }
 
-/* ---- item editor modal ---- */
-.ddb-json-modal {
-  width: min(640px, 92vw);
-}
-.ddb-json-type-tag {
-  background: var(--bg2);
-  border-radius: 5px;
-  padding: 1px 7px;
-  font-size: 11px;
-  color: var(--text-dim);
-  font-family: var(--mono, ui-monospace, monospace);
-}
-.ddb-item-attrs {
-  max-height: 46vh;
-  overflow-y: auto;
+/* ---- create-table form rows (DynamoDdlModals) ----
+   Inside `.truncate-prod`, which already stacks its labels; these lay a couple
+   of them out side by side (attribute name + its declared type). */
+.ddb-ddl-row {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 6px 0;
-}
-.ddb-attr-row {
-  display: grid;
-  grid-template-columns: 58px 150px 1fr 26px;
-  align-items: center;
   gap: 8px;
-  padding: 4px 0;
+  align-items: flex-end;
 }
-.ddb-attr-row.invalid .ddb-val-input {
-  border-color: #e06c75;
+.ddb-ddl-grow {
+  flex: 1;
+  min-width: 0;
 }
-.ddb-attr-type {
-  font-family: var(--mono, ui-monospace, monospace);
-  font-size: 11px;
+.ddb-ddl-type {
+  flex: none;
+  width: 116px;
+}
+/* The Select trigger is a button, not an input, so it needs the field height
+   the sibling inputs get from `.truncate-prod input`. */
+.ddb-ddl-row .sel-trigger {
+  height: 35px;
+}
+.ddb-ddl-check {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px !important;
+  cursor: pointer;
+}
+.ddb-ddl-check input {
+  width: auto;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.ddb-ddl-hint {
+  font-size: 11.5px;
   color: var(--text-faint);
-  text-align: center;
+  margin: 0;
 }
+
+/* ---- item editor modal ---- */
 .ddb-type-sel,
 .ddb-val-input {
   background: var(--bg1);
@@ -883,57 +943,200 @@
 .ddb-val-input:focus {
   border-color: var(--accent);
 }
-.ddb-val-input.locked {
-  opacity: 0.7;
-  font-family: var(--mono, ui-monospace, monospace);
-}
 .ddb-val-json {
   font-family: var(--mono, ui-monospace, monospace);
   font-size: 11.5px;
   resize: vertical;
 }
-.ddb-attr-name {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  overflow: hidden;
+/* ---- item editor drawer (DynamoItemDrawer) ----
+   Borrows the SQL row inspector's shell (`.ri-drawer` / `.ri-head` / `.ri-body`
+   / `.ri-foot`) so an item reads the same way a row does; only the DynamoDB
+   specifics — the type selector in the field head, the key chips, the raw-JSON
+   block — are added here. */
+.ddb-item-drawer {
+  /* Wider than the 420px SQL drawer: an attribute row carries a type selector
+     beside its name, and M/L values are JSON that needs the columns. */
+  width: 460px;
 }
-.ddb-attr-nametext {
+/* The type selector sits inline in the field head, beside an 11.5px mono name —
+   at the shared trigger's default size it dominated the row it belongs to. Here
+   it is a chip: auto width, tight padding, and the same 9.5px the `.ri-field-type`
+   label it replaces uses, so a key row and an editable row read as one list. */
+.ddb-item-drawer .ddb-type-sel.sel-wrap {
+  flex: none;
+  width: auto;
+}
+.ddb-item-drawer .ddb-type-sel .sel-trigger {
+  gap: 2px;
+  padding: 1px 3px 1px 6px;
+  border-radius: 5px;
+  background: var(--bg2);
+  font-size: 9.5px;
+  color: var(--text-dim);
+}
+.ddb-item-drawer .ddb-type-sel .sel-trigger .msym {
+  font-size: 13px;
+}
+/* ---- preview format tabs (JSON / DynamoDB JSON) ---- */
+.ddb-json-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 6px;
+}
+.ddb-json-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+.ddb-json-tab {
+  border: none;
+  background: none;
+  border-radius: 5px;
+  padding: 3px 9px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-faint);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ddb-json-tab:hover {
+  color: var(--text);
+}
+.ddb-json-tab.on {
+  background: color-mix(in oklab, var(--accent) 16%, var(--bg3));
+  color: var(--accent);
+}
+.ddb-json-head .ri-mini-btn,
+.ddb-json-head .ddb-json-err {
+  margin-left: auto;
+}
+.ddb-json-head .ddb-json-err {
+  font-size: 10.5px;
+}
+/* The preview is a highlight layer, not an editor — the tokens come from
+   `highlightJSON`, coloured by the shared `.jx-*` rules in CellEditors.css.
+
+   `flex: none` is load-bearing. `.ri-body` is a flex column, and a flex item
+   whose overflow is not `visible` has an automatic minimum size of 0 — so this
+   block, alone among the body's children, was free to be squeezed by the fields
+   above it until only the opening brace showed. It must keep its content height
+   (up to the cap) and let the body scroll instead. */
+.ddb-json-pre {
+  flex: none;
+  max-height: 190px;
+  line-height: 1.5;
+  white-space: pre;
+  tab-size: 2;
+}
+
+/* Delete-this-item, in the drawer header beside Close. Red only on hover: at
+   rest it should not shout louder than the close button it sits next to. */
+.ddb-ri-delete:hover:not(:disabled) {
+  background: color-mix(in srgb, #e06c75 15%, transparent);
+  color: #e06c75;
+}
+
+/* A button label is never worth wrapping — "Stage changes" broke onto two lines
+   and doubled the footer's height. */
+.ddb-item-drawer .ri-btn,
+.ddb-item-drawer .ri-foot-n {
+  white-space: nowrap;
+}
+
+/* Locked key value inside the dashed `.ri-pk-lock` box. */
+.ddb-pk-lock-val {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12.5px;
 }
-.ddb-lock {
-  color: var(--text-faint);
-}
-.ddb-attr-del {
-  background: none;
-  border: none;
-  color: var(--text-faint);
-  cursor: pointer;
-  display: inline-flex;
-  padding: 4px;
-  border-radius: 5px;
-}
-.ddb-attr-del:hover {
-  color: #e06c75;
-  background: var(--bg2);
-}
-.ddb-add-attr {
+
+/* Collapsed state of the add-attribute affordance: a full-width dashed slot
+   that reads as "there is room for one more" rather than as a toolbar button. */
+.ddb-add-attr-btn {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
   margin: 8px 0;
+  padding: 8px 0;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: none;
+  color: var(--text-dim);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition:
+    border-color 0.12s,
+    color 0.12s,
+    background 0.12s;
 }
-.ddb-add-attr .ddb-val-input {
-  flex: 1;
+.ddb-add-attr-btn:hover {
+  border-color: color-mix(in oklab, var(--accent) 55%, var(--border));
+  background: color-mix(in oklab, var(--accent) 7%, transparent);
+  color: var(--accent);
 }
-.ddb-ddl-label {
-  font-size: 11px;
+
+/* Expanded state: type, name and value composed together before the attribute
+   joins the item. Accent-edged so it reads as the one live thing on the sheet. */
+.ddb-attr-new {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 8px 0;
+  padding: 10px 12px 12px;
+  border: 1px solid color-mix(in oklab, var(--accent) 35%, var(--border));
+  border-radius: 8px;
+  background: var(--bg1);
+}
+.ddb-attr-new-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+}
+.ddb-attr-new-grid {
+  display: grid;
+  grid-template-columns: 132px 1fr;
+  gap: 10px;
+}
+.ddb-attr-new-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  font-size: 10.5px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   color: var(--text-faint);
-  margin: 6px 0 4px;
+}
+/* The value gets its own full-width row — an M/L skeleton needs the room, and
+   a short S value looks no worse for it. */
+.ddb-attr-new-val {
+  grid-column: 1 / -1;
+}
+.ddb-attr-new-err {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: #e06c75;
+}
+.ddb-attr-new-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 .ddb-json-err {
   color: #e06c75;
@@ -953,13 +1156,6 @@
 }
 .ddb-ddl-block.invalid {
   border-color: #e06c75;
-}
-.ddb-keys-hint {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--text-faint);
 }
 
 /* ---- PartiQL tab ---- */

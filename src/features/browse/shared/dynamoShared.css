@@ -309,6 +309,21 @@
 .ddb-vg-body-row.selected .ddb-vg-cell {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
+/* Rows holding un-committed writes, until the save bar commits them. The left
+   accent bar is the same marker the SQL grid puts on an edited cell; a staged
+   NEW item gets a dashed one, because it does not exist in the table yet. */
+.ddb-vg-body-row.staged .ddb-vg-rownum,
+.ddb-vg-body-row.staged-new .ddb-vg-rownum {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.ddb-vg-body-row.staged .ddb-vg-cell,
+.ddb-vg-body-row.staged-new .ddb-vg-cell {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+.ddb-vg-body-row.staged-new .ddb-vg-rownum {
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 55%, transparent);
+  font-style: italic;
+}
 .ddb-vg-cell {
   position: relative;
   display: flex;
@@ -343,6 +358,74 @@
 }
 .ddb-vg-rownum-h {
   background: var(--bg2);
+}
+
+/* ---- frozen leading columns ----
+   The checkbox gutter and the row number stay put while the attribute columns
+   scroll horizontally — the same treatment `.dg-check-c` / `.dg-rownum` get in
+   the SQL grid. Both already carry OPAQUE backgrounds in every state
+   (hover/selected/staged/inspecting are mixed with --bg1, never transparent),
+   which is what stops scrolled cell text showing through them. */
+.ddb-vg-check-c,
+.ddb-vg-rownum {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+}
+/* With the checkbox gutter present it owns left:0, so the row number parks to
+   its right. 34px is CHECK_PX in DynamoItemGrid.tsx — keep the two in step. */
+.ddb-vg-check-c + .ddb-vg-rownum {
+  left: 34px;
+}
+/* The header row is itself sticky at z-index 2, so its leading cells have to
+   outrank the body's to stay on top when both axes are scrolled. */
+.ddb-vg-header .ddb-vg-check-c,
+.ddb-vg-header .ddb-vg-rownum {
+  z-index: 3;
+}
+
+/* ---- row-number → item inspector affordance ----
+   The same two-layer gutter the SQL grid uses (`.dg-rownum-eye`): the number is
+   swapped on row-hover for an accent reader pill, and the row whose inspector is
+   open keeps the pill plus an inset accent bar. The gutter keeps an OPAQUE
+   background in every state so horizontally-scrolled cell text cannot bleed
+   through it. */
+.ddb-vg-rownum {
+  cursor: pointer;
+  gap: 4px;
+}
+.ddb-vg-rownum-eye {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  margin-left: auto;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 14%, var(--bg1));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 35%, transparent);
+}
+.ddb-vg-body-row:hover .ddb-vg-rownum-n,
+.ddb-vg-rownum.inspecting .ddb-vg-rownum-n {
+  display: none;
+}
+.ddb-vg-body-row:hover .ddb-vg-rownum-eye,
+.ddb-vg-rownum.inspecting .ddb-vg-rownum-eye {
+  display: inline-flex;
+}
+.ddb-vg-rownum:hover .ddb-vg-rownum-eye {
+  background: color-mix(in oklab, var(--accent) 26%, var(--bg1));
+}
+.ddb-vg-rownum.inspecting {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+/* The inspected row, tinted so it is findable while the drawer is open. */
+.ddb-vg-body-row.inspecting .ddb-vg-cell {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+.ddb-vg-body-row.inspecting .ddb-vg-rownum {
+  background: color-mix(in oklab, var(--accent) 11%, var(--bg1));
 }
 .ddb-vg-check-c {
   display: flex;

@@ -30,6 +30,9 @@ interface DynamoSidebarProps {
   onExportTable: (name: string) => void;
   onImportTable: (name: string) => void;
   onExportAll: () => void;
+  onCreateTable: () => void;
+  onTruncateTable: (name: string) => void;
+  onDeleteTable: (name: string) => void;
   onRefresh: () => void;
   /** Spin the refresh icon while an auto-refresh tick is in flight. */
   refreshing?: boolean;
@@ -61,6 +64,9 @@ export function DynamoSidebar({
   onExportTable,
   onImportTable,
   onExportAll,
+  onCreateTable,
+  onTruncateTable,
+  onDeleteTable,
   onRefresh,
   refreshing,
   onCloseWorkspace,
@@ -241,6 +247,19 @@ export function DynamoSidebar({
         >
           {ctxMenu.db ? (
             <>
+              {/* Create sits at the TOP, accent-tinted and with no separator
+                  under it — the treatment the SQL, Cassandra and Mongo sidebars
+                  all give their own create action. */}
+              <button
+                type="button"
+                className="ddb-ctx-item ctx-item-accent"
+                onClick={() => {
+                  setCtxMenu(null);
+                  onCreateTable();
+                }}
+              >
+                <Icon name="add_box" size={15} /> Create table
+              </button>
               <button
                 type="button"
                 className="ddb-ctx-item"
@@ -261,17 +280,8 @@ export function DynamoSidebar({
               >
                 <Icon name="terminal" size={15} /> PartiQL editor
               </button>
-              <div className="ddb-ctx-sep" />
-              <button
-                type="button"
-                className="ddb-ctx-item"
-                onClick={() => {
-                  setCtxMenu(null);
-                  onRefresh();
-                }}
-              >
-                <Icon name="refresh" size={15} /> Refresh
-              </button>
+              {/* No Refresh item: the region row's own sync icon already does
+                  it, and no other engine's scope menu carries one. */}
             </>
           ) : (
             <>
@@ -317,6 +327,31 @@ export function DynamoSidebar({
                 }}
               >
                 <Icon name="upload" size={15} /> Import items
+              </button>
+              {/* Destructive last, behind a separator — the same placement the
+                  SQL, Cassandra and Mongo sidebars use. */}
+              <div className="ddb-ctx-sep" />
+              <button
+                type="button"
+                className="ddb-ctx-item danger"
+                onClick={() => {
+                  const tbl = ctxMenu.table;
+                  setCtxMenu(null);
+                  if (tbl) onTruncateTable(tbl);
+                }}
+              >
+                <Icon name="delete_sweep" size={15} /> Empty table
+              </button>
+              <button
+                type="button"
+                className="ddb-ctx-item danger"
+                onClick={() => {
+                  const tbl = ctxMenu.table;
+                  setCtxMenu(null);
+                  if (tbl) onDeleteTable(tbl);
+                }}
+              >
+                <Icon name="delete_forever" size={15} /> Delete table
               </button>
             </>
           )}

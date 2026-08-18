@@ -13,6 +13,8 @@ import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { Btn } from "../../../../shared/ui/Btn";
 import { LanguageChip } from "../../../../shared/ui/LanguageChip";
 import { ScopeSplitAction, ScopeSplitHint } from "../../../workspaces/components/ScopeSplitAction";
+import { ScopeSwitcherModal } from "../../../workspaces/components/ScopeSwitcherModal";
+import { useSettingsStore } from "../../../settings/state";
 import type { Env } from "../../../../shared/types";
 import type { TableDescriptor } from "../api";
 
@@ -95,6 +97,10 @@ export function CassandraSidebar({
 }: CassandraSidebarProps) {
   const [q, setQ] = useState("");
   const [ksOpen, setKsOpen] = useState(false);
+  // M36: dropdown (default) or an icon that opens the keyspace list as a
+  // modal. One setting across the SQL, Cassandra and Mongo switchers.
+  const scopeSwitcher = useSettingsStore((st) => st.settings.scopeSwitcher);
+  const [ksModalOpen, setKsModalOpen] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
 
@@ -139,65 +145,85 @@ export function CassandraSidebar({
       </div>
 
       <div className="schema-row">
-        <div style={{ position: "relative", flex: 1 }}>
+        {/* M36 `icon` mode: the list opens as a searchable modal instead of
+            a popover. The active keyspace stays named in the status bar and on
+            this button's tooltip. */}
+        {scopeSwitcher === "icon" ? (
+          // Same `.schema-btn` pill as the dropdown, so the row keeps the app's
+          // shape and the label flexes the action icons back to the right edge.
           <button
+            type="button"
             className="schema-btn"
-            style={{ width: "100%" }}
-            title="Switch keyspace"
-            onClick={(e) => {
-              e.stopPropagation();
-              setKsOpen((o) => !o);
-            }}
+            style={{ flex: 1, minWidth: 0 }}
+            title={"Keyspace: " + ks + " — click to switch"}
+            aria-label={"Switch keyspace (current: " + ks + ")"}
+            aria-haspopup="dialog"
+            onClick={() => setKsModalOpen(true)}
           >
             <Icon name="hub" size={15} style={{ color: "var(--accent)" }} />
-            <span className="schema-btn-name">{ks}</span>
-            <Icon
-              name="expand_more"
-              size={15}
-              style={{ marginLeft: "auto", color: "var(--text-faint)" }}
-            />
+            <span className="schema-btn-name">Switcher</span>
           </button>
-          {ksOpen ? (
-            <div className="schema-pop" onClick={(e) => e.stopPropagation()}>
-              {/* Create sits at the TOP, like the SQL schema switcher — the
+        ) : (
+          <div style={{ position: "relative", flex: 1 }}>
+            <button
+              className="schema-btn"
+              style={{ width: "100%" }}
+              title="Switch keyspace"
+              onClick={(e) => {
+                e.stopPropagation();
+                setKsOpen((o) => !o);
+              }}
+            >
+              <Icon name="hub" size={15} style={{ color: "var(--accent)" }} />
+              <span className="schema-btn-name">{ks}</span>
+              <Icon
+                name="expand_more"
+                size={15}
+                style={{ marginLeft: "auto", color: "var(--text-faint)" }}
+              />
+            </button>
+            {ksOpen ? (
+              <div className="schema-pop" onClick={(e) => e.stopPropagation()}>
+                {/* Create sits at the TOP, like the SQL schema switcher — the
                   keyspace list grows, and the action should not drift down
                   with it. */}
-              <div
-                className="schema-pop-create"
-                onClick={() => {
-                  setKsOpen(false);
-                  onCreateKeyspace();
-                }}
-              >
-                <Icon name="add" size={14} />
-                <span>Create keyspace</span>
-              </div>
-              <div className="schema-pop-sep" />
-              {keyspaces.map((d) => (
                 <div
-                  key={d}
-                  className={"schema-pop-item" + (d === ks ? " active" : "")}
+                  className="schema-pop-create"
                   onClick={() => {
-                    onKsChange(d);
                     setKsOpen(false);
+                    onCreateKeyspace();
                   }}
                 >
-                  <Icon name="hub" size={14} />
-                  <span>{d}</span>
-                  <ScopeSplitAction
-                    scope={d}
-                    opened={openedScopes.includes(d)}
-                    onOpen={(scope) => {
-                      setKsOpen(false);
-                      onOpenScopeWorkspace(scope);
-                    }}
-                  />
+                  <Icon name="add" size={14} />
+                  <span>Create keyspace</span>
                 </div>
-              ))}
-              <ScopeSplitHint />
-            </div>
-          ) : null}
-        </div>
+                <div className="schema-pop-sep" />
+                {keyspaces.map((d) => (
+                  <div
+                    key={d}
+                    className={"schema-pop-item" + (d === ks ? " active" : "")}
+                    onClick={() => {
+                      onKsChange(d);
+                      setKsOpen(false);
+                    }}
+                  >
+                    <Icon name="hub" size={14} />
+                    <span>{d}</span>
+                    <ScopeSplitAction
+                      scope={d}
+                      opened={openedScopes.includes(d)}
+                      onOpen={(scope) => {
+                        setKsOpen(false);
+                        onOpenScopeWorkspace(scope);
+                      }}
+                    />
+                  </div>
+                ))}
+                <ScopeSplitHint />
+              </div>
+            ) : null}
+          </div>
+        )}
         <IconBtn icon="schema" title="Schema map" onClick={onOpenMap} />
         <IconBtn icon="monitoring" title="Keyspace dashboard" onClick={onOpenDashboard} />
         <IconBtn
@@ -457,6 +483,22 @@ export function CassandraSidebar({
             </>
           )}
         </div>
+      ) : null}
+
+      {/* M36 `icon` mode. Cassandra has no server-internal keyspaces to group
+          and no per-keyspace table count on hand, so neither is passed. */}
+      {ksModalOpen ? (
+        <ScopeSwitcherModal
+          noun="keyspace"
+          icon="hub"
+          items={keyspaces.map((name) => ({ name }))}
+          current={ks}
+          openedScopes={openedScopes}
+          onSelect={onKsChange}
+          onOpenWorkspace={onOpenScopeWorkspace}
+          onCreate={onCreateKeyspace}
+          onClose={() => setKsModalOpen(false)}
+        />
       ) : null}
     </aside>
   );

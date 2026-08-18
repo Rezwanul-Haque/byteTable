@@ -34,6 +34,7 @@ import type {
   ConnectTimeoutSec,
   DefaultLimit,
   Density,
+  ScopeSwitcher,
   Settings,
   SidebarSide,
 } from "../api";
@@ -841,6 +842,19 @@ export function SettingsModal({ tab: initialTab, onClose }: SettingsModalProps) 
                 <SetToggle
                   on={settings.showSystemSchemas}
                   onChange={(v) => setSetting("showSystemSchemas", v)}
+                />
+              </SetRow>
+              <SetRow
+                label="Schema switcher"
+                hint="Also covers Cassandra keyspaces and MongoDB databases. Dropdown names the current one inline. Icon collapses it to a button that opens the full list in a searchable modal — easier on a connection with many, and it frees room for the row's action icons. The status bar names the active one either way."
+              >
+                <SetSeg<ScopeSwitcher>
+                  value={settings.scopeSwitcher}
+                  onChange={(v) => setSetting("scopeSwitcher", v)}
+                  options={[
+                    { value: "dropdown", label: "Dropdown" },
+                    { value: "icon", label: "Icon" },
+                  ]}
                 />
               </SetRow>
               <div className="set-section-label">{t("set.sec.session")}</div>

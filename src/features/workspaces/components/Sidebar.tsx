@@ -54,6 +54,7 @@ import { useSettingsStore } from "../../settings/state";
 import { useAutoRefresh } from "../../settings/useAutoRefresh";
 import { useScopeWorkspaces } from "../scopes";
 import { ScopeSplitAction, ScopeSplitHint } from "./ScopeSplitAction";
+import { ScopeSwitcherModal } from "./ScopeSwitcherModal";
 import { useWorkspacesStore } from "../state";
 import { useTabMetaStore } from "../tabMeta";
 import type { Workspace } from "../types";
@@ -137,6 +138,8 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   // "Show system schemas" (a persisted setting, toggled from the switcher):
   // whether the schema list also carries the server's own schemas.
   const showSystemSchemas = useSettingsStore((s) => s.settings.showSystemSchemas);
+  // M36: dropdown (default) or an icon that opens the list in a modal.
+  const scopeSwitcher = useSettingsStore((s) => s.settings.scopeSwitcher);
   const setSetting = useSettingsStore((s) => s.setSetting);
   const canShowSystemSchemas = SYSTEM_SCHEMA_ENGINES.has(engine);
 
@@ -197,6 +200,8 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   const openGenerate = useGenerateStore((s) => s.openModal);
   // Create-schema modal (from the schema switcher's "Create schema" item).
   const [createSchemaOpen, setCreateSchemaOpen] = useState(false);
+  // Only reachable in `icon` mode; the dropdown has its own popover state.
+  const [schemaModalOpen, setSchemaModalOpen] = useState(false);
   // Create-table modal (from the schema-actions menu's "Create table" item).
   const [createTableOpen, setCreateTableOpen] = useState(false);
   const secActionsRef = useRef<HTMLDivElement | null>(null);
@@ -535,75 +540,98 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
       </div>
 
       <div className="schema-row">
-        <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
+        {/* M36: in `icon` mode the trigger opens the schema list as a
+            searchable modal instead of a popover. The schema NAME is not in
+            the trigger any more — the status bar and this button's tooltip
+            carry it. */}
+        {scopeSwitcher === "icon" ? (
+          // Same `.schema-btn` pill as the dropdown, so the row keeps the
+          // app's shape: the label flexes and pushes the action icons back to
+          // the right edge. It reads "Switcher" rather than the schema name —
+          // naming the control, not its value, which the status bar carries.
           <button
-            ref={schemaBtnRef}
             type="button"
             className="schema-btn"
-            onClick={() => setSchemaOpen(!schemaOpen)}
-            title="Switch schema"
-            aria-haspopup="menu"
-            aria-expanded={schemaOpen}
+            style={{ flex: 1, minWidth: 0 }}
+            title={"Schema: " + schemaName + " — click to switch"}
+            aria-label={"Switch schema (current: " + schemaName + ")"}
+            aria-haspopup="dialog"
+            onClick={() => setSchemaModalOpen(true)}
           >
-            <Icon name="schema" size={15} style={{ color: "var(--accent)" }} />
-            <span className="schema-btn-name">{schemaName}</span>
-            <Icon name="expand_more" size={15} style={{ color: "var(--text-faint)" }} />
+            <Icon name="database" size={15} style={{ color: "var(--accent)" }} />
+            <span className="schema-btn-name">Switcher</span>
           </button>
-          {schemaOpen ? (
-            <div
-              ref={schemaPopRef}
-              className="schema-pop"
-              role="menu"
-              aria-label="Switch schema"
-              onKeyDown={onMenuKeyDown}
+        ) : (
+          <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
+            <button
+              ref={schemaBtnRef}
+              type="button"
+              className="schema-btn"
+              onClick={() => setSchemaOpen(!schemaOpen)}
+              title="Switch schema"
+              aria-haspopup="menu"
+              aria-expanded={schemaOpen}
             >
-              <button
-                type="button"
-                className="schema-pop-create"
-                role="menuitem"
-                onClick={() => {
-                  setSchemaOpen(false);
-                  setCreateSchemaOpen(true);
-                }}
+              <Icon name="schema" size={15} style={{ color: "var(--accent)" }} />
+              <span className="schema-btn-name">{schemaName}</span>
+              <Icon name="expand_more" size={15} style={{ color: "var(--text-faint)" }} />
+            </button>
+            {schemaOpen ? (
+              <div
+                ref={schemaPopRef}
+                className="schema-pop"
+                role="menu"
+                aria-label="Switch schema"
+                onKeyDown={onMenuKeyDown}
               >
-                <Icon name="create_new_folder" size={14} />
-                <span>Create schema</span>
-              </button>
-              <div className="schema-pop-sep" />
-              {userSchemas.map(renderSchemaItem)}
-              {/* The server's own schemas, opt-in: a labelled group after the
+                <button
+                  type="button"
+                  className="schema-pop-create"
+                  role="menuitem"
+                  onClick={() => {
+                    setSchemaOpen(false);
+                    setCreateSchemaOpen(true);
+                  }}
+                >
+                  <Icon name="create_new_folder" size={14} />
+                  <span>Create schema</span>
+                </button>
+                <div className="schema-pop-sep" />
+                {userSchemas.map(renderSchemaItem)}
+                {/* The server's own schemas, opt-in: a labelled group after the
                   user ones so the list never opens on `information_schema`
                   where a database used to be. */}
-              {canShowSystemSchemas && showSystemSchemas && systemSchemas.length > 0 ? (
-                <>
-                  <div className="schema-pop-sep" />
-                  <div className="schema-pop-group">System</div>
-                  {systemSchemas.map(renderSchemaItem)}
-                </>
-              ) : null}
-              {canShowSystemSchemas ? (
-                <>
-                  <div className="schema-pop-sep" />
-                  <button
-                    type="button"
-                    className="schema-pop-sys"
-                    role="menuitemcheckbox"
-                    aria-checked={showSystemSchemas}
-                    title="List the server's own schemas (mysql, pg_catalog, sys, …) here too"
-                    onClick={() => setSetting("showSystemSchemas", !showSystemSchemas)}
-                  >
-                    <Icon
-                      name={showSystemSchemas ? "check_box" : "check_box_outline_blank"}
-                      size={14}
-                    />
-                    <span>Show system schemas</span>
-                  </button>
-                </>
-              ) : null}
-              <ScopeSplitHint />
-            </div>
-          ) : null}
-        </div>
+                {canShowSystemSchemas && showSystemSchemas && systemSchemas.length > 0 ? (
+                  <>
+                    <div className="schema-pop-sep" />
+                    <div className="schema-pop-group">System</div>
+                    {systemSchemas.map(renderSchemaItem)}
+                  </>
+                ) : null}
+                {canShowSystemSchemas ? (
+                  <>
+                    <div className="schema-pop-sep" />
+                    <button
+                      type="button"
+                      className="schema-pop-sys"
+                      role="menuitemcheckbox"
+                      aria-checked={showSystemSchemas}
+                      title="List the server's own schemas (mysql, pg_catalog, sys, …) here too"
+                      onClick={() => setSetting("showSystemSchemas", !showSystemSchemas)}
+                    >
+                      <Icon
+                        name={showSystemSchemas ? "check_box" : "check_box_outline_blank"}
+                        size={14}
+                      />
+                      <span>Show system schemas</span>
+                    </button>
+                  </>
+                ) : null}
+                <ScopeSplitHint />
+              </div>
+            ) : null}
+          </div>
+        )}
         <IconBtn icon="schema" title="Schema map (ER diagram)" onClick={openMap} />
         {/* M28: only the engines with a structural snapshot can be diffed. */}
         {isDiffable(workspace.saved) ? (
@@ -1123,6 +1151,36 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
           existing={workspace.schemas.map((s) => s.name)}
           onCreated={onSchemaCreated}
           onClose={() => setCreateSchemaOpen(false)}
+        />
+      ) : null}
+
+      {/* M36 `icon` mode: the same switcher, with room to search. It holds no
+          state of its own — every action routes back through the handlers the
+          popover uses, so the two presentations cannot drift apart. */}
+      {schemaModalOpen ? (
+        <ScopeSwitcherModal
+          noun="schema"
+          icon="database"
+          items={workspace.schemas.map((s) => ({
+            name: s.name,
+            count: schemaTableCount(s),
+            system: s.isSystem,
+          }))}
+          current={schemaName}
+          openedScopes={openedSchemas}
+          onSelect={setSchema}
+          onOpenWorkspace={onOpenSchemaWorkspace}
+          onCreate={() => setCreateSchemaOpen(true)}
+          system={
+            canShowSystemSchemas
+              ? {
+                  show: showSystemSchemas,
+                  onToggle: (next) => setSetting("showSystemSchemas", next),
+                  hint: "List the server's own schemas (mysql, pg_catalog, sys, …) here too",
+                }
+              : undefined
+          }
+          onClose={() => setSchemaModalOpen(false)}
         />
       ) : null}
 

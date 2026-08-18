@@ -15,6 +15,8 @@ import type { Env } from "../../../../shared/types";
 import { ENV_COLOR } from "../../../../shared/ui/envColors";
 import { LanguageChip } from "../../../../shared/ui/LanguageChip";
 import { ScopeSplitAction, ScopeSplitHint } from "../../../workspaces/components/ScopeSplitAction";
+import { ScopeSwitcherModal } from "../../../workspaces/components/ScopeSwitcherModal";
+import { useSettingsStore } from "../../../settings/state";
 import type { CollectionDescriptor } from "../api";
 
 interface CtxMenu {
@@ -78,6 +80,10 @@ export function MongoSidebar({
 }) {
   const [q, setQ] = useState("");
   const [dbOpen, setDbOpen] = useState(false);
+  // M36: dropdown (default) or an icon that opens the database list as a
+  // modal. One setting across the SQL, Cassandra and Mongo switchers.
+  const scopeSwitcher = useSettingsStore((st) => st.settings.scopeSwitcher);
+  const [dbModalOpen, setDbModalOpen] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
   const envColor = ENV_COLOR[env];
@@ -123,51 +129,71 @@ export function MongoSidebar({
       </div>
 
       <div className="schema-row">
-        <div style={{ position: "relative", flex: 1 }}>
+        {/* M36 `icon` mode: the list opens as a searchable modal instead of
+            a popover. The active database stays named in the status bar and on
+            this button's tooltip. */}
+        {scopeSwitcher === "icon" ? (
+          // Same `.schema-btn` pill as the dropdown, so the row keeps the app's
+          // shape and the label flexes the action icons back to the right edge.
           <button
+            type="button"
             className="schema-btn"
-            style={{ width: "100%" }}
-            title="Switch database"
-            onClick={(e) => {
-              e.stopPropagation();
-              setDbOpen((o) => !o);
-            }}
+            style={{ flex: 1, minWidth: 0 }}
+            title={"Database: " + db + " — click to switch"}
+            aria-label={"Switch database (current: " + db + ")"}
+            aria-haspopup="dialog"
+            onClick={() => setDbModalOpen(true)}
           >
             <Icon name="database" size={15} style={{ color: "var(--accent)" }} />
-            <span className="schema-btn-name">{db}</span>
-            <Icon
-              name="expand_more"
-              size={15}
-              style={{ marginLeft: "auto", color: "var(--text-faint)" }}
-            />
+            <span className="schema-btn-name">Switcher</span>
           </button>
-          {dbOpen ? (
-            <div className="schema-pop" onClick={(e) => e.stopPropagation()}>
-              {dbNames.map((d) => (
-                <div
-                  key={d}
-                  className={"schema-pop-item" + (d === db ? " active" : "")}
-                  onClick={() => {
-                    onDbChange(d);
-                    setDbOpen(false);
-                  }}
-                >
-                  <Icon name="database" size={14} />
-                  <span>{d}</span>
-                  <ScopeSplitAction
-                    scope={d}
-                    opened={openedScopes.includes(d)}
-                    onOpen={(scope) => {
+        ) : (
+          <div style={{ position: "relative", flex: 1 }}>
+            <button
+              className="schema-btn"
+              style={{ width: "100%" }}
+              title="Switch database"
+              onClick={(e) => {
+                e.stopPropagation();
+                setDbOpen((o) => !o);
+              }}
+            >
+              <Icon name="database" size={15} style={{ color: "var(--accent)" }} />
+              <span className="schema-btn-name">{db}</span>
+              <Icon
+                name="expand_more"
+                size={15}
+                style={{ marginLeft: "auto", color: "var(--text-faint)" }}
+              />
+            </button>
+            {dbOpen ? (
+              <div className="schema-pop" onClick={(e) => e.stopPropagation()}>
+                {dbNames.map((d) => (
+                  <div
+                    key={d}
+                    className={"schema-pop-item" + (d === db ? " active" : "")}
+                    onClick={() => {
+                      onDbChange(d);
                       setDbOpen(false);
-                      onOpenScopeWorkspace(scope);
                     }}
-                  />
-                </div>
-              ))}
-              <ScopeSplitHint />
-            </div>
-          ) : null}
-        </div>
+                  >
+                    <Icon name="database" size={14} />
+                    <span>{d}</span>
+                    <ScopeSplitAction
+                      scope={d}
+                      opened={openedScopes.includes(d)}
+                      onOpen={(scope) => {
+                        setDbOpen(false);
+                        onOpenScopeWorkspace(scope);
+                      }}
+                    />
+                  </div>
+                ))}
+                <ScopeSplitHint />
+              </div>
+            ) : null}
+          </div>
+        )}
         <IconBtn icon="schema" title="Schema map" onClick={onOpenMap} />
         <IconBtn icon="monitoring" title="Database dashboard" onClick={onOpenDashboard} />
         <IconBtn
@@ -371,6 +397,21 @@ export function MongoSidebar({
             </>
           )}
         </div>
+      ) : null}
+
+      {/* M36 `icon` mode. Mongo's switcher has no create action and no system
+          group, so neither is passed and the modal omits both. */}
+      {dbModalOpen ? (
+        <ScopeSwitcherModal
+          noun="database"
+          icon="database"
+          items={dbNames.map((name) => ({ name }))}
+          current={db}
+          openedScopes={openedScopes}
+          onSelect={onDbChange}
+          onOpenWorkspace={onOpenScopeWorkspace}
+          onClose={() => setDbModalOpen(false)}
+        />
       ) : null}
     </aside>
   );

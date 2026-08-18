@@ -1,0 +1,208 @@
+/* Scope list modal (M36) — the "icon" presentation of a sidebar's scope
+   switcher (SQL schema / Cassandra keyspace / MongoDB database). Row visuals
+   deliberately echo `.schema-pop-item` (Sidebar.css) so the two presentations
+   read as the same control at different sizes.
+
+   `ssm-` = scope switcher modal. */
+
+.modal.ssm-modal {
+  /* Capped, then `.ssm-list` scrolls inside it while the title, filter and
+     footer stay put. `overflow: hidden` overrides the shared `.modal`'s own
+     `overflow-y: auto`: with both able to scroll, a long list could produce a
+     second scrollbar on the panel itself. The list is the one scroller. */
+  max-height: min(620px, calc(100vh - 96px));
+  overflow: hidden;
+  gap: 12px;
+}
+
+/* `.modal-title` sets no `flex`, so it defaults to shrinkable — pin it (and the
+   filter and footer already are) so only the list gives way to a long list. */
+.modal.ssm-modal .modal-title {
+  flex: none;
+}
+
+/* The create action, accent-tinted to match `.schema-pop-create` — the same
+   action in the dropdown this modal replaces. A `text` Btn is `--text-dim` by
+   default, which read as secondary next to the list. Doubled class names so
+   both rules outrank `.btn-text` / `.btn-text:hover`, the latter of which would
+   otherwise pull the label back to `--text` on hover. */
+.ssm-create.btn-text {
+  color: var(--accent);
+  /* Mono like `.schema-pop-create`, and like the scope names in the list
+     below it — `.btn` sets no family, so it was inheriting the UI font. */
+  font-family: var(--mono);
+}
+.ssm-create.btn-text:hover {
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+}
+
+.ssm-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 6px 9px;
+  flex: none;
+}
+.ssm-search input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-family: var(--ui);
+  font-size: 13px;
+}
+.ssm-search-clear {
+  display: flex;
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  padding: 0;
+}
+.ssm-search-clear:hover {
+  color: var(--text);
+}
+
+.ssm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  /* Shrink to the content but never past the panel; the modal caps the height. */
+  flex: 0 1 auto;
+  min-height: 0;
+  /* Room so a row's focus ring is not clipped by the scroll edge. */
+  margin-inline: -4px;
+  padding-inline: 4px;
+}
+
+.ssm-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 11px;
+  border-radius: 9px;
+  background: none;
+  border: 1px solid transparent;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--ui);
+}
+.ssm-row:hover,
+.ssm-row:focus-visible {
+  background: var(--bg2);
+  outline: none;
+}
+.ssm-row.active {
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+  border-color: color-mix(in oklab, var(--accent) 35%, transparent);
+}
+/* A server-internal schema is browsable but not editable — de-emphasised the
+   same way the popover's `.schema-pop-item.system` is. */
+.ssm-row.system .ssm-row-name {
+  color: var(--text-dim);
+}
+
+.ssm-row-name {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ssm-row-count {
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  flex: none;
+}
+
+/* Reserved slot for the active tick. Rendered on every row, empty when the row
+   is not active, so the split action beside it never shifts sideways between
+   rows. Both are anchored to the right edge (the name flexes), so they form two
+   straight columns whatever the scope name or table count is. */
+.ssm-row-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  flex: none;
+}
+
+/* The split action ("open as its own workspace") is ALWAYS visible here.
+   `.schema-pop-split` defaults to `opacity: 0` and Sidebar.css only reveals it
+   on `.schema-pop-item:hover` — a rule these rows do not match, so it was
+   present but permanently invisible, and the action looked missing.
+   Restoring the hover reveal would have fixed that, but hiding it is a
+   concession to a 218px popover: this modal is 520px with room to spare, and
+   discoverability is the whole reason to prefer it. The footer names the icon. */
+.ssm-row .schema-pop-split {
+  flex: none;
+  opacity: 1;
+}
+
+.ssm-group {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  padding: 10px 11px 4px;
+}
+
+.ssm-empty {
+  font-size: 12.5px;
+  color: var(--text-faint);
+  text-align: center;
+  padding: 22px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+}
+
+/* One row: the system toggle at the left, the split-action legend at the right.
+   Stacking them was tried and reverted — the legend is small, dim text and sat
+   awkwardly directly beneath the toggle, reading as a broken second line rather
+   than a caption. */
+.ssm-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  flex: none;
+}
+
+.ssm-sys {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: var(--ui);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.ssm-sys:hover {
+  color: var(--text);
+}
+
+.ssm-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-faint);
+}

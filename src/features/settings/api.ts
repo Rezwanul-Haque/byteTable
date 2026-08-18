@@ -24,6 +24,19 @@ export type ConnectTimeoutSec = 3 | 5 | 10 | 30;
 export type Density = "compact" | "comfortable";
 /** Which side the object-list sidebar renders on. */
 export type SidebarSide = "left" | "right";
+/**
+ * How a sidebar's SCOPE switcher is presented (M36) — the control that picks a
+ * SQL schema, a Cassandra keyspace or a MongoDB database. One setting for all
+ * three: they are the same control wearing each engine's noun (`scopeNoun`).
+ *
+ * `"dropdown"` — the trigger names the current scope and opens a popover beside
+ * it. The default, and the better fit for a handful of scopes.
+ * `"icon"` — the trigger collapses to a single icon and opens the full list in
+ * a searchable modal. Meant for connections with many scopes, where the popover
+ * is a cramped scroll and the trigger crowds the row's action icons. The active
+ * scope is still named in the status bar either way.
+ */
+export type ScopeSwitcher = "dropdown" | "icon";
 export type TitlebarPosition =
   | "topLeftIcon"
   | "topRightIcon"
@@ -72,6 +85,11 @@ export interface Settings {
    * apart and read-only there. Toggled from the switcher itself.
    */
   showSystemSchemas: boolean;
+  /**
+   * Dropdown (default) or an icon that opens the scope list in a modal.
+   * Presentation only — both offer the same actions.
+   */
+  scopeSwitcher: ScopeSwitcher;
   sidebarSide: SidebarSide;
   titlebarPosition: TitlebarPosition;
   /** macOS-only: which custom-titlebar chrome to use. */
@@ -103,6 +121,7 @@ export const DEFAULTS: Settings = {
   autoRefreshSec: 10,
   connectTimeoutSec: 5,
   showSystemSchemas: true,
+  scopeSwitcher: "dropdown",
   sidebarSide: "left",
   titlebarPosition: "topLeftIcon",
   macChrome: "native",

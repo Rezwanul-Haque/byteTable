@@ -219,6 +219,67 @@ pub fn export_save(path: &str, contents: &str) -> Result<(), AppError> {
         .map_err(|err| AppError::Io(format!("Could not write {path}: {err}")))
 }
 
+/// Overwrite an EXISTING file the user is editing (the M35 data-file editor's
+/// save), durably: write a sibling temp file, flush it to disk, then rename it
+/// over the target.
+///
+/// `export_save`'s plain create/truncate is fine for writing a NEW export, but
+/// not for a file the user already has: a crash or a full disk between truncate
+/// and write leaves them with a truncated or half-written source file. Rename
+/// is atomic on every platform we ship, so the target is either the old bytes
+/// or the new ones and never a mix.
+///
+/// The temp file is created beside the target (not in the system temp dir) so
+/// the rename stays within one filesystem — across devices it would fail, or
+/// silently degrade to a copy.
+///
+/// When `backup` is set, the previous contents are kept alongside as
+/// `<name>.bak` before the rename.
+pub fn save_text_file_atomic(path: &str, contents: &str, backup: bool) -> Result<(), AppError> {
+    use std::io::Write;
+
+    let target = std::path::Path::new(path);
+    let dir = target.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let name = target
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("data-file");
+
+    if backup && target.exists() {
+        let bak = dir.join(format!("{name}.bak"));
+        std::fs::copy(target, &bak).map_err(|err| {
+            AppError::Io(format!(
+                "Could not back up {path} to {}: {err}",
+                bak.display()
+            ))
+        })?;
+    }
+
+    let tmp = dir.join(format!(".{name}.bytetable-tmp"));
+    // Scoped so the handle is closed before the rename — Windows refuses to
+    // replace a file that is still open.
+    {
+        let mut file = std::fs::File::create(&tmp).map_err(|err| {
+            AppError::Io(format!(
+                "Could not write near {path}: {err} ({})",
+                tmp.display()
+            ))
+        })?;
+        file.write_all(contents.as_bytes())
+            .and_then(|()| file.sync_all())
+            .map_err(|err| {
+                // Do not leave the scratch file behind on a failed write.
+                let _ = std::fs::remove_file(&tmp);
+                AppError::Io(format!("Could not write {path}: {err}"))
+            })?;
+    }
+
+    std::fs::rename(&tmp, target).map_err(|err| {
+        let _ = std::fs::remove_file(&tmp);
+        AppError::Io(format!("Could not save {path}: {err}"))
+    })
+}
+
 /// Read a user-picked text file (CSV or `.sql`) into a `String` for the
 /// renderer to preview/parse. The `path` comes from the native open dialog, so
 /// the user's choice is the consent — no scope check (mirrors `export_save`'s
@@ -543,6 +604,62 @@ async fn fetch_page(
             limit: EXPORT_BATCH_ROWS,
         })
         .await
+}
+
+#[cfg(test)]
+mod atomic_save_tests {
+    use super::*;
+
+    #[test]
+    fn replaces_the_target_and_leaves_no_scratch_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("data.csv");
+        std::fs::write(&path, "a,b\n1,2\n").expect("seed");
+
+        save_text_file_atomic(path.to_str().unwrap(), "a,b\n1,9\n", false).expect("save");
+
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "a,b\n1,9\n");
+        // The sibling temp file must be gone, not left beside the user's data.
+        let leftovers: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n != "data.csv")
+            .collect();
+        assert!(leftovers.is_empty(), "left behind {leftovers:?}");
+    }
+
+    #[test]
+    fn keeps_the_previous_contents_when_a_backup_is_asked_for() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("data.csv");
+        std::fs::write(&path, "old\n").expect("seed");
+
+        save_text_file_atomic(path.to_str().unwrap(), "new\n", true).expect("save");
+
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "new\n");
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("data.csv.bak")).unwrap(),
+            "old\n"
+        );
+    }
+
+    #[test]
+    fn creates_a_file_that_does_not_exist_yet() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("fresh.csv");
+        save_text_file_atomic(path.to_str().unwrap(), "a\n", true).expect("save");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "a\n");
+        assert!(!dir.path().join("fresh.csv.bak").exists());
+    }
+
+    #[test]
+    fn an_unwritable_directory_is_a_human_error_naming_the_path() {
+        let path = "/definitely/not/a/directory/data.csv";
+        let err = save_text_file_atomic(path, "x", false).unwrap_err();
+        assert!(matches!(err, AppError::Io(_)));
+        assert!(err.to_string().contains(path), "got {err}");
+    }
 }
 
 #[cfg(test)]

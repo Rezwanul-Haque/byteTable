@@ -29,8 +29,13 @@ import {
 import { NewConnectionModal } from "../../connections/components/NewConnectionModal";
 import { pickSqliteFile } from "../../connections/dialog";
 import { useConnectionsStore } from "../../connections/state";
+import { OpenDataFileSheet } from "../../data_file/components/OpenDataFileSheet";
+import { useOpenDataFile } from "../../data_file/open";
 import { CompareSchemasModal } from "../../schema_diff/components/CompareSchemasModal";
 import { useConnectAndOpen, useOpenSqliteFile } from "../connect";
+// The "Open file" popover borrows `.schema-pop` from the sidebar (M35 Task 7),
+// so its rules must be loaded even when no workspace has ever been opened.
+import "./Sidebar.css";
 import "./ConnectScreen.css";
 
 // Sentinel for `connecting` while the file-open flow runs — saved-connection
@@ -71,6 +76,11 @@ export function ConnectScreen() {
   const [filter, setFilter] = useState("");
   const [projFilter, setProjFilter] = useState<string>("all");
   const [projOpen, setProjOpen] = useState(false);
+  // M35: the "Open file" popover, and the data-file sheet it opens. One
+  // right-aligned button with a menu, not two text buttons — those overflowed
+  // the panel and competed with "New connection".
+  const [fileMenu, setFileMenu] = useState(false);
+  const [dataFileOpen, setDataFileOpen] = useState(false);
   const [openGroup, setOpenGroup] = useState<string | null>(null);
   // Non-null only while a card is being dragged between project groups.
   const [drag, setDrag] = useState<CardDrag | null>(null);
@@ -92,6 +102,7 @@ export function ConnectScreen() {
   const duplicateConnection = useConnectionsStore((state) => state.duplicate);
   const connectAndOpen = useConnectAndOpen();
   const openSqliteFile = useOpenSqliteFile();
+  const openDataFile = useOpenDataFile();
   const toast = useToast();
 
   // Registry entries this build can't use (unknown engine from another build):
@@ -111,6 +122,15 @@ export function ConnectScreen() {
     void load();
     refreshUnsupported();
   }, [load]);
+
+  // Dismiss the "Open file" menu on any click outside it. The trigger stops
+  // propagation, so its own click never reaches this.
+  useEffect(() => {
+    if (!fileMenu) return;
+    const close = () => setFileMenu(false);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [fileMenu]);
 
   // Delete an unsupported entry (its struck-out card's trash button). Goes
   // straight through the delete command (the store only tracks known engines),
@@ -592,15 +612,59 @@ export function ConnectScreen() {
           >
             {t("connect.compare")}
           </Btn>
-          <Btn
-            icon="folder_open"
-            variant="text"
-            disabled={connecting !== null}
-            onClick={() => void openFile()}
-          >
-            {t("connect.openFile")}
-          </Btn>
-          {connecting === FILE_OPEN_ID ? <span className="spinner" /> : null}
+          {/* Spinner + Open file are ONE slot, so the row keeps three evenly
+              spaced controls while a file is opening. */}
+          <div className="connect-actions-end">
+            {connecting === FILE_OPEN_ID ? <span className="spinner" /> : null}
+            {/* M35: an "Open file" button with a small menu.
+              `stopPropagation` on the trigger, or the very click that opens the
+              menu also reaches the outside-click handler and closes it again in
+              the same tick. */}
+            <div className="conn-openfile">
+              <button
+                type="button"
+                className={"conn-openfile-btn" + (fileMenu ? " open" : "")}
+                disabled={connecting !== null}
+                title="Open a database or data file"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setFileMenu((o) => !o);
+                }}
+              >
+                <Icon name="drive_folder_upload" size={17} />
+                <span>{t("connect.openFileMenu")}</span>
+                <Icon name="expand_less" size={14} style={{ opacity: 0.6 }} />
+              </button>
+              {fileMenu ? (
+                <div className="schema-pop conn-openfile-pop">
+                  <button
+                    type="button"
+                    className="schema-pop-item"
+                    onClick={() => {
+                      setFileMenu(false);
+                      void openFile();
+                    }}
+                  >
+                    <Icon name="folder_open" size={14} style={{ color: "var(--text-faint)" }} />
+                    <span className="conn-openfile-label">{t("connect.openFile")}</span>
+                    <span className="conn-openfile-ext">.db .sqlite</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="schema-pop-item"
+                    onClick={() => {
+                      setFileMenu(false);
+                      setDataFileOpen(true);
+                    }}
+                  >
+                    <Icon name="table_view" size={14} style={{ color: "var(--text-faint)" }} />
+                    <span className="conn-openfile-label">{t("menu.file.openCsv")}</span>
+                    <span className="conn-openfile-ext">.csv .tsv</span>
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -631,6 +695,18 @@ export function ConnectScreen() {
           onClose={() => {
             setShowNew(false);
             setEditConn(null);
+          }}
+        />
+      ) : null}
+
+      {dataFileOpen ? (
+        <OpenDataFileSheet
+          onClose={() => setDataFileOpen(false)}
+          onOpen={(file) => {
+            setDataFileOpen(false);
+            void openDataFile(file).then((name) => {
+              if (name) toast("Opened “" + name + "” — editable, and queryable with SQL", "ok");
+            });
           }}
         />
       ) : null}

@@ -4,9 +4,9 @@
 // pasted string resolved to) can read the label without a component file
 // exporting a constant, which react-refresh forbids.
 
-import type { Engine } from "../types";
+import type { BadgeEngine } from "../types";
 
-export const ENGINE_META: Record<Engine, { label: string; short: string; color: string }> = {
+export const ENGINE_META: Record<BadgeEngine, { label: string; short: string; color: string }> = {
   sqlite: { label: "SQLite", short: "SQ", color: "#56b6c2" },
   mysql: { label: "MySQL", short: "My", color: "#e2b340" },
   postgres: { label: "PostgreSQL", short: "Pg", color: "#61afef" },
@@ -29,4 +29,8 @@ export const ENGINE_META: Record<Engine, { label: string; short: string; color: 
   // Typesense (M30): the Typesense amber (prototype ui.jsx ENGINE_META),
   // warmer than MySQL's gold and unlike ClickHouse's acid yellow.
   typesense: { label: "Typesense", short: "Ts", color: "#e0a458" },
+  // Data file (M35): not a database engine — the violet badge a CSV/TSV
+  // workspace wears in the rail, title bar and sidebar (prototype ui.jsx
+  // ENGINE_META.csv), distinct from Cassandra's cyan and Redis's vermilion.
+  csv: { label: "Data file", short: "Cv", color: "#a78bfa" },
 };

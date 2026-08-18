@@ -39,6 +39,10 @@ export interface TitleBarCtx {
   onSettings: () => void;
   /** Quit the whole app (after a confirm). */
   onQuit: () => void;
+  /** File ▸ Open ▸ Open CSV — the M35 data-file sheet. */
+  onOpenDataFile: () => void;
+  /** File ▸ Open ▸ Open DB / SQLite File — the native database picker. */
+  onOpenSqliteFile: () => void;
 }
 
 /** Per-render enablement inputs, derived from the active workspace + zoom. */
@@ -51,6 +55,9 @@ export interface MenuCtx {
   hasPalette: boolean;
   /** The active workspace exposes a server process list (SQL, Redis, Mongo). */
   hasProcesses: boolean;
+  /** The active workspace docks a terminal/console panel. The M35 data-file
+   *  viewer does not — there is no server to talk to. */
+  hasTerminal: boolean;
   /** The app is zoomed away from 100% (font-size setting != base). */
   zoomChanged: boolean;
   ctx: TitleBarCtx;
@@ -65,6 +72,13 @@ export type MenuItem =
       hint?: string;
       enabled: boolean;
       run?: () => void;
+      /**
+       * A nested menu. An item with `sub` is a parent: it opens the submenu on
+       * hover/click and never runs anything itself. One level only — that is
+       * all the File menu needs, and deeper nesting in an in-window menu bar is
+       * a maze.
+       */
+      sub?: MenuItem[];
     };
 
 export interface Menu {
@@ -85,7 +99,7 @@ export function execEdit(cmd: "undo" | "redo" | "cut" | "copy" | "paste"): void 
 }
 
 export function buildMenus(m: MenuCtx): Menu[] {
-  const { hasWs, isSql, hasPalette, hasProcesses, zoomChanged, ctx } = m;
+  const { hasWs, isSql, hasPalette, hasProcesses, hasTerminal, zoomChanged, ctx } = m;
 
   return [
     {
@@ -104,11 +118,36 @@ export function buildMenus(m: MenuCtx): Menu[] {
           enabled: isSql,
           run: () => emitCmd("new-query"),
         },
+        // One "Open" parent with a submenu (M35 Task 7). Flat siblings were
+        // tried and rejected: the two file entries sat oddly beside the .sql
+        // one, and their extension hints wrapped in the shortcut column.
+        // Labels carry no ellipses.
         {
-          id: "open-sql-file",
-          label: t("menu.file.openSqlFile"),
-          enabled: isSql,
-          run: () => emitCmd("open-sql-file"),
+          id: "open",
+          label: t("menu.file.open"),
+          enabled: true,
+          sub: [
+            {
+              id: "open-sql-file",
+              label: t("menu.file.openSqlFile"),
+              // Loading a .sql buffer needs a query editor to load it into.
+              hint: t("menu.file.openSqlFile.hint"),
+              enabled: isSql,
+              run: () => emitCmd("open-sql-file"),
+            },
+            {
+              id: "open-csv",
+              label: t("menu.file.openCsv"),
+              enabled: true,
+              run: ctx.onOpenDataFile,
+            },
+            {
+              id: "open-db-file",
+              label: t("menu.file.openDbFile"),
+              enabled: true,
+              run: ctx.onOpenSqliteFile,
+            },
+          ],
         },
         "—",
         {
@@ -158,7 +197,7 @@ export function buildMenus(m: MenuCtx): Menu[] {
           id: "toggle-terminal",
           label: t("menu.view.terminal"),
           hint: "Ctrl+`",
-          enabled: hasWs,
+          enabled: hasTerminal,
           run: () => emitCmd("toggle-terminal"),
         },
         {

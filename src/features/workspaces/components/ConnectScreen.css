@@ -270,8 +270,98 @@
 
 .connect-actions {
   display: flex;
-  gap: 8px;
   align-items: center;
+  /* The three controls sit on ONE line; the panel was widened to fit them
+     rather than letting them wrap or overflow (see .connect-panel). */
+  flex-wrap: nowrap;
+  /* Spread across the row rather than bunching left with the last one pushed
+     right by an auto margin — that left a small gap on one side of the middle
+     button and a large one on the other. `space-between` makes the two gaps
+     equal, and every `.btn` variant shares the same 14px horizontal padding, so
+     what the eye reads either side of the middle (text) button matches too. */
+  justify-content: space-between;
+  /* Only load-bearing if the panel ever narrows enough to close the gaps. */
+  gap: 8px;
+}
+
+/* Keeps the in-flight spinner attached to the Open file control, so
+   `space-between` always distributes exactly three slots — without this the
+   spinner becomes a fourth item and the row re-spaces while a file opens. */
+.connect-actions-end {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+/* ---------- "Open file" split button (M35 Task 7) ---------- */
+
+.conn-openfile {
+  position: relative;
+  flex: none;
+}
+
+/* Metrics copied from `.btn` (padding / radius / gap / font-size) rather than
+   invented, so this sits at exactly the same height and shape as the two real
+   buttons beside it. It is not a `Btn` only because it owns a popover. */
+.conn-openfile-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: var(--ui);
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.conn-openfile-btn:hover:not(:disabled),
+.conn-openfile-btn.open {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+}
+.conn-openfile-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Borrows .schema-pop from the sidebar, so it must reset that rule's `top` and
+   `right`: resolving BOTH `top` and `bottom` makes the browser solve for height
+   instead, which collapses the popover to a 12px sliver. */
+.conn-openfile-pop {
+  position: absolute;
+  left: auto;
+  right: 0;
+  top: auto;
+  bottom: calc(100% + 6px);
+  min-width: 226px;
+  max-width: none;
+  z-index: 20;
+  text-align: left;
+}
+/* A UA `button` rule beats inheritance, so the alignment goes on the item. */
+.conn-openfile-pop .schema-pop-item {
+  width: 100%;
+  text-align: left;
+}
+/* Above `.schema-pop-item span:nth-child(2)`, which flexes and ellipsizes the
+   label — here both the label and the extension tag must stay on one line. */
+.conn-openfile-pop .schema-pop-item .conn-openfile-label,
+.conn-openfile-pop .schema-pop-item .conn-openfile-ext {
+  white-space: nowrap;
+  flex: none;
+  overflow: visible;
+}
+.conn-openfile-ext {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+  margin-left: auto;
 }
 
 .connect-footnote {

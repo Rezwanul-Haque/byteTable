@@ -18,6 +18,16 @@ export type Engine =
   | "typesense";
 
 /**
+ * What the UI can put a badge on: every {@link Engine}, plus `csv` — the
+ * data-file workspace (M35). `csv` is deliberately NOT an
+ * {@link Engine}: nothing is saved to the registry for it and the backend has
+ * no such engine, so it must never reach the wire. It exists only so the rail
+ * tile, title bar and workspace sidebar can badge a data file as itself rather
+ * than as the in-memory SQLite database backing its SQL tab.
+ */
+export type BadgeEngine = Engine | "csv";
+
+/**
  * Deployment environment a connection points at (drives the EnvTag tint).
  * The canonical set is `dev | staging | production` (m15 redesign — the env
  * picker in the new-connection modal). Connections persisted before m15 used

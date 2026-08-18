@@ -7,14 +7,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
 
-import type { Engine } from "../../../shared/types";
+import type { BadgeEngine } from "../../../shared/types";
 import { BTLogo } from "../../../shared/ui/BTLogo";
 import { dropWordSelection } from "../../../shared/ui/dropWordSelection";
 import { Icon } from "../../../shared/ui/Icon";
 import { useToast } from "../../../shared/ui/toastContext";
 import { scopeNoun, scopeNounTitle } from "../scopes";
 import { selectShowConnect, useWorkspacesStore, WORKSPACE_COLORS } from "../state";
-import type { Workspace } from "../types";
+import { workspaceBadge, type Workspace } from "../types";
 import "./Rail.css";
 
 // Tile chip/tooltip engine names — prototype ui.jsx ENGINE_META (label +
@@ -31,7 +31,9 @@ const ENGINE_META = {
   cassandra: { label: "Cassandra", short: "Cs" },
   clickhouse: { label: "ClickHouse", short: "CH" },
   typesense: { label: "Typesense", short: "Ts" },
-} as const satisfies Record<Engine, { label: string; short: string }>;
+  // Not an engine: the M35 data-file workspace.
+  csv: { label: "Data file", short: "Cv" },
+} as const satisfies Record<BadgeEngine, { label: string; short: string }>;
 
 // Ported from rail.jsx wsInitials: two characters from the workspace name —
 // first letters of the first two words ("_-" count as separators), or the
@@ -237,7 +239,7 @@ export function Rail({
                       " " +
                       ws.name +
                       (ws.temp ? " · temporary — ⌘-click to keep" : " · kept")
-                    : ws.name + " · " + ENGINE_META[ws.saved.engine].label
+                    : ws.name + " · " + ENGINE_META[workspaceBadge(ws)].label
                 }
               >
                 {isChild ? (
@@ -248,7 +250,7 @@ export function Rail({
                 ) : (
                   <>
                     <span className="ws-tile-initials">{wsInitials(ws.name)}</span>
-                    <span className="ws-tile-engine">{ENGINE_META[ws.saved.engine].short}</span>
+                    <span className="ws-tile-engine">{ENGINE_META[workspaceBadge(ws)].short}</span>
                   </>
                 )}
               </button>
@@ -393,7 +395,7 @@ export function Rail({
                 border: "1px solid " + editingWs.color + "55",
               }}
             >
-              {ENGINE_META[editingWs.saved.engine].short}
+              {ENGINE_META[workspaceBadge(editingWs)].short}
             </span>
             <div className="ws-edit-title">
               {/* M33: name the scope the way the engine does — a Cassandra

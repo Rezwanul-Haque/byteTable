@@ -458,6 +458,7 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
                       descriptor={descriptor}
                       mode={t.mode ?? "query"}
                       isProduction={env === "production"}
+                      active={t.id === activeId}
                       onModeChange={(m) => updateTab(t.id, { mode: m })}
                       onExport={(tb) => setExportJob({ scope: "table", table: tb })}
                       onImport={(tb) => setImportTarget({ table: tb })}

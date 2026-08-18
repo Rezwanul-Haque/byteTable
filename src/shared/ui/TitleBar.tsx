@@ -20,6 +20,7 @@ import { abbreviatePath, tildify, useHomeDir } from "../homeDir";
 import { useT } from "../i18n/useT";
 import { useSettingsStore } from "../../features/settings/state";
 import { selectShowConnect, useWorkspacesStore } from "../../features/workspaces/state";
+import { isDataFileWorkspace, workspaceBadge } from "../../features/workspaces/types";
 import { connectionDetail } from "../../features/connections/api";
 import { normalizeEnv } from "../types";
 import { EngineBadge } from "./EngineBadge";
@@ -78,11 +79,18 @@ export function TitleBar({ ctx }: { ctx: TitleBarCtx }) {
   const active = workspaces.find((w) => w.id === activeWorkspaceId) ?? null;
   const ws = showConnect ? null : active;
 
+  // M35: the data-file viewer's handle is a SQL connection, but the workspace
+  // is not the SQL shell — it has no query tabs, no palette, no terminal and no
+  // server to list processes for. Excluding it here keeps those items disabled
+  // rather than dispatching bt:cmd events nothing is listening for.
+  const isFile = ws !== null && isDataFileWorkspace(ws);
+  const isSqlShell = ws?.kind === "sql" && !isFile;
   const menuCtx: MenuCtx = {
     hasWs: ws !== null,
-    isSql: ws?.kind === "sql",
-    hasPalette: ws?.kind === "sql" || ws?.kind === "kv",
-    hasProcesses: ws?.kind === "sql" || ws?.kind === "kv" || ws?.kind === "mongo",
+    isSql: isSqlShell,
+    hasPalette: isSqlShell || ws?.kind === "kv",
+    hasProcesses: isSqlShell || ws?.kind === "kv" || ws?.kind === "mongo",
+    hasTerminal: ws !== null && !isFile,
     zoomChanged: settings.fontSize !== 13,
     ctx,
   };
@@ -132,13 +140,20 @@ export function TitleBar({ ctx }: { ctx: TitleBarCtx }) {
       <div className="bt-titlebar-center" data-tauri-drag-region>
         {ws ? (
           <>
-            <EngineBadge engine={ws.saved.engine} size={18} />
+            <EngineBadge engine={workspaceBadge(ws)} size={18} />
             <span className="tb-ws-name">{ws.name}</span>
-            <EnvPill env={ws.saved.env} color={ws.saved.color} />
+            {/* A data file has no deployment environment — it is a file. */}
+            {ws.file ? null : <EnvPill env={ws.saved.env} color={ws.saved.color} />}
             <span className="tb-detail">
-              {ws.saved.params.engine === "sqlite"
-                ? abbreviatePath(tildify(ws.saved.params.path, home))
-                : connectionDetail(ws.saved.params)}
+              {ws.file
+                ? // Its handle is a scratch `:memory:` database; showing that
+                  // path would be technically true and completely useless.
+                  ws.file.path
+                  ? abbreviatePath(tildify(ws.file.path, home))
+                  : ws.file.name
+                : ws.saved.params.engine === "sqlite"
+                  ? abbreviatePath(tildify(ws.saved.params.path, home))
+                  : connectionDetail(ws.saved.params)}
             </span>
           </>
         ) : (

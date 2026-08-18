@@ -23,6 +23,7 @@ import type {
   SavedConnection,
   SchemaInfo,
 } from "../connections/api";
+import type { BadgeEngine } from "../../shared/types";
 
 /**
  * One editing row in the filter builder (M5). The UI-side mirror of a wire
@@ -370,6 +371,39 @@ export function unsavedSummary(ui: WorkspaceUiState, tabId: string): string {
   return parts.join(", ");
 }
 
+/**
+ * The delimited file a data-file workspace (M35) is showing. Its presence on a
+ * {@link Workspace} is what makes that workspace the CSV viewer/editor rather
+ * than one of the engine shells — see {@link isDataFileWorkspace}.
+ *
+ * The text is held in memory for the workspace's lifetime because every view
+ * derives from it: re-parsing on a delimiter change must not require re-reading
+ * the file, and the profile/issue passes work on the parsed rows, not the disk.
+ */
+export interface DataFileRef {
+  /** File name as shown everywhere (no path). */
+  name: string;
+  /** Absolute path, when the file came from the native picker; else null. */
+  path: string | null;
+  /** Size in bytes, for the sidebar/status bar readouts. */
+  size: number;
+  /** The whole file, decoded as UTF-8. */
+  text: string;
+  /** The parse options the user committed in the open sheet. */
+  opts: DataFileParseOpts;
+}
+
+/**
+ * The parse options a {@link DataFileRef} was opened with. A structural mirror
+ * of the core's resolved options, narrowed to the three the sheet exposes plus
+ * the quote character, so this module does not depend on the data-file slice.
+ */
+export interface DataFileParseOpts {
+  delimiter: string;
+  header: boolean;
+  trim: boolean;
+}
+
 /** An open workspace — one per live connection the user has opened. */
 export interface Workspace extends WorkspaceConnection {
   id: string;
@@ -402,6 +436,32 @@ export interface Workspace extends WorkspaceConnection {
    * promotes it to a first-class workspace.
    */
   temp?: boolean;
+
+  // --- Data-file workspace (M35) -----------------------------------------
+  /**
+   * The delimited file this workspace is a view of, and can edit. Present only for
+   * a data-file workspace; its `saved`/`handleId` still point at a real (but
+   * private, in-memory) SQLite connection holding the file's rows, which is how
+   * the SQL tab runs through the ordinary query path.
+   */
+  file?: DataFileRef;
+}
+
+/** True when `workspace` is the data-file viewer rather than an
+ *  engine workspace. One predicate so the App, rail and title bar agree. */
+export function isDataFileWorkspace(
+  workspace: Pick<Workspace, "file">,
+): workspace is Pick<Workspace, "file"> & { file: DataFileRef } {
+  return workspace.file !== undefined;
+}
+
+/**
+ * What to badge a workspace as. A data-file workspace shows `csv` rather than
+ * the SQLite database its rows happen to be loaded into — the user opened a
+ * file, and the rail tile, title bar and sidebar should all say so.
+ */
+export function workspaceBadge(workspace: Pick<Workspace, "file" | "saved">): BadgeEngine {
+  return isDataFileWorkspace(workspace) ? "csv" : workspace.saved.engine;
 }
 
 /** The deterministic id of a schema sub-workspace, so opening the same schema

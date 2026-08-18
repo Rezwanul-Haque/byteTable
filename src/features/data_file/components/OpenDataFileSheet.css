@@ -1,0 +1,302 @@
+/* "Open a data file" sheet (M35 Task 4) — ported from ByteTable.html's
+   `.csvo-*` rules. The sheet rides on the shared <Modal> (which owns the scrim,
+   the Escape stack and the focus trap), so the panel rules below only undo the
+   modal's default padding/gap and re-impose the sheet's own head/body/foot
+   frame. */
+
+.modal.csvo-sheet {
+  width: min(900px, 94vw);
+  max-height: 88vh;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+  border-radius: 16px;
+}
+
+.csvo-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.csvo-title {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.csvo-sub {
+  font-size: 11px;
+  color: var(--text-faint);
+  flex: 1;
+}
+
+.csvo-body {
+  padding: 14px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Drop zone. `over` is set by both the HTML5 drag events (plain-browser dev)
+   and Tauri's own webview drag-drop events (the desktop app, where the OS
+   intercepts the HTML ones). */
+.csvo-drop {
+  border: 1.5px dashed var(--border);
+  border-radius: 14px;
+  padding: 30px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  color: var(--text-faint);
+  background: none;
+  font-family: var(--ui);
+  transition:
+    border-color 0.14s,
+    background 0.14s;
+}
+.csvo-drop:hover,
+.csvo-drop.over {
+  border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 7%, transparent);
+}
+.csvo-drop-main {
+  font-size: 13px;
+  color: var(--text);
+  margin-top: 4px;
+}
+.csvo-drop-sub {
+  font-size: 11px;
+}
+
+.csvo-samples-h {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+.csvo-samples {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.csvo-sample {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 11px;
+  cursor: pointer;
+  font-family: var(--ui);
+}
+.csvo-sample:hover {
+  border-color: var(--accent);
+}
+/* The name and note stack. They are `<span>`s (this row is a <button>), so
+   without an explicit column they lay out inline and the note runs straight
+   into the file name with no gap. Same construction as `.csvo-drop` above,
+   whose children are spans for the same reason and stack for this reason. */
+.csvo-sample-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.csvo-sample-name {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text);
+}
+.csvo-sample-note {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  margin-top: 1px;
+}
+.csvo-sample-size {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.csvo-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  padding: 10px 12px;
+}
+.csvo-file-body {
+  flex: 1;
+  min-width: 0;
+}
+.csvo-file-name {
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.csvo-file-meta {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+
+.csvo-opts {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.csvo-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.csvo-opt-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-faint);
+}
+.csvo-seg .seg-btn {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+/* The sniffed delimiter name, inline in the "Auto" segment. */
+.csvo-auto {
+  font-family: var(--ui);
+  font-style: normal;
+  font-size: 9.5px;
+  color: var(--text-faint);
+  margin-left: 5px;
+}
+.csvo-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.csvo-prev-wrap {
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  overflow: auto;
+  max-height: 232px;
+  background: var(--bg0);
+}
+.csvo-prev {
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 11px;
+  width: 100%;
+}
+.csvo-prev th {
+  position: sticky;
+  top: 0;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  padding: 6px 9px;
+  text-align: left;
+  vertical-align: top;
+}
+.csvo-prev-name {
+  font-size: 11px;
+  color: var(--text);
+  white-space: nowrap;
+}
+.csvo-prev-type {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--ui);
+  font-size: 9.5px;
+  margin-top: 2px;
+}
+.csvo-prev td {
+  padding: 5px 9px;
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  color: var(--text-dim);
+  white-space: nowrap;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.csvo-prev td.nul {
+  color: var(--text-faint);
+  font-style: italic;
+}
+.csvo-prev td.bad {
+  color: var(--warn);
+  background: color-mix(in oklab, var(--warn) 13%, transparent);
+}
+.csvo-prev-n {
+  color: var(--text-faint);
+  text-align: right;
+  width: 32px;
+}
+.csvo-prev-more {
+  color: var(--text-faint);
+}
+
+.csvo-detect {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  font-size: 11px;
+  color: var(--text-dim);
+  flex-wrap: wrap;
+}
+.csvo-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+.csvo-detect b {
+  font-weight: 600;
+  color: var(--text);
+}
+.csvo-warn {
+  color: var(--warn);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.csvo-ok {
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.csvo-warn .msym,
+.csvo-ok .msym {
+  flex: none;
+}
+
+.csvo-foot {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 14px;
+  border-top: 1px solid var(--border);
+  flex: none;
+}
+.csvo-foot-note {
+  flex: 1;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}

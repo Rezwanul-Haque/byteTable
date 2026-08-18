@@ -208,6 +208,68 @@ body[data-platform="macos"].window-fullscreen .bt-titlebar-left {
   background: var(--border);
 }
 
+/* ---- Submenus (M35: File ▸ Open) ---------------------------------------- */
+
+/* The parent row is a <div>, not a <button>, because it hosts the submenu
+   popover — so it needs the hover styling a :hover:not(:disabled) button rule
+   would give it, driven by the `hot` class the bar sets while its submenu is up. */
+.tb-menu-parent {
+  position: relative;
+  cursor: default;
+}
+.tb-menu-parent.hot,
+.tb-menu-parent:hover {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.tb-menu-caret {
+  flex: none;
+  opacity: 0.7;
+}
+
+/* Sits beside the parent row, its top edge level with it (−5px cancels the
+   parent popover's 5px padding). It reuses .tb-menu-pop for the surface, so only
+   the placement is overridden. */
+.tb-menu-sub {
+  top: -5px;
+  left: calc(100% + 4px);
+  min-width: 232px;
+  z-index: 90;
+  /* The submenu is its own surface again, so undo the parent row's inverted
+     hover colours for the rows inside it. */
+  color: var(--text);
+}
+.tb-menu-sub .tb-menu-item {
+  background: none;
+  color: var(--text);
+}
+.tb-menu-sub .tb-menu-item:disabled {
+  color: var(--text-faint);
+}
+.tb-menu-sub .tb-menu-item:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+/* Nothing in a submenu may wrap: the rows carry file-extension hints, which is
+   exactly what wrapped when these were flat siblings in the File menu. */
+.tb-menu-sub .tb-menu-label,
+.tb-menu-sub .tb-menu-hint-key {
+  white-space: nowrap;
+}
+
+/* A bar docked at the bottom opens its popovers upward; the submenu follows,
+   growing up from the parent row rather than down off-screen. */
+body[data-titlebar-position^="bottom"] .tb-menu-sub {
+  top: auto;
+  bottom: -5px;
+}
+/* Right-aligned menu group: the submenu grows leftward, like its parent. */
+body[data-titlebar-position$="RightIcon"] .tb-menu-sub {
+  left: auto;
+  right: calc(100% + 4px);
+}
+
 /* ---- Center region: live workspace context ------------------------------ */
 
 /* Absolutely centered against the whole bar so the context reads as
@@ -375,8 +437,10 @@ body[data-titlebar-position="bottomRightIcon"] .bt-titlebar-buttons {
    bottomRightIcon); suffix selector matches both right rows (topRightIcon,
    bottomRightIcon). */
 
-/* Bottom-docked bar: open upward (above the bar), not down past the screen edge. */
-body[data-titlebar-position^="bottom"] .tb-menu-pop {
+/* Bottom-docked bar: open upward (above the bar), not down past the screen edge.
+   `:not(.tb-menu-sub)` because a submenu is positioned against its PARENT ROW,
+   not against the bar — its own placement rules are above. */
+body[data-titlebar-position^="bottom"] .tb-menu-pop:not(.tb-menu-sub) {
   top: auto;
   bottom: calc(100% - 2px);
   /* Slide up into place instead of down, to match the open direction. */
@@ -385,7 +449,7 @@ body[data-titlebar-position^="bottom"] .tb-menu-pop {
 
 /* Right-aligned menu group: align the popover's right edge to the button so its
    208px width grows leftward (into view) rather than off the right screen edge. */
-body[data-titlebar-position$="RightIcon"] .tb-menu-pop {
+body[data-titlebar-position$="RightIcon"] .tb-menu-pop:not(.tb-menu-sub) {
   left: auto;
   right: 0;
 }

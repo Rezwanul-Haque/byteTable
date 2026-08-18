@@ -380,11 +380,8 @@ body:not(.bt-no-rowhover) .dg-tr:hover .dg-rownum {
   background: color-mix(in oklab, var(--accent) 7%, transparent);
 }
 
-.dg-td.cell-selected {
-  outline: 1.5px solid var(--accent);
-  outline-offset: -1.5px;
-  border-radius: 2px;
-}
+/* `.dg-td.cell-selected`'s accent ring is defined alongside `.cell-editing`
+   further down, so the two states cannot drift apart. */
 
 /* ---------- cell value variants (ByteTable.html .cell-*) ---------- */
 .cell-null {
@@ -440,9 +437,40 @@ body:not(.bt-no-rowhover) .dg-tr:hover .dg-rownum {
 }
 
 .dg-td.cell-editing {
-  outline: 1.5px solid var(--accent);
-  outline-offset: -1.5px;
   background: var(--bg0);
+}
+
+/* The accent ring around the focused / editing cell.
+   An INSET BOX-SHADOW, not `outline` + `outline-offset: -1.5px`, which is what
+   this used to be. A negative-offset outline is painted from the BORDER box
+   inward, and the cell's 1px `border-bottom` puts its bottom line right on that
+   edge — at some row heights and webview zoom levels (this app zooms by
+   font-size, so fractional device pixels are routine) it rounded away and left a
+   three-sided box. An inset shadow is painted within the PADDING box, above the
+   border, so all four sides survive the same rounding. */
+.dg-td.cell-selected,
+.dg-td.cell-editing {
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+  border-radius: 2px;
+}
+
+/* An edited cell carries a left accent bar; keep it AND the ring when it is
+   also the focused cell, or the more specific rule above would drop the bar. */
+.dg-td.cell-edited.cell-selected,
+.dg-td.cell-edited.cell-editing {
+  box-shadow:
+    inset 0 0 0 1.5px var(--accent),
+    inset 2px 0 0 var(--accent);
+}
+
+/* Belt and braces for the other way an edge can vanish: virtualized rows are
+   absolutely positioned and OPAQUE (see `.dg-tr`), so at a fractional offset a
+   later row can paint over the last pixels of the one above. Lifting the row
+   that owns the ring keeps it clear. `.dg-tr` is already a stacking context via
+   its inline `transform`, so a z-index on the CELL could not escape it. */
+.dg-tr:has(.cell-editing),
+.dg-tr:has(.cell-selected) {
+  z-index: 3;
 }
 
 /* ---------- staged data editing (Prompts 1–3) ---------- */

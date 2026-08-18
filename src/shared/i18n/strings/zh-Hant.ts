@@ -24,7 +24,11 @@ export const zhHant: StringTable = {
 
   "menu.file.newConnection": "新增連線",
   "menu.file.newQuery": "新增查詢分頁",
+  "menu.file.open": "開啟",
   "menu.file.openSqlFile": "開啟 .sql 檔案",
+  "menu.file.openSqlFile.hint": "僅限 SQL 工作區",
+  "menu.file.openCsv": "開啟 CSV",
+  "menu.file.openDbFile": "開啟 DB / SQLite 檔案",
   "menu.file.closeWorkspace": "關閉工作區",
   "menu.file.settings": "設定",
   "menu.file.quit": "關閉 {app}",
@@ -61,6 +65,7 @@ export const zhHant: StringTable = {
   "connect.edit": "編輯連線",
   "connect.compare": "比較結構",
   "connect.openFile": "開啟 SQLite 檔案",
+  "connect.openFileMenu": "開啟檔案",
   "connect.allProjects": "所有專案",
 
   "set.title": "設定",

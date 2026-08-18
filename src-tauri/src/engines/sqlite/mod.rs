@@ -405,7 +405,22 @@ fn sqlite_engine_info() -> EngineInfo {
 
 /// Open the file and prove it is a real SQLite database, with §5-style
 /// errors for the two common failure modes (missing file, not a database).
+///
+/// `:memory:` is the one non-file path accepted: it opens a private, empty,
+/// in-process database. The data-file viewer (M35) uses it to load a parsed
+/// CSV/TSV so the file can be queried through the ordinary `query_run` path
+/// instead of a second, forked query engine. It is deliberately not offered
+/// anywhere in the connect UI, and an in-memory database is per-connection —
+/// closing the handle discards it, which is exactly the read-only,
+/// nothing-is-persisted contract the viewer promises.
 fn open_validated(path: &str) -> Result<Connection, AppError> {
+    // A scratch database has no file to validate and must be CREATEd, so it
+    // takes its own branch before the file checks below.
+    if path == ":memory:" {
+        return Connection::open_in_memory().map_err(|err| {
+            AppError::Database(format!("Could not open a scratch database: {err}."))
+        });
+    }
     if !Path::new(path).is_file() {
         return Err(AppError::Database(format!(
             "SQLite database file '{path}' does not exist."
@@ -533,6 +548,35 @@ mod tests {
             "got version {:?}",
             info.server_version
         );
+    }
+
+    /// M35: `:memory:` opens a private scratch database the data-file viewer
+    /// loads a parsed CSV into — it must NOT go through the file checks, and it
+    /// must be usable for CREATE/INSERT/SELECT on the one handle.
+    #[tokio::test]
+    async fn memory_path_opens_a_usable_scratch_database() {
+        let conn = SqliteConnector
+            .open(&ConnectionParams::Sqlite {
+                path: ":memory:".to_string(),
+            })
+            .await
+            .expect("open scratch db")
+            .into_sql()
+            .expect("sql connection");
+
+        conn.execute_script(
+            "main",
+            "CREATE TABLE t (a INTEGER); INSERT INTO t VALUES (1),(2);",
+            &|_, _| {},
+        )
+        .await
+        .expect("seed scratch db");
+        let result = conn
+            .run_query("SELECT count(*) AS n FROM t", QueryOptions::default())
+            .await
+            .expect("query scratch db");
+        assert_eq!(result.rows[0][0], serde_json::json!(2));
+        assert!(!Path::new(":memory:").exists(), "no file may be created");
     }
 
     #[tokio::test]

@@ -3,7 +3,7 @@
 // font-size = 0.42 × badge size. Hexes mirror --engine-* in tokens.css;
 // literals are kept so the prototype's alpha-suffix pattern stays exact.
 
-import type { Engine } from "../types";
+import type { BadgeEngine, Engine } from "../types";
 
 import { ENGINE_META } from "./engineMeta";
 
@@ -13,7 +13,8 @@ import "./EngineBadge.css";
 export type { Engine };
 
 interface EngineBadgeProps {
-  engine: Engine;
+  /** A database engine, or `csv` for the M35 data-file workspace. */
+  engine: BadgeEngine;
   size?: number;
 }
 

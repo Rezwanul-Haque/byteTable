@@ -1,0 +1,627 @@
+/* Data-file viewer (M35 Task 5) — ported from ByteTable.html's `.csvv-*` rules.
+   The workspace frame, sidebar, tab bar, status bar, pager and SQL error card
+   are the app's shared chrome; only what is specific to the viewer lives here. */
+
+/* ---------- sidebar ---------- */
+.csvv-parse-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 9px;
+  cursor: pointer;
+  font-family: var(--ui);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.csvv-parse-pill:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.csvv-parse-dim {
+  color: var(--text-faint);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.csvv-views {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 8px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.csvv-view {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-dim);
+  font-family: var(--ui);
+  font-size: 12px;
+  text-align: left;
+}
+.csvv-view:hover {
+  background: var(--bg2);
+}
+.csvv-view.active {
+  background: color-mix(in oklab, var(--accent) 13%, transparent);
+  color: var(--text);
+}
+.csvv-view-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.csvv-view-meta {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  max-width: 84px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: none;
+}
+.csvv-view-meta.bad {
+  color: var(--warn);
+}
+
+.csvv-cols {
+  padding: 0 6px;
+}
+.csvv-col {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 7px;
+  border-radius: 7px;
+  cursor: pointer;
+  background: none;
+  border: none;
+  width: 100%;
+  font-family: var(--ui);
+  text-align: left;
+}
+.csvv-col:hover {
+  background: var(--bg2);
+}
+.csvv-col.off {
+  opacity: 0.5;
+}
+.csvv-col-body {
+  flex: 1;
+  min-width: 0;
+}
+.csvv-col-name {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.csvv-fill {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--bg2);
+  margin-top: 4px;
+  overflow: hidden;
+}
+.csvv-fill span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  opacity: 0.8;
+}
+.csvv-col-bad {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--warn);
+  background: color-mix(in oklab, var(--warn) 16%, transparent);
+  border-radius: 99px;
+  padding: 0 5px;
+  flex: none;
+}
+.csvv-col-eye {
+  opacity: 0;
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  flex: none;
+}
+.csvv-col:hover .csvv-col-eye,
+.csvv-col.off .csvv-col-eye {
+  opacity: 1;
+}
+
+/* ---------- shared bits ---------- */
+.csvv-type {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--mono);
+  font-size: 10px;
+  flex: none;
+}
+.csvv-pane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.csvv-scroll {
+  overflow-y: auto;
+  padding: 14px 16px 22px;
+  position: relative;
+}
+.csvv-pane-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 13px;
+}
+.csvv-pane-head h3 {
+  font-size: 14px;
+  font-weight: 600;
+}
+.csvv-pane-note {
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+/* ---------- data tab toolbar ---------- */
+.csvv-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.csvv-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 8px;
+  min-width: 270px;
+}
+.csvv-search input {
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-family: var(--ui);
+  font-size: 12px;
+  flex: 1;
+  min-width: 0;
+}
+.csvv-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--ui);
+  font-size: 11px;
+  color: var(--text-dim);
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 3px 9px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex: none;
+}
+.csvv-chip:hover {
+  border-color: var(--warn);
+  color: var(--text);
+}
+.csvv-chip.active {
+  border-color: var(--accent);
+  color: var(--text);
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+}
+.csvv-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.csvv-bar-dim {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+/* A row staged for deletion: struck through and dimmed, still visible until the
+   save happens — the point of staging is that you can see and undo it. */
+.dg-tr.row-deleted .dg-td {
+  opacity: 0.5;
+  text-decoration: line-through;
+  text-decoration-color: var(--danger);
+}
+.dg-tr.row-deleted .dg-rownum {
+  color: var(--danger);
+}
+
+/* The engine's Filters toggle (TableTab.css) sits in this bar beside a search
+   box with a 270px floor — pin it so a narrow window squashes neither. */
+.csvv-bar .filter-toggle {
+  flex: none;
+}
+.csvv-bar .csvv-search {
+  min-width: 0;
+  flex: 1 1 270px;
+}
+
+/* ---------- column profile ---------- */
+.csvv-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 11px;
+}
+.csvv-card {
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  scroll-margin-top: 12px;
+}
+.csvv-card.focused {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.csvv-card-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 9px;
+}
+.csvv-card-name {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.csvv-badge {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+  border: 1px solid color-mix(in oklab, var(--accent) 40%, transparent);
+  border-radius: 99px;
+  padding: 1px 6px;
+  flex: none;
+}
+.csvv-badge.bad {
+  color: var(--warn);
+  border-color: color-mix(in oklab, var(--warn) 40%, transparent);
+}
+
+.csvv-stack {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--bg2);
+}
+.csvv-stack span {
+  display: block;
+  height: 100%;
+}
+.csvv-stack span.ok {
+  background: var(--accent);
+}
+.csvv-stack span.bad {
+  background: var(--warn);
+}
+.csvv-stack span.nul {
+  background: var(--bg2);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.csvv-stack-legend {
+  display: flex;
+  gap: 12px;
+  margin: 6px 0 10px;
+  font-size: 10px;
+  color: var(--text-faint);
+  flex-wrap: wrap;
+}
+.csvv-stack-legend span {
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+}
+.csvv-stack-legend i {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  margin-right: 4px;
+  flex: none;
+}
+.csvv-stack-legend i.ok {
+  background: var(--accent);
+}
+.csvv-stack-legend i.bad {
+  background: var(--warn);
+}
+.csvv-stack-legend i.nul {
+  background: var(--bg2);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.csvv-pstats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px 14px;
+}
+.csvv-pstat {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  border-bottom: 1px dotted var(--border);
+  padding: 2px 0;
+}
+.csvv-pstat b {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.csvv-hist {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 46px;
+  margin-top: 12px;
+}
+.csvv-hist span {
+  flex: 1;
+  border-radius: 2px 2px 0 0;
+  opacity: 0.85;
+  min-height: 2px;
+}
+
+.csvv-top {
+  margin-top: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.csvv-top-row {
+  display: grid;
+  grid-template-columns: 1fr 72px 34px;
+  align-items: center;
+  gap: 8px;
+}
+.csvv-top-v {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.csvv-top-bar {
+  height: 5px;
+  border-radius: 3px;
+  background: var(--bg2);
+  overflow: hidden;
+}
+.csvv-top-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  opacity: 0.85;
+}
+.csvv-top-n {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  text-align: right;
+}
+.csvv-top-more {
+  font-size: 10px;
+  color: var(--text-faint);
+  margin-top: 3px;
+}
+
+/* ---------- data quality ---------- */
+.csvv-sevrow {
+  display: flex;
+  gap: 9px;
+  margin-bottom: 14px;
+}
+.csvv-sev {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 15px;
+}
+.csvv-sev b {
+  font-family: var(--mono);
+  font-size: 18px;
+}
+.csvv-sev span {
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+.csvv-clean {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+}
+.csvv-clean b {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 2px;
+}
+.csvv-clean span {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+.csvv-issues {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.csvv-issue {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  padding: 11px 12px;
+}
+.csvv-issue > .msym {
+  margin-top: 1px;
+  flex: none;
+}
+.csvv-issue.error {
+  border-color: color-mix(in oklab, var(--danger) 32%, var(--border));
+}
+.csvv-issue.warn {
+  border-color: color-mix(in oklab, var(--warn) 26%, var(--border));
+}
+.csvv-issue-body {
+  flex: 1;
+  min-width: 0;
+}
+.csvv-issue-title {
+  font-size: 12.5px;
+  color: var(--text);
+}
+.csvv-issue-detail {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 3px;
+  line-height: 1.55;
+}
+.csvv-issue-fix {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  margin-top: 5px;
+}
+.csvv-issue-actions {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+
+/* ---------- SQL tab ---------- */
+.csvv-sql-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11.5px;
+  color: var(--text-dim);
+  flex: none;
+}
+.csvv-sql-head code {
+  font-family: var(--mono);
+  color: var(--accent);
+}
+.csvv-sql-samples {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.csvv-sample-q {
+  font-family: var(--ui);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 2px 9px;
+  cursor: pointer;
+}
+.csvv-sample-q:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.csvv-sql-editor {
+  display: flex;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+  align-items: flex-start;
+}
+.csvv-sql-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 11px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  outline: none;
+  resize: vertical;
+  line-height: 1.6;
+}
+.csvv-sql-input:focus {
+  border-color: var(--accent);
+}
+.csvv-sql-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-end;
+}
+.csvv-sql-hint {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+
+/* The results area owns the leftover height so its grid can scroll. */
+.csvv-sql-results {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}

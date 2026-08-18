@@ -20,8 +20,16 @@ import { DynamoWorkspace } from "./features/browse/dynamo/components/DynamoWorks
 import { MongoWorkspace } from "./features/browse/mongo/components/MongoWorkspace";
 import { CassandraWorkspace } from "./features/browse/cassandra/components/CassandraWorkspace";
 import { TypesenseWorkspace } from "./features/browse/typesense/components/TypesenseWorkspace";
+import { DataFileWorkspace } from "./features/data_file/components/DataFileWorkspace";
+import { OpenDataFileSheet } from "./features/data_file/components/OpenDataFileSheet";
+import { useOpenDataFile } from "./features/data_file/open";
 import { startSessionPersistence } from "./features/workspaces/sessionSync";
 import { selectShowConnect, useWorkspacesStore } from "./features/workspaces/state";
+import { isDataFileWorkspace } from "./features/workspaces/types";
+import { pickSqliteFile } from "./features/connections/dialog";
+import { useOpenSqliteFile } from "./features/workspaces/connect";
+import { useToast } from "./shared/ui/toastContext";
+import { isAppErrorPayload } from "./shared/api/error";
 import { useTrayWorkspaces } from "./features/workspaces/trayMenu";
 import {
   appVersion,
@@ -143,6 +151,11 @@ export function App() {
   // connect screen has its own copy for its "New connection" button).
   const [newConnOpen, setNewConnOpen] = useState(false);
 
+  // File ▸ Open ▸ … (M35). Which of the two file flows the menu asked for, or
+  // null. Both need the toast context, so they run in FileOpenBridge below —
+  // this component sits OUTSIDE its own ToastProvider.
+  const [fileOpenRequest, setFileOpenRequest] = useState<"csv" | "sqlite" | null>(null);
+
   // "Close ByteTable" (File menu) → confirm, then hard-exit the app.
   const [quitConfirmOpen, setQuitConfirmOpen] = useState(false);
   const confirmQuit = () => {
@@ -251,6 +264,8 @@ export function App() {
     onShortcuts: () => setShortcutsOpen(true),
     onSettings: () => openSettings(),
     onQuit: () => setQuitConfirmOpen(true),
+    onOpenDataFile: () => setFileOpenRequest("csv"),
+    onOpenSqliteFile: () => setFileOpenRequest("sqlite"),
     onZoom: (dir) => {
       const cur = settings.fontSize;
       // The font-size setting drives the whole-app webview zoom (zoom.ts),
@@ -267,6 +282,9 @@ export function App() {
           clicks. Renders nothing; must sit inside ToastProvider (it toasts on
           a failed open). */}
       <TrayWorkspacesBridge />
+      {/* File ▸ Open ▸ Open CSV / Open DB. Inside the provider because both
+          flows toast; renders the sheet (CSV) or nothing (the native picker). */}
+      <FileOpenBridge request={fileOpenRequest} onDone={() => setFileOpenRequest(null)} />
       <div className="bt-app-root">
         <TitleBar ctx={titleBarCtx} />
         <div className="app-frame">
@@ -295,7 +313,19 @@ export function App() {
               // other — only the App, the shared host, knows both.
               // M17: a document-store connection renders the DynamoDB workspace
               // (a third sibling shell). Key-value → Redis; everything else → SQL.
-              activeWorkspace.kind === "kv" ? (
+              //
+              // M35: a workspace carrying a `file` is the data-file viewer
+              // and editor. It is checked FIRST and by the file, not by `kind`:
+              // its handle really is a SQL connection (a private in-memory
+              // SQLite database holding the parsed rows), so routing on `kind`
+              // would land it in the relational shell.
+              isDataFileWorkspace(activeWorkspace) ? (
+                <DataFileWorkspace
+                  key={activeWorkspace.id}
+                  workspace={activeWorkspace}
+                  file={activeWorkspace.file}
+                />
+              ) : activeWorkspace.kind === "kv" ? (
                 <RedisWorkspace key={activeWorkspace.id} workspace={activeWorkspace} />
               ) : activeWorkspace.kind === "document" ? (
                 <DynamoWorkspace key={activeWorkspace.id} workspace={activeWorkspace} />
@@ -393,4 +423,68 @@ export function App() {
 function TrayWorkspacesBridge() {
   useTrayWorkspaces();
   return null;
+}
+
+/**
+ * Runs the title bar's two File ▸ Open flows (M35 Task 7), which both need the
+ * toast context that App itself provides — so they cannot live in App's body.
+ *
+ * `"csv"` shows the data-file sheet; `"sqlite"` opens the native database
+ * picker once, on the mount of that request, and renders nothing.
+ */
+function FileOpenBridge({
+  request,
+  onDone,
+}: {
+  request: "csv" | "sqlite" | null;
+  onDone: () => void;
+}) {
+  const openDataFile = useOpenDataFile();
+  const openSqliteFile = useOpenSqliteFile();
+  const toast = useToast();
+
+  useEffect(() => {
+    if (request !== "sqlite") return;
+    let cancelled = false;
+    void (async () => {
+      let path: string | null = null;
+      try {
+        path = await pickSqliteFile();
+      } catch (error) {
+        // The desktop shell is there but the dialog failed, vs plain-browser
+        // dev where the plugin is not present at all.
+        toast(
+          isAppErrorPayload(error) ? error.message : "Native file dialog requires the desktop app",
+          isAppErrorPayload(error) ? "err" : "info",
+        );
+        onDone();
+        return;
+      }
+      if (cancelled) return;
+      if (path !== null) {
+        // Failures are already toasted inside the connect flow.
+        const name = await openSqliteFile(path);
+        if (name) toast("Workspace “" + name + "” opened", "ok");
+      }
+      onDone();
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // One run per request; `onDone` clears it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [request]);
+
+  if (request !== "csv") return null;
+  return (
+    <OpenDataFileSheet
+      onClose={onDone}
+      onOpen={(file) => {
+        onDone();
+        void openDataFile(file).then((name) => {
+          if (name) toast("Opened “" + name + "” — editable, and queryable with SQL", "ok");
+        });
+      }}
+    />
+  );
 }

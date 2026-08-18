@@ -15,6 +15,7 @@ import { BulkDeleteModal } from "../../../../shared/ui/BulkDeleteModal";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { Select } from "../../../../shared/ui/Select";
+import { useFilterShortcut } from "../../../../shared/ui/useFilterShortcut";
 import { useToast } from "../../../../shared/ui/toastContext";
 import {
   cassDeleteRows,
@@ -67,6 +68,12 @@ interface CassandraTableTabProps {
   descriptor: TableDescriptor;
   mode: "query" | "structure";
   isProduction: boolean;
+  /**
+   * True while this is the visible tab. The workspace keeps inactive tabs
+   * mounted (display:none) to preserve their state, so window-level shortcuts
+   * must be gated on it or every open table would answer the same keypress.
+   */
+  active: boolean;
   onModeChange: (mode: "query" | "structure") => void;
   onExport: (table: string) => void;
   onImport: (table: string) => void;
@@ -79,6 +86,7 @@ export function CassandraTableTab({
   descriptor: t,
   mode,
   isProduction,
+  active,
   onModeChange,
   onExport,
   onImport,
@@ -114,6 +122,10 @@ export function CassandraTableTab({
     lim: number;
     af: boolean;
   }>({ pv: {}, cc: [], fc: [], lim: 100, af: false });
+
+  // ⌘F / Ctrl+F toggles the query builder, matching the SQL browser. Only while
+  // this tab is the visible one AND in query mode — Structure has no filters.
+  useFilterShortcut(active && mode !== "structure", () => setFiltersOpen((o) => !o));
 
   const regularNames = useMemo(
     () => t.columns.filter((c) => c.kind === "regular" || c.kind === "static").map((c) => c.name),

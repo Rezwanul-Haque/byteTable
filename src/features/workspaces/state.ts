@@ -17,6 +17,7 @@ import { readKeptSchemas, readSchemaColor, readSchemaSession, readSession } from
 import type { CellValue } from "../../shared/api/engine";
 import type { AlterOp, DbObjectInfo, DbObjectKind, SortSpec } from "../../shared/api/engine";
 import type {
+  DataFileRef,
   SqlHistoryEntry,
   SqlRun,
   Tab,
@@ -100,6 +101,26 @@ interface WorkspacesFeatureState {
    * schema from inside a sub-workspace yields a sibling, never a grandchild.
    */
   openSchemaWorkspace: (parentId: string, schema: string) => void;
+  /**
+   * Open a delimited file as its own workspace (M35) and activate it.
+   *
+   * `connection` is the scratch in-memory SQLite database the file's rows were
+   * just loaded into (see the data_file slice's `loadDataFile`) — the workspace
+   * is a real connection like any other, which is what lets its SQL tab run
+   * through the ordinary query path. `file` is what makes it the CSV viewer.
+   */
+  openFileWorkspace: (connection: WorkspaceConnection, file: DataFileRef) => void;
+  /**
+   * Point an open data-file workspace at a different file (or the same file
+   * re-parsed with different options) and swap in the scratch connection that
+   * was loaded for it. The caller closes the OLD handle after this returns —
+   * the store never awaits IPC.
+   *
+   * Also resets the workspace's tabs, because every tab is a view of the old
+   * file: hidden columns, row filters and the focused profile card all name
+   * columns that may not exist in the new one.
+   */
+  replaceWorkspaceFile: (id: string, connection: WorkspaceConnection, file: DataFileRef) => void;
   /** Clear a sub-workspace's `temp` flag so it survives its parent closing. */
   keepWorkspace: (id: string) => void;
   setActive: (id: string) => void;
@@ -458,6 +479,35 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
         colorCursor: savedColor ? state.colorCursor : state.colorCursor + 1,
       };
     }),
+
+  openFileWorkspace: (connection, file) =>
+    set((state) => {
+      const workspace: Workspace = {
+        id: "ws-file-" + crypto.randomUUID(),
+        ...connection,
+        name: file.name,
+        // Always a palette colour: a data file has no saved connection to
+        // carry one, and the entry is never written to the registry.
+        color: WORKSPACE_COLORS[state.colorCursor % WORKSPACE_COLORS.length] ?? WORKSPACE_COLORS[0],
+        // No session to restore: the viewer's tabs live in the data_file
+        // slice's own store, and a scratch database cannot be reconnected to.
+        ui: {},
+        file,
+      };
+      return {
+        workspaces: [...state.workspaces, workspace],
+        activeWorkspaceId: workspace.id,
+        adding: false,
+        colorCursor: state.colorCursor + 1,
+      };
+    }),
+
+  replaceWorkspaceFile: (id, connection, file) =>
+    set((state) => ({
+      workspaces: state.workspaces.map((ws) =>
+        ws.id === id ? { ...ws, ...connection, name: file.name, file, ui: {} } : ws,
+      ),
+    })),
 
   openSchemaWorkspace: (parentId, schema) =>
     set((state) => {

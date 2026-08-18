@@ -24,7 +24,11 @@ export const ja: StringTable = {
 
   "menu.file.newConnection": "新しい接続",
   "menu.file.newQuery": "新しいクエリタブ",
+  "menu.file.open": "開く",
   "menu.file.openSqlFile": ".sql ファイルを開く",
+  "menu.file.openSqlFile.hint": "SQL ワークスペースのみ",
+  "menu.file.openCsv": "CSV を開く",
+  "menu.file.openDbFile": "DB / SQLite ファイルを開く",
   "menu.file.closeWorkspace": "ワークスペースを閉じる",
   "menu.file.settings": "設定",
   "menu.file.quit": "{app} を閉じる",
@@ -61,6 +65,7 @@ export const ja: StringTable = {
   "connect.edit": "接続を編集",
   "connect.compare": "スキーマを比較",
   "connect.openFile": "SQLite ファイルを開く",
+  "connect.openFileMenu": "ファイルを開く",
   "connect.allProjects": "すべてのプロジェクト",
 
   "set.title": "設定",

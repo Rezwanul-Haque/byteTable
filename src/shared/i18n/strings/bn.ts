@@ -24,7 +24,11 @@ export const bn: StringTable = {
 
   "menu.file.newConnection": "নতুন কানেকশন",
   "menu.file.newQuery": "নতুন কোয়েরি ট্যাব",
+  "menu.file.open": "খুলুন",
   "menu.file.openSqlFile": ".sql ফাইল খুলুন",
+  "menu.file.openSqlFile.hint": "শুধু SQL ওয়ার্কস্পেসে",
+  "menu.file.openCsv": "CSV খুলুন",
+  "menu.file.openDbFile": "DB / SQLite ফাইল খুলুন",
   "menu.file.closeWorkspace": "ওয়ার্কস্পেস বন্ধ করুন",
   "menu.file.settings": "সেটিংস",
   "menu.file.quit": "{app} বন্ধ করুন",
@@ -61,6 +65,7 @@ export const bn: StringTable = {
   "connect.edit": "কানেকশন সম্পাদনা",
   "connect.compare": "স্কিমা তুলনা করুন",
   "connect.openFile": "SQLite ফাইল খুলুন",
+  "connect.openFileMenu": "ফাইল খুলুন",
   "connect.allProjects": "সব প্রজেক্ট",
 
   "set.title": "সেটিংস",

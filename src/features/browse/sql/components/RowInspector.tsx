@@ -819,10 +819,15 @@ interface RowInspectorProps {
   onPrev: () => void;
   onNext: () => void;
   onClose: () => void;
-  /** Re-fetch the grid page and re-read this row, drawer stays open. */
-  onRefresh: () => void;
+  /**
+   * Re-fetch the grid page and re-read this row, drawer stays open. OMIT when
+   * there is nothing to re-read: the M35 data-file editor's rows come from a
+   * file already held in memory, and a refresh button that cannot refresh
+   * anything is worse than no button.
+   */
+  onRefresh?: () => void;
   /** True while that re-fetch is in flight — spins the refresh icon. */
-  refreshing: boolean;
+  refreshing?: boolean;
   /** Copy this row to the clipboard in one of the offered shapes. Gets the
    *  values the drawer is SHOWING (drafts folded over the base row). */
   onCopyRow: (format: RowCopyFormat, values: CellValue[]) => void;
@@ -1054,21 +1059,23 @@ export function RowInspector({
             {/* Re-read this row from the database without closing the drawer —
                 the way to confirm a save actually landed. Blocked while dirty:
                 a re-fetch replaces the base values under the open drafts. */}
-            <button
-              type="button"
-              className="ri-close"
-              disabled={dirty || isStagedNew || refreshing}
-              title={
-                isStagedNew
-                  ? "Staged row — not in the database yet"
-                  : dirty
-                    ? "Stage or discard changes first"
-                    : "Reload this row"
-              }
-              onClick={onRefresh}
-            >
-              <Icon name="refresh" size={16} className={refreshing ? "ri-spin" : undefined} />
-            </button>
+            {onRefresh ? (
+              <button
+                type="button"
+                className="ri-close"
+                disabled={dirty || isStagedNew || refreshing}
+                title={
+                  isStagedNew
+                    ? "Staged row — not in the database yet"
+                    : dirty
+                      ? "Stage or discard changes first"
+                      : "Reload this row"
+                }
+                onClick={onRefresh}
+              >
+                <Icon name="refresh" size={16} className={refreshing ? "ri-spin" : undefined} />
+              </button>
+            ) : null}
             <button
               type="button"
               className="ri-close"

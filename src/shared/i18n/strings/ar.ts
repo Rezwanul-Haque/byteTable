@@ -24,7 +24,11 @@ export const ar: StringTable = {
 
   "menu.file.newConnection": "اتصال جديد",
   "menu.file.newQuery": "علامة تبويب استعلام جديدة",
+  "menu.file.open": "فتح",
   "menu.file.openSqlFile": "فتح ملف .sql",
+  "menu.file.openSqlFile.hint": "في مساحة عمل SQL فقط",
+  "menu.file.openCsv": "فتح CSV",
+  "menu.file.openDbFile": "فتح ملف DB / SQLite",
   "menu.file.closeWorkspace": "إغلاق مساحة العمل",
   "menu.file.settings": "الإعدادات",
   "menu.file.quit": "إغلاق {app}",
@@ -61,6 +65,7 @@ export const ar: StringTable = {
   "connect.edit": "تعديل الاتصال",
   "connect.compare": "مقارنة المخططات",
   "connect.openFile": "فتح ملف SQLite",
+  "connect.openFileMenu": "فتح ملف",
   "connect.allProjects": "كل المشاريع",
 
   "set.title": "الإعدادات",

@@ -23,7 +23,11 @@ export const es: StringTable = {
 
   "menu.file.newConnection": "Nueva conexión",
   "menu.file.newQuery": "Nueva pestaña de consulta",
+  "menu.file.open": "Abrir",
   "menu.file.openSqlFile": "Abrir archivo .sql",
+  "menu.file.openSqlFile.hint": "Solo en un espacio SQL",
+  "menu.file.openCsv": "Abrir CSV",
+  "menu.file.openDbFile": "Abrir archivo DB / SQLite",
   "menu.file.closeWorkspace": "Cerrar espacio de trabajo",
   "menu.file.settings": "Ajustes",
   "menu.file.quit": "Cerrar {app}",
@@ -60,6 +64,7 @@ export const es: StringTable = {
   "connect.edit": "Editar conexión",
   "connect.compare": "Comparar esquemas",
   "connect.openFile": "Abrir archivo SQLite",
+  "connect.openFileMenu": "Abrir archivo",
   "connect.allProjects": "Todos los proyectos",
 
   "set.title": "Ajustes",

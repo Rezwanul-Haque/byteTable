@@ -30,6 +30,7 @@ import { useSettingsStore } from "../../settings/state";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Icon } from "../../../shared/ui/Icon";
 import { Select } from "../../../shared/ui/Select";
+import { useFilterShortcut } from "../../../shared/ui/useFilterShortcut";
 import type { ColumnInfo, SortSpec } from "../../../shared/api/engine";
 import { useWorkspacesStore } from "../state";
 import { rowCountLabel, useTabMetaStore } from "../tabMeta";
@@ -211,28 +212,20 @@ export function TableTab({
   }, [colOpen, actionsOpen]);
 
   // Cmd/Ctrl+F opens (and focuses) the filter panel while in data mode. Only
-  // the active tab mounts TableTab, so this listener is inherently tab-scoped.
-  useEffect(() => {
-    if (tab.mode !== "data") return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "f" && event.key !== "F") return;
-      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
-      event.preventDefault();
-      // Toggle: close if already open.
-      if (panelOpen) {
-        setPanelOpen(false);
-        return;
-      }
-      if (!filterState) {
-        setTabFilter(tab.id, { draft: emptyDraft(columns[0]?.name ?? ""), applied: null });
-      }
-      // The panel focuses its own value field when `open` flips — it knows which
-      // control that is (see FilterPanel), so nothing to chase from here.
-      setPanelOpen(true);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [tab.mode, tab.id, panelOpen, filterState, columns, setTabFilter]);
+  // the active tab mounts TableTab, so `enabled` need only check the mode.
+  useFilterShortcut(tab.mode === "data", () => {
+    // Toggle: close if already open.
+    if (panelOpen) {
+      setPanelOpen(false);
+      return;
+    }
+    if (!filterState) {
+      setTabFilter(tab.id, { draft: emptyDraft(columns[0]?.name ?? ""), applied: null });
+    }
+    // The panel focuses its own value field when `open` flips — it knows which
+    // control that is (see FilterPanel), so nothing to chase from here.
+    setPanelOpen(true);
+  });
 
   const doExport = (kind: "tableCsv" | "tableSql") => {
     setActionsOpen(false);

@@ -80,6 +80,19 @@ pub async fn export_save(path: String, contents: String) -> Result<(), AppError>
     application::export_save(&path, &contents)
 }
 
+/// Overwrite a file the user is editing (the M35 data-file editor's save),
+/// durably: temp file + fsync + atomic rename, optionally keeping a `.bak` of
+/// the previous contents. Use this — not `export_save` — whenever the target
+/// already holds the user's data.
+#[tauri::command]
+pub async fn save_text_file_atomic(
+    path: String,
+    contents: String,
+    backup: bool,
+) -> Result<(), AppError> {
+    application::save_text_file_atomic(&path, &contents, backup)
+}
+
 /// Read a user-picked text file (CSV or `.sql`) for the renderer to
 /// preview/parse. The `path` comes from the native open dialog (the user's
 /// choice is the consent — same path handling as `export_save`). A

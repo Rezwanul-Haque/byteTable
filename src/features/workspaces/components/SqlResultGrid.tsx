@@ -14,7 +14,7 @@
 
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { save } from "@tauri-apps/plugin-dialog";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { exportSave } from "../../../shared/api/engine";
 import type { CellValue, QueryResult, SortSpec } from "../../../shared/api/engine";
@@ -94,10 +94,110 @@ function cellText(value: CellValue): string {
   return typeof value === "object" ? JSON.stringify(value) : String(value);
 }
 
-export function SqlResultGrid({ result }: { result: QueryResult }) {
+interface SqlResultGridProps {
+  result: QueryResult;
+  /**
+   * Controlled sort. When `onSort` is given the PARENT owns ordering — it hands
+   * over rows already in display order — and this grid only draws the indicator
+   * and reports header clicks. Used by the data-file viewer (M35), which sorts
+   * the whole file and then pages it, so a header click cannot be allowed to
+   * reorder just the visible page. Omit both props for the default behaviour:
+   * the grid sorts the result it was given, in place.
+   */
+  sort?: SortSpec | null;
+  onSort?: (next: SortSpec | null) => void;
+  /** Default file name the CSV export offers. */
+  exportName?: string;
+  /**
+   * Every row behind `result`, in display order, when `result` holds only the
+   * visible PAGE of a larger set — the data-file viewer pages in the parent.
+   * "Export all CSV" writes these, so the button means what it says; exporting
+   * a selection still uses the page, which is the only place a row can be
+   * checked. Omit when `result` already is the whole thing.
+   */
+  allRows?: CellValue[][];
+  /**
+   * Opt-in inline editing (the M35 data-file editor). Absent — the default for
+   * SQL results, which have no row identity to write back to — the grid stays
+   * read-only exactly as before.
+   *
+   * Nothing here writes anything: a commit is reported to the owner, which
+   * STAGES it. The classes are the browse grid's, so a staged cell looks
+   * identical whether the row lives in a table or a file.
+   */
+  editing?: GridEditing;
+  /**
+   * Extra controls for the selection bar, given the checked row indexes. Lets an
+   * owner add row-scoped actions (the data-file editor's Delete) without this
+   * component having to know about them, or selection having to be lifted out.
+   */
+  selectionActions?: (selected: number[]) => ReactNode;
+  /**
+   * Opt-in row inspector. Given it, the row-number gutter gains the browse
+   * grid's eye button and a single click on a cell opens the drawer on that
+   * field. Absent, the gutter is a plain number as before.
+   */
+  inspecting?: GridInspecting;
+}
+
+/** The row-inspector seam: which row is open, and how to open one. */
+export interface GridInspecting {
+  /** Open the drawer on a row, optionally focused on a column. */
+  onOpen: (rowIdx: number, colIdx: number | null) => void;
+  /** The row currently in the drawer, so its gutter can mark itself. */
+  openRow: number | null;
+  /**
+   * True while the drawer holds un-staged drafts. A cell click then only moves
+   * the selection — re-targeting the drawer would discard what the user is
+   * part-way through typing (the browse grid's `inspectDirty` gate).
+   */
+  dirty?: boolean;
+}
+
+/** The editing seam: what is staged, and where a commit goes. */
+export interface GridEditing {
+  /** Double-click a cell → edit. Reported as `(rowIdx, colIdx, newText)`. */
+  onCommit: (rowIdx: number, colIdx: number, value: string) => void;
+  /** Staged cells as `"row:col"`, for the accent tint + left bar. */
+  dirty: Set<string>;
+  /** Rows staged as NEW (accent row + gutter mark). */
+  stagedRows?: Set<number>;
+  /** Rows staged for DELETION (struck through). */
+  deletedRows?: Set<number>;
+}
+
+export function SqlResultGrid({
+  result,
+  sort: controlledSort,
+  onSort,
+  exportName = "query-result.csv",
+  allRows,
+  editing,
+  selectionActions,
+  inspecting,
+}: SqlResultGridProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const { columns, rows } = result;
   const toast = useToast();
+  const controlled = onSort !== undefined;
+
+  // The focused cell (single click). Purely presentational — it draws the
+  // accent outline and tells the inspector which field to land on.
+  const [selectedCell, setSelectedCell] = useState<{ row: number; col: number } | null>(null);
+  // The cell currently under an inline editor, and its working text. Local:
+  // an in-progress edit is not staged until it commits.
+  const [editCell, setEditCell] = useState<{ row: number; col: number } | null>(null);
+  const [editText, setEditText] = useState("");
+  const beginEdit = (row: number, col: number, value: CellValue) => {
+    if (!editing) return;
+    setEditCell({ row, col });
+    setEditText(value === null ? "" : String(value));
+  };
+  const commitEdit = () => {
+    if (!editCell || !editing) return;
+    editing.onCommit(editCell.row, editCell.col, editText);
+    setEditCell(null);
+  };
 
   // Multi-select (by row index into the in-memory result). Cleared when a new
   // result lands (the component is keyed/remounted per run upstream).
@@ -110,12 +210,18 @@ export function SqlResultGrid({ result }: { result: QueryResult }) {
   // driven by the `--dg-col-w` CSS var (pure repaint, no re-render / re-window);
   // the final px value commits to `colOverrides` on release.
   const [draggingCol, setDraggingCol] = useState<string | null>(null);
-  // Client-side header sort; null = the query's own row order.
-  const [sort, setSort] = useState<SortSpec | null>(null);
+  // Client-side header sort; null = the query's own row order. Ignored (and
+  // never written) when the parent controls the sort.
+  const [localSort, setLocalSort] = useState<SortSpec | null>(null);
+  const sort = controlled ? (controlledSort ?? null) : localSort;
   useEffect(() => {
     setSelected(new Set());
-    setSort(null);
+    setLocalSort(null);
   }, [result]);
+  const clickHeader = (column: string) => {
+    if (onSort) onSort(cycleSort(sort, column));
+    else setLocalSort((s) => cycleSort(s, column));
+  };
   const allSelected = rows.length > 0 && selected.size === rows.length;
   const someSelected = selected.size > 0 && !allSelected;
   const toggleRow = (i: number) =>
@@ -132,18 +238,22 @@ export function SqlResultGrid({ result }: { result: QueryResult }) {
   // result itself, so selection (keyed by the original index) and the measured
   // column widths survive a sort untouched.
   const order = useMemo(() => {
-    if (!sort) return rows.map((_, i) => i);
+    // Controlled: the rows arrived in display order already.
+    if (controlled || !sort) return rows.map((_, i) => i);
     return sortedOrder(
       rows,
       columns.findIndex((c) => c.name === sort.column),
       sort.direction,
     );
-  }, [rows, columns, sort]);
+  }, [rows, columns, sort, controlled]);
 
-  // Export the selected rows (or all rows when none are checked) to CSV, in the
-  // order they're displayed — a sorted grid exports sorted.
+  // Export the selected rows (or every row when none are checked) to CSV, in
+  // the order they're displayed — a sorted grid exports sorted. With no
+  // selection and an `allRows` set behind the page, "all" really is all.
   const exportCsv = async () => {
-    const idxs = selected.size > 0 ? order.filter((i) => selected.has(i)) : order;
+    const selecting = selected.size > 0;
+    const source = !selecting && allRows ? allRows : rows;
+    const idxs = selecting ? order.filter((i) => selected.has(i)) : source.map((_, i) => i);
     if (!idxs.length) return;
     const esc = (v: CellValue) => {
       if (v === null || v === undefined) return "";
@@ -151,11 +261,11 @@ export function SqlResultGrid({ result }: { result: QueryResult }) {
       return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
     };
     const csv = [columns.map((c) => c.name).join(",")]
-      .concat(idxs.map((i) => columns.map((_, ci) => esc(rows[i]![ci] ?? null)).join(",")))
+      .concat(idxs.map((i) => columns.map((_, ci) => esc(source[i]![ci] ?? null)).join(",")))
       .join("\n");
     try {
       const path = await save({
-        defaultPath: "query-result.csv",
+        defaultPath: exportName,
         filters: [{ name: "CSV", extensions: ["csv"] }],
       });
       if (!path) return;
@@ -324,6 +434,7 @@ export function SqlResultGrid({ result }: { result: QueryResult }) {
             : `${rows.length} row${rows.length === 1 ? "" : "s"}`}
         </span>
         <div style={{ flex: 1 }} />
+        {selectionActions?.([...selected])}
         <Btn icon="download" variant="tonal" small onClick={() => void exportCsv()}>
           {selected.size > 0 ? "Export CSV" : "Export all CSV"}
         </Btn>
@@ -352,7 +463,7 @@ export function SqlResultGrid({ result }: { result: QueryResult }) {
                 <div
                   key={c.name + ":" + ci}
                   className="dg-th sortable"
-                  onClick={() => setSort((s) => cycleSort(s, c.name))}
+                  onClick={() => clickHeader(c.name)}
                   title={
                     (c.typeHint ? c.name + " · " + c.typeHint : c.name) +
                     " · click to sort these results"
@@ -395,10 +506,14 @@ export function SqlResultGrid({ result }: { result: QueryResult }) {
               // the untouched result (what selection is keyed by).
               const rowIdx = order[vr.index]!;
               const row = rows[rowIdx]!;
+              const staged = editing?.stagedRows?.has(rowIdx) ?? false;
+              const dropped = editing?.deletedRows?.has(rowIdx) ?? false;
               return (
                 <div
                   key={rowIdx}
-                  className="dg-tr dg-row"
+                  className={
+                    "dg-tr dg-row" + (staged ? " row-staged" : "") + (dropped ? " row-deleted" : "")
+                  }
                   style={{ height: vr.size, transform: `translateY(${vr.start}px)` }}
                 >
                   <div className="dg-check-c">
@@ -410,22 +525,84 @@ export function SqlResultGrid({ result }: { result: QueryResult }) {
                       aria-label={"Select row " + (vr.index + 1)}
                     />
                   </div>
-                  <div className="dg-rownum">{vr.index + 1}</div>
+                  <div
+                    className={"dg-rownum" + (inspecting?.openRow === rowIdx ? " inspecting" : "")}
+                    title={inspecting ? "Inspect row (⌘E / Ctrl+E)" : undefined}
+                    onClick={inspecting ? () => inspecting.onOpen(rowIdx, null) : undefined}
+                  >
+                    {inspecting ? (
+                      <>
+                        {/* The same two layers as the browse grid: the number,
+                            which the CSS swaps on hover for the accent reader
+                            pill, and a staged row's ✱ marker. */}
+                        <span className="dg-rownum-n">{staged ? "✱" : vr.index + 1}</span>
+                        <span className="dg-rownum-eye">
+                          <Icon name="chrome_reader_mode" size={13} />
+                        </span>
+                      </>
+                    ) : (
+                      vr.index + 1
+                    )}
+                  </div>
                   {virtualizeCols ? <div className="dg-pad" aria-hidden /> : null}
                   {winIdx.map((ci) => {
                     const c = columns[ci]!;
                     const cellVal = row[ci] ?? null;
+                    const isEditing = editCell?.row === rowIdx && editCell.col === ci;
+                    const isDirty = editing?.dirty.has(rowIdx + ":" + ci) ?? false;
+                    const isSelected = selectedCell?.row === rowIdx && selectedCell.col === ci;
                     return (
-                      <div key={c.name + ":" + ci} className="dg-td">
-                        <CellContent value={cellVal} column={c.name} type={c.typeHint} />
-                        {/* Hover copy button — copies the raw value. */}
-                        {cellVal !== null ? (
-                          <CopyButton
-                            className="dg-copy"
-                            label={"Copy " + c.name + " value"}
-                            text={cellText(cellVal)}
+                      <div
+                        key={c.name + ":" + ci}
+                        className={
+                          "dg-td" +
+                          (isSelected ? " cell-selected" : "") +
+                          (isDirty ? " cell-edited" : "") +
+                          (isEditing ? " cell-editing" : "")
+                        }
+                        // Single click focuses the cell and lands the inspector
+                        // on that field; double click edits it. The same split
+                        // as the browse grid, so the two feel identical.
+                        onClick={() => {
+                          setSelectedCell({ row: rowIdx, col: ci });
+                          if (inspecting && !inspecting.dirty) inspecting.onOpen(rowIdx, ci);
+                        }}
+                        onDoubleClick={() => beginEdit(rowIdx, ci, cellVal)}
+                        title={editing && !isEditing ? "Double-click to edit" : undefined}
+                      >
+                        {isEditing ? (
+                          <input
+                            className="cell-input"
+                            autoFocus
+                            value={editText}
+                            onChange={(e) => setEditText(e.target.value)}
+                            onBlur={commitEdit}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                commitEdit();
+                              } else if (e.key === "Escape") {
+                                e.preventDefault();
+                                // Abandon the edit; the staged value (if any)
+                                // stays as it was.
+                                setEditCell(null);
+                              }
+                            }}
+                            aria-label={"Edit " + c.name}
                           />
-                        ) : null}
+                        ) : (
+                          <>
+                            <CellContent value={cellVal} column={c.name} type={c.typeHint} />
+                            {/* Hover copy button — copies the raw value. */}
+                            {cellVal !== null ? (
+                              <CopyButton
+                                className="dg-copy"
+                                label={"Copy " + c.name + " value"}
+                                text={cellText(cellVal)}
+                              />
+                            ) : null}
+                          </>
+                        )}
                       </div>
                     );
                   })}

@@ -788,6 +788,20 @@ export function exportSave(path: string, contents: string): Promise<void> {
 }
 
 /**
+ * Overwrite a file the user is EDITING, durably (`save_text_file_atomic`):
+ * sibling temp file + fsync + atomic rename, so a crash mid-save leaves the
+ * original intact rather than truncated. `backup` keeps the previous contents
+ * as `<name>.bak`.
+ *
+ * Use this instead of {@link exportSave} whenever the target already holds the
+ * user's data — `export_save` is a plain create/truncate, which is right for a
+ * fresh export and wrong for a source file.
+ */
+export function saveTextFileAtomic(path: string, contents: string, backup: boolean): Promise<void> {
+  return invoke<void>("save_text_file_atomic", { path, contents, backup });
+}
+
+/**
  * Import a `.sql` dump into a schema (`import_sql` command — the I/O
  * counterpart of {@link exportSave}). The backend reads the file at `path`
  * (obtained from the native open dialog — the `dialog:allow-open` capability;

@@ -30,7 +30,11 @@ export const en = {
   // language. Keyboard hints (⌘T) are key names, not copy, and stay as they are.
   "menu.file.newConnection": "New Connection",
   "menu.file.newQuery": "New Query Tab",
+  "menu.file.open": "Open",
   "menu.file.openSqlFile": "Open .sql File",
+  "menu.file.openSqlFile.hint": "SQL workspace only",
+  "menu.file.openCsv": "Open CSV",
+  "menu.file.openDbFile": "Open DB / SQLite File",
   "menu.file.closeWorkspace": "Close Workspace",
   "menu.file.settings": "Settings",
   "menu.file.quit": "Close {app}",
@@ -69,6 +73,7 @@ export const en = {
   "connect.edit": "Edit connection",
   "connect.compare": "Compare schemas",
   "connect.openFile": "Open SQLite file",
+  "connect.openFileMenu": "Open file",
   "connect.allProjects": "All projects",
 
   "set.title": "Settings",

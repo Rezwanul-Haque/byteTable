@@ -47,6 +47,12 @@ export function MongoSidebar({
   onExportColl,
   onImportColl,
   onExportAll,
+  onCreateDb,
+  onCreateColl,
+  onEmptyDb,
+  onDropDb,
+  onTruncateColl,
+  onDropColl,
   onRefresh,
   refreshing,
   onCloseWorkspace,
@@ -73,6 +79,18 @@ export function MongoSidebar({
   onExportColl: (coll: string) => void;
   onImportColl: (coll: string | null) => void;
   onExportAll: () => void;
+  /** Create a database (with its first collection — MongoDB needs one). */
+  onCreateDb: () => void;
+  /** Create a new, empty collection in the current database. */
+  onCreateColl: () => void;
+  /** Drop every collection in the current database (keeps the database). */
+  onEmptyDb: () => void;
+  /** Drop the database itself, contents and all. */
+  onDropDb: () => void;
+  /** Remove every document from one collection, keeping it. */
+  onTruncateColl: (coll: string) => void;
+  /** Drop one collection outright. */
+  onDropColl: (coll: string) => void;
   onRefresh: () => void;
   /** Spin the refresh icon while an auto-refresh tick is in flight. */
   refreshing?: boolean;
@@ -168,6 +186,20 @@ export function MongoSidebar({
             </button>
             {dbOpen ? (
               <div className="schema-pop" onClick={(e) => e.stopPropagation()}>
+                {/* Create sits at the TOP, like the SQL and Cassandra switchers
+                    — the database list grows and the action should not drift
+                    down with it. */}
+                <div
+                  className="schema-pop-create"
+                  onClick={() => {
+                    setDbOpen(false);
+                    onCreateDb();
+                  }}
+                >
+                  <Icon name="add" size={14} />
+                  <span>Create database</span>
+                </div>
+                <div className="schema-pop-sep" />
                 {dbNames.map((d) => (
                   <div
                     key={d}
@@ -315,6 +347,18 @@ export function MongoSidebar({
         >
           {ctxMenu.db ? (
             <>
+              {/* Create sits at the TOP, accent-tinted and with no separator
+                  under it — the same treatment the SQL and Cassandra sidebars
+                  give their own create action. */}
+              <div
+                className="ctx-item ctx-item-accent"
+                onClick={() => {
+                  setCtxMenu(null);
+                  onCreateColl();
+                }}
+              >
+                <Icon name="create_new_folder" size={15} /> Create collection
+              </div>
               <div
                 className="ctx-item"
                 onClick={() => {
@@ -343,14 +387,28 @@ export function MongoSidebar({
               >
                 <Icon name="account_tree" size={15} /> New aggregation pipeline
               </div>
+              {/* No Refresh item: the row's own sync icon already does it, and
+                  no other engine's scope menu carries one. */}
+              {/* Destructive last, behind a separator — the same placement the
+                  SQL and Cassandra sidebars use. */}
+              <div className="ctx-sep" />
               <div
-                className="ctx-item"
+                className="ctx-item danger"
                 onClick={() => {
                   setCtxMenu(null);
-                  onRefresh();
+                  onEmptyDb();
                 }}
               >
-                <Icon name="refresh" size={15} /> Refresh
+                <Icon name="delete_sweep" size={15} /> Drop all collections
+              </div>
+              <div
+                className="ctx-item danger"
+                onClick={() => {
+                  setCtxMenu(null);
+                  onDropDb();
+                }}
+              >
+                <Icon name="delete_forever" size={15} /> Drop database
               </div>
             </>
           ) : (
@@ -394,6 +452,27 @@ export function MongoSidebar({
               >
                 <Icon name="upload" size={15} /> Import documents
               </div>
+              <div className="ctx-sep" />
+              <div
+                className="ctx-item danger"
+                onClick={() => {
+                  const c = ctxMenu.coll;
+                  setCtxMenu(null);
+                  if (c) onTruncateColl(c);
+                }}
+              >
+                <Icon name="delete_sweep" size={15} /> Empty collection
+              </div>
+              <div
+                className="ctx-item danger"
+                onClick={() => {
+                  const c = ctxMenu.coll;
+                  setCtxMenu(null);
+                  if (c) onDropColl(c);
+                }}
+              >
+                <Icon name="delete_forever" size={15} /> Drop collection
+              </div>
             </>
           )}
         </div>
@@ -410,6 +489,7 @@ export function MongoSidebar({
           openedScopes={openedScopes}
           onSelect={onDbChange}
           onOpenWorkspace={onOpenScopeWorkspace}
+          onCreate={onCreateDb}
           onClose={() => setDbModalOpen(false)}
         />
       ) : null}

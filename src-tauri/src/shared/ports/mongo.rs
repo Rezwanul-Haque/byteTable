@@ -323,6 +323,32 @@ pub trait MongoWriter: Send + Sync {
         coll: &str,
         validator: Option<Value>,
     ) -> Result<(), AppError>;
+
+    // --- collection lifecycle ------------------------------------------
+    // MongoDB creates a collection implicitly on first insert, so these exist
+    // for the cases that implicit creation cannot serve: an empty collection
+    // to import into or index up front, and the destructive counterparts,
+    // which have no implicit form at all.
+    /// `createCollection` — an explicit, empty collection.
+    async fn create_collection(&self, db: &str, coll: &str) -> Result<(), AppError>;
+
+    /// `drop` one collection: its documents, indexes and validator.
+    async fn drop_collection(&self, db: &str, coll: &str) -> Result<(), AppError>;
+
+    /// `deleteMany({})` — empty a collection but keep it, with its indexes and
+    /// validator intact. The MongoDB counterpart of SQL's TRUNCATE. Returns the
+    /// number of documents removed.
+    async fn truncate_collection(&self, db: &str, coll: &str) -> Result<u64, AppError>;
+
+    /// Drop EVERY collection in a database, leaving the (now empty) database.
+    /// The counterpart of Cassandra's "empty keyspace" — a rebuild target, not
+    /// a `dropDatabase`. Returns the collections dropped, in the order tried.
+    async fn empty_database(&self, db: &str) -> Result<Vec<String>, AppError>;
+
+    /// `dropDatabase` — the database itself, not just its contents. The other
+    /// half of the pair every engine offers (SQL "Empty schema" / "Delete
+    /// schema", Cassandra "Empty keyspace" / "Drop keyspace").
+    async fn drop_database(&self, db: &str) -> Result<(), AppError>;
 }
 
 /// A live MongoDB connection: the read + write ports bundled, plus the shared

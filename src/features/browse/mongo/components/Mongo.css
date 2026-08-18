@@ -616,6 +616,33 @@ select.filter-select:focus {
   gap: 10px;
 }
 
+/* Inferred-schema empty state: an empty collection has no documents to sample,
+   so the field table has nothing to show. Bare column headers read as a
+   failure — this says why there is nothing instead. */
+.mg-schema-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+  padding: 34px 24px;
+  color: var(--text-faint);
+}
+.mg-schema-empty b {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.mg-schema-empty span {
+  font-size: 12px;
+  max-width: 46ch;
+  line-height: 1.6;
+}
+.mg-schema-empty code {
+  font-family: var(--mono);
+  color: var(--text-dim);
+}
+
 /* explain */
 .mg-explain {
   border-bottom: 1px solid var(--border);

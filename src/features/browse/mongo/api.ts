@@ -232,6 +232,50 @@ export function mongoInsertMany(
   return invoke<InsertManyResult>("mongo_insert_many", { handleId, db, coll, docs });
 }
 
+// --- collection lifecycle --------------------------------------------------
+// MongoDB creates a collection implicitly on first insert, so `create` is for
+// what implicit creation cannot do: an empty target to import into, or one to
+// index/validate before any data arrives. The three destructive ones have no
+// implicit form at all — every caller confirms first.
+
+/** `createCollection` — an explicit, empty collection. */
+export function mongoCreateCollection(handleId: string, db: string, coll: string): Promise<void> {
+  return invoke<void>("mongo_create_collection", { handleId, db, coll });
+}
+
+/** **Destructive.** Drop a collection: documents, indexes and validator. */
+export function mongoDropCollection(handleId: string, db: string, coll: string): Promise<void> {
+  return invoke<void>("mongo_drop_collection", { handleId, db, coll });
+}
+
+/**
+ * **Destructive.** Remove every document, keeping the collection with its
+ * indexes and validator — MongoDB's TRUNCATE. Resolves to the count removed.
+ */
+export function mongoTruncateCollection(
+  handleId: string,
+  db: string,
+  coll: string,
+): Promise<number> {
+  return invoke<number>("mongo_truncate_collection", { handleId, db, coll });
+}
+
+/**
+ * **Destructive.** Drop every collection in a database, leaving the database
+ * standing. Resolves to the collections dropped.
+ */
+export function mongoEmptyDatabase(handleId: string, db: string): Promise<string[]> {
+  return invoke<string[]>("mongo_empty_database", { handleId, db });
+}
+
+/**
+ * **Destructive.** Drop a database: every collection AND the database itself.
+ * The counterpart of {@link mongoEmptyDatabase}, which keeps the database.
+ */
+export function mongoDropDatabase(handleId: string, db: string): Promise<void> {
+  return invoke<void>("mongo_drop_database", { handleId, db });
+}
+
 /** `createIndex`. */
 export function mongoCreateIndex(
   handleId: string,

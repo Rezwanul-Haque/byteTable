@@ -29,6 +29,14 @@ import { MongoExportModal, MongoImportModal } from "./MongoIoModals";
 import { MongoPipelineTab, type MongoPipelineTabState } from "./MongoPipelineTab";
 import { MongoSchemaMap } from "./MongoSchemaMap";
 import { MongoSidebar } from "./MongoSidebar";
+import {
+  MongoCreateCollectionModal,
+  MongoCreateDatabaseModal,
+  MongoDropCollectionModal,
+  MongoDropDatabaseModal,
+  MongoEmptyDatabaseModal,
+  MongoTruncateCollectionModal,
+} from "./MongoDdlModals";
 import { SidebarResizer } from "../../../../shared/ui/SidebarResizer";
 import { useAutoRefresh } from "../../../settings/useAutoRefresh";
 import { useMongoActiveDbStore, useMongoShellStore } from "../shellState";
@@ -107,6 +115,14 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
 
   const [dbNames, setDbNames] = useState<string[]>([]);
   const [collections, setCollections] = useState<CollectionDescriptor[]>([]);
+  // Collection lifecycle dialogs. Each holds its own target so the menu that
+  // opened it can close immediately.
+  const [createDb, setCreateDb] = useState(false);
+  const [createColl, setCreateColl] = useState(false);
+  const [emptyDb, setEmptyDb] = useState(false);
+  const [dropDb, setDropDb] = useState(false);
+  const [truncateColl, setTruncateColl] = useState<string | null>(null);
+  const [dropColl, setDropColl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
@@ -259,6 +275,21 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
       return next;
     });
 
+  /**
+   * Close every tab showing `coll` — after a drop, those tabs point at a
+   * collection the server no longer has, and leaving them open means the next
+   * query fails with a driver error instead of the tab simply being gone.
+   */
+  const closeCollectionTabs = (coll: string) =>
+    setTabs((ts) => {
+      const next = ts.filter((t) => !(t.kind === "collection" && t.coll === coll));
+      if (next.length === ts.length) return ts;
+      // If the active tab was one of them, fall back to whatever remains
+      // (the dashboard is never closable, so `next` is never empty).
+      if (!next.some((t) => t.id === activeId)) setActiveId(next[next.length - 1]!.id);
+      return next;
+    });
+
   const tabMenu = useTabMenu({
     ids: tabs.map((t) => t.id),
     close: (ids) => ids.forEach(closeTab),
@@ -330,6 +361,12 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
         onExportColl={(c) => setExportJob({ scope: "collection", coll: c })}
         onImportColl={(c) => setImportTarget({ coll: c })}
         onExportAll={() => setExportJob({ scope: "all" })}
+        onCreateDb={() => setCreateDb(true)}
+        onCreateColl={() => setCreateColl(true)}
+        onEmptyDb={() => setEmptyDb(true)}
+        onDropDb={() => setDropDb(true)}
+        onTruncateColl={(c) => setTruncateColl(c)}
+        onDropColl={(c) => setDropColl(c)}
         onRefresh={refresh}
         refreshing={refreshSpinning}
         onCloseWorkspace={() => closeWorkspace(workspace.id)}
@@ -431,6 +468,8 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
                   onUpdateTab={(p) => updateTab(t.id, p as Partial<Tab>)}
                   onExport={(c) => setExportJob({ scope: "collection", coll: c })}
                   onImport={(c) => setImportTarget({ coll: c })}
+                  onTruncate={(c) => setTruncateColl(c)}
+                  onDrop={(c) => setDropColl(c)}
                   onDataChanged={() => void loadCollections(db, { silent: true })}
                 />
               )}
@@ -493,6 +532,96 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
           onClose={() => setImportTarget(null)}
           onDone={() => {
             setImportTarget(null);
+            void loadCollections(db, { silent: true });
+          }}
+        />
+      ) : null}
+
+      {/* Collection lifecycle. Each reloads the sidebar list on success; a drop
+          also closes any tab still showing the collection that no longer
+          exists. */}
+      {createDb ? (
+        <MongoCreateDatabaseModal
+          handleId={handleId}
+          existing={dbNames}
+          onClose={() => setCreateDb(false)}
+          onCreated={(name) => {
+            // Add it to the switcher and go there: a database you just made
+            // is the one you want to be in. Appended locally rather than
+            // re-listing — `listDatabases` on some deployments lags a moment
+            // behind a fresh create, and the name is already known.
+            setDbNames((names) => (names.includes(name) ? names : [...names, name].sort()));
+            switchDb(name);
+          }}
+        />
+      ) : null}
+
+      {createColl ? (
+        <MongoCreateCollectionModal
+          handleId={handleId}
+          db={db}
+          existing={collections.map((c) => c.name)}
+          onClose={() => setCreateColl(false)}
+          onCreated={(coll) => {
+            void loadCollections(db, { silent: true });
+            openColl(coll);
+          }}
+        />
+      ) : null}
+
+      {truncateColl ? (
+        <MongoTruncateCollectionModal
+          handleId={handleId}
+          db={db}
+          coll={truncateColl}
+          count={collections.find((c) => c.name === truncateColl)?.count ?? null}
+          env={env}
+          onClose={() => setTruncateColl(null)}
+          onTruncated={() => void loadCollections(db, { silent: true })}
+        />
+      ) : null}
+
+      {dropColl ? (
+        <MongoDropCollectionModal
+          handleId={handleId}
+          db={db}
+          coll={dropColl}
+          env={env}
+          onClose={() => setDropColl(null)}
+          onDropped={(coll) => {
+            closeCollectionTabs(coll);
+            void loadCollections(db, { silent: true });
+          }}
+        />
+      ) : null}
+
+      {dropDb ? (
+        <MongoDropDatabaseModal
+          handleId={handleId}
+          db={db}
+          collections={collections.map((c) => c.name)}
+          env={env}
+          onClose={() => setDropDb(false)}
+          onDropped={(name) => {
+            // The database this workspace was on no longer exists: drop it from
+            // the switcher and move to whatever is left, so nothing keeps
+            // querying a namespace the server has forgotten.
+            const rest = dbNames.filter((n) => n !== name);
+            setDbNames(rest);
+            if (rest[0]) switchDb(rest[0]);
+          }}
+        />
+      ) : null}
+
+      {emptyDb ? (
+        <MongoEmptyDatabaseModal
+          handleId={handleId}
+          db={db}
+          collections={collections.map((c) => c.name)}
+          env={env}
+          onClose={() => setEmptyDb(false)}
+          onEmptied={() => {
+            collections.forEach((c) => closeCollectionTabs(c.name));
             void loadCollections(db, { silent: true });
           }}
         />

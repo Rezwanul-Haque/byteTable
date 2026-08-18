@@ -71,6 +71,8 @@ export function MongoCollectionTab({
   onUpdateTab,
   onExport,
   onImport,
+  onTruncate,
+  onDrop,
   onDataChanged,
 }: {
   tab: MongoTab;
@@ -82,6 +84,10 @@ export function MongoCollectionTab({
   onUpdateTab: (patch: Partial<MongoTab>) => void;
   onExport: (coll: string) => void;
   onImport: (coll: string) => void;
+  /** Remove every document, keeping the collection (confirmed by the host). */
+  onTruncate: (coll: string) => void;
+  /** Drop the collection outright (confirmed by the host). */
+  onDrop: (coll: string) => void;
   onDataChanged: () => void;
 }) {
   const toast = useToast();
@@ -350,6 +356,27 @@ export function MongoCollectionTab({
                 }}
               >
                 <Icon name="upload" size={15} /> Import documents
+              </div>
+              {/* Destructive last, behind a separator — same order as the
+                  sidebar's collection menu and the SQL table menu. */}
+              <div className="ctx-sep" />
+              <div
+                className="ctx-item danger"
+                onClick={() => {
+                  setActionsOpen(false);
+                  onTruncate(coll);
+                }}
+              >
+                <Icon name="delete_sweep" size={15} /> Empty collection
+              </div>
+              <div
+                className="ctx-item danger"
+                onClick={() => {
+                  setActionsOpen(false);
+                  onDrop(coll);
+                }}
+              >
+                <Icon name="delete_forever" size={15} /> Drop collection
               </div>
             </div>
           ) : null}

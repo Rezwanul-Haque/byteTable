@@ -195,6 +195,66 @@ pub async fn insert_many(
         .await
 }
 
+/// `createCollection` — an explicit, empty collection.
+pub async fn create_collection(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    db: &str,
+    coll: &str,
+) -> Result<(), AppError> {
+    manager
+        .get_mongo(handle)
+        .await?
+        .create_collection(db, coll)
+        .await
+}
+
+/// Drop one collection — documents, indexes and validator.
+pub async fn drop_collection(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    db: &str,
+    coll: &str,
+) -> Result<(), AppError> {
+    manager
+        .get_mongo(handle)
+        .await?
+        .drop_collection(db, coll)
+        .await
+}
+
+/// Empty a collection, keeping it (and its indexes/validator) in place.
+pub async fn truncate_collection(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    db: &str,
+    coll: &str,
+) -> Result<u64, AppError> {
+    manager
+        .get_mongo(handle)
+        .await?
+        .truncate_collection(db, coll)
+        .await
+}
+
+/// Drop every collection in a database, keeping the database itself.
+pub async fn empty_database(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    db: &str,
+) -> Result<Vec<String>, AppError> {
+    manager.get_mongo(handle).await?.empty_database(db).await
+}
+
+/// Drop a database outright — the collections and the database itself.
+pub async fn drop_database(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    db: &str,
+) -> Result<(), AppError> {
+    manager.get_mongo(handle).await?.drop_database(db).await
+}
+
 /// `createIndex` (MILESTONE_18 §18.5).
 pub async fn create_index(
     manager: &ConnectionManager,

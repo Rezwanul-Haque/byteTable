@@ -162,6 +162,64 @@ pub async fn mongo_insert_many(
     application::insert_many(state.manager(), &handle_id, &db, &coll, docs).await
 }
 
+/// Create an explicit, empty collection. MongoDB would create one implicitly on
+/// first insert, so this is for the cases that cannot serve: an empty target to
+/// import into, or one to index/validate before any data arrives.
+#[tauri::command]
+pub async fn mongo_create_collection(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+    db: String,
+    coll: String,
+) -> Result<(), AppError> {
+    application::create_collection(state.manager(), &handle_id, &db, &coll).await
+}
+
+/// **Destructive.** Drop a collection with its documents, indexes and validator.
+#[tauri::command]
+pub async fn mongo_drop_collection(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+    db: String,
+    coll: String,
+) -> Result<(), AppError> {
+    application::drop_collection(state.manager(), &handle_id, &db, &coll).await
+}
+
+/// **Destructive.** Remove every document but keep the collection, its indexes
+/// and its validator — MongoDB's answer to TRUNCATE. Returns the count removed.
+#[tauri::command]
+pub async fn mongo_truncate_collection(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+    db: String,
+    coll: String,
+) -> Result<u64, AppError> {
+    application::truncate_collection(state.manager(), &handle_id, &db, &coll).await
+}
+
+/// **Destructive.** Drop every collection in a database, leaving the database
+/// itself standing. Returns the collections dropped.
+#[tauri::command]
+pub async fn mongo_empty_database(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+    db: String,
+) -> Result<Vec<String>, AppError> {
+    application::empty_database(state.manager(), &handle_id, &db).await
+}
+
+/// **Destructive.** Drop a database: every collection AND the database itself.
+/// The counterpart of `mongo_empty_database`, which keeps the database.
+#[tauri::command]
+pub async fn mongo_drop_database(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+    db: String,
+) -> Result<(), AppError> {
+    application::drop_database(state.manager(), &handle_id, &db).await
+}
+
 #[tauri::command]
 pub async fn mongo_create_index(
     state: State<'_, ConnectionsState>,

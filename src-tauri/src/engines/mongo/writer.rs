@@ -141,4 +141,60 @@ impl MongoWriter for MongoDbConnection {
             .map_err(|e| db_err(&format!("Update validator on '{coll}'"), e))?;
         Ok(())
     }
+
+    async fn create_collection(&self, db: &str, coll: &str) -> Result<(), AppError> {
+        self.client
+            .database(db)
+            .create_collection(coll)
+            .await
+            .map_err(|e| db_err(&format!("Create collection '{coll}'"), e))
+    }
+
+    async fn drop_collection(&self, db: &str, coll: &str) -> Result<(), AppError> {
+        self.coll(db, coll)
+            .drop()
+            .await
+            .map_err(|e| db_err(&format!("Drop collection '{coll}'"), e))
+    }
+
+    async fn truncate_collection(&self, db: &str, coll: &str) -> Result<u64, AppError> {
+        // An empty filter matches every document. `drop` would be faster, but
+        // it would also take the indexes and the validator with it — the whole
+        // point of truncate is that the collection survives ready to refill.
+        let res = self
+            .coll(db, coll)
+            .delete_many(doc! {})
+            .await
+            .map_err(|e| db_err(&format!("Empty collection '{coll}'"), e))?;
+        Ok(res.deleted_count)
+    }
+
+    async fn empty_database(&self, db: &str) -> Result<Vec<String>, AppError> {
+        let handle = self.client.database(db);
+        let names = handle
+            .list_collection_names()
+            .await
+            .map_err(|e| db_err(&format!("List collections in '{db}'"), e))?;
+        // Sequential and fail-fast: a partial result is reported by the error
+        // itself naming the collection that refused, so the caller can see how
+        // far it got rather than being told the whole thing failed.
+        let mut dropped = Vec::with_capacity(names.len());
+        for name in names {
+            handle
+                .collection::<Document>(&name)
+                .drop()
+                .await
+                .map_err(|e| db_err(&format!("Drop collection '{name}'"), e))?;
+            dropped.push(name);
+        }
+        Ok(dropped)
+    }
+
+    async fn drop_database(&self, db: &str) -> Result<(), AppError> {
+        self.client
+            .database(db)
+            .drop()
+            .await
+            .map_err(|e| db_err(&format!("Drop database '{db}'"), e))
+    }
 }

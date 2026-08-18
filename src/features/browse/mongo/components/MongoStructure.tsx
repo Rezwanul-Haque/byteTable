@@ -121,7 +121,7 @@ export function MongoStructure({
         </button>
       </div>
       <div className="mg-struct-body">
-        {tab === "schema" ? (
+        {tab === "schema" && schema.length > 0 ? (
           <table className="structure-table mg-schema-table">
             <thead>
               <tr>
@@ -177,7 +177,23 @@ export function MongoStructure({
               })}
             </tbody>
           </table>
-        ) : tab === "indexes" ? (
+        ) : null}
+        {/* MongoDB is schemaless: this table is INFERRED by sampling documents,
+            so a collection with none has nothing to infer and renders as bare
+            column headers. Say that instead — an empty grid reads as a failure,
+            and "0 fields" on a brand-new collection is the correct answer, not
+            a missing one. */}
+        {tab === "schema" && schema.length === 0 ? (
+          <div className="mg-schema-empty">
+            <Icon name="schema" size={22} style={{ color: "var(--text-faint)" }} />
+            <b>No fields to infer yet</b>
+            <span>
+              MongoDB has no fixed schema — this is read from the documents in <code>{coll}</code>,
+              and it has none. Insert a document and the fields appear here.
+            </span>
+          </div>
+        ) : null}
+        {tab === "indexes" ? (
           <div className="mg-indexes">
             {indexes.map((idx) => (
               <div key={idx.name} className="structure-card">
@@ -233,7 +249,8 @@ export function MongoStructure({
               </div>
             )}
           </div>
-        ) : (
+        ) : null}
+        {tab === "validation" ? (
           <div className="mg-validation">
             {editingValidator ? (
               <>
@@ -299,7 +316,7 @@ export function MongoStructure({
               </div>
             )}
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

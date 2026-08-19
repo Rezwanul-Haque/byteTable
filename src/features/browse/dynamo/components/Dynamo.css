@@ -658,9 +658,11 @@
 .ddb-q-field .sel-trigger {
   width: 100%;
 }
-.ddb-query-bar > .btn {
-  align-self: flex-start;
-  margin-left: 160px;
+/* Run sits at the end of the sort-key row (or the partition-key row when the
+   index has no sort key), not on a line of its own — the query bar is directly
+   above the grid, so a row spent on one button costs a row of items. */
+.ddb-q-run {
+  flex: none;
 }
 .ddb-sk-row {
   display: flex;

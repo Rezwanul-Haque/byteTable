@@ -136,6 +136,10 @@ export function DynamoTableTab({
   // ⌘E toggles the inspector; read through a ref so the listener is bound once
   // rather than re-bound whenever the page changes.
   const toggleInspectorRef = useRef<() => void>(() => {});
+  // ⌘/Ctrl+Enter runs whatever the current mode reads with — a Query or a Scan.
+  // Read through a ref so the listener is bound once rather than on every
+  // keystroke in the key fields.
+  const runRef = useRef<() => void>(() => {});
   // The row ⌘E should reopen on — the last one inspected, so the key is a real
   // toggle rather than "close, then jump back to the top". Survives the close
   // that `inspectingRow` does not, and is reset by a fetch (see `fetchAt`).
@@ -149,6 +153,16 @@ export function DynamoTableTab({
     if (!active) return;
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      // ⌘/Ctrl+Enter runs the tab's read — Query or Scan, whichever mode is on
+      // — from anywhere in the tab. The key inputs also accept a bare Enter,
+      // which is the habit inside a form field. Indexes reads nothing, so it is
+      // left alone.
+      if (e.key === "Enter") {
+        if (mode === "structure") return;
+        e.preventDefault();
+        runRef.current();
+        return;
+      }
       const key = e.key.toLowerCase();
       if (key !== "i" && key !== "f" && key !== "s" && key !== "e") return;
       if (key === "f") {
@@ -482,6 +496,13 @@ export function DynamoTableTab({
   }, [saveStaged]);
 
   useEffect(() => {
+    runRef.current = () => {
+      if (mode === "query") void runQuery();
+      else runScan();
+    };
+  });
+
+  useEffect(() => {
     drawerOpenRef.current = itemView !== null || creating;
   }, [itemView, creating]);
 
@@ -601,6 +622,26 @@ export function DynamoTableTab({
   const idx = useIndex ? t.gsis.concat(t.lsis).find((g) => g.name === useIndex) : undefined;
   const idxPk = idx ? idx.pk : t.keySchema.pk;
   const idxSk = idx ? idx.sk : t.keySchema.sk;
+
+  // Run lives at the end of the sort-key row — or the partition-key row on an
+  // index with no sort key — rather than on a line of its own. The query bar sits
+  // above the grid, so a whole row spent on one button is a row of items nobody
+  // can see.
+  //
+  // Filled, and Run scan matches it: the two are the same action in different
+  // modes, so they should read as the same button.
+  const runQueryBtn = (
+    <Btn
+      className="ddb-q-run"
+      icon="play_arrow"
+      variant="filled"
+      small
+      title="Run this query (⌘↵ / Ctrl+↵)"
+      onClick={() => void runQuery()}
+    >
+      Query
+    </Btn>
+  );
 
   const indexOptions = [
     { value: "", label: `${t.name} (base table)` },
@@ -727,7 +768,13 @@ export function DynamoTableTab({
             separates it from the mode/projection controls on the left. */}
         <div style={{ flex: 1 }} />
         {mode === "scan" ? (
-          <Btn icon="play_arrow" variant="tonal" small onClick={() => void runScan()}>
+          <Btn
+            icon="play_arrow"
+            variant="filled"
+            small
+            title="Read a page of this table (⌘↵ / Ctrl+↵)"
+            onClick={() => void runScan()}
+          >
             Run scan
           </Btn>
         ) : null}
@@ -830,6 +877,7 @@ export function DynamoTableTab({
               }}
               spellCheck={false}
             />
+            {idxSk ? null : runQueryBtn}
           </label>
           {idxSk ? (
             <div className="ddb-q-field ddb-q-sk">
@@ -867,12 +915,10 @@ export function DynamoTableTab({
                     spellCheck={false}
                   />
                 ) : null}
+                {runQueryBtn}
               </div>
             </div>
           ) : null}
-          <Btn icon="play_arrow" variant="filled" small onClick={() => void runQuery()}>
-            Query
-          </Btn>
         </div>
       ) : null}
 

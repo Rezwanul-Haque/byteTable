@@ -131,8 +131,6 @@ export function DynamoTableTab({
   // ⌘S commits the staged batch. Read through a ref so the key listener does not
   // need re-binding every time the buffer changes.
   const saveStagedRef = useRef<() => void>(() => {});
-  // True while the item drawer is up — it takes ⌘S for staging (see below).
-  const drawerOpenRef = useRef(false);
   // ⌘E toggles the inspector; read through a ref so the listener is bound once
   // rather than re-bound whenever the page changes.
   const toggleInspectorRef = useRef<() => void>(() => {});
@@ -140,6 +138,11 @@ export function DynamoTableTab({
   // Read through a ref so the listener is bound once rather than on every
   // keystroke in the key fields.
   const runRef = useRef<() => void>(() => {});
+  // The drawer owns ⌘S while it is up: its edits must be staged before there is
+  // anything worth committing. Captured in the listener's closure (a dependency
+  // below) rather than read from a ref — a ref written by an effect lags the
+  // render that opened the drawer, and this must be exact for one keystroke.
+  const drawerOpen = itemView !== null || creating;
   // The row ⌘E should reopen on — the last one inspected, so the key is a real
   // toggle rather than "close, then jump back to the top". Survives the close
   // that `inspectingRow` does not, and is reset by a fetch (see `fetchAt`).
@@ -181,7 +184,7 @@ export function DynamoTableTab({
         // The drawer owns ⌘S while it is open: its edits must be staged before
         // there is anything worth committing, so one keystroke never both stages
         // and commits.
-        if (!drawerOpenRef.current) saveStagedRef.current();
+        if (!drawerOpen) saveStagedRef.current();
         return;
       }
       // Indexes is a read-only view of the schema; nothing to add an item to.
@@ -191,7 +194,7 @@ export function DynamoTableTab({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [active, mode, onModeChange]);
+  }, [active, mode, onModeChange, drawerOpen]);
 
   useEffect(() => {
     if (focusPk === 0 || mode !== "query") return;
@@ -501,10 +504,6 @@ export function DynamoTableTab({
       else runScan();
     };
   });
-
-  useEffect(() => {
-    drawerOpenRef.current = itemView !== null || creating;
-  }, [itemView, creating]);
 
   // ⌘E: close the inspector if it is open, else open it on the first item with
   // no attribute focused — "show me this record", the same toggle the SQL and

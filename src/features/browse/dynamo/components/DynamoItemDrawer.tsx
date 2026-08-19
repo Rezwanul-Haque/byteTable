@@ -350,11 +350,19 @@ export function DynamoItemDrawer({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
+        e.stopImmediatePropagation();
         onClose();
         return;
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
+        // The grid has its own ⌘S listener on `window` for committing the
+        // staged batch. `preventDefault` does NOT stop a sibling listener, and
+        // whichever was registered first wins — so one keystroke could stage
+        // here and immediately commit there, skipping the review the save bar
+        // exists for. Stop the event dead: while this drawer is up, ⌘S means
+        // stage and nothing else.
+        e.stopImmediatePropagation();
         stageRef.current();
       }
     };

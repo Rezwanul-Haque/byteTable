@@ -30,14 +30,21 @@ import {
   ddbCoerce,
   ddbRawOf,
   ddbType,
+  formatIsoTs,
+  isIsoTimestamp,
   isSetType,
+  isoShapeOf,
   itemKeyOf,
+  orderAttributes,
+  parseIsoTs,
   marshalItem,
   DDB_TYPES,
 } from "../helpers";
+import { RiDateTime } from "../../shared/DateTimeField";
+import { JsonField } from "../../shared/JsonField";
 import { highlightJSON } from "../../shared/jsonCell";
 import "../../shared/CellEditors.css";
-import "../../sql/components/RowInspector.css";
+import "../../shared/InspectorShell.css";
 
 interface AttrRow {
   name: string;
@@ -114,18 +121,59 @@ function rawForType(type: string, raw: string): string {
  * both the attribute list and the composer, so a value is edited the same way
  * wherever it appears.
  */
+/**
+ * The shape a timestamp is written in when the field has no shape to copy —
+ * after the value was cleared, or when the calendar's "now" button fills an
+ * empty field. Plain UTC ISO-8601, the form AWS's own docs use.
+ */
+const DEFAULT_ISO_SHAPE = { sep: "T", frac: "", zone: "Z", hasSeconds: true };
+
 function AttrValueField({
   type,
   raw,
   onChange,
   placeholder,
+  asTimestamp,
 }: {
   type: string;
   raw: string;
   onChange: (raw: string) => void;
   placeholder?: string;
+  /**
+   * Render the calendar editor even when `raw` does not currently parse as a
+   * timestamp. The caller owns this decision and keeps it STICKY per attribute:
+   * detecting from the value alone is a one-way door, because clearing the field
+   * (or the calendar's own "null" button) makes the value stop looking like a
+   * date and the calendar would vanish with no way back short of retyping a full
+   * ISO string by hand.
+   */
+  asTimestamp?: boolean;
 }) {
   if (type === "NULL") return <input className="ri-input" value="null" readOnly disabled />;
+  // An `S` holding an ISO-8601 timestamp gets the calendar + clock editor the
+  // SQL inspector gives a temporal column. DynamoDB declares no such type, so
+  // the value itself is the only signal — and the editor keeps its raw-text
+  // escape hatch, so a string that merely looks like a date is never a trap.
+  if (type === "S" && (asTimestamp || isIsoTimestamp(raw))) {
+    // Keep the stored spelling when there is one; fall back to plain UTC ISO for
+    // an empty field, so "now" and the steppers still have something to write.
+    const shape = isoShapeOf(raw) ?? DEFAULT_ISO_SHAPE;
+    return (
+      <RiDateTime
+        type="timestamp"
+        // An empty attribute is passed as NULL, not as "". The editor reads
+        // `cur != null && !date` as "there is a value here and it does not
+        // parse" and forces raw-text mode with the clock disabled — which is
+        // what an empty string looked like, stranding the field the moment its
+        // own `null` button was used. As null it shows the NULL chip and offers
+        // `now`, exactly as it does for a SQL column.
+        cur={raw === "" ? null : raw}
+        onDraft={(v) => onChange(v === null || v === undefined ? "" : String(v))}
+        parse={(v) => parseIsoTs(v)}
+        emitValue={(d) => formatIsoTs(d, shape)}
+      />
+    );
+  }
   if (type === "BOOL")
     return (
       <Select
@@ -140,17 +188,12 @@ function AttrValueField({
         onChange={onChange}
       />
     );
+  // Maps, lists and the three set types all edit as JSON, so they all get the
+  // highlighted editor with its live validity check and format / minify — the
+  // same field the SQL inspector gives a JSON column. A nested map is the case
+  // that needs it most: plain text at this size is where a missing brace hides.
   if (type === "M" || type === "L" || isSetType(type))
-    return (
-      <textarea
-        className="ri-input ri-ta ddb-val-json"
-        rows={Math.min(6, raw.split("\n").length)}
-        value={raw}
-        onChange={(e) => onChange(e.target.value)}
-        spellCheck={false}
-        aria-label="Attribute value"
-      />
-    );
+    return <JsonField text={raw} onChange={onChange} minRows={2} maxRows={12} />;
   return (
     <input
       className="ri-input"
@@ -202,15 +245,6 @@ export function DynamoItemDrawer({
   onStage,
 }: DynamoItemDrawerProps) {
   const keyAttrs = [table.keySchema.pk, table.keySchema.sk].filter(Boolean) as string[];
-  const allKeyAttrs = new Set(keyAttrs);
-  for (const gsi of table.gsis) {
-    allKeyAttrs.add(gsi.pk);
-    if (gsi.sk) allKeyAttrs.add(gsi.sk);
-  }
-  for (const lsi of table.lsis) {
-    allKeyAttrs.add(lsi.pk);
-    if (lsi.sk) allKeyAttrs.add(lsi.sk);
-  }
   const isKey = (k: string) => keyAttrs.includes(k);
 
   // The drawer's starting point, and what Discard restores.
@@ -219,17 +253,23 @@ export function DynamoItemDrawer({
       ? // New item: seed the key attributes (empty values) using their declared
         // DynamoDB types, so identity is always present and typed correctly.
         keyAttrs.map((k) => ({ name: k, type: table.attrTypes[k] ?? "S", raw: "" }))
-      : Object.keys(item)
-          .sort((a, b) => {
-            const aK = allKeyAttrs.has(a);
-            const bK = allKeyAttrs.has(b);
-            if (aK && !bK) return -1;
-            if (!aK && bK) return 1;
-            return a < b ? -1 : a > b ? 1 : 0;
-          })
-          .map((k) => ({ name: k, type: ddbType(item[k]), raw: ddbRawOf(item[k]) }));
+      : // Same order as the grid's columns, so a row and its drawer read alike.
+        orderAttributes(Object.keys(item), table.keySchema).map((k) => ({
+          name: k,
+          type: ddbType(item[k]),
+          raw: ddbRawOf(item[k]),
+        }));
+
+  /** Attribute names currently edited with the calendar, seeded from the item. */
+  const tsAttrsOf = (rs: AttrRow[]) =>
+    new Set(rs.filter((r) => r.type === "S" && isIsoTimestamp(r.raw)).map((r) => r.name));
 
   const [rows, setRows] = useState<AttrRow[]>(initialRows);
+  // Which fields show the calendar. Sticky, not derived from the value on every
+  // render: emptying a field — including with the calendar's own "null" button —
+  // makes it stop looking like a date, and a derived flag would take the
+  // calendar away at exactly the moment the user wanted to pick a new one.
+  const [tsAttrs, setTsAttrs] = useState<Set<string>>(() => tsAttrsOf(initialRows()));
   const bodyRef = useRef<HTMLDivElement | null>(null);
 
   const [dirty, setDirty] = useState(false);
@@ -246,8 +286,10 @@ export function DynamoItemDrawer({
   const identity = create ? "new" : itemKeyOf(item, table.keySchema);
   const [lastIdentity, setLastIdentity] = useState(identity);
   if (lastIdentity !== identity) {
+    const fresh = initialRows();
     setLastIdentity(identity);
-    setRows(initialRows());
+    setRows(fresh);
+    setTsAttrs(tsAttrsOf(fresh));
     setDirty(false);
     setDraftAttr(null);
   }
@@ -328,6 +370,12 @@ export function DynamoItemDrawer({
 
   const setRow = (i: number, patch: Partial<AttrRow>) => {
     setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+    // Typing a full ISO string into a plain field promotes it to the calendar —
+    // and, being sticky, it stays there afterwards.
+    const row = rows[i];
+    if (row && patch.raw !== undefined && !tsAttrs.has(row.name) && isIsoTimestamp(patch.raw)) {
+      setTsAttrs((prev) => new Set(prev).add(row.name));
+    }
     setDirty(true);
   };
   const removeRow = (i: number) => {
@@ -337,6 +385,16 @@ export function DynamoItemDrawer({
   const changeType = (i: number, type: string) => {
     const cur = rows[i];
     if (!cur) return;
+    // Leaving `S` is an explicit "this is not a date", and the way out of the
+    // calendar for good. (Its own text mode is the way to edit the raw string
+    // without leaving.)
+    if (type !== "S" && tsAttrs.has(cur.name)) {
+      setTsAttrs((prev) => {
+        const next = new Set(prev);
+        next.delete(cur.name);
+        return next;
+      });
+    }
     setRow(i, { type, raw: rawForType(type, cur.raw) });
   };
 
@@ -406,7 +464,9 @@ export function DynamoItemDrawer({
     !create || keyAttrs.every((k) => (rows.find((r) => r.name === k)?.raw.trim() ?? "") !== "");
 
   const discard = () => {
-    setRows(initialRows());
+    const fresh = initialRows();
+    setRows(fresh);
+    setTsAttrs(tsAttrsOf(fresh));
     setDraftAttr(null);
     setDirty(false);
   };
@@ -666,6 +726,7 @@ export function DynamoItemDrawer({
                   type={r.type}
                   raw={r.raw}
                   onChange={(raw) => setRow(i, { raw })}
+                  asTimestamp={tsAttrs.has(r.name)}
                   placeholder={
                     keyRow ? (badge ? badge.toUpperCase() + " value" : "key value") : undefined
                   }

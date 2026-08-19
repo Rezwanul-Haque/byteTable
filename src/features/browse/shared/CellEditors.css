@@ -357,3 +357,82 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ---- inspector field primitives ----
+   The input, textarea, mini-button, nav-button and NULL chip shared by the SQL
+   row inspector, the DynamoDB item drawer and the datetime field between them.
+   They live here rather than in either inspector's own stylesheet because all
+   three load this file, and the datetime field would otherwise depend on the
+   SQL slice's CSS. */
+
+.ri-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.ri-nav-btn:hover:not(:disabled) {
+  background: var(--bg3);
+  color: var(--text);
+}
+.ri-nav-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.ri-null {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--text-faint);
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 5px;
+  line-height: 1.6;
+}
+.ri-input {
+  width: 100%;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 6px 9px;
+  font-size: 12px;
+  font-family: var(--mono);
+  color: var(--text);
+  outline: none;
+}
+.ri-input:focus {
+  border-color: var(--accent);
+}
+.ri-ta {
+  resize: vertical;
+  line-height: 1.45;
+}
+.ri-mini-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-family: var(--mono);
+}
+.ri-mini-btn:hover:not(:disabled) {
+  background: var(--bg3);
+  color: var(--text);
+}
+.ri-mini-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

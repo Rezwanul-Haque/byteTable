@@ -54,6 +54,22 @@ export function ddbType(v: unknown): string {
   return "S";
 }
 
+/**
+ * The one attribute order used by BOTH the item grid and the item drawer:
+ * partition key, sort key, then everything else alphabetically.
+ *
+ * Shared because they disagreed. The drawer used to float every KEY attribute to
+ * the top — including secondary-index keys — and sort that whole group by name,
+ * so a table with a GSI on `eventType` listed `aggregateId, eventType,
+ * timestamp` while the grid showed `aggregateId, timestamp, eventType`. Index
+ * keys are ordinary attributes of the item; only the table's own key identifies
+ * it, and that is what earns the top of the list.
+ */
+export function orderAttributes(names: string[], keySchema: { pk: string; sk?: string }): string[] {
+  const lead = [keySchema.pk, keySchema.sk].filter((c): c is string => !!c && names.includes(c));
+  return lead.concat(names.filter((c) => c !== keySchema.pk && c !== keySchema.sk).sort());
+}
+
 /** First-seen-order attribute union across items (the schemaless grid columns). */
 export function attributeUnion(items: DynamoItem[]): string[] {
   const seen = new Set<string>();
@@ -156,6 +172,118 @@ export function itemKeyOf(item: DynamoItem, keySchema: { pk: string; sk?: string
   const parts = [JSON.stringify(item[keySchema.pk] ?? null)];
   if (keySchema.sk) parts.push(JSON.stringify(item[keySchema.sk] ?? null));
   return parts.join("|");
+}
+
+// -- ISO-8601 timestamps ----------------------------------------------------
+//
+// DynamoDB has no date type. The convention AWS itself documents is an ISO-8601
+// string in an `S` attribute, so that is what the item drawer offers a calendar
+// for. Epoch NUMBERS are the other common convention, and are deliberately NOT
+// detected: a bare 1775577600 is indistinguishable from a price or a counter,
+// and silently turning someone's integer into a date picker would be worse than
+// not offering one.
+
+/**
+ * `2026-04-07T16:30:00Z`, `…+06:00`, `…T16:30`, millis optional, and the space
+ * separator some writers use. Anchored, so a string that merely STARTS with a
+ * date (an id like `2026-04-07-order-12`) is not mistaken for a timestamp.
+ */
+const ISO_TS =
+  /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?(\.\d{1,9})?(Z|[+-]\d{2}:?\d{2})?$/;
+
+/** The parts of an ISO string worth preserving when it is written back. */
+export interface IsoShape {
+  /** `T` or a space — whichever the stored value used. */
+  sep: string;
+  /** The fractional-seconds text (`.500`), or "" when there was none. */
+  frac: string;
+  /** `Z`, `+06:00`, or "" for a bare local-looking timestamp. */
+  zone: string;
+  /** Whether the stored value spelled out seconds. */
+  hasSeconds: boolean;
+}
+
+/** The ISO shape of a value, or null when it is not an ISO timestamp. */
+export function isoShapeOf(v: unknown): IsoShape | null {
+  if (typeof v !== "string") return null;
+  const m = ISO_TS.exec(v.trim());
+  if (!m) return null;
+  return {
+    sep: v.includes("T") ? "T" : " ",
+    frac: m[7] ?? "",
+    zone: m[8] ?? "",
+    hasSeconds: m[6] !== undefined,
+  };
+}
+
+/** True when a value is an ISO-8601 timestamp the calendar editor can drive. */
+export function isIsoTimestamp(v: unknown): boolean {
+  return isoShapeOf(v) !== null && parseIsoTs(v) !== null;
+}
+
+/**
+ * Parse an ISO-8601 timestamp, HONOURING its offset — `…T16:30:00+06:00` is
+ * 10:30 UTC, not 16:30. (The SQL `parseTs` stops at the seconds and would read
+ * it as 16:30 UTC.) A value with no zone is read as UTC.
+ */
+export function parseIsoTs(v: unknown): Date | null {
+  if (typeof v !== "string") return null;
+  const m = ISO_TS.exec(v.trim());
+  if (!m) return null;
+  const [, y, mo, d, h, mi, sec, frac, zone] = m;
+  let ms = Date.UTC(
+    +y!,
+    +mo! - 1,
+    +d!,
+    +h!,
+    +mi!,
+    sec ? +sec : 0,
+    frac ? Math.round(parseFloat(frac) * 1000) : 0,
+  );
+  if (zone && zone !== "Z") {
+    const sign = zone.startsWith("-") ? -1 : 1;
+    const [zh, zm] = zone.slice(1).replace(":", "").match(/\d{2}/g) ?? ["0", "0"];
+    ms -= sign * (+zh! * 60 + +zm!) * 60_000;
+  }
+  const date = new Date(ms);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/**
+ * Render a Date back to ISO-8601 in the SAME shape it was read in — same
+ * separator, same fractional digits, same zone spelling. Editing the minute of
+ * a `…T16:30:00Z` must not also rewrite it as `… 16:30:00.000+00:00`.
+ *
+ * The instant is always correct: a value stored with an offset keeps that
+ * offset, with the wall-clock time recomputed for it.
+ */
+export function formatIsoTs(date: Date, shape: IsoShape): string {
+  const offsetMin = (() => {
+    if (!shape.zone || shape.zone === "Z") return 0;
+    const sign = shape.zone.startsWith("-") ? -1 : 1;
+    const [zh, zm] = shape.zone.slice(1).replace(":", "").match(/\d{2}/g) ?? ["0", "0"];
+    return sign * (+zh! * 60 + +zm!);
+  })();
+  const local = new Date(date.getTime() + offsetMin * 60_000);
+  const p = (n: number) => String(n).padStart(2, "0");
+  const base =
+    local.getUTCFullYear() +
+    "-" +
+    p(local.getUTCMonth() + 1) +
+    "-" +
+    p(local.getUTCDate()) +
+    shape.sep +
+    p(local.getUTCHours()) +
+    ":" +
+    p(local.getUTCMinutes()) +
+    (shape.hasSeconds ? ":" + p(local.getUTCSeconds()) : "");
+  const frac = shape.frac
+    ? "." +
+      String(local.getUTCMilliseconds())
+        .padStart(3, "0")
+        .slice(0, shape.frac.length - 1)
+    : "";
+  return base + frac + shape.zone;
 }
 
 // -- DynamoDB-typed JSON marshalling (dynamo-export.js / dynamo-import.js) ---

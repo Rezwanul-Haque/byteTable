@@ -1,0 +1,274 @@
+/* Inspector shell — the drawer chrome shared by the SQL row inspector
+   (`browse/sql/components/RowInspector`) and the DynamoDB item drawer
+   (`browse/dynamo/components/DynamoItemDrawer`), which are separate components
+   that deliberately present the same way.
+
+   Here rather than in either slice so neither engine imports the other's
+   stylesheet. What lives here is everything BOTH hosts render: the drawer, its
+   head/body/foot, the field card, the copy-row menu, the locked-key box and the
+   footer buttons. Engine-specific field bodies stay with their own inspector —
+   the JSON/binary/bool editors in RowInspector.css, the type selector and set
+   editors in Dynamo.css.
+
+   The `.ri-` prefix is kept: renaming would churn two components for no gain. */
+
+/* Row Inspector drawer — .ri-* rules ported from the prototype (ByteTable.html).
+   The drawer is non-modal (no scrim): it sits at z-index 44, below every modal
+   (.modal-scrim is 50) and its top sits exactly at the custom title bar's bottom
+   edge so it never covers it. The title bar height is platform-dependent
+   (36px default, 28px on macOS — see TitleBar.css), so `top` is overridden per
+   platform below. The prototype's `var(--danger)` maps to this app's `--error`. */
+
+.ri-drawer {
+  position: fixed;
+  top: 36px;
+  right: 0;
+  bottom: 0;
+  width: 420px;
+  max-width: 88%;
+  background: var(--bg1);
+  border-left: 1px solid var(--border);
+  box-shadow: -18px 0 48px rgba(0, 0, 0, 0.45);
+  transform: translateX(102%);
+  transition: transform 0.22s cubic-bezier(0.4, 0.1, 0.2, 1);
+  z-index: 44;
+  display: flex;
+  flex-direction: column;
+}
+/* macOS title bar is 28px (vs the 36px default) — pull the drawer up to touch it. */
+body[data-platform="macos"] .ri-drawer {
+  top: 28px;
+}
+.ri-drawer.open {
+  transform: translateX(0);
+}
+
+.ri-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 12px 12px 14px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.ri-title {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+.ri-title-main {
+  font-size: 13.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ri-title-sub {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ri-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  color: var(--text-faint);
+  cursor: pointer;
+  flex: none;
+}
+.ri-close:hover:not(:disabled) {
+  background: var(--bg3);
+  color: var(--text);
+}
+.ri-close:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.ri-close.on {
+  background: var(--bg3);
+  color: var(--text);
+}
+/* Copy-row button + its format menu, anchored under the button. */
+.ri-copyrow {
+  position: relative;
+  flex: none;
+}
+.ri-copyrow-menu {
+  position: absolute;
+  top: 30px;
+  right: 0;
+  z-index: 5;
+  min-width: 168px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+.ri-copyrow-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.ri-copyrow-item:hover {
+  background: var(--bg3);
+  color: var(--text);
+}
+
+.ri-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ri-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  border-left: 2px solid transparent;
+  padding-left: 9px;
+  margin-left: -11px;
+}
+.ri-field.dirty {
+  border-left-color: var(--accent);
+}
+/* The field for the cell the drawer was opened from — the drawer's answer to the
+   grid's `cell-selected`, so a click on column 3 lands on column 3 here. Marked
+   with the existing border slot + an accent name rather than a background or an
+   outline: the editor inside already takes focus (and draws its own ring), and
+   nothing here changes the box, so moving the marker never shifts the layout. */
+.ri-field.focused {
+  border-left-color: color-mix(in oklab, var(--accent) 45%, transparent);
+}
+.ri-field.focused .ri-field-name {
+  color: var(--accent);
+}
+.ri-field-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 18px;
+}
+.ri-field-name {
+  font-size: 11.5px;
+  font-weight: 600;
+  font-family: var(--mono);
+}
+.ri-field-type {
+  font-size: 9.5px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+}
+.ri-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-left: 2px;
+}
+
+/* Per-field copy button — always visible, pushed to the head's right edge. */
+.ri-copy {
+  margin-left: auto;
+  padding: 2px 4px;
+}
+
+.ri-pk-lock {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg2);
+  border: 1px dashed var(--border);
+  border-radius: 7px;
+  padding: 6px 9px;
+  font-size: 12px;
+  font-family: var(--mono);
+}
+.ri-pk-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  flex: none;
+  white-space: nowrap;
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+
+/* ---- footer ---- */
+.ri-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--bg1);
+  min-height: 46px;
+}
+.ri-foot.dirty {
+  border-top-color: color-mix(in oklab, var(--accent) 40%, var(--border));
+  background: color-mix(in oklab, var(--accent) 6%, var(--bg1));
+}
+.ri-foot-n {
+  font-size: 12px;
+  font-weight: 600;
+}
+.ri-foot-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  line-height: 1.4;
+}
+.ri-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.ri-btn.ghost {
+  background: none;
+  border-color: var(--border);
+  color: var(--text-dim);
+}
+.ri-btn.ghost:hover {
+  color: var(--text);
+  border-color: var(--text-faint);
+}
+.ri-btn.primary {
+  background: var(--accent);
+  color: #0c1210;
+}
+.ri-btn.primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+.ri-btn.primary:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

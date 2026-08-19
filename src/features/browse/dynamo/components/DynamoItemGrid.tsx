@@ -17,7 +17,7 @@ import { observeElementRect, useVirtualizer, type Virtualizer } from "@tanstack/
 import { Icon } from "../../../../shared/ui/Icon";
 import { useToast } from "../../../../shared/ui/toastContext";
 import type { DynamoItem, KeySchema } from "../api";
-import { attributeUnion, dynamoFmt } from "../helpers";
+import { attributeUnion, dynamoFmt, orderAttributes } from "../helpers";
 // The shared column-resize handle styling (.dg-col-resize / body.dg-col-resizing).
 import "../../shared/DataGrid.css";
 
@@ -120,12 +120,10 @@ function DynamoItemGridInner({
   // Keys first, then the remaining attributes in first-seen order. Keys are only
   // shown when actually present in the returned items — a projection that omits
   // PK/SK must not render empty key columns.
-  const ordered = useMemo(() => {
-    const cols = attributeUnion(items);
-    return [keySchema.pk, keySchema.sk]
-      .filter((c): c is string => !!c && cols.includes(c))
-      .concat(cols.filter((c) => c !== keySchema.pk && c !== keySchema.sk).sort());
-  }, [items, keySchema.pk, keySchema.sk]);
+  const ordered = useMemo(
+    () => orderAttributes(attributeUnion(items), keySchema),
+    [items, keySchema],
+  );
 
   const selectable = !!onToggleRow;
 

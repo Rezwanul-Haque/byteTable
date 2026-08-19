@@ -1,0 +1,277 @@
+/* Calendar + clock datetime field (`DateTimeField.tsx`) — the editor shared by
+   the SQL row inspector and the DynamoDB item drawer.
+   
+   Moved here from RowInspector.css so neither engine slice has to reach into the
+   other's stylesheet; the datetime HELPERS it drives (`dateTimeCell.ts`) already
+   lived in this folder.
+
+   The `.ri-` prefix is kept deliberately: these class names are shared with the
+   inspector shells that host the field, and renaming them would be churn across
+   two components for no behavioural gain. */
+
+/* ---- datetime editor ---- */
+.ri-dt {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ri-dt > .ri-input {
+  flex: 1;
+}
+.ri-dt:has(> .ri-input) {
+  flex-direction: row;
+  align-items: center;
+}
+.ri-dt-display {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 6px 9px;
+  cursor: pointer;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.ri-dt-display:hover,
+.ri-dt-display.open {
+  border-color: var(--accent);
+}
+.ri-dt-val {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ri-dt-tz {
+  font-size: 9.5px;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+  border-radius: 4px;
+  padding: 1px 5px;
+  flex: none;
+}
+.ri-dt-panel {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg0);
+  padding: 8px 9px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ri-dt-toprow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ri-dt-tzsel {
+  position: relative;
+}
+.ri-dt-tzbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--border);
+  background: var(--bg1);
+  color: var(--text-dim);
+  font-size: 10.5px;
+  font-family: var(--mono);
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ri-dt-tzbtn:hover {
+  border-color: var(--text-faint);
+  color: var(--text);
+}
+.ri-dt-tzmenu {
+  position: absolute;
+  top: 26px;
+  left: 0;
+  z-index: 5;
+  min-width: 136px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+.ri-dt-tzitem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  padding: 5px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--text-dim);
+}
+.ri-dt-tzitem:hover {
+  background: var(--bg3);
+  color: var(--text);
+}
+.ri-dt-tzitem.on {
+  color: var(--accent);
+}
+.ri-dt-tzdef {
+  font-size: 8.5px;
+  color: var(--text-faint);
+}
+.ri-dt-monthrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ri-dt-month {
+  font-size: 12px;
+  font-weight: 600;
+  flex: 1;
+}
+.ri-dt-year {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11.5px;
+  font-family: var(--mono);
+  color: var(--text-dim);
+  position: relative;
+}
+.ri-dt-yrbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid var(--border);
+  background: var(--bg1);
+  color: var(--text-dim);
+  font-size: 11px;
+  font-family: var(--mono);
+  padding: 3px 7px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ri-dt-yrbtn:hover {
+  border-color: var(--text-faint);
+  color: var(--text);
+}
+.ri-dt-yrmenu {
+  position: absolute;
+  top: 26px;
+  right: 0;
+  z-index: 5;
+  width: 104px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ri-dt-yrinput {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--bg0);
+  border-radius: 6px;
+  outline: none;
+  color: var(--text);
+  font-size: 11px;
+  font-family: var(--mono);
+  padding: 4px 7px;
+}
+.ri-dt-yrinput:focus {
+  border-color: var(--accent);
+}
+.ri-dt-yrlist {
+  max-height: 200px;
+  overflow-y: auto;
+}
+.ri-dt-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  margin-top: 6px;
+}
+.ri-dt-dow {
+  font-size: 9px;
+  color: var(--text-faint);
+  text-align: center;
+  padding: 2px 0;
+}
+.ri-dt-day {
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-size: 10.5px;
+  font-family: var(--mono);
+  height: 24px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ri-dt-day:hover {
+  background: var(--bg3);
+  color: var(--text);
+}
+.ri-dt-day.on {
+  background: var(--accent);
+  color: #0c1210;
+  font-weight: 700;
+}
+.ri-dt-clock {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.ri-dt-colon {
+  color: var(--text-faint);
+  font-family: var(--mono);
+}
+.ri-dt-stored {
+  margin-left: auto;
+  font-size: 9px;
+  color: var(--text-faint);
+  text-align: right;
+  line-height: 1.35;
+  max-width: 110px;
+}
+.ri-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  overflow: hidden;
+}
+.ri-step-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  width: 30px;
+  height: 15px;
+  padding: 0;
+}
+.ri-step-btn:hover {
+  color: var(--accent);
+  background: var(--bg3);
+}
+.ri-step-val {
+  width: 30px;
+  border: none;
+  background: none;
+  outline: none;
+  color: var(--text);
+  font-size: 12px;
+  font-family: var(--mono);
+  text-align: center;
+  padding: 1px 0;
+}

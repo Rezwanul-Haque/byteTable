@@ -127,6 +127,7 @@ mod tests {
                 .map(|(name, _)| TableInfo {
                     name: (*name).to_string(),
                     approx_row_count: None,
+                    ..Default::default()
                 })
                 .collect())
         }

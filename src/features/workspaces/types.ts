@@ -240,7 +240,22 @@ export type Tab =
       kind: "objexplorer";
       schema: string;
       focusClass: DbObjectKind | "all";
+    }
+  // Estimated table overview: one card per table, built from the catalog
+  // statistics `list_tables` already returned. One per schema; it issues no
+  // query, so it is safe to leave open.
+  | {
+      id: string;
+      kind: "tableoverview";
+      schema: string;
+      /** Table (default) or card layout. Kept on the tab because the workspace
+       *  mounts only the ACTIVE tab, so component state would reset on every
+       *  switch away and back. */
+      view: TableOverviewView;
     };
+
+/** The table overview's two layouts. */
+export type TableOverviewView = "table" | "cards";
 
 /**
  * Per-workspace UI state, preserved across workspace switches (spec §2:

@@ -147,6 +147,7 @@ pub(super) async fn list_tables(
             TableInfo {
                 name,
                 approx_row_count: est.map(|e| e.max(0) as u64),
+                ..Default::default()
             }
         })
         .collect())

@@ -29,13 +29,41 @@ pub struct SchemaInfo {
 }
 
 /// A table within a schema.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TableInfo {
     pub name: String,
     /// Approximate row count, when cheaply known (may be an estimate for
     /// server engines; exact `COUNT(*)` for SQLite in M2).
     pub approx_row_count: Option<u64>,
+
+    // ----- catalog facts (all optional; an engine fills what it cheaply knows)
+    //
+    // Every field below comes from the catalog the engine already maintains —
+    // `information_schema.TABLES`, `pg_class` + `pg_*_size()` — so populating
+    // them costs one extra column in a listing query the sidebar already runs.
+    // NOT from the table itself: nothing here reads a row.
+    //
+    // `None` means "this engine does not report it", which is a different claim
+    // from zero and must be displayed differently.
+    /// Bytes for the table including its indexes and TOAST.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_bytes: Option<u64>,
+    /// Bytes for the row data alone.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_bytes: Option<u64>,
+    /// Bytes for the indexes alone.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub index_bytes: Option<u64>,
+    /// Storage engine (MySQL `InnoDB` / `MyISAM`); no counterpart elsewhere.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub engine: Option<String>,
+    /// Default collation for the table's text columns.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub collation: Option<String>,
+    /// The table's comment, when it carries one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
 }
 
 /// A schema-level database object other than a base table — surfaced in the

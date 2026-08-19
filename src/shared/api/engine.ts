@@ -37,6 +37,20 @@ export interface TableInfo {
   name: string;
   /** Approximate row count, when cheaply known (`null` otherwise). */
   approxRowCount: number | null;
+  // Catalog facts, all optional — each engine reports what its catalog cheaply
+  // knows, and `undefined` means "not reported", which is NOT zero.
+  /** Bytes including indexes and (Postgres) TOAST. */
+  totalBytes?: number;
+  /** Bytes for the row data alone. */
+  dataBytes?: number;
+  /** Bytes for the indexes alone. */
+  indexBytes?: number;
+  /** MySQL storage engine (`InnoDB`); no counterpart on other engines. */
+  engine?: string;
+  /** The table's default collation (MySQL). */
+  collation?: string;
+  /** The table's comment, when it has one. */
+  comment?: string;
 }
 
 /** The target of a foreign-key reference: a column in another table. */

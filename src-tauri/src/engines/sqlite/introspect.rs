@@ -106,6 +106,7 @@ pub(super) fn list_tables_blocking(
         tables.push(TableInfo {
             name,
             approx_row_count,
+            ..Default::default()
         });
     }
     Ok(tables)

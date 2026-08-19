@@ -80,8 +80,14 @@ pub(super) async fn list_tables(
     // included so `information_schema` is browsable when the switcher's
     // system-schema toggle is on — that type occurs nowhere else, so a user
     // database's listing is unchanged.
+    // The size/engine/collation/comment columns come from the same catalog row
+    // as the estimate, so they are free — one wider SELECT, still no table read.
     let rows = sqlx::query(
-        "SELECT CAST(table_name AS CHAR) AS name, table_rows AS est \
+        "SELECT CAST(table_name AS CHAR) AS name, table_rows AS est, \
+                data_length AS data_len, index_length AS index_len, \
+                CAST(engine AS CHAR) AS engine, \
+                CAST(table_collation AS CHAR) AS collation, \
+                CAST(table_comment AS CHAR) AS comment \
          FROM information_schema.tables \
          WHERE table_schema = ? AND table_type IN ('BASE TABLE', 'SYSTEM VIEW') \
          ORDER BY table_name",
@@ -98,9 +104,30 @@ pub(super) async fn list_tables(
             // table_rows is BIGINT UNSIGNED, decoded as u64; NULL for some
             // engines/views → None.
             let est: Option<u64> = row.try_get("est").unwrap_or(None);
+            let data_len: Option<u64> = row.try_get("data_len").unwrap_or(None);
+            let index_len: Option<u64> = row.try_get("index_len").unwrap_or(None);
+            // Blank strings are how information_schema spells "none" for the
+            // text columns; carry them through as None so the UI can omit them
+            // rather than render an empty cell.
+            let text = |k: &str| -> Option<String> {
+                row.try_get::<Option<String>, _>(k)
+                    .unwrap_or(None)
+                    .filter(|v| !v.is_empty())
+            };
             TableInfo {
                 name,
                 approx_row_count: est,
+                // Total is data + indexes; either half may be absent, so it is
+                // only reported when at least one is known.
+                total_bytes: match (data_len, index_len) {
+                    (None, None) => None,
+                    (a, b) => Some(a.unwrap_or(0) + b.unwrap_or(0)),
+                },
+                data_bytes: data_len,
+                index_bytes: index_len,
+                engine: text("engine"),
+                collation: text("collation"),
+                comment: text("comment"),
             }
         })
         .collect())

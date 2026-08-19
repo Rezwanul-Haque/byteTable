@@ -33,6 +33,7 @@ const TAB_ICONS: Record<Tab["kind"], string> = {
   diff: "difference",
   object: "visibility",
   objexplorer: "category",
+  tableoverview: "monitoring",
 };
 
 function tabIcon(tab: Tab): string {

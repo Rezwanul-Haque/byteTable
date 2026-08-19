@@ -20,6 +20,7 @@ import { BTLogo } from "../../../shared/ui/BTLogo";
 import { Kbd } from "../../../shared/ui/Kbd";
 import { ObjectViewer } from "../../db_objects/components/ObjectViewer";
 import { ObjectExplorer } from "../../db_objects/components/ObjectExplorer";
+import { TableOverview } from "../../browse/sql/components/TableOverview";
 import { useWorkspacesStore } from "../state";
 import { useTabMetaStore } from "../tabMeta";
 import type { Tab, Workspace } from "../types";
@@ -89,6 +90,15 @@ function TabBody({
     case "objexplorer":
       return (
         <ObjectExplorer workspace={workspace} schema={tab.schema} focusClass={tab.focusClass} />
+      );
+    case "tableoverview":
+      return (
+        <TableOverview
+          workspace={workspace}
+          schema={tab.schema}
+          view={tab.view}
+          onViewChange={(v) => useWorkspacesStore.getState().setTableOverviewView(tab.id, v)}
+        />
       );
   }
 }

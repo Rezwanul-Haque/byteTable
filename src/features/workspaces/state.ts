@@ -21,6 +21,7 @@ import type {
   SqlHistoryEntry,
   SqlRun,
   Tab,
+  TableOverviewView,
   TableTabMode,
   TabFilterState,
   TabGridEdits,
@@ -202,6 +203,13 @@ interface WorkspacesFeatureState {
    * focus and focus the tab.
    */
   openObjExplorer: (schema: string, focusClass: DbObjectKind | "all") => void;
+  /**
+   * Open (or focus) the estimated table overview for a schema — one card per
+   * table, from the statistics `list_tables` already returned. One per schema.
+   */
+  openTableOverview: (schema: string) => void;
+  /** Switch a table-overview tab between the table and card layouts. */
+  setTableOverviewView: (tabId: string, view: TableOverviewView) => void;
   /**
    * Close a tab. The neighbour (left, else right) becomes active when the
    * closed tab was active; closing the last tab sets activeTabId to null,
@@ -824,6 +832,31 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
         const tab: Tab = { id: newTabId("objexplorer"), kind: "objexplorer", schema, focusClass };
         return { tabs: [...tabs, tab], activeTabId: tab.id };
       }),
+    })),
+
+  openTableOverview: (schema) =>
+    set((state) => ({
+      workspaces: patchActiveUi(state, (ui) => {
+        const tabs = ui.tabs ?? [];
+        const existing = tabs.find((t) => t.kind === "tableoverview" && t.schema === schema);
+        if (existing) return { activeTabId: existing.id };
+        const tab: Tab = {
+          id: newTabId("tableoverview"),
+          kind: "tableoverview",
+          schema,
+          view: "table",
+        };
+        return { tabs: [...tabs, tab], activeTabId: tab.id };
+      }),
+    })),
+
+  setTableOverviewView: (tabId, view) =>
+    set((state) => ({
+      workspaces: patchActiveUi(state, (ui) => ({
+        tabs: (ui.tabs ?? []).map((t) =>
+          t.id === tabId && t.kind === "tableoverview" ? { ...t, view } : t,
+        ),
+      })),
     })),
 
   closeTab: (tabId) =>

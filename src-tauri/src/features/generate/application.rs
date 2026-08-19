@@ -514,10 +514,12 @@ mod tests {
                 TableInfo {
                     name: "orders".into(),
                     approx_row_count: Some(0),
+                    ..Default::default()
                 },
                 TableInfo {
                     name: "users".into(),
                     approx_row_count: Some(0),
+                    ..Default::default()
                 },
             ])
         }

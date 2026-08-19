@@ -112,6 +112,7 @@ pub async fn list_tables(http: &ClickHouseHttp, schema: &str) -> Result<Vec<Tabl
             Some(TableInfo {
                 name,
                 approx_row_count,
+                ..Default::default()
             })
         })
         .collect())

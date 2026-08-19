@@ -122,6 +122,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   const patchWorkspaceUi = useWorkspacesStore((state) => state.patchWorkspaceUi);
   const setWorkspaceSchemas = useWorkspacesStore((state) => state.setWorkspaceSchemas);
   const openTableTab = useWorkspacesStore((state) => state.openTableTab);
+  const openTableOverview = useWorkspacesStore((state) => state.openTableOverview);
   const openSqlTab = useWorkspacesStore((state) => state.openSqlTab);
   const openMapTab = useWorkspacesStore((state) => state.openMapTab);
   const openDiffTab = useWorkspacesStore((state) => state.openDiffTab);
@@ -748,6 +749,23 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                   >
                     <Icon name="auto_awesome" size={15} /> Generate data
                   </button>
+                </>
+              ) : null}
+              {/* Available on system schemas too: it only reads statistics the
+                  sidebar already holds, so there is nothing to refuse. */}
+              <button
+                type="button"
+                className="ctx-item"
+                role="menuitem"
+                onClick={() => {
+                  setSchemaMenu(false);
+                  openTableOverview(schemaName);
+                }}
+              >
+                <Icon name="monitoring" size={15} /> Table overview
+              </button>
+              {!schemaIsSystem ? (
+                <>
                   <div className="ctx-sep" />
                   <button
                     type="button"

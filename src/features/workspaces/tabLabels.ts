@@ -32,6 +32,8 @@ function tabTitle(tab: Tab, currentSchema: string): string {
       return tab.schema === currentSchema ? tab.name : tab.schema + "." + tab.name;
     case "objexplorer":
       return "Objects";
+    case "tableoverview":
+      return tab.schema + " · overview";
   }
 }
 

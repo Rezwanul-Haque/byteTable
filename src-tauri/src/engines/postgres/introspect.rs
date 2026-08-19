@@ -78,7 +78,13 @@ pub(super) async fn list_tables(pool: &PgPool, schema: &str) -> Result<Vec<Table
     // Base tables in the schema, with the planner's row ESTIMATE
     // (reltuples). A never-analyzed table reports -1 → None (module docs).
     let rows = sqlx::query(
-        "SELECT c.relname AS name, c.reltuples::bigint AS est \
+        // Sizes and the comment come from the same catalog row as the estimate
+        // — the pg_*_size() functions read metadata, never the table.
+        "SELECT c.relname AS name, c.reltuples::bigint AS est, \
+                pg_total_relation_size(c.oid)::bigint AS total_len, \
+                pg_relation_size(c.oid)::bigint AS data_len, \
+                pg_indexes_size(c.oid)::bigint AS index_len, \
+                obj_description(c.oid, 'pg_class') AS comment \
          FROM pg_class c \
          JOIN pg_namespace n ON n.oid = c.relnamespace \
          WHERE n.nspname = $1 AND c.relkind = 'r' \
@@ -94,9 +100,25 @@ pub(super) async fn list_tables(pool: &PgPool, schema: &str) -> Result<Vec<Table
         .map(|row| {
             let name: String = row.get("name");
             let est: i64 = row.try_get("est").unwrap_or(-1);
+            let bytes = |k: &str| -> Option<u64> {
+                row.try_get::<Option<i64>, _>(k)
+                    .unwrap_or(None)
+                    .and_then(|v| u64::try_from(v).ok())
+            };
             TableInfo {
                 name,
                 approx_row_count: if est < 0 { None } else { Some(est as u64) },
+                total_bytes: bytes("total_len"),
+                data_bytes: bytes("data_len"),
+                index_bytes: bytes("index_len"),
+                // Postgres has no per-table storage engine, and its collation is
+                // a per-column property rather than a table default.
+                engine: None,
+                collation: None,
+                comment: row
+                    .try_get::<Option<String>, _>("comment")
+                    .unwrap_or(None)
+                    .filter(|v| !v.is_empty()),
             }
         })
         .collect())

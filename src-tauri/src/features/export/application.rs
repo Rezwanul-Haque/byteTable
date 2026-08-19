@@ -696,6 +696,7 @@ mod tests {
             Ok(vec![TableInfo {
                 name: "t".into(),
                 approx_row_count: Some(self.rows.len() as u64),
+                ..Default::default()
             }])
         }
         async fn table_meta(&self, _schema: &str, _table: &str) -> Result<TableMeta, AppError> {

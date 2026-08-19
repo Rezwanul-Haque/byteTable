@@ -34,6 +34,10 @@ interface DynamoSidebarProps {
   onImportTable: (name: string) => void;
   onExportAll: () => void;
   onCreateTable: () => void;
+  /** Region-wide destructive actions (the ⋯ menu); the per-table versions are
+   *  `onTruncateTable` / `onDeleteTable`, on a table's own right-click menu. */
+  onEmptyAllTables: () => void;
+  onDropAllTables: () => void;
   onTruncateTable: (name: string) => void;
   onDeleteTable: (name: string) => void;
   onRefresh: () => void;
@@ -69,6 +73,8 @@ export function DynamoSidebar({
   onImportTable,
   onExportAll,
   onCreateTable,
+  onEmptyAllTables,
+  onDropAllTables,
   onTruncateTable,
   onDeleteTable,
   onRefresh,
@@ -179,7 +185,15 @@ export function DynamoSidebar({
           return (
             <div key={t.name}>
               <div
-                className={"ddb-table-item" + (t.name === activeTable ? " active" : "")}
+                className={
+                  "ddb-table-item" +
+                  (t.name === activeTable ? " active" : "") +
+                  // Mark the row the open context menu belongs to. Without it
+                  // the only highlighted row is whichever table's tab is open,
+                  // so a right-click on a DIFFERENT row gave no clue which
+                  // table "Delete table" was about to act on.
+                  (ctxMenu?.table === t.name ? " ctx-target" : "")
+                }
                 // ⌘/Ctrl-click opens a second tab for the table (the browser
                 // convention the SQL sidebar follows); a plain click focuses the
                 // existing one.
@@ -286,18 +300,34 @@ export function DynamoSidebar({
               >
                 <Icon name="download" size={15} /> Export all tables
               </button>
-              <button
-                type="button"
-                className="ddb-ctx-item"
-                onClick={() => {
-                  setCtxMenu(null);
-                  onOpenPartiql();
-                }}
-              >
-                <Icon name="terminal" size={15} /> PartiQL editor
-              </button>
               {/* No Refresh item: the region row's own sync icon already does
                   it, and no other engine's scope menu carries one. */}
+
+              {/* Destructive last, behind a separator. Region-wide here — the
+                  single-table versions live on a table's own right-click menu. */}
+              <div className="ddb-ctx-sep" />
+              <button
+                type="button"
+                className="ddb-ctx-item danger"
+                disabled={tables.length === 0}
+                onClick={() => {
+                  setCtxMenu(null);
+                  onEmptyAllTables();
+                }}
+              >
+                <Icon name="delete_sweep" size={15} /> Empty all tables
+              </button>
+              <button
+                type="button"
+                className="ddb-ctx-item danger"
+                disabled={tables.length === 0}
+                onClick={() => {
+                  setCtxMenu(null);
+                  onDropAllTables();
+                }}
+              >
+                <Icon name="delete_forever" size={15} /> Drop all tables
+              </button>
             </>
           ) : (
             <>

@@ -28,6 +28,7 @@ import {
 import { dynamoTabTitles, useDynamoTabsStore, type DynamoWorkspaceTab } from "../workspaceTabs";
 import { DynamoDashboard } from "./DynamoDashboard";
 import {
+  DynamoBulkTableModal,
   DynamoCreateTableModal,
   DynamoDeleteTableModal,
   DynamoTruncateTableModal,
@@ -109,6 +110,8 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
   // Table DDL: the create form, and the two destructive confirms keyed by the
   // table they act on.
   const [creatingTable, setCreatingTable] = useState(false);
+  // Region-wide destructive run: empty every table, or drop every table.
+  const [bulkAction, setBulkAction] = useState<"empty" | "drop" | null>(null);
   const [truncateTarget, setTruncateTarget] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
@@ -287,6 +290,8 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
         onImportTable={(t) => setImportTarget(t)}
         onExportAll={() => setExportJob({ scope: "all" })}
         onCreateTable={() => setCreatingTable(true)}
+        onEmptyAllTables={() => setBulkAction("empty")}
+        onDropAllTables={() => setBulkAction("drop")}
         onTruncateTable={(t) => setTruncateTarget(t)}
         onDeleteTable={(t) => setDeleteTarget(t)}
         onRefresh={() => void refreshTables()}
@@ -454,6 +459,27 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
           }}
         />
       ) : null}
+      {bulkAction ? (
+        <DynamoBulkTableModal
+          handleId={handleId}
+          action={bulkAction}
+          region={region}
+          tables={tables}
+          env={env}
+          onClose={() => setBulkAction(null)}
+          onDone={() => {
+            // A drop removes the tables the open tabs point at, so close those
+            // rather than leave "no longer available" placeholders behind.
+            if (bulkAction === "drop") {
+              setTabs((ts) => ts.filter((t) => t.kind !== "table"));
+              setTables([]);
+            }
+            setDataVersion((v) => v + 1);
+            void refreshTables();
+          }}
+        />
+      ) : null}
+
       {creatingTable ? (
         <DynamoCreateTableModal
           handleId={handleId}

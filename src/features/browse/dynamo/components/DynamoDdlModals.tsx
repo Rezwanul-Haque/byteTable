@@ -581,3 +581,180 @@ export function DynamoDeleteTableModal({
     </Modal>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Region-wide: empty every table / drop every table
+// ---------------------------------------------------------------------------
+
+/**
+ * The two bulk actions on the region's ⋯ menu. One dialog, because they differ
+ * only in what they say and which call they loop — but they differ ENORMOUSLY in
+ * cost, and the dialog says so:
+ *
+ *   • Drop is a control-plane call. AWS does not bill for it and it does not
+ *     consume write capacity, so it costs the same on an empty table as on one
+ *     with 500M items. What it costs is everything else: the GSIs, LSIs, TTL
+ *     config, tags, stream settings and PITR history go with each table, and
+ *     nothing brings them back.
+ *   • Empty keeps all of that, and pays for it — a key-only scan plus one write
+ *     unit per item, per table. On a large region that is a real bill.
+ *
+ * Both run table-by-table from here rather than as one backend call: DynamoDB's
+ * DDL is asynchronous and a big region can take minutes, so progress has to be
+ * visible. A table that fails does not stop the rest; the failures are listed at
+ * the end instead of vanishing into a single error.
+ */
+export function DynamoBulkTableModal({
+  handleId,
+  action,
+  region,
+  tables,
+  env,
+  onClose,
+  onDone,
+}: {
+  handleId: string;
+  action: "empty" | "drop";
+  region: string;
+  tables: TableDescriptor[];
+  env: string;
+  onClose: () => void;
+  /** Called after the run (even a partial one) so the caller can refresh. */
+  onDone: () => void;
+}) {
+  const toast = useToast();
+  const [typed, setTyped] = useState("");
+  const [running, setRunning] = useState(false);
+  const [doneCount, setDoneCount] = useState(0);
+  const [current, setCurrent] = useState<string | null>(null);
+  const [failed, setFailed] = useState<{ table: string; message: string }[]>([]);
+  const nameRef = useRef<HTMLInputElement | null>(null);
+
+  const isDrop = action === "drop";
+  const verb = isDrop ? "Drop" : "Empty";
+  // Always typed: both act on every table in the region at once, and neither has
+  // an undo. The region name is the scope's own identifier.
+  const armed = typed.trim() === region && !running && tables.length > 0;
+  const totalItems = tables.reduce((n, t) => n + t.itemCount, 0);
+
+  const run = () => {
+    if (!armed) return;
+    setRunning(true);
+    setFailed([]);
+    setDoneCount(0);
+    void (async () => {
+      const errors: { table: string; message: string }[] = [];
+      for (const t of tables) {
+        setCurrent(t.name);
+        try {
+          if (isDrop) await dynamoDeleteTable(handleId, t.name);
+          else await dynamoTruncateTable(handleId, t.name);
+        } catch (err) {
+          errors.push({ table: t.name, message: appErrorMessage(err, "Failed.") });
+        }
+        setDoneCount((n) => n + 1);
+      }
+      setCurrent(null);
+      setFailed(errors);
+      setRunning(false);
+      onDone();
+      const ok = tables.length - errors.length;
+      if (errors.length === 0) {
+        toast((isDrop ? "Dropped " : "Emptied ") + ok + " table" + (ok === 1 ? "" : "s"), "ok");
+        onClose();
+      } else {
+        toast(ok + " of " + tables.length + " tables done · " + errors.length + " failed", "err");
+      }
+    })();
+  };
+
+  return (
+    <Modal
+      onClose={running ? () => {} : onClose}
+      label={verb + " all tables"}
+      width={520}
+      className="truncate-modal"
+      initialFocusRef={nameRef}
+    >
+      <ModalTitle>
+        <Icon
+          name={isDrop ? "delete_forever" : "delete_sweep"}
+          size={18}
+          style={{ color: DANGER }}
+        />{" "}
+        {verb} all tables
+      </ModalTitle>
+      <div className="truncate-body">
+        <p>
+          This {isDrop ? "deletes" : "empties"} <b>all {tables.length} tables</b> in{" "}
+          <code>{region}</code>
+          {isDrop ? (
+            <>
+              {" "}
+              — with their items, secondary indexes, TTL settings, tags and point-in-time-recovery
+              history. Nothing here can be restored.
+            </>
+          ) : (
+            <>
+              {" "}
+              — about <b>{totalItems.toLocaleString()}</b> items in total. The tables and their
+              indexes stay.
+            </>
+          )}
+        </p>
+        {isDrop ? (
+          <p>
+            DeleteTable is a control-plane call, so this is <b>free</b> and its speed does not
+            depend on how much data the tables hold.
+          </p>
+        ) : (
+          <p>
+            DynamoDB has no TRUNCATE: <b>every table is scanned in full</b> for its keys, then the
+            items are deleted in batches. That is read capacity for the whole region — billed on
+            each item's full size, not the keys returned — plus <b>one write unit per item</b>.
+            Dropping is free by comparison, at the price of rebuilding every index.
+          </p>
+        )}
+        <pre className="truncate-sql">
+          {tables.map((t) => (isDrop ? "DeleteTable " : "Empty ") + t.name).join("\n")}
+        </pre>
+
+        {running || doneCount > 0 ? (
+          <div className="ddb-bulk-progress">
+            <Icon name="hourglass_top" size={14} />
+            <span>
+              {doneCount} / {tables.length}
+              {current ? " · " + current : ""}
+            </span>
+          </div>
+        ) : null}
+
+        {failed.length > 0 ? (
+          <div className="truncate-error">
+            <Icon name="error" size={15} />
+            <span>
+              {failed.length} failed: {failed.map((f) => f.table).join(", ")}
+            </span>
+          </div>
+        ) : null}
+
+        <ConfirmName name={region} env={env} typed={typed} onTyped={setTyped} inputRef={nameRef} />
+      </div>
+      <ModalActions>
+        <Btn variant="text" disabled={running} onClick={onClose}>
+          {failed.length > 0 ? "Close" : "Cancel"}
+        </Btn>
+        <button type="button" className="btn btn-danger" disabled={!armed} onClick={run}>
+          <Icon name={isDrop ? "delete_forever" : "delete_sweep"} size={16} />
+          <span>
+            {running
+              ? isDrop
+                ? "Dropping…"
+                : "Emptying…"
+              : verb + " all " + tables.length + " tables"}
+          </span>
+        </button>
+      </ModalActions>
+    </Modal>
+  );
+}

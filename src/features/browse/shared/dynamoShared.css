@@ -116,6 +116,18 @@
 .ddb-io-hint {
   margin-bottom: 4px;
 }
+/* An inline reason under a control that is deliberately unavailable — a
+   disabled segment carrying only a tooltip reads as broken, and a tooltip on a
+   disabled button often never fires at all. Distinct from `.ddb-io-hint`, which
+   the Mongo and Cassandra IO modals already use for plain caption text. */
+.ddb-io-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
 .ddb-io-hint {
   font-size: 11px;
   color: var(--text-faint);

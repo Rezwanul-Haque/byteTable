@@ -8,6 +8,7 @@
 
 import { useMemo, useRef, useState } from "react";
 
+import { exportSave } from "../../../../shared/api/engine";
 import { isAppErrorPayload } from "../../../../shared/api/error";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
@@ -16,14 +17,7 @@ import { Modal, ModalActions, ModalTitle } from "../../../../shared/ui/Modal";
 import { useToast } from "../../../../shared/ui/toastContext";
 import { exportStamp } from "../../../export/exportFlow";
 import { dynamoBatchWrite, dynamoScan, type DynamoItem, type TableDescriptor } from "../api";
-import {
-  attributeUnion,
-  downloadText,
-  marshalItem,
-  parseItems,
-  tableDefinition,
-  toCSV,
-} from "../helpers";
+import { attributeUnion, marshalItem, parseItems, tableDefinition, toCSV } from "../helpers";
 import { DynamoItemGrid } from "./DynamoItemGrid";
 
 const SCAN_PAGE = 100;
@@ -131,7 +125,6 @@ export function DynamoExportModal({
     cancelled.current = false;
     try {
       let content: string;
-      let mime: string;
       if (isAll) {
         const tablesOut: Record<string, unknown>[] = [];
         for (const t of tables) {
@@ -154,7 +147,6 @@ export function DynamoExportModal({
           tables: tablesOut,
         };
         content = JSON.stringify(payload, null, 2);
-        mime = "application/json";
       } else {
         const t = descOf(table ?? "");
         const items =
@@ -167,7 +159,6 @@ export function DynamoExportModal({
         if (cancelled.current) return;
         if (isCsv) {
           content = toCSV(items);
-          mime = "text/csv";
         } else {
           const def = t ? tableDefinition(t) : {};
           const payload =
@@ -177,14 +168,40 @@ export function DynamoExportModal({
                 ? { Items: marshalArr(items) }
                 : { TableDefinition: def, Items: marshalArr(items) };
           content = JSON.stringify(payload, null, 2);
-          mime = "application/json";
         }
       }
       if (cancelled.current) return;
-      setStage("done");
       setPct(100);
-      downloadText(fname, content, mime);
-      toast("Exported " + fname, "ok");
+
+      // Ask where to put it, then write through the backend — the same path
+      // every other export in the app takes. This used to hand the content to a
+      // blob URL and an <a download>, which is a BROWSER idiom: inside the Tauri
+      // webview it produced no dialog and no file the user could find, while the
+      // toast still claimed success.
+      let path: string | null;
+      try {
+        const { save } = await import("@tauri-apps/plugin-dialog");
+        path = await save({
+          defaultPath: fname,
+          filters: [
+            isCsv ? { name: "CSV", extensions: ["csv"] } : { name: "JSON", extensions: ["json"] },
+          ],
+        });
+      } catch {
+        toast("Exporting requires the ByteTable desktop app.", "info");
+        onClose();
+        return;
+      }
+      // Cancelled at the dialog: stay on the choices rather than closing, so the
+      // scan that was just paid for is not thrown away.
+      if (!path) {
+        setStage("choose");
+        setPct(0);
+        return;
+      }
+      await exportSave(path, content);
+      setStage("done");
+      toast("Exported " + (path.split(/[\\/]/).pop() ?? fname), "ok");
       setTimeout(() => {
         if (!cancelled.current) onClose();
       }, 700);
@@ -240,6 +257,16 @@ export function DynamoExportModal({
               );
             })}
           </div>
+          {/* A disabled segment with only a tooltip reads as broken — and a
+              tooltip on a disabled button often never fires. Say why in the
+              open: one CSV has one header row, so it cannot carry four tables
+              with different attributes. */}
+          {isAll ? (
+            <div className="ddb-io-note">
+              <Icon name="info" size={13} /> CSV exports one table at a time — use a table's own
+              Export for it.
+            </div>
+          ) : null}
 
           <div className="ddb-io-label">Contents</div>
           {isCsv ? (

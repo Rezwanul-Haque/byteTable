@@ -19,7 +19,8 @@ use crate::features::connections::application::ConnectionHandleId;
 use crate::features::connections::commands::ConnectionsState;
 use crate::shared::error::AppError;
 use crate::shared::keyvalue::{
-    KeyType, KeyView, KvDbInfo, KvServerInfo, KvServerStats, RespReply, ScanPage, ScanRequest,
+    ClusterTopology, KeyType, KeyView, KvClient, KvDbInfo, KvKillFilter, KvServerInfo,
+    KvServerStats, RespReply, ScanPage, ScanRequest,
 };
 
 use super::application;
@@ -229,4 +230,58 @@ pub async fn kv_command(
     args: Vec<String>,
 ) -> Result<RespReply, AppError> {
     application::run_command(state.manager(), &handle_id, db, args).await
+}
+
+// -- connected clients + cluster (M36) --------------------------------------
+
+#[tauri::command]
+pub async fn kv_client_list(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+) -> Result<Vec<KvClient>, AppError> {
+    application::client_list(state.manager(), &handle_id).await
+}
+
+#[tauri::command]
+pub async fn kv_client_kill(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+    filter: KvKillFilter,
+    value: String,
+) -> Result<u64, AppError> {
+    application::client_kill(state.manager(), &handle_id, filter, &value).await
+}
+
+#[tauri::command]
+pub async fn kv_client_kill_ids(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+    ids: Vec<i64>,
+) -> Result<u64, AppError> {
+    application::client_kill_ids(state.manager(), &handle_id, &ids).await
+}
+
+#[tauri::command]
+pub async fn kv_client_no_evict(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+    on: bool,
+) -> Result<(), AppError> {
+    application::client_no_evict(state.manager(), &handle_id, on).await
+}
+
+#[tauri::command]
+pub async fn kv_client_unpause(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+) -> Result<(), AppError> {
+    application::client_unpause(state.manager(), &handle_id).await
+}
+
+#[tauri::command]
+pub async fn kv_cluster_topology(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+) -> Result<Option<ClusterTopology>, AppError> {
+    application::cluster_topology(state.manager(), &handle_id).await
 }

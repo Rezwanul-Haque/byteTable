@@ -77,6 +77,72 @@
   margin-top: 2px;
 }
 
+/* A stat card that is also an entry point (M36 §A4): same card, hover accent,
+   plus an affordance line saying what pressing it does. */
+.rdash-stat-btn {
+  display: block;
+  width: 100%;
+  text-align: start;
+  cursor: pointer;
+  font-family: var(--ui);
+  transition:
+    border-color 0.13s,
+    background 0.13s;
+}
+.rdash-stat-btn:hover {
+  border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 7%, var(--bg1));
+}
+.rdash-stat-go {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  color: var(--accent);
+  margin-top: 2px;
+}
+
+/* Connected-clients panel: one bar per client class. */
+.rdash-cl-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 8px;
+}
+.rdash-cl-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+.rdash-cl-label {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  width: 66px;
+  flex: none;
+}
+.rdash-cl-n {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text-dim);
+  width: 26px;
+  text-align: end;
+  flex: none;
+}
+.rdash-cl-note {
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: var(--text-faint);
+  margin: 11px 0;
+}
+.rdash-cl-note .msym {
+  flex: none;
+  margin-top: 1px;
+}
+
 .rdash-cols {
   display: grid;
   grid-template-columns: 1fr 1fr;

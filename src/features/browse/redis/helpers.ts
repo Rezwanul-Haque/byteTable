@@ -6,7 +6,7 @@
 // Tasks 3 (key viewers) and 4 (CLI + dashboard + status) also consume
 // `humanBytes` / `humanNum` here.
 
-import type { KeyType, RespReply } from "./api";
+import type { KeyEntry, KeyType, RespReply } from "./api";
 import type { CliLine } from "./state";
 
 /**
@@ -106,6 +106,27 @@ export function buildNamespaceTree(keys: string[]): NamespaceNode {
     node.keys.push(key);
   }
   return root;
+}
+
+/**
+ * Merge a freshly-scanned page into the keys already listed, de-duplicated by
+ * name with the newer entry winning.
+ *
+ * `SCAN`'s guarantee is **at least** once, not exactly once: while the hash
+ * table is rehashing — which it does whenever keys are added or removed during
+ * the iteration, so routinely on a live cache — the same key can come back on
+ * two different pages. Appending blindly would then draw the key twice and
+ * push the loaded count past the real `DBSIZE`.
+ *
+ * The later entry wins because it is the fresher read of the same key's type
+ * and TTL. Insertion order is preserved (the list is sorted for display
+ * anyway), so a re-seen key keeps its original position.
+ */
+export function mergeKeys(previous: KeyEntry[], page: KeyEntry[]): KeyEntry[] {
+  const byName = new Map<string, KeyEntry>();
+  for (const entry of previous) byName.set(entry.name, entry);
+  for (const entry of page) byName.set(entry.name, entry);
+  return [...byName.values()];
 }
 
 /** Total leaf-key count under a tree node (its own keys + all descendants'). */

@@ -32,6 +32,12 @@ interface RedisCommandPaletteProps {
   workspaceName: string;
   initialDb: number;
   dbIndex: number;
+  /**
+   * True when the connection is a cluster node (M36 §B3). Cluster mode rejects
+   * `SELECT`, so the "Switch to dbN" entries are dropped rather than offering a
+   * command that would error.
+   */
+  cluster: boolean;
   databases: KvDbInfo[];
   /** Connection handle — for the key-jump SCAN sample. */
   handleId: string;
@@ -47,6 +53,7 @@ export function RedisCommandPalette(props: RedisCommandPaletteProps) {
     workspaceName,
     initialDb,
     dbIndex,
+    cluster,
     databases,
     handleId,
     onOpenKey,
@@ -102,8 +109,8 @@ export function RedisCommandPalette(props: RedisCommandPaletteProps) {
     };
     const dash: PaletteCommand = {
       id: "dashboard",
-      icon: "monitoring",
-      label: "Keyspace dashboard",
+      icon: cluster ? "lan" : "monitoring",
+      label: cluster ? "Cluster dashboard" : "Keyspace dashboard",
       run: () => openDashboardTab(workspaceId, initialDb),
     };
     const clients: PaletteCommand = {
@@ -113,15 +120,26 @@ export function RedisCommandPalette(props: RedisCommandPaletteProps) {
       hint: "CLIENT LIST · kill",
       run: () => openProcessesTab(workspaceId, initialDb),
     };
-    const dbCmds: PaletteCommand[] = databases
-      .filter((d) => d.index !== dbIndex && d.keyCount > 0)
-      .map((d) => ({
-        id: "db-" + d.index,
-        icon: "storage",
-        label: "Switch to db" + d.index,
-        hint: d.keyCount + " keys",
-        run: () => setDbIndex(workspaceId, initialDb, d.index),
-      }));
+    // Same tab, named for the job people actually come here to do. Both entries
+    // focus the one Clients tab rather than opening a second copy.
+    const kickIdle: PaletteCommand = {
+      id: "kick-idle",
+      icon: "cleaning_services",
+      label: "Kick idle clients",
+      hint: "CLIENT KILL · leaked pool connections",
+      run: () => openProcessesTab(workspaceId, initialDb),
+    };
+    const dbCmds: PaletteCommand[] = cluster
+      ? []
+      : databases
+          .filter((d) => d.index !== dbIndex && d.keyCount > 0)
+          .map((d) => ({
+            id: "db-" + d.index,
+            icon: "storage",
+            label: "Switch to db" + d.index,
+            hint: d.keyCount + " keys",
+            run: () => setDbIndex(workspaceId, initialDb, d.index),
+          }));
     const close: PaletteCommand = {
       id: "close-ws",
       icon: "power_settings_new",
@@ -129,9 +147,10 @@ export function RedisCommandPalette(props: RedisCommandPaletteProps) {
       hint: workspaceName,
       run: onCloseWorkspace,
     };
-    return [...keyCmds, cli, dash, clients, ...dbCmds, close];
+    return [...keyCmds, cli, dash, clients, kickIdle, ...dbCmds, close];
   }, [
     sampleKeys,
+    cluster,
     databases,
     dbIndex,
     workspaceId,

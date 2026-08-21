@@ -573,11 +573,26 @@ pub async fn test_connection<S: SecretStore + ?Sized>(
     .await
 }
 
-/// What `open_connection` opens: either a saved entry or ad-hoc parameters
-/// (e.g. "Open SQLite file…" before anything is saved).
+/// What `open_connection` opens.
 pub enum OpenTarget {
+    /// A saved entry, by id — params and secrets both come from the registry.
     SavedId(String),
+    /// Ad-hoc parameters (e.g. "Open SQLite file…" before anything is saved).
+    /// Only a transiently-typed secret can authenticate it.
     Params(ConnectionParams),
+    /// Ad-hoc parameters authenticated as a saved entry (M36).
+    ///
+    /// The case this exists for: a Redis Cluster peer. Switching the node a
+    /// cluster workspace browses means opening a *different endpoint of the
+    /// same configured server* — same password, same ACL user, same TLS, only
+    /// host and port differ. Without this the renderer would have to hold the
+    /// keychain secret to pass it back in, which is exactly what the keychain
+    /// exists to avoid. `connection_test` already takes the same
+    /// params-plus-saved-id pair for the same reason.
+    ParamsAs {
+        params: ConnectionParams,
+        saved_id: String,
+    },
 }
 
 /// Everything the renderer needs right after opening a connection.
@@ -649,6 +664,15 @@ pub async fn open_connection<R: ConnectionRepository + ?Sized, S: SecretStore + 
                 .ok_or_else(|| AppError::NotFound(format!("saved connection '{id}'")))?
                 .params;
             (params, Some(id))
+        }
+        // The caller supplies the endpoint; the saved entry supplies the
+        // credentials. It must still be a real entry — resolving a secret
+        // under an id nobody saved would silently open unauthenticated.
+        OpenTarget::ParamsAs { params, saved_id } => {
+            if repository.get(&saved_id)?.is_none() {
+                return Err(AppError::NotFound(format!("saved connection '{saved_id}'")));
+            }
+            (params, Some(saved_id))
         }
     };
 
@@ -1505,6 +1529,58 @@ mod tests {
         .await
         .unwrap_err();
         assert!(matches!(missing, AppError::NotFound(_)));
+    }
+
+    #[tokio::test]
+    async fn open_params_as_a_saved_entry_uses_the_given_endpoint_and_that_entrys_secret() {
+        let closed = Arc::new(AtomicBool::new(false));
+        let registry = registry_with_fake(closed);
+        let manager = ConnectionManager::new();
+        let repo = FakeRepository::default();
+        let store = InMemorySecretStore::default();
+        let saved = save_connection(
+            &repo,
+            &store,
+            new_connection("Cluster node 1"),
+            &TransientSecrets::new(Some("s3cret".into()), None),
+        )
+        .expect("save");
+
+        // The Redis-Cluster case: a peer endpoint, the saved entry's password.
+        let opened = open_connection(
+            &repo,
+            &registry,
+            &store,
+            &manager,
+            OpenTarget::ParamsAs {
+                params: sqlite_params(),
+                saved_id: saved.id.clone(),
+            },
+            &no_secrets(),
+            DEFAULT_CONNECT_TIMEOUT,
+        )
+        .await
+        .expect("open");
+        assert_eq!(manager.open_count().await, 1);
+        assert_eq!(opened.engine_info.server_version, "SQLite 0.0-test");
+
+        // An id nobody saved must NOT quietly open unauthenticated.
+        let missing = open_connection(
+            &repo,
+            &registry,
+            &store,
+            &manager,
+            OpenTarget::ParamsAs {
+                params: sqlite_params(),
+                saved_id: "ghost".into(),
+            },
+            &no_secrets(),
+            DEFAULT_CONNECT_TIMEOUT,
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(missing, AppError::NotFound(_)));
+        assert_eq!(manager.open_count().await, 1);
     }
 
     // -- secret resolution on open -------------------------------------------

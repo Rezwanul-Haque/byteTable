@@ -22,7 +22,16 @@ import { EngineBadge } from "../../../../shared/ui/EngineBadge";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import type { KvDbInfo, KvServerInfo } from "../../../connections/api";
-import { kvScan, kvServerStats, type KeyType, type KvServerStats } from "../api";
+import { Btn } from "../../../../shared/ui/Btn";
+import {
+  kvClientList,
+  kvScan,
+  kvServerStats,
+  type KeyType,
+  type KvClient,
+  type KvServerStats,
+} from "../api";
+import { CLIENT_TYPE_COLOR, breakdown } from "../clients";
 import { humanBytes, humanNum, REDIS_TYPES, REDIS_TYPE_ORDER } from "../helpers";
 import { RedisTypeBadge } from "./RedisTypeBadge";
 import "../../shared/dashboard.css";
@@ -44,6 +53,8 @@ interface DashboardTabProps {
   version: number;
   /** Switch the workspace db (clicking a per-db cell). */
   onSelectDb: (db: number) => void;
+  /** Open (or focus) the connected-clients tab (M36 §A4). */
+  onOpenClients: () => void;
 }
 
 type TypeCounts = Partial<Record<KeyType, number>>;
@@ -55,8 +66,14 @@ export function DashboardTab({
   serverInfo,
   version,
   onSelectDb,
+  onOpenClients,
 }: DashboardTabProps) {
   const [stats, setStats] = useState<KvServerStats | null>(null);
+  // The connected-clients panel + the Clients stat both read one `CLIENT LIST`,
+  // so the number on the dashboard is the number of rows in the tab — INFO's
+  // `connected_clients` and the list can disagree by a connection mid-refresh,
+  // and two different numbers for the same thing reads as a bug.
+  const [clients, setClients] = useState<KvClient[] | null>(null);
   const [typeCounts, setTypeCounts] = useState<TypeCounts>({});
   const [sampled, setSampled] = useState(0);
   const [sampleTruncated, setSampleTruncated] = useState(false);
@@ -77,6 +94,12 @@ export function DashboardTab({
         const s = await kvServerStats(handleId);
         if (!signal.live) return;
         setStats(s);
+
+        // A server that refuses CLIENT LIST (a restrictive ACL) must not take
+        // the whole dashboard down with it — the panel falls back to INFO.
+        const list = await kvClientList(handleId).catch(() => null);
+        if (!signal.live) return;
+        setClients(list);
 
         // Bounded SCAN sample of the current db → per-type tally.
         const counts: TypeCounts = {};
@@ -136,6 +159,10 @@ export function DashboardTab({
   const maxTypeCount = Math.max(1, ...Object.values(typeCounts).map((n) => n ?? 0));
   const typesWithKeys = REDIS_TYPE_ORDER.filter((t) => (typeCounts[t] ?? 0) > 0);
 
+  // The client split, from the same `CLIENT LIST` the tab shows.
+  const cl = clients ? breakdown(clients) : null;
+  const clientTotal = cl?.total ?? stats?.connectedClients ?? null;
+
   const stat = (label: string, value: React.ReactNode, sub?: string) => (
     <div className="rdash-stat">
       <div className="rdash-stat-label">{label}</div>
@@ -173,7 +200,19 @@ export function DashboardTab({
           humanNum(hits) + " hits · " + humanNum(misses) + " misses",
         )}
         {stat("Ops/sec", stats ? humanNum(stats.instantaneousOpsPerSec) : "—", "instantaneous")}
-        {stat("Clients", stats ? stats.connectedClients : "—", "connected")}
+        <button
+          type="button"
+          className="rdash-stat rdash-stat-btn"
+          onClick={onOpenClients}
+          title="Review connected clients · CLIENT LIST"
+        >
+          <div className="rdash-stat-label">Clients</div>
+          <div className="rdash-stat-value">{clientTotal ?? "—"}</div>
+          <div className="rdash-stat-go">
+            <Icon name="monitor_heart" size={12} />
+            Review clients
+          </div>
+        </button>
         {stat("Uptime", stats ? stats.uptimeInDays + "d" : "—", "since last restart")}
         {stat("Expired", stats ? humanNum(stats.expiredKeys) : "—", "keys total")}
         {stat("Evicted", stats ? humanNum(stats.evictedKeys) : "—", "keys total")}
@@ -236,6 +275,59 @@ export function DashboardTab({
               </button>
             ))}
           </div>
+        </div>
+
+        <div className="rdash-panel">
+          <h3>
+            <Icon name="monitor_heart" size={15} /> Connected clients
+          </h3>
+          {cl ? (
+            <>
+              {(
+                [
+                  ["normal", "Normal", CLIENT_TYPE_COLOR.normal],
+                  ["pubsub", "Pub/Sub", CLIENT_TYPE_COLOR.pubsub],
+                  ["replica", "Replica", CLIENT_TYPE_COLOR.replica],
+                ] as const
+              ).map(([key, label, color]) => (
+                <div className="rdash-cl-row" key={key}>
+                  <span className="rdash-cl-dot" style={{ background: color }} />
+                  <span className="rdash-cl-label">{label}</span>
+                  <span className="rdash-bar-track">
+                    <span
+                      className="rdash-bar-fill"
+                      style={{
+                        width: (cl[key] / Math.max(1, cl.total)) * 100 + "%",
+                        background: color,
+                      }}
+                    />
+                  </span>
+                  <span className="rdash-cl-n">{cl[key]}</span>
+                </div>
+              ))}
+              <div className="rdash-cl-note">
+                <Icon name="info" size={12} />
+                <span>
+                  {cl.stale
+                    ? cl.stale +
+                      (cl.stale === 1
+                        ? " normal client has been idle over 5 minutes"
+                        : " normal clients have been idle over 5 minutes") +
+                      " — usually leaked pool connections worth closing."
+                    : "No client has been idle long enough to look leaked."}
+                </span>
+              </div>
+            </>
+          ) : (
+            <div className="rdash-panel-empty">
+              {loading
+                ? "Reading CLIENT LIST…"
+                : "CLIENT LIST is not available on this connection."}
+            </div>
+          )}
+          <Btn icon="monitor_heart" variant="tonal" small onClick={onOpenClients}>
+            Review clients
+          </Btn>
         </div>
       </div>
     </div>

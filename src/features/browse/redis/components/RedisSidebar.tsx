@@ -1,6 +1,6 @@
 // Redis keyspace sidebar (REDIS_SPEC §4) — ported from `redis.jsx`
-// RedisSidebar. Top→bottom: connection header (SQL recipe) · db switcher row
-// (storage button + db popover, dashboard, refresh) · MATCH glob input · type
+// RedisSidebar. Top→bottom: connection header (SQL recipe) · scope row (the db
+// switcher, or in cluster mode the node picker) · MATCH glob input · type
 // filter chips · KEYS section label with a tree⇄flat toggle + match count ·
 // the SCAN-backed key list (flat or namespace tree) · a "New CLI console"
 // footer.
@@ -32,6 +32,8 @@ import {
   kvGetKey,
   kvScan,
   type KeyType,
+  type ClusterNode,
+  type ClusterTopology,
   type KeyEntry,
   type KvValue,
 } from "../api";
@@ -41,15 +43,27 @@ import {
   countLeaves,
   humanTTL,
   lastSegment,
+  mergeKeys,
   REDIS_TYPE_ORDER,
   REDIS_TYPES,
   type NamespaceNode,
 } from "../helpers";
+import { allNodes, shardName } from "../cluster";
+import { ClusterNodePicker } from "./ClusterNodePicker";
 import { RedisTypeBadge } from "./RedisTypeBadge";
 import "./RedisSidebar.css";
+// `.cl-scope` / `.cl-np-*` — the cluster keyspace chip and its node picker.
+import "./ClusterDashboard.css";
 
 /** SCAN COUNT hint per round trip (work, not a result cap). */
 const SCAN_COUNT = 200;
+/**
+ * How many pages the refresh will re-scan to restore what the user had paged
+ * in. Bounded because the refresh is on a timer: without a cap, someone who
+ * pressed "Load more" fifty times would fire fifty SCANs every tick. Past the
+ * cap the tree keeps its head fresh and leaves the tail as it was.
+ */
+const MAX_REFRESH_PAGES = 25;
 /** Indent per tree depth, in px (prototype `redis.jsx`). */
 const TREE_INDENT = 13;
 /** The number of databases a Redis connection exposes (REDIS_SPEC §2). */
@@ -76,6 +90,21 @@ interface RedisSidebarProps {
   isTunneled: boolean;
   tunnelHint: string;
   handleId: string;
+  /**
+   * The cluster topology when this connection is a cluster node, else null
+   * (M36 §B3). Cluster mode rejects `SELECT`, so the db switcher is replaced —
+   * not by nothing, but by a NODE picker: a cluster has one database and N
+   * nodes, and which node you are attached to decides which slots (and so
+   * which keys) `SCAN` can see.
+   */
+  cluster: ClusterTopology | null;
+  /**
+   * Attach the workspace to another cluster node. Omitted for a standalone
+   * connection; when omitted the chip renders inert.
+   */
+  onPickNode?: (node: ClusterNode) => void;
+  /** True while a node switch is in flight (the chip spins, rows disable). */
+  nodeSwitching?: boolean;
   /** Per-db key counts from the open-result overview (REDIS_SPEC §4 popover). */
   databases: KvDbInfo[];
   dbIndex: number;
@@ -105,6 +134,9 @@ export function RedisSidebar(props: RedisSidebarProps) {
     isTunneled,
     tunnelHint,
     handleId,
+    cluster,
+    onPickNode,
+    nodeSwitching = false,
     databases,
     dbIndex,
     activeKey,
@@ -124,6 +156,7 @@ export function RedisSidebar(props: RedisSidebarProps) {
   const [typeFilter, setTypeFilter] = useState<KeyType | "all">("all");
   const [view, setView] = useState<"tree" | "flat">("tree");
   const [dbOpen, setDbOpen] = useState(false);
+  const [nodeOpen, setNodeOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   // Multi-select for bulk delete / export. `selectMode` swaps key-row clicks
@@ -154,6 +187,7 @@ export function RedisSidebar(props: RedisSidebarProps) {
 
   const dbBtnRef = useRef<HTMLButtonElement | null>(null);
   const dbPopRef = useRef<HTMLDivElement | null>(null);
+  const nodePickRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
 
   // Per-db key counts from the overview (the popover + the db button label).
@@ -177,7 +211,9 @@ export function RedisSidebar(props: RedisSidebarProps) {
           cursor: fromCursor,
           count: SCAN_COUNT,
         });
-        setKeys((prev) => (append ? [...prev, ...page.keys] : page.keys));
+        // Merged, not concatenated: SCAN may hand back a key it already gave
+        // us on an earlier page (see `mergeKeys`).
+        setKeys((prev) => (append ? mergeKeys(prev, page.keys) : page.keys));
         setCursor(page.cursor);
         setError(null);
       } catch (err) {
@@ -190,28 +226,69 @@ export function RedisSidebar(props: RedisSidebarProps) {
     [handleId, dbIndex, pattern, typeFilter],
   );
 
-  // Reset + load the first page whenever the query inputs change. `version`
-  // is the refresh / write-invalidation nonce (manual refresh, a write, or the
-  // auto-refresh timer). On a query change we hard-reset (clear → show
-  // loading); on a version-only bump we soft-refresh — re-scan page 0 and
-  // replace in place so the auto-refresh timer doesn't blank the tree every
-  // tick (which would also drop the user's scroll position).
+  // How many pages the user has paged in. A refresh has to restore this depth:
+  // re-scanning only page 1 would throw away everything "Load more" fetched,
+  // which the 10s auto-refresh timer then does over and over — the list grows,
+  // vanishes, and the button comes back.
+  const pagesRef = useRef(1);
+
+  // Re-scan from the start up to `pages` pages and replace the list in one go.
+  // Cursors are not resumable across scans, so restoring depth means walking
+  // the pages again rather than picking up where the last one stopped.
+  const refetchPages = useCallback(
+    async (pages: number) => {
+      setLoading(true);
+      try {
+        let all: KeyEntry[] = [];
+        let cur = "0";
+        let fetched = 0;
+        do {
+          const page = await kvScan(handleId, dbIndex, {
+            pattern: scanGlob(pattern),
+            ...(typeFilter !== "all" ? { typeFilter } : {}),
+            cursor: cur,
+            count: SCAN_COUNT,
+          });
+          all = mergeKeys(all, page.keys);
+          cur = page.cursor;
+          fetched += 1;
+        } while (cur !== "0" && fetched < pages);
+        // One setState at the end, so the tree never flashes a partial list.
+        setKeys(all);
+        setCursor(cur);
+        setError(null);
+      } catch (err) {
+        setError(appErrorMessage(err, "Could not scan the keyspace."));
+        setKeys([]);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [handleId, dbIndex, pattern, typeFilter],
+  );
+
+  // Reload whenever the query inputs change or `version` bumps (manual refresh,
+  // a write, or the auto-refresh timer). A query change hard-resets to one page
+  // (clear → show loading); a version-only bump re-scans the depth the user had
+  // already paged to and replaces in place, so neither the tree nor the scroll
+  // position jumps every tick.
   const queryKey = handleId + "|" + dbIndex + "|" + pattern + "|" + typeFilter;
   const lastQueryKeyRef = useRef<string | null>(null);
   useEffect(() => {
     if (lastQueryKeyRef.current !== queryKey) {
       lastQueryKeyRef.current = queryKey;
+      pagesRef.current = 1;
       setKeys([]); // hard reset only when the query itself changed
     }
-    setCursor("0");
-    void fetchPage("0", false);
-    // fetchPage's identity already encodes the query inputs; `version` adds the
-    // refresh nonce. queryKey is derived from the same inputs (lint-listed for
-    // completeness).
-  }, [fetchPage, version, queryKey]);
+    void refetchPages(Math.min(pagesRef.current, MAX_REFRESH_PAGES));
+    // refetchPages' identity already encodes the query inputs; `version` adds
+    // the refresh nonce. queryKey is derived from the same inputs (lint-listed
+    // for completeness).
+  }, [refetchPages, version, queryKey]);
 
   const loadMore = useCallback(() => {
     if (loading || done) return;
+    pagesRef.current += 1;
     void fetchPage(cursor, true);
   }, [loading, done, fetchPage, cursor]);
 
@@ -234,6 +311,45 @@ export function RedisSidebar(props: RedisSidebarProps) {
     for (const k of keys) m.set(k.name, k.ttl);
     return m;
   }, [keys]);
+
+  // The cluster node this connection is attached to, from CLUSTER NODES'
+  // `myself` flag — the server's own answer, not something we track locally,
+  // so it stays right across a switch.
+  const currentNode = useMemo(
+    () => (cluster ? (allNodes(cluster.shards).find((n) => n.myself) ?? null) : null),
+    [cluster],
+  );
+  const currentShard = useMemo(() => {
+    if (!cluster || !currentNode) return null;
+    return (
+      cluster.shards.find(
+        (s) => s.master.id === currentNode.id || s.replicas.some((r) => r.id === currentNode.id),
+      ) ?? null
+    );
+  }, [cluster, currentNode]);
+
+  // In cluster mode the header names the node this handle is actually attached
+  // to. `detail` is the SAVED endpoint, which stops being true the moment the
+  // node picker repoints the workspace.
+  const nodeDetail = currentNode ? currentNode.host + ":" + currentNode.port + " · db0" : null;
+
+  // Outside-click / Escape close the node picker.
+  useEffect(() => {
+    if (!nodeOpen) return;
+    const onDown = (event: MouseEvent) => {
+      if (event.target instanceof Node && nodePickRef.current?.contains(event.target)) return;
+      setNodeOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setNodeOpen(false);
+    };
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [nodeOpen]);
 
   // Outside-click / Escape close the db popover (Sidebar/Rail pattern).
   useEffect(() => {
@@ -432,6 +548,34 @@ export function RedisSidebar(props: RedisSidebarProps) {
 
   const matchCount = sorted.length;
 
+  // The KEYS badge counts what is LOADED, not what exists — the list is paged,
+  // so "200" with 406 keys on the server reads as a total and makes the "Load
+  // more" button below it look like a bug. Show the denominator when there is
+  // an honest one: `INFO keyspace`'s count for this db (per node in cluster
+  // mode) is comparable only while nothing narrows the scan. Under a MATCH
+  // glob or a type filter the server filters too, so `12 / 406` would be a
+  // lie — the badge says `12+` instead, which claims only that more may come.
+  const narrowed = scanGlob(pattern) !== "*" || typeFilter !== "all";
+  const dbTotal = dbCounts[dbIndex] ?? 0;
+  // Only quote a denominator we can stand behind: unfiltered, non-zero, and not
+  // already behind what is on screen (INFO keyspace can lag a scan by a tick).
+  const showTotal = !narrowed && dbTotal > 0 && dbTotal >= matchCount;
+  const countLabel = done
+    ? String(matchCount)
+    : showTotal
+      ? matchCount + " / " + dbTotal
+      : matchCount + "+";
+  const countTitle = done
+    ? matchCount + (matchCount === 1 ? " key" : " keys")
+    : showTotal
+      ? matchCount +
+        " of " +
+        dbTotal +
+        " keys loaded — the list pages through SCAN, so Load more fetches the rest"
+      : matchCount +
+        (matchCount === 1 ? " key" : " keys") +
+        " loaded so far — Load more to keep scanning";
+
   // Drop the selection whenever the query inputs change (the list is replaced).
   useEffect(() => {
     setSelectedKeys(new Set());
@@ -516,13 +660,17 @@ export function RedisSidebar(props: RedisSidebarProps) {
             {workspaceName}
             <span className="env-dot" style={{ background: envColor }} title={envLabel} />
           </div>
-          <div className="sidebar-conn-detail">
+          <div className="sidebar-conn-detail" title={nodeDetail ? detail + " (configured)" : ""}>
             {isTunneled ? (
               <span className="tunnel-lock" title={tunnelHint}>
                 <Icon name="vpn_lock" size={11} style={{ color: "var(--accent)" }} />
               </span>
             ) : null}
-            {detail}
+            {/* After a node switch this line must name the node actually being
+                talked to, not the endpoint the connection was configured with —
+                otherwise the header claims :7001 while every command goes to
+                :7005. The configured endpoint stays in the tooltip. */}
+            {nodeDetail ?? detail}
           </div>
         </div>
         <LanguageChip />
@@ -536,61 +684,132 @@ export function RedisSidebar(props: RedisSidebarProps) {
       </div>
 
       <div className="schema-row">
-        <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
-          <button
-            ref={dbBtnRef}
-            type="button"
-            className="schema-btn redis-db-btn"
-            onClick={() => setDbOpen((o) => !o)}
-            title="Switch database"
-            aria-haspopup="menu"
-            aria-expanded={dbOpen}
-          >
-            <Icon name="storage" size={15} style={{ color: "var(--accent)" }} />
-            <span className="schema-btn-name">db{dbIndex}</span>
-            <span className="rdb-keycount">{dbCounts[dbIndex]} keys</span>
-            <Icon name="expand_more" size={15} style={{ color: "var(--text-faint)" }} />
-          </button>
-          {dbOpen ? (
-            <div
-              ref={dbPopRef}
-              className="schema-pop rdb-pop"
-              role="menu"
-              aria-label="Switch database"
-              onKeyDown={onPopKeyDown}
+        {/* Cluster mode exposes a single logical keyspace and rejects SELECT, so
+            the db switcher is replaced by a locked chip — offering db0–db15
+            would be offering a command that errors. */}
+        {cluster ? (
+          // Not a db switcher — a NODE switcher. Cluster mode has one database,
+          // so `SELECT` stays unavailable; but `SCAN` answers for the node you
+          // are attached to, so reaching another shard's keys means attaching
+          // to the node that owns those slots.
+          <div ref={nodePickRef} style={{ position: "relative", flex: 1, minWidth: 0 }}>
+            <button
+              type="button"
+              className="cl-scope"
+              disabled={!onPickNode || nodeSwitching}
+              onClick={() => setNodeOpen((open) => !open)}
+              aria-haspopup="dialog"
+              aria-expanded={nodeOpen}
+              title={
+                currentNode
+                  ? "Browsing the " +
+                    currentNode.role +
+                    " " +
+                    currentNode.host +
+                    ":" +
+                    currentNode.port +
+                    (currentShard ? " of " + shardName(currentShard) : "") +
+                    (currentNode.role === "replica"
+                      ? " — reads are served in READONLY mode and may lag its master."
+                      : ".") +
+                    " Click to browse another node; a cluster has one database, so SELECT is not available."
+                  : "Cluster mode exposes a single logical keyspace — SELECT is not available"
+              }
             >
-              {dbCounts.map((count, index) => (
-                <button
-                  key={index}
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={index === dbIndex}
-                  className={
-                    "schema-pop-item" +
-                    (index === dbIndex ? " active" : "") +
-                    (count === 0 ? " empty" : "")
-                  }
-                  onClick={() => selectDb(index)}
-                >
-                  <Icon name="storage" size={14} />
-                  <span>db{index}</span>
-                  <span className="schema-pop-count">{count}</span>
-                  <ScopeSplitAction
-                    scope={dbScopeId(index)}
-                    label={"db" + index}
-                    opened={openedScopes.includes(dbScopeId(index))}
-                    onOpen={(scope) => {
-                      setDbOpen(false);
-                      onOpenScopeWorkspace(scope);
-                    }}
-                  />
-                </button>
-              ))}
-              <ScopeSplitHint />
-            </div>
-          ) : null}
-        </div>
-        <IconBtn icon="monitoring" title="Keyspace dashboard" onClick={onOpenDashboard} />
+              <Icon name="lan" size={15} style={{ color: "var(--accent)" }} />
+              <span className="cl-scope-name">
+                {currentShard ? shardName(currentShard) : "cluster keyspace"}
+              </span>
+              {/* A shard is a master AND its replicas, so the shard name alone
+                  does not say which one you are on — and it matters: a replica
+                  serves reads in READONLY mode and may lag its master.
+                  This takes the slot the node's key count briefly had: at the
+                  default sidebar width the chip fits the name, one tag and the
+                  chevron, and the count is already in the `200 / 406` KEYS
+                  badge below while the role is shown nowhere else. */}
+              {currentNode ? (
+                <span className={"cl-role " + currentNode.role}>{currentNode.role}</span>
+              ) : null}
+              <Icon
+                name={nodeSwitching ? "autorenew" : "expand_more"}
+                size={15}
+                style={{ color: "var(--text-faint)" }}
+                className={nodeSwitching ? "sidebar-sync-spinning" : undefined}
+              />
+            </button>
+            {nodeOpen && onPickNode ? (
+              <ClusterNodePicker
+                topology={cluster}
+                busy={nodeSwitching}
+                onClose={() => setNodeOpen(false)}
+                onPick={(node) => {
+                  setNodeOpen(false);
+                  onPickNode(node);
+                }}
+              />
+            ) : null}
+          </div>
+        ) : (
+          <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
+            <button
+              ref={dbBtnRef}
+              type="button"
+              className="schema-btn redis-db-btn"
+              onClick={() => setDbOpen((o) => !o)}
+              title="Switch database"
+              aria-haspopup="menu"
+              aria-expanded={dbOpen}
+            >
+              <Icon name="storage" size={15} style={{ color: "var(--accent)" }} />
+              <span className="schema-btn-name">db{dbIndex}</span>
+              <span className="rdb-keycount">{dbCounts[dbIndex]} keys</span>
+              <Icon name="expand_more" size={15} style={{ color: "var(--text-faint)" }} />
+            </button>
+            {dbOpen ? (
+              <div
+                ref={dbPopRef}
+                className="schema-pop rdb-pop"
+                role="menu"
+                aria-label="Switch database"
+                onKeyDown={onPopKeyDown}
+              >
+                {dbCounts.map((count, index) => (
+                  <button
+                    key={index}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={index === dbIndex}
+                    className={
+                      "schema-pop-item" +
+                      (index === dbIndex ? " active" : "") +
+                      (count === 0 ? " empty" : "")
+                    }
+                    onClick={() => selectDb(index)}
+                  >
+                    <Icon name="storage" size={14} />
+                    <span>db{index}</span>
+                    <span className="schema-pop-count">{count}</span>
+                    <ScopeSplitAction
+                      scope={dbScopeId(index)}
+                      label={"db" + index}
+                      opened={openedScopes.includes(dbScopeId(index))}
+                      onOpen={(scope) => {
+                        setDbOpen(false);
+                        onOpenScopeWorkspace(scope);
+                      }}
+                    />
+                  </button>
+                ))}
+                <ScopeSplitHint />
+              </div>
+            ) : null}
+          </div>
+        )}
+        <IconBtn
+          icon={cluster ? "lan" : "monitoring"}
+          title={cluster ? "Cluster dashboard" : "Keyspace dashboard"}
+          onClick={onOpenDashboard}
+        />
         <IconBtn
           icon="sync"
           title="Refresh keyspace"
@@ -665,7 +884,9 @@ export function RedisSidebar(props: RedisSidebarProps) {
           >
             <Icon name={view === "tree" ? "account_tree" : "list"} size={14} />
           </button>
-          <span className="sidebar-count">{matchCount}</span>
+          <span className="sidebar-count" title={countTitle}>
+            {countLabel}
+          </span>
         </div>
       </div>
 

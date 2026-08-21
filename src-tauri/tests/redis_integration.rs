@@ -22,7 +22,9 @@ use std::sync::Arc;
 
 use bytetable_lib::engines::redis::RedisConnector;
 use bytetable_lib::shared::engine::{ConnectSecret, ConnectionParams, Connector, Engine, TlsMode};
-use bytetable_lib::shared::keyvalue::{KeyType, KeyValueConnection, KvValue, RespReply};
+use bytetable_lib::shared::keyvalue::{
+    KeyType, KeyValueConnection, KvKillFilter, KvValue, RespReply,
+};
 
 /// Parse `redis://[:password]@host:port` into params + secret. Only the subset
 /// the test server uses is handled (no ACL user, no TLS, no path).
@@ -558,4 +560,159 @@ async fn redis_test_connection_reports_version() {
         .expect("test connection");
     assert_eq!(info.engine, Engine::Redis);
     assert!(info.server_version.starts_with("Redis "));
+}
+
+/// `CLIENT LIST` / `CLIENT KILL` (M36 §A) against the live standalone server.
+/// Opens a second connection, finds it in the list, and kills it by id —
+/// asserting along the way that our own connection is flagged and that every
+/// field the inspector shows really arrives.
+#[tokio::test]
+async fn redis_client_list_and_kill() {
+    let Some((params, secret)) = gate("redis_client_list_and_kill") else {
+        return;
+    };
+    let conn = open_kv(&params, &secret).await;
+
+    // Name the victim so we can find it without guessing at ports.
+    let victim = open_kv(&params, &secret).await;
+    let tag = format!("bttest-victim-{}", uuid_like());
+    victim
+        .run_command(0, vec!["CLIENT".into(), "SETNAME".into(), tag.clone()])
+        .await
+        .expect("CLIENT SETNAME");
+
+    let clients = conn.client_list().await.expect("CLIENT LIST");
+    assert!(!clients.is_empty());
+
+    // Exactly one connection is ours, and it is the one issuing the command.
+    let me = clients.iter().filter(|c| c.is_self).count();
+    assert_eq!(me, 1, "exactly one client is flagged is_self");
+
+    let target = clients
+        .iter()
+        .find(|c| c.name == tag)
+        .expect("the named victim is listed");
+    assert!(!target.is_self);
+    assert!(target.id > 0);
+    assert!(!target.addr.is_empty());
+    assert_eq!(target.client_type, "normal");
+    // The raw line IS the CLIENT INFO format, and the parsed pairs keep the
+    // server's own order starting at `id`.
+    assert!(target.raw.contains(&format!("id={}", target.id)));
+    assert_eq!(target.fields.first().map(|f| f.field.as_str()), Some("id"));
+    assert!(target.fields.iter().any(|f| f.field == "tot-mem"));
+
+    let closed = conn
+        .client_kill_ids(&[target.id])
+        .await
+        .expect("CLIENT KILL ID");
+    assert_eq!(closed, 1);
+
+    let after = conn.client_list().await.expect("CLIENT LIST after kill");
+    assert!(
+        !after.iter().any(|c| c.id == target.id),
+        "the killed connection is gone from the list"
+    );
+
+    // Killing a filter that matches no connection is zero closed, not an error
+    // — the UI's live match count can be stale by the time you confirm.
+    // (Note the asymmetry Redis itself has: an ADDR nobody is at is simply no
+    // match, while `CLIENT KILL USER <unknown>` is an error, because the user
+    // does not exist. Both reach the UI correctly: one toasts "0 closed", the
+    // other surfaces the server's sentence.)
+    let none = conn
+        .client_kill(KvKillFilter::Addr, "203.0.113.255:1")
+        .await
+        .expect("CLIENT KILL ADDR nobody is at");
+    assert_eq!(none, 0);
+
+    // A standalone server has no cluster topology.
+    assert!(conn
+        .cluster_topology()
+        .await
+        .expect("cluster topology")
+        .is_none());
+
+    let _ = victim.close().await;
+    conn.close().await.expect("close");
+}
+
+/// The cluster reader (M36 §B) against a live Redis Cluster node. Gated on its
+/// own env var, because it needs the cluster rig rather than the standalone
+/// server:
+///
+/// ```sh
+/// BYTETABLE_TEST_REDIS_CLUSTER_URL='redis://:bytetable@127.0.0.1:7001' \
+///   cargo test --test redis_integration -- --nocapture
+/// ```
+#[tokio::test]
+async fn redis_cluster_topology_describes_the_live_cluster() {
+    let url = match std::env::var("BYTETABLE_TEST_REDIS_CLUSTER_URL") {
+        Ok(url) if !url.is_empty() => url,
+        _ => {
+            eprintln!(
+                "SKIP redis_cluster_topology_describes_the_live_cluster: \
+                 BYTETABLE_TEST_REDIS_CLUSTER_URL not set (live Redis Cluster required)"
+            );
+            return;
+        }
+    };
+    let (params, secret) = parse_url(&url);
+    let conn = open_kv(&params, &secret).await;
+
+    let topology = conn
+        .cluster_topology()
+        .await
+        .expect("cluster topology")
+        .expect("the server reports redis_mode:cluster");
+
+    // CLUSTER INFO comes through with its own keys, unrewritten.
+    let state = topology
+        .info
+        .iter()
+        .find(|f| f.field == "cluster_state")
+        .map(|f| f.value.as_str());
+    assert_eq!(state, Some("ok"));
+    assert!(topology.nodes_text.contains("myself"));
+
+    // Every slot is covered exactly once by the shards we assembled.
+    let covered: u32 = topology
+        .shards
+        .iter()
+        .flat_map(|s| s.slots.iter())
+        .map(|r| u32::from(r.to) - u32::from(r.from) + 1)
+        .sum();
+    assert_eq!(covered, 16384, "the shards cover the whole slot space");
+
+    // Shards are ordered by first slot and start at 0.
+    let first = topology.shards.first().expect("at least one shard");
+    assert_eq!(first.slots.first().map(|r| r.from), Some(0));
+    assert_eq!(first.index, 0);
+
+    // Exactly one node in the whole cluster is `myself`.
+    let myself = topology
+        .shards
+        .iter()
+        .flat_map(|s| std::iter::once(&s.master).chain(s.replicas.iter()))
+        .filter(|n| n.myself)
+        .count();
+    assert_eq!(myself, 1);
+
+    for shard in &topology.shards {
+        assert_eq!(shard.master.role, "master");
+        assert_eq!(shard.master.id.len(), 40, "node ids are 40 hex chars");
+        assert!(shard.master.bus_port > shard.master.port);
+        for replica in &shard.replicas {
+            assert_eq!(replica.role, "replica");
+            assert_eq!(replica.master_id.as_deref(), Some(shard.master.id.as_str()));
+            assert!(replica.slots.is_empty(), "replicas own no slots");
+        }
+    }
+
+    // The rig publishes every node on loopback, so the per-node probes run and
+    // the counters are measurements rather than `None`.
+    assert!(topology.node_stats_measured);
+    assert!(topology.shards.iter().all(|s| s.master.keys.is_some()));
+
+    conn.close().await.expect("close");
 }

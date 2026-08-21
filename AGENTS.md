@@ -27,8 +27,10 @@ make fmt          # prettier + rustfmt auto-format
 make build        # production Tauri bundle (pnpm tauri build)
 make dev-cert     # macOS: one-time self-signed cert for keychain prompt avoidance
 make tag VERSION=x.y.z  # bump, commit, tag, push (triggers release workflow)
-make db-up        # Docker: Postgres/MySQL/SQL Server/Redis/DynamoDB/MongoDB/Cassandra/ClickHouse/Typesense + seed
-make db-down      # stop + wipe volumes
+make db-up        # Docker: Postgres/MySQL/SQL Server/Redis/Redis Cluster/DynamoDB/MongoDB/Cassandra/ClickHouse/Typesense + seed
+make db-down      # stop + wipe volumes (both compose projects)
+make redis-cluster-up    # just the 3-master/3-replica Redis Cluster (7001-7006) + form + seed
+make redis-cluster-down  # just the cluster rig
 make hooks        # install git pre-commit hook (husky + lint-staged)
 ```
 
@@ -61,7 +63,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 
 ## Testing
 
-- Rust tests run via `cargo test --all-features` from `src-tauri/`. SQLite is unit-testable in-process. MySQL/Postgres/SQL Server/Redis/DynamoDB/MongoDB/Cassandra/Typesense integration tests need Docker databases (`make db-up`); each is gated behind a `BYTETABLE_TEST_*_URL` env var (SQL Server: `BYTETABLE_TEST_MSSQL_URL`; Typesense also reads `BYTETABLE_TEST_TYPESENSE_KEY`).
+- Rust tests run via `cargo test --all-features` from `src-tauri/`. SQLite is unit-testable in-process. MySQL/Postgres/SQL Server/Redis/DynamoDB/MongoDB/Cassandra/Typesense integration tests need Docker databases (`make db-up`); each is gated behind a `BYTETABLE_TEST_*_URL` env var (SQL Server: `BYTETABLE_TEST_MSSQL_URL`; Typesense also reads `BYTETABLE_TEST_TYPESENSE_KEY`; the Redis Cluster reader has its own `BYTETABLE_TEST_REDIS_CLUSTER_URL`, satisfied by `make redis-cluster-up`).
 - No frontend test framework configured.
 - Test fixtures use offset Docker ports (e.g. Postgres on 55432).
 

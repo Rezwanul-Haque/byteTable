@@ -6,7 +6,8 @@
 use crate::features::connections::application::{ConnectionHandleId, ConnectionManager};
 use crate::shared::error::AppError;
 use crate::shared::keyvalue::{
-    KeyType, KeyView, KvDbInfo, KvServerInfo, KvServerStats, RespReply, ScanPage, ScanRequest,
+    ClusterTopology, KeyType, KeyView, KvClient, KvDbInfo, KvKillFilter, KvServerInfo,
+    KvServerStats, RespReply, ScanPage, ScanRequest,
 };
 
 /// Server identity for the dashboard header (`INFO server`/`replication`).
@@ -231,6 +232,66 @@ pub async fn run_command(
     manager.get_kv(handle).await?.run_command(db, args).await
 }
 
+// -- connected clients (M36 §A) ---------------------------------------------
+
+/// `CLIENT LIST` — every connection, with ours flagged.
+pub async fn client_list(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+) -> Result<Vec<KvClient>, AppError> {
+    manager.get_kv(handle).await?.client_list().await
+}
+
+/// `CLIENT KILL <filter> <value>` — resolves to the number closed.
+pub async fn client_kill(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    filter: KvKillFilter,
+    value: &str,
+) -> Result<u64, AppError> {
+    manager
+        .get_kv(handle)
+        .await?
+        .client_kill(filter, value)
+        .await
+}
+
+/// One `CLIENT KILL ID <id>` per id — resolves to the number closed.
+pub async fn client_kill_ids(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    ids: &[i64],
+) -> Result<u64, AppError> {
+    manager.get_kv(handle).await?.client_kill_ids(ids).await
+}
+
+/// `CLIENT NO-EVICT on|off` (applies to this connection only).
+pub async fn client_no_evict(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    on: bool,
+) -> Result<(), AppError> {
+    manager.get_kv(handle).await?.client_no_evict(on).await
+}
+
+/// `CLIENT UNPAUSE`.
+pub async fn client_unpause(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+) -> Result<(), AppError> {
+    manager.get_kv(handle).await?.client_unpause().await
+}
+
+// -- cluster (M36 §B) -------------------------------------------------------
+
+/// The cluster snapshot, or `None` when the server is standalone.
+pub async fn cluster_topology(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+) -> Result<Option<ClusterTopology>, AppError> {
+    manager.get_kv(handle).await?.cluster_topology().await
+}
+
 #[cfg(test)]
 mod tests {
     use async_trait::async_trait;
@@ -238,7 +299,8 @@ mod tests {
     use super::*;
     use crate::shared::engine::{Engine, EngineInfo, OpenConnection};
     use crate::shared::keyvalue::{
-        CommandRunner, KeyValueConnection, KeyspaceReader, KeyspaceWriter, KvValue,
+        ClientAdmin, ClusterReader, CommandRunner, KeyValueConnection, KeyspaceReader,
+        KeyspaceWriter, KvValue,
     };
 
     /// A minimal fake key-value connection: records the last command and echoes
@@ -351,6 +413,37 @@ mod tests {
                     value: Some(args.join(" ")),
                 })
             }
+        }
+    }
+
+    #[async_trait]
+    impl ClientAdmin for FakeKv {
+        async fn client_list(&self) -> Result<Vec<KvClient>, AppError> {
+            Ok(vec![KvClient {
+                id: 7,
+                is_self: true,
+                ..KvClient::default()
+            }])
+        }
+        async fn client_kill(&self, _: KvKillFilter, _: &str) -> Result<u64, AppError> {
+            Ok(2)
+        }
+        async fn client_kill_ids(&self, ids: &[i64]) -> Result<u64, AppError> {
+            Ok(ids.len() as u64)
+        }
+        async fn client_no_evict(&self, _: bool) -> Result<(), AppError> {
+            Ok(())
+        }
+        async fn client_unpause(&self) -> Result<(), AppError> {
+            Ok(())
+        }
+    }
+
+    #[async_trait]
+    impl ClusterReader for FakeKv {
+        async fn cluster_topology(&self) -> Result<Option<ClusterTopology>, AppError> {
+            // The fake is a standalone server — no cluster.
+            Ok(None)
         }
     }
 

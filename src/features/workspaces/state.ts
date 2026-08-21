@@ -8,7 +8,7 @@
 
 import { create } from "zustand";
 
-import type { SchemaInfo } from "../connections/api";
+import type { EngineInfo, SchemaInfo } from "../connections/api";
 import { connectionClose } from "../connections/api";
 import { useIntrospectionStore } from "../introspection/state";
 import { useSettingsStore } from "../settings/state";
@@ -91,6 +91,20 @@ interface WorkspacesFeatureState {
    * backend connection (fire-and-forget).
    */
   closeWorkspace: (id: string) => void;
+  /**
+   * Point a workspace at a different, already-open backend handle (M36).
+   *
+   * The case this exists for is switching which Redis Cluster node a cluster
+   * workspace browses: the saved connection is unchanged and the keyspace is
+   * the same logical one — only the endpoint serving it moves. Repointing the
+   * workspace means every consumer (sidebar, key tabs, console, status bar)
+   * follows without a prop being threaded through each of them.
+   *
+   * The previous handle is released on the same refcount rule `closeWorkspace`
+   * uses: only when no surviving workspace still references it, so a db
+   * sub-workspace sharing its parent's handle is never cut off.
+   */
+  setWorkspaceHandle: (id: string, handleId: string, info?: EngineInfo) => void;
   /**
    * Open `schema` as a sub-workspace of `parentId` (M32) — create-or-focus.
    *
@@ -566,6 +580,27 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
     set((state) => ({
       workspaces: state.workspaces.map((ws) => (ws.id === id ? { ...ws, temp: false } : ws)),
     })),
+
+  setWorkspaceHandle: (id, handleId, info) => {
+    const before = get().workspaces;
+    const target = before.find((ws) => ws.id === id);
+    if (!target || target.handleId === handleId) return;
+    const previous = target.handleId;
+
+    const workspaces = before.map((ws) =>
+      ws.id === id ? { ...ws, handleId, info: info ?? ws.info } : ws,
+    );
+
+    // Same refcount rule as closeWorkspace: release the old handle only if
+    // nothing else is still on it (a db sub-workspace shares its parent's).
+    if (!workspaces.some((ws) => ws.handleId === previous)) {
+      connectionClose(previous).catch((err: unknown) => {
+        console.warn("connection_close failed", err);
+      });
+      useIntrospectionStore.getState().invalidate(previous);
+    }
+    set({ workspaces });
+  },
 
   closeWorkspace: (id) => {
     const before = get().workspaces;

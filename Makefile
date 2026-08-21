@@ -12,7 +12,7 @@ MANIFEST    := src-tauri/Cargo.toml
 export PATH := $(HOME)/.cargo/bin:$(PATH)
 
 .DEFAULT_GOAL := help
-.PHONY: help install hooks ensure-cargo dev dev-cert test lint clippy fmt build build-debug run tag db-up db-down tunnel-up tunnel-down clean
+.PHONY: help install hooks ensure-cargo dev dev-cert test lint clippy fmt build build-debug run tag db-up db-down tunnel-up tunnel-down redis-cluster-up redis-cluster-down clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -106,11 +106,15 @@ tag: ## Bump the version on dev, merge dev → main, then tag + push the release
 	git checkout dev && \
 	echo "Released v$$v: dev → main merged, tagged + pushed — the release workflow will build + publish it."
 
-db-up: ## Start the test databases (Postgres/MySQL/SQL Server/Redis/DynamoDB/MongoDB/Cassandra/ClickHouse/Typesense) + seed them
+db-up: ## Start the test databases (Postgres/MySQL/SQL Server/Redis/Redis Cluster/DynamoDB/MongoDB/Cassandra/ClickHouse/Typesense) + seed them
 	cd test-fixtures && docker compose up -d && ./seed/seed-redis.sh && ./seed/seed-dynamo.sh && ./seed/seed-cassandra.sh && ./seed/seed-mssql.sh && ./seed/seed-typesense.sh
+	# The cluster is its own compose project (own file + project name), so it is
+	# a nested make rather than another service in the chain above.
+	$(MAKE) redis-cluster-up
 
-db-down: ## Stop and wipe the test databases
+db-down: ## Stop and wipe the test databases (including the Redis Cluster rig)
 	cd test-fixtures && docker compose down -v
+	$(MAKE) redis-cluster-down
 
 tunnel-up: ## Start the SSH-bastion tunnel rig (MySQL/Postgres/Redis behind a bastion) + seed
 	cd test-fixtures && \
@@ -120,6 +124,14 @@ tunnel-up: ## Start the SSH-bastion tunnel rig (MySQL/Postgres/Redis behind a ba
 
 tunnel-down: ## Stop and wipe the SSH-bastion tunnel rig
 	cd test-fixtures && docker compose -p bytetable-tunnel -f docker-compose.tunnel.yml down -v
+
+redis-cluster-up: ## Start JUST the Redis Cluster rig (3 masters + 3 replicas on 7001-7006) + form and seed it
+	cd test-fixtures && \
+	  docker compose -p bytetable-rediscluster -f docker-compose.redis-cluster.yml up -d && \
+	  ./seed/seed-redis-cluster.sh
+
+redis-cluster-down: ## Stop and wipe JUST the Redis Cluster rig
+	cd test-fixtures && docker compose -p bytetable-rediscluster -f docker-compose.redis-cluster.yml down -v
 
 clean: ## Remove build artifacts (dist + Rust target)
 	rm -rf dist

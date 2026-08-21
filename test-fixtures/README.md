@@ -5,6 +5,13 @@ Throwaway databases for exercising all engines. **Test data only — never produ
 ## Bring it up
 
 ```sh
+make db-up      # everything below, seeded — the usual way
+make db-down    # stop + wipe both compose projects
+```
+
+By hand, if you want only some of it:
+
+```sh
 cd test-fixtures
 docker compose up -d        # Postgres + MySQL + SQL Server + Redis + DynamoDB + MongoDB + Cassandra + ClickHouse + Typesense (Postgres/MySQL/MongoDB/ClickHouse auto-seed on first init)
 ./seed/seed-redis.sh        # seed Redis (no auto-init dir for Redis)
@@ -13,6 +20,10 @@ docker compose up -d        # Postgres + MySQL + SQL Server + Redis + DynamoDB +
 ./seed/seed-typesense.sh    # seed Typesense (collections, curation, a search-only key)
 ./seed/seed-mssql.sh        # seed SQL Server (waits for it, ~30–60s)
 docker compose down -v      # stop + wipe volumes (next `up` re-seeds)
+
+# The Redis Cluster rig is a second compose project — see its section below.
+docker compose -p bytetable-rediscluster -f docker-compose.redis-cluster.yml up -d
+./seed/seed-redis-cluster.sh
 ```
 
 Ports are offset (5**5432**/3**3306**/1**1433**/6**3790**) so they won't collide with any local Postgres/MySQL/SQL Server/Redis. DynamoDB Local keeps the standard **8000**, MongoDB the standard **27017**, Cassandra the standard **9042**, and Typesense the standard **8108** so the connect modal's defaults work as-is.
@@ -62,6 +73,37 @@ Run `./seed/seed-mssql.sh` once after `up` (SQL Server takes ~30–60s to accept
 | DB index | `0`                         |
 | ACL user | _(leave blank → `default`)_ |
 | Password | `bytetable`                 |
+
+### Redis Cluster (M36)
+
+A real 3-master + 3-replica cluster over the 16384 hash slots. `make db-up` starts and seeds it along with everything else, and `make db-down` wipes it. It lives in its own compose file + project name (`bytetable-rediscluster`) rather than as six more services in `docker-compose.yml`, so it can also be run on its own:
+
+```sh
+make redis-cluster-up      # just the cluster: up + form + seed
+make redis-cluster-down    # just the cluster: stop + wipe
+
+# or, by hand:
+docker compose -p bytetable-rediscluster -f docker-compose.redis-cluster.yml up -d
+./seed/seed-redis-cluster.sh
+```
+
+| field    | value                                    |
+| -------- | ---------------------------------------- |
+| Host     | `127.0.0.1`                              |
+| Port     | `7001` _(or 7002…7006 — any node works)_ |
+| DB index | `0` _(cluster mode has only db0)_        |
+| ACL user | _(leave blank → `default`)_              |
+| Password | `bytetable`                              |
+
+Same credentials as the standalone Redis above: the rig sets `--requirepass bytetable` (and `--masterauth bytetable`, so replicas can authenticate to their masters) with no ACL file, so `default` is the only user.
+
+ByteTable detects cluster mode from the server's own `redis_mode:cluster` — there is no toggle. The workspace then opens on the **Cluster** dashboard, the sidebar's db switcher is replaced by a locked `cluster keyspace` chip, and the status bar reports `cluster · 3 shards · 6 nodes`.
+
+The seed makes the cluster views worth looking at: keys spread across all three shards, a `{user:5521}` hash-tag family that all lands on slot 4403 (so the key resolver can show a legal multi-key `MGET` next to a `CROSSSLOT` error), and 400 keys under a deliberately hot `{tenant:acme}` tag so the health panel's "key distribution is uneven" warning has something real to fire on.
+
+> All six nodes share one Docker network namespace (owned by `bt-rc-net`), which is what lets them announce `127.0.0.1:700N` — an address that is correct both for gossip between the nodes and for the host dialling in. Announcing container IPs would break the host; announcing loopback from separate namespaces would break gossip.
+
+**To exercise the failure warnings:** `docker pause bt-rc-6` — it has the shortest `cluster-node-timeout`, so it is flagged `PFAIL` first and its shard shows "no healthy replica". `docker unpause bt-rc-6` restores it.
 
 ### DynamoDB (Local)
 

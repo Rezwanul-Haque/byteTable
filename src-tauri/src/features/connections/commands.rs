@@ -199,11 +199,10 @@ pub async fn connection_open(
     let target = match (id, params) {
         (Some(id), None) => OpenTarget::SavedId(id),
         (None, Some(params)) => OpenTarget::Params(params),
-        (Some(_), Some(_)) => {
-            return Err(AppError::Invalid(
-                "provide either a saved connection id or connection params, not both".into(),
-            ))
-        }
+        // Both: open THESE params, authenticated as that saved entry (M36 —
+        // a Redis Cluster peer is the same configured server at another
+        // endpoint). `connection_test` reads the pair the same way.
+        (Some(saved_id), Some(params)) => OpenTarget::ParamsAs { params, saved_id },
         (None, None) => {
             return Err(AppError::Invalid(
                 "provide either a saved connection id or connection params".into(),

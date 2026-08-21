@@ -55,6 +55,8 @@ use crate::shared::keyvalue::{CommandRunner, KeyValueConnection, RespReply};
 
 use value::{redis_error_as_reply_text, value_to_reply, value_to_string};
 
+mod clients;
+mod cluster;
 mod error;
 mod processes;
 mod reader;
@@ -120,7 +122,7 @@ impl Connector for RedisConnector {
             client,
             info,
             connections: Mutex::new(connections),
-            _tunnel: tunnel,
+            tunnel,
         }))
     }
 }
@@ -132,7 +134,10 @@ pub struct RedisKvConnection {
     client: Client,
     info: EngineInfo,
     connections: Mutex<HashMap<u8, MultiplexedConnection>>,
-    _tunnel: Option<SshTunnel>,
+    /// Held so it lives exactly as long as the connection. Also *read* by the
+    /// cluster reader: only the tunnelled endpoint is routable from here, so
+    /// the per-node probes are skipped when a tunnel is in play.
+    tunnel: Option<SshTunnel>,
 }
 
 impl RedisKvConnection {

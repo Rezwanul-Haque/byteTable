@@ -6,10 +6,11 @@
 // on the active tab's kind and hands each its props.
 
 import type { KvDbInfo, KvServerInfo } from "../../../connections/api";
-import { ProcessesTab } from "../../../processes/ProcessesTab";
-import type { KeyType } from "../api";
+import type { ClusterTopology, KeyType } from "../api";
 import type { RedisTab } from "../state";
+import { ClusterDashboard } from "./ClusterDashboard";
 import { DashboardTab } from "./DashboardTab";
+import { RedisClientsTab } from "./RedisClientsTab";
 import { KeyTab } from "./KeyTab";
 import "./RedisTabContent.css";
 
@@ -19,6 +20,12 @@ interface RedisTabContentProps {
   handleId: string;
   /** Server identity (dashboard header). */
   serverInfo: KvServerInfo | undefined;
+  /**
+   * The cluster topology when the connection is a cluster node, else null
+   * (M36 §B3). The dashboard branches on it once, at the top — cluster mode
+   * changes the shape of the whole view, not a few rows of the standalone one.
+   */
+  cluster: ClusterTopology | null;
   /** The workspace's selected db (dashboard sample). */
   dbIndex: number;
   /** Connection deployment env (drives the kill modal's production gate). */
@@ -37,12 +44,15 @@ interface RedisTabContentProps {
   onSelectDb: (db: number) => void;
   /** Close a tab by id (key tab DEL closes itself). */
   onCloseTab: (tabId: string) => void;
+  /** Open (or focus) the connected-clients tab (M36 §A4 dashboard entry points). */
+  onOpenClients: () => void;
 }
 
 export function RedisTabContent({
   tab,
   handleId,
   serverInfo,
+  cluster,
   dbIndex,
   env,
   databases,
@@ -52,10 +62,21 @@ export function RedisTabContent({
   onMutated,
   onSelectDb,
   onCloseTab,
+  onOpenClients,
 }: RedisTabContentProps) {
   switch (tab.kind) {
     case "dashboard":
-      return (
+      // One branch at the top, not conditional rows sprinkled through the
+      // standalone view: Redis Cluster reshapes the whole workspace.
+      return cluster ? (
+        <ClusterDashboard
+          handleId={handleId}
+          topology={cluster}
+          serverVersion={serverInfo?.serverVersion ?? "cluster"}
+          version={version}
+          onOpenClients={onOpenClients}
+        />
+      ) : (
         <DashboardTab
           handleId={handleId}
           dbIndex={dbIndex}
@@ -63,6 +84,7 @@ export function RedisTabContent({
           serverInfo={serverInfo}
           version={version}
           onSelectDb={onSelectDb}
+          onOpenClients={onOpenClients}
         />
       );
     case "key":
@@ -83,8 +105,9 @@ export function RedisTabContent({
         />
       );
     case "processes":
-      return (
-        <ProcessesTab handleId={handleId} engine="redis" env={env} schemaName={"db" + dbIndex} />
-      );
+      // M36: Redis gets its own `CLIENT LIST` tab — the generic ProcessesTab
+      // flattened Redis's fields into a SQL-shaped session row and offered no
+      // kill route beyond one id at a time.
+      return <RedisClientsTab handleId={handleId} env={env} />;
   }
 }

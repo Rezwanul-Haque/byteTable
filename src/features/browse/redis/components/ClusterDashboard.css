@@ -1,0 +1,762 @@
+/* Redis Cluster dashboard (M36 §B2) — ported from the prototype's `.cl-*`
+   rules. Reuses the `.rdash-*` vocabulary from the standalone dashboard for the
+   head, stat grid and panels; everything cluster-shaped is `.cl-*`. */
+
+.cl-dash .rdash-head {
+  align-items: center;
+}
+
+/* `cluster_state` and node health are two separate facts: Redis keeps the state
+   `ok` while every slot is covered, so folding a PFAIL node into it would be
+   self-contradictory. Two pills, never one. */
+.cl-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 11px;
+  border-radius: 99px;
+  padding: 3px 10px;
+}
+.cl-state.ok {
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 13%, transparent);
+  border: 1px solid color-mix(in oklab, var(--accent) 32%, transparent);
+}
+.cl-state.warn {
+  color: var(--warn);
+  background: color-mix(in oklab, var(--warn) 12%, transparent);
+  border: 1px solid color-mix(in oklab, var(--warn) 32%, transparent);
+}
+.cl-state.bad {
+  color: var(--danger);
+  background: color-mix(in oklab, var(--danger) 12%, transparent);
+  border: 1px solid color-mix(in oklab, var(--danger) 32%, transparent);
+}
+
+.cl-grid {
+  grid-template-columns: repeat(4, 1fr);
+}
+.cl-stat-bad .rdash-stat-value {
+  color: var(--warn);
+}
+.cl-bad-n {
+  font-family: var(--ui);
+  font-style: normal;
+  font-size: 10px;
+  color: var(--warn);
+}
+
+/* ---------- the 16384-slot band ---------- */
+.cl-map {
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px 12px;
+  margin-bottom: 16px;
+  max-width: 1000px;
+}
+.cl-map-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 11px;
+  flex-wrap: wrap;
+}
+.cl-map-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-dim);
+}
+.cl-map-sub {
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+.cl-map-hover {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text);
+}
+.cl-map-hover.dim {
+  color: var(--text-faint);
+}
+/* "What is a slot?" — an opt-in explainer for the one concept the whole view
+   is built on. Everything else on this dashboard names a real Redis field; a
+   slot is the idea behind all of them, and nowhere in the UI said what it is. */
+.cl-help-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--ui);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 2px 9px;
+  cursor: pointer;
+}
+.cl-help-btn:hover,
+.cl-help-btn[aria-expanded="true"] {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+}
+.cl-help {
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 11px 13px;
+  margin-bottom: 12px;
+  max-width: 74ch;
+}
+.cl-help p {
+  font-size: 11.5px;
+  line-height: 1.65;
+  color: var(--text-dim);
+  margin: 0 0 8px;
+}
+.cl-help p:last-child {
+  margin-bottom: 0;
+}
+.cl-help b {
+  color: var(--text);
+  font-weight: 600;
+}
+.cl-help code {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.cl-help-try {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  color: var(--text-faint) !important;
+}
+.cl-help-try > .msym {
+  flex: none;
+  margin-top: 2px;
+  color: var(--accent);
+}
+
+.cl-band {
+  position: relative;
+  display: flex;
+  /* The slot axis runs 0 → 16,383. That is a number line, not text, so it
+     stays left-to-right in RTL — mirroring it would put slot 0 on the right
+     and invert the hover-to-slot arithmetic. */
+  direction: ltr;
+  height: 44px;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.cl-seg {
+  position: relative;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  padding: 0 10px;
+  overflow: hidden;
+  opacity: 0.82;
+  transition: opacity 0.13s;
+  text-align: start;
+}
+.cl-seg:hover,
+.cl-seg.on {
+  opacity: 1;
+}
+.cl-seg + .cl-seg {
+  box-shadow: inset 1px 0 0 rgba(0, 0, 0, 0.35);
+}
+.cl-seg-label {
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 600;
+  color: #0d0f12;
+  white-space: nowrap;
+}
+.cl-seg-range {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: rgba(0, 0, 0, 0.62);
+  white-space: nowrap;
+}
+/* Slots nobody owns — with cluster-require-full-coverage on, these stop the
+   cluster, so they read as a hole rather than as another shard. */
+.cl-gap {
+  background: repeating-linear-gradient(
+    45deg,
+    color-mix(in oklab, var(--danger) 30%, transparent) 0 4px,
+    transparent 4px 8px
+  );
+}
+.cl-mig {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(0, 0, 0, 0.42) 0 4px,
+    transparent 4px 8px
+  );
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.4);
+}
+.cl-cursor {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--text);
+  pointer-events: none;
+}
+.cl-map-legend {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 9px;
+}
+.cl-lg {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+.cl-lg i {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  flex: none;
+}
+.cl-lg-mig {
+  background-image: repeating-linear-gradient(45deg, var(--text-faint) 0 2px, transparent 2px 4px);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+/* ---------- shard cards ---------- */
+.cl-shards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+  gap: 11px;
+  margin-bottom: 16px;
+  max-width: 1000px;
+}
+.cl-shard {
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 13px;
+  cursor: pointer;
+  text-align: start;
+  font-family: var(--ui);
+  transition:
+    opacity 0.13s,
+    border-color 0.13s;
+}
+.cl-shard:hover {
+  border-color: var(--text-faint);
+}
+.cl-shard.dim {
+  opacity: 0.45;
+}
+.cl-shard-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.cl-shard-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  flex: none;
+}
+.cl-shard-head b {
+  font-size: 12.5px;
+}
+.cl-shard-slots {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+.cl-shard-rep {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+}
+.cl-shard-rep.bad {
+  color: var(--danger);
+}
+.cl-node {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 0;
+  border-top: 1px solid var(--border);
+}
+.cl-node.bad {
+  background: color-mix(in oklab, var(--warn) 7%, transparent);
+  margin: 0 -13px;
+  padding: 7px 13px;
+}
+.cl-node > .msym {
+  margin-top: 1px;
+  flex: none;
+}
+.cl-node-main {
+  flex: 1;
+  min-width: 0;
+}
+.cl-node-line {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.cl-node-addr {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text);
+}
+.cl-role {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.cl-role.master {
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 15%, transparent);
+}
+.cl-role.replica {
+  color: var(--text-faint);
+  background: var(--bg2);
+}
+.cl-me {
+  font-size: 8.5px;
+  font-weight: 700;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+.cl-lag {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--warn);
+  background: color-mix(in oklab, var(--warn) 14%, transparent);
+  border-radius: 99px;
+  padding: 0 6px;
+}
+.cl-node-meta {
+  display: flex;
+  gap: 11px;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+  margin-top: 3px;
+}
+.cl-health {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  flex: none;
+}
+
+/* ---------- health panel + resolver ---------- */
+.cl-cols {
+  max-width: 1000px;
+  margin-bottom: 14px;
+  align-items: start;
+}
+.cl-clean {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+.cl-warn {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 9px 10px;
+  border-radius: 9px;
+  margin-bottom: 7px;
+}
+.cl-warn > .msym {
+  margin-top: 1px;
+  flex: none;
+}
+.cl-warn.error {
+  background: color-mix(in oklab, var(--danger) 9%, transparent);
+  border: 1px solid color-mix(in oklab, var(--danger) 28%, transparent);
+}
+.cl-warn.error > .msym {
+  color: var(--danger);
+}
+.cl-warn.warn {
+  background: color-mix(in oklab, var(--warn) 9%, transparent);
+  border: 1px solid color-mix(in oklab, var(--warn) 26%, transparent);
+}
+.cl-warn.warn > .msym {
+  color: var(--warn);
+}
+.cl-warn.note {
+  background: var(--bg0);
+  border: 1px solid var(--border);
+}
+.cl-warn.note > .msym {
+  color: var(--text-faint);
+}
+.cl-warn-t {
+  font-size: 12px;
+  color: var(--text);
+}
+.cl-warn-d {
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--text-dim);
+  margin-top: 3px;
+}
+.cl-warn-f {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text-faint);
+  margin-top: 5px;
+}
+.cl-warn-f .msym {
+  margin-top: 1px;
+}
+
+.cl-res-in {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 6px 10px;
+}
+.cl-res-in:focus-within {
+  border-color: var(--accent);
+}
+.cl-res-in input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  outline: none;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+}
+.cl-res-sugg {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin: 7px 0 11px;
+}
+.cl-res-sugg button {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 6px;
+  cursor: pointer;
+}
+.cl-res-sugg button.on,
+.cl-res-sugg button:hover {
+  color: var(--text);
+  border-color: var(--text-faint);
+}
+.cl-res-out {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-bottom: 10px;
+}
+.cl-res-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 3px 0;
+  border-bottom: 1px dotted var(--border);
+}
+.cl-res-row span {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  flex: none;
+}
+.cl-res-row b {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  font-weight: 500;
+  text-align: end;
+}
+.cl-res-note {
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: var(--text-faint);
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 9px;
+  margin-bottom: 6px;
+}
+.cl-res-note > .msym {
+  margin-top: 1px;
+  flex: none;
+}
+.cl-res-note code {
+  font-family: var(--mono);
+  color: var(--text-dim);
+}
+.cl-res-note.ok {
+  border-color: color-mix(in oklab, var(--accent) 28%, transparent);
+}
+.cl-res-note.ok > .msym {
+  color: var(--accent);
+}
+.cl-res-note.warn {
+  border-color: color-mix(in oklab, var(--warn) 28%, transparent);
+}
+.cl-res-note.warn > .msym {
+  color: var(--warn);
+}
+
+/* ---------- raw replies ---------- */
+.cl-raw {
+  max-width: 1000px;
+}
+.cl-raw-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: var(--ui);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.cl-raw-btn:hover {
+  color: var(--text);
+}
+.cl-raw-body {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+  gap: 11px;
+  margin-top: 9px;
+  align-items: start;
+}
+.cl-raw-pre {
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 11px;
+  margin: 0;
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre;
+}
+
+/* ---------- sidebar + status-bar cluster chips ---------- */
+/* The sidebar chip that replaces the db switcher. It is a button: cluster mode
+   has one database, but it has N nodes, and which node you are attached to
+   decides which slots — and therefore which keys — you can see. */
+.cl-scope {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px 9px;
+  font-family: var(--ui);
+  text-align: start;
+  cursor: pointer;
+}
+.cl-scope:hover:not(:disabled) {
+  border-color: color-mix(in oklab, var(--accent) 55%, var(--border));
+}
+.cl-scope:disabled {
+  cursor: default;
+}
+.cl-scope-name {
+  font-size: 12px;
+  color: var(--text);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The role tag holds its size: the shard name ellipsises first, because which
+   node you are on is the part that changes what you are looking at. */
+.cl-scope .cl-role {
+  flex: none;
+}
+.cl-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent) !important;
+}
+
+/* ---------- node picker popover ---------- */
+.cl-np {
+  position: absolute;
+  inset-inline-start: 0;
+  top: calc(100% + 6px);
+  width: min(330px, calc(100vw - 32px));
+  z-index: 40;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.5);
+  padding: 11px;
+}
+.cl-np-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 9px;
+}
+.cl-np-head .icon-btn {
+  margin-inline-start: auto;
+}
+.cl-np-n {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 400;
+  color: var(--text-faint);
+}
+.cl-np-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.cl-np-shard-h {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  margin-bottom: 3px;
+}
+.cl-np-shard-h b {
+  font-size: 11.5px;
+}
+.cl-np-mem {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+.cl-np-node {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--bg0);
+  font-family: var(--ui);
+  text-align: start;
+  cursor: pointer;
+}
+.cl-np-node + .cl-np-node {
+  margin-top: 3px;
+}
+.cl-np-node:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 8%, var(--bg0));
+}
+.cl-np-node:disabled {
+  cursor: default;
+}
+/* The node you are already on: marked, not hidden — seeing where you are is
+   half of what the list is for. */
+.cl-np-node.on {
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+}
+.cl-np-addr {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+}
+.cl-np-keys {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+.cl-np-foot {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--border);
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+.cl-np-foot > .msym {
+  flex: none;
+  margin-top: 1px;
+}
+.cl-np-foot code {
+  font-family: var(--mono);
+  color: var(--text-dim);
+}
+
+@media (max-width: 1120px) {
+  .cl-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .cl-raw-body {
+    grid-template-columns: 1fr;
+  }
+}

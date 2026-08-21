@@ -16,13 +16,19 @@ import { Icon } from "../../../../shared/ui/Icon";
 import { useTabMenu } from "../../../../shared/ui/useTabMenu";
 import type { RedisTab } from "../state";
 import { RedisTypeBadge } from "./RedisTypeBadge";
+// `.tabbar-tools` / `.tabbar-tool` / `.tabbar-tool-icon` for the right-hand
+// tools, borrowed rather than re-declared — the same import the Mongo,
+// Cassandra and Typesense tab bars make.
+import "../../../workspaces/components/TabBar.css";
 import "./RedisTabBar.css";
 
-/** The visible label: the key name, or "Dashboard". */
-function tabTitle(tab: RedisTab): string {
+/** The visible label: the key name, or the dashboard's name for this mode. */
+function tabTitle(tab: RedisTab, cluster: boolean): string {
   switch (tab.kind) {
     case "dashboard":
-      return "Dashboard";
+      // A cluster workspace's first tab is the Cluster dashboard, not a
+      // keyspace one — the tab name says which view it actually is.
+      return cluster ? "Cluster" : "Dashboard";
     case "key":
       return tab.key;
     case "processes":
@@ -32,6 +38,8 @@ function tabTitle(tab: RedisTab): string {
 
 interface RedisTabBarProps {
   tabs: RedisTab[];
+  /** True when the connection is a cluster node — retitles the dashboard tab. */
+  cluster: boolean;
   activeTabId: string;
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
@@ -39,15 +47,20 @@ interface RedisTabBarProps {
   consoleOpen: boolean;
   /** Toggle the docked console panel (M14). */
   onToggleConsole: () => void;
+  /** Open (or focus) the Clients tab — the tab-bar tool the other engines
+   *  put beside Terminal (M36). */
+  onOpenClients: () => void;
 }
 
 export function RedisTabBar({
   tabs,
+  cluster,
   activeTabId,
   onSelect,
   onClose,
   consoleOpen,
   onToggleConsole,
+  onOpenClients,
 }: RedisTabBarProps) {
   const menu = useTabMenu({
     ids: tabs.map((t) => t.id),
@@ -65,7 +78,7 @@ export function RedisTabBar({
       <div className="tabbar-tabs">
         {tabs.map((tab) => {
           const active = tab.id === activeTabId;
-          const title = tabTitle(tab);
+          const title = tabTitle(tab, cluster);
           const closable = tab.kind !== "dashboard";
           const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
             if (event.target !== event.currentTarget) return;
@@ -101,7 +114,7 @@ export function RedisTabBar({
                 <RedisTypeBadge type={tab.keyType} size={13} />
               ) : (
                 <Icon
-                  name={tab.kind === "processes" ? "monitor_heart" : "monitoring"}
+                  name={tab.kind === "processes" ? "monitor_heart" : cluster ? "lan" : "monitoring"}
                   size={14}
                   style={{ color: active ? "var(--accent)" : "var(--text-faint)" }}
                 />
@@ -136,6 +149,18 @@ export function RedisTabBar({
         >
           <Icon name="terminal" size={15} />
           <span>Terminal</span>
+        </button>
+        {/* Icon-only, immediately after Terminal — the same slot the SQL,
+            Mongo and Cassandra tab bars put their processes toggle in, so the
+            shortcut and the muscle memory carry across engines. */}
+        <button
+          type="button"
+          className="tabbar-tool tabbar-tool-icon"
+          title="Connected clients (Ctrl+Shift+P)"
+          aria-label="Connected clients (Ctrl+Shift+P)"
+          onClick={onOpenClients}
+        >
+          <Icon name="monitor_heart" size={15} />
         </button>
       </div>
       {menu.element}

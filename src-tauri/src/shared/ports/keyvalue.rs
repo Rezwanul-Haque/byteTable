@@ -274,6 +274,177 @@ pub enum RespReply {
 }
 
 // ---------------------------------------------------------------------------
+// Connected clients (M36 part A) — `CLIENT LIST` / `CLIENT KILL`
+// ---------------------------------------------------------------------------
+
+/// One connection from `CLIENT LIST` (M36 §A1). The parsed subset the table
+/// sorts and filters on, plus **every** reported field verbatim in
+/// `fields`/`raw` — a `CLIENT LIST` line IS the `CLIENT INFO` format, so the
+/// inspector shows exactly what the server said rather than a re-rendering of
+/// it. Fields Redis omits on older servers are simply absent from `fields` and
+/// default here.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KvClient {
+    pub id: i64,
+    pub addr: String,
+    pub laddr: String,
+    pub name: String,
+    /// Seconds since the connection opened.
+    pub age: i64,
+    /// Seconds since its last command.
+    pub idle: i64,
+    /// The raw flag letters (`N` normal, `S` replica, `b` blocked, `x` MULTI…).
+    pub flags: String,
+    pub db: u8,
+    pub sub: i64,
+    pub psub: i64,
+    /// Commands queued in an open `MULTI`; `-1` = no transaction.
+    pub multi: i64,
+    pub watch: i64,
+    pub qbuf: i64,
+    /// Output list length — replies queued but not yet flushed.
+    pub oll: i64,
+    pub omem: i64,
+    /// Total memory this connection costs the server, buffers included.
+    pub tot_mem: i64,
+    /// Last command executed (`client|list`), as Redis reports it.
+    pub cmd: String,
+    /// ACL user this connection authenticated as.
+    pub user: String,
+    /// Derived class: `normal` / `pubsub` / `replica` / `master`.
+    pub client_type: String,
+    /// True for the connection ByteTable itself is using (`CLIENT ID`).
+    pub is_self: bool,
+    /// Every `key=value` the server reported, in the server's own order.
+    pub fields: Vec<KvField>,
+    /// The verbatim `CLIENT LIST` line — identical to `CLIENT INFO` output.
+    pub raw: String,
+}
+
+/// The `CLIENT KILL` filter to apply (M36 §A3). Always the **filter form**
+/// (`CLIENT KILL <FILTER> <value>`), never the legacy `CLIENT KILL addr:port`
+/// form, so every kill returns the number of connections closed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum KvKillFilter {
+    Id,
+    Addr,
+    Laddr,
+    Type,
+    User,
+    /// `MAXAGE <seconds>` — Redis 7.4+.
+    Maxage,
+}
+
+impl KvKillFilter {
+    /// The uppercase token this filter takes in the `CLIENT KILL` command.
+    pub fn as_token(self) -> &'static str {
+        match self {
+            Self::Id => "ID",
+            Self::Addr => "ADDR",
+            Self::Laddr => "LADDR",
+            Self::Type => "TYPE",
+            Self::User => "USER",
+            Self::Maxage => "MAXAGE",
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Cluster topology (M36 part B) — `CLUSTER INFO` / `NODES` / `SHARDS`
+// ---------------------------------------------------------------------------
+
+/// An inclusive `[from, to]` hash-slot range owned by a node.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SlotRange {
+    pub from: u16,
+    pub to: u16,
+}
+
+/// One slot currently moving between shards, from the local node's
+/// `CLUSTER NODES` view (`[slot->-target]` / `[slot-<-source]`). Redis reports
+/// these per slot; the renderer groups contiguous runs into a window.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SlotMigration {
+    pub slot: u16,
+    /// `migrating` (leaving this node) or `importing` (arriving here).
+    pub direction: String,
+    /// The node id on the other end of the move.
+    pub peer_id: String,
+}
+
+/// One node of a Redis Cluster. Identity/health come from `CLUSTER NODES` (+
+/// `CLUSTER SHARDS` where available); the traffic counters are **best effort**
+/// — they need an `INFO` on that node, which is skipped when the node is not
+/// directly reachable (SSH tunnel, private cluster addresses). `None` means
+/// "not measured", never "zero".
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClusterNode {
+    /// The 40-hex node id.
+    pub id: String,
+    pub host: String,
+    pub port: u16,
+    /// The cluster-bus port (`@17000`), which gossip uses.
+    pub bus_port: u16,
+    /// `cluster-announce-hostname`, when the node announces one.
+    pub hostname: Option<String>,
+    /// `master` or `replica`.
+    pub role: String,
+    /// The master's node id when this is a replica.
+    pub master_id: Option<String>,
+    /// True for the node this connection is attached to (`myself` flag).
+    pub myself: bool,
+    /// `online` · `fail?` (PFAIL) · `fail` · `handshake` · `noaddr`.
+    pub health: String,
+    /// The cluster-bus link state: `connected` / `disconnected`.
+    pub link: String,
+    pub epoch: i64,
+    pub slots: Vec<SlotRange>,
+    /// Replication offset from `CLUSTER SHARDS`, when the server reports it.
+    pub offset: Option<i64>,
+    /// Bytes this replica is behind its master (master offset − ours).
+    pub lag_bytes: Option<i64>,
+    /// Seconds this replica is behind, from the master's `INFO replication`.
+    pub lag_seconds: Option<i64>,
+    pub keys: Option<u64>,
+    pub memory: Option<u64>,
+    pub ops: Option<u64>,
+    pub clients: Option<u64>,
+}
+
+/// One shard: the master that owns a slot range plus its replicas.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClusterShard {
+    /// Zero-based position, ordered by the shard's first slot.
+    pub index: u32,
+    pub master: ClusterNode,
+    pub replicas: Vec<ClusterNode>,
+    pub slots: Vec<SlotRange>,
+}
+
+/// The whole cluster as one snapshot (M36 §B1). `info` carries the raw
+/// `CLUSTER INFO` `key:value` pairs in server order so the UI can show them
+/// verbatim and read the ones it needs; `nodes_text` is the raw `CLUSTER NODES`
+/// reply.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClusterTopology {
+    pub info: Vec<KvField>,
+    pub nodes_text: String,
+    pub shards: Vec<ClusterShard>,
+    pub migrating: Vec<SlotMigration>,
+    /// True when the per-node `INFO`/`DBSIZE` probes ran; false when they were
+    /// skipped (tunnelled connection) or every node refused, so the UI can say
+    /// "not measured" instead of showing a misleading zero.
+    pub node_stats_measured: bool,
+}
+
+// ---------------------------------------------------------------------------
 // Port traits
 // ---------------------------------------------------------------------------
 
@@ -369,12 +540,50 @@ pub trait CommandRunner: Send + Sync {
     async fn run_command(&self, db: u8, args: Vec<String>) -> Result<RespReply, AppError>;
 }
 
-/// A live key-value connection: the three port traits bundled, plus the shared
-/// [`EngineInfo`] accessor and an orderly `close`. The `engines::redis`
-/// adapter implements all four; the [`crate::shared::engine::OpenConnection`]
-/// `Kv` arm holds an `Arc<dyn KeyValueConnection>`.
+/// Connected-client administration (M36 §A): the `CLIENT` command family the
+/// clients tab is built on. Separate from [`KeyspaceReader`] because it reads
+/// the **server's connections**, not the keyspace — and because it is
+/// per-node in cluster mode (`CLIENT LIST` never spans a cluster).
 #[async_trait]
-pub trait KeyValueConnection: KeyspaceReader + KeyspaceWriter + CommandRunner {
+pub trait ClientAdmin: Send + Sync {
+    /// `CLIENT LIST` — every connected client, with our own flagged `is_self`
+    /// (resolved through `CLIENT ID`) so the UI can protect it.
+    async fn client_list(&self) -> Result<Vec<KvClient>, AppError>;
+
+    /// `CLIENT KILL <filter> <value>` — returns how many connections closed.
+    /// Killing zero is a normal outcome (the match went away), not an error.
+    async fn client_kill(&self, filter: KvKillFilter, value: &str) -> Result<u64, AppError>;
+
+    /// One `CLIENT KILL ID <id>` per id — exactly the command the UI shows for
+    /// a multi-select kill. Returns the total closed.
+    async fn client_kill_ids(&self, ids: &[i64]) -> Result<u64, AppError>;
+
+    /// `CLIENT NO-EVICT on|off`. Redis applies this to the **calling**
+    /// connection only, so it can never target another client.
+    async fn client_no_evict(&self, on: bool) -> Result<(), AppError>;
+
+    /// `CLIENT UNPAUSE` — resume every client the server had paused.
+    async fn client_unpause(&self) -> Result<(), AppError>;
+}
+
+/// Cluster topology reader (M36 §B1). `None` means the server is not running
+/// in cluster mode — the workspace then stays standalone.
+#[async_trait]
+pub trait ClusterReader: Send + Sync {
+    /// A whole-cluster snapshot: `CLUSTER INFO` + `CLUSTER NODES` (+
+    /// `CLUSTER SHARDS` when supported), assembled into shards.
+    async fn cluster_topology(&self) -> Result<Option<ClusterTopology>, AppError>;
+}
+
+/// A live key-value connection: the port traits bundled, plus the shared
+/// [`EngineInfo`] accessor and an orderly `close`. The `engines::redis`
+/// adapter implements all of them; the
+/// [`crate::shared::engine::OpenConnection`] `Kv` arm holds an
+/// `Arc<dyn KeyValueConnection>`.
+#[async_trait]
+pub trait KeyValueConnection:
+    KeyspaceReader + KeyspaceWriter + CommandRunner + ClientAdmin + ClusterReader
+{
     /// Engine + version of this connection (`Redis 7.4.1`).
     fn engine_info(&self) -> EngineInfo;
 

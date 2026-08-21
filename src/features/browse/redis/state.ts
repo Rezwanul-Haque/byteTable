@@ -94,6 +94,16 @@ interface RedisBrowseState {
   openDashboardTab: (workspaceId: string, initialDb: number) => void;
   /** Open (or focus) the singleton Clients (processes) tab (M26). */
   openProcessesTab: (workspaceId: string, initialDb: number) => void;
+  /**
+   * Close every key tab and bump the version (M36 — a cluster node switch).
+   *
+   * A key tab is bound to the key it opened, and in cluster mode a key lives on
+   * exactly one shard: after attaching to a different node those tabs point at
+   * keys the new node does not serve, so re-fetching them would only produce
+   * `MOVED` errors. Dropping them is the honest outcome. The dashboard and the
+   * clients tab survive — both are about "this node" and simply re-read.
+   */
+  dropKeyTabs: (workspaceId: string, initialDb: number) => void;
   /** Set the active tab (no-op if the id is unknown). */
   setActiveTab: (workspaceId: string, initialDb: number, tabId: string) => void;
   /**
@@ -172,6 +182,15 @@ export const useRedisBrowseStore = create<RedisBrowseState>((set, get) => {
       }
       const tab: RedisTab = { id: newTabId("processes"), kind: "processes" };
       put(workspaceId, { ...ws, tabs: [...ws.tabs, tab], activeTabId: tab.id });
+    },
+
+    dropKeyTabs: (workspaceId, initialDb) => {
+      const ws = current(workspaceId, initialDb);
+      const tabs = ws.tabs.filter((t) => t.kind !== "key");
+      const activeTabId = tabs.some((t) => t.id === ws.activeTabId)
+        ? ws.activeTabId
+        : (tabs[0]?.id ?? DASHBOARD_ID);
+      put(workspaceId, { ...ws, tabs, activeTabId, version: ws.version + 1 });
     },
 
     setActiveTab: (workspaceId, initialDb, tabId) => {

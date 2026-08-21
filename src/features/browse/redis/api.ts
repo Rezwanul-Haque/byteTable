@@ -298,6 +298,166 @@ export function kvCommand(handleId: string, db: number, args: string[]): Promise
   return invoke<RespReply>("kv_command", { handleId, db, args });
 }
 
+// ---------------------------------------------------------------------------
+// Connected clients (M36 §A) — CLIENT LIST / CLIENT KILL
+// ---------------------------------------------------------------------------
+
+/**
+ * One connection from `CLIENT LIST` — mirrors Rust's `KvClient`. The typed
+ * fields are the ones the table sorts, filters and colors by; `fields` carries
+ * **every** `key=value` the server reported in its own order, and `raw` is the
+ * verbatim line (a `CLIENT LIST` line IS `CLIENT INFO` output, which is what
+ * people paste into a bug report).
+ */
+export interface KvClient {
+  id: number;
+  addr: string;
+  laddr: string;
+  name: string;
+  /** Seconds since the connection opened. */
+  age: number;
+  /** Seconds since its last command. */
+  idle: number;
+  /** Raw flag letters: `N` normal · `S` replica · `b` blocked · `x` in MULTI. */
+  flags: string;
+  db: number;
+  sub: number;
+  psub: number;
+  /** Commands queued in an open `MULTI`; `-1` = no transaction. */
+  multi: number;
+  watch: number;
+  qbuf: number;
+  /** Output list length — replies queued but not yet flushed. */
+  oll: number;
+  omem: number;
+  /** Total memory the connection costs the server, buffers included. */
+  totMem: number;
+  cmd: string;
+  user: string;
+  /** Derived class: `normal` / `pubsub` / `replica` / `master`. */
+  clientType: string;
+  /** True for the connection ByteTable itself is using — never killable. */
+  isSelf: boolean;
+  fields: KvField[];
+  raw: string;
+}
+
+/** The `CLIENT KILL` filter to apply — mirrors Rust's `KvKillFilter`. */
+export type KvKillFilter = "id" | "addr" | "laddr" | "type" | "user" | "maxage";
+
+/** `CLIENT LIST` — every connection on this node, ours flagged `isSelf`. */
+export function kvClientList(handleId: string): Promise<KvClient[]> {
+  return invoke<KvClient[]>("kv_client_list", { handleId });
+}
+
+/** `CLIENT KILL <filter> <value>` — resolves to the number of connections closed. */
+export function kvClientKill(
+  handleId: string,
+  filter: KvKillFilter,
+  value: string,
+): Promise<number> {
+  return invoke<number>("kv_client_kill", { handleId, filter, value });
+}
+
+/** One `CLIENT KILL ID <id>` per id — resolves to the number closed. */
+export function kvClientKillIds(handleId: string, ids: number[]): Promise<number> {
+  return invoke<number>("kv_client_kill_ids", { handleId, ids });
+}
+
+/**
+ * `CLIENT NO-EVICT on|off`. Redis applies this to the **calling** connection
+ * only — it cannot be aimed at another client, which is why the inspector
+ * enables it only on your own connection.
+ */
+export function kvClientNoEvict(handleId: string, on: boolean): Promise<void> {
+  return invoke("kv_client_no_evict", { handleId, on });
+}
+
+/** `CLIENT UNPAUSE` — resume every client the server had paused. */
+export function kvClientUnpause(handleId: string): Promise<void> {
+  return invoke("kv_client_unpause", { handleId });
+}
+
+// ---------------------------------------------------------------------------
+// Cluster topology (M36 §B)
+// ---------------------------------------------------------------------------
+
+/** An inclusive `[from, to]` hash-slot range owned by a node. */
+export interface SlotRange {
+  from: number;
+  to: number;
+}
+
+/**
+ * One slot moving between shards, from the local node's `CLUSTER NODES` view.
+ * Redis reports these one slot at a time; the UI groups contiguous runs.
+ */
+export interface SlotMigration {
+  slot: number;
+  /** `migrating` (leaving this node) or `importing` (arriving here). */
+  direction: string;
+  peerId: string;
+}
+
+/**
+ * One cluster node — mirrors Rust's `ClusterNode`. Identity/health are facts
+ * from `CLUSTER NODES`; the traffic counters need an `INFO` on that node and
+ * are `null` when it was not directly reachable (see `nodeStatsMeasured`).
+ */
+export interface ClusterNode {
+  id: string;
+  host: string;
+  port: number;
+  busPort: number;
+  hostname: string | null;
+  /** `master` or `replica`. */
+  role: string;
+  masterId: string | null;
+  /** True for the node this connection is attached to. */
+  myself: boolean;
+  /** `online` · `fail?` (PFAIL) · `fail` · `handshake` · `noaddr`. */
+  health: string;
+  /** Cluster-bus link state: `connected` / `disconnected`. */
+  link: string;
+  epoch: number;
+  slots: SlotRange[];
+  offset: number | null;
+  lagBytes: number | null;
+  lagSeconds: number | null;
+  keys: number | null;
+  memory: number | null;
+  ops: number | null;
+  clients: number | null;
+}
+
+/** One shard: the master owning a slot range plus its replicas. */
+export interface ClusterShard {
+  index: number;
+  master: ClusterNode;
+  replicas: ClusterNode[];
+  slots: SlotRange[];
+}
+
+/** The whole cluster as one snapshot — mirrors Rust's `ClusterTopology`. */
+export interface ClusterTopology {
+  /** Raw `CLUSTER INFO` pairs in server order. */
+  info: KvField[];
+  /** Raw `CLUSTER NODES` reply. */
+  nodesText: string;
+  shards: ClusterShard[];
+  migrating: SlotMigration[];
+  /** False when the per-node probes were skipped — counters are unknown, not zero. */
+  nodeStatsMeasured: boolean;
+}
+
+/**
+ * The cluster snapshot, or `null` when the server runs standalone. The
+ * connection decides — there is no UI toggle (M36 §B3).
+ */
+export function kvClusterTopology(handleId: string): Promise<ClusterTopology | null> {
+  return invoke<ClusterTopology | null>("kv_cluster_topology", { handleId });
+}
+
 /**
  * Sub-workspace scope id for a Redis db (M33).
  *

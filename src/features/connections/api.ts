@@ -296,12 +296,21 @@ export interface OpenResult {
 }
 
 /**
- * `connection_open` opens a saved entry by id *or* ad-hoc params ("Open
- * SQLite file…") — exactly one, enforced by the backend and by this union.
+ * What `connection_open` opens:
+ *
+ * - `{ id }` — a saved entry; params and secrets both come from the registry.
+ * - `{ params }` — ad-hoc ("Open SQLite file…"); only a transiently-typed
+ *   secret can authenticate it.
+ * - `{ params, id }` — these params, authenticated as that saved entry (M36).
+ *   The case this exists for is a Redis Cluster peer: a different endpoint of
+ *   the *same configured server*, so host and port differ but the password,
+ *   ACL user and TLS mode are the saved entry's. Without it the renderer would
+ *   have to hold the keychain secret to pass back in.
  */
 export type OpenTarget =
   | { id: string; params?: undefined }
-  | { params: ConnectionParams; id?: undefined };
+  | { params: ConnectionParams; id?: undefined }
+  | { params: ConnectionParams; id: string };
 
 export function connectionList(): Promise<SavedConnection[]> {
   return invoke<SavedConnection[]>("connection_list");

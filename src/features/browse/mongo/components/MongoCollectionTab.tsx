@@ -214,6 +214,25 @@ export function MongoCollectionTab({
     setSelected(new Set());
   }, [result]);
 
+  // ⌘I / Ctrl+I opens the new-document editor — the binding the SQL, Cassandra
+  // and DynamoDB grids use for "add row". Every tab stays mounted, so the
+  // listener is gated on this one being the visible tab; a modal that is already
+  // up owns the keyboard.
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const modalOpen = newDoc || docView !== null || deleteOpen;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!rootRef.current || rootRef.current.offsetParent === null) return;
+      if (modalOpen || mode === "structure") return;
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "i") {
+        e.preventDefault();
+        setNewDoc(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [modalOpen, mode]);
+
   const toggleRow = (i: number) =>
     setSelected((s) => {
       const n = new Set(s);
@@ -267,7 +286,7 @@ export function MongoCollectionTab({
     : ([Number(limit), ...FIND_LIMITS].filter((n) => n > 0).sort((a, b) => a - b) as number[]);
 
   return (
-    <div className="table-tab">
+    <div className="table-tab" ref={rootRef}>
       <div className="table-toolbar ddb-toolbar">
         <div className="seg">
           <button
@@ -329,9 +348,11 @@ export function MongoCollectionTab({
           </Btn>
         ) : null}
         {mode !== "structure" ? (
-          <Btn icon="add" variant="tonal" small onClick={() => setNewDoc(true)}>
-            Insert
-          </Btn>
+          <IconBtn
+            icon="add_box"
+            title="Insert document (⌘I / Ctrl+I)"
+            onClick={() => setNewDoc(true)}
+          />
         ) : null}
         <div className="table-actions" style={{ position: "relative" }}>
           <IconBtn
@@ -534,7 +555,7 @@ export function MongoCollectionTab({
               : view === "tree"
                 ? "Tree view · click ✎ to edit a document"
                 : "Table view · click a row to edit"}{" "}
-            · {db}.{coll}
+            · ⌘I insert · {db}.{coll}
           </div>
         </>
       )}

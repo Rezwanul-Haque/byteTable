@@ -577,6 +577,10 @@
 .mg-stage-body:focus {
   outline: none;
 }
+/* The operator's example body — a hint, never part of the pipeline. */
+.mg-stage-body::placeholder {
+  color: var(--text-faint);
+}
 .mg-add-stage {
   display: inline-flex;
   flex-direction: column;

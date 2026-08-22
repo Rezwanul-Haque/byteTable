@@ -1,14 +1,15 @@
 // MongoDB aggregation stage rail (M18 §18.4): add/remove/reorder stages, each
-// an op picker + a JSON body seeded from STAGE_TEMPLATES, bodies auto-sized to
-// a shared height. Plus Run / Copy pipeline. Shared by the collection-tab
-// Aggregate mode and the standalone MongoPipelineTab. Ported from the prototype.
+// an op picker + an empty JSON body showing the operator's example as its
+// placeholder, bodies auto-sized to a shared height. Plus Run / Copy / Clear
+// pipeline. Shared by the collection-tab Aggregate mode and the standalone
+// MongoPipelineTab. Ported from the prototype.
 
 import { useEffect, useRef } from "react";
 
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { Select } from "../../../../shared/ui/Select";
-import { PIPELINE_STAGES, stageTemplate, type Stage } from "../pipeline";
+import { PIPELINE_STAGES, stagePlaceholder, type Stage } from "../pipeline";
 
 const STAGE_OPTIONS = PIPELINE_STAGES.map((op) => ({ value: op, label: op }));
 
@@ -46,9 +47,7 @@ export function MongoStageRail({
 
   const setStage = (i: number, patch: Partial<Stage>) =>
     onChange(stages.map((s, j) => (j === i ? { ...s, ...patch } : s)));
-  // A stage nobody has picked an operator for yet starts empty; the templates
-  // come in once an operator is chosen from the picker.
-  const addStage = () => onChange([...stages, { op: "$match", body: "{ }" }]);
+  const addStage = () => onChange([...stages, { op: "$match", body: "" }]);
   const removeStage = (i: number) => onChange(stages.filter((_, j) => j !== i));
   const moveStage = (i: number, dir: number) => {
     const n = stages.slice();
@@ -72,7 +71,10 @@ export function MongoStageRail({
                 className="mg-stage-op"
                 value={s.op}
                 options={STAGE_OPTIONS}
-                onChange={(op) => setStage(i, { op, body: stageTemplate(op) })}
+                // Switching the operator only changes which example the empty
+                // body shows; anything typed for the old operator stays, since
+                // most switches ($match → $project) keep the fields.
+                onChange={(op) => setStage(i, { op })}
                 aria-label={"Stage " + (i + 1) + " operator"}
               />
               <div style={{ flex: 1 }} />
@@ -103,6 +105,8 @@ export function MongoStageRail({
             <textarea
               className="mg-stage-body mg-mono"
               value={s.body}
+              placeholder={stagePlaceholder(s.op)}
+              aria-label={"Stage " + (i + 1) + " body"}
               onChange={(e) => setStage(i, { body: e.target.value })}
               spellCheck={false}
             />

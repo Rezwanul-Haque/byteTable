@@ -14,7 +14,13 @@ import { MongoDocGrid, MongoDocTree } from "./MongoValue";
 import { MongoDocModal } from "./MongoDocModal";
 import { MongoExplainPanel } from "./MongoExplainPanel";
 import { MongoStageRail } from "./MongoStageRail";
-import { compilePipeline, copyToClipboard, emptyPipeline, type Stage } from "../pipeline";
+import {
+  compilePipeline,
+  copyToClipboard,
+  emptyPipeline,
+  restoreStages,
+  type Stage,
+} from "../pipeline";
 
 export interface MongoPipelineTabState {
   id: string;
@@ -42,7 +48,7 @@ export function MongoPipelineTab({
 }) {
   const toast = useToast();
   const [coll, setColl] = useState(tab.coll ?? collNames[0] ?? "");
-  const [stages, setStages] = useState<Stage[]>(tab.stages ?? emptyPipeline());
+  const [stages, setStages] = useState<Stage[]>(() => restoreStages(tab.stages));
   const [view, setView] = useState<"tree" | "grid">(tab.view ?? "tree");
   const [result, setResult] = useState<AggregateResult | null>(null);
   const [error, setError] = useState<string | null>(null);

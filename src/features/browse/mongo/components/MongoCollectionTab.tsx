@@ -34,6 +34,7 @@ import {
   copyToClipboard,
   emptyPipeline,
   FIND_LIMITS,
+  restoreStages,
   type Stage,
 } from "../pipeline";
 
@@ -104,7 +105,7 @@ export function MongoCollectionTab({
   const [limit, setLimit] = useState(tab.limit ?? 50);
   // A fresh Aggregate mode opens on one empty $match: the seeded three-stage
   // pipeline named fields ($status, $total) that most collections do not have.
-  const [stages, setStages] = useState<Stage[]>(tab.stages ?? emptyPipeline());
+  const [stages, setStages] = useState<Stage[]>(() => restoreStages(tab.stages));
   const [result, setResult] = useState<FindState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [docView, setDocView] = useState<MongoDoc | null>(null);

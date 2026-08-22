@@ -268,6 +268,42 @@
   outline: none;
   border-color: var(--accent);
 }
+/* Highlighted variant (MongoDocModal): the textarea keeps its box and its
+   resize handle, but hands its colours to the <pre> underneath. Both layers
+   share the font metrics and the content box — the transparent border on the
+   <pre> stands in for the textarea's — so the tokens sit on the characters. */
+.mg-doc-code {
+  position: relative;
+  background: var(--bg0);
+  border-radius: 8px;
+}
+.mg-doc-code .mg-doc-editor {
+  position: relative;
+  background: none;
+  color: transparent;
+  caret-color: var(--text);
+  display: block;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.mg-doc-hl {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid transparent;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.55;
+  overflow: hidden;
+  pointer-events: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+/* ObjectId / ISODate — the same violet the grid gives an _id. */
+.jx-fn {
+  color: #b08cff;
+}
 .mg-doc-status {
   display: flex;
   align-items: center;

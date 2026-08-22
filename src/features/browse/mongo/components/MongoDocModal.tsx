@@ -5,7 +5,7 @@
 // explicit action (production-env confirm). Ported from the prototype's
 // MongoDocModal.
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { appErrorMessage } from "../../../../shared/api/error";
 import { Btn } from "../../../../shared/ui/Btn";
@@ -14,7 +14,8 @@ import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { Modal } from "../../../../shared/ui/Modal";
 import { useToast } from "../../../../shared/ui/toastContext";
 import { mongoDeleteOne, mongoInsertOne, mongoReplaceOne, type MongoDoc } from "../api";
-import { mongoParse, mongoStringify, validateAgainstSchema } from "../helpers";
+import { highlightMongoJson, mongoParse, mongoStringify, validateAgainstSchema } from "../helpers";
+import "../../shared/CellEditors.css"; // .jx-* token colours
 
 export function MongoDocModal({
   doc,
@@ -41,6 +42,17 @@ export function MongoDocModal({
   const [text, setText] = useState(() => mongoStringify(doc));
   const [dirty, setDirty] = useState(!!isNew);
   const [busy, setBusy] = useState(false);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  const hlRef = useRef<HTMLPreElement>(null);
+
+  // The highlight layer must scroll with the textarea or the colours slide off
+  // the characters they belong to.
+  const syncScroll = () => {
+    if (taRef.current && hlRef.current) {
+      hlRef.current.scrollTop = taRef.current.scrollTop;
+      hlRef.current.scrollLeft = taRef.current.scrollLeft;
+    }
+  };
 
   let parsed: MongoDoc | null = null;
   let error: string | null = null;
@@ -113,15 +125,33 @@ export function MongoDocModal({
         </span>
         <IconBtn icon="close" onClick={onClose} title="Close" />
       </div>
-      <textarea
-        className="mg-doc-editor"
-        spellCheck={false}
-        value={text}
-        onChange={(e) => {
-          setText(e.target.value);
-          setDirty(true);
-        }}
-      />
+      {/* Transparent-text textarea over a <pre> highlight layer, their scroll
+          positions kept in sync — the same shape as the shared JsonField, but
+          with a Mongo tokenizer so ObjectId("…") / ISODate("…") colour too. */}
+      <div className="mg-doc-code">
+        <pre
+          className="mg-doc-hl"
+          ref={hlRef}
+          aria-hidden="true"
+          // `highlightMongoJson` escapes &, < and > itself, so the only markup
+          // here is its own token spans.
+          dangerouslySetInnerHTML={{ __html: highlightMongoJson(text) + "\n" }}
+        />
+        <textarea
+          ref={taRef}
+          className="mg-doc-editor"
+          spellCheck={false}
+          autoCapitalize="off"
+          autoComplete="off"
+          aria-label={isNew ? "New document JSON" : "Document JSON"}
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            setDirty(true);
+          }}
+          onScroll={syncScroll}
+        />
+      </div>
       <div className="mg-doc-status">
         {error ? (
           <span className="mg-doc-err">

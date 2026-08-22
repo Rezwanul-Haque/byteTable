@@ -109,6 +109,53 @@ export function mongoParse(text: string): MongoDoc {
   return JSON.parse(json) as MongoDoc;
 }
 
+/** The tokens the doc editor colours: the `ObjectId("…")` / `ISODate("…")`
+ *  constructors `mongoStringify` writes, then plain JSON strings (a key when a
+ *  `:` follows), keywords and numbers. */
+const MONGO_TOKEN =
+  /(ObjectId|ISODate)\(\s*"(?:[^"\\]|\\.)*"\s*\)|"(?:[^"\\]|\\.)*"(\s*:)?|\b(?:true|false|null)\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g;
+
+function escapeHtml(src: string): string {
+  return src.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** Highlight editor text as `.jx-*` spans. `highlightJSON` can't be reused: it
+ *  would read `ObjectId("…")` as a bare string, so the tokenizer takes the BSON
+ *  constructors first and escapes every gap between tokens itself. */
+export function highlightMongoJson(src: string): string {
+  let html = "";
+  let last = 0;
+  for (const m of src.matchAll(MONGO_TOKEN)) {
+    const at = m.index ?? 0;
+    const tok = m[0];
+    html += escapeHtml(src.slice(last, at));
+    last = at + tok.length;
+    if (m[1]) {
+      // ObjectId("…") — the constructor name, then its literal, so the hex/date
+      // inside reads as the string it round-trips to.
+      const inner = tok.slice(tok.indexOf("(") + 1, -1);
+      html +=
+        '<span class="jx-fn">' +
+        m[1] +
+        '</span>(<span class="jx-str">' +
+        escapeHtml(inner) +
+        "</span>)";
+    } else if (tok.startsWith('"')) {
+      const colon = m[2] ?? "";
+      const str = colon ? tok.slice(0, tok.length - colon.length) : tok;
+      html +=
+        '<span class="jx-' + (colon ? "key" : "str") + '">' + escapeHtml(str) + "</span>" + colon;
+    } else if (tok === "true" || tok === "false") {
+      html += '<span class="jx-bool">' + tok + "</span>";
+    } else if (tok === "null") {
+      html += '<span class="jx-null">null</span>';
+    } else {
+      html += '<span class="jx-num">' + tok + "</span>";
+    }
+  }
+  return html + escapeHtml(src.slice(last));
+}
+
 // -- $jsonSchema validation (client-side, mirrors the prototype) -------------
 
 interface JsonSchemaRule {

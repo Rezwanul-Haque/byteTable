@@ -112,6 +112,8 @@ export function MongoCollectionTab({
   // Grid multi-select (by row index into the current result); cleared on re-run.
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [deleteOpen, setDeleteOpen] = useState(false);
+  /** The single document the row's trash icon is asking to delete. */
+  const [delDoc, setDelDoc] = useState<MongoDoc | null>(null);
   const persisted = useRef({ filter, proj, sort, limit, stages, view, mode });
 
   const runFind = useCallback(async () => {
@@ -194,17 +196,12 @@ export function MongoCollectionTab({
     );
   };
 
+  // The confirm modal owns the production guard and reports failures inline, so
+  // this only does the delete and lets it throw. The `window.confirm` that stood
+  // here does not block in the app's webview — the row went without a prompt.
   const deleteDoc = async (d: MongoDoc) => {
-    if (isProduction && !window.confirm("Delete this document from production " + coll + "?"))
-      return;
-    try {
-      await mongoDeleteOne(handleId, db, coll, d._id);
-      toast("Document deleted · " + db + "." + coll, "ok");
-      void runFind();
-      onDataChanged();
-    } catch (e) {
-      toast(appErrorMessage(e, "Could not delete document"), "err");
-    }
+    await mongoDeleteOne(handleId, db, coll, d._id);
+    toast("Document deleted · " + db + "." + coll, "ok");
   };
 
   const docs = result ? result.docs : [];
@@ -225,7 +222,7 @@ export function MongoCollectionTab({
   // listener is gated on this one being the visible tab; a modal that is already
   // up owns the keyboard.
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const modalOpen = newDoc || docView !== null || deleteOpen;
+  const modalOpen = newDoc || docView !== null || deleteOpen || delDoc !== null;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!rootRef.current || rootRef.current.offsetParent === null) return;
@@ -554,7 +551,7 @@ export function MongoCollectionTab({
             <MongoDocTree
               docs={docs}
               onOpenDoc={setDocView}
-              onDeleteDoc={mode === "find" ? (d) => void deleteDoc(d) : undefined}
+              onDeleteDoc={mode === "find" ? (d) => setDelDoc(d) : undefined}
             />
           ) : (
             <MongoDocGrid
@@ -604,6 +601,20 @@ export function MongoCollectionTab({
           onClose={() => setNewDoc(false)}
           onSaved={() => {
             setNewDoc(false);
+            void runFind();
+            onDataChanged();
+          }}
+        />
+      ) : null}
+      {delDoc ? (
+        <BulkDeleteModal
+          count={1}
+          target={coll}
+          noun="document"
+          isProduction={isProduction}
+          onConfirm={() => deleteDoc(delDoc)}
+          onClose={() => setDelDoc(null)}
+          onDone={() => {
             void runFind();
             onDataChanged();
           }}

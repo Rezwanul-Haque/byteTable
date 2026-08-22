@@ -11,6 +11,7 @@ import { appErrorMessage } from "../../../../shared/api/error";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
+import { BulkDeleteModal } from "../../../../shared/ui/BulkDeleteModal";
 import { Modal } from "../../../../shared/ui/Modal";
 import { useToast } from "../../../../shared/ui/toastContext";
 import { mongoDeleteOne, mongoInsertOne, mongoReplaceOne, type MongoDoc } from "../api";
@@ -42,6 +43,7 @@ export function MongoDocModal({
   const [text, setText] = useState(() => mongoStringify(doc));
   const [dirty, setDirty] = useState(!!isNew);
   const [busy, setBusy] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const hlRef = useRef<HTMLPreElement>(null);
 
@@ -90,104 +92,121 @@ export function MongoDocModal({
     }
   };
 
+  // The confirm modal owns the guard — on a production connection the collection
+  // name has to be typed to arm it — and shows a failure inline, so this only
+  // does the delete and lets it throw. A `window.confirm` stood here before, but
+  // it does not block in the app's webview: the production check passed straight
+  // through and the document was gone without a prompt.
   const del = async () => {
-    if (isProduction && !window.confirm("Delete this document from production " + coll + "?")) {
-      return;
-    }
-    setBusy(true);
-    try {
-      await mongoDeleteOne(handleId, db, coll, doc._id);
-      toast("Document deleted · " + db + "." + coll, "ok");
-      onSaved();
-      onClose();
-    } catch (e) {
-      toast(appErrorMessage(e, "Could not delete document"), "err");
-    } finally {
-      setBusy(false);
-    }
+    await mongoDeleteOne(handleId, db, coll, doc._id);
+    toast("Document deleted · " + db + "." + coll, "ok");
   };
 
   return (
-    <Modal onClose={onClose} className="json-modal mg-doc-modal">
-      <div className="modal-title">
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-          <Icon name="data_object" size={17} style={{ color: "var(--accent)" }} />{" "}
-          {isNew ? "Insert document" : "Edit document"}
-          <span className="json-type-tag">
-            {db}.{coll}
-          </span>
-          {validator ? (
-            <span className="mg-validated">
-              <Icon name="verified" size={12} /> validated
+    <>
+      <Modal onClose={onClose} className="json-modal mg-doc-modal">
+        <div className="modal-title">
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <Icon name="data_object" size={17} style={{ color: "var(--accent)" }} />{" "}
+            {isNew ? "Insert document" : "Edit document"}
+            <span className="json-type-tag">
+              {db}.{coll}
             </span>
-          ) : null}
-          {dirty ? <span className="ddb-edit-dot" title="Unsaved changes" /> : null}
-        </span>
-        <IconBtn icon="close" onClick={onClose} title="Close" />
-      </div>
-      {/* Transparent-text textarea over a <pre> highlight layer, their scroll
+            {validator ? (
+              <span className="mg-validated">
+                <Icon name="verified" size={12} /> validated
+              </span>
+            ) : null}
+            {dirty ? <span className="ddb-edit-dot" title="Unsaved changes" /> : null}
+          </span>
+          <IconBtn icon="close" onClick={onClose} title="Close" />
+        </div>
+        {/* Transparent-text textarea over a <pre> highlight layer, their scroll
           positions kept in sync — the same shape as the shared JsonField, but
           with a Mongo tokenizer so ObjectId("…") / ISODate("…") colour too. */}
-      <div className="mg-doc-code">
-        <pre
-          className="mg-doc-hl"
-          ref={hlRef}
-          aria-hidden="true"
-          // `highlightMongoJson` escapes &, < and > itself, so the only markup
-          // here is its own token spans.
-          dangerouslySetInnerHTML={{ __html: highlightMongoJson(text) + "\n" }}
-        />
-        <textarea
-          ref={taRef}
-          className="mg-doc-editor"
-          spellCheck={false}
-          autoCapitalize="off"
-          autoComplete="off"
-          aria-label={isNew ? "New document JSON" : "Document JSON"}
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value);
-            setDirty(true);
-          }}
-          onScroll={syncScroll}
-        />
-      </div>
-      <div className="mg-doc-status">
-        {error ? (
-          <span className="mg-doc-err">
-            <Icon name="error" size={13} /> {error}
-          </span>
-        ) : validationErr ? (
-          <span className="mg-doc-err">
-            <Icon name="gpp_bad" size={13} /> {validationErr}
-          </span>
-        ) : (
-          <span className="mg-doc-ok">
-            <Icon name="check_circle" size={13} /> valid {validator ? "· passes schema" : "JSON"}
-          </span>
-        )}
-        <span className="mg-doc-hint">ObjectId("…") and ISODate("…") are preserved</span>
-      </div>
-      <div className="modal-actions ddb-item-actions">
-        {!isNew ? (
-          <Btn variant="text" small icon="delete" onClick={() => void del()} className="mg-del-btn">
-            Delete
+        <div className="mg-doc-code">
+          <pre
+            className="mg-doc-hl"
+            ref={hlRef}
+            aria-hidden="true"
+            // `highlightMongoJson` escapes &, < and > itself, so the only markup
+            // here is its own token spans.
+            dangerouslySetInnerHTML={{ __html: highlightMongoJson(text) + "\n" }}
+          />
+          <textarea
+            ref={taRef}
+            className="mg-doc-editor"
+            spellCheck={false}
+            autoCapitalize="off"
+            autoComplete="off"
+            aria-label={isNew ? "New document JSON" : "Document JSON"}
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value);
+              setDirty(true);
+            }}
+            onScroll={syncScroll}
+          />
+        </div>
+        <div className="mg-doc-status">
+          {error ? (
+            <span className="mg-doc-err">
+              <Icon name="error" size={13} /> {error}
+            </span>
+          ) : validationErr ? (
+            <span className="mg-doc-err">
+              <Icon name="gpp_bad" size={13} /> {validationErr}
+            </span>
+          ) : (
+            <span className="mg-doc-ok">
+              <Icon name="check_circle" size={13} /> valid {validator ? "· passes schema" : "JSON"}
+            </span>
+          )}
+          <span className="mg-doc-hint">ObjectId("…") and ISODate("…") are preserved</span>
+        </div>
+        <div className="modal-actions ddb-item-actions">
+          {!isNew ? (
+            <Btn
+              variant="text"
+              small
+              icon="delete"
+              onClick={() => setConfirmDel(true)}
+              className="mg-del-btn"
+            >
+              Delete
+            </Btn>
+          ) : null}
+          <div style={{ flex: 1 }} />
+          <Btn variant="text" small onClick={onClose}>
+            Cancel
           </Btn>
-        ) : null}
-        <div style={{ flex: 1 }} />
-        <Btn variant="text" small onClick={onClose}>
-          Cancel
-        </Btn>
-        <Btn
-          icon="save"
-          variant="filled"
-          small
-          disabled={!dirty || !!error || !!validationErr || busy}
-          onClick={() => void save()}
-        >
-          {isNew ? "Insert" : "Save changes"}
-        </Btn>
-      </div>
-    </Modal>
+          <Btn
+            icon="save"
+            variant="filled"
+            small
+            disabled={!dirty || !!error || !!validationErr || busy}
+            onClick={() => void save()}
+          >
+            {isNew ? "Insert" : "Save changes"}
+          </Btn>
+        </div>
+      </Modal>
+      {/* Stacked over the editor (Esc closes the top-most modal): the same
+          confirm the grid's bulk delete uses, for the one document. */}
+      {confirmDel ? (
+        <BulkDeleteModal
+          count={1}
+          target={coll}
+          noun="document"
+          isProduction={!!isProduction}
+          onConfirm={del}
+          onClose={() => setConfirmDel(false)}
+          onDone={() => {
+            onSaved();
+            onClose();
+          }}
+        />
+      ) : null}
+    </>
   );
 }

@@ -7,7 +7,7 @@ import { useState } from "react";
 
 import { Icon } from "../../../../shared/ui/Icon";
 import type { MongoDoc, OidTag, DateTag } from "../api";
-import { fieldUnion, MONGO_TYPE_COLOR, mType, scalar, shortDate } from "../helpers";
+import { fieldUnion, MONGO_TYPE_COLOR, mType, shortDate } from "../helpers";
 
 /** One typed value cell. */
 export function MongoValue({ v }: { v: unknown }) {
@@ -181,9 +181,10 @@ export function MongoTreeNode({
   );
 }
 
-/** Tree view: one card per doc, with per-doc edit (✎) and two-click-arm
- *  delete (🗑). Delete is only wired on find results (onDeleteDoc undefined for
- *  aggregation output). */
+/** Tree view: one card per doc, with per-doc edit (✎) and delete (🗑). Delete
+ *  is only wired on find results (onDeleteDoc undefined for aggregation output);
+ *  the host confirms it, so the icon used to arm on a first click and no longer
+ *  does — one click asks. */
 export function MongoDocTree({
   docs,
   onOpenDoc,
@@ -193,12 +194,10 @@ export function MongoDocTree({
   onOpenDoc: (d: MongoDoc) => void;
   onDeleteDoc?: (d: MongoDoc) => void;
 }) {
-  const [armed, setArmed] = useState<string | null>(null);
   if (!docs.length) return <div className="grid-empty">No documents</div>;
   return (
     <div className="mg-tree-wrap">
       {docs.map((d, i) => {
-        const id = String(scalar(d._id));
         return (
           <div key={i} className="mg-tree-doc">
             <div className="mg-tree-doc-head">
@@ -210,19 +209,11 @@ export function MongoDocTree({
               </button>
               {onDeleteDoc ? (
                 <button
-                  className={"mg-tree-del" + (armed === id ? " armed" : "")}
-                  onClick={() => {
-                    if (armed === id) {
-                      onDeleteDoc(d);
-                      setArmed(null);
-                    } else setArmed(id);
-                  }}
-                  onMouseLeave={() => {
-                    if (armed === id) setArmed(null);
-                  }}
-                  title={armed === id ? "Click again to delete" : "Delete document"}
+                  className="mg-tree-del"
+                  onClick={() => onDeleteDoc(d)}
+                  title="Delete document"
                 >
-                  <Icon name={armed === id ? "delete_forever" : "delete"} size={13} />
+                  <Icon name="delete" size={13} />
                 </button>
               ) : null}
             </div>

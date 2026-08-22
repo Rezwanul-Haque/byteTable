@@ -191,11 +191,6 @@
   color: #e06c75;
   border-color: color-mix(in srgb, #e06c75 45%, var(--border));
 }
-.mg-tree-del.armed {
-  background: #e06c75;
-  color: #fff;
-  border-color: #e06c75;
-}
 .mg-tree-doc-body {
   padding: 5px 8px 7px;
 }
@@ -342,6 +337,10 @@
 }
 .mg-del-btn {
   color: #e06c75 !important;
+  /* Pull the button's own left padding out so the trash icon starts on the
+     modal's content edge, in line with the editor and the "valid JSON" row.
+     The hover background still wraps the label. */
+  margin-left: -11px;
 }
 
 /* structure */

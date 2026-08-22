@@ -267,7 +267,11 @@ export function ProcessesTab({
         >
           <Icon name="autorenew" size={13} /> auto
         </button>
-        <IconBtn icon="refresh" title="Refresh now" onClick={() => refresh.current()} />
+        {/* Manual refresh only matters while auto is off — with the 2.5s poll
+            running the list is already current, so the button would be noise. */}
+        {auto ? null : (
+          <IconBtn icon="refresh" title="Refresh now" onClick={() => refresh.current()} />
+        )}
       </div>
       {selProcs.length ? (
         <div className="dg-selbar">

@@ -2,7 +2,7 @@
 // or the database-actions menu; a collection picker + the shared stage rail +
 // Tree/Table result. Ported from the prototype's MongoPipelineTab.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { appErrorMessage } from "../../../../shared/api/error";
 import { Btn } from "../../../../shared/ui/Btn";
@@ -76,6 +76,25 @@ export function MongoPipelineTab({
     }
   };
 
+  // ⌘/Ctrl+↵ runs the pipeline from anywhere in the tab, like the Find bar's
+  // and the other engines' run shortcut. Bound once and reading the current
+  // runner through a ref; gated on this being the visible tab (every tab stays
+  // mounted) and on no document modal owning the keyboard.
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const runRef = useRef<() => void>(() => {});
+  runRef.current = () => void runAggregate();
+  const modalOpen = docView !== null;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!rootRef.current || rootRef.current.offsetParent === null) return;
+      if (modalOpen || !(e.metaKey || e.ctrlKey) || e.key !== "Enter") return;
+      e.preventDefault();
+      runRef.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [modalOpen]);
+
   const toggleExplain = () => {
     if (explainPipeline) {
       setExplainPipeline(null);
@@ -111,7 +130,7 @@ export function MongoPipelineTab({
   const docs = result ? result.docs : [];
 
   return (
-    <div className="table-tab">
+    <div className="table-tab" ref={rootRef}>
       <div className="table-toolbar ddb-toolbar">
         <span className="mg-pipe-title">
           <Icon name="account_tree" size={15} style={{ color: "var(--accent)" }} /> Aggregation

@@ -107,7 +107,13 @@ export function MongoStageRail({
         </button>
       </div>
       <div className="mg-pipeline-run">
-        <Btn icon="play_arrow" variant="filled" small onClick={onRun}>
+        <Btn
+          icon="play_arrow"
+          variant="filled"
+          small
+          title="Run this pipeline (⌘↵ / Ctrl+↵)"
+          onClick={onRun}
+        >
           Run pipeline
         </Btn>
         <Btn icon="content_copy" variant="tonal" small onClick={onCopy}>

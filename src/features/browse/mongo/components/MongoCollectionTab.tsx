@@ -214,6 +214,12 @@ export function MongoCollectionTab({
     setSelected(new Set());
   }, [result]);
 
+  // ⌘/Ctrl+↵ runs whatever the current mode reads with — the find or the
+  // pipeline. Read through a ref so the key listener is bound once instead of
+  // being re-bound on every keystroke in the Find bar.
+  const runRef = useRef<() => void>(() => {});
+  runRef.current = () => void (mode === "aggregate" ? runAggregate() : runFind());
+
   // ⌘I / Ctrl+I opens the new-document editor — the binding the SQL, Cassandra
   // and DynamoDB grids use for "add row". Every tab stays mounted, so the
   // listener is gated on this one being the visible tab; a modal that is already
@@ -224,7 +230,11 @@ export function MongoCollectionTab({
     const onKey = (e: KeyboardEvent) => {
       if (!rootRef.current || rootRef.current.offsetParent === null) return;
       if (modalOpen || mode === "structure") return;
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "i") {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (e.key === "Enter") {
+        e.preventDefault();
+        runRef.current();
+      } else if (e.key.toLowerCase() === "i") {
         e.preventDefault();
         setNewDoc(true);
       }
@@ -463,7 +473,13 @@ export function MongoCollectionTab({
               aria-label="Limit"
             />
           </div>
-          <Btn icon="play_arrow" variant="filled" small onClick={() => void runFind()}>
+          <Btn
+            icon="play_arrow"
+            variant="filled"
+            small
+            title="Run this find (⌘↵ / Ctrl+↵)"
+            onClick={() => void runFind()}
+          >
             Find
           </Btn>
         </div>

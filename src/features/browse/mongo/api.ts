@@ -167,6 +167,16 @@ export function mongoExplain(
   return invoke<ExplainResult>("mongo_explain", { handleId, db, coll, filter, sort });
 }
 
+/** Real `explain("executionStats")` for an aggregation pipeline. */
+export function mongoExplainAggregate(
+  handleId: string,
+  db: string,
+  coll: string,
+  pipeline: unknown[],
+): Promise<ExplainResult> {
+  return invoke<ExplainResult>("mongo_explain_aggregate", { handleId, db, coll, pipeline });
+}
+
 /** Inferred-schema field union. */
 export function mongoInferSchema(
   handleId: string,

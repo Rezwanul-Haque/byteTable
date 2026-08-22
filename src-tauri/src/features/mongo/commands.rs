@@ -87,6 +87,17 @@ pub async fn mongo_explain(
 }
 
 #[tauri::command]
+pub async fn mongo_explain_aggregate(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+    db: String,
+    coll: String,
+    pipeline: Vec<Value>,
+) -> Result<ExplainResult, AppError> {
+    application::explain_aggregate(state.manager(), &handle_id, &db, &coll, pipeline).await
+}
+
+#[tauri::command]
 pub async fn mongo_infer_schema(
     state: State<'_, ConnectionsState>,
     handle_id: ConnectionHandleId,

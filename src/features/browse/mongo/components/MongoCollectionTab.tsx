@@ -60,6 +60,8 @@ interface FindState {
   usedIndex?: string;
   filterObj?: unknown;
   sortObj?: unknown;
+  /** The compiled pipeline of an `agg` run — what Explain explains. */
+  pipelineObj?: unknown[];
 }
 
 export function MongoCollectionTab({
@@ -164,7 +166,7 @@ export function MongoCollectionTab({
     }
     try {
       const r = await mongoAggregate(handleId, db, coll, pipeline);
-      setResult({ kind: "agg", ...r });
+      setResult({ kind: "agg", pipelineObj: pipeline, ...r });
       setError(null);
     } catch (e) {
       setError(appErrorMessage(e, "Aggregation failed"));
@@ -315,7 +317,7 @@ export function MongoCollectionTab({
             {result.returned} docs · {result.ms.toFixed(1)} ms
           </span>
         ) : null}
-        {mode === "find" ? (
+        {mode !== "structure" ? (
           <Btn
             icon="bolt"
             variant="text"
@@ -455,13 +457,18 @@ export function MongoCollectionTab({
         />
       ) : null}
 
-      {showExplain && mode === "find" && result ? (
+      {/* Explain describes the last run, so it needs a result: the find's
+          filter/sort, or the pipeline the Aggregate mode actually ran. */}
+      {showExplain && result ? (
         <MongoExplainPanel
           handleId={handleId}
           db={db}
           coll={coll}
-          filter={result.filterObj}
-          sort={result.sortObj}
+          query={
+            result.kind === "agg"
+              ? { kind: "aggregate", pipeline: result.pipelineObj ?? [] }
+              : { kind: "find", filter: result.filterObj, sort: result.sortObj }
+          }
           onClose={() => setShowExplain(false)}
         />
       ) : null}

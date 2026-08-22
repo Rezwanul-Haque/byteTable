@@ -224,38 +224,50 @@ impl MongoReader for MongoDbConnection {
             .await
             .map_err(|e| db_err(&format!("Explain '{coll}'"), e))?;
 
-        let query_planner = out.get_document("queryPlanner").ok();
-        let winning_plan = query_planner.and_then(|q| q.get_document("winningPlan").ok());
-        let (stage, index_name) = winning_plan
-            .map(plan_stage)
-            .unwrap_or(("COLLSCAN".into(), None));
-
-        let exec = out.get_document("executionStats").ok();
-        let n_returned = exec.map(|e| bson_u64(e, "nReturned")).unwrap_or(0);
-        let docs_examined = exec.map(|e| bson_u64(e, "totalDocsExamined")).unwrap_or(0);
-        let keys_examined = exec.map(|e| bson_u64(e, "totalKeysExamined")).unwrap_or(0);
-        let ms = exec
-            .map(|e| bson_u64(e, "executionTimeMillis") as f64)
-            .unwrap_or(0.0);
-
         let total_docs = self
             .coll(db, coll)
             .estimated_document_count()
             .await
             .unwrap_or(0);
 
-        Ok(ExplainResult {
-            namespace: format!("{db}.{coll}"),
-            stage,
-            index_name,
-            n_returned,
-            docs_examined,
-            keys_examined,
+        Ok(explain_summary(
+            format!("{db}.{coll}"),
+            out.get_document("queryPlanner").ok(),
+            out.get_document("executionStats").ok(),
             total_docs,
-            ratio: n_returned as f64 / docs_examined.max(1) as f64,
-            ms,
-            plan: winning_plan.map(doc_to_json).unwrap_or(Value::Null),
-        })
+        ))
+    }
+
+    async fn explain_aggregate(
+        &self,
+        db: &str,
+        coll: &str,
+        pipeline: Vec<Value>,
+    ) -> Result<ExplainResult, AppError> {
+        let stages: Vec<Document> = pipeline.iter().map(json_to_doc).collect();
+        let out = self
+            .client
+            .database(db)
+            .run_command(doc! {
+                "explain": { "aggregate": coll, "pipeline": stages, "cursor": {} },
+                "verbosity": "executionStats",
+            })
+            .await
+            .map_err(|e| db_err(&format!("Explain aggregation on '{coll}'"), e))?;
+
+        let (query_planner, exec) = agg_explain_parts(&out);
+        let total_docs = self
+            .coll(db, coll)
+            .estimated_document_count()
+            .await
+            .unwrap_or(0);
+
+        Ok(explain_summary(
+            format!("{db}.{coll}"),
+            query_planner,
+            exec,
+            total_docs,
+        ))
     }
 
     async fn infer_schema(&self, db: &str, coll: &str) -> Result<Vec<SchemaField>, AppError> {
@@ -271,6 +283,64 @@ impl MongoReader for MongoDbConnection {
 
     async fn list_indexes(&self, db: &str, coll: &str) -> Result<Vec<IndexInfo>, AppError> {
         self.indexes(db, coll).await
+    }
+}
+
+/// Fold an explain command's `queryPlanner` / `executionStats` pair into the
+/// Explain panel's summary. Shared by the find and aggregation explains — both
+/// answer the same question (did this reach the documents through an index?),
+/// only the place the two sub-documents live in the reply differs.
+pub(super) fn explain_summary(
+    namespace: String,
+    query_planner: Option<&Document>,
+    exec: Option<&Document>,
+    total_docs: u64,
+) -> ExplainResult {
+    let winning_plan = query_planner.and_then(|q| q.get_document("winningPlan").ok());
+    let (stage, index_name) = winning_plan
+        .map(plan_stage)
+        .unwrap_or(("COLLSCAN".into(), None));
+
+    let n_returned = exec.map(|e| bson_u64(e, "nReturned")).unwrap_or(0);
+    let docs_examined = exec.map(|e| bson_u64(e, "totalDocsExamined")).unwrap_or(0);
+    let keys_examined = exec.map(|e| bson_u64(e, "totalKeysExamined")).unwrap_or(0);
+    let ms = exec
+        .map(|e| bson_u64(e, "executionTimeMillis") as f64)
+        .unwrap_or(0.0);
+
+    ExplainResult {
+        namespace,
+        stage,
+        index_name,
+        n_returned,
+        docs_examined,
+        keys_examined,
+        total_docs,
+        ratio: n_returned as f64 / docs_examined.max(1) as f64,
+        ms,
+        plan: winning_plan.map(doc_to_json).unwrap_or(Value::Null),
+    }
+}
+
+/// The `queryPlanner` / `executionStats` of an aggregation explain. The classic
+/// engine nests the collection access under the leading `$cursor` stage; when
+/// the pipeline is pushed down whole (SBE, `explainVersion: 2`) the pair sits at
+/// the top level, exactly like a find explain.
+pub(super) fn agg_explain_parts(out: &Document) -> (Option<&Document>, Option<&Document>) {
+    if let Ok(planner) = out.get_document("queryPlanner") {
+        return (Some(planner), out.get_document("executionStats").ok());
+    }
+    let cursor = out.get_array("stages").ok().and_then(|stages| {
+        stages
+            .iter()
+            .find_map(|s| s.as_document()?.get_document("$cursor").ok())
+    });
+    match cursor {
+        Some(c) => (
+            c.get_document("queryPlanner").ok(),
+            c.get_document("executionStats").ok(),
+        ),
+        None => (None, None),
     }
 }
 
@@ -401,6 +471,49 @@ mod tests {
             choose_index(&indexes, &serde_json::json!({ "name": "x" })),
             None
         );
+    }
+
+    #[test]
+    fn agg_explain_parts_reads_the_cursor_stage() {
+        // Classic engine: the collection access hides under `$cursor`, behind
+        // whatever stages the pipeline adds after it.
+        let out = doc! {
+            "stages": [
+                { "$cursor": {
+                    "queryPlanner": { "winningPlan": { "stage": "IXSCAN", "indexName": "status_1" } },
+                    "executionStats": { "nReturned": 3i64, "totalDocsExamined": 3i64 },
+                } },
+                { "$group": { "nReturned": 1i64 } },
+            ],
+        };
+        let (planner, exec) = agg_explain_parts(&out);
+        let summary = explain_summary("shop.orders".into(), planner, exec, 100);
+        assert_eq!(summary.stage, "IXSCAN");
+        assert_eq!(summary.index_name, Some("status_1".into()));
+        assert_eq!(summary.n_returned, 3);
+        assert_eq!(summary.docs_examined, 3);
+    }
+
+    #[test]
+    fn agg_explain_parts_falls_back_to_the_top_level() {
+        // SBE pushes the whole pipeline down and reports like a find explain.
+        let out = doc! {
+            "queryPlanner": { "winningPlan": { "stage": "COLLSCAN" } },
+            "executionStats": { "nReturned": 7i64, "totalDocsExamined": 900i64 },
+        };
+        let (planner, exec) = agg_explain_parts(&out);
+        let summary = explain_summary("shop.orders".into(), planner, exec, 900);
+        assert_eq!(summary.stage, "COLLSCAN");
+        assert_eq!(summary.index_name, None);
+        assert_eq!(summary.docs_examined, 900);
+    }
+
+    #[test]
+    fn explain_summary_without_a_plan_reads_as_a_collscan() {
+        let summary = explain_summary("shop.orders".into(), None, None, 0);
+        assert_eq!(summary.stage, "COLLSCAN");
+        assert_eq!(summary.ratio, 0.0);
+        assert_eq!(summary.plan, Value::Null);
     }
 
     #[test]

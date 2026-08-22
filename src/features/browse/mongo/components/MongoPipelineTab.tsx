@@ -5,12 +5,14 @@
 import { useEffect, useState } from "react";
 
 import { appErrorMessage } from "../../../../shared/api/error";
+import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { Select } from "../../../../shared/ui/Select";
 import { useToast } from "../../../../shared/ui/toastContext";
 import { mongoAggregate, type AggregateResult, type MongoDoc } from "../api";
 import { MongoDocGrid, MongoDocTree } from "./MongoValue";
 import { MongoDocModal } from "./MongoDocModal";
+import { MongoExplainPanel } from "./MongoExplainPanel";
 import { MongoStageRail } from "./MongoStageRail";
 import { compilePipeline, copyToClipboard, type Stage } from "../pipeline";
 
@@ -45,6 +47,10 @@ export function MongoPipelineTab({
   const [result, setResult] = useState<AggregateResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [docView, setDocView] = useState<MongoDoc | null>(null);
+  // The pipeline captured when Explain was opened (null = panel hidden), so the
+  // stats stay pinned to what was explained while the rail is edited — the same
+  // capture-on-open the SQL editor's Explain does with the statement at the caret.
+  const [explainPipeline, setExplainPipeline] = useState<unknown[] | null>(null);
 
   useEffect(() => {
     onUpdateTab({ coll, stages, view, title: "Aggregation · " + coll });
@@ -67,6 +73,18 @@ export function MongoPipelineTab({
     } catch (e) {
       setError(appErrorMessage(e, "Aggregation failed"));
       setResult(null);
+    }
+  };
+
+  const toggleExplain = () => {
+    if (explainPipeline) {
+      setExplainPipeline(null);
+      return;
+    }
+    try {
+      setExplainPipeline(compilePipeline(stages));
+    } catch (e) {
+      toast("Fix stage JSON before explaining — " + (e instanceof Error ? e.message : ""), "err");
     }
   };
 
@@ -133,6 +151,15 @@ export function MongoPipelineTab({
             {result.returned} docs · {result.ms.toFixed(1)} ms
           </span>
         ) : null}
+        <Btn
+          icon="bolt"
+          variant="text"
+          small
+          onClick={toggleExplain}
+          className={explainPipeline ? "active" : undefined}
+        >
+          Explain
+        </Btn>
       </div>
 
       <MongoStageRail
@@ -141,6 +168,16 @@ export function MongoPipelineTab({
         onRun={() => void runAggregate()}
         onCopy={copyPipeline}
       />
+
+      {explainPipeline ? (
+        <MongoExplainPanel
+          handleId={handleId}
+          db={db}
+          coll={coll}
+          query={{ kind: "aggregate", pipeline: explainPipeline }}
+          onClose={() => setExplainPipeline(null)}
+        />
+      ) : null}
 
       {error ? (
         <div className="sql-results">

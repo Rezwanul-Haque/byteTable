@@ -91,6 +91,21 @@ pub async fn explain(
         .await
 }
 
+/// Real `explain("executionStats")` for an aggregation pipeline (MILESTONE_18 §18.4).
+pub async fn explain_aggregate(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    db: &str,
+    coll: &str,
+    pipeline: Vec<Value>,
+) -> Result<ExplainResult, AppError> {
+    manager
+        .get_mongo(handle)
+        .await?
+        .explain_aggregate(db, coll, pipeline)
+        .await
+}
+
 /// Inferred-schema field union (MILESTONE_18 §18.5/§18.7).
 pub async fn infer_schema(
     manager: &ConnectionManager,

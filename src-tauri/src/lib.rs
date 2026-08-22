@@ -581,6 +581,7 @@ pub fn run() {
             features::mongo::commands::mongo_count,
             features::mongo::commands::mongo_aggregate,
             features::mongo::commands::mongo_explain,
+            features::mongo::commands::mongo_explain_aggregate,
             features::mongo::commands::mongo_infer_schema,
             features::mongo::commands::mongo_list_indexes,
             features::mongo::commands::mongo_insert_one,

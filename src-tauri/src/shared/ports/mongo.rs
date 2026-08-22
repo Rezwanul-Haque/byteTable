@@ -264,6 +264,16 @@ pub trait MongoReader: Send + Sync {
         sort: Option<Value>,
     ) -> Result<ExplainResult, AppError>;
 
+    /// Real `explain("executionStats")` for an aggregation pipeline — the same
+    /// summary as [`MongoReader::explain`], read from the pipeline's cursor
+    /// stage (how the first stage reaches the documents it feeds the pipeline).
+    async fn explain_aggregate(
+        &self,
+        db: &str,
+        coll: &str,
+        pipeline: Vec<Value>,
+    ) -> Result<ExplainResult, AppError>;
+
     /// Inferred schema by sampling documents (MILESTONE_18 §18.5/§18.7).
     async fn infer_schema(&self, db: &str, coll: &str) -> Result<Vec<SchemaField>, AppError>;
 

@@ -1,5 +1,5 @@
 // MongoDB aggregation stage rail (M18 §18.4): add/remove/reorder stages, each
-// an op <select> + a JSON body seeded from STAGE_TEMPLATES, bodies auto-sized to
+// an op picker + a JSON body seeded from STAGE_TEMPLATES, bodies auto-sized to
 // a shared height. Plus Run / Copy pipeline. Shared by the collection-tab
 // Aggregate mode and the standalone MongoPipelineTab. Ported from the prototype.
 
@@ -7,7 +7,10 @@ import { useEffect, useRef } from "react";
 
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
+import { Select } from "../../../../shared/ui/Select";
 import { PIPELINE_STAGES, stageTemplate, type Stage } from "../pipeline";
+
+const STAGE_OPTIONS = PIPELINE_STAGES.map((op) => ({ value: op, label: op }));
 
 export function MongoStageRail({
   stages,
@@ -59,19 +62,13 @@ export function MongoStageRail({
           <div key={i} className="mg-stage">
             <div className="mg-stage-head">
               <span className="mg-stage-num">{i + 1}</span>
-              <select
+              <Select
                 className="mg-stage-op"
                 value={s.op}
-                onChange={(e) =>
-                  setStage(i, { op: e.target.value, body: stageTemplate(e.target.value) })
-                }
-              >
-                {PIPELINE_STAGES.map((op) => (
-                  <option key={op} value={op}>
-                    {op}
-                  </option>
-                ))}
-              </select>
+                options={STAGE_OPTIONS}
+                onChange={(op) => setStage(i, { op, body: stageTemplate(op) })}
+                aria-label={"Stage " + (i + 1) + " operator"}
+              />
               <div style={{ flex: 1 }} />
               <button
                 className="mg-stage-btn"

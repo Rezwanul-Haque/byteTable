@@ -12,6 +12,7 @@ import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { Modal } from "../../../../shared/ui/Modal";
+import { Select } from "../../../../shared/ui/Select";
 import { useToast } from "../../../../shared/ui/toastContext";
 import { exportStamp } from "../../../export/exportFlow";
 import { mongoFind, mongoInsertMany, type CollectionDescriptor, type MongoDoc } from "../api";
@@ -409,20 +410,16 @@ export function MongoImportModal({
       </div>
 
       <div className="import-format">
-        <label className="mg-import-target">
+        <div className="mg-import-target">
           <span>Into</span>
-          <select
-            className="filter-select"
+          <Select
+            className="mg-import-sel"
             value={target}
-            onChange={(e) => setTarget(e.target.value)}
-          >
-            {collNames.map((c) => (
-              <option key={c} value={c}>
-                {db}.{c}
-              </option>
-            ))}
-          </select>
-        </label>
+            options={collNames.map((c) => ({ value: c, label: db + "." + c }))}
+            onChange={setTarget}
+            aria-label="Import into collection"
+          />
+        </div>
         <div className="seg">
           <button
             className={"seg-btn" + (format === "json" ? " active" : "")}

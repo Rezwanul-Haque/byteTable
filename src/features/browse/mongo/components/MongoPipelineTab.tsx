@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 
 import { appErrorMessage } from "../../../../shared/api/error";
 import { Icon } from "../../../../shared/ui/Icon";
+import { Select } from "../../../../shared/ui/Select";
 import { useToast } from "../../../../shared/ui/toastContext";
 import { mongoAggregate, type AggregateResult, type MongoDoc } from "../api";
 import { MongoDocGrid, MongoDocTree } from "./MongoValue";
@@ -97,24 +98,21 @@ export function MongoPipelineTab({
         <span className="mg-pipe-title">
           <Icon name="account_tree" size={15} style={{ color: "var(--accent)" }} /> Aggregation
         </span>
-        <label className="mg-pipe-coll">
+        <span className="mg-pipe-coll">
           <span>db.</span>
-          <select
+          <Select
+            className="mg-pipe-coll-sel"
             value={coll}
-            onChange={(e) => {
-              setColl(e.target.value);
+            options={collNames.map((c) => ({ value: c, label: c }))}
+            onChange={(c) => {
+              setColl(c);
               setResult(null);
               setError(null);
             }}
-          >
-            {collNames.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
+            aria-label="Aggregate a collection"
+          />
           <span>.aggregate()</span>
-        </label>
+        </span>
         <div className="seg mg-view-seg" title="Document view">
           <button
             className={"seg-btn" + (view === "tree" ? " active" : "")}

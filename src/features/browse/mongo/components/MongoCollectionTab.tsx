@@ -13,6 +13,7 @@ import { BulkDeleteModal } from "../../../../shared/ui/BulkDeleteModal";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
+import { Select } from "../../../../shared/ui/Select";
 import { useToast } from "../../../../shared/ui/toastContext";
 import {
   mongoAggregate,
@@ -426,21 +427,19 @@ export function MongoCollectionTab({
               spellCheck={false}
             />
           </label>
-          <label className="mg-find-field mg-find-limit">
+          <div className="mg-find-field mg-find-limit">
             <span className="mg-find-label">Limit</span>
-            <select
-              className="filter-select"
-              value={Number(limit) || 0}
-              onChange={(e) => setLimit(Number(e.target.value))}
-            >
-              {limitOptions.map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-              <option value={0}>All</option>
-            </select>
-          </label>
+            <Select
+              className="mg-limit-sel"
+              value={String(Number(limit) || 0)}
+              options={[
+                ...limitOptions.map((n) => ({ value: String(n), label: String(n) })),
+                { value: "0", label: "All" },
+              ]}
+              onChange={(v) => setLimit(Number(v))}
+              aria-label="Limit"
+            />
+          </div>
           <Btn icon="play_arrow" variant="filled" small onClick={() => void runFind()}>
             Find
           </Btn>

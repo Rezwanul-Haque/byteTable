@@ -90,7 +90,6 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
   // mongosh docks as the shared bottom TerminalPanel (keyed by workspace id),
   // exactly like the SQL/Redis/Dynamo consoles — not a tab.
   const termLabel = shellLabel(workspace.saved.engine);
-  const openPanel = usePanelStore((s) => s.openPanel);
   const togglePanel = usePanelStore((s) => s.togglePanel);
   const setActiveDb = useMongoActiveDbStore((s) => s.setDb);
 
@@ -262,7 +261,6 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
     setTabs((ts) => [...ts, tab]);
     setActiveId(tab.id);
   };
-  const openShell = () => openPanel(workspace.id, termLabel);
   const toggleShell = () => togglePanel(workspace.id, termLabel);
   const updateTab = (id: string, patch: Partial<Tab>) =>
     setTabs((ts) => ts.map((t) => (t.id === id ? ({ ...t, ...patch } as Tab) : t)));
@@ -354,7 +352,6 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
         openedScopes={openedScopes}
         onOpenScopeWorkspace={openScope}
         onOpenColl={openColl}
-        onOpenShell={openShell}
         onOpenDashboard={() => openSingleton("dashboard", "Dashboard")}
         onOpenMap={() => openSingleton("map", "Schema map")}
         onNewPipeline={openPipeline}

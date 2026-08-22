@@ -1,7 +1,7 @@
 // MongoDB sidebar (M18 §18.1): database selector, collection list with index
 // sub-rows + search, header icons (schema map hub / refresh / dashboard
 // monitoring), the "Collections N ⋯" section label with database-actions menu,
-// and the mongosh footer button. Ported from the prototype's MongoSidebar;
+// and the new-aggregation footer button. Ported from the prototype's MongoSidebar;
 // reads real CollectionDescriptor[] instead of the mock window.BT_MONGO.
 
 import { useEffect, useState } from "react";
@@ -40,7 +40,6 @@ export function MongoSidebar({
   openedScopes,
   onOpenScopeWorkspace,
   onOpenColl,
-  onOpenShell,
   onOpenDashboard,
   onOpenMap,
   onNewPipeline,
@@ -72,7 +71,6 @@ export function MongoSidebar({
   /** Open (or focus) a database as its own workspace, nested in the rail. */
   onOpenScopeWorkspace: (db: string) => void;
   onOpenColl: (coll: string) => void;
-  onOpenShell: () => void;
   onOpenDashboard: () => void;
   onOpenMap: () => void;
   onNewPipeline: () => void;
@@ -329,13 +327,16 @@ export function MongoSidebar({
       </div>
 
       <div className="sidebar-footer">
+        {/* The footer opens the engine's query surface, like the SQL sidebar's
+            "New SQL query" — for Mongo that is an aggregation pipeline tab.
+            mongosh stays on the tab bar's terminal tool + ⌘` / Ctrl+`. */}
         <Btn
-          icon="terminal"
+          icon="account_tree"
           variant="tonal"
-          onClick={onOpenShell}
+          onClick={onNewPipeline}
           style={{ width: "100%", justifyContent: "center" }}
         >
-          mongosh
+          New aggregation
         </Btn>
       </div>
 

@@ -415,6 +415,17 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
               <Icon name="terminal" size={15} />
               <span>mongosh</span>
             </button>
+            {/* Icon-only, immediately after mongosh — the slot the SQL, Redis
+                and Cassandra tab bars give their processes toggle. */}
+            <button
+              type="button"
+              className="tabbar-tool tabbar-tool-icon"
+              title="Running processes (Ctrl+Shift+P)"
+              aria-label="Running processes (Ctrl+Shift+P)"
+              onClick={() => openSingleton("processes", "Processes")}
+            >
+              <Icon name="monitor_heart" size={15} />
+            </button>
           </div>
           {tabMenu.element}
         </div>

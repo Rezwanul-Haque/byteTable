@@ -22,7 +22,10 @@ import "./MongoMap.css";
 const CARD_W = 240;
 const HEAD_H = 36;
 const ROW_H = 21;
-const MAX_FIELDS = 8;
+/** Default layout: cards per row, the horizontal step, and the gap below a row. */
+const MAP_COLS = 3;
+const COL_STEP = 360;
+const ROW_GAP = 60;
 
 interface MapField {
   name: string;
@@ -69,10 +72,11 @@ function inferReferences(schemas: Record<string, SchemaField[]>, names: string[]
   return refs;
 }
 
+/** Cards grow to fit every inferred field — the SQL map lists a table's whole
+ *  column set too, and a truncated card hides exactly the field you came to
+ *  look for. */
 function cardHeight(c: MapColl): number {
-  const shown = Math.min(c.fields.length, MAX_FIELDS);
-  const more = c.fields.length > MAX_FIELDS ? 1 : 0;
-  return HEAD_H + 8 + (shown + more) * ROW_H;
+  return HEAD_H + 8 + c.fields.length * ROW_H;
 }
 
 export function MongoSchemaMap({
@@ -126,11 +130,20 @@ export function MongoSchemaMap({
 
   const { colls, refs } = model;
 
-  // Default grid position for a card by its index (used until the user drags it,
-  // at which point the explicit position in `overrides` takes over).
-  const defaultPos = (i: number) => ({ x: 70 + (i % 3) * 360, y: 70 + Math.floor(i / 3) * 360 });
-  const indexOf: Record<string, number> = {};
-  colls.forEach((c, i) => (indexOf[c.id] = i));
+  // Default layout (used until the user drags a card, at which point the
+  // explicit position in `overrides` takes over): three columns, each row given
+  // the height of its tallest card so full-height cards never overlap the row
+  // below — a collection with thirty fields is taller than any fixed step.
+  const defaultPos = useMemo(() => {
+    const out: Record<string, { x: number; y: number }> = {};
+    let top = 70;
+    for (let i = 0; i < colls.length; i += MAP_COLS) {
+      const row = colls.slice(i, i + MAP_COLS);
+      row.forEach((c, j) => (out[c.id] = { x: 70 + j * COL_STEP, y: top }));
+      top += Math.max(...row.map(cardHeight)) + ROW_GAP;
+    }
+    return out;
+  }, [colls]);
   const [overrides, setOverrides] = useState<Record<string, { x: number; y: number }>>({});
   const [zoom, setZoom] = useState(1);
   const dragRef = useRef<{
@@ -138,7 +151,7 @@ export function MongoSchemaMap({
     start: { x: number; y: number; ox: number; oy: number };
   } | null>(null);
   const positions: Record<string, { x: number; y: number }> = {};
-  colls.forEach((c, i) => (positions[c.id] = overrides[c.id] ?? defaultPos(i)));
+  colls.forEach((c) => (positions[c.id] = overrides[c.id] ?? defaultPos[c.id] ?? { x: 70, y: 70 }));
   const setPositions = setOverrides;
   const initPos = () => setOverrides({});
 
@@ -197,7 +210,7 @@ export function MongoSchemaMap({
   const fieldRowIndex = (c: MapColl, field: string) => {
     const base = field.split(".")[0];
     const idx = c.fields.findIndex((f) => f.name === base);
-    return idx < 0 ? 0 : Math.min(idx, MAX_FIELDS);
+    return idx < 0 ? 0 : idx;
   };
   const rowY = (id: string, rowIdx: number) =>
     (positions[id]?.y ?? 0) + HEAD_H + rowIdx * ROW_H + ROW_H / 2;
@@ -234,15 +247,11 @@ export function MongoSchemaMap({
     try {
       const cards = colls.map((c) => {
         const p = positions[c.id] ?? { x: 0, y: 0 };
-        const extra = c.fields.length - MAX_FIELDS;
-        const rows: ExportMapRow[] = c.fields.slice(0, MAX_FIELDS).map((f) => ({
+        const rows: ExportMapRow[] = c.fields.map((f) => ({
           name: f.name,
           type: f.type,
           typeColor: MONGO_TYPE_COLOR[f.type as MongoType],
         }));
-        if (extra > 0) {
-          rows.push({ name: `+ ${extra} more field${extra > 1 ? "s" : ""}…`, muted: true });
-        }
         return { x: p.x, y: p.y, w: CARD_W, name: c.name, count: String(c.count), rows };
       });
       const edges = refs
@@ -359,7 +368,6 @@ export function MongoSchemaMap({
             {colls.map((c) => {
               const p = positions[c.id];
               if (!p) return null;
-              const extra = c.fields.length - MAX_FIELDS;
               return (
                 <div key={c.id} className="map-card" style={{ left: p.x, top: p.y, width: CARD_W }}>
                   <div className="map-card-head" onMouseDown={(ev) => onHeadDown(ev, c.id)}>
@@ -379,7 +387,7 @@ export function MongoSchemaMap({
                     </button>
                   </div>
                   <div className="map-card-cols">
-                    {c.fields.slice(0, MAX_FIELDS).map((f) => {
+                    {c.fields.map((f) => {
                       const isRef = /Id$/.test(f.name) || f.name === "_id";
                       return (
                         <div key={f.name} className="map-card-col" style={{ height: ROW_H }}>
@@ -414,14 +422,6 @@ export function MongoSchemaMap({
                         </div>
                       );
                     })}
-                    {extra > 0 ? (
-                      <div className="map-card-col map-col-more" style={{ height: ROW_H }}>
-                        <span className="map-col-icon" />
-                        <span className="map-col-name">
-                          + {extra} more field{extra > 1 ? "s" : ""}…
-                        </span>
-                      </div>
-                    ) : null}
                   </div>
                 </div>
               );

@@ -173,7 +173,3 @@
   font-size: 9px;
   color: var(--text-faint);
 }
-.mg-map .map-col-more .map-col-name {
-  color: var(--text-faint);
-  font-style: italic;
-}

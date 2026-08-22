@@ -32,7 +32,7 @@ import { MongoStageRail } from "./MongoStageRail";
 import {
   compilePipeline,
   copyToClipboard,
-  DEFAULT_STAGES,
+  emptyPipeline,
   FIND_LIMITS,
   type Stage,
 } from "../pipeline";
@@ -102,7 +102,9 @@ export function MongoCollectionTab({
   const [proj, setProj] = useState(tab.proj ?? "");
   const [sort, setSort] = useState(tab.sort ?? "");
   const [limit, setLimit] = useState(tab.limit ?? 50);
-  const [stages, setStages] = useState<Stage[]>(tab.stages ?? DEFAULT_STAGES);
+  // A fresh Aggregate mode opens on one empty $match: the seeded three-stage
+  // pipeline named fields ($status, $total) that most collections do not have.
+  const [stages, setStages] = useState<Stage[]>(tab.stages ?? emptyPipeline());
   const [result, setResult] = useState<FindState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [docView, setDocView] = useState<MongoDoc | null>(null);
@@ -174,6 +176,16 @@ export function MongoCollectionTab({
       setError(appErrorMessage(e, "Aggregation failed"));
       setResult(null);
     }
+  };
+
+  /** Back to a fresh rail: one empty $match, no result, no explain panel — so a
+   *  finished aggregation can be dropped without retyping every stage away. */
+  const clearPipeline = () => {
+    setStages(emptyPipeline());
+    setResult(null);
+    setError(null);
+    setSelected(new Set());
+    setShowExplain(false);
   };
 
   const copyPipeline = () => {
@@ -488,6 +500,7 @@ export function MongoCollectionTab({
           onChange={setStages}
           onRun={() => void runAggregate()}
           onCopy={copyPipeline}
+          onClear={clearPipeline}
         />
       ) : null}
 

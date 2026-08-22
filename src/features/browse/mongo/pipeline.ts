@@ -38,11 +38,14 @@ export const STAGE_TEMPLATES: Record<string, string> = {
 /** The seed body for a stage op (falls back to an empty object literal). */
 export const stageTemplate = (op: string): string => STAGE_TEMPLATES[op] ?? "{ }";
 
-export const DEFAULT_STAGES: Stage[] = [
-  { op: "$match", body: '{ "status": "paid" }' },
-  { op: "$group", body: stageTemplate("$group") },
-  { op: "$sort", body: '{ "revenue": -1 }' },
-];
+/** A fresh rail: one empty `$match`. What the Aggregate mode and a new
+ *  aggregation tab open with, and what Clear pipeline resets to — a function so
+ *  each caller gets its own array to mutate through `onChange`.
+ *
+ *  The prototype's three seeded stages ($match status/$group revenue/$sort) went
+ *  with it: they name fields only the demo collection has, so every other
+ *  collection opened on a pipeline that could not run. */
+export const emptyPipeline = (): Stage[] => [{ op: "$match", body: "{ }" }];
 
 /** Compile a stage list to a pipeline array; throws with a message naming the
  *  first stage whose JSON body is invalid. */

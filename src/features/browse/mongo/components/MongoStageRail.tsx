@@ -17,11 +17,15 @@ export function MongoStageRail({
   onChange,
   onRun,
   onCopy,
+  onClear,
 }: {
   stages: Stage[];
   onChange: (stages: Stage[]) => void;
   onRun: () => void;
   onCopy: () => void;
+  /** Reset the rail and drop the last result. The host owns it: the result the
+   *  run left on screen lives there, not here. */
+  onClear?: () => void;
 }) {
   const railRef = useRef<HTMLDivElement | null>(null);
 
@@ -42,7 +46,9 @@ export function MongoStageRail({
 
   const setStage = (i: number, patch: Partial<Stage>) =>
     onChange(stages.map((s, j) => (j === i ? { ...s, ...patch } : s)));
-  const addStage = () => onChange([...stages, { op: "$match", body: stageTemplate("$match") }]);
+  // A stage nobody has picked an operator for yet starts empty; the templates
+  // come in once an operator is chosen from the picker.
+  const addStage = () => onChange([...stages, { op: "$match", body: "{ }" }]);
   const removeStage = (i: number) => onChange(stages.filter((_, j) => j !== i));
   const moveStage = (i: number, dir: number) => {
     const n = stages.slice();
@@ -119,6 +125,17 @@ export function MongoStageRail({
         <Btn icon="content_copy" variant="tonal" small onClick={onCopy}>
           Copy pipeline
         </Btn>
+        {onClear ? (
+          <Btn
+            icon="clear_all"
+            variant="text"
+            small
+            title="Clear the stages and the last result"
+            onClick={onClear}
+          >
+            Clear pipeline
+          </Btn>
+        ) : null}
         <span className="sql-hint">
           {stages.length} stage{stages.length === 1 ? "" : "s"}
         </span>

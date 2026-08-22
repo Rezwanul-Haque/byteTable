@@ -300,7 +300,9 @@ pub(super) fn parse_field_pairs(value: Value) -> Vec<KvField> {
             })
             .collect(),
         Value::Array(flat) => flat
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|pair| KvField {
                 field: value_to_string(&pair[0]),
                 value: value_to_string(&pair[1]),
@@ -333,7 +335,9 @@ pub(super) fn parse_scored(value: Value) -> Vec<KvScored> {
                     .collect()
             } else {
                 items
-                    .chunks_exact(2)
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
                     .map(|pair| KvScored {
                         member: value_to_string(&pair[0]),
                         score: score_of(&pair[1]),
@@ -369,7 +373,9 @@ pub(super) fn parse_stream(value: Value) -> Vec<KvStreamEntry> {
             let id = value_to_string(&it.next()?);
             let fields = match it.next() {
                 Some(Value::Array(flat)) => flat
-                    .chunks_exact(2)
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
                     .map(|pair| KvField {
                         field: value_to_string(&pair[0]),
                         value: value_to_string(&pair[1]),

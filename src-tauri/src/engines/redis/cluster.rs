@@ -407,7 +407,9 @@ fn field_of<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
             .find(|(k, _)| value_to_string(k) == key)
             .map(|(_, v)| v),
         Value::Array(flat) => flat
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .find(|pair| value_to_string(&pair[0]) == key)
             .map(|pair| &pair[1]),
         _ => None,

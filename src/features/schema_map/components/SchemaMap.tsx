@@ -73,6 +73,7 @@ import {
   cardModel,
   CARD_PAD_T,
   CARD_W,
+  contentBounds,
   contentExtent,
   crowFoot,
   HEAD_H,
@@ -115,6 +116,11 @@ async function saveDialog(defaultName: string, ext: string, label: string) {
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 1.5;
 const ZOOM_STEP = 0.1;
+/** How far fit-to-window may zoom out past the manual floor before it gives up
+ *  and leaves the rest to scrolling. */
+const FIT_ZOOM_MIN = 0.2;
+/** Breathing room left around the diagram when fitting it to the window. */
+const FIT_PAD = 28;
 /** Debounce (ms) for persisting positions after a drag settles. */
 const SAVE_DEBOUNCE = 400;
 
@@ -581,6 +587,27 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
   const boxes = useMemo<GroupBox[]>(() => groupBoxes(groups, cardsById), [groups, cardsById]);
   // Scroll room covers the cards AND every frame — a frame stretched past the
   // last card must not be cut off by the SVG's own box.
+  // The tight box around everything drawn — cards plus frames. Fit-to-window
+  // frames this; the scroll extent below just needs to reach past it.
+  const contentBox = useMemo(() => {
+    const b = contentBounds(cards, FIT_PAD);
+    let left = b.x;
+    let top = b.y;
+    let right = b.x + b.width;
+    let bottom = b.y + b.height;
+    for (const g of boxes) {
+      left = Math.min(left, g.x - FIT_PAD);
+      top = Math.min(top, g.y - FIT_PAD);
+      right = Math.max(right, g.x + g.w + FIT_PAD);
+      bottom = Math.max(bottom, g.y + g.h + FIT_PAD);
+    }
+    // The SVG's own box starts at the origin, so nothing left/above it is
+    // reachable — clamp rather than promise a view that would be clipped.
+    left = Math.max(0, left);
+    top = Math.max(0, top);
+    return { x: left, y: top, width: right - left, height: bottom - top };
+  }, [cards, boxes]);
+
   const extent = useMemo(() => {
     const base = contentExtent(cards);
     let width = base.width;
@@ -930,6 +957,35 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
     applyZoom(zoom + (e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP));
   };
 
+  /**
+   * Zoom and scroll so the whole diagram is on screen at once. Chooses the
+   * larger-fitting axis' scale, then centres the content in whatever slack is
+   * left. Fit may go below the manual zoom floor (a big schema simply doesn't
+   * fit at 50%), but never below FIT_ZOOM_MIN — past that the cards are illegible
+   * and scrolling serves better.
+   */
+  const fitToWindow = () => {
+    const wrap = wrapRef.current;
+    if (!wrap || cards.length === 0) return;
+    const vw = wrap.clientWidth;
+    const vh = wrap.clientHeight;
+    if (vw === 0 || vh === 0) return;
+    const raw = Math.min(vw / contentBox.width, vh / contentBox.height);
+    // Floor to 1% so rounding can never leave the content a hair too big.
+    const z = Math.min(ZOOM_MAX, Math.max(FIT_ZOOM_MIN, Math.floor(raw * 100) / 100));
+    setZoom(z);
+    // Positioning is by scroll, not pan: the SVG is sized to the whole extent,
+    // so a pan offset would push content outside its box and clip it.
+    setPan({ x: 0, y: 0 });
+    if (positions) persist(positions, z);
+    requestAnimationFrame(() =>
+      wrap.scrollTo({
+        left: Math.max(0, contentBox.x * z - Math.max(0, (vw - contentBox.width * z) / 2)),
+        top: Math.max(0, contentBox.y * z - Math.max(0, (vh - contentBox.height * z) / 2)),
+      }),
+    );
+  };
+
   const resetView = () => {
     if (!metas) return;
     const auto = autoLayout(tables, metas);
@@ -1157,6 +1213,13 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         ) : null}
         <IconBtn
           icon="fit_screen"
+          title="Fit the whole schema in the window"
+          aria-label="Fit the whole schema in the window"
+          hidden={editing}
+          onClick={fitToWindow}
+        />
+        <IconBtn
+          icon="restart_alt"
           title="Reset view & re-run layout (also straightens edges)"
           aria-label="Reset view, re-run auto-layout, and straighten edges"
           onClick={resetView}

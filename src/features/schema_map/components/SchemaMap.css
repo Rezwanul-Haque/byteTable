@@ -156,7 +156,9 @@
 
 .map-group-name {
   fill: var(--group-color);
-  font-family: var(--ui);
+  /* Mono, like the table names — and like the export, whose PNG rasterizer only
+   * has this face (see export.ts). */
+  font-family: var(--mono);
   font-size: 12px;
   font-weight: 600;
   pointer-events: none;
@@ -184,7 +186,7 @@
   border-radius: 7px;
   background: color-mix(in oklab, var(--group-color) 20%, var(--bg0));
   color: var(--group-color);
-  font-family: var(--ui);
+  font-family: var(--mono);
   font-size: 12px;
   font-weight: 600;
   outline: none;

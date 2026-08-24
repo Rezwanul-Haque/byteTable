@@ -1689,9 +1689,9 @@ const GROUP_HANDLES: { id: ResizeHandle; fx: number; fy: number; cursor: string 
   { id: "w", fx: 0, fy: 0.5, cursor: "ew-resize" },
 ];
 
-/** Rough advance width of the 12px semibold UI face. SVG can't size a rect to
+/** Advance width of one 12px JetBrains Mono character. SVG can't size a rect to
  *  its text, so the title bar is measured from the label instead. */
-const NAME_CHAR_W = 6.9;
+const NAME_CHAR_W = 7.2;
 
 /**
  * One group's frame: a tinted rounded rectangle with a title bar, drawn behind

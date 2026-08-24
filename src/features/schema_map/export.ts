@@ -76,8 +76,11 @@ export function readExportColors(): ExportColors {
   };
 }
 
+// ONE FAMILY, ON PURPOSE. The PNG path rasterizes this SVG with resvg, whose
+// font database is loaded with JetBrains Mono and nothing else — no system fonts
+// are consulted (see `render.rs`). Text in any other family silently vanishes
+// from the PNG, so every <text> here — and the document default — must be MONO.
 const MONO = "JetBrains Mono, ui-monospace, monospace";
-const UI = "IBM Plex Sans, system-ui, sans-serif";
 
 /** XML-escape a text node value. */
 function esc(s: string): string {
@@ -195,7 +198,7 @@ function groupSvg(box: GroupBox): string {
     `width="${Math.max(60, box.name.length * 7.2 + 20)}" height="${GROUP_HEAD_H}" rx="7" ` +
     `fill="${box.color}" fill-opacity="0.16"/>` +
     `<text x="${box.x + 20}" y="${box.y + GROUP_PAD_TOP / 2}" dominant-baseline="central" ` +
-    `font-family="${UI}" font-size="12" font-weight="600" fill="${box.color}">${esc(box.name)}</text>`
+    `font-family="${MONO}" font-size="12" font-weight="600" fill="${box.color}">${esc(box.name)}</text>`
   );
 }
 
@@ -236,7 +239,7 @@ export function buildExportSvg(
     edges.map((e) => edgeSvg(e, colors)).join("") +
     cards.map((c) => cardSvg(c, colors)).join("");
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(b.width)}" height="${Math.round(b.height)}" viewBox="${b.x} ${b.y} ${b.width} ${b.height}" font-family="${UI}">` +
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(b.width)}" height="${Math.round(b.height)}" viewBox="${b.x} ${b.y} ${b.width} ${b.height}" font-family="${MONO}">` +
     `<defs>` +
     (fontCss ? `<style>${fontCss}</style>` : "") +
     // NOTE: no blur filter here — cards use a cheap static offset shadow (see

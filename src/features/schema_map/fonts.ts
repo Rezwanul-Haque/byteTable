@@ -7,8 +7,9 @@
 // export SVG's <defs><style>. Data URIs keep the SVG self-contained, so the
 // canvas stays untainted and PNG export works.
 //
-// WHICH FONTS: the diagram text uses JetBrains Mono (table names, columns,
-// types) and IBM Plex Sans (the SVG's default ui font fallback). We embed
+// WHICH FONTS: the diagram text is all JetBrains Mono (table names, columns,
+// types, group labels); IBM Plex Sans rides along as a fallback for any text
+// that ever asks for the ui face in a standalone SVG. We embed
 // weight 400 + 600 of both, latin subset (the @fontsource "latin" woff2 files,
 // the same ones the app loads). The four ICONS are NOT a font here — they are
 // inline <path> shapes (see icons.ts), so the 5MB Material Symbols font is

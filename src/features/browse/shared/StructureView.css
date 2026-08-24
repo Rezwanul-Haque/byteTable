@@ -62,8 +62,44 @@
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 1fr 348px;
+  /* Rail width is user-resizable (StructureRailResizer) via --struct-rail-w;
+     348px is the default the pane was designed at. */
+  grid-template-columns: 1fr var(--struct-rail-w, 348px);
   gap: 0;
+  /* Anchors the absolutely-positioned resize handle on the seam. */
+  position: relative;
+}
+
+/* Resize handle — a thin strip on the columns/rail seam, sitting at
+   x = width - rail width. Absolute rather than a grid column so the two
+   structure views (SQL, Cassandra) keep their existing two-child markup.
+   Logical insets: the grid mirrors under dir=rtl, so the seam follows the
+   inline end rather than a physical side. */
+.structure-rail-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  inset-inline-end: var(--struct-rail-w, 348px);
+  margin-inline-end: -4px;
+  width: 8px;
+  cursor: col-resize;
+  z-index: 6;
+}
+
+/* The visible 2px line, only tinted on hover / while dragging. */
+.structure-rail-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  inset-inline-start: 3px;
+  width: 2px;
+  background: transparent;
+  transition: background 0.12s;
+}
+.structure-rail-resizer:hover::after,
+body.col-resizing .structure-rail-resizer::after {
+  background: color-mix(in oklab, var(--accent) 55%, transparent);
 }
 
 /* Rail collapsed: the columns pane takes the full width; the rail is hidden
@@ -71,7 +107,9 @@
 .structure-body.rail-collapsed {
   grid-template-columns: 1fr;
 }
-.structure-body.rail-collapsed .structure-rail {
+.structure-body.rail-collapsed .structure-rail,
+/* Nothing to resize while the rail is collapsed. */
+.structure-body.rail-collapsed .structure-rail-resizer {
   display: none;
 }
 .structure-body.rail-collapsed .columns-pane {

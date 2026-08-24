@@ -24,6 +24,7 @@ import {
   type TableDescriptor,
 } from "../api";
 import { cqlColor } from "../cqlTypes";
+import { StructureRailResizer } from "../../shared/StructureRailResizer";
 
 type PendingOp =
   | { kind: "createIndex"; name: string; target: string; cql: string }
@@ -342,6 +343,7 @@ export function CassStructure({
       </div>
 
       <div className="structure-body">
+        <StructureRailResizer />
         <section className="columns-pane">
           <div className="columns-pane-head">
             <h3>

@@ -50,6 +50,7 @@ import { Modal, ModalTitle } from "../../../../shared/ui/Modal";
 import { Select } from "../../../../shared/ui/Select";
 import { useToast } from "../../../../shared/ui/toastContext";
 import "../../shared/StructureView.css";
+import { StructureRailResizer } from "../../shared/StructureRailResizer";
 
 interface StructureViewProps {
   handleId: string;
@@ -559,6 +560,7 @@ export function StructureView({
       </div>
 
       <div className={"structure-body" + (railCollapsed ? " rail-collapsed" : "")}>
+        <StructureRailResizer />
         <section className="columns-pane">
           <div className="columns-pane-head">
             <h3>

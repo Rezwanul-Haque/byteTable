@@ -22,6 +22,10 @@ export interface TabMenuOptions {
   close: (ids: string[]) => void;
   /** Whether a tab may be closed (e.g. a pinned Dashboard cannot). Default: yes. */
   canClose?: (id: string) => boolean;
+  /** Add a "Close all" item. Off by default: on a strip of documents "Close
+   *  others" is the safer sibling of Close, but a strip of disposable output
+   *  (the SQL result tabs) wants to be swept in one go. */
+  closeAll?: boolean;
 }
 
 interface MenuState {
@@ -30,7 +34,7 @@ interface MenuState {
   id: string;
 }
 
-export function useTabMenu({ ids, close, canClose }: TabMenuOptions) {
+export function useTabMenu({ ids, close, canClose, closeAll = false }: TabMenuOptions) {
   const [menu, setMenu] = useState<MenuState | null>(null);
 
   const onContextMenu = (e: ReactMouseEvent, id: string) => {
@@ -61,6 +65,7 @@ export function useTabMenu({ ids, close, canClose }: TabMenuOptions) {
         icon: "clear_all",
         targets: ids.filter((id) => id !== menu.id && ok(id)),
       },
+      ...(closeAll ? [{ label: "Close all", icon: "delete_sweep", targets: ids.filter(ok) }] : []),
       { label: "Close to the right", icon: "last_page", targets: ids.slice(idx + 1).filter(ok) },
       { label: "Close to the left", icon: "first_page", targets: ids.slice(0, idx).filter(ok) },
     ];
@@ -68,9 +73,10 @@ export function useTabMenu({ ids, close, canClose }: TabMenuOptions) {
       if (targets.length) close(targets);
       closeMenu();
     };
-    // Clamp so the menu stays on-screen.
+    // Clamp so the menu stays on-screen — from the item count, since the menu
+    // is a row taller with "Close all".
     const left = Math.min(menu.x, window.innerWidth - 210);
-    const top = Math.min(menu.y, window.innerHeight - 170);
+    const top = Math.min(menu.y, window.innerHeight - (items.length * 34 + 12));
     element = createPortal(
       <>
         <div

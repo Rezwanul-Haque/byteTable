@@ -308,6 +308,9 @@ interface WorkspacesFeatureState {
   setActiveRun: (tabId: string, runId: string) => void;
   /** Close one result tab; if it was focused, focus a neighbour. */
   closeRun: (tabId: string, runId: string) => void;
+  /** Close a set of result tabs at once (the strip's context menu). One update,
+   *  so the focus lands on a survivor rather than hopping per removal. */
+  closeRuns: (tabId: string, runIds: string[]) => void;
   /** Dismiss the results pane: clear all runs (the × button). */
   clearSqlRuns: (tabId: string) => void;
   /** Set the editor-pane height (px) from the editor/results splitter; null
@@ -1075,6 +1078,28 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
           t.activeRunId === runId
             ? ((runs[idx] ?? runs[idx - 1] ?? null)?.id ?? null)
             : t.activeRunId;
+        return { runs, activeRunId };
+      }),
+    })),
+
+  closeRuns: (tabId, runIds) =>
+    set((state) => ({
+      workspaces: patchSqlTab(state, tabId, (t) => {
+        const drop = new Set(runIds);
+        if (drop.size === 0) return {};
+        const runs = t.runs.filter((r) => !drop.has(r.id));
+        // Keep the focused result if it survived; otherwise focus the nearest
+        // survivor to its right, else to its left, else nothing (pane closes).
+        let activeRunId = t.activeRunId;
+        if (activeRunId !== null && drop.has(activeRunId)) {
+          const idx = t.runs.findIndex((r) => r.id === activeRunId);
+          const after = t.runs.slice(idx + 1).find((r) => !drop.has(r.id));
+          const before = t.runs
+            .slice(0, idx)
+            .reverse()
+            .find((r) => !drop.has(r.id));
+          activeRunId = (after ?? before)?.id ?? null;
+        }
         return { runs, activeRunId };
       }),
     })),

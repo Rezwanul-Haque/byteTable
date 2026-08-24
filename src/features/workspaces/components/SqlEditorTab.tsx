@@ -31,6 +31,7 @@ import type { Engine } from "../../../shared/types";
 import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
+import { useTabMenu } from "../../../shared/ui/useTabMenu";
 import { useToast } from "../../../shared/ui/toastContext";
 import { columnsKey, tablesKey, useIntrospectionStore } from "../../introspection/state";
 import { type SavedQuery } from "../../saved_queries/api";
@@ -162,6 +163,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   const setSqlRuns = useWorkspacesStore((s) => s.setSqlRuns);
   const setActiveRun = useWorkspacesStore((s) => s.setActiveRun);
   const closeRun = useWorkspacesStore((s) => s.closeRun);
+  const closeRuns = useWorkspacesStore((s) => s.closeRuns);
   const pushSqlHistory = useWorkspacesStore((s) => s.pushSqlHistory);
 
   const clearSqlRuns = useWorkspacesStore((s) => s.clearSqlRuns);
@@ -557,6 +559,14 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   // The focused result tab; its result/error drive the body below (falls back
   // to the first run if the active id is stale).
   const activeRun = runs.find((r) => r.id === activeRunId) ?? runs[0] ?? null;
+  // Right-click menu on the result tabs — the same one the workspace tab strip
+  // and the NoSQL shells use, plus "Close all": a result tab is disposable
+  // output, so sweeping the lot is a normal thing to want after a batch run.
+  const resultMenu = useTabMenu({
+    ids: runs.map((r) => r.id),
+    close: (ids) => closeRuns(tab.id, ids),
+    closeAll: true,
+  });
   const result = activeRun?.result ?? null;
   const error = activeRun?.error ?? null;
 
@@ -748,6 +758,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
                     key={r.id}
                     className={"sqlres-tab" + (active ? " active" : "")}
                     onClick={() => setActiveRun(tab.id, r.id)}
+                    onContextMenu={(e) => resultMenu.onContextMenu(e, r.id)}
                     title={r.sql}
                   >
                     <Icon
@@ -771,6 +782,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
                   </div>
                 );
               })}
+              {resultMenu.element}
             </div>
           ) : null}
           {view === "explain" ? (

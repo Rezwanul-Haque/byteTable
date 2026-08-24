@@ -615,10 +615,15 @@ export function buildDynamoModel(
           }
         }),
       );
-      const attrs = order.filter(
-        (k) => k !== pkN && k !== skN && k !== "entity" && !gsiKeys.has(k),
-      );
-      const refKeys = order.filter((k) => k !== pkN && k !== skN && k !== "entity");
+      // Sorted, not first-seen: a scan returns items in no guaranteed order, so
+      // taking the sample's order made a card's attribute list reshuffle on
+      // every re-sample. Alphabetical matches how the item grid and drawer list
+      // non-key attributes (see `orderAttributes`), and keeps the MAX_ATTRS the
+      // map shows stable between refreshes.
+      const attrs = order
+        .filter((k) => k !== pkN && k !== skN && k !== "entity" && !gsiKeys.has(k))
+        .sort();
+      const refKeys = order.filter((k) => k !== pkN && k !== skN && k !== "entity").sort();
       entities.push({
         id: t.name + "::" + ename,
         table: t.name,

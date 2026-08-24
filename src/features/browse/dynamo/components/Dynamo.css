@@ -1366,6 +1366,15 @@
   overflow: auto;
   background: var(--bg0);
   position: relative;
+  /* Dot grid (22px), as on the relational schema map. `local` attachment keeps
+   * the dots under the cards as the canvas scrolls; the tile size is set inline
+   * from the zoom level. */
+  background-image: radial-gradient(
+    color-mix(in oklab, var(--border) 70%, transparent) 1px,
+    transparent 1px
+  );
+  background-size: 22px 22px;
+  background-attachment: local;
 }
 .ddb-map-canvas {
   position: relative;

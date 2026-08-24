@@ -57,13 +57,33 @@ export function DynamoSchemaMap({ handleId, tables, onOpenTable }: DynamoSchemaM
     return () => window.removeEventListener("click", close);
   }, [exportMenuOpen]);
 
+  // The auto-sync poll hands us a fresh `tables` array every tick, which would
+  // otherwise re-scan every table and re-seed the layout on a timer. Rebuild
+  // only when the tables actually differ in the ways the map draws: which
+  // tables exist, their key schema, and their indexes.
+  const tablesSig = useMemo(
+    () =>
+      tables
+        .map(
+          (t) =>
+            `${t.name}|${t.keySchema.pk}/${t.keySchema.sk ?? ""}|` +
+            t.gsis.map((g) => `${g.name}:${g.pk}/${g.sk ?? ""}`).join(","),
+        )
+        .join("\n"),
+    [tables],
+  );
+  // Read through a ref so the effect can use the live descriptors without
+  // taking the array's identity as a dependency.
+  const tablesRef = useRef(tables);
+  tablesRef.current = tables;
+
   // Sample items per table (bounded), then build the model once.
   useEffect(() => {
     let alive = true;
     void (async () => {
       try {
         const sampled = await Promise.all(
-          tables.map(async (t) => {
+          tablesRef.current.map(async (t) => {
             let items: DynamoItem[] = [];
             try {
               const page = await dynamoScan(handleId, t.name, { limit: SAMPLE_LIMIT });
@@ -77,12 +97,15 @@ export function DynamoSchemaMap({ handleId, tables, onOpenTable }: DynamoSchemaM
         if (!alive) return;
         const m = buildDynamoModel(sampled);
         setModel(m);
-        // Seed initial positions in a grid.
-        const p: Record<string, { x: number; y: number }> = {};
-        m.entities.forEach((e, i) => {
-          p[e.id] = { x: 70 + (i % 3) * 400, y: 80 + Math.floor(i / 3) * 380 };
+        // Seed a grid slot for entities we have not placed yet, and leave every
+        // card the user has already dragged exactly where they put it.
+        setPositions((prev) => {
+          const next = { ...prev };
+          m.entities.forEach((e, i) => {
+            next[e.id] ??= { x: 70 + (i % 3) * 400, y: 80 + Math.floor(i / 3) * 380 };
+          });
+          return next;
         });
-        setPositions(p);
       } catch (e) {
         if (alive) setError(isAppErrorPayload(e) ? e.message : "Could not build the schema map");
       }
@@ -90,7 +113,7 @@ export function DynamoSchemaMap({ handleId, tables, onOpenTable }: DynamoSchemaM
     return () => {
       alive = false;
     };
-  }, [handleId, tables]);
+  }, [handleId, tablesSig]);
 
   const byId = useMemo(() => {
     const m: Record<string, DynamoEntity> = {};
@@ -284,7 +307,12 @@ export function DynamoSchemaMap({ handleId, tables, onOpenTable }: DynamoSchemaM
           ) : null}
         </div>
       </div>
-      <div className="ddb-map-canvas-wrap">
+      <div
+        className="ddb-map-canvas-wrap"
+        // Grid tile scales with zoom so the dots sit under the cards at any
+        // zoom level (matches the relational schema map).
+        style={{ backgroundSize: `${22 * zoom}px ${22 * zoom}px` }}
+      >
         <div
           className="ddb-map-canvas"
           style={{ width: (maxX + 120) * zoom, height: (maxY + 120) * zoom }}

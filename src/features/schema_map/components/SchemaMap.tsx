@@ -70,16 +70,19 @@ import { useSchemaMapStore } from "../state";
 import {
   autoLayout,
   buildEdges,
+  cardHeight,
   cardModel,
   CARD_PAD_T,
   CARD_W,
   contentBounds,
   contentExtent,
+  placeNewCards,
   crowFoot,
   HEAD_H,
   ROW_H,
   type CardModel,
   type EdgeModel,
+  type Occupied,
   type Waypoint,
 } from "../diagram";
 import {
@@ -88,6 +91,7 @@ import {
   GROUP_COLORS,
   rectAroundCards,
   resizeRect,
+  relayoutWithGroups,
   scopeToGroup,
   GROUP_HEAD_H,
   GROUP_PAD_TOP,
@@ -432,7 +436,6 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
     void (async () => {
       const layout = await loadLayout(connectionId, schema);
       if (cancelled) return;
-      const auto = autoLayout(Object.keys(metas), metas);
       if (layout && layout.positions.length > 0) {
         const saved: Positions = {};
         const savedWidths: Widths = {};
@@ -442,10 +445,33 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
           // against a stale/out-of-range value in the JSON.
           if (typeof p.w === "number" && metas[p.table]) savedWidths[p.table] = clampCardW(p.w);
         }
-        // Merge: saved positions win; any table missing a saved position
-        // (schema gained a table since the save) falls back to auto-layout.
-        const merged: Positions = { ...auto };
-        for (const t of Object.keys(metas)) if (saved[t]) merged[t] = saved[t];
+        // Merge: saved positions win. Tables the layout has never seen (the
+        // schema gained some since the last save) are packed into free space
+        // below the whole arrangement — NOT at their auto-layout coordinates,
+        // which are computed for the schema from scratch and would drop the new
+        // cards on top of wherever the user dragged the existing ones.
+        const live = Object.keys(metas);
+        const merged: Positions = {};
+        for (const t of live) if (saved[t]) merged[t] = saved[t];
+        const fresh = live.filter((t) => !merged[t]);
+        if (fresh.length > 0) {
+          const occupied: Occupied[] = live
+            .filter((t) => merged[t])
+            .map((t) => {
+              const p = merged[t] as { x: number; y: number };
+              const meta = metas[t] as TableMeta;
+              return {
+                x: p.x,
+                y: p.y,
+                w: savedWidths[t] ?? CARD_W,
+                h: cardHeight(meta),
+              };
+            });
+          // Group frames count as occupied too, so new tables land clear of
+          // them rather than silently joining a group they were never in.
+          for (const g of layout.groups ?? []) if (g.rect) occupied.push(g.rect);
+          Object.assign(merged, placeNewCards(fresh, metas, occupied, savedWidths));
+        }
         setPositions(merged);
         setWidths(savedWidths);
         const wp: Record<string, Waypoint> = {};
@@ -457,7 +483,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         setGroups(layout.groups ?? []);
         if (typeof layout.zoom === "number") setZoom(clampZoom(layout.zoom));
       } else {
-        setPositions(auto);
+        setPositions(autoLayout(Object.keys(metas), metas));
         setWidths({});
         setWaypoints({});
         setOverrides({});
@@ -1045,7 +1071,21 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
       requestAnimationFrame(() => wrapRef.current?.scrollTo({ left: 0, top: 0 }));
       return;
     }
-    setPositions(auto);
+    // With frames on the canvas, a plain auto-layout would lay the whole schema
+    // out from the origin — straight into whichever frame sits there, which
+    // hands every table in the schema to that one group. Tidy each frame's own
+    // tables inside it instead, and put the ungrouped ones in a band below.
+    let next = auto;
+    if (boxes.length > 0) {
+      const relaid = relayoutWithGroups(tables, metas, boxes);
+      next = relaid.positions;
+      const regrouped = groups.map((g) =>
+        relaid.rects[g.id] ? { ...g, rect: relaid.rects[g.id], tables: undefined } : g,
+      );
+      groupsRef.current = regrouped;
+      setGroups(regrouped);
+    }
+    setPositions(next);
     setZoom(1);
     setPan({ x: 0, y: 0 });
     // Full reset to the initial state: re-run auto-layout, straighten every edge
@@ -1056,7 +1096,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
     setWaypoints({});
     widthsRef.current = {};
     setWidths({});
-    persist(auto, 1);
+    persist(next, 1);
   };
 
   // Reset only the bezier curves: straighten every edge back to its default

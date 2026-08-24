@@ -13,7 +13,8 @@
 // overlapping frames never both claim a card and an export scope stays
 // unambiguous.
 
-import type { CardModel, EdgeModel } from "./diagram";
+import { autoLayout, cardHeight, CARD_W, type CardModel, type EdgeModel } from "./diagram";
+import type { TableMeta } from "../../shared/api/engine";
 
 /** A group's frame in world coords. */
 export interface GroupRect {
@@ -237,4 +238,116 @@ export function scopeToGroup(
     edges: edges.filter((e) => inside.has(e.childTable) && inside.has(e.refTable)),
     groups: [box],
   };
+}
+
+/** Bounding box of a set of laid-out cards, at default card width. */
+function spanOf(
+  positions: Record<string, { x: number; y: number }>,
+  metas: Record<string, TableMeta>,
+): { x: number; y: number; w: number; h: number } {
+  const entries = Object.entries(positions);
+  if (entries.length === 0) return { x: 0, y: 0, w: 0, h: 0 };
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const [table, p] of entries) {
+    const meta = metas[table];
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x + CARD_W);
+    maxY = Math.max(maxY, p.y + (meta ? cardHeight(meta) : 0));
+  }
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
+/** Gap between frames, and between the frames and the ungrouped band. */
+const RESET_GAP = 80;
+/** Frames flow left-to-right on reset and wrap past roughly this width. */
+const RESET_WRAP_W = 3200;
+
+/**
+ * Re-run auto-layout WITHOUT dissolving the groups: each frame's current
+ * members are tidied inside that frame, the frame is resized to hold them, and
+ * tables belonging to no frame are laid out in a band underneath.
+ *
+ * Plain `autoLayout` knows nothing about frames — it lays the whole schema out
+ * from the origin, so on a map with a frame near the origin every table in the
+ * schema lands inside it and the group swallows the diagram. Membership here is
+ * whatever each frame holds *now* (resolved by the caller from the live cards),
+ * so a reset rearranges the diagram without changing who belongs to what.
+ *
+ * Frames themselves are re-flowed left-to-right in their existing reading
+ * order, which is what stops a frame that grew to fit its contents from
+ * overlapping its neighbour — and an overlap would silently move cards between
+ * groups, since membership is spatial.
+ */
+export function relayoutWithGroups(
+  tables: string[],
+  metas: Record<string, TableMeta>,
+  boxes: GroupBox[],
+): { positions: Record<string, { x: number; y: number }>; rects: Record<string, GroupRect> } {
+  const live = new Set(tables);
+  const positions: Record<string, { x: number; y: number }> = {};
+  const rects: Record<string, GroupRect> = {};
+
+  // Reading order, so the reset keeps the arrangement recognisable.
+  const ordered = [...boxes].sort((a, b) => a.y - b.y || a.x - b.x);
+  const startX = ordered.length > 0 ? Math.min(...ordered.map((b) => b.x)) : 40;
+  const startY = ordered.length > 0 ? Math.min(...ordered.map((b) => b.y)) : 40;
+
+  let cursorX = startX;
+  let cursorY = startY;
+  let rowH = 0;
+
+  for (const box of ordered) {
+    // Sorted before layout: `autoLayout` falls back to input order for a set
+    // with no in-schema foreign keys, and a reset must not depend on the order
+    // the caller happened to hand us the tables in.
+    const members = box.tables.filter((t) => live.has(t)).sort((a, b) => a.localeCompare(b));
+    let rect: GroupRect;
+    if (members.length === 0) {
+      // Nothing to tidy — an empty frame keeps its size and just takes its turn
+      // in the flow.
+      rect = clampRect({ x: cursorX, y: cursorY, w: box.w, h: box.h });
+    } else {
+      const local = autoLayout(members, metas);
+      const span = spanOf(local, metas);
+      const originX = cursorX + GROUP_PAD;
+      const originY = cursorY + GROUP_PAD_TOP;
+      for (const [table, p] of Object.entries(local)) {
+        positions[table] = { x: originX + (p.x - span.x), y: originY + (p.y - span.y) };
+      }
+      rect = clampRect({
+        x: cursorX,
+        y: cursorY,
+        w: span.w + 2 * GROUP_PAD,
+        h: span.h + GROUP_PAD_TOP + GROUP_PAD,
+      });
+    }
+    rects[box.id] = rect;
+    rowH = Math.max(rowH, rect.h);
+    cursorX += rect.w + RESET_GAP;
+    if (cursorX > startX + RESET_WRAP_W) {
+      cursorX = startX;
+      cursorY += rowH + RESET_GAP;
+      rowH = 0;
+    }
+  }
+
+  // Everything in no frame goes in a band below every frame.
+  const grouped = new Set(Object.keys(positions));
+  const loose = tables.filter((t) => !grouped.has(t)).sort((a, b) => a.localeCompare(b));
+  if (loose.length > 0) {
+    const local = autoLayout(loose, metas);
+    const span = spanOf(local, metas);
+    const below = Object.values(rects).reduce((m, r) => Math.max(m, r.y + r.h), startY - RESET_GAP);
+    const originX = startX;
+    const originY = below + RESET_GAP;
+    for (const [table, p] of Object.entries(local)) {
+      positions[table] = { x: originX + (p.x - span.x), y: originY + (p.y - span.y) };
+    }
+  }
+
+  return { positions, rects };
 }

@@ -210,6 +210,74 @@ export function autoLayout(
   return pos;
 }
 
+/** A rectangle in world coords — a placed card or a group frame. */
+export interface Occupied {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * Positions for tables the saved layout has never seen, packed into free space
+ * BELOW everything already on the canvas.
+ *
+ * Why not auto-layout them: auto-layout computes coordinates for the whole
+ * schema from scratch, so its idea of where a table goes has nothing to do with
+ * where the user dragged the rest. Mixing the two coordinate systems drops new
+ * cards on top of existing ones — which is exactly what a schema gaining ten
+ * tables used to look like.
+ *
+ * New cards are laid left-to-right in rows under the occupied bounds, wrapping
+ * at its width, sorted by name so a re-open is stable. Grouping them together
+ * below also keeps them out of any group frame that wraps the old arrangement.
+ */
+export function placeNewCards(
+  newTables: string[],
+  metas: Record<string, TableMeta>,
+  occupied: Occupied[],
+  widths: Record<string, number> = {},
+): Record<string, { x: number; y: number }> {
+  const pos: Record<string, { x: number; y: number }> = {};
+  if (newTables.length === 0) return pos;
+
+  const COL_GAP = 96;
+  const ROW_GAP = 40;
+  const BAND_GAP = 80; // clearance between the old arrangement and the new band
+
+  let left = 40;
+  let top = 40;
+  let right = left + 3 * (CARD_W + COL_GAP); // fallback width on an empty canvas
+  if (occupied.length > 0) {
+    left = Math.min(...occupied.map((o) => o.x));
+    right = Math.max(...occupied.map((o) => o.x + o.w));
+    top = Math.max(...occupied.map((o) => o.y + o.h)) + BAND_GAP;
+  }
+  // Always leave room for a few columns, however narrow the existing layout is.
+  const wrapAt = Math.max(right, left + 3 * (CARD_W + COL_GAP));
+
+  let x = left;
+  let y = top;
+  let rowH = 0;
+  for (const t of [...newTables].sort((a, b) => a.localeCompare(b))) {
+    const meta = metas[t];
+    if (!meta) continue;
+    const w = widths[t] ?? CARD_W;
+    const h = cardHeight(meta);
+    // Wrap to the next row once this card would cross the right edge (never on
+    // the first card of a row, or a card wider than the band would loop).
+    if (x > left && x + w > wrapAt) {
+      x = left;
+      y += rowH + ROW_GAP;
+      rowH = 0;
+    }
+    pos[t] = { x, y };
+    x += w + COL_GAP;
+    rowH = Math.max(rowH, h);
+  }
+  return pos;
+}
+
 /** A movable edge's midpoint offset (relative to the live midpoint). */
 export interface Waypoint {
   dx: number;

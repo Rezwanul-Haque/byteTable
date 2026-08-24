@@ -601,10 +601,9 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
       right = Math.max(right, g.x + g.w + FIT_PAD);
       bottom = Math.max(bottom, g.y + g.h + FIT_PAD);
     }
-    // The SVG's own box starts at the origin, so nothing left/above it is
-    // reachable — clamp rather than promise a view that would be clipped.
-    left = Math.max(0, left);
-    top = Math.max(0, top);
+    // Deliberately NOT clamped to the origin: a frame parked at x=0 has its
+    // padding at a negative coordinate, and fit-to-window restores that with a
+    // pan (scroll cannot go below zero).
     return { x: left, y: top, width: right - left, height: bottom - top };
   }, [cards, boxes]);
 
@@ -974,15 +973,18 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
     // Floor to 1% so rounding can never leave the content a hair too big.
     const z = Math.min(ZOOM_MAX, Math.max(FIT_ZOOM_MIN, Math.floor(raw * 100) / 100));
     setZoom(z);
-    // Positioning is by scroll, not pan: the SVG is sized to the whole extent,
-    // so a pan offset would push content outside its box and clip it.
-    setPan({ x: 0, y: 0 });
+    // Where the framed content should sit: centred in whatever slack is left
+    // over. Scrolling gets it there when the content starts far enough into the
+    // canvas; when it doesn't (content near the origin, or a viewport wider than
+    // the diagram) scroll would have to go negative, so the shortfall becomes a
+    // pan instead — which is what keeps the left and top gaps equal to the right
+    // and bottom ones.
+    const wantX = contentBox.x * z - Math.max(0, (vw - contentBox.width * z) / 2);
+    const wantY = contentBox.y * z - Math.max(0, (vh - contentBox.height * z) / 2);
+    setPan({ x: Math.max(0, -wantX), y: Math.max(0, -wantY) });
     if (positions) persist(positions, z);
     requestAnimationFrame(() =>
-      wrap.scrollTo({
-        left: Math.max(0, contentBox.x * z - Math.max(0, (vw - contentBox.width * z) / 2)),
-        top: Math.max(0, contentBox.y * z - Math.max(0, (vh - contentBox.height * z) / 2)),
-      }),
+      wrap.scrollTo({ left: Math.max(0, wantX), top: Math.max(0, wantY) }),
     );
   };
 

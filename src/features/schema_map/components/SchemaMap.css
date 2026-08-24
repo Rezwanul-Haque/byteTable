@@ -58,16 +58,18 @@
     transparent 1px
   );
   background-size: 22px 22px;
+  /* `local` so the dots travel with the content as the canvas scrolls. */
+  background-attachment: local;
 }
 
 .map-svg {
-  position: absolute;
-  top: 0;
-  left: 0;
+  /* IN FLOW, deliberately: the SVG is the scrollable content. It used to be
+     absolutely positioned with a hidden spacer div reserving the scroll room
+     beside it — two boxes that had to agree on a size, and did not once a pan
+     offset entered the picture. min-* keeps it filling the wrap when the schema
+     is smaller than the viewport. */
+  position: relative;
   display: block;
-  /* The SVG is sized to the scaled content extent (inline width/height) so it
-     covers every card instead of clipping at the viewport. min-* keeps it
-     filling the wrap when the schema is smaller than the viewport. */
   min-width: 100%;
   min-height: 100%;
   /* Empty-canvas drag = pan; cards stop propagation so they drag instead. */
@@ -90,12 +92,6 @@
 .map-svg.is-picking,
 .map-svg.is-picking:active {
   cursor: crosshair;
-}
-
-/* Invisible spacer that reserves scroll room for large/spread layouts. */
-.map-extent {
-  pointer-events: none;
-  visibility: hidden;
 }
 
 /* ---------- pan/zoom easing ---------- */

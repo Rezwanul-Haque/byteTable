@@ -223,7 +223,19 @@ type Drag =
       origDy: number;
       moved: boolean;
     }
-  | { kind: "pan"; startX: number; startY: number; origPanX: number; origPanY: number };
+  | {
+      /** Canvas drag = scroll. The diagram used to move under an SVG transform
+       *  instead, inside a box that never grew to match: drag toward the far
+       *  side and the content slid out past the SVG's own viewport, which clips
+       *  it, while the scrollable width stayed put so scrolling could not reach
+       *  it either. Scrolling is the one navigation that cannot leave content
+       *  outside the box. */
+      kind: "pan";
+      startX: number;
+      startY: number;
+      origScrollLeft: number;
+      origScrollTop: number;
+    };
 
 /** Width of a frame's grab band — the strip along each edge (and the square at
  *  each corner) that starts a resize instead of falling through to the canvas.
@@ -298,6 +310,10 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
   // User-resized read-mode card widths by table (empty = all default width).
   const [widths, setWidths] = useState<Widths>({});
   const [zoom, setZoom] = useState(1);
+  // A NON-NEGATIVE layout offset, not a free pan: fit-to-window uses it to
+  // centre content that is smaller than the viewport (scrolling alone cannot,
+  // since scroll stops at zero). The canvas is sized to include it, so content
+  // is always inside the box and always reachable by scrolling.
   const [pan, setPan] = useState({ x: 0, y: 0 });
   // Movable-edge waypoints: a {dx,dy} offset per edge id, applied to the live
   // midpoint so a bend follows the connected cards. Empty = all edges straight.
@@ -865,12 +881,13 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
       return;
     }
     setSelected([]);
+    const wrap = wrapRef.current;
     dragRef.current = {
       kind: "pan",
       startX: e.clientX,
       startY: e.clientY,
-      origPanX: pan.x,
-      origPanY: pan.y,
+      origScrollLeft: wrap?.scrollLeft ?? 0,
+      origScrollTop: wrap?.scrollTop ?? 0,
     };
   };
 
@@ -949,7 +966,12 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
       d.moved = true;
       setWaypoints((prev) => ({ ...prev, [d.id]: { dx, dy } }));
     } else {
-      setPan({ x: d.origPanX + (e.clientX - d.startX), y: d.origPanY + (e.clientY - d.startY) });
+      // Drag right → content moves right → scroll left decreases.
+      const wrap = wrapRef.current;
+      if (wrap) {
+        wrap.scrollLeft = d.origScrollLeft - (e.clientX - d.startX);
+        wrap.scrollTop = d.origScrollTop - (e.clientY - d.startY);
+      }
     }
   };
 
@@ -1092,6 +1114,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
     setPositions(next);
     setZoom(1);
     setPan({ x: 0, y: 0 });
+    requestAnimationFrame(() => wrapRef.current?.scrollTo({ left: 0, top: 0 }));
     // Full reset to the initial state: re-run auto-layout, straighten every edge
     // (clear all bezier waypoints), AND drop custom card widths back to default.
     // The refs are cleared first so the debounced persist below writes the empty
@@ -1417,8 +1440,11 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
               // laid out beyond the visible area aren't clipped by the SVG's own box
               // — the wrap then scrolls to reach them. min-width/height:100% (CSS)
               // keeps it filling the viewport when the schema is small.
-              width={extent.width * zoom}
-              height={extent.height * zoom}
+              // The offset is part of the canvas: content translated by it must
+              // still fall inside the box, or the SVG clips what scrolling would
+              // otherwise reach.
+              width={extent.width * zoom + pan.x}
+              height={extent.height * zoom + pan.y}
               onPointerDown={onCanvasPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={endDrag}
@@ -1514,12 +1540,6 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
                 ) : null}
               </g>
             </svg>
-            {/* Off-screen spacer matching the scaled SVG, so the wrap reserves the
-            same scroll room at any zoom level. */}
-            <div
-              className="map-extent"
-              style={{ width: extent.width * zoom, height: extent.height * zoom }}
-            />
           </>
         )}
       </div>

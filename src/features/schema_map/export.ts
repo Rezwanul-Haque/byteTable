@@ -25,6 +25,7 @@
 // canvas.toBlob('image/png') succeeds. This is why Task 2 chose SVG-native.
 
 import { HEAD_H, ROW_H, contentBounds, crowFoot, type CardModel, type EdgeModel } from "./diagram";
+import { GROUP_HEAD_H, GROUP_PAD_TOP, type GroupBox } from "./groups";
 import { ICON_KEY, ICON_LINK, ICON_OPEN, ICON_TABLE, type IconPath } from "./icons";
 import { embeddedFontFaceCss } from "./fonts";
 
@@ -184,22 +185,56 @@ function edgeSvg(edge: EdgeModel, c: ExportColors): string {
   );
 }
 
+/** One group frame → SVG markup: tinted box, coloured border, title bar. The
+ *  frame's colour is baked into the group itself, so no theme tokens apply. */
+function groupSvg(box: GroupBox): string {
+  return (
+    `<rect x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" rx="14" ` +
+    `fill="${box.color}" fill-opacity="0.06" stroke="${box.color}" stroke-opacity="0.55" stroke-width="1.5"/>` +
+    `<rect x="${box.x + 10}" y="${box.y + (GROUP_PAD_TOP - GROUP_HEAD_H) / 2}" ` +
+    `width="${Math.max(60, box.name.length * 7.2 + 20)}" height="${GROUP_HEAD_H}" rx="7" ` +
+    `fill="${box.color}" fill-opacity="0.16"/>` +
+    `<text x="${box.x + 20}" y="${box.y + GROUP_PAD_TOP / 2}" dominant-baseline="central" ` +
+    `font-family="${UI}" font-size="12" font-weight="600" fill="${box.color}">${esc(box.name)}</text>`
+  );
+}
+
 /**
- * Build the standalone export SVG string for the whole diagram. `fontCss` is
- * the embedded @font-face block (data: URIs); pass "" to fall back to system
- * fonts (last-resort — text drifts but still renders). Edges carry crow's-foot
+ * Build the standalone export SVG string for the diagram. `fontCss` is the
+ * embedded @font-face block (data: URIs); pass "" to fall back to system fonts
+ * (last-resort — text drifts but still renders). Edges carry crow's-foot
  * cardinality markers at each end, matching the live canvas.
+ *
+ * `groups` paints the named frames behind the cards. Exporting a single group
+ * is just passing that group's cards/edges/frame — the framing bounding box
+ * follows the cards handed in, so no separate crop step is needed (see
+ * `scopeToGroup`).
  */
 export function buildExportSvg(
   cards: CardModel[],
   edges: EdgeModel[],
   colors: ExportColors,
   fontCss: string,
+  groups: GroupBox[] = [],
 ): string {
-  const b = contentBounds(cards, 48);
+  // Frame from the cards, then widen to hold every group frame — a frame the
+  // user has stretched beyond its cards must not be cropped out of the export.
+  const cb = contentBounds(cards, 48);
+  const b = groups.reduce(
+    (acc, g) => {
+      const x = Math.min(acc.x, g.x - 24);
+      const y = Math.min(acc.y, g.y - 24);
+      const right = Math.max(acc.x + acc.width, g.x + g.w + 24);
+      const bottom = Math.max(acc.y + acc.height, g.y + g.h + 24);
+      return { x, y, width: right - x, height: bottom - y };
+    },
+    { ...cb },
+  );
   const GRID = 22;
   const body =
-    edges.map((e) => edgeSvg(e, colors)).join("") + cards.map((c) => cardSvg(c, colors)).join("");
+    groups.map((g) => groupSvg(g)).join("") +
+    edges.map((e) => edgeSvg(e, colors)).join("") +
+    cards.map((c) => cardSvg(c, colors)).join("");
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(b.width)}" height="${Math.round(b.height)}" viewBox="${b.x} ${b.y} ${b.width} ${b.height}" font-family="${UI}">` +
     `<defs>` +

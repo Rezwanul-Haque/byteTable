@@ -56,6 +56,23 @@ export interface EdgeCardinality {
 }
 
 /**
+ * A named rectangle framing part of the map. The frame is what's stored; the
+ * tables inside it are resolved from the layout on every render (see
+ * `groups.ts`). Mirrors Rust's `TableGroup`.
+ */
+export interface TableGroup {
+  id: string;
+  name: string;
+  /** The frame in diagram coords. Absent only in a layout written before frames
+   *  were storable, where `tables` seeds one instead. */
+  rect?: { x: number; y: number; w: number; h: number };
+  /** Legacy member list from that early format; never written back. */
+  tables?: string[];
+  /** Literal frame colour, baked at creation so the export matches the canvas. */
+  color?: string;
+}
+
+/**
  * The full saved layout for one (connectionId, schema). Mirrors Rust's
  * `MapLayout`: `positions` / `edges` are always present (possibly empty);
  * `zoom` is omitted from the wire when never set, so it arrives `undefined` —
@@ -66,6 +83,8 @@ export interface MapLayout {
   edges: EdgeWaypoint[];
   /** Manual cardinality overrides, keyed by edge id. Omitted/empty = all auto. */
   cardinalities?: EdgeCardinality[];
+  /** Table groups (named frames). Omitted/empty = an ungrouped diagram. */
+  groups?: TableGroup[];
   zoom?: number | null;
 }
 

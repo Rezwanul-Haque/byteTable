@@ -79,6 +79,13 @@
   cursor: grabbing;
 }
 
+/* Picking mode (toolbar select button, or shift held): a canvas drag sweeps a
+ * selection box rather than panning. */
+.map-svg.is-picking,
+.map-svg.is-picking:active {
+  cursor: crosshair;
+}
+
 /* Invisible spacer that reserves scroll room for large/spread layouts. */
 .map-extent {
   pointer-events: none;
@@ -91,6 +98,109 @@
  * §1.6 motion 100–150ms). */
 .map-eased {
   transition: transform 130ms ease;
+}
+
+/* ---------- table groups (named frames) ---------- */
+/* Each frame carries its own hue in --group-color (set inline from the group's
+ * baked palette colour), so one rule set covers every group. Everything here is
+ * SVG: a foreignObject header broke under WebKit (see GroupFrame's note). */
+.map-group-box {
+  fill: var(--group-color);
+  fill-opacity: 0.06;
+  stroke: var(--group-color);
+  stroke-opacity: 0.55;
+  stroke-width: 1.5;
+  /* The interior is a backdrop: never swallow a pan or a click aimed at a card
+   * inside it. Interaction lives on the title bar and the edge grips. */
+  pointer-events: none;
+  transition:
+    fill-opacity 120ms ease,
+    stroke-opacity 120ms ease;
+}
+
+.map-group.is-selected .map-group-box {
+  fill-opacity: 0.1;
+  stroke-opacity: 1;
+  stroke-width: 2;
+}
+
+/* Invisible grab bands along the border — resize from any edge or corner. */
+.map-group-grip {
+  fill: transparent;
+  pointer-events: fill;
+}
+
+/* Corner pips (selected frames only) so the grips are visible affordances. */
+.map-group-pip {
+  fill: var(--bg0);
+  stroke: var(--group-color);
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+
+.map-group-head {
+  fill: color-mix(in oklab, var(--group-color) 16%, var(--bg0));
+  stroke: color-mix(in oklab, var(--group-color) 45%, transparent);
+  stroke-width: 1;
+  cursor: grab;
+}
+
+.map-group-head:active {
+  cursor: grabbing;
+}
+
+.map-group.is-selected .map-group-head {
+  fill: color-mix(in oklab, var(--group-color) 26%, var(--bg0));
+  stroke: var(--group-color);
+}
+
+.map-group-name {
+  fill: var(--group-color);
+  font-family: var(--ui);
+  font-size: 12px;
+  font-weight: 600;
+  pointer-events: none;
+  user-select: none;
+}
+
+.map-group-count {
+  fill: color-mix(in oklab, var(--group-color) 70%, var(--text-faint));
+  font-family: var(--mono);
+  font-size: 10px;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* The one piece of HTML left in a frame: the inline rename box, open only while
+ * renaming. It stands in for the title bar, so it wears the same colours and
+ * fills the same box. Nothing in here may set opacity — that is what strands
+ * foreignObject content in the canvas corner under WebKit. */
+.map-group-input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 0 9px;
+  border: 1px solid var(--group-color);
+  border-radius: 7px;
+  background: color-mix(in oklab, var(--group-color) 20%, var(--bg0));
+  color: var(--group-color);
+  font-family: var(--ui);
+  font-size: 12px;
+  font-weight: 600;
+  outline: none;
+}
+
+.map-group-input::selection {
+  background: color-mix(in oklab, var(--group-color) 45%, transparent);
+}
+
+/* Rubber-band selection rectangle. */
+.map-marquee {
+  fill: color-mix(in oklab, var(--accent) 12%, transparent);
+  stroke: var(--accent);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
 }
 
 /* ---------- edges ---------- */
@@ -236,6 +346,13 @@
 
 .map-card:hover .map-card-box {
   stroke: color-mix(in oklab, var(--accent) 55%, var(--border));
+}
+
+/* Picked for grouping (shift-click / marquee) — a full accent outline so a
+ * selection reads at a glance across a big diagram. */
+.map-card.is-selected .map-card-box {
+  stroke: var(--accent);
+  stroke-width: 2;
 }
 
 .map-card-head {
@@ -399,6 +516,137 @@
 }
 
 .map-export-item .msym {
+  color: var(--text-dim);
+}
+
+/* ---------- export scope picker (whole diagram vs one group) ---------- */
+.map-export-head {
+  padding: 4px 9px 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.map-export-scope {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 9px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--ui);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 110ms ease;
+}
+
+.map-export-scope:hover {
+  background: var(--bg3);
+}
+
+.map-export-scope.active {
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+  color: var(--text);
+}
+
+.map-export-scope-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-export-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  flex: none;
+}
+
+/* "Full diagram" has no group colour — mark it with the accent outline. */
+.map-export-swatch.is-full {
+  background: transparent;
+  border: 1.5px solid var(--accent);
+}
+
+.map-export-n {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.map-export-sep {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--border);
+}
+
+/* ---------- grouping bar (floats over the canvas while tables are picked) --- */
+.map-selection {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 32px);
+  padding: 7px 10px;
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--bg1) 96%, transparent);
+  border: 1px solid var(--border);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.45);
+}
+
+.map-sel-count {
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.map-sel-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg2);
+  color: var(--text);
+  font-family: var(--ui);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 110ms ease,
+    border-color 110ms ease;
+}
+
+.map-sel-btn:hover {
+  background: var(--bg3);
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+}
+
+.map-sel-btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+.map-sel-btn.primary:hover {
+  background: color-mix(in oklab, var(--accent) 85%, #fff);
+}
+
+.map-sel-btn.ghost {
+  background: transparent;
+  border-color: transparent;
   color: var(--text-dim);
 }
 
@@ -770,27 +1018,8 @@
 }
 
 /* ---- toolbar edit controls ---- */
-.map-edit-toggle {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 12px;
-  color: var(--text-dim);
-  padding: 5px 10px;
-  border-radius: 7px;
-  border: 1px solid var(--border);
-  cursor: pointer;
-  background: transparent;
-}
-.map-edit-toggle:hover {
-  color: var(--text);
-  background: var(--bg2);
-}
-.map-edit-toggle.on {
-  color: var(--accent);
-  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
-  background: color-mix(in oklab, var(--accent) 12%, transparent);
-}
+/* The edit toggle is a plain IconBtn now (icon-only, like the zoom/export
+ * controls), so it needs no rules of its own. */
 .map-addtable {
   display: flex;
   align-items: center;

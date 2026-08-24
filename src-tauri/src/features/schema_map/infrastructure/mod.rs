@@ -161,6 +161,7 @@ mod tests {
                 dy: -4.0,
             }],
             cardinalities: Vec::new(),
+            groups: Vec::new(),
             zoom: Some(1.25),
         }
     }

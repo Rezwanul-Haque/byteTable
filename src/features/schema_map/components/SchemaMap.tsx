@@ -64,6 +64,7 @@ import {
   type EdgeCardinality,
   type EdgeWaypoint,
   type NodePosition,
+  type TableGroup,
 } from "../api";
 import { useSchemaMapStore } from "../state";
 import {
@@ -80,6 +81,18 @@ import {
   type EdgeModel,
   type Waypoint,
 } from "../diagram";
+import {
+  createGroup,
+  groupBoxes,
+  rectAroundCards,
+  resizeRect,
+  scopeToGroup,
+  GROUP_HEAD_H,
+  GROUP_PAD_TOP,
+  type GroupBox,
+  type GroupRect,
+  type ResizeHandle,
+} from "../groups";
 import { ICON_KEY, ICON_LINK, ICON_OPEN, ICON_TABLE, type IconPath } from "../icons";
 import { buildExportSvg, embeddedFontFaceCss, exportTimestamp, readExportColors } from "../export";
 import { isDestructive } from "../editModel";
@@ -145,10 +158,51 @@ function anchorToOrigin(p: Positions): Positions {
   return np;
 }
 
-/** A drag in progress — a card move, an edge bend, or a canvas pan. */
+/** A drag in progress — a card/selection/group move, an edge bend, a marquee
+ *  select, or a canvas pan. */
 type Drag =
-  | { kind: "card"; table: string; startX: number; startY: number; origX: number; origY: number }
+  | {
+      /** Moves one card or a whole multi-selection — the same operation over a
+       *  set of tables. */
+      kind: "move";
+      tables: string[];
+      startX: number;
+      startY: number;
+      /** Pre-drag positions of the moving tables (the delta applies to these). */
+      orig: Positions;
+      /** Top-left-most of `orig`, so the delta can be clamped once for the whole
+       *  set instead of per card (which would distort their arrangement). */
+      minX: number;
+      minY: number;
+    }
+  | {
+      /** Move a group's frame, carrying the cards that were inside it. */
+      kind: "group-move";
+      id: string;
+      startX: number;
+      startY: number;
+      origRect: GroupRect;
+      /** The frame's members at grab time, with their pre-drag positions. */
+      orig: Positions;
+    }
+  | {
+      /** Drag one of a frame's corners/edges. */
+      kind: "group-resize";
+      id: string;
+      handle: ResizeHandle;
+      startX: number;
+      startY: number;
+      origRect: GroupRect;
+    }
   | { kind: "resize"; table: string; startX: number; origW: number }
+  | {
+      kind: "marquee";
+      /** Anchor corner in world coords. */
+      wx: number;
+      wy: number;
+      /** Add to the existing selection rather than replacing it. */
+      additive: boolean;
+    }
   | {
       kind: "edge";
       id: string;
@@ -159,6 +213,12 @@ type Drag =
       moved: boolean;
     }
   | { kind: "pan"; startX: number; startY: number; origPanX: number; origPanY: number };
+
+/** Width of a frame's grab band — the strip along each edge (and the square at
+ *  each corner) that starts a resize instead of falling through to the canvas.
+ *  In screen pixels: the component divides by the zoom so the band stays as easy
+ *  to hit when the diagram is zoomed out as when it is zoomed in. */
+const HANDLE = 12;
 
 export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema: string }) {
   const { handleId } = workspace;
@@ -243,6 +303,27 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
   const [hoveredEdge, setHoveredEdge] = useState<string | null>(null);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+
+  // --- table groups (named frames) -------------------------------------
+  // A group IS its rectangle: it stores a frame, and whichever cards sit inside
+  // that frame are its members (see groups.ts). Move or resize the frame, or
+  // drag a card in or out, and membership follows with nothing to keep in sync.
+  const [groups, setGroups] = useState<TableGroup[]>([]);
+  /** Tables picked for grouping (shift/⌘-click a card, or shift-drag a marquee). */
+  const [selected, setSelected] = useState<string[]>([]);
+  /** The group whose title is being edited inline, or null. */
+  const [renamingGroup, setRenamingGroup] = useState<string | null>(null);
+  /** Live marquee rectangle in world coords while shift-dragging the canvas. */
+  const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(
+    null,
+  );
+  /** Export scope: a group id, or null for the whole diagram. */
+  const [exportScope, setExportScope] = useState<string | null>(null);
+  /** The clicked frame, if any: shows its handles and takes the Delete key. */
+  const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
+  /** Latched picking mode (the toolbar's select button): clicking or sweeping
+   *  picks tables without holding shift. */
+  const [selectMode, setSelectMode] = useState(false);
 
   // --- edit mode (visual schema designer) -----------------------------
   const [editing, setEditing] = useState(false);
@@ -366,12 +447,14 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         const ov: Record<string, CardinalityKind> = {};
         for (const c of layout.cardinalities ?? []) ov[c.id] = c.kind;
         setOverrides(ov);
+        setGroups(layout.groups ?? []);
         if (typeof layout.zoom === "number") setZoom(clampZoom(layout.zoom));
       } else {
         setPositions(auto);
         setWidths({});
         setWaypoints({});
         setOverrides({});
+        setGroups([]);
       }
     })();
     return () => {
@@ -391,6 +474,9 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
   // whichever drag (card move / resize / edge bend / zoom) triggered it.
   const widthsRef = useRef(widths);
   widthsRef.current = widths;
+  // Same for groups: a card drag inside a group must save the group list too.
+  const groupsRef = useRef(groups);
+  groupsRef.current = groups;
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const persist = useCallback(
     (pos: Positions, z: number) => {
@@ -416,6 +502,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
           positions: positionsArr,
           edges: edgesArr,
           cardinalities: cardinalitiesArr,
+          groups: groupsRef.current,
           zoom: z,
         });
       }, SAVE_DEBOUNCE);
@@ -490,26 +577,179 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
     [positions, zoom, persist],
   );
 
-  const extent = useMemo(() => contentExtent(cards), [cards]);
+  // --- groups: derived frames + mutations -------------------------------
+  const boxes = useMemo<GroupBox[]>(() => groupBoxes(groups, cardsById), [groups, cardsById]);
+  // Scroll room covers the cards AND every frame — a frame stretched past the
+  // last card must not be cut off by the SVG's own box.
+  const extent = useMemo(() => {
+    const base = contentExtent(cards);
+    let width = base.width;
+    let height = base.height;
+    for (const b of boxes) {
+      width = Math.max(width, b.x + b.w + 80);
+      height = Math.max(height, b.y + b.h + 80);
+    }
+    return { width, height };
+  }, [cards, boxes]);
+
+  // The chosen export scope, resolved to a live frame (null = whole diagram).
+  // A scope whose group was ungrouped silently falls back to the whole diagram.
+  const scopeBox = useMemo(
+    () => (exportScope ? (boxes.find((b) => b.id === exportScope) ?? null) : null),
+    [boxes, exportScope],
+  );
+
+  /** Commit a new group list: mirror it to the save ref and persist. */
+  const applyGroups = useCallback(
+    (next: TableGroup[]) => {
+      groupsRef.current = next;
+      setGroups(next);
+      if (positions) persist(positions, zoom);
+    },
+    [positions, zoom, persist],
+  );
+
+  /** Draw a frame around the picked tables, then open its title for renaming so
+   *  naming it is one keystroke away rather than a second gesture. */
+  const groupSelection = useCallback(() => {
+    const rect = rectAroundCards(cardsById, selected);
+    if (!rect) return;
+    const { groups: next, group } = createGroup(groups, rect);
+    applyGroups(next);
+    setSelected([]);
+    setSelectMode(false);
+    setSelectedGroup(group.id);
+    setRenamingGroup(group.id);
+  }, [groups, selected, cardsById, applyGroups]);
+
+  /** Remove a frame. The tables it framed stay exactly where they are. */
+  const deleteGroup = useCallback(
+    (id: string) => {
+      applyGroups(groups.filter((g) => g.id !== id));
+      setSelectedGroup((cur) => (cur === id ? null : cur));
+      setRenamingGroup((cur) => (cur === id ? null : cur));
+      setExportScope((cur) => (cur === id ? null : cur));
+    },
+    [groups, applyGroups],
+  );
+
+  /** Rename a group; an all-blank name is rejected (the frame keeps its old one). */
+  const renameGroup = useCallback(
+    (id: string, name: string) => {
+      setRenamingGroup(null);
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      const target = groups.find((g) => g.id === id);
+      if (!target || target.name === trimmed) return;
+      applyGroups(groups.map((g) => (g.id === id ? { ...g, name: trimmed } : g)));
+    },
+    [groups, applyGroups],
+  );
+
+  /** Write a frame's new rectangle (mid-drag: state only, no save yet). */
+  const setGroupRect = useCallback((id: string, rect: GroupRect) => {
+    setGroups((prev) => {
+      const next = prev.map((g) => (g.id === id ? { ...g, rect, tables: undefined } : g));
+      groupsRef.current = next;
+      return next;
+    });
+  }, []);
 
   // --- drag (card move + canvas pan) ----------------------------------
   const svgRef = useRef<SVGSVGElement | null>(null);
   const dragRef = useRef<Drag | null>(null);
 
-  const onCardPointerDown = (e: React.PointerEvent, table: string) => {
-    if (e.button !== 0 || !positions) return;
-    e.stopPropagation();
+  /** Client → world coords (undo the pan/zoom transform on the SVG). */
+  const toWorld = useCallback(
+    (cx: number, cy: number) => {
+      const r = svgRef.current?.getBoundingClientRect();
+      return {
+        x: (cx - (r?.left ?? 0) - pan.x) / zoom,
+        y: (cy - (r?.top ?? 0) - pan.y) / zoom,
+      };
+    },
+    [pan.x, pan.y, zoom],
+  );
+
+  /** Begin moving a set of tables together (one card or a whole selection). */
+  const startMove = (e: React.PointerEvent, moving: string[]) => {
+    if (!positions || moving.length === 0) return;
     // Capture on the <svg> (not the card glyph) so its onPointerMove/Up keep
     // firing for the whole drag even if the pointer leaves the card.
     svgRef.current?.setPointerCapture?.(e.pointerId);
-    const p = positions[table];
+    const orig: Positions = {};
+    let minX = Infinity;
+    let minY = Infinity;
+    for (const t of moving) {
+      const p = positions[t] ?? { x: 0, y: 0 };
+      orig[t] = p;
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+    }
     dragRef.current = {
-      kind: "card",
-      table,
+      kind: "move",
+      tables: moving,
       startX: e.clientX,
       startY: e.clientY,
-      origX: p?.x ?? 0,
-      origY: p?.y ?? 0,
+      orig,
+      minX,
+      minY,
+    };
+  };
+
+  const onCardPointerDown = (e: React.PointerEvent, table: string) => {
+    if (e.button !== 0 || !positions) return;
+    e.stopPropagation();
+    // Picking mode (or a modifier) selects tables instead of dragging them.
+    if (selectMode || e.metaKey || e.ctrlKey || e.shiftKey) {
+      setSelected((prev) =>
+        prev.includes(table) ? prev.filter((t) => t !== table) : [...prev, table],
+      );
+      return;
+    }
+    // Dragging a card that is part of the selection moves the whole selection;
+    // dragging any other card is a plain single-card move and drops the
+    // selection (the user has moved on to arranging).
+    if (selected.includes(table)) {
+      startMove(e, selected);
+      return;
+    }
+    setSelected([]);
+    startMove(e, [table]);
+  };
+
+  /** Grab a frame's title bar → select it, and drag to move frame + contents. */
+  const onGroupPointerDown = (e: React.PointerEvent, box: GroupBox) => {
+    if (e.button !== 0 || !positions) return;
+    e.stopPropagation();
+    setSelectedGroup(box.id);
+    setSelected([]);
+    svgRef.current?.setPointerCapture?.(e.pointerId);
+    const orig: Positions = {};
+    for (const t of box.tables) orig[t] = positions[t] ?? { x: 0, y: 0 };
+    dragRef.current = {
+      kind: "group-move",
+      id: box.id,
+      startX: e.clientX,
+      startY: e.clientY,
+      origRect: { x: box.x, y: box.y, w: box.w, h: box.h },
+      orig,
+    };
+  };
+
+  /** Grab one of a frame's corners/edges → select it, and drag to resize. */
+  const onGroupResizePointerDown = (e: React.PointerEvent, box: GroupBox, handle: ResizeHandle) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    setSelectedGroup(box.id);
+    svgRef.current?.setPointerCapture?.(e.pointerId);
+    dragRef.current = {
+      kind: "group-resize",
+      id: box.id,
+      handle,
+      startX: e.clientX,
+      startY: e.clientY,
+      origRect: { x: box.x, y: box.y, w: box.w, h: box.h },
     };
   };
 
@@ -528,10 +768,23 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
 
   const onCanvasPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
-    // Clicking empty canvas deselects any selected edge + closes the menu.
+    // Clicking empty canvas deselects any selected edge/frame + closes the menu.
     setSelectedEdge(null);
+    setSelectedGroup(null);
     setExportMenuOpen(false);
     (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+    // In picking mode (or with a modifier held) a canvas drag rubber-bands a
+    // selection instead of panning — the quickest way to pick a cluster. A
+    // modifier always ADDS to the pick; a plain sweep in picking mode replaces
+    // it, which is what a fresh sweep is normally taken to mean.
+    const modifier = e.metaKey || e.ctrlKey || e.shiftKey;
+    if (selectMode || modifier) {
+      const p = toWorld(e.clientX, e.clientY);
+      dragRef.current = { kind: "marquee", wx: p.x, wy: p.y, additive: modifier };
+      setMarquee({ x: p.x, y: p.y, w: 0, h: 0 });
+      return;
+    }
+    setSelected([]);
     dragRef.current = {
       kind: "pan",
       startX: e.clientX,
@@ -569,10 +822,44 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
   const onPointerMove = (e: React.PointerEvent) => {
     const d = dragRef.current;
     if (!d) return;
-    if (d.kind === "card") {
-      const nx = Math.max(0, d.origX + (e.clientX - d.startX) / zoom);
-      const ny = Math.max(0, d.origY + (e.clientY - d.startY) / zoom);
-      setPositions((prev) => (prev ? { ...prev, [d.table]: { x: nx, y: ny } } : prev));
+    if (d.kind === "move") {
+      // Clamp the DELTA (not each card) so a multi-card move keeps its shape
+      // when the set runs into the canvas edge.
+      const dx = Math.max((e.clientX - d.startX) / zoom, -d.minX);
+      const dy = Math.max((e.clientY - d.startY) / zoom, -d.minY);
+      setPositions((prev) => {
+        if (!prev) return prev;
+        const next = { ...prev };
+        for (const t of d.tables) {
+          const o = d.orig[t];
+          if (o) next[t] = { x: o.x + dx, y: o.y + dy };
+        }
+        return next;
+      });
+    } else if (d.kind === "group-move") {
+      // The frame and everything that was inside it travel together, so a group
+      // can be parked elsewhere without spilling its tables.
+      const dx = Math.max((e.clientX - d.startX) / zoom, -d.origRect.x);
+      const dy = Math.max((e.clientY - d.startY) / zoom, -d.origRect.y);
+      setGroupRect(d.id, { ...d.origRect, x: d.origRect.x + dx, y: d.origRect.y + dy });
+      setPositions((prev) => {
+        if (!prev) return prev;
+        const next = { ...prev };
+        for (const [t, o] of Object.entries(d.orig)) next[t] = { x: o.x + dx, y: o.y + dy };
+        return next;
+      });
+    } else if (d.kind === "group-resize") {
+      const dx = (e.clientX - d.startX) / zoom;
+      const dy = (e.clientY - d.startY) / zoom;
+      setGroupRect(d.id, resizeRect(d.origRect, d.handle, dx, dy));
+    } else if (d.kind === "marquee") {
+      const p = toWorld(e.clientX, e.clientY);
+      setMarquee({
+        x: Math.min(d.wx, p.x),
+        y: Math.min(d.wy, p.y),
+        w: Math.abs(p.x - d.wx),
+        h: Math.abs(p.y - d.wy),
+      });
     } else if (d.kind === "resize") {
       const nw = clampCardW(d.origW + (e.clientX - d.startX) / zoom);
       setWidths((prev) => ({ ...prev, [d.table]: nw }));
@@ -590,10 +877,32 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
     const d = dragRef.current;
     dragRef.current = null;
     // Persist when a card moved or an edge bent (positions/waypoints changed);
-    // panning is pure view state and is not saved here.
-    if (d?.kind === "card" && positions) persist(positions, zoom);
+    // panning and marquee selection are pure view state and are not saved here.
+    if (d?.kind === "move" && positions) persist(positions, zoom);
+    else if ((d?.kind === "group-move" || d?.kind === "group-resize") && positions)
+      persist(positions, zoom);
     else if (d?.kind === "resize" && positions) persist(positions, zoom);
     else if (d?.kind === "edge" && d.moved && positions) persist(positions, zoom);
+    else if (d?.kind === "marquee") {
+      const m = marquee;
+      setMarquee(null);
+      if (!m || (m.w < 4 && m.h < 4)) {
+        // A click on empty canvas, not a sweep: drop the pick (unless the
+        // modifier said "add to it").
+        if (!d.additive) setSelected([]);
+        return;
+      }
+      // Any card the rectangle touches joins the selection (touch, not fully
+      // enclosed — sweeping a tall card's corner is enough).
+      const hit = cards
+        .filter((c) => c.x < m.x + m.w && c.x + c.w > m.x && c.y < m.y + m.h && c.y + c.h > m.y)
+        .map((c) => c.table);
+      setSelected((prev) => (d.additive ? [...new Set([...prev, ...hit])] : hit));
+      // A sweep is one complete gesture — it says what the whole pick is — so
+      // the tool pops back out rather than staying armed. (Clicking tables one
+      // by one is incremental, so that leaves the mode on.)
+      setSelectMode(false);
+    }
   };
 
   /** Straighten an edge (clear its waypoint) — double-click its handle. */
@@ -666,15 +975,22 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
   const runExport = useCallback(
     async (format: "png" | "svg") => {
       setExportMenuOpen(false);
-      if (cards.length === 0) {
+      // Scoped export: just the chosen group's cards + the relationships inside
+      // it, framed to that group (see scopeToGroup). Otherwise the whole
+      // diagram, with every group frame painted in.
+      const scoped = scopeBox
+        ? scopeToGroup(scopeBox, cards, edges)
+        : { cards, edges, groups: boxes };
+      if (scoped.cards.length === 0) {
         toast("Nothing to export yet.", "info");
         return;
       }
       try {
         const colors = readExportColors();
         const fontCss = await embeddedFontFaceCss();
-        const svg = buildExportSvg(cards, edges, colors, fontCss);
-        const defaultName = `${schema}-schema-map-${exportTimestamp()}.${format}`;
+        const svg = buildExportSvg(scoped.cards, scoped.edges, colors, fontCss, scoped.groups);
+        const slug = scopeBox ? `-${fileSlug(scopeBox.name)}` : "";
+        const defaultName = `${schema}${slug}-schema-map-${exportTimestamp()}.${format}`;
 
         let path: string | null;
         try {
@@ -697,15 +1013,42 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         // the webview canvas — WebKitGTK can't do SVG→canvas→PNG on Linux.
         await diagramExport(path, format, svg);
         const file = path.split(/[\\/]/).pop() ?? defaultName;
-        toast(`Exported schema map to ${file}`, "ok");
+        toast(
+          scopeBox ? `Exported ${scopeBox.name} to ${file}` : `Exported schema map to ${file}`,
+          "ok",
+        );
       } catch (err) {
         toast(appErrorMessage(err, "Could not export the schema map."), "err");
       } finally {
         setExporting(false);
       }
     },
-    [cards, edges, schema, toast],
+    [cards, edges, boxes, scopeBox, schema, toast],
   );
+
+  // Escape backs out of a grouping gesture (clears the pick, closes an inline
+  // rename, deselects a frame); Delete removes the selected frame.
+  useEffect(() => {
+    if (selected.length === 0 && !renamingGroup && !selectedGroup && !selectMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      // While the rename box has focus it owns both keys.
+      const typing =
+        el?.tagName === "INPUT" || el?.tagName === "TEXTAREA" || el?.isContentEditable === true;
+      if (typing) return;
+      if (e.key === "Escape") {
+        setSelected([]);
+        setRenamingGroup(null);
+        setSelectedGroup(null);
+        setSelectMode(false);
+      } else if ((e.key === "Delete" || e.key === "Backspace") && selectedGroup) {
+        e.preventDefault();
+        deleteGroup(selectedGroup);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selected.length, renamingGroup, selectedGroup, selectMode, deleteGroup]);
 
   // --- render ----------------------------------------------------------
   if (loading) {
@@ -746,6 +1089,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         <span className="map-sub">
           {tables.length} {tables.length === 1 ? "table" : "tables"} · {edges.length}{" "}
           {edges.length === 1 ? "relationship" : "relationships"}
+          {boxes.length > 0 ? ` · ${boxes.length} ${boxes.length === 1 ? "group" : "groups"}` : ""}
         </span>
         <div style={{ flex: 1 }} />
         {editing ? (
@@ -754,18 +1098,37 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
             Add table
           </button>
         ) : (
-          <span className="map-hint">drag tables to rearrange</span>
+          <span className="map-hint">
+            {selectMode
+              ? "click tables, or drag a box around them"
+              : boxes.length > 0
+                ? "drag tables in or out of a frame · drag its edges to resize"
+                : "drag to rearrange"}
+          </span>
         )}
+        {/* Select tables — the same pick that shift-click/shift-drag does, as a
+            latched mode, so it doesn't depend on knowing the shortcut. */}
+        <IconBtn
+          icon="select_all"
+          title="Select tables to group (or hold shift)"
+          aria-label="Select tables to group"
+          aria-pressed={selectMode}
+          active={selectMode}
+          hidden={editing}
+          onClick={() => {
+            setSelectMode((on) => !on);
+            setSelected([]);
+          }}
+        />
         {editable ? (
-          <button
-            type="button"
-            className={"map-edit-toggle" + (editing ? " on" : "")}
+          <IconBtn
+            icon={editing ? "edit_off" : "edit"}
+            title={editing ? "Leave the schema designer" : "Edit schema"}
+            aria-label={editing ? "Leave the schema designer" : "Edit schema"}
+            aria-pressed={editing}
+            active={editing}
             onClick={toggleEditing}
-            title="Toggle schema editing"
-          >
-            <Icon name={editing ? "edit_off" : "edit"} size={15} />
-            {editing ? "Editing" : "Edit schema"}
-          </button>
+          />
         ) : null}
         <IconBtn
           icon="zoom_out"
@@ -803,7 +1166,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         <div className="map-export" hidden={editing}>
           <IconBtn
             icon={exporting ? "hourglass_top" : "download"}
-            title="Export diagram"
+            title={scopeBox ? `Export ${scopeBox.name}` : "Export diagram"}
             aria-label="Export diagram"
             aria-haspopup="menu"
             aria-expanded={exportMenuOpen}
@@ -813,6 +1176,39 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
           />
           {exportMenuOpen ? (
             <div className="map-export-menu" role="menu">
+              {/* Scope picker — only worth showing once groups exist. Picking a
+                  scope keeps the menu open; the format button below runs it. */}
+              {boxes.length > 0 ? (
+                <>
+                  <div className="map-export-head">Export</div>
+                  <button
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={scopeBox === null}
+                    className={"map-export-scope" + (scopeBox === null ? " active" : "")}
+                    onClick={() => setExportScope(null)}
+                  >
+                    <span className="map-export-swatch is-full" />
+                    <span className="map-export-scope-name">Full diagram</span>
+                    <span className="map-export-n">{cards.length}</span>
+                  </button>
+                  {boxes.map((b) => (
+                    <button
+                      key={b.id}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={scopeBox?.id === b.id}
+                      className={"map-export-scope" + (scopeBox?.id === b.id ? " active" : "")}
+                      onClick={() => setExportScope(b.id)}
+                    >
+                      <span className="map-export-swatch" style={{ background: b.color }} />
+                      <span className="map-export-scope-name">{b.name}</span>
+                      <span className="map-export-n">{b.tables.length}</span>
+                    </button>
+                  ))}
+                  <div className="map-export-sep" />
+                </>
+              ) : null}
               <button
                 type="button"
                 role="menuitem"
@@ -861,7 +1257,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
           <>
             <svg
               ref={svgRef}
-              className="map-svg"
+              className={"map-svg" + (selectMode ? " is-picking" : "")}
               // Size the SVG to the SCALED content extent (not the viewport) so cards
               // laid out beyond the visible area aren't clipped by the SVG's own box
               // — the wrap then scrolls to reach them. min-width/height:100% (CSS)
@@ -891,6 +1287,24 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
                 transform={`translate(${pan.x},${pan.y}) scale(${zoom})`}
                 className={dragRef.current ? "" : "map-eased"}
               >
+                {/* Group frames sit behind everything — they are backdrops for
+                    the cards they contain, not foreground objects. */}
+                <g className="map-groups-layer">
+                  {boxes.map((box) => (
+                    <GroupFrame
+                      key={box.id}
+                      box={box}
+                      selected={selectedGroup === box.id}
+                      renaming={renamingGroup === box.id}
+                      onHeaderPointerDown={(e) => onGroupPointerDown(e, box)}
+                      onResizePointerDown={(e, handle) => onGroupResizePointerDown(e, box, handle)}
+                      onStartRename={() => setRenamingGroup(box.id)}
+                      onRename={(name) => renameGroup(box.id, name)}
+                      grab={HANDLE / zoom}
+                    />
+                  ))}
+                </g>
+
                 {/* Edges first so cards paint over their endpoints. */}
                 <g className="map-edges-layer">
                   {orderedEdges.map((edge) => (
@@ -914,11 +1328,24 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
                   <Card
                     key={card.table}
                     card={card}
+                    selected={selected.includes(card.table)}
                     onHeaderPointerDown={(e) => onCardPointerDown(e, card.table)}
                     onResizePointerDown={(e) => onCardResizePointerDown(e, card.table)}
                     onOpen={() => openTableTab(schema, card.table)}
                   />
                 ))}
+
+                {/* Rubber-band selection rectangle (shift-drag on empty canvas). */}
+                {marquee ? (
+                  <rect
+                    className="map-marquee"
+                    x={marquee.x}
+                    y={marquee.y}
+                    width={marquee.w}
+                    height={marquee.h}
+                    rx={4}
+                  />
+                ) : null}
 
                 {/* Cardinality popover on its own top layer — after the cards so
                     it paints above them (a real FK edge only; derived M:N stays
@@ -941,6 +1368,25 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
           </>
         )}
       </div>
+
+      {/* Grouping bar — floats over the canvas bottom while tables are picked.
+          Everything you can do with a pick lives here: frame it as a new group,
+          drop it into an existing one, or pull it out of its group. */}
+      {!editing && selected.length > 0 ? (
+        <div className="map-selection">
+          <Icon name="select_all" size={16} style={{ color: "var(--accent)" }} />
+          <span className="map-sel-count">
+            {selected.length} table{selected.length === 1 ? "" : "s"} selected
+          </span>
+          <button type="button" className="map-sel-btn primary" onClick={groupSelection}>
+            <Icon name="add" size={14} />
+            Frame as group
+          </button>
+          <button type="button" className="map-sel-btn ghost" onClick={() => setSelected([])}>
+            Clear
+          </button>
+        </div>
+      ) : null}
 
       {/* Pending-migration bar — floats over the canvas bottom when ≥1 change
           is staged in edit mode. */}
@@ -1168,14 +1614,164 @@ function CardinalityPopover({
   );
 }
 
+/** The eight resize grips of a frame, as unit offsets of its box. */
+const GROUP_HANDLES: { id: ResizeHandle; fx: number; fy: number; cursor: string }[] = [
+  { id: "nw", fx: 0, fy: 0, cursor: "nwse-resize" },
+  { id: "n", fx: 0.5, fy: 0, cursor: "ns-resize" },
+  { id: "ne", fx: 1, fy: 0, cursor: "nesw-resize" },
+  { id: "e", fx: 1, fy: 0.5, cursor: "ew-resize" },
+  { id: "se", fx: 1, fy: 1, cursor: "nwse-resize" },
+  { id: "s", fx: 0.5, fy: 1, cursor: "ns-resize" },
+  { id: "sw", fx: 0, fy: 1, cursor: "nesw-resize" },
+  { id: "w", fx: 0, fy: 0.5, cursor: "ew-resize" },
+];
+
+/** Rough advance width of the 12px semibold UI face. SVG can't size a rect to
+ *  its text, so the title bar is measured from the label instead. */
+const NAME_CHAR_W = 6.9;
+
+/**
+ * One group's frame: a tinted rounded rectangle with a title bar, drawn behind
+ * the cards it contains.
+ *
+ * ALL SVG, ON PURPOSE. The first cut put the title bar in a <foreignObject>;
+ * WebKit paints any element inside a foreignObject that makes its own layer
+ * (anything with opacity < 1) at the page origin instead of inside the SVG
+ * transform, which stranded the header's controls in the canvas corner. The
+ * only HTML left is the rename <input>, and only while it is open.
+ *
+ * The frame's interior is transparent to pointers so panning and card drags
+ * inside a group still work; the title bar moves it and the eight edge/corner
+ * grips resize it.
+ */
+function GroupFrame({
+  box,
+  selected,
+  renaming,
+  onHeaderPointerDown,
+  onResizePointerDown,
+  onStartRename,
+  onRename,
+  grab,
+}: {
+  box: GroupBox;
+  selected: boolean;
+  renaming: boolean;
+  onHeaderPointerDown: (e: React.PointerEvent) => void;
+  onResizePointerDown: (e: React.PointerEvent, handle: ResizeHandle) => void;
+  onStartRename: () => void;
+  onRename: (name: string) => void;
+  /** Grab-band width in world units (screen pixels ÷ zoom). */
+  grab: number;
+}) {
+  const style = { "--group-color": box.color } as React.CSSProperties;
+  const label = truncate(box.name, 28);
+  const count = String(box.tables.length);
+  const nameW = label.length * NAME_CHAR_W;
+  const headW = Math.max(60, Math.min(box.w - 16, 22 + nameW + count.length * 7));
+  // Wider than the pill while editing (names get longer as you type), but never
+  // wider than the frame it sits in.
+  const editW = Math.min(180, Math.max(120, box.w - 16));
+  const hx = box.x + 8;
+  const hy = box.y + (GROUP_PAD_TOP - GROUP_HEAD_H) / 2;
+  const cy = hy + GROUP_HEAD_H / 2;
+  return (
+    <g
+      className={"map-group" + (selected ? " is-selected" : "")}
+      style={style}
+      data-group-id={box.id}
+    >
+      <rect className="map-group-box" x={box.x} y={box.y} width={box.w} height={box.h} rx={14} />
+
+      {/* Edge + corner grips. Transparent bands straddling the border, so the
+          frame is grabbable anywhere along its outline. */}
+      {GROUP_HANDLES.map((h) => (
+        <rect
+          key={h.id}
+          className={"map-group-grip grip-" + h.id}
+          x={box.x + h.fx * box.w - (h.fx === 0.5 ? box.w / 2 - grab : grab / 2)}
+          y={box.y + h.fy * box.h - (h.fy === 0.5 ? box.h / 2 - grab : grab / 2)}
+          width={h.fx === 0.5 ? Math.max(4, box.w - 2 * grab) : grab}
+          height={h.fy === 0.5 ? Math.max(4, box.h - 2 * grab) : grab}
+          style={{ cursor: h.cursor }}
+          onPointerDown={(e) => onResizePointerDown(e, h.id)}
+        />
+      ))}
+      {/* Corner pips, shown while the frame is selected, so the grips read as
+          handles rather than invisible hot zones. */}
+      {selected
+        ? GROUP_HANDLES.filter((h) => h.fx !== 0.5 && h.fy !== 0.5).map((h) => (
+            <rect
+              key={h.id}
+              className="map-group-pip"
+              x={box.x + h.fx * box.w - 3.5}
+              y={box.y + h.fy * box.h - 3.5}
+              width={7}
+              height={7}
+              rx={2}
+            />
+          ))
+        : null}
+
+      {/* Title bar. While renaming, the input IS the title bar — same box, same
+          colours — rather than a second control laid over it. */}
+      {renaming ? (
+        <foreignObject x={hx} y={hy} width={editW} height={GROUP_HEAD_H}>
+          <input
+            className="map-group-input"
+            defaultValue={box.name}
+            autoFocus
+            aria-label="Group name"
+            onPointerDown={(e) => e.stopPropagation()}
+            onBlur={(e) => onRename(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") onRename(e.currentTarget.value);
+              else if (e.key === "Escape") onRename(box.name);
+            }}
+          />
+        </foreignObject>
+      ) : (
+        <>
+          <rect
+            className="map-group-head"
+            x={hx}
+            y={hy}
+            width={headW}
+            height={GROUP_HEAD_H}
+            rx={7}
+            onPointerDown={onHeaderPointerDown}
+            onDoubleClick={onStartRename}
+          >
+            <title>Drag to move this group · double-click to rename</title>
+          </rect>
+          <text className="map-group-name" x={hx + 10} y={cy} dominantBaseline="central">
+            {label}
+          </text>
+          <text
+            className="map-group-count"
+            x={hx + headW - 9}
+            y={cy}
+            textAnchor="end"
+            dominantBaseline="central"
+          >
+            {count}
+          </text>
+        </>
+      )}
+    </g>
+  );
+}
+
 /** One table card, rendered as an SVG group. */
 function Card({
   card,
+  selected,
   onHeaderPointerDown,
   onResizePointerDown,
   onOpen,
 }: {
   card: CardModel;
+  selected: boolean;
   onHeaderPointerDown: (e: React.PointerEvent) => void;
   onResizePointerDown: (e: React.PointerEvent) => void;
   onOpen: () => void;
@@ -1189,7 +1785,7 @@ function Card({
   const colNameMax = Math.round(16 * wr);
   const colTypeMax = Math.round(12 * wr);
   return (
-    <g className="map-card" transform={`translate(${x},${y})`}>
+    <g className={"map-card" + (selected ? " is-selected" : "")} transform={`translate(${x},${y})`}>
       <rect
         className="map-card-box"
         x={0}
@@ -1305,6 +1901,17 @@ function Card({
         <line className="map-card-resize-grip" x1={w} y1={HEAD_H + 6} x2={w} y2={h - 6} />
       </g>
     </g>
+  );
+}
+
+/** A group name reduced to a filename-safe slug for the default export name. */
+function fileSlug(s: string): string {
+  return (
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 40) || "group"
   );
 }
 

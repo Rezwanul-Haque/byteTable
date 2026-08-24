@@ -56,6 +56,38 @@ pub struct EdgeCardinality {
     pub kind: String,
 }
 
+/// A group's frame in diagram coordinates — the same space as `NodePosition`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GroupRect {
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+}
+
+/// A named rectangle framing part of the map (e.g. "Billing"). The *frame* is
+/// what's stored: the renderer resolves which cards sit inside it on every
+/// render, so a group can never disagree with where its cards actually are, and
+/// the frame stays freely movable and resizable. `color` is the literal frame
+/// colour baked at creation so an exported diagram matches the canvas. Stored
+/// opaquely — the renderer owns the id scheme and the palette.
+///
+/// `tables` is a legacy member list from the first version of this field, kept
+/// only so such a layout can still seed a frame; the renderer never writes it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TableGroup {
+    pub id: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rect: Option<GroupRect>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tables: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+}
+
 /// The full saved layout for one (connectionId, schema): every table card's
 /// position, every user-dragged FK edge offset, and the zoom level.
 ///
@@ -83,6 +115,10 @@ pub struct MapLayout {
     /// when empty (a new optional field, non-breaking like `zoom`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cardinalities: Vec<EdgeCardinality>,
+    /// Table groups (named frames). Omitted from the wire when empty (a new
+    /// optional field, non-breaking like `cardinalities`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub groups: Vec<TableGroup>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub zoom: Option<f64>,
 }
@@ -149,6 +185,7 @@ mod tests {
                 dy: -8.0,
             }],
             cardinalities: Vec::new(),
+            groups: Vec::new(),
             zoom: Some(1.5),
         }
     }
@@ -218,6 +255,53 @@ mod tests {
             serde_json::from_value(serde_json::json!({ "table": "t", "x": 1.0, "y": 2.0 }))
                 .expect("legacy node parses");
         assert_eq!(legacy.w, None);
+    }
+
+    #[test]
+    fn groups_are_omitted_when_empty_and_round_trip_when_set() {
+        // No groups → no `groups` key (pre-grouping layouts stay byte-identical).
+        assert!(serde_json::to_value(sample())
+            .expect("serialize")
+            .get("groups")
+            .is_none());
+
+        let layout = MapLayout {
+            groups: vec![TableGroup {
+                id: "g1".into(),
+                name: "Billing".into(),
+                rect: Some(GroupRect {
+                    x: 40.0,
+                    y: 12.0,
+                    w: 620.0,
+                    h: 400.0,
+                }),
+                tables: Vec::new(),
+                color: Some("#4f9dff".into()),
+            }],
+            ..sample()
+        };
+        let json = serde_json::to_value(&layout).expect("serialize");
+        assert_eq!(
+            json["groups"],
+            serde_json::json!([{
+                "id": "g1",
+                "name": "Billing",
+                "rect": { "x": 40.0, "y": 12.0, "w": 620.0, "h": 400.0 },
+                "color": "#4f9dff",
+            }])
+        );
+        let back: MapLayout = serde_json::from_value(json).expect("deserialize");
+        assert_eq!(back, layout);
+
+        // The early format (a member list, no frame) still parses so the
+        // renderer can seed a frame from it.
+        let legacy: TableGroup = serde_json::from_value(
+            serde_json::json!({ "id": "g2", "name": "Auth", "tables": ["users"] }),
+        )
+        .expect("legacy group parses");
+        assert_eq!(legacy.rect, None);
+        assert_eq!(legacy.tables, vec!["users".to_string()]);
+        assert_eq!(legacy.color, None);
     }
 
     #[test]

@@ -26,7 +26,7 @@ interface DynamoSidebarProps {
   /** A SECOND tab for a table that already has one — the context menu's "Open
    *  in new tab", plus ⌘/Ctrl-click and middle-click on the row. */
   onOpenTableInNewTab: (name: string) => void;
-  onOpenPartiql: () => void;
+  onNewQuery: () => void;
   onOpenDashboard: () => void;
   showDashboard?: boolean;
   onOpenMap: () => void;
@@ -66,7 +66,7 @@ export function DynamoSidebar({
   activeTable,
   onOpenTable,
   onOpenTableInNewTab,
-  onOpenPartiql,
+  onNewQuery,
   onOpenDashboard,
   onOpenMap,
   onExportTable,
@@ -259,13 +259,16 @@ export function DynamoSidebar({
       </div>
 
       <div className="ddb-sidebar-footer">
+        {/* Same slot, same job as the SQL sidebar's "New SQL query": open this
+            workspace's query surface. PartiQL keeps its own entry points — the
+            toolbar's terminal button and ⌘` / Ctrl+`. */}
         <Btn
-          icon="terminal"
+          icon="add"
           variant="tonal"
-          onClick={onOpenPartiql}
+          onClick={onNewQuery}
           style={{ width: "100%", justifyContent: "center" }}
         >
-          PartiQL editor
+          New query
         </Btn>
       </div>
 

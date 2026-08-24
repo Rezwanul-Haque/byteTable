@@ -16,6 +16,9 @@ interface DynamoQueryTabProps {
   version: number;
   /** Selected table name (persisted on the tab) — "" until the user picks one. */
   table: string;
+  /** Open the table picker straight away — set for a tab the user just opened,
+   *  which has nothing to show until a table is chosen. */
+  pickTable?: boolean;
   onTableChange: (name: string) => void;
   mode: "scan" | "query" | "structure";
   onModeChange: (mode: "scan" | "query" | "structure") => void;
@@ -33,6 +36,7 @@ export function DynamoQueryTab({
   isProduction,
   version,
   table,
+  pickTable = false,
   onTableChange,
   mode,
   onModeChange,
@@ -59,6 +63,7 @@ export function DynamoQueryTab({
           value={table}
           options={options}
           onChange={onTableChange}
+          autoOpen={pickTable && !table}
           aria-label="Query a table"
         />
         {desc ? (

@@ -54,8 +54,14 @@ const TAB_ICON: Record<TabKind, string> = {
   query: "search",
 };
 
-let seq = 0;
-const nextId = () => "ddb-" + ++seq;
+// Tab ids must be unique against the tabs that ALREADY exist, and those live
+// in a separate store that outlives this module: a module-level counter assumes
+// it is the only allocator and hands out an id an open tab already holds the
+// moment it restarts (a dev hot-reload is enough). Two tabs sharing an id both
+// match `activeId`, so both bodies render at once, React sees duplicate keys,
+// and closing one takes the other with it. A random id has no such assumption —
+// the SQL and Redis shells key their tabs the same way.
+const nextId = () => "ddb-" + crypto.randomUUID();
 
 export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
   const closeWorkspace = useWorkspacesStore((state) => state.closeWorkspace);
@@ -113,6 +119,8 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
   // Region-wide destructive run: empty every table, or drop every table.
   const [bulkAction, setBulkAction] = useState<"empty" | "drop" | null>(null);
   const [truncateTarget, setTruncateTarget] = useState<string | null>(null);
+  /** Query tab whose table picker should open on mount (the one just created). */
+  const [pickTableFor, setPickTableFor] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   // PartiQL docks as the shared bottom terminal panel (keyed by workspace id).
@@ -200,9 +208,17 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
     const tab: Tab = { id: nextId(), kind: "query", title: `Query ${n}`, mode: "query" };
     setTabs((ts) => [...ts, tab]);
     setActiveId(tab.id);
+    // A fresh query tab can do nothing until a table is chosen, so drop the
+    // user straight into the picker. Component state, so it is gone by the time
+    // the tab is ever re-mounted (a workspace switch) — the picker only opens
+    // for the tab the user just asked for.
+    setPickTableFor(tab.id);
   };
   const openSingleton = (kind: "dashboard" | "map", title: string) => {
-    const ex = tabs.find((t) => t.kind === kind);
+    // Fresh store state, like the other openers: `tabs` is this render's copy,
+    // so two opens in the same tick would both miss the existing tab and stack
+    // up a second Dashboard/Schema map.
+    const ex = peekTabs().find((t) => t.kind === kind);
     if (ex) {
       setActiveId(ex.id);
       return;
@@ -282,7 +298,7 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
         activeTable={activeTab?.kind === "table" ? (activeTab.table ?? null) : null}
         onOpenTable={openTable}
         onOpenTableInNewTab={(name) => void openTable(name, true)}
-        onOpenPartiql={openPartiql}
+        onNewQuery={openQuery}
         showDashboard={isLocal}
         onOpenDashboard={() => openSingleton("dashboard", "Dashboard")}
         onOpenMap={() => openSingleton("map", "Schema map")}
@@ -380,7 +396,11 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
                   active={t.id === activeId}
                   version={dataVersion}
                   table={t.table ?? ""}
-                  onTableChange={(name) => updateTab(t.id, { table: name })}
+                  pickTable={pickTableFor === t.id}
+                  onTableChange={(name) => {
+                    setPickTableFor(null);
+                    updateTab(t.id, { table: name });
+                  }}
                   mode={t.mode ?? "query"}
                   onModeChange={(mode) => updateTab(t.id, { mode })}
                   onExport={(tbl) => setExportJob({ scope: "table", table: tbl })}

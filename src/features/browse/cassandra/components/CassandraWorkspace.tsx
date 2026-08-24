@@ -84,8 +84,9 @@ export interface CassTab {
   mode?: "query" | "structure";
 }
 
-let seq = 0;
-const nextId = (p: string) => "cs-" + p + "-" + ++seq;
+// Unique per tab, not per module load — see the note in DynamoWorkspace: a
+// restarting counter re-issues ids that open tabs still hold.
+const nextId = (p: string) => "cs-" + p + "-" + crypto.randomUUID();
 
 export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
   const closeWorkspace = useWorkspacesStore((state) => state.closeWorkspace);

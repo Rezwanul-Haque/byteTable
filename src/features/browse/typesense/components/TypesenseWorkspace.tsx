@@ -97,8 +97,9 @@ const SECTION_TITLE: Record<TsSectionKind, string> = {
   keys: "API keys",
 };
 
-let seq = 0;
-const nextId = (p: string) => "ts-" + p + "-" + ++seq;
+// Unique per tab, not per module load — see the note in DynamoWorkspace: a
+// restarting counter re-issues ids that open tabs still hold.
+const nextId = (p: string) => "ts-" + p + "-" + crypto.randomUUID();
 
 export function TypesenseWorkspace({ workspace }: { workspace: Workspace }) {
   const closeWorkspace = useWorkspacesStore((state) => state.closeWorkspace);

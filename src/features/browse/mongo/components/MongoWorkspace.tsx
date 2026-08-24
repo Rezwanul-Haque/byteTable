@@ -74,8 +74,9 @@ const TAB_ICON: Record<string, string> = {
   processes: "monitor_heart",
 };
 
-let seq = 0;
-const nextId = (p: string) => "mg-" + p + "-" + ++seq;
+// Unique per tab, not per module load — see the note in DynamoWorkspace: a
+// restarting counter re-issues ids that open tabs still hold.
+const nextId = (p: string) => "mg-" + p + "-" + crypto.randomUUID();
 
 export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
   const closeWorkspace = useWorkspacesStore((state) => state.closeWorkspace);

@@ -943,18 +943,40 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
   };
 
   // --- zoom controls ---------------------------------------------------
-  const applyZoom = (z: number) => {
-    const next = clampZoom(z);
-    setZoom(next);
-    // Read-mode positions are untouched in edit mode, so persisting the (read)
-    // layout + zoom is safe either way.
-    if (positions) persist(positions, next);
-  };
+  const applyZoom = useCallback(
+    (z: number) => {
+      const next = clampZoom(z);
+      setZoom(next);
+      // Read-mode positions are untouched in edit mode, so persisting the (read)
+      // layout + zoom is safe either way.
+      if (positions) persist(positions, next);
+    },
+    [positions, persist],
+  );
   const onWheel = (e: React.WheelEvent) => {
     if (!e.ctrlKey && !e.metaKey) return; // only zoom on pinch / ctrl+wheel
     e.preventDefault();
     applyZoom(zoom + (e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP));
   };
+
+  // ⌘/Ctrl with + or − zooms the diagram, matching the toolbar buttons. Only
+  // the open tab is mounted, so this listener is live exactly while the map is
+  // on screen. preventDefault keeps the webview's own page zoom out of it.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      // Both the character and the physical key are checked: "+" needs shift on
+      // most layouts, and the numeric keypad sends its own keys entirely.
+      const zoomIn = e.key === "+" || e.key === "=" || e.code === "Equal" || e.code === "NumpadAdd";
+      const zoomOut =
+        e.key === "-" || e.key === "_" || e.code === "Minus" || e.code === "NumpadSubtract";
+      if (!zoomIn && !zoomOut) return;
+      e.preventDefault();
+      applyZoom(zoom + (zoomIn ? ZOOM_STEP : -ZOOM_STEP));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [zoom, applyZoom]);
 
   /**
    * Zoom and scroll so the whole diagram is on screen at once. Chooses the
@@ -1190,7 +1212,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         ) : null}
         <IconBtn
           icon="zoom_out"
-          title="Zoom out"
+          title="Zoom out (⌘/Ctrl −)"
           aria-label="Zoom out"
           onClick={() => applyZoom(zoom - ZOOM_STEP)}
           disabled={zoom <= ZOOM_MIN}
@@ -1200,7 +1222,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         </span>
         <IconBtn
           icon="zoom_in"
-          title="Zoom in"
+          title="Zoom in (⌘/Ctrl +)"
           aria-label="Zoom in"
           onClick={() => applyZoom(zoom + ZOOM_STEP)}
           disabled={zoom >= ZOOM_MAX}

@@ -776,6 +776,9 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
   const onCardPointerDown = (e: React.PointerEvent, table: string) => {
     if (e.button !== 0 || !positions) return;
     e.stopPropagation();
+    // Shift-click is a pick here, not a text-range extension: stop the browser
+    // acting on its own meaning for the gesture.
+    e.preventDefault();
     // Picking mode (or a modifier) selects tables instead of dragging them.
     if (selectMode || e.metaKey || e.ctrlKey || e.shiftKey) {
       setSelected((prev) =>
@@ -844,6 +847,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
 
   const onCanvasPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
+    e.preventDefault();
     // Clicking empty canvas deselects any selected edge/frame + closes the menu.
     setSelectedEdge(null);
     setSelectedGroup(null);
@@ -1980,7 +1984,16 @@ function Card({
   const colNameMax = Math.round(16 * wr);
   const colTypeMax = Math.round(12 * wr);
   return (
-    <g className={"map-card" + (selected ? " is-selected" : "")} transform={`translate(${x},${y})`}>
+    // The whole card is the grab handle, not just its header: with several
+    // cards picked, hunting for title bars to move the set is needless work.
+    // Children that mean something else — the open button, the resize strip —
+    // stop the event themselves, and the header's own handler stops propagation
+    // so a header grab never starts the move twice.
+    <g
+      className={"map-card" + (selected ? " is-selected" : "")}
+      transform={`translate(${x},${y})`}
+      onPointerDown={onHeaderPointerDown}
+    >
       <rect
         className="map-card-box"
         x={0}

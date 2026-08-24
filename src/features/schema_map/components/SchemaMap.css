@@ -73,6 +73,12 @@
   /* Empty-canvas drag = pan; cards stop propagation so they drag instead. */
   cursor: grab;
   touch-action: none;
+  /* The diagram is not a document: shift-click is the map's own pick gesture,
+   * and to the browser it means "extend the text selection", which sweeps the
+   * <text> of every card between the anchor and the click. Nothing in here is
+   * meant to be selected as text — the inline rename box opts back in below. */
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .map-svg:active {
@@ -178,6 +184,9 @@
  * fills the same box. Nothing in here may set opacity — that is what strands
  * foreignObject content in the canvas corner under WebKit. */
 .map-group-input {
+  /* Opt back in: the canvas turns text selection off wholesale. */
+  user-select: text;
+  -webkit-user-select: text;
   box-sizing: border-box;
   width: 100%;
   height: 100%;
@@ -357,10 +366,14 @@
   stroke-width: 2;
 }
 
+/* The whole card drags (see the Card component); the resize strip and the open
+ * button set their own cursors over their own areas. */
+.map-card,
 .map-card-head {
   cursor: grab;
 }
 
+.map-card:active,
 .map-card-head:active {
   cursor: grabbing;
 }

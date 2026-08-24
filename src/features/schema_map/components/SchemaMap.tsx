@@ -85,6 +85,7 @@ import {
 import {
   createGroup,
   groupBoxes,
+  GROUP_COLORS,
   rectAroundCards,
   resizeRect,
   scopeToGroup,
@@ -583,6 +584,14 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
     [positions, zoom, persist],
   );
 
+  // Colour choices offered for a frame: the app's accent first (so a group can
+  // wear the product colour), then the group palette. Read once per theme —
+  // --accent is a token, but a group stores a literal colour.
+  const swatches = useMemo(() => {
+    const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
+    return [accent || "#2dd4a7", ...GROUP_COLORS];
+  }, []);
+
   // --- groups: derived frames + mutations -------------------------------
   const boxes = useMemo<GroupBox[]>(() => groupBoxes(groups, cardsById), [groups, cardsById]);
   // Scroll room covers the cards AND every frame — a frame stretched past the
@@ -668,6 +677,21 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
       const target = groups.find((g) => g.id === id);
       if (!target || target.name === trimmed) return;
       applyGroups(groups.map((g) => (g.id === id ? { ...g, name: trimmed } : g)));
+    },
+    [groups, applyGroups],
+  );
+
+  /** The selected frame, resolved (null when nothing is selected). */
+  const selectedBox = useMemo(
+    () => (selectedGroup ? (boxes.find((b) => b.id === selectedGroup) ?? null) : null),
+    [boxes, selectedGroup],
+  );
+
+  /** Recolour a frame. The colour is stored literally (not as a token) so an
+   *  exported diagram matches the canvas without re-resolving anything. */
+  const setGroupColor = useCallback(
+    (id: string, color: string) => {
+      applyGroups(groups.map((g) => (g.id === id ? { ...g, color } : g)));
     },
     [groups, applyGroups],
   );
@@ -1471,6 +1495,50 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
           </button>
           <button type="button" className="map-sel-btn ghost" onClick={() => setSelected([])}>
             Clear
+          </button>
+        </div>
+      ) : null}
+
+      {/* Selected-frame bar — the one thing a frame needs beyond drag/resize:
+          its colour. Plain HTML at the canvas edge rather than a control on the
+          frame itself, which is what the icon row used to be. */}
+      {!editing && selectedBox ? (
+        <div className="map-selection">
+          <span className="map-sel-dot" style={{ background: selectedBox.color }} />
+          <span className="map-sel-count">{selectedBox.name}</span>
+          <span className="map-sel-label">colour</span>
+          <div className="map-swatches">
+            {swatches.map((c) => (
+              <button
+                key={c}
+                type="button"
+                className={
+                  "map-swatch" +
+                  (c.toLowerCase() === selectedBox.color.toLowerCase() ? " active" : "")
+                }
+                style={{ background: c }}
+                title={c}
+                aria-label={`Colour this group ${c}`}
+                aria-pressed={c.toLowerCase() === selectedBox.color.toLowerCase()}
+                onClick={() => setGroupColor(selectedBox.id, c)}
+              />
+            ))}
+            {/* Anything else: the platform colour picker, live as you drag it. */}
+            <span className="map-swatch-custom" title="Pick any colour">
+              <input
+                type="color"
+                value={selectedBox.color}
+                aria-label="Pick any colour for this group"
+                onChange={(e) => setGroupColor(selectedBox.id, e.currentTarget.value)}
+              />
+            </span>
+          </div>
+          <button
+            type="button"
+            className="map-sel-btn ghost"
+            onClick={() => setSelectedGroup(null)}
+          >
+            Done
           </button>
         </div>
       ) : null}

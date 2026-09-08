@@ -44,7 +44,7 @@
 // auto-layout. Saves are debounced and fire on drag END, never per mousemove,
 // to avoid IPC spam. Zoom is persisted too. connectionId = workspace.saved.id.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import type { TableMeta } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
@@ -138,6 +138,17 @@ const clampCardW = (w: number): number => Math.min(MAX_CARD_W, Math.max(MIN_CARD
 
 const clampZoom = (z: number): number =>
   Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(z * 10) / 10));
+
+/**
+ * Clamp for a zoom coming back from a SAVED layout, which is not the same rule
+ * as the manual one above: fit-to-window is allowed below ZOOM_MIN and lands on
+ * whole percents, so `clampZoom` would round a fitted 0.42 to 0.4 and then floor
+ * it to 0.5 — reopening the tab snapped a fitted map back to 50% and clipped the
+ * right-hand groups back off screen. Honour the fit floor and 1% granularity so
+ * what fit-to-window persisted is what reopening restores.
+ */
+const clampSavedZoom = (z: number): number =>
+  Math.min(ZOOM_MAX, Math.max(FIT_ZOOM_MIN, Math.round(z * 100) / 100));
 
 type Positions = Record<string, { x: number; y: number }>;
 /** User-resized card widths by table (read-mode). Absent = default CARD_W. */
@@ -497,7 +508,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         for (const c of layout.cardinalities ?? []) ov[c.id] = c.kind;
         setOverrides(ov);
         setGroups(layout.groups ?? []);
-        if (typeof layout.zoom === "number") setZoom(clampZoom(layout.zoom));
+        if (typeof layout.zoom === "number") setZoom(clampSavedZoom(layout.zoom));
       } else {
         setPositions(autoLayout(Object.keys(metas), metas));
         setWidths({});
@@ -1054,37 +1065,86 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
     return () => window.removeEventListener("keydown", onKey);
   }, [zoom, applyZoom]);
 
+  // A scroll a fit has queued for the next commit. Setting the zoom grows the
+  // wrap's scrollable extent, but only once React has re-rendered the SVG at the
+  // new size — a scrollTo issued before that is clamped to the OLD maximum. This
+  // flushes it in a LAYOUT effect, so zoom, pan and scroll all land in the same
+  // frame; doing it in requestAnimationFrame instead painted the intermediate
+  // state first, which is the shift you could see when the tab opened.
+  const pendingScroll = useRef<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const next = pendingScroll.current;
+    if (!next) return;
+    pendingScroll.current = null;
+    wrapRef.current?.scrollTo(next);
+  });
+
   /**
    * Zoom and scroll so the whole diagram is on screen at once. Chooses the
    * larger-fitting axis' scale, then centres the content in whatever slack is
    * left. Fit may go below the manual zoom floor (a big schema simply doesn't
    * fit at 50%), but never below FIT_ZOOM_MIN — past that the cards are illegible
    * and scrolling serves better.
+   *
+   * `save` is false for the automatic fit on open: that is a view restore, not a
+   * user edit, so it must not overwrite the zoom the user last chose by hand.
+   * Returns whether the fit actually ran — the caller can retry on a later
+   * commit when the viewport had not been measured yet.
    */
-  const fitToWindow = () => {
-    const wrap = wrapRef.current;
-    if (!wrap || cards.length === 0) return;
-    const vw = wrap.clientWidth;
-    const vh = wrap.clientHeight;
-    if (vw === 0 || vh === 0) return;
-    const raw = Math.min(vw / contentBox.width, vh / contentBox.height);
-    // Floor to 1% so rounding can never leave the content a hair too big.
-    const z = Math.min(ZOOM_MAX, Math.max(FIT_ZOOM_MIN, Math.floor(raw * 100) / 100));
-    setZoom(z);
-    // Where the framed content should sit: centred in whatever slack is left
-    // over. Scrolling gets it there when the content starts far enough into the
-    // canvas; when it doesn't (content near the origin, or a viewport wider than
-    // the diagram) scroll would have to go negative, so the shortfall becomes a
-    // pan instead — which is what keeps the left and top gaps equal to the right
-    // and bottom ones.
-    const wantX = contentBox.x * z - Math.max(0, (vw - contentBox.width * z) / 2);
-    const wantY = contentBox.y * z - Math.max(0, (vh - contentBox.height * z) / 2);
-    setPan({ x: Math.max(0, -wantX), y: Math.max(0, -wantY) });
-    if (positions) persist(positions, z);
-    requestAnimationFrame(() =>
-      wrap.scrollTo({ left: Math.max(0, wantX), top: Math.max(0, wantY) }),
-    );
-  };
+  const fitToWindow = useCallback(
+    (save = true): boolean => {
+      const wrap = wrapRef.current;
+      if (!wrap || cards.length === 0) return false;
+      const vw = wrap.clientWidth;
+      const vh = wrap.clientHeight;
+      if (vw === 0 || vh === 0) return false;
+      const raw = Math.min(vw / contentBox.width, vh / contentBox.height);
+      // Floor to 1% so rounding can never leave the content a hair too big.
+      const z = Math.min(ZOOM_MAX, Math.max(FIT_ZOOM_MIN, Math.floor(raw * 100) / 100));
+      setZoom(z);
+      // Where the framed content should sit: centred in whatever slack is left
+      // over. Scrolling gets it there when the content starts far enough into the
+      // canvas; when it doesn't (content near the origin, or a viewport wider than
+      // the diagram) scroll would have to go negative, so the shortfall becomes a
+      // pan instead — which is what keeps the left and top gaps equal to the right
+      // and bottom ones.
+      const wantX = contentBox.x * z - Math.max(0, (vw - contentBox.width * z) / 2);
+      const wantY = contentBox.y * z - Math.max(0, (vh - contentBox.height * z) / 2);
+      setPan({ x: Math.max(0, -wantX), y: Math.max(0, -wantY) });
+      if (save && positions) persist(positions, z);
+      const target = { left: Math.max(0, wantX), top: Math.max(0, wantY) };
+      // An unchanged zoom re-renders nothing, so there may be no next commit to
+      // flush a queued scroll — and none is needed: the extent is already right.
+      // (A scroll target above zero only ever pairs with a zero pan, so the pan
+      // change in the other branch can't shrink what this can reach either.)
+      if (z === zoom) wrap.scrollTo(target);
+      else pendingScroll.current = target;
+      return true;
+    },
+    [cards.length, contentBox, positions, zoom, persist],
+  );
+
+  // The map's opening view IS the fitted view. Fit's centring lives in `pan` +
+  // scroll, neither of which is part of the saved layout, so restoring the saved
+  // zoom alone reopened the map hard against the top-left.
+  //
+  // A LAYOUT effect is what makes this the default rather than a correction: it
+  // runs in the same commit the cards first appear in, so the first frame the
+  // user sees is already fitted. As a plain effect the browser painted the
+  // un-fitted map first and then jumped to the fit — the visible shift.
+  //
+  // Fires once per (connection, schema) — after that the view belongs to the
+  // user, and a card drag must not yank the map back to a fit. It deliberately
+  // does NOT persist: the saved zoom stays whatever the user last set by hand.
+  const autoFitKey = `${connectionId}\u0000${schema}`;
+  const autoFitDone = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (editing || autoFitDone.current === autoFitKey) return;
+    if (!positions || cards.length === 0) return;
+    // A fit that could not measure the viewport leaves the guard unset, so the
+    // next commit tries again rather than stranding the map at the saved zoom.
+    if (fitToWindow(false)) autoFitDone.current = autoFitKey;
+  }, [autoFitKey, editing, positions, cards.length, fitToWindow]);
 
   const resetView = () => {
     if (!metas) return;
@@ -1331,7 +1391,9 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
           title="Fit the whole schema in the window"
           aria-label="Fit the whole schema in the window"
           hidden={editing}
-          onClick={fitToWindow}
+          // Wrapped, not passed by reference: the click event would land in the
+          // `save` parameter.
+          onClick={() => fitToWindow()}
         />
         <IconBtn
           icon="restart_alt"

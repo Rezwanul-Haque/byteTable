@@ -28,9 +28,9 @@
 import { useEffect, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
-import { dropWordSelection } from "./dropWordSelection";
-import { Icon } from "./Icon";
-import "./TabMenu.css";
+import { dropWordSelection } from "../ui/dropWordSelection";
+import { Icon } from "../ui/Icon";
+import "../ui/TabMenu.css";
 
 /** A leaf entry, or a parent that opens a one-level flyout. */
 export interface ContextMenuItem {

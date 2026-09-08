@@ -8,11 +8,11 @@
 
 import { useEffect, useState } from "react";
 
-import { mongoListDatabases } from "../browse/mongo/api";
-import { MongoShellTab } from "../browse/mongo/components/MongoShellTab";
-import { useMongoActiveDbStore } from "../browse/mongo/shellState";
-import type { Workspace } from "../workspaces/types";
-import type { TermSession } from "./state";
+import { mongoListDatabases } from "../../browse/mongo/api";
+import { MongoShellTab } from "../../browse/mongo/components/MongoShellTab";
+import { useMongoActiveDbStore } from "../../browse/mongo/shellState";
+import type { Workspace } from "../../workspaces/types";
+import type { TermSession } from "../state";
 
 export function MongoShellSession({
   workspace,

@@ -7,13 +7,13 @@ import { useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 
-import { BrandMark } from "../../shared/ui/BrandMark";
-import { Btn } from "../../shared/ui/Btn";
-import { Icon } from "../../shared/ui/Icon";
-import { IconBtn } from "../../shared/ui/IconBtn";
-import { Modal, ModalActions } from "../../shared/ui/Modal";
-import { useToast } from "../../shared/ui/toastContext";
-import { releaseUrl, skipVersion, type Update } from "./api";
+import { BrandMark } from "../../../shared/ui/BrandMark";
+import { Btn } from "../../../shared/ui/Btn";
+import { Icon } from "../../../shared/ui/Icon";
+import { IconBtn } from "../../../shared/ui/IconBtn";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
+import { useToast } from "../../../shared/ui/toastContext";
+import { releaseUrl, skipVersion, type Update } from "../api";
 import "./UpdateModal.css";
 
 /** Tiny markdown → elements. Handles ATX headings (`#`–`######`), `-`/`*` bullet

@@ -7,7 +7,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { useSettingsStore } from "./state";
+import { useSettingsStore } from "../state";
 
 /** One full rotation of the refresh icon per tick (matches the Redis sync). */
 const SPIN_MS = 700;

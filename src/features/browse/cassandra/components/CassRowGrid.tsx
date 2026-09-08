@@ -11,7 +11,7 @@ import type { CassColumn } from "../api";
 import { cassIsComplex } from "../cqlTypes";
 import { CassValue, KeyBadge } from "./CassValue";
 // Shared column-resize handle styling (.dg-col-resize / body.dg-col-resizing).
-import "../../shared/DataGrid.css";
+import "../../shared/styles/DataGrid.css";
 
 // Column-width estimate (sample a few rows, clamp). Cassandra results are
 // bounded (no virtualization), so measuring across a small sample is cheap.

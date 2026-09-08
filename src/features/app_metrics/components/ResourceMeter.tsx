@@ -7,9 +7,9 @@
 // nothing until the first sample lands, and never shows an error — an ambient
 // number is not worth interrupting anyone over.
 
-import { Icon } from "../../shared/ui/Icon";
-import { fmtBytes, fmtCpu, metricsTitle } from "./api";
-import { useAppMetrics } from "./useAppMetrics";
+import { Icon } from "../../../shared/ui/Icon";
+import { fmtBytes, fmtCpu, metricsTitle } from "../api";
+import { useAppMetrics } from "../hooks/useAppMetrics";
 import "./ResourceMeter.css";
 
 /** `className` is the host bar's dim class — the DynamoDB bar styles its own

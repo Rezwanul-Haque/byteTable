@@ -4,7 +4,7 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 
 import { ToastProvider } from "./shared/ui/ToastProvider";
-import { useRepaintOnRestore } from "./shared/ui/useRepaintOnRestore";
+import { useRepaintOnRestore } from "./shared/hooks/useRepaintOnRestore";
 import { usePreferencesStore } from "./features/preferences/state";
 import { useSettingsStore } from "./features/settings/state";
 import { SettingsModal } from "./features/settings/components/SettingsModal";
@@ -38,8 +38,8 @@ import {
   skippedVersion,
   type Update,
 } from "./features/updater/api";
-import { AboutModal } from "./features/updater/AboutModal";
-import { UpdateModal } from "./features/updater/UpdateModal";
+import { AboutModal } from "./features/updater/components/AboutModal";
+import { UpdateModal } from "./features/updater/components/UpdateModal";
 import { TitleBar } from "./shared/ui/TitleBar";
 import { KeyboardShortcutsModal } from "./shared/ui/KeyboardShortcutsModal";
 import type { TitleBarCtx } from "./shared/ui/titlebarMenus";

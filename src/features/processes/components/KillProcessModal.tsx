@@ -7,13 +7,13 @@
 
 import { useState } from "react";
 
-import { appErrorMessage } from "../../shared/api/error";
-import { Btn } from "../../shared/ui/Btn";
-import { Icon } from "../../shared/ui/Icon";
-import { Modal, ModalActions, ModalTitle } from "../../shared/ui/Modal";
-import type { Engine } from "../../shared/types";
-import { useSettingsStore } from "../settings/state";
-import { PROC_SOURCES, procNoun, processKill, type ProcessInfo } from "./api";
+import { appErrorMessage } from "../../../shared/api/error";
+import { Btn } from "../../../shared/ui/Btn";
+import { Icon } from "../../../shared/ui/Icon";
+import { Modal, ModalActions, ModalTitle } from "../../../shared/ui/Modal";
+import type { Engine } from "../../../shared/types";
+import { useSettingsStore } from "../../settings/state";
+import { PROC_SOURCES, procNoun, processKill, type ProcessInfo } from "../api";
 
 export function KillProcessModal({
   handleId,

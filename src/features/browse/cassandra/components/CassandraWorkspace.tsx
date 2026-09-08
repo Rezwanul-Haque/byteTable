@@ -12,12 +12,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { isAppErrorPayload } from "../../../../shared/api/error";
 import { ENV_COLOR } from "../../../../shared/ui/envColors";
 import { BuiltByCredit } from "../../../../shared/ui/BuiltByCredit";
-import { ResourceMeter } from "../../../app_metrics/ResourceMeter";
+import { ResourceMeter } from "../../../app_metrics/components/ResourceMeter";
 import { Icon } from "../../../../shared/ui/Icon";
 import { useToast } from "../../../../shared/ui/toastContext";
-import { useTabMenu } from "../../../../shared/ui/useTabMenu";
+import { useTabMenu } from "../../../../shared/hooks/useTabMenu";
 import { connectionDetail } from "../../../connections/api";
-import { TerminalPanel } from "../../../console/TerminalPanel";
+import { TerminalPanel } from "../../../console/components/TerminalPanel";
 import { shellLabel, usePanelStore } from "../../../console/state";
 import { useWorkspacesStore } from "../../../workspaces/state";
 import { useScopeWorkspaces } from "../../../workspaces/scopes";
@@ -47,7 +47,7 @@ import { CassandraQueryTab } from "./CassandraQueryTab";
 import { CassandraSchemaMap } from "./CassandraSchemaMap";
 import { CassandraSidebar } from "./CassandraSidebar";
 import { SidebarResizer } from "../../../../shared/ui/SidebarResizer";
-import { useAutoRefresh } from "../../../settings/useAutoRefresh";
+import { useAutoRefresh } from "../../../settings/hooks/useAutoRefresh";
 import { CassandraTableTab } from "./CassandraTableTab";
 import { useCassTabsStore } from "../workspaceTabs";
 // Shared chrome the Cassandra slice REUSES (importing the owning components' CSS
@@ -58,15 +58,15 @@ import "../../../workspaces/components/TabBar.css";
 import "../../../workspaces/components/StatusBar.css";
 import "../../../workspaces/components/TableTab.css";
 import "../../../workspaces/components/SqlEditorTab.css";
-import "../../shared/DataGrid.css";
-import "../../shared/StructureView.css";
-import "../../shared/dashboard.css";
-import "../../../console/SqlTerminalTab.css"; // .rcli-* terminal chrome
-import "../../../console/TerminalPanel.css"; // docked terminal panel chrome
+import "../../shared/styles/DataGrid.css";
+import "../../shared/styles/StructureView.css";
+import "../../shared/styles/dashboard.css";
+import "../../../console/components/SqlTerminalTab.css"; // .rcli-* terminal chrome
+import "../../../console/components/TerminalPanel.css"; // docked terminal panel chrome
 import "../../../export/components/ExportProgressModal.css"; // .export-progress-modal
 import "../../../import/components/ImportModal.css"; // import modal chrome
-import "../../shared/dynamoShared.css"; // ddb grid family + io-seg labels shared with Dynamo
-import "../../shared/mongoShared.css"; // mg-* + IO-modal bits shared with Mongo
+import "../../shared/styles/dynamoShared.css"; // ddb grid family + io-seg labels shared with Dynamo
+import "../../shared/styles/mongoShared.css"; // mg-* + IO-modal bits shared with Mongo
 import "./Cassandra.css";
 
 const TAB_ICON: Record<string, string> = {

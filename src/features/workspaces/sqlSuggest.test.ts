@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { Engine } from "../../../shared/types";
+import type { Engine } from "../../shared/types";
 
 import { suggestSql, type EditorSchema } from "./sqlSuggest";
 

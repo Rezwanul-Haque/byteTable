@@ -24,7 +24,7 @@ import {
   type TableDescriptor,
 } from "../api";
 import { cqlColor } from "../cqlTypes";
-import { StructureRailResizer } from "../../shared/StructureRailResizer";
+import { StructureRailResizer } from "../../shared/components/StructureRailResizer";
 
 type PendingOp =
   | { kind: "createIndex"; name: string; target: string; cql: string }

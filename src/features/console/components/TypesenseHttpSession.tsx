@@ -14,14 +14,14 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { isAppErrorPayload } from "../../shared/api/error";
-import { typesenseRawHttp } from "../browse/typesense/api";
-import { TsJson } from "../browse/typesense/components/TsJson";
-import { helpText, parseConsoleCommand } from "../browse/typesense/httpConsole";
-import { useTsTabsStore } from "../browse/typesense/workspaceTabs";
-import type { Workspace } from "../workspaces/types";
-import type { TermSession } from "./state";
-import { focusPromptUnlessSelecting } from "./terminalBody";
+import { isAppErrorPayload } from "../../../shared/api/error";
+import { typesenseRawHttp } from "../../browse/typesense/api";
+import { TsJson } from "../../browse/typesense/components/TsJson";
+import { helpText, parseConsoleCommand } from "../../browse/typesense/httpConsole";
+import { useTsTabsStore } from "../../browse/typesense/workspaceTabs";
+import type { Workspace } from "../../workspaces/types";
+import type { TermSession } from "../state";
+import { focusPromptUnlessSelecting } from "../terminalBody";
 
 interface TextLine {
   kind: "text";

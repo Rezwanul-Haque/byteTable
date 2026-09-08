@@ -51,7 +51,7 @@ import {
   type MigrationWindow,
 } from "../cluster";
 import { humanBytes, humanNum } from "../helpers";
-import "../../shared/dashboard.css";
+import "../../shared/styles/dashboard.css";
 import "./ClusterDashboard.css";
 
 /** Health flag → how it is drawn and what it is called. */

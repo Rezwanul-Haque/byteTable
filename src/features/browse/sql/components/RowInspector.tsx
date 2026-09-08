@@ -18,7 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CellValue } from "../../../../shared/api/engine";
 import { Icon } from "../../../../shared/ui/Icon";
 import { useToast } from "../../../../shared/ui/toastContext";
-import { CellContent } from "../../shared/GridCell";
+import { CellContent } from "../../shared/components/GridCell";
 import {
   binaryClipboardText,
   formatBinary,
@@ -26,15 +26,15 @@ import {
   isUuidType,
 } from "../../shared/binaryCell";
 import { isJsonType, validateJSON } from "../../shared/jsonCell";
-import { JsonField } from "../../shared/JsonField";
+import { JsonField } from "../../shared/components/JsonField";
 import { isTemporalType } from "../../shared/dateTimeCell";
 // The calendar + clock editor now lives in `browse/shared` — it is shared with
 // the DynamoDB item drawer, so neither engine slice imports from the other.
-import { RiDateTime } from "../../shared/DateTimeField";
+import { RiDateTime } from "../../shared/components/DateTimeField";
 import { BinaryEditorModal } from "./BinaryEditorModal";
 import { UuidEditorModal } from "./UuidEditorModal";
-import "../../shared/CellEditors.css";
-import "../../shared/InspectorShell.css";
+import "../../shared/styles/CellEditors.css";
+import "../../shared/styles/InspectorShell.css";
 import "./RowInspector.css";
 
 /** Clipboard shapes offered by the drawer's copy-row menu. */

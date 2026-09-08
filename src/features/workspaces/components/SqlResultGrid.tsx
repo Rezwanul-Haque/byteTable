@@ -23,9 +23,9 @@ import { Btn } from "../../../shared/ui/Btn";
 import { CopyButton } from "../../../shared/ui/CopyButton";
 import { Icon } from "../../../shared/ui/Icon";
 import { useToast } from "../../../shared/ui/toastContext";
-import { CellContent } from "../../browse/shared/GridCell";
+import { CellContent } from "../../browse/shared/components/GridCell";
 
-import { cycleSort, sortedOrder } from "./resultSort";
+import { cycleSort, sortedOrder } from "../resultSort";
 
 /** Row overscan handed to the virtualizer (DOM rows beyond the viewport). */
 const ROW_OVERSCAN = 12;

@@ -20,15 +20,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { isAppErrorPayload } from "../../../../shared/api/error";
 import { Icon } from "../../../../shared/ui/Icon";
 import { BuiltByCredit } from "../../../../shared/ui/BuiltByCredit";
-import { ResourceMeter } from "../../../app_metrics/ResourceMeter";
+import { ResourceMeter } from "../../../app_metrics/components/ResourceMeter";
 import { SidebarResizer } from "../../../../shared/ui/SidebarResizer";
 import { ENV_COLOR } from "../../../../shared/ui/envColors";
-import { useTabMenu } from "../../../../shared/ui/useTabMenu";
+import { useTabMenu } from "../../../../shared/hooks/useTabMenu";
 import { useToast } from "../../../../shared/ui/toastContext";
 import { connectionDetail } from "../../../connections/api";
-import { TerminalPanel } from "../../../console/TerminalPanel";
+import { TerminalPanel } from "../../../console/components/TerminalPanel";
 import { shellLabel, usePanelStore } from "../../../console/state";
-import { useAutoRefresh } from "../../../settings/useAutoRefresh";
+import { useAutoRefresh } from "../../../settings/hooks/useAutoRefresh";
 import { useWorkspacesStore } from "../../../workspaces/state";
 import type { Workspace } from "../../../workspaces/types";
 import {
@@ -63,12 +63,12 @@ import "../../../workspaces/components/TabBar.css";
 import "../../../workspaces/components/StatusBar.css";
 import "../../../workspaces/components/TableTab.css"; // .table-footer / .pager / .seg
 import "../../../workspaces/components/SqlEditorTab.css"; // .snippet-chip
-import "../../shared/StructureView.css";
-import "../../shared/dashboard.css";
-import "../../shared/mongoShared.css"; // .mg-mono
+import "../../shared/styles/StructureView.css";
+import "../../shared/styles/dashboard.css";
+import "../../shared/styles/mongoShared.css"; // .mg-mono
 import "../../cassandra/components/Cassandra.css"; // .cass-dash-num / .cass-dash-key
-import "../../../console/SqlTerminalTab.css"; // .rcli-* terminal chrome
-import "../../../console/TerminalPanel.css";
+import "../../../console/components/SqlTerminalTab.css"; // .rcli-* terminal chrome
+import "../../../console/components/TerminalPanel.css";
 import "./Typesense.css";
 
 const TAB_ICON: Record<string, string> = {

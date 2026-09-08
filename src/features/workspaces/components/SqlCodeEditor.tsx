@@ -70,8 +70,8 @@ import {
   makeSqlCompletionSource,
   sqlDialectFor,
   type EditorSchema,
-} from "./sqlCompletion";
-import { statementRangeAt } from "./sqlStatement";
+} from "../sqlCompletion";
+import { statementRangeAt } from "../sqlStatement";
 import "./SqlCodeEditor.css";
 
 /**

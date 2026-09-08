@@ -102,7 +102,7 @@ import {
 import { ICON_KEY, ICON_LINK, ICON_OPEN, ICON_TABLE, type IconPath } from "../icons";
 import { buildExportSvg, embeddedFontFaceCss, exportTimestamp, readExportColors } from "../export";
 import { isDestructive } from "../editModel";
-import { useSchemaEditor } from "../useSchemaEditor";
+import { useSchemaEditor } from "../hooks/useSchemaEditor";
 import { SchemaCommitModal } from "./SchemaCommitModal";
 import { SchemaEditCanvas } from "./SchemaEditCanvas";
 import "./SchemaMap.css";

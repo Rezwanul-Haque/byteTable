@@ -14,7 +14,7 @@
 // then it shows "— rows".
 
 import { connectionIsTunneled, connectionUser, tunnelTitle } from "../../connections/api";
-import { ResourceMeter } from "../../app_metrics/ResourceMeter";
+import { ResourceMeter } from "../../app_metrics/components/ResourceMeter";
 import { EnvTag } from "../../../shared/ui/EnvTag";
 import { BuiltByCredit } from "../../../shared/ui/BuiltByCredit";
 import { Icon } from "../../../shared/ui/Icon";
@@ -22,7 +22,7 @@ import { rowCountLabel, useTabMetaStore } from "../tabMeta";
 import { useWorkspacesStore } from "../state";
 import type { Workspace } from "../types";
 import { homeSchema } from "../types";
-import "../../processes/ProcessList.css";
+import "../../processes/components/ProcessList.css";
 import "./StatusBar.css";
 
 export function StatusBar({ workspace }: { workspace: Workspace }) {

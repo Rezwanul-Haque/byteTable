@@ -17,10 +17,10 @@
 
 import { useRef } from "react";
 
-import { Icon } from "../../shared/ui/Icon";
-import { IconBtn } from "../../shared/ui/IconBtn";
-import { useTabMenu } from "../../shared/ui/useTabMenu";
-import type { Workspace } from "../workspaces/types";
+import { Icon } from "../../../shared/ui/Icon";
+import { IconBtn } from "../../../shared/ui/IconBtn";
+import { useTabMenu } from "../../../shared/hooks/useTabMenu";
+import type { Workspace } from "../../workspaces/types";
 import { CassandraShellSession } from "./CassandraShellSession";
 import { DynamoPartiqlSession } from "./DynamoPartiqlSession";
 import { MongoShellSession } from "./MongoShellSession";
@@ -35,7 +35,7 @@ import {
   shellLabel,
   usePanelStore,
   type TermSession,
-} from "./state";
+} from "../state";
 import "./TerminalPanel.css";
 
 export function TerminalPanel({ workspace }: { workspace: Workspace }) {

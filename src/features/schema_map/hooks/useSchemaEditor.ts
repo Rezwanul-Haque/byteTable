@@ -20,12 +20,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { executeScriptText } from "../../shared/api/engine";
-import type { TableMeta } from "../../shared/api/engine";
-import { appErrorMessage } from "../../shared/api/error";
-import type { ToastKind } from "../../shared/ui/toastContext";
-import { useIntrospectionStore } from "../introspection/state";
-import type { Workspace } from "../workspaces/types";
+import { executeScriptText } from "../../../shared/api/engine";
+import type { TableMeta } from "../../../shared/api/engine";
+import { appErrorMessage } from "../../../shared/api/error";
+import type { ToastKind } from "../../../shared/ui/toastContext";
+import { useIntrospectionStore } from "../../introspection/state";
+import type { Workspace } from "../../workspaces/types";
 import {
   buildEditSchema,
   cloneEditSchema,
@@ -34,7 +34,7 @@ import {
   sanitizeName,
   type EditMeta,
   type EditSchema,
-} from "./editModel";
+} from "../editModel";
 
 /** Card position in world coords (matches the host's `Positions` entries). */
 export interface XY {

@@ -14,7 +14,7 @@ import { SidebarResizer } from "../../../shared/ui/SidebarResizer";
 import { CommandPalette } from "./CommandPalette";
 import { StatusBar } from "./StatusBar";
 import { WorkspaceContent } from "./WorkspaceContent";
-import { TerminalPanel } from "../../console/TerminalPanel";
+import { TerminalPanel } from "../../console/components/TerminalPanel";
 import { shellLabel, usePanelStore } from "../../console/state";
 import { PROC_SOURCES } from "../../processes/api";
 import { useWorkspacesStore } from "../state";

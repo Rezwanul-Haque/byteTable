@@ -15,7 +15,7 @@ import { EngineBadge } from "../../../shared/ui/EngineBadge";
 import { EnvTag } from "../../../shared/ui/EnvTag";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
-import { useContextMenu } from "../../../shared/ui/useContextMenu";
+import { useContextMenu } from "../../../shared/hooks/useContextMenu";
 import { useToast } from "../../../shared/ui/toastContext";
 import { useT } from "../../../shared/i18n/useT";
 import { tildify, useHomeDir } from "../../../shared/homeDir";

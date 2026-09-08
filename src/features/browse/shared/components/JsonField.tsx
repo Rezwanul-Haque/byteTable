@@ -15,9 +15,9 @@
 
 import { useRef } from "react";
 
-import { Icon } from "../../../shared/ui/Icon";
-import { highlightJSON, validateJSON } from "./jsonCell";
-import "./CellEditors.css";
+import { Icon } from "../../../../shared/ui/Icon";
+import { highlightJSON, validateJSON } from "../jsonCell";
+import "../styles/CellEditors.css";
 import "./JsonField.css";
 
 /** Line height (px) of the code area, matched by `.ri-json-hl` / `.ri-json-ta`. */

@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { PROC_SOURCES } from "../../processes/api";
-import { ProcessesTab } from "../../processes/ProcessesTab";
+import { ProcessesTab } from "../../processes/components/ProcessesTab";
 import { SchemaDiff } from "../../schema_diff/components/SchemaDiff";
 import { SchemaMap } from "../../schema_map/components/SchemaMap";
 import { selectPanel, shellLabel, usePanelStore } from "../../console/state";

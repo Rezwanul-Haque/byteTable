@@ -16,7 +16,7 @@ import { Modal } from "../../../../shared/ui/Modal";
 import { useToast } from "../../../../shared/ui/toastContext";
 import { mongoDeleteOne, mongoInsertOne, mongoReplaceOne, type MongoDoc } from "../api";
 import { highlightMongoJson, mongoParse, mongoStringify, validateAgainstSchema } from "../helpers";
-import "../../shared/CellEditors.css"; // .jx-* token colours
+import "../../shared/styles/CellEditors.css"; // .jx-* token colours
 
 export function MongoDocModal({
   doc,

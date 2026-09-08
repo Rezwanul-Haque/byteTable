@@ -5,12 +5,12 @@
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
-import { appErrorMessage } from "../../shared/api/error";
-import { Icon } from "../../shared/ui/Icon";
-import { IconBtn } from "../../shared/ui/IconBtn";
-import { ENV_COLOR } from "../../shared/ui/envColors";
-import { normalizeEnv, type Engine } from "../../shared/types";
-import { useToast } from "../../shared/ui/toastContext";
+import { appErrorMessage } from "../../../shared/api/error";
+import { Icon } from "../../../shared/ui/Icon";
+import { IconBtn } from "../../../shared/ui/IconBtn";
+import { ENV_COLOR } from "../../../shared/ui/envColors";
+import { normalizeEnv, type Engine } from "../../../shared/types";
+import { useToast } from "../../../shared/ui/toastContext";
 import {
   PROC_SOURCES,
   fmtProcTime,
@@ -18,9 +18,9 @@ import {
   procStateCls,
   processList,
   type ProcessInfo,
-} from "./api";
+} from "../api";
 import { KillProcessModal } from "./KillProcessModal";
-import "../browse/shared/DataGrid.css";
+import "../../browse/shared/styles/DataGrid.css";
 import "./ProcessList.css";
 
 const REFRESH_MS = 2500;

@@ -8,7 +8,7 @@
 // exactly what the query RETURNED (with a backend row_limit in play, that is
 // the returned page, not the whole table).
 
-import type { CellValue, SortDirection, SortSpec } from "../../../shared/api/engine";
+import type { CellValue, SortDirection, SortSpec } from "../../shared/api/engine";
 
 /** Sort state cycles asc → desc → none (null) on repeated header clicks —
  *  identical to the browse DataGrid's `cycleSort`. */

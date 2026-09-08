@@ -15,7 +15,7 @@ import { BulkDeleteModal } from "../../../../shared/ui/BulkDeleteModal";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { Select } from "../../../../shared/ui/Select";
-import { useFilterShortcut } from "../../../../shared/ui/useFilterShortcut";
+import { useFilterShortcut } from "../../../../shared/hooks/useFilterShortcut";
 import { useToast } from "../../../../shared/ui/toastContext";
 import {
   cassDeleteRows,

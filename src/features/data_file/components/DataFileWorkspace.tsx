@@ -20,9 +20,9 @@ import { BuiltByCredit } from "../../../shared/ui/BuiltByCredit";
 import { Modal, ModalActions, ModalTitle } from "../../../shared/ui/Modal";
 import { Icon } from "../../../shared/ui/Icon";
 import { SidebarResizer } from "../../../shared/ui/SidebarResizer";
-import { useTabMenu } from "../../../shared/ui/useTabMenu";
+import { useTabMenu } from "../../../shared/hooks/useTabMenu";
 import { useToast } from "../../../shared/ui/toastContext";
-import { ResourceMeter } from "../../app_metrics/ResourceMeter";
+import { ResourceMeter } from "../../app_metrics/components/ResourceMeter";
 import { useWorkspacesStore } from "../../workspaces/state";
 import type { DataFileRef, Workspace } from "../../workspaces/types";
 import { delimLabel, fmtBytes } from "../core";
@@ -46,7 +46,7 @@ import "../../../features/workspaces/components/StatusBar.css";
 import "../../../features/workspaces/components/TableTab.css"; // .table-footer / .pager / .filter-toggle
 import "../../../features/workspaces/components/SqlEditorTab.css"; // .sql-error
 import "../../browse/sql/components/FilterPanel.css";
-import "../../browse/shared/DataGrid.css"; // .save-bar / .cell-edited / .row-staged
+import "../../browse/shared/styles/DataGrid.css"; // .save-bar / .cell-edited / .row-staged
 // Reuse the app's destructive-button styling (.btn-danger) for the discard confirm.
 import "../../export/components/TruncateModal.css";
 import "./DataFileWorkspace.css";

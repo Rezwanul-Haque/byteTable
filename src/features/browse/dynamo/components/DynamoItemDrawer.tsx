@@ -40,11 +40,11 @@ import {
   marshalItem,
   DDB_TYPES,
 } from "../helpers";
-import { RiDateTime } from "../../shared/DateTimeField";
-import { JsonField } from "../../shared/JsonField";
+import { RiDateTime } from "../../shared/components/DateTimeField";
+import { JsonField } from "../../shared/components/JsonField";
 import { highlightJSON } from "../../shared/jsonCell";
-import "../../shared/CellEditors.css";
-import "../../shared/InspectorShell.css";
+import "../../shared/styles/CellEditors.css";
+import "../../shared/styles/InspectorShell.css";
 
 interface AttrRow {
   name: string;

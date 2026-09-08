@@ -21,7 +21,7 @@ import {
   validateBinary,
   type UuidVersion,
 } from "../../shared/binaryCell";
-import "../../shared/CellEditors.css";
+import "../../shared/styles/CellEditors.css";
 
 interface BinaryEditorModalProps {
   schemaName: string;

@@ -17,7 +17,7 @@
 // matching formatSql); ClickHouse's camelCase functions are NOT uppercased —
 // `toDateTime` is a different identifier from `TODATETIME` there.
 
-import type { Engine } from "../../../shared/types";
+import type { Engine } from "../../shared/types";
 
 /**
  * Keywords every supported SQL engine shares. Ordered roughly by how often a

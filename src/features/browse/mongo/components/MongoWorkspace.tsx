@@ -13,11 +13,11 @@ import { ENV_COLOR } from "../../../../shared/ui/envColors";
 import { BuiltByCredit } from "../../../../shared/ui/BuiltByCredit";
 import { Icon } from "../../../../shared/ui/Icon";
 import { useBtCmd } from "../../../../shared/ui/btCmd";
-import { ResourceMeter } from "../../../app_metrics/ResourceMeter";
-import { ProcessesTab } from "../../../processes/ProcessesTab";
-import { useTabMenu } from "../../../../shared/ui/useTabMenu";
+import { ResourceMeter } from "../../../app_metrics/components/ResourceMeter";
+import { ProcessesTab } from "../../../processes/components/ProcessesTab";
+import { useTabMenu } from "../../../../shared/hooks/useTabMenu";
 import { connectionDetail } from "../../../connections/api";
-import { TerminalPanel } from "../../../console/TerminalPanel";
+import { TerminalPanel } from "../../../console/components/TerminalPanel";
 import { shellLabel, usePanelStore } from "../../../console/state";
 import { useWorkspacesStore } from "../../../workspaces/state";
 import { useScopeWorkspaces } from "../../../workspaces/scopes";
@@ -38,7 +38,7 @@ import {
   MongoTruncateCollectionModal,
 } from "./MongoDdlModals";
 import { SidebarResizer } from "../../../../shared/ui/SidebarResizer";
-import { useAutoRefresh } from "../../../settings/useAutoRefresh";
+import { useAutoRefresh } from "../../../settings/hooks/useAutoRefresh";
 import { useMongoActiveDbStore, useMongoShellStore } from "../shellState";
 import { useMongoTabsStore, type MongoWorkspaceTab as Tab } from "../workspaceTabs";
 // Shared chrome the Mongo slice REUSES (per MILESTONE_18: "do not re-style it").
@@ -53,18 +53,18 @@ import "../../../workspaces/components/TabBar.css"; // .tabbar, .tab, .tab-new
 import "../../../workspaces/components/StatusBar.css"; // .statusbar, .ws-chip, .env-tag, .status-*
 import "../../../workspaces/components/TableTab.css"; // .table-tab, .table-toolbar, .seg/.seg-btn
 import "../../../workspaces/components/SqlEditorTab.css"; // .sql-error, .sql-hint, .sql-snippets, .snippet-chip
-import "../../shared/DataGrid.css"; // .datagrid, .dg-*, .cell-*
-import "../../shared/StructureView.css"; // .structure-table, .structure-card, .ddl-block, .tag
-import "../../shared/dashboard.css"; // .rdash-*
-import "../../../console/SqlTerminalTab.css"; // .rcli-* terminal chrome
+import "../../shared/styles/DataGrid.css"; // .datagrid, .dg-*, .cell-*
+import "../../shared/styles/StructureView.css"; // .structure-table, .structure-card, .ddl-block, .tag
+import "../../shared/styles/dashboard.css"; // .rdash-*
+import "../../../console/components/SqlTerminalTab.css"; // .rcli-* terminal chrome
 import "../../../export/components/ExportProgressModal.css"; // .export-*
 import "../../../import/components/ImportModal.css"; // .import-*
-import "../../shared/dynamoShared.css"; // ddb grid family + dash-num/edit-dot/io shared with Dynamo
-import "../../../console/TerminalPanel.css"; // docked mongosh panel chrome
+import "../../shared/styles/dynamoShared.css"; // ddb grid family + dash-num/edit-dot/io shared with Dynamo
+import "../../../console/components/TerminalPanel.css"; // docked mongosh panel chrome
 // Mongo-specific (mg-*) styles load LAST so they win on any conflict.
 import "./Mongo.css";
 // Cross-engine mg-* + IO-modal overrides (shared with Cassandra) — load last.
-import "../../shared/mongoShared.css";
+import "../../shared/styles/mongoShared.css";
 
 const TAB_ICON: Record<string, string> = {
   dashboard: "monitoring",

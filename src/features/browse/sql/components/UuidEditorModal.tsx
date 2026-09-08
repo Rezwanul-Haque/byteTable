@@ -18,7 +18,7 @@ import {
   UUID_VERSIONS,
   type UuidVersion,
 } from "../../shared/binaryCell";
-import "../../shared/CellEditors.css";
+import "../../shared/styles/CellEditors.css";
 
 interface UuidEditorModalProps {
   schemaName: string;

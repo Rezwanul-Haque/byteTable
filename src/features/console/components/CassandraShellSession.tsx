@@ -6,17 +6,17 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { isAppErrorPayload } from "../../shared/api/error";
-import { CassValue } from "../browse/cassandra/components/CassValue";
+import { isAppErrorPayload } from "../../../shared/api/error";
+import { CassValue } from "../../browse/cassandra/components/CassValue";
 import {
   cassClusterStatus,
   cassRunCql,
   type CassColumn,
   type NodeStatus,
-} from "../browse/cassandra/api";
-import type { Workspace } from "../workspaces/types";
-import type { TermSession } from "./state";
-import { focusPromptUnlessSelecting } from "./terminalBody";
+} from "../../browse/cassandra/api";
+import type { Workspace } from "../../workspaces/types";
+import type { TermSession } from "../state";
+import { focusPromptUnlessSelecting } from "../terminalBody";
 
 interface TextLine {
   cls: string;

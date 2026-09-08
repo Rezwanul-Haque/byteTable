@@ -7,12 +7,12 @@ import { useState } from "react";
 
 import { openUrl } from "@tauri-apps/plugin-opener";
 
-import { BrandMark } from "../../shared/ui/BrandMark";
-import { Btn } from "../../shared/ui/Btn";
-import { Icon } from "../../shared/ui/Icon";
-import { IconBtn } from "../../shared/ui/IconBtn";
-import { Modal, ModalActions } from "../../shared/ui/Modal";
-import { checkForUpdate, UPDATE_REPO, type Update } from "./api";
+import { BrandMark } from "../../../shared/ui/BrandMark";
+import { Btn } from "../../../shared/ui/Btn";
+import { Icon } from "../../../shared/ui/Icon";
+import { IconBtn } from "../../../shared/ui/IconBtn";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
+import { checkForUpdate, UPDATE_REPO, type Update } from "../api";
 import "./AboutModal.css";
 
 const REPO_URL = `https://github.com/${UPDATE_REPO}`;

@@ -49,8 +49,8 @@ import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { Modal, ModalTitle } from "../../../../shared/ui/Modal";
 import { Select } from "../../../../shared/ui/Select";
 import { useToast } from "../../../../shared/ui/toastContext";
-import "../../shared/StructureView.css";
-import { StructureRailResizer } from "../../shared/StructureRailResizer";
+import "../../shared/styles/StructureView.css";
+import { StructureRailResizer } from "../../shared/components/StructureRailResizer";
 
 interface StructureViewProps {
   handleId: string;

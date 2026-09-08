@@ -38,7 +38,7 @@ import {
   type StepKey,
   stepByKey,
   WRITTEN_ORDER,
-} from "./explainClauses";
+} from "../explainClauses";
 import {
   type Analysis,
   analyzeQuery,
@@ -55,9 +55,9 @@ import {
   psqlPlanText,
   rawPlanText,
   withServerPlan,
-} from "./explainModel";
-import { parseSelectShape } from "./explainParse";
-import { measureQuery } from "./explainRun";
+} from "../explainModel";
+import { parseSelectShape } from "../explainParse";
+import { measureQuery } from "../explainRun";
 import {
   explainCapabilities,
   type ExplainCapabilities,
@@ -68,8 +68,8 @@ import {
   type RawPlan,
   rawPlanTextOf,
   type ServerPlan,
-} from "./explainServer";
-import { statementContextAt } from "./sqlStatement";
+} from "../explainServer";
+import { statementContextAt } from "../sqlStatement";
 
 /**
  * Compact two-column "written vs. run order" minimap shown under the editor.

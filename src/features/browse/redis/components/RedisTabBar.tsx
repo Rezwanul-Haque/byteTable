@@ -13,7 +13,7 @@ import {
 } from "react";
 
 import { Icon } from "../../../../shared/ui/Icon";
-import { useTabMenu } from "../../../../shared/ui/useTabMenu";
+import { useTabMenu } from "../../../../shared/hooks/useTabMenu";
 import type { RedisTab } from "../state";
 import { RedisTypeBadge } from "./RedisTypeBadge";
 // `.tabbar-tools` / `.tabbar-tool` / `.tabbar-tool-icon` for the right-hand

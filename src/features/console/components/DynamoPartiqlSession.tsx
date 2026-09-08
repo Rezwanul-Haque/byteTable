@@ -8,10 +8,10 @@
 
 import { useEffect, useState } from "react";
 
-import { dynamoListTables, type TableDescriptor } from "../browse/dynamo/api";
-import { DynamoPartiqlTab } from "../browse/dynamo/components/DynamoPartiqlTab";
-import type { Workspace } from "../workspaces/types";
-import { usePanelStore, type TermSession } from "./state";
+import { dynamoListTables, type TableDescriptor } from "../../browse/dynamo/api";
+import { DynamoPartiqlTab } from "../../browse/dynamo/components/DynamoPartiqlTab";
+import type { Workspace } from "../../workspaces/types";
+import { usePanelStore, type TermSession } from "../state";
 
 export function DynamoPartiqlSession({
   workspace,

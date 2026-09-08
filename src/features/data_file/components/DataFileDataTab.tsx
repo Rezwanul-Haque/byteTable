@@ -24,7 +24,7 @@ import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Select } from "../../../shared/ui/Select";
-import { useFilterShortcut } from "../../../shared/ui/useFilterShortcut";
+import { useFilterShortcut } from "../../../shared/hooks/useFilterShortcut";
 import { useToast } from "../../../shared/ui/toastContext";
 import { FilterPanel } from "../../browse/sql/components/FilterPanel";
 import {
@@ -34,7 +34,7 @@ import {
 } from "../../browse/sql/components/RowInspector";
 import { appliedDisplaySql, emptyDraft } from "../../browse/sql/filter";
 import { SqlResultGrid } from "../../workspaces/components/SqlResultGrid";
-import { sortedOrder } from "../../workspaces/components/resultSort";
+import { sortedOrder } from "../../workspaces/resultSort";
 import type { TabFilterState } from "../../workspaces/types";
 import { TYPES } from "../core";
 import type { DataFileDoc } from "../doc";

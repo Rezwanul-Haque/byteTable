@@ -24,22 +24,22 @@
 
 import { useLayoutEffect, useRef, useState } from "react";
 
-import { Btn } from "../../shared/ui/Btn";
-import { Icon } from "../../shared/ui/Icon";
-import { IconBtn } from "../../shared/ui/IconBtn";
-import { Modal, ModalActions, ModalTitle } from "../../shared/ui/Modal";
-import { appErrorMessage } from "../../shared/api/error";
-import { kvCommand } from "../browse/redis/api";
+import { Btn } from "../../../shared/ui/Btn";
+import { Icon } from "../../../shared/ui/Icon";
+import { IconBtn } from "../../../shared/ui/IconBtn";
+import { Modal, ModalActions, ModalTitle } from "../../../shared/ui/Modal";
+import { appErrorMessage } from "../../../shared/api/error";
+import { kvCommand } from "../../browse/redis/api";
 import {
   formatReply,
   isDestructiveCommand,
   isMutatingCommand,
   tokenizeCommand,
-} from "../browse/redis/helpers";
-import { useRedisBrowseStore } from "../browse/redis/state";
-import type { Workspace } from "../workspaces/types";
-import { usePanelStore, type TermLine, type TermSession } from "./state";
-import { focusPromptUnlessSelecting } from "./terminalBody";
+} from "../../browse/redis/helpers";
+import { useRedisBrowseStore } from "../../browse/redis/state";
+import type { Workspace } from "../../workspaces/types";
+import { usePanelStore, type TermLine, type TermSession } from "../state";
+import { focusPromptUnlessSelecting } from "../terminalBody";
 import "./SqlTerminalTab.css";
 
 /** The redis-cli quick-command preset chips (ported verbatim from the

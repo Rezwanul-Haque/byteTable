@@ -20,7 +20,7 @@ import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { Modal, ModalActions, ModalTitle } from "../../../../shared/ui/Modal";
 import { useToast } from "../../../../shared/ui/toastContext";
-import { CellContent } from "../../shared/GridCell";
+import { CellContent } from "../../shared/components/GridCell";
 import { highlightJSON } from "../../shared/jsonCell";
 import {
   kvDeleteKey,

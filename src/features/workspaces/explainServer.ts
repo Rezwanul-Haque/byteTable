@@ -8,8 +8,8 @@
 
 import { invoke } from "@tauri-apps/api/core";
 
-import type { CellValue } from "../../../shared/api/engine";
-import type { Engine } from "../../../shared/types";
+import type { CellValue } from "../../shared/api/engine";
+import type { Engine } from "../../shared/types";
 
 /** Mirrors Rust `explain::domain::NodeKind`. */
 export type NodeKind = "scan" | "join" | "agg" | "sort" | "unique" | "limit" | "other";

@@ -17,7 +17,7 @@ import {
 } from "react";
 
 import { Icon } from "../../../shared/ui/Icon";
-import { useTabMenu } from "../../../shared/ui/useTabMenu";
+import { useTabMenu } from "../../../shared/hooks/useTabMenu";
 import { OBJ_SECTIONS } from "../../db_objects/kinds";
 import { tabLabels } from "../tabLabels";
 import type { Tab } from "../types";

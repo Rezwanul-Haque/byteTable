@@ -34,7 +34,7 @@ import {
 import { CLIENT_TYPE_COLOR, breakdown } from "../clients";
 import { humanBytes, humanNum, REDIS_TYPES, REDIS_TYPE_ORDER } from "../helpers";
 import { RedisTypeBadge } from "./RedisTypeBadge";
-import "../../shared/dashboard.css";
+import "../../shared/styles/dashboard.css";
 
 /** Total keys to sample (bounded) when deriving the per-type distribution. */
 const SAMPLE_MAX = 500;

@@ -19,7 +19,7 @@ import { useToast } from "../../../../shared/ui/toastContext";
 import type { DynamoItem, KeySchema } from "../api";
 import { attributeUnion, dynamoFmt, orderAttributes } from "../helpers";
 // The shared column-resize handle styling (.dg-col-resize / body.dg-col-resizing).
-import "../../shared/DataGrid.css";
+import "../../shared/styles/DataGrid.css";
 
 /**
  * Rect observer that ignores a 0×0 measurement and keeps the last real one.

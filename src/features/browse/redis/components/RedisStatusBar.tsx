@@ -6,13 +6,13 @@
 
 import { EnvTag } from "../../../../shared/ui/EnvTag";
 import { BuiltByCredit } from "../../../../shared/ui/BuiltByCredit";
-import { ResourceMeter } from "../../../app_metrics/ResourceMeter";
+import { ResourceMeter } from "../../../app_metrics/components/ResourceMeter";
 import { Icon } from "../../../../shared/ui/Icon";
 import type { Env } from "../../../../shared/types";
 import type { ClusterTopology, KeyType } from "../api";
 import { allNodes, totalKeys } from "../cluster";
 import { humanBytes, humanNum, REDIS_TYPES } from "../helpers";
-import "../../../processes/ProcessList.css";
+import "../../../processes/components/ProcessList.css";
 import "./ClusterDashboard.css";
 import "./RedisStatusBar.css";
 

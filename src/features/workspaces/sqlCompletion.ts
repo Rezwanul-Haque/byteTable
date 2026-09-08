@@ -24,7 +24,7 @@ import {
   type SQLDialect,
 } from "@codemirror/lang-sql";
 
-import type { Engine } from "../../../shared/types";
+import type { Engine } from "../../shared/types";
 
 import { suggestSql, SUGGEST_KIND_LABEL, type EditorSchema, type Suggestion } from "./sqlSuggest";
 

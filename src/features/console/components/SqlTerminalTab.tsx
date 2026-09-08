@@ -19,25 +19,25 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import { connectionSchemas, connectionTables } from "../connections/api";
-import { queryRun, tableMeta, type CellValue, type QueryResult } from "../../shared/api/engine";
-import { appErrorMessage } from "../../shared/api/error";
-import type { Engine } from "../../shared/types";
-import { Icon } from "../../shared/ui/Icon";
-import { IconBtn } from "../../shared/ui/IconBtn";
-import { CopyButton } from "../../shared/ui/CopyButton";
-import { useToast } from "../../shared/ui/toastContext";
-import { columnsKey, tablesKey, useIntrospectionStore } from "../introspection/state";
+import { connectionSchemas, connectionTables } from "../../connections/api";
+import { queryRun, tableMeta, type CellValue, type QueryResult } from "../../../shared/api/engine";
+import { appErrorMessage } from "../../../shared/api/error";
+import type { Engine } from "../../../shared/types";
+import { Icon } from "../../../shared/ui/Icon";
+import { IconBtn } from "../../../shared/ui/IconBtn";
+import { CopyButton } from "../../../shared/ui/CopyButton";
+import { useToast } from "../../../shared/ui/toastContext";
+import { columnsKey, tablesKey, useIntrospectionStore } from "../../introspection/state";
 import {
   suggestSql,
   SUGGEST_KIND_LABEL,
   type EditorSchema,
   type Suggestion,
-} from "../workspaces/components/sqlSuggest";
-import { useWorkspacesStore } from "../workspaces/state";
-import type { Workspace } from "../workspaces/types";
-import { usePanelStore, type TermLine, type TermSession, type TermTextLine } from "./state";
-import { focusPromptUnlessSelecting, gridToTsv, transcriptToText } from "./terminalBody";
+} from "../../workspaces/sqlSuggest";
+import { useWorkspacesStore } from "../../workspaces/state";
+import type { Workspace } from "../../workspaces/types";
+import { usePanelStore, type TermLine, type TermSession, type TermTextLine } from "../state";
+import { focusPromptUnlessSelecting, gridToTsv, transcriptToText } from "../terminalBody";
 import "./SqlTerminalTab.css";
 
 // ---- engine-specific shell config (ported verbatim from termConfig) ----

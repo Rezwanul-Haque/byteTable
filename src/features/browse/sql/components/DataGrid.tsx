@@ -73,7 +73,7 @@ import { Icon } from "../../../../shared/ui/Icon";
 import { CopyButton } from "../../../../shared/ui/CopyButton";
 import { Modal, ModalActions, ModalTitle } from "../../../../shared/ui/Modal";
 import { useToast } from "../../../../shared/ui/toastContext";
-import { useContextMenu } from "../../../../shared/ui/useContextMenu";
+import { useContextMenu } from "../../../../shared/hooks/useContextMenu";
 import { useIntrospectionStore } from "../../../introspection/state";
 import { storedTabGridEdits, useWorkspacesStore } from "../../../workspaces/state";
 import { useSettingsStore } from "../../../settings/state";
@@ -91,12 +91,12 @@ import {
 import { highlightSql } from "../../shared/highlightSql";
 import { ColumnInsights, type InsightsAnchor } from "./ColumnInsights";
 import { FkPeek, type FkPeekAnchor } from "./FkPeek";
-import { CellContent } from "../../shared/GridCell";
+import { CellContent } from "../../shared/components/GridCell";
 import { JsonEditorModal } from "./JsonEditorModal";
 import { RowInspector, type InspectorColumn, type RowCopyFormat } from "./RowInspector";
 import { isJsonType } from "../../shared/jsonCell";
 import type { Engine } from "../../../../shared/types";
-import "../../shared/DataGrid.css";
+import "../../shared/styles/DataGrid.css";
 
 /** Per-column metadata the grid keeps from tableMeta: pk/fk drive icons + FK
  *  hop (M10); dataType/nullable drive inline-edit type coercion + the

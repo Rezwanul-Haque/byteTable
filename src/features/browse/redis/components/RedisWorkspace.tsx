@@ -15,7 +15,7 @@ import {
   tunnelTitle,
   type KvDbInfo,
 } from "../../../connections/api";
-import { TerminalPanel } from "../../../console/TerminalPanel";
+import { TerminalPanel } from "../../../console/components/TerminalPanel";
 import { shellLabel, usePanelStore } from "../../../console/state";
 import { useWorkspacesStore } from "../../../workspaces/state";
 import { useScopeWorkspaces } from "../../../workspaces/scopes";
@@ -37,7 +37,7 @@ import { useBtCmd } from "../../../../shared/ui/btCmd";
 import { RedisCommandPalette } from "./RedisCommandPalette";
 import { RedisSidebar } from "./RedisSidebar";
 import { SidebarResizer } from "../../../../shared/ui/SidebarResizer";
-import { useAutoRefresh } from "../../../settings/useAutoRefresh";
+import { useAutoRefresh } from "../../../settings/hooks/useAutoRefresh";
 import { RedisStatusBar } from "./RedisStatusBar";
 import { RedisTabBar } from "./RedisTabBar";
 import { RedisTabContent } from "./RedisTabContent";

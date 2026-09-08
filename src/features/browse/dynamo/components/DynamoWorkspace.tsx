@@ -9,15 +9,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { isAppErrorPayload } from "../../../../shared/api/error";
 import { connectionDetail } from "../../../connections/api";
-import { TerminalPanel } from "../../../console/TerminalPanel";
+import { TerminalPanel } from "../../../console/components/TerminalPanel";
 import { shellLabel, usePanelStore } from "../../../console/state";
 import { ENV_COLOR } from "../../../../shared/ui/envColors";
 import { BuiltByCredit } from "../../../../shared/ui/BuiltByCredit";
-import { ResourceMeter } from "../../../app_metrics/ResourceMeter";
+import { ResourceMeter } from "../../../app_metrics/components/ResourceMeter";
 import { Icon } from "../../../../shared/ui/Icon";
-import { useTabMenu } from "../../../../shared/ui/useTabMenu";
+import { useTabMenu } from "../../../../shared/hooks/useTabMenu";
 import { useWorkspacesStore } from "../../../workspaces/state";
-import { useAutoRefresh } from "../../../settings/useAutoRefresh";
+import { useAutoRefresh } from "../../../settings/hooks/useAutoRefresh";
 import type { Workspace } from "../../../workspaces/types";
 import {
   dynamoDescribeTable,
@@ -42,7 +42,7 @@ import { DynamoTableTab } from "./DynamoTableTab";
 import "./Dynamo.css";
 // Grid family + shared ddb bits (reused by Mongo/Cassandra) — load last to keep
 // the datagrid cascade order it had as one file.
-import "../../shared/dynamoShared.css";
+import "../../shared/styles/dynamoShared.css";
 
 type TabKind = "dashboard" | "table" | "map" | "query";
 type Tab = DynamoWorkspaceTab;

@@ -30,7 +30,7 @@ import { useSettingsStore } from "../../settings/state";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Icon } from "../../../shared/ui/Icon";
 import { Select } from "../../../shared/ui/Select";
-import { useFilterShortcut } from "../../../shared/ui/useFilterShortcut";
+import { useFilterShortcut } from "../../../shared/hooks/useFilterShortcut";
 import type { ColumnInfo, SortSpec } from "../../../shared/api/engine";
 import { useWorkspacesStore } from "../state";
 import { rowCountLabel, useTabMetaStore } from "../tabMeta";

@@ -47,8 +47,8 @@ import {
 import { RedisClientInspector } from "./RedisClientInspector";
 import { RedisKillFilter, type KillFilterRequest } from "./RedisKillFilter";
 import { RedisKillClientsModal, type KillTarget } from "./RedisKillClientsModal";
-import "../../shared/DataGrid.css";
-import "../../../processes/ProcessList.css";
+import "../../shared/styles/DataGrid.css";
+import "../../../processes/components/ProcessList.css";
 import "./RedisClientsTab.css";
 
 /** Auto-refresh cadence — the prototype's 2.5s. */

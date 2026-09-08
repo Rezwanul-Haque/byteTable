@@ -52,7 +52,7 @@ import { platform } from "@tauri-apps/plugin-os";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { UPDATE_REPO } from "../../updater/api";
 import { detectSystemMonos } from "../fonts";
-import { renderSqlPreview } from "../sqlPreview";
+import { renderSqlPreview } from "./sqlPreview";
 import { useSettingsStore, type SettingsTabId } from "../state";
 import "./SettingsModal.css";
 

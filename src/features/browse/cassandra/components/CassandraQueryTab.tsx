@@ -9,12 +9,12 @@ import { useMemo, useRef, useState } from "react";
 import { isAppErrorPayload } from "../../../../shared/api/error";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
-import { formatSql } from "../../../workspaces/components/formatSql";
+import { formatSql } from "../../../workspaces/formatSql";
 import {
   SqlCodeEditor,
   type SqlCodeEditorHandle,
 } from "../../../workspaces/components/SqlCodeEditor";
-import { splitStatements } from "../../../workspaces/components/sqlStatement";
+import { splitStatements } from "../../../workspaces/sqlStatement";
 import { cassRunCql, type CassColumn, type CassCqlResult, type TableDescriptor } from "../api";
 import { csvOf, download } from "../cassIo";
 import { CassRowGrid } from "./CassRowGrid";

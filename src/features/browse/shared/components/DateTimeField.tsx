@@ -19,8 +19,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import type { CellValue } from "../../../shared/api/engine";
-import { Icon } from "../../../shared/ui/Icon";
+import type { CellValue } from "../../../../shared/api/engine";
+import { Icon } from "../../../../shared/ui/Icon";
 import {
   RI_TZS,
   fmtTs,
@@ -31,8 +31,8 @@ import {
   tzParts,
   wallToDate,
   type WallParts,
-} from "./dateTimeCell";
-import "./CellEditors.css";
+} from "../dateTimeCell";
+import "../styles/CellEditors.css";
 import "./DateTimeField.css";
 
 // --- timestamp editor: calendar + clock, UTC by default, tz switchable ------

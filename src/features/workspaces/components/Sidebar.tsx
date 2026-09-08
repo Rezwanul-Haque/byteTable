@@ -51,7 +51,7 @@ import { ImportModal } from "../../import/components/ImportModal";
 import { SchemaImportModal } from "../../import/components/SchemaImportModal";
 import { tablesKey, columnsKey, useIntrospectionStore } from "../../introspection/state";
 import { useSettingsStore } from "../../settings/state";
-import { useAutoRefresh } from "../../settings/useAutoRefresh";
+import { useAutoRefresh } from "../../settings/hooks/useAutoRefresh";
 import { useScopeWorkspaces } from "../scopes";
 import { ScopeSplitAction, ScopeSplitHint } from "./ScopeSplitAction";
 import { ScopeSwitcherModal } from "./ScopeSwitcherModal";

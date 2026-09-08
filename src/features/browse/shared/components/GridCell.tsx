@@ -13,11 +13,11 @@
 // SQL-results grid — which has no per-column table origin (see SqlResultGrid)
 // — is unchanged until/unless an origin is supplied.
 
-import type { CellValue, FkRef } from "../../../shared/api/engine";
-import { Icon } from "../../../shared/ui/Icon";
-import { formatBinary, isBinaryType, isUuidType, looksUuid } from "./binaryCell";
-import { isJsonType, jsonPreview } from "./jsonCell";
-import "./CellEditors.css";
+import type { CellValue, FkRef } from "../../../../shared/api/engine";
+import { Icon } from "../../../../shared/ui/Icon";
+import { formatBinary, isBinaryType, isUuidType, looksUuid } from "../binaryCell";
+import { isJsonType, jsonPreview } from "../jsonCell";
+import "../styles/CellEditors.css";
 
 /** Enum→color map for status/method-like string pills (prototype ui.jsx). */
 const STATUS_COLORS: Record<string, string> = {

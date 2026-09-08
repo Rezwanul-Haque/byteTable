@@ -21,7 +21,7 @@
 //     caller's `engine`): Postgres offers RETURNING/ILIKE, ClickHouse PREWHERE
 //     and its camelCase functions, Cassandra a CQL-only set with no joins.
 
-import type { Engine } from "../../../shared/types";
+import type { Engine } from "../../shared/types";
 
 import { functionsFor, keywordsFor } from "./sqlKeywords";
 import { statementRangeAt } from "./sqlStatement";

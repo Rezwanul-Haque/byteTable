@@ -16,7 +16,7 @@
 // `share`: the view has to say which tree is on screen, and whether its
 // per-node figure is a measured millisecond or the planner's cost estimate.
 
-import type { Engine } from "../../../shared/types";
+import type { Engine } from "../../shared/types";
 import { EXEC_STEPS, type StepKey } from "./explainClauses";
 import type { JoinShape, SelectShape } from "./explainParse";
 import type { ServerPlan } from "./explainServer";

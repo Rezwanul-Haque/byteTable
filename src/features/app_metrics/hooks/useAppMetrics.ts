@@ -12,7 +12,7 @@
 
 import { useEffect, useState } from "react";
 
-import { appMetricsRead, type AppMetrics } from "./api";
+import { appMetricsRead, type AppMetrics } from "../api";
 
 /** Slow enough to be cheap, fast enough that a spike is still visible. */
 const POLL_MS = 2000;

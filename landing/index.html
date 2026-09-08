@@ -78,6 +78,13 @@
   .gh-star .gh-count.loading { color:var(--faint); }
   .gh-star .msym { font-size:16px; color:#e3b341; }
 
+  /* "Try Online" — accent-tinted, deliberately quieter than the hero's solid
+     primary so "Download free" stays the loudest CTA on the page. */
+  .btn-try { background:color-mix(in oklab,var(--accent) 14%, var(--bg2)); color:var(--accent);
+    border-color:color-mix(in oklab,var(--accent) 42%, transparent); padding:7px 13px; font-size:13.5px; }
+  .btn-try:hover { background:color-mix(in oklab,var(--accent) 24%, var(--bg2)); }
+  .btn-try .msym { font-size:15px; }
+
   .btn-sponsor { background:color-mix(in oklab, var(--sponsor) 16%, var(--bg2)); color:var(--sponsor); border:1px solid color-mix(in oklab, var(--sponsor) 40%, transparent); }
   .btn-sponsor:hover { background:color-mix(in oklab, var(--sponsor) 26%, var(--bg2)); }
   .btn-sponsor .msym { font-size:18px; }
@@ -241,6 +248,45 @@
   .coffee .smoke.s2 { animation-delay:1.1s; }
   @keyframes rise { 0%{opacity:0;transform:translateY(2px)} 35%{opacity:.7} 70%{opacity:.25} 100%{opacity:0;transform:translateY(-3px)} }
 
+  /* ---------- "Try Online" — the app simulator ---------- */
+  /* This overlay is only a frame. The demo itself is `landing/demo/` — the
+     ByteTable design prototype (React + a mock query engine), i.e. the real
+     app running on sample data, with the experimental surfaces stripped out.
+     Regenerate it with `node scripts/sync-demo.mjs`. The iframe's src is set
+     on first open, so nobody pays for it on page load. */
+  body.demo-open { overflow:hidden; }
+  .demo { position:fixed; inset:0; z-index:120; display:none; flex-direction:column; gap:10px;
+    padding:14px; background:rgba(5,6,8,.94); backdrop-filter:blur(10px); }
+  .demo.open { display:flex; }
+  .demo-bar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; flex:none; }
+  .demo-note { display:inline-flex; align-items:center; gap:8px; font-size:12.5px; color:var(--dim); }
+  .demo-note b { color:var(--text); font-weight:600; }
+  .demo-note i { width:7px; height:7px; border-radius:50%; background:var(--accent); flex:none;
+    box-shadow:0 0 0 4px color-mix(in oklab,var(--accent) 18%, transparent); }
+  /* Shown only where the desktop layout no longer fits and the stage pans. */
+  .demo-pan { display:none; }
+  @media (max-width:1200px){ .demo-pan { display:inline; color:var(--accent); margin-left:6px; } }
+  .demo-acts { margin-left:auto; display:flex; align-items:center; gap:8px; flex:none; }
+  .demo-acts .btn { padding:7px 13px; font-size:13px; }
+  .demo-x { width:34px; height:34px; border-radius:9px; background:var(--bg2); border:1px solid var(--border);
+    color:var(--text); display:flex; align-items:center; justify-content:center; cursor:pointer; flex:none; }
+  .demo-x:hover { border-color:var(--accent); background:var(--bg3); }
+  .demo-x .msym { font-size:19px; }
+  /* The app is a desktop layout: below its minimum the stage scrolls rather
+     than squeezing the window into a shape the real app never takes. */
+  .demo-stage { flex:1; min-height:0; position:relative; overflow:auto; border:1px solid var(--border);
+    border-radius:11px; background:var(--bg0); box-shadow:0 30px 90px rgba(0,0,0,.6); }
+  .demo-stage iframe { display:block; width:100%; min-width:1120px; height:100%; min-height:640px; border:0; }
+  .demo-boot { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; gap:13px; background:var(--bg0); color:var(--dim); font-size:13px;
+    transition:opacity .45s; }
+  .demo-boot.gone { opacity:0; pointer-events:none; }
+  .demo-boot .bar { width:168px; height:3px; border-radius:2px; background:var(--bg3); overflow:hidden; }
+  .demo-boot .bar span { display:block; height:100%; width:40%; border-radius:2px; background:var(--accent);
+    animation:demo-load 1.1s ease-in-out infinite; }
+  @keyframes demo-load { 0%{transform:translateX(-120%)} 100%{transform:translateX(320%)} }
+  @media (prefers-reduced-motion:reduce){ .demo-boot .bar span { animation:none; } }
+
   /* ---------- footer ---------- */
   footer { padding:40px 0; border-top:1px solid var(--border); }
   .foot-in { display:flex; align-items:center; gap:14px; flex-wrap:wrap; color:var(--faint); font-size:13px; }
@@ -277,6 +323,7 @@
       <a class="txt" href="#features">Features</a>
       <a class="txt" href="#all-features">All features</a>
       <a class="txt" href="#download">Download</a>
+      <button class="btn btn-try" id="tryBtn" type="button"><span class="msym"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span> Try Online</button>
       <a class="gh-star" id="ghStar" href="https://github.com/rezwanul-Haque/byteTable" target="_blank" rel="noreferrer" aria-label="Star on GitHub">
         <span class="gh-label"><span class="msym"><svg viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg></span> Star</span>
         <span class="gh-count loading" id="ghCount">…</span>
@@ -644,6 +691,25 @@
   </div>
 </section>
 
+<!-- "Try Online" overlay — hosts landing/demo/, the app simulator. -->
+<div class="demo" id="demo" role="dialog" aria-modal="true" aria-label="ByteTable interactive demo" aria-hidden="true">
+  <div class="demo-bar">
+    <span class="demo-note"><i></i> <b>Interactive demo</b> — the app itself, running on sample data in your browser. Nothing connects to a real database.<span class="demo-pan">Scroll to pan — best on a wide screen.</span></span>
+    <div class="demo-acts">
+      <a class="btn btn-primary" href="#download" id="demoDl"><span class="msym"><svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z"/></svg></span> Download free</a>
+      <button class="demo-x" id="demoClose" type="button" aria-label="Close demo"><span class="msym"><svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></span></button>
+    </div>
+  </div>
+  <div class="demo-stage">
+    <iframe id="demoFrame" title="ByteTable interactive demo"></iframe>
+    <div class="demo-boot" id="demoBoot">
+      <svg width="46" height="46" viewBox="0 0 24 24"><use href="#bt"/></svg>
+      Starting ByteTable…
+      <div class="bar"><span></span></div>
+    </div>
+  </div>
+</div>
+
 <footer>
   <div class="wrap foot-in">
     <a class="brand" href="#top"><svg width="20" height="20"><use href="#bt"/></svg> ByteTable</a>
@@ -830,6 +896,56 @@
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && lbOpen) closeLb(); });
 
     render(); reset();
+  })();
+</script>
+
+<script>
+  // "Try Online" — opens landing/demo/, the app simulator, in an iframe.
+  //
+  // The demo is a whole second app (React + the mock query engine), so its src
+  // is set on the FIRST open and never again: visitors who don't click it
+  // never download it, and re-opening keeps whatever state they left behind.
+  (function () {
+    var demo = document.getElementById('demo');
+    var frame = document.getElementById('demoFrame');
+    var boot = document.getElementById('demoBoot');
+    var openBtn = document.getElementById('tryBtn');
+    var closeBtn = document.getElementById('demoClose');
+    if (!demo || !frame || !openBtn) return;
+
+    var started = false;
+    var lastFocus = null;
+
+    function open() {
+      lastFocus = document.activeElement;
+      if (!started) {
+        started = true;
+        frame.addEventListener('load', function () { boot.classList.add('gone'); });
+        frame.src = 'demo/index.html';
+      }
+      demo.classList.add('open');
+      demo.setAttribute('aria-hidden', 'false');
+      document.body.classList.add('demo-open');
+      closeBtn.focus();
+    }
+    function close() {
+      demo.classList.remove('open');
+      demo.setAttribute('aria-hidden', 'true');
+      document.body.classList.remove('demo-open');
+      if (lastFocus && lastFocus.focus) lastFocus.focus();
+    }
+
+    openBtn.addEventListener('click', open);
+    closeBtn.addEventListener('click', close);
+    document.getElementById('demoDl').addEventListener('click', close);
+    // Escape closes only from the page itself — inside the frame it belongs to
+    // the app, which uses it to dismiss its own popovers and modals.
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && demo.classList.contains('open')) close();
+    });
+
+    // #try in the URL (or a shared link) opens the demo straight away.
+    if (location.hash === '#try') open();
   })();
 </script>
 </body>

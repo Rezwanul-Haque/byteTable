@@ -1,0 +1,75 @@
+/* Checkbox — the data grid's `.dg-check` look, lifted out so every use site
+   gets the same box instead of the platform's own control. `appearance: none`
+   plus a drawn tick is the whole point: the native Linux/GTK checkbox ignores
+   `accent-color` sizing and renders a flat oversized square that breaks the
+   dialogs it sits in.
+
+   Retone per use site with the two custom properties (the destructive modals
+   turn the fill red) rather than by re-declaring the geometry. */
+
+.bt-check {
+  --check-fill: var(--accent);
+  --check-mark: var(--on-accent);
+
+  appearance: none;
+  -webkit-appearance: none;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  flex: none;
+  vertical-align: middle;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg2);
+  cursor: pointer;
+  position: relative;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
+}
+
+.bt-check:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--check-fill) 55%, var(--border));
+}
+
+.bt-check:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--check-fill) 70%, transparent);
+  outline-offset: 2px;
+}
+
+.bt-check:checked,
+.bt-check:indeterminate {
+  background: var(--check-fill);
+  border-color: var(--check-fill);
+}
+
+.bt-check:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--check-mark);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+/* Indeterminate wins over checked: the dash is the "some, not all" state. */
+.bt-check:indeterminate::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  top: 6px;
+  width: auto;
+  height: 2px;
+  border: 0;
+  background: var(--check-mark);
+  transform: none;
+}
+
+.bt-check:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

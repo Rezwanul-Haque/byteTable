@@ -16,6 +16,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import { Btn } from "../../../shared/ui/Btn";
+import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Modal } from "../../../shared/ui/Modal";
@@ -268,15 +269,11 @@ export function OpenDataFileSheet({ onClose, onOpen }: OpenDataFileSheetProps) {
                 </div>
               </div>
               <label className="csvo-check">
-                <input
-                  type="checkbox"
-                  checked={header}
-                  onChange={(e) => setHeader(e.target.checked)}
-                />
+                <Checkbox checked={header} onChange={(e) => setHeader(e.target.checked)} />
                 First row is a header
               </label>
               <label className="csvo-check">
-                <input type="checkbox" checked={trim} onChange={(e) => setTrim(e.target.checked)} />
+                <Checkbox checked={trim} onChange={(e) => setTrim(e.target.checked)} />
                 Trim whitespace
               </label>
             </div>

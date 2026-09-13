@@ -22,6 +22,7 @@ import { useRef, useState, type RefObject } from "react";
 
 import { appErrorMessage } from "../../../../shared/api/error";
 import { Btn } from "../../../../shared/ui/Btn";
+import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { Icon } from "../../../../shared/ui/Icon";
 import { Modal, ModalActions, ModalTitle } from "../../../../shared/ui/Modal";
 import { Select } from "../../../../shared/ui/Select";
@@ -262,8 +263,7 @@ export function DynamoCreateTableModal({
               offered here rather than left to a "modify table" that DynamoDB
               does not have. */}
           <label className="ddb-ddl-check">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={withSk}
               onChange={(e) => setWithSk(e.target.checked)}
               aria-label="Add a sort key"

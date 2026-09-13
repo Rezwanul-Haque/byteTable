@@ -29,6 +29,7 @@ import { queryRun, queryRunBatch, readTextFile } from "../../../shared/api/engin
 import { appErrorMessage } from "../../../shared/api/error";
 import type { Engine } from "../../../shared/types";
 import { Btn } from "../../../shared/ui/Btn";
+import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { useTabMenu } from "../../../shared/hooks/useTabMenu";
@@ -704,11 +705,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
                 spellCheck={false}
               />
               <label className="save-pop-attach">
-                <input
-                  type="checkbox"
-                  checked={attach}
-                  onChange={(e) => setAttach(e.target.checked)}
-                />
+                <Checkbox checked={attach} onChange={(e) => setAttach(e.target.checked)} />
                 <span>Attach to this workspace</span>
               </label>
               <div className="save-pop-note">

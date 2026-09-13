@@ -12,6 +12,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { appErrorMessage } from "../../../../shared/api/error";
+import { useT } from "../../../../shared/i18n/useT";
 import {
   mongoAggregate,
   mongoCount,
@@ -102,6 +103,7 @@ export function MongoShellTab({
   // the sidebar db re-points a persisted session's prompt (a terminal-local
   // `use <db>` only changes `curDb`, not this, so it isn't clobbered).
   const selectedDb = useMongoActiveDbStore((s) => s.byWorkspace[workspaceId]);
+  const t = useT();
 
   const [input, setInput] = useState("");
   const [hi, setHi] = useState(-1);
@@ -208,10 +210,8 @@ export function MongoShellTab({
               kind: "text",
               cls: "term-meta",
               text:
-                r.matched +
-                " document" +
-                (r.matched === 1 ? "" : "s") +
-                (r.matched > 20 ? " (showing 20)" : ""),
+                t("mongo.shell.matched", { count: r.matched }) +
+                (r.matched > 20 ? t("mongo.shell.showing") : ""),
             },
           ]);
         } else if (op === "findOne") {
@@ -231,14 +231,14 @@ export function MongoShellTab({
             {
               kind: "text",
               cls: "term-meta",
-              text: r.returned + " document" + (r.returned === 1 ? "" : "s"),
+              text: t("mongo.shell.matched", { count: r.returned }),
             },
           ]);
         } else if (op === "getIndexes") {
           const idx = await mongoListIndexes(handleId, curDb, collName);
           out([{ kind: "json", text: mongoStringify(idx) }]);
         } else {
-          out([{ kind: "text", cls: "term-err", text: "unsupported op: " + op }]);
+          out([{ kind: "text", cls: "term-err", text: t("mongo.shell.unsupported", { op }) }]);
         }
         return;
       }
@@ -250,7 +250,7 @@ export function MongoShellTab({
         },
       ]);
     } catch (e) {
-      out([{ kind: "text", cls: "term-err", text: appErrorMessage(e, "Command failed") }]);
+      out([{ kind: "text", cls: "term-err", text: appErrorMessage(e, t("mongo.shell.cmdFail")) }]);
     }
   }
 

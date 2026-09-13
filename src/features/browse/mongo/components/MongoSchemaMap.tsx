@@ -10,6 +10,7 @@ import { appErrorMessage } from "../../../../shared/api/error";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { useToast } from "../../../../shared/ui/toastContext";
+import { useT } from "../../../../shared/i18n/useT";
 import {
   exportCardMap,
   type ExportFormat,
@@ -156,6 +157,7 @@ export function MongoSchemaMap({
   const initPos = () => setOverrides({});
 
   const toast = useToast();
+  const t = useT();
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   useEffect(() => {
@@ -166,7 +168,7 @@ export function MongoSchemaMap({
   }, [exportMenuOpen]);
 
   if (!schemas) {
-    return <div className="grid-empty">Building schema map…</div>;
+    return <div className="grid-empty">{t("mongo.mapBuilding")}</div>;
   }
 
   const onHeadDown = (e: React.MouseEvent, id: string) => {
@@ -264,12 +266,11 @@ export function MongoSchemaMap({
         .filter((e): e is { d: string; dashed: boolean } => e !== null);
 
       const res = await exportCardMap({ cards, edges, fileBase: `${db}-schema-map`, format });
-      if (res.status === "ok") toast(`Exported schema map to ${res.file}`, "ok");
-      else if (res.status === "empty") toast("Nothing to export yet.", "info");
-      else if (res.status === "no-dialog")
-        toast("Exporting requires the ByteTable desktop app.", "info");
+      if (res.status === "ok") toast(t("mongo.mapExported", { file: res.file }), "ok");
+      else if (res.status === "empty") toast(t("mongo.mapNothing"), "info");
+      else if (res.status === "no-dialog") toast(t("mongo.mapNoApp"), "info");
     } catch (e) {
-      toast(appErrorMessage(e, "Could not export the schema map."), "err");
+      toast(appErrorMessage(e, t("mongo.mapExportFail")), "err");
     } finally {
       setExporting(false);
     }
@@ -279,9 +280,9 @@ export function MongoSchemaMap({
     <div className="schema-map mg-map" data-screen-label="MongoDB schema map">
       <div className="map-toolbar">
         <Icon name="schema" size={16} style={{ color: "var(--accent)" }} />
-        <span className="map-title">{db} · collection map</span>
+        <span className="map-title">{t("mongo.mapTitle", { db })}</span>
         <span className="map-sub">
-          {colls.length} collections · {refs.length} references
+          {t("mongo.mapSub", { colls: colls.length, refs: refs.length })}
         </span>
         <span
           className="map-hint"
@@ -292,23 +293,24 @@ export function MongoSchemaMap({
             minWidth: 0,
           }}
         >
-          references inferred from <code>&lt;name&gt;Id → name</code>
+          {t("mongo.mapHintPre")}
+          <code>&lt;name&gt;Id → name</code>
         </span>
         <div style={{ flex: 1, minWidth: 8 }} />
         <IconBtn
           icon="zoom_out"
-          title="Zoom out"
+          title={t("mongo.zoomOut")}
           onClick={() => setZoom((z) => Math.max(0.5, Math.round((z - 0.1) * 10) / 10))}
         />
         <span className="map-zoom">{Math.round(zoom * 100)}%</span>
         <IconBtn
           icon="zoom_in"
-          title="Zoom in"
+          title={t("mongo.zoomIn")}
           onClick={() => setZoom((z) => Math.min(1.5, Math.round((z + 0.1) * 10) / 10))}
         />
         <IconBtn
           icon="fit_screen"
-          title="Reset layout"
+          title={t("mongo.resetLayout")}
           onClick={() => {
             initPos();
             setZoom(1);
@@ -317,7 +319,7 @@ export function MongoSchemaMap({
         <div style={{ position: "relative" }}>
           <IconBtn
             icon="download"
-            title="Export schema map"
+            title={t("mongo.exportMap")}
             active={exportMenuOpen}
             disabled={exporting}
             onClick={(e) => {
@@ -332,10 +334,10 @@ export function MongoSchemaMap({
               onClick={(e) => e.stopPropagation()}
             >
               <div className="ctx-item" onClick={() => void runExport("png")}>
-                <Icon name="image" size={15} /> PNG image
+                <Icon name="image" size={15} /> {t("mongo.exportPng")}
               </div>
               <div className="ctx-item" onClick={() => void runExport("svg")}>
-                <Icon name="shape_line" size={15} /> SVG vector
+                <Icon name="shape_line" size={15} /> {t("mongo.exportSvg")}
               </div>
             </div>
           ) : null}
@@ -379,7 +381,7 @@ export function MongoSchemaMap({
                     <span className="map-card-count">{c.count}</span>
                     <button
                       className="map-card-open"
-                      title={"Open " + c.name}
+                      title={t("mongo.openCollTitle", { name: c.name })}
                       onMouseDown={(ev) => ev.stopPropagation()}
                       onClick={() => onOpenColl(c.name)}
                     >

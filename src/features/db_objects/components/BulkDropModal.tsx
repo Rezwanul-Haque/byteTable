@@ -10,10 +10,20 @@ import { createPortal } from "react-dom";
 import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
+import { useT } from "../../../shared/i18n/useT";
+import type { StringKey } from "../../../shared/i18n";
 import type { Engine, Env } from "../../../shared/types";
 import type { DbObjectKind } from "../api";
 import { dropPrefix } from "../ddl";
-import { OBJ_SECTIONS } from "../kinds";
+
+/** Object kind → its translated section-group key (used in the per-class tally). */
+const GROUP_KEY: Record<DbObjectKind, StringKey> = {
+  view: "obj.group.views",
+  materialized_view: "obj.group.materializedViews",
+  function: "obj.group.functions",
+  procedure: "obj.group.procedures",
+  trigger: "obj.group.triggers",
+};
 
 export interface BulkDropRow {
   kind: DbObjectKind;
@@ -43,8 +53,9 @@ export function BulkDropModal({
   onClose: () => void;
 }) {
   const [typed, setTyped] = useState("");
+  const t = useT();
   const isProd = env === "production";
-  const word = `drop ${rows.length}`;
+  const word = t("obj.dropMany.word", { count: rows.length });
   const armed = (!isProd || typed.trim().toLowerCase() === word) && !busy;
 
   // Per-class tally (e.g. "3 views · 2 functions").
@@ -76,26 +87,23 @@ export function BulkDropModal({
       <div className="modal truncate-modal" role="dialog" aria-modal="true">
         <div className="modal-title">
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-            <Icon name="warning" size={18} style={{ color: "var(--danger)" }} /> Drop {rows.length}{" "}
-            object{rows.length === 1 ? "" : "s"}
+            <Icon name="warning" size={18} style={{ color: "var(--danger)" }} />{" "}
+            {t("obj.dropMany.title", { count: rows.length })}
           </span>
-          <IconBtn icon="close" onClick={onClose} title="Close" />
+          <IconBtn icon="close" onClick={onClose} title={t("common.close")} />
         </div>
         <div className="truncate-body">
-          <p>
-            This permanently drops {rows.length} object{rows.length === 1 ? "" : "s"} from{" "}
-            <code>{schema}</code>. This cannot be undone.
-          </p>
+          <p>{t("obj.dropMany.body", { count: rows.length, schema })}</p>
           <div className="oe-drop-tally">
             {[...tally.entries()].map(([kind, n]) => (
               <span key={kind} className="oe-drop-chip">
-                {n} {OBJ_SECTIONS[kind].group.toLowerCase()}
+                {n} {t(GROUP_KEY[kind]).toLowerCase()}
               </span>
             ))}
           </div>
           <pre className="truncate-sql obj-drop-sql">
             {preview}
-            {overflow > 0 ? `\n-- …and ${overflow} more` : ""}
+            {overflow > 0 ? t("obj.dropMany.overflow", { count: overflow }) : ""}
           </pre>
           {isProd ? (
             <div className="truncate-prod">
@@ -107,14 +115,15 @@ export function BulkDropModal({
                   background: envColor + "14",
                 }}
               >
-                <Icon name="public" size={13} /> production
+                <Icon name="public" size={13} /> {t("uix.bulkDelete.prodTag")}
               </div>
               <label>
-                Type <b>{word}</b> to confirm
+                {t("uix.bulkDelete.typePre")} <b>{word}</b> {t("uix.bulkDelete.typePost")}
                 <input
                   value={typed}
                   onChange={(e) => setTyped(e.target.value)}
                   placeholder={word}
+                  aria-label={t("uix.bulkDelete.typeAria", { target: word })}
                   spellCheck={false}
                   autoFocus
                 />
@@ -125,7 +134,7 @@ export function BulkDropModal({
         <div className="modal-actions">
           <div style={{ flex: 1 }} />
           <Btn variant="text" onClick={onClose}>
-            Cancel
+            {t("common.cancel")}
           </Btn>
           <Btn
             variant="filled"
@@ -134,7 +143,7 @@ export function BulkDropModal({
             disabled={!armed}
             onClick={() => armed && onConfirm()}
           >
-            Drop {rows.length}
+            {t("obj.dropMany.btn", { count: rows.length })}
           </Btn>
         </div>
       </div>

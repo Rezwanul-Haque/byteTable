@@ -13,6 +13,7 @@ import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { useToast } from "../../../shared/ui/toastContext";
+import { useT } from "../../../shared/i18n/useT";
 import { releaseUrl, skipVersion, type Update } from "../api";
 import "./UpdateModal.css";
 
@@ -83,6 +84,7 @@ type Stage = "idle" | "downloading" | "ready" | "error";
 
 export function UpdateModal({ update, onClose }: { update: Update; onClose: () => void }) {
   const toast = useToast();
+  const t = useT();
   const [stage, setStage] = useState<Stage>("idle");
   const [pct, setPct] = useState(0);
 
@@ -113,22 +115,22 @@ export function UpdateModal({ update, onClose }: { update: Update; onClose: () =
         }
       });
       // Relaunch into the freshly-installed version.
-      toast(`Restarting into v${version}…`, "ok");
+      toast(t("upd.restarting", { version }), "ok");
       await relaunch();
     } catch (err) {
       setStage("error");
-      toast(err instanceof Error ? err.message : "Update failed.", "err");
+      toast(err instanceof Error ? err.message : t("upd.err.failed"), "err");
     }
   };
 
   return (
-    <Modal className="update-modal" width={480} label="Update available" onClose={onClose}>
+    <Modal className="update-modal" width={480} label={t("upd.title")} onClose={onClose}>
       <div className="update-head">
         <div className="update-mark">
           <BrandMark size={26} blink />
         </div>
         <div style={{ flex: 1 }}>
-          <div className="update-title">Update available</div>
+          <div className="update-title">{t("upd.title")}</div>
           <div className="update-versions">
             {current ? <span className="ver-old">v{current}</span> : null}
             <Icon name="arrow_forward" size={14} style={{ color: "var(--text-faint)" }} />
@@ -136,7 +138,7 @@ export function UpdateModal({ update, onClose }: { update: Update; onClose: () =
             {date ? <span className="update-date">· {date}</span> : null}
           </div>
         </div>
-        <IconBtn icon="close" onClick={onClose} title="Close" />
+        <IconBtn icon="close" onClick={onClose} title={t("common.close")} />
       </div>
 
       {notes ? <div className="update-notes">{renderNotes(notes)}</div> : null}
@@ -147,7 +149,7 @@ export function UpdateModal({ update, onClose }: { update: Update; onClose: () =
             <span style={{ width: pct + "%" }} />
           </div>
           <span className="update-progress-txt">
-            {stage === "ready" ? "Downloaded — restarting…" : "Downloading… " + pct + "%"}
+            {stage === "ready" ? t("upd.downloaded") : t("upd.downloading", { pct })}
           </span>
         </div>
       ) : null}
@@ -159,7 +161,7 @@ export function UpdateModal({ update, onClose }: { update: Update; onClose: () =
           onClick={() => void openUrl(releaseUrl(version))}
         >
           <Icon name="open_in_new" size={13} />
-          <span className="update-link-label">Release notes</span>
+          <span className="update-link-label">{t("upd.releaseNotes")}</span>
         </button>
         <div style={{ flex: 1 }} />
         {stage === "idle" || stage === "error" ? (
@@ -168,22 +170,22 @@ export function UpdateModal({ update, onClose }: { update: Update; onClose: () =
               variant="text"
               onClick={() => {
                 skipVersion(version);
-                toast(`Skipped v${version}`);
+                toast(t("upd.skipped", { version }));
                 onClose();
               }}
             >
-              Skip this version
+              {t("upd.skip")}
             </Btn>
             <Btn variant="text" onClick={onClose}>
-              Later
+              {t("upd.later")}
             </Btn>
             <Btn variant="filled" icon="download" onClick={() => void install()}>
-              {stage === "error" ? "Retry" : "Download & install"}
+              {stage === "error" ? t("upd.retry") : t("upd.download")}
             </Btn>
           </>
         ) : (
           <Btn variant="text" onClick={onClose}>
-            Hide
+            {t("upd.hide")}
           </Btn>
         )}
       </ModalActions>

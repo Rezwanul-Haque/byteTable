@@ -31,6 +31,7 @@ import {
 } from "../api";
 import { useRedisBrowseStore } from "../state";
 import { appErrorMessage } from "../../../../shared/api/error";
+import { useT } from "../../../../shared/i18n/useT";
 import { ENV_COLOR } from "../../../../shared/ui/envColors";
 import { useToast } from "../../../../shared/ui/toastContext";
 import { useBtCmd } from "../../../../shared/ui/btCmd";
@@ -49,6 +50,7 @@ const NO_DATABASES: KvDbInfo[] = [];
 export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
   const closeWorkspace = useWorkspacesStore((state) => state.closeWorkspace);
   const toast = useToast();
+  const t = useT();
 
   // Per-db key counts: seeded from the open-result overview, then kept live by
   // re-fetching on every `version` bump (manual refresh, a write, or the
@@ -247,9 +249,9 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
           // would flash the standalone chrome (db switcher, "Dashboard" tab)
           // for one frame.
           setWorkspaceHandle(wsId, opened.handleId, opened.engineInfo);
-          toast("Browsing " + node.host + ":" + node.port, "ok");
+          toast(t("redis.browseNode", { node: node.host + ":" + node.port }), "ok");
         } catch (err) {
-          toast(appErrorMessage(err, "Could not connect to that node."), "err");
+          toast(appErrorMessage(err, t("redis.connectNodeFail")), "err");
         } finally {
           setNodeSwitching(false);
         }
@@ -264,6 +266,7 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
       wsId,
       initialDb,
       toast,
+      t,
     ],
   );
 

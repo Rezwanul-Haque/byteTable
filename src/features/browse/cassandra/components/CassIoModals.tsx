@@ -4,6 +4,7 @@
 
 import { useMemo, useRef, useState } from "react";
 
+import { useT } from "../../../../shared/i18n/useT";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
@@ -23,10 +24,14 @@ import {
 } from "../cassIo";
 import { CassRowGrid } from "./CassRowGrid";
 
-const EXPORT_FORMATS: { id: ExportFormat; label: string; icon: string }[] = [
-  { id: "cql", label: "CQL script", icon: "code" },
-  { id: "json", label: "JSON", icon: "data_object" },
-  { id: "csv", label: "CSV", icon: "table_view" },
+const EXPORT_FORMATS: {
+  id: ExportFormat;
+  labelKey: "cass.io.fmtCql" | "cass.io.fmtJson" | "cass.io.fmtCsv";
+  icon: string;
+}[] = [
+  { id: "cql", labelKey: "cass.io.fmtCql", icon: "code" },
+  { id: "json", labelKey: "cass.io.fmtJson", icon: "data_object" },
+  { id: "csv", labelKey: "cass.io.fmtCsv", icon: "table_view" },
 ];
 
 export function CassExportModal({
@@ -49,6 +54,7 @@ export function CassExportModal({
   env?: string;
   onClose: () => void;
 }) {
+  const t = useT();
   const toast = useToast();
   const [stage, setStage] = useState<"choose" | "building" | "done">("choose");
   const [format, setFormat] = useState<ExportFormat>("cql");
@@ -105,10 +111,10 @@ export function CassExportModal({
         setStage("done");
         setPct(100);
         download(fname, res.content, res.mime);
-        toast("Exported " + fname, "ok");
+        toast(t("cass.io.exportedFile", { file: fname }), "ok");
         setTimeout(() => !cancelled.current && onClose(), 700);
       } catch (e) {
-        toast((e as Error).message ?? "Export failed", "err");
+        toast((e as Error).message ?? t("cass.io.exportFailed"), "err");
         onClose();
       }
     })();
@@ -128,19 +134,21 @@ export function CassExportModal({
               style={{ color: "var(--accent)" }}
             />
             {stage === "done"
-              ? "Export complete"
+              ? t("cass.io.exportComplete")
               : stage === "choose"
                 ? isAll
-                  ? "Export keyspace " + ks
-                  : "Export " + table
-                : "Exporting…"}
+                  ? t("cass.io.exportKeyspace", { ks })
+                  : t("cass.io.exportTable", { table: table ?? "" })
+                : t("cass.io.exporting")}
           </span>
-          {stage !== "building" ? <IconBtn icon="close" onClick={onClose} title="Close" /> : null}
+          {stage !== "building" ? (
+            <IconBtn icon="close" onClick={onClose} title={t("cass.io.close")} />
+          ) : null}
         </div>
 
         {stage === "choose" ? (
           <>
-            <div className="ddb-io-label">Format</div>
+            <div className="ddb-io-label">{t("cass.io.format")}</div>
             <div className="seg ddb-io-seg">
               {EXPORT_FORMATS.map((f) => {
                 const disabled = isAll && f.id === "csv";
@@ -149,22 +157,20 @@ export function CassExportModal({
                     key={f.id}
                     className={"seg-btn" + (format === f.id ? " active" : "")}
                     disabled={disabled}
-                    title={disabled ? "CSV is per-table only" : ""}
+                    title={disabled ? t("cass.io.csvPerTable") : ""}
                     onClick={() => setFormat(f.id)}
                   >
-                    <Icon name={f.icon} size={14} /> {f.label}
+                    <Icon name={f.icon} size={14} /> {t(f.labelKey)}
                   </button>
                 );
               })}
             </div>
 
-            <div className="ddb-io-label">Contents</div>
+            <div className="ddb-io-label">{t("cass.io.contents")}</div>
             {isCsv ? (
               <div className="export-file" style={{ marginTop: 0 }}>
                 <Icon name="table_view" size={15} style={{ color: "var(--text-dim)" }} />
-                <span className="export-file-name">
-                  CSV exports rows only; collections (set/list/map) become JSON strings.
-                </span>
+                <span className="export-file-name">{t("cass.io.csvNote")}</span>
               </div>
             ) : (
               <div className="export-choose">
@@ -173,24 +179,20 @@ export function CassExportModal({
                     [
                       "both",
                       "schema",
-                      "Schema + data",
-                      format === "cql"
-                        ? "CREATE TABLE + INSERT statements"
-                        : "Table definition and rows",
+                      t("cass.io.schemaPlusData"),
+                      format === "cql" ? t("cass.io.schemaPlusDataHint") : t("cass.io.bothHint"),
                     ],
                     [
                       "schema",
                       "account_tree",
-                      "Schema only",
-                      format === "cql"
-                        ? "CREATE TABLE / INDEX / MV"
-                        : "Column definitions, no rows",
+                      t("cass.io.schemaOnly"),
+                      format === "cql" ? t("cass.io.schemaOnlyHint") : t("cass.io.justRows"),
                     ],
                     [
                       "data",
                       "table_rows",
-                      "Data only",
-                      format === "cql" ? "INSERT statements only" : "Just the rows",
+                      t("cass.io.dataOnly"),
+                      format === "cql" ? t("cass.io.dataOnlyHint") : t("cass.io.justRows"),
                     ],
                   ] as const
                 ).map(([m, icon, title, sub]) => (
@@ -226,15 +228,19 @@ export function CassExportModal({
                 style={{ color: "var(--text-dim)" }}
               />
               <span className="export-file-name">{fname}</span>
-              {isAll ? <span className="export-cur">{tables.length} tables</span> : null}
+              {isAll ? (
+                <span className="export-cur">
+                  {t("cass.io.tableCount", { count: tables.length })}
+                </span>
+              ) : null}
             </div>
             <div className="modal-actions">
               <div style={{ flex: 1 }} />
               <Btn variant="text" onClick={onClose}>
-                Cancel
+                {t("cass.io.cancel")}
               </Btn>
               <Btn variant="filled" icon="download" onClick={build}>
-                Export
+                {t("cass.io.exportBtn")}
               </Btn>
             </div>
           </>
@@ -255,7 +261,7 @@ export function CassExportModal({
               <div className="export-bar-fill" style={{ width: pct + "%" }} />
             </div>
             <div className="export-meta">
-              <span>{stage === "done" ? "Done" : pct + "%"}</span>
+              <span>{stage === "done" ? t("cass.io.done") : pct + "%"}</span>
             </div>
             {stage !== "done" ? (
               <div className="modal-actions">
@@ -267,7 +273,7 @@ export function CassExportModal({
                     onClose();
                   }}
                 >
-                  Cancel
+                  {t("cass.io.cancel")}
                 </Btn>
               </div>
             ) : null}
@@ -293,6 +299,7 @@ export function CassImportModal({
   onClose: () => void;
   onDone: (n: number) => void;
 }) {
+  const t = useT();
   const toast = useToast();
   const names = tables.map((t) => t.name);
   const [target, setTarget] = useState(table ?? names[0] ?? "");
@@ -340,29 +347,26 @@ export function CassImportModal({
         setBusy({ pct: Math.round(p * 100), rows: d, total: t }),
       );
       toast(
-        "Imported " +
-          n.toLocaleString() +
-          " row" +
-          (n === 1 ? "" : "s") +
-          " into " +
-          ks +
-          "." +
-          target,
+        t("cass.io.imported", {
+          count: n.toLocaleString(),
+          target: ks + "." + target,
+        }),
         "ok",
       );
       onDone(n);
     } catch (err) {
-      toast((err as Error).message ?? "Import failed", "err");
+      toast((err as Error).message ?? t("cass.io.importFailed"), "err");
       setBusy(null);
     }
   };
 
   const placeholder =
     format === "csv"
-      ? "Paste CSV — first row is the header matching column names:\nuser_id,name,country"
+      ? t("cass.io.pasteCsv")
       : format === "json"
-        ? 'Paste a JSON array of rows, or { "rows": [ … ] }'
-        : "Paste CQL INSERT statements:\nINSERT INTO " +
+        ? t("cass.io.pasteJson")
+        : t("cass.io.pasteCql") +
+          "\nINSERT INTO " +
           ks +
           "." +
           target +
@@ -373,14 +377,15 @@ export function CassImportModal({
       <div className="modal import-modal">
         <div className="modal-title">
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-            <Icon name="upload" size={17} style={{ color: "var(--accent)" }} /> Import rows
+            <Icon name="upload" size={17} style={{ color: "var(--accent)" }} />{" "}
+            {t("cass.io.importRows")}
           </span>
-          <IconBtn icon="close" onClick={onClose} title="Close" />
+          <IconBtn icon="close" onClick={onClose} title={t("cass.io.close")} />
         </div>
 
         <div className="import-format">
           <label className="mg-import-target">
-            <span>Into</span>
+            <span>{t("cass.io.into")}</span>
             <select
               className="filter-select"
               value={target}
@@ -416,7 +421,7 @@ export function CassImportModal({
           </div>
           <div style={{ flex: 1 }} />
           <Btn icon="folder_open" variant="tonal" small onClick={() => fileRef.current?.click()}>
-            Choose file…
+            {t("cass.io.chooseFile")}
           </Btn>
           <input
             ref={fileRef}
@@ -448,12 +453,15 @@ export function CassImportModal({
               <div className="import-preview-bar">
                 <span className="import-ready">
                   <Icon name="check_circle" size={14} style={{ color: "var(--accent)" }} />{" "}
-                  {prev.count.toLocaleString()} row{prev.count === 1 ? "" : "s"} ready
+                  {t("cass.io.rowsReady", { count: prev.count.toLocaleString() })}
                 </span>
-                <span className="import-match">{prev.columns.length} columns</span>
+                <span className="import-match">
+                  {t("cass.io.columnsCount", { count: prev.columns.length })}
+                </span>
                 {prev.missingKey ? (
                   <span className="import-unknown">
-                    <Icon name="warning" size={12} /> {prev.missingKey} missing a primary-key value
+                    <Icon name="warning" size={12} />{" "}
+                    {t("cass.io.missingKey", { count: prev.missingKey })}
                   </span>
                 ) : null}
               </div>
@@ -470,20 +478,20 @@ export function CassImportModal({
               <div className="export-bar-fill" style={{ width: busy.pct + "%" }} />
             </div>
             <div className="export-meta">
-              <span>writing… {busy.pct}%</span>
+              <span>{t("cass.io.writing", { pct: busy.pct })}</span>
               <span>
-                {busy.rows.toLocaleString()} / {busy.total.toLocaleString()} rows
+                {t("cass.io.rowsProgress", {
+                  done: busy.rows.toLocaleString(),
+                  total: busy.total.toLocaleString(),
+                })}
               </span>
             </div>
           </div>
         ) : (
           <div className="modal-actions">
-            <div className="import-note">
-              Rows are written by primary key — an existing key upserts (Cassandra has no separate
-              INSERT vs UPDATE).
-            </div>
+            <div className="import-note">{t("cass.io.importNote")}</div>
             <Btn variant="text" onClick={onClose}>
-              Cancel
+              {t("cass.io.cancel")}
             </Btn>
             <Btn
               variant="filled"
@@ -491,7 +499,7 @@ export function CassImportModal({
               onClick={() => void doImport()}
               disabled={!prev || !!prev.error || !prev.count}
             >
-              Import
+              {t("cass.io.importBtn")}
             </Btn>
           </div>
         )}

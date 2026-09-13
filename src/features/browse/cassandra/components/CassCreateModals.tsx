@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 
 import { isAppErrorPayload } from "../../../../shared/api/error";
+import { useT } from "../../../../shared/i18n/useT";
 import { Btn } from "../../../../shared/ui/Btn";
 import { CopyButton } from "../../../../shared/ui/CopyButton";
 import { Icon } from "../../../../shared/ui/Icon";
@@ -51,11 +52,18 @@ const CASS_CQL_TYPES = [
   "list<text>",
   "map<text,text>",
 ];
-const CASS_ROLES: { id: ColumnKind; label: string }[] = [
-  { id: "partition_key", label: "Partition" },
-  { id: "clustering", label: "Clustering" },
-  { id: "regular", label: "Regular" },
-  { id: "static", label: "Static" },
+const CASS_ROLES: {
+  id: ColumnKind;
+  labelKey:
+    | "cass.role.partition"
+    | "cass.role.clustering"
+    | "cass.role.regular"
+    | "cass.role.static";
+}[] = [
+  { id: "partition_key", labelKey: "cass.role.partition" },
+  { id: "clustering", labelKey: "cass.role.clustering" },
+  { id: "regular", labelKey: "cass.role.regular" },
+  { id: "static", labelKey: "cass.role.static" },
 ];
 
 const cassIdent = (s: string) => s.trim().replace(/\W+/g, "_").toLowerCase();
@@ -74,6 +82,7 @@ export function CassCreateKeyspaceModal({
   onClose: () => void;
   onCreated: (name: string) => void;
 }) {
+  const t = useT();
   const toast = useToast();
   const [name, setName] = useState("");
   const [strategy, setStrategy] = useState<"NetworkTopologyStrategy" | "SimpleStrategy">(
@@ -136,29 +145,25 @@ export function CassCreateKeyspaceModal({
   // default LOCAL_QUORUM. Advisory only: asking for RF 3 before adding the
   // other two nodes is legitimate.
   const quorum = Math.floor(rf / 2) + 1;
-  const nodeLabel = (n: number) => n + (n === 1 ? " node" : " nodes");
   const advice =
     available === null || available === 0
       ? null
       : quorum > available
         ? {
             tone: "err" as const,
-            text:
-              rf +
-              " replicas, " +
-              nodeLabel(available) +
-              " — a QUORUM needs " +
-              quorum +
-              " of them, so reads and writes at QUORUM / LOCAL_QUORUM will fail until the cluster grows.",
+            text: t("cass.create.adviceQuorum", {
+              rf,
+              nodes: t("cass.create.nodes", { count: available }),
+              quorum,
+            }),
           }
         : rf > available
           ? {
               tone: "warn" as const,
-              text:
-                rf +
-                " replicas, " +
-                nodeLabel(available) +
-                " — the extra copies have nowhere to live until more nodes join. QUORUM still works.",
+              text: t("cass.create.adviceTooMany", {
+                rf,
+                nodes: t("cass.create.nodes", { count: available }),
+              }),
             }
           : null;
   const ddl =
@@ -179,10 +184,10 @@ export function CassCreateKeyspaceModal({
           ? { class: "SimpleStrategy", replication_factor: rf }
           : { class: "NetworkTopologyStrategy", [dc]: rf };
       await cassCreateKeyspace(handleId, clean, replication, durable);
-      toast("CREATE KEYSPACE " + clean + " — applied", "ok");
+      toast(t("cass.create.applied", { name: clean }), "ok");
       onCreated(clean);
     } catch (e) {
-      toast(isAppErrorPayload(e) ? e.message : "Create keyspace failed", "err");
+      toast(isAppErrorPayload(e) ? e.message : t("cass.create.failed"), "err");
     } finally {
       setBusy(false);
     }
@@ -193,19 +198,20 @@ export function CassCreateKeyspaceModal({
       <div className="modal cass-create-modal">
         <div className="modal-title">
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-            <Icon name="hub" size={17} style={{ color: "var(--accent)" }} /> Create keyspace
+            <Icon name="hub" size={17} style={{ color: "var(--accent)" }} />{" "}
+            {t("cass.create.title")}
           </span>
-          <IconBtn icon="close" onClick={onClose} title="Close" />
+          <IconBtn icon="close" onClick={onClose} title={t("cass.row.close")} />
         </div>
 
         <div className="cass-row-field">
-          <span className="form-section-label">Keyspace name</span>
+          <span className="form-section-label">{t("cass.create.nameLabel")}</span>
           <input
             className="cass-field"
             value={name}
             autoFocus
             spellCheck={false}
-            placeholder="byteshop"
+            placeholder={t("cass.create.namePh")}
             onChange={(e) => setName(e.target.value)}
           />
         </div>
@@ -215,7 +221,7 @@ export function CassCreateKeyspaceModal({
               with two equal chips, the replicas card is wide enough for its
               longer label ("Replication factor") to stay on one line. */}
           <div className="cass-field cass-field-strategy">
-            <span className="form-section-label">Replication strategy</span>
+            <span className="form-section-label">{t("cass.create.replicationStrategy")}</span>
             <div className="seg">
               {(["NetworkTopologyStrategy", "SimpleStrategy"] as const).map((s) => (
                 <button
@@ -230,7 +236,9 @@ export function CassCreateKeyspaceModal({
           </div>
           <div className="cass-field cass-field-rf">
             <span className="form-section-label">
-              {strategy === "SimpleStrategy" ? "Replication factor" : dc + " replicas"}
+              {strategy === "SimpleStrategy"
+                ? t("cass.create.replicationFactor")
+                : t("cass.create.replicas", { dc })}
             </span>
             <div className="cass-stepper">
               <button onClick={() => setRf((n) => Math.max(1, n - 1))} disabled={rf <= 1}>
@@ -250,9 +258,7 @@ export function CassCreateKeyspaceModal({
             size={18}
             style={{ color: durable ? "var(--accent)" : "var(--text-faint)" }}
           />
-          <span>
-            <b>durable_writes</b> — log writes to the commit log (recommended)
-          </span>
+          <span>{t("cass.create.durableWrites")}</span>
         </button>
 
         {advice ? (
@@ -267,17 +273,24 @@ export function CassCreateKeyspaceModal({
             className="cass-cql-preview"
             dangerouslySetInnerHTML={{ __html: highlightSql(ddl) }}
           />
-          <CopyButton className="cass-cql-copy" text={ddl} label="Copy CQL" size={13} />
+          <CopyButton
+            className="cass-cql-copy"
+            text={ddl}
+            label={t("cass.create.copyCql")}
+            size={13}
+          />
         </div>
-        {dupe ? <p className="cass-create-note">Keyspace “{clean}” already exists</p> : null}
+        {dupe ? (
+          <p className="cass-create-note">{t("cass.create.ksExists", { name: clean })}</p>
+        ) : null}
 
         <div className="modal-actions">
           <div style={{ flex: 1 }} />
           <Btn variant="text" onClick={onClose}>
-            Cancel
+            {t("cass.create.cancel")}
           </Btn>
           <Btn variant="filled" icon="add" disabled={!ok || busy} onClick={() => void confirm()}>
-            Create keyspace
+            {t("cass.create.createBtn")}
           </Btn>
         </div>
       </div>
@@ -308,6 +321,7 @@ export function CassCreateTableModal({
   onClose: () => void;
   onCreated: (name: string) => void;
 }) {
+  const t = useT();
   const toast = useToast();
   const [name, setName] = useState("");
   const [cols, setCols] = useState<ColDraft[]>([
@@ -369,10 +383,10 @@ export function CassCreateTableModal({
         clustering.map((c) => ({ name: cassIdent(c.name), order: c.order })),
         comment.trim(),
       );
-      toast("CREATE TABLE " + clean + " — applied", "ok");
+      toast(t("cass.createTable.applied", { name: clean }), "ok");
       onCreated(clean);
     } catch (e) {
-      toast(isAppErrorPayload(e) ? e.message : "Create table failed", "err");
+      toast(isAppErrorPayload(e) ? e.message : t("cass.createTable.failed"), "err");
     } finally {
       setBusy(false);
     }
@@ -383,36 +397,37 @@ export function CassCreateTableModal({
       <div className="modal cass-create-modal cass-create-table">
         <div className="modal-title">
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-            <Icon name="add" size={17} style={{ color: "var(--accent)" }} /> Create table
-            <span className="structure-sub">in {ks}</span>
+            <Icon name="add" size={17} style={{ color: "var(--accent)" }} />{" "}
+            {t("cass.createTable.title")}
+            <span className="structure-sub">{t("cass.createTable.in", { ks })}</span>
           </span>
-          <IconBtn icon="close" onClick={onClose} title="Close" />
+          <IconBtn icon="close" onClick={onClose} title={t("cass.row.close")} />
         </div>
 
         <div className="cass-row-field">
-          <span className="form-section-label">Table name</span>
+          <span className="form-section-label">{t("cass.createTable.nameLabel")}</span>
           <input
             className="cass-field"
             value={name}
             autoFocus
             spellCheck={false}
-            placeholder="orders_by_user"
+            placeholder={t("cass.createTable.namePh")}
             onChange={(e) => setName(e.target.value)}
           />
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span className="form-section-label">Columns</span>
-          <button className="rail-add" onClick={addCol} title="Add column">
+          <span className="form-section-label">{t("cass.createTable.columns")}</span>
+          <button className="rail-add" onClick={addCol} title={t("cass.createTable.addColumn")}>
             <Icon name="add" size={15} />
           </button>
         </div>
         <div>
           <div className="cass-ct-row cass-ct-head">
-            <span>Name</span>
-            <span>Type</span>
-            <span>Role</span>
-            <span>Order</span>
+            <span>{t("cass.createTable.thName")}</span>
+            <span>{t("cass.createTable.thType")}</span>
+            <span>{t("cass.createTable.thRole")}</span>
+            <span>{t("cass.createTable.thOrder")}</span>
             <span />
           </div>
           {cols.map((c) => (
@@ -420,13 +435,13 @@ export function CassCreateTableModal({
               <input
                 className="cass-field"
                 value={c.name}
-                placeholder="column"
+                placeholder={t("cass.createTable.colPh")}
                 spellCheck={false}
                 onChange={(e) => patch(c.id, { name: e.target.value })}
               />
               <Select
                 className="sel-block cass-ct-select"
-                aria-label="Column type"
+                aria-label={t("cass.createTable.colType")}
                 value={c.type}
                 options={[...new Set([c.type, ...CASS_CQL_TYPES])].map((ty) => ({
                   value: ty,
@@ -436,17 +451,17 @@ export function CassCreateTableModal({
               />
               <Select<ColumnKind>
                 className={"sel-block cass-ct-select cass-role-" + c.role}
-                aria-label="Column role"
+                aria-label={t("cass.createTable.colRole")}
                 mono={false}
                 value={c.role}
-                options={CASS_ROLES.map((r) => ({ value: r.id, label: r.label }))}
+                options={CASS_ROLES.map((r) => ({ value: r.id, label: t(r.labelKey) }))}
                 onChange={(role) => patch(c.id, { role })}
               />
               {c.role === "clustering" ? (
                 <button
                   className="cass-qb-allow on"
                   onClick={() => patch(c.id, { order: c.order === "ASC" ? "DESC" : "ASC" })}
-                  title="Toggle clustering order"
+                  title={t("cass.createTable.toggleOrder")}
                 >
                   {c.order === "DESC" ? "↓ DESC" : "↑ ASC"}
                 </button>
@@ -457,7 +472,7 @@ export function CassCreateTableModal({
                 className="card-drop"
                 onClick={() => remove(c.id)}
                 disabled={cols.length === 1}
-                title="Remove column"
+                title={t("cass.createTable.removeColumn")}
               >
                 <Icon name="delete" size={14} />
               </button>
@@ -466,12 +481,12 @@ export function CassCreateTableModal({
         </div>
 
         <div className="cass-row-field">
-          <span className="form-section-label">Comment</span>
+          <span className="form-section-label">{t("cass.createTable.comment")}</span>
           <input
             className="cass-field"
             value={comment}
             spellCheck={false}
-            placeholder="A user's orders, newest first"
+            placeholder={t("cass.createTable.commentPh")}
             onChange={(e) => setComment(e.target.value)}
           />
         </div>
@@ -481,21 +496,26 @@ export function CassCreateTableModal({
             className="cass-cql-preview"
             dangerouslySetInnerHTML={{ __html: highlightSql(ddl) }}
           />
-          <CopyButton className="cass-cql-copy" text={ddl} label="Copy CQL" size={13} />
+          <CopyButton
+            className="cass-cql-copy"
+            text={ddl}
+            label={t("cass.createTable.copyCql")}
+            size={13}
+          />
         </div>
         {dupe ? (
-          <p className="cass-create-note">Table “{clean}” already exists</p>
+          <p className="cass-create-note">{t("cass.createTable.exists", { name: clean })}</p>
         ) : !partition.length && validCols.length ? (
-          <p className="cass-create-note">Mark at least one column as the partition key</p>
+          <p className="cass-create-note">{t("cass.createTable.needPartition")}</p>
         ) : null}
 
         <div className="modal-actions">
           <div style={{ flex: 1 }} />
           <Btn variant="text" onClick={onClose}>
-            Cancel
+            {t("cass.createTable.cancel")}
           </Btn>
           <Btn variant="filled" icon="add" disabled={!ok || busy} onClick={() => void confirm()}>
-            Create table
+            {t("cass.createTable.createBtn")}
           </Btn>
         </div>
       </div>
@@ -517,6 +537,7 @@ export function CassAddIndexModal({
   onClose: () => void;
   onDone: () => void;
 }) {
+  const t = useT();
   const toast = useToast();
   const [kind, setKind] = useState<"index" | "mv">("index");
   const allCols = table.columns.map((c) => c.name);
@@ -563,14 +584,14 @@ export function CassAddIndexModal({
     try {
       if (kind === "index") {
         await cassCreateIndex(handleId, ks, table.name, idxName, target);
-        toast("CREATE INDEX " + idxName + " — applied", "ok");
+        toast(t("cass.addIndex.indexApplied", { name: idxName }), "ok");
       } else {
         await cassCreateMv(handleId, ks, table.name, cleanMvName, [mvPk], mvClustering);
-        toast("CREATE MATERIALIZED VIEW " + cleanMvName + " — applied", "ok");
+        toast(t("cass.addIndex.mvApplied", { name: cleanMvName }), "ok");
       }
       onDone();
     } catch (e) {
-      toast(isAppErrorPayload(e) ? e.message : "Create failed", "err");
+      toast(isAppErrorPayload(e) ? e.message : t("cass.addIndex.failed"), "err");
     } finally {
       setBusy(false);
     }
@@ -581,10 +602,11 @@ export function CassAddIndexModal({
       <div className="modal cass-create-modal">
         <div className="modal-title">
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-            <Icon name="bolt" size={17} style={{ color: "var(--accent)" }} /> Add to
+            <Icon name="bolt" size={17} style={{ color: "var(--accent)" }} />{" "}
+            {t("cass.addIndex.title")}
             <span className="structure-sub">{table.name}</span>
           </span>
-          <IconBtn icon="close" onClick={onClose} title="Close" />
+          <IconBtn icon="close" onClick={onClose} title={t("cass.row.close")} />
         </div>
 
         <div className="seg" style={{ width: "100%" }}>
@@ -593,24 +615,24 @@ export function CassAddIndexModal({
             style={{ flex: 1, justifyContent: "center" }}
             onClick={() => setKind("index")}
           >
-            <Icon name="bolt" size={14} /> Secondary index
+            <Icon name="bolt" size={14} /> {t("cass.addIndex.secondaryIndex")}
           </button>
           <button
             className={"seg-btn" + (kind === "mv" ? " active" : "")}
             style={{ flex: 1, justifyContent: "center" }}
             onClick={() => setKind("mv")}
           >
-            <Icon name="dvr" size={14} /> Materialized view
+            <Icon name="dvr" size={14} /> {t("cass.addIndex.materializedView")}
           </button>
         </div>
 
         {kind === "index" ? (
           <>
             <div className="cass-field">
-              <span className="form-section-label">Index column</span>
+              <span className="form-section-label">{t("cass.addIndex.indexColumn")}</span>
               <Select
                 className="sel-block cass-ct-select"
-                aria-label="Index column"
+                aria-label={t("cass.addIndex.indexColumn")}
                 value={target}
                 options={table.columns.map((c) => ({
                   value: c.name,
@@ -620,14 +642,13 @@ export function CassAddIndexModal({
               />
             </div>
             <p className="cass-create-note">
-              <Icon name="info" size={13} /> A 2i lets you filter by <code>{target}</code> without{" "}
-              <code>ALLOW FILTERING</code>. Best for low-cardinality columns.
+              <Icon name="info" size={13} /> {t("cass.addIndex.hint", { target: target || "…" })}
             </p>
           </>
         ) : (
           <>
             <div className="cass-row-field">
-              <span className="form-section-label">View name</span>
+              <span className="form-section-label">{t("cass.addIndex.viewName")}</span>
               <input
                 className="cass-field"
                 value={mvName}
@@ -636,18 +657,18 @@ export function CassAddIndexModal({
               />
             </div>
             <div className="cass-field">
-              <span className="form-section-label">New partition key</span>
+              <span className="form-section-label">{t("cass.addIndex.newPartitionKey")}</span>
               <Select
                 className="sel-block cass-ct-select"
-                aria-label="New partition key"
+                aria-label={t("cass.addIndex.newPartitionKey")}
                 value={mvPk}
                 options={allCols.map((c) => ({ value: c, label: c }))}
                 onChange={setMvPk}
               />
             </div>
             <p className="cass-create-note">
-              <Icon name="info" size={13} /> Re-partitions <code>{table.name}</code> by{" "}
-              <code>{mvPk}</code>
+              <Icon name="info" size={13} />{" "}
+              {t("cass.addIndex.repartitions", { table: table.name, keys: mvPk })}
               {mvClustering.length
                 ? ", carrying (" + mvClustering.join(", ") + ") as clustering"
                 : ""}
@@ -664,7 +685,7 @@ export function CassAddIndexModal({
           <CopyButton
             className="cass-cql-copy"
             text={kind === "index" ? idxDDL : mvDDL}
-            label="Copy CQL"
+            label={t("cass.addIndex.copyCql")}
             size={13}
           />
         </div>
@@ -672,10 +693,10 @@ export function CassAddIndexModal({
         <div className="modal-actions">
           <div style={{ flex: 1 }} />
           <Btn variant="text" onClick={onClose}>
-            Cancel
+            {t("cass.addIndex.cancel")}
           </Btn>
           <Btn variant="filled" icon="add" disabled={!ok || busy} onClick={() => void confirm()}>
-            {kind === "index" ? "Create index" : "Create view"}
+            {kind === "index" ? t("cass.addIndex.createIndex") : t("cass.addIndex.createView")}
           </Btn>
         </div>
       </div>

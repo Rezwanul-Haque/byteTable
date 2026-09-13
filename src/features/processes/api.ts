@@ -9,6 +9,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import type { Engine } from "../../shared/types";
+import type { StringKey } from "../../shared/i18n";
 
 /** One live server session / operation / client (mirrors Rust `ProcessInfo`). */
 export interface ProcessInfo {
@@ -43,15 +44,19 @@ export function processKill(handleId: string, target: ProcessKill): Promise<void
 
 /** Column-header overrides for the engines whose columns aren't SQL sessions. */
 export type ProcLabels = Partial<
-  Record<"user" | "host" | "db" | "state" | "time" | "query", string>
+  Record<"user" | "host" | "db" | "state" | "time" | "query", StringKey>
 >;
 
 /** Per-engine display metadata for the Processes tab. */
 export interface ProcSource {
   /** System source tag shown in the toolbar (e.g. `pg_stat_activity`). */
   src: string;
-  /** The PID column header (MySQL `Id`, Postgres `PID`, …). */
-  pidLabel: string;
+  /**
+   * The PID column header (MySQL `Id`, Postgres `PID`, …), as an i18n key: the
+   * engines name this column themselves, so the label is engine vocabulary —
+   * a key lets the header stay native in English while still being translatable.
+   */
+  pidKey: StringKey;
   /** The human-readable kill statement previewed in the confirm modal. */
   kill: (p: ProcessInfo | ProcessKill) => string;
   /** Column-header overrides (Mongo / Redis rename the session columns). */
@@ -67,41 +72,46 @@ export interface ProcSource {
 export const PROC_SOURCES: Partial<Record<Engine, ProcSource>> = {
   mysql: {
     src: "SHOW FULL PROCESSLIST",
-    pidLabel: "Id",
+    pidKey: "proc.pid.mysql",
     kill: (p) => "KILL " + p.pid + ";",
   },
   postgres: {
     src: "pg_stat_activity",
-    pidLabel: "PID",
+    pidKey: "proc.pid.postgres",
     kill: (p) => "SELECT pg_terminate_backend(" + p.pid + ");",
   },
   mssql: {
     src: "sys.dm_exec_sessions",
-    pidLabel: "SPID",
+    pidKey: "proc.pid.mssql",
     kill: (p) => "KILL " + p.pid + ";",
   },
   clickhouse: {
     src: "system.processes",
-    pidLabel: "Query ID",
+    pidKey: "proc.pid.clickhouse",
     kill: (p) => "KILL QUERY WHERE query_id = '" + (p.qid ?? p.pid) + "';",
   },
   mongodb: {
     src: "db.currentOp()",
-    pidLabel: "OpId",
+    pidKey: "proc.pid.mongo",
     kill: (p) => "db.killOp(" + p.pid + ")",
-    labels: { user: "Op", host: "Client", db: "Namespace", query: "Command" },
+    labels: {
+      user: "proc.col.op",
+      host: "proc.col.client",
+      db: "proc.col.namespace",
+      query: "proc.col.command",
+    },
   },
   redis: {
     src: "CLIENT LIST",
-    pidLabel: "ID",
+    pidKey: "proc.pid.redis",
     kill: (p) => "CLIENT KILL ID " + p.pid,
     labels: {
-      user: "Name",
-      host: "Addr",
-      db: "DB",
-      state: "Flags",
-      time: "Age",
-      query: "Last command",
+      user: "proc.col.name",
+      host: "proc.col.addr",
+      db: "proc.col.db",
+      state: "proc.col.flags",
+      time: "proc.col.age",
+      query: "proc.col.lastCommand",
     },
   },
 };

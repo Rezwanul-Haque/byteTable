@@ -27,6 +27,7 @@ import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { CopyButton } from "../../../shared/ui/CopyButton";
 import { useToast } from "../../../shared/ui/toastContext";
+import { useT } from "../../../shared/i18n/useT";
 import { columnsKey, tablesKey, useIntrospectionStore } from "../../introspection/state";
 import {
   suggestSql,
@@ -200,6 +201,7 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
   const bodyRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const toast = useToast();
+  const tr = useT();
 
   // --- Autocomplete schema (shares the editor's suggester, sqlSuggest) -------
   // Same source as the SQL editor: the active connection's introspected schema
@@ -982,19 +984,19 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
         <IconBtn
           icon="content_copy"
           size={15}
-          title="Copy all output"
+          title={tr("term.sql.copyAll")}
           disabled={session.lines.length === 0}
           onClick={() => {
             void navigator.clipboard.writeText(transcriptToText(session.lines)).then(
-              () => toast("Output copied", "ok"),
-              () => toast("Couldn't copy to clipboard", "err"),
+              () => toast(tr("term.sql.copied"), "ok"),
+              () => toast(tr("uix.copy.fail"), "err"),
             );
           }}
         />
         <IconBtn
           icon="delete_sweep"
           size={15}
-          title="Clear (Ctrl+L)"
+          title={tr("term.sql.clear")}
           onClick={() => setLines([])}
         />
       </div>
@@ -1023,7 +1025,7 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
             autoComplete="off"
             autoCapitalize="off"
             autoCorrect="off"
-            aria-label="SQL command"
+            aria-label={tr("term.sql.aria")}
             onChange={(e) => {
               setInput(e.target.value);
               computeAc(e.target.value, e.target.selectionStart ?? e.target.value.length, false);
@@ -1086,12 +1088,13 @@ export function SqlTerminalTab({ workspace, session, onClose, embedded }: SqlTer
 // for grabbing a single value, and the result as a whole has one that yields
 // the header row plus tab-separated rows.
 function TermGrid({ columns, rows }: { columns: string[]; rows: CellValue[][] }) {
+  const tr = useT();
   if (columns.length === 0) return null;
   return (
     <div className="term-result">
       <CopyButton
         className="term-grid-copy"
-        label="Copy result"
+        label={tr("term.sql.copyResult")}
         size={13}
         text={gridToTsv(columns, rows)}
       />
@@ -1108,7 +1111,7 @@ function TermGrid({ columns, rows }: { columns: string[]; rows: CellValue[][] })
             {rows.length === 0 ? (
               <tr>
                 <td className="term-grid-empty" colSpan={columns.length}>
-                  0 rows
+                  {tr("term.sql.zeroRows")}
                 </td>
               </tr>
             ) : (

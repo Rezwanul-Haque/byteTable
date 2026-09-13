@@ -15,6 +15,7 @@ import type { CellValue, RowLookup } from "../../../../shared/api/engine";
 import { rowLookup } from "../../../../shared/api/engine";
 import { appErrorMessage } from "../../../../shared/api/error";
 import { Icon } from "../../../../shared/ui/Icon";
+import { useT } from "../../../../shared/i18n/useT";
 import { CellContent } from "../../shared/components/GridCell";
 import "./Popovers.css";
 
@@ -61,6 +62,7 @@ export function FkPeek({
   const [result, setResult] = useState<RowLookup | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const t = useT();
 
   const { refSchema, refTable, refColumn, value, binary } = anchor;
 
@@ -85,7 +87,7 @@ export function FkPeek({
         setLoading(false);
       } catch (err: unknown) {
         if (!alive) return;
-        setError(appErrorMessage(err, "Lookup failed."));
+        setError(appErrorMessage(err, t("grid.lookupFail")));
         setLoading(false);
       }
     })();
@@ -125,21 +127,23 @@ export function FkPeek({
       className="dg-popover fk-peek"
       style={pos}
       role="dialog"
-      aria-label={"Referenced row in " + refTable}
+      aria-label={t("grid.referencedRowIn", { table: refTable })}
     >
       <div className="dg-pop-title">
         <Icon name="link" size={14} style={{ color: "var(--accent)" }} />
         <span className="dg-pop-mono">{refTable}</span>
         <span className="dg-pop-dim">
-          where {refColumn} = {String(value)}
+          {t("grid.whereCond", { column: refColumn, value: String(value) })}
         </span>
-        {matchCount > 1 ? <span className="fk-matchcount">1 of {matchCount}</span> : null}
+        {matchCount > 1 ? (
+          <span className="fk-matchcount">{t("grid.matchOneOf", { count: matchCount })}</span>
+        ) : null}
       </div>
 
       {loading ? (
         <div className="dg-pop-loading">
           <span className="dg-pop-spinner" />
-          <span className="dg-pop-dim">Looking up…</span>
+          <span className="dg-pop-dim">{t("grid.lookingUp")}</span>
         </div>
       ) : error ? (
         <div className="dg-pop-empty">{error}</div>
@@ -157,11 +161,11 @@ export function FkPeek({
           ))}
         </div>
       ) : (
-        <div className="dg-pop-empty">No matching row</div>
+        <div className="dg-pop-empty">{t("grid.noMatchingRow")}</div>
       )}
 
       <button type="button" className="fk-open-btn" onClick={() => onOpenInTable(anchor)}>
-        <Icon name="open_in_new" size={13} /> Open in {refTable}
+        <Icon name="open_in_new" size={13} /> {t("grid.openIn", { table: refTable })}
       </button>
     </div>
   );

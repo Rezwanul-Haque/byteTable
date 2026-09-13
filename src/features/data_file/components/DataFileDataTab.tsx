@@ -26,6 +26,7 @@ import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Select } from "../../../shared/ui/Select";
 import { useFilterShortcut } from "../../../shared/hooks/useFilterShortcut";
 import { useToast } from "../../../shared/ui/toastContext";
+import { useT } from "../../../shared/i18n/useT";
 import { FilterPanel } from "../../browse/sql/components/FilterPanel";
 import {
   RowInspector,
@@ -121,6 +122,7 @@ export function DataFileDataTab({
   saving,
 }: DataFileDataTabProps) {
   const toast = useToast();
+  const t = useT();
   const [q, setQ] = useState("");
   const [pageSize, setPageSize] = useState<string>(DEFAULT_PAGE_SIZE);
   const [markEmpty, setMarkEmpty] = useState(true);
@@ -163,11 +165,11 @@ export function DataFileDataTab({
         if (seq !== rawSeq.current) return;
         // Keep the previous rows on screen and say why the new clause failed —
         // silently showing the whole file would look like the filter worked.
-        onPatch({ filterError: appErrorMessage(error, "That WHERE clause could not be run.") });
+        onPatch({ filterError: appErrorMessage(error, t("dfile.whereFail")) });
       });
     // `onPatch` is a fresh closure each render; re-running on it would loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [handleId, doc, rawClause]);
+  }, [handleId, doc, rawClause, t]);
 
   // Visible columns, in file order. A hidden column leaves the grid but stays
   // in the profile — hiding is about reading the table, not about the data.
@@ -399,11 +401,11 @@ export function DataFileDataTab({
               values.map((v) => quoteField(cell(v), doc.parsed.opts)).join(",");
     if (navigator.clipboard?.writeText) {
       void navigator.clipboard.writeText(text).then(
-        () => toast("Row copied", "ok"),
-        () => toast("Couldn't copy to clipboard", "err"),
+        () => toast(t("dfile.rowCopied"), "ok"),
+        () => toast(t("uix.copy.fail"), "err"),
       );
     } else {
-      toast("Couldn't copy to clipboard", "err");
+      toast(t("uix.copy.fail"), "err");
     }
   };
 
@@ -411,9 +413,9 @@ export function DataFileDataTab({
   const counts = batchSize(edits);
   const pending = !isEmptyBatch(edits);
   const pendingLabel = [
-    counts.edited ? counts.edited + " edited row" + (counts.edited === 1 ? "" : "s") : "",
-    counts.added ? counts.added + " new row" + (counts.added === 1 ? "" : "s") : "",
-    counts.deleted ? counts.deleted + " deleted row" + (counts.deleted === 1 ? "" : "s") : "",
+    counts.edited ? t("ws.unsaved.editedRows", { count: counts.edited }) : "",
+    counts.added ? t("ws.unsaved.newRows", { count: counts.added }) : "",
+    counts.deleted ? t("dfile.deletedRowsN", { count: counts.deleted }) : "",
   ]
     .filter(Boolean)
     .join(", ");
@@ -466,24 +468,30 @@ export function DataFileDataTab({
           onClick={openPanel}
           aria-expanded={filterOpen}
         >
-          <Icon name="filter_list" size={15} /> Filters
+          <Icon name="filter_list" size={15} /> {t("ws.table.filters")}
           {hasApplied ? <span className="filter-dot" /> : null}
           <Icon name="expand_more" size={14} style={{ color: "var(--text-faint)" }} />
         </button>
 
         {hasApplied ? (
-          <IconBtn icon="filter_alt_off" title="Clear filters" onClick={clearFilters} />
+          <IconBtn
+            icon="filter_alt_off"
+            title={t("ws.table.clearFilters")}
+            onClick={clearFilters}
+          />
         ) : null}
 
         <div className="csvv-search">
           <Icon name="search" size={14} style={{ color: "var(--text-faint)" }} />
           <input
-            placeholder={"Search all " + doc.parsed.rows.length.toLocaleString() + " rows…"}
+            placeholder={t("dfile.searchRows", { count: doc.parsed.rows.length.toLocaleString() })}
             value={q}
             onChange={(e) => setQ(e.target.value)}
             spellCheck={false}
           />
-          {q ? <IconBtn icon="close" title="Clear" onClick={() => setQ("")} size={14} /> : null}
+          {q ? (
+            <IconBtn icon="close" title={t("ws.scope.clear")} onClick={() => setQ("")} size={14} />
+          ) : null}
         </div>
 
         {rowFilter ? (
@@ -491,7 +499,7 @@ export function DataFileDataTab({
             type="button"
             className="csvv-chip active"
             onClick={() => onRowFilter(null)}
-            title="Clear this filter"
+            title={t("dfile.clearChip")}
           >
             <Icon name="filter_alt" size={12} />
             <span>{rowFilter.label}</span>
@@ -503,27 +511,19 @@ export function DataFileDataTab({
             className="csvv-chip"
             onClick={() =>
               onRowFilter({
-                label: problem.size + " problem row" + (problem.size === 1 ? "" : "s"),
+                label: t("dfile.problemRows", { count: problem.size }),
                 rows: [...problem],
               })
             }
           >
             <Icon name="report" size={12} />
-            <span>
-              {problem.size} problem row{problem.size === 1 ? "" : "s"}
-            </span>
+            <span>{t("dfile.problemRows", { count: problem.size })}</span>
           </button>
         ) : null}
 
         <div style={{ flex: 1 }} />
-        <Btn
-          icon="add"
-          variant="text"
-          small
-          onClick={addRowHere}
-          title="Add a row to the end of the file (⌘I)"
-        >
-          Add row
+        <Btn icon="add" variant="text" small onClick={addRowHere} title={t("dfile.addRowTitle")}>
+          {t("dfile.addRow")}
         </Btn>
         <label className="csvv-toggle">
           <input
@@ -531,10 +531,12 @@ export function DataFileDataTab({
             checked={markEmpty}
             onChange={(e) => setMarkEmpty(e.target.checked)}
           />
-          Mark empty cells
+          {t("dfile.markEmpty")}
         </label>
         <span className="csvv-bar-dim">
-          {hidden.size ? hidden.size + " hidden" : columns.length + " columns"}
+          {hidden.size
+            ? t("dfile.hiddenN", { count: hidden.size })
+            : t("dfile.colN", { count: columns.length })}
         </span>
       </div>
 
@@ -581,8 +583,8 @@ export function DataFileDataTab({
               }
             >
               {sel.some((g) => deletedSet.has(pageRows[g] ?? -1))
-                ? "Restore " + sel.length
-                : "Delete " + sel.length}
+                ? t("dfile.restoreN", { count: sel.length })
+                : t("dfile.deleteN", { count: sel.length })}
             </Btn>
           )
         }
@@ -594,63 +596,60 @@ export function DataFileDataTab({
         <div className="save-bar">
           <Icon name="edit_note" size={15} style={{ color: "var(--accent)" }} />
           <span className="save-bar-count">{pendingLabel}</span>
-          <span className="save-bar-hint">not saved yet — the file on disk is unchanged</span>
+          <span className="save-bar-hint">{t("dfile.notSavedHint")}</span>
           <div style={{ flex: 1 }} />
           <Btn variant="text" small disabled={saving} onClick={onDiscard}>
-            Discard
+            {t("grid.discard")}
           </Btn>
           <Btn icon="file_copy" variant="tonal" small disabled={saving} onClick={onSaveCopy}>
-            Save a copy
+            {t("dfile.saveCopyBtn")}
           </Btn>
           <Btn
             icon="save"
             variant="filled"
             small
             disabled={saving || !onSave}
-            title={
-              onSave
-                ? "Overwrite " + doc.name + " (⌘S)"
-                : "This sample has no file on disk — use Save a copy"
-            }
+            title={onSave ? t("dfile.overwriteTitle", { name: doc.name }) : t("dfile.sampleHint")}
             onClick={() => onSave?.()}
           >
-            {saving ? "Saving…" : "Save"}
+            {saving ? t("grid.saving") : t("common.save")}
           </Btn>
         </div>
       ) : null}
 
       <div className="table-footer">
-        <span className="table-hint">
-          {doc.name} · double-click a cell to edit · click a header to sort the whole file · stack
-          under Filters
-        </span>
+        <span className="table-hint">{t("dfile.footerHint", { name: doc.name })}</span>
         <div className="pager">
           <span className="pager-label" id="csvv-pager-label">
-            Rows per page
+            {t("ws.pager.rowsPerPage")}
           </span>
           <Select
             className="pager-size"
             placement="up"
             aria-labelledby="csvv-pager-label"
             value={pageSize}
-            options={PAGE_SIZES.map((n) => ({ value: n, label: n === "all" ? "All" : n }))}
+            options={PAGE_SIZES.map((n) => ({
+              value: n,
+              label: n === "all" ? t("ws.table.all") : n,
+            }))}
             onChange={(v) => {
               setPageSize(v);
               setOffset(0);
             }}
           />
           <span className="pager-range">
-            {from.toLocaleString()}–{to.toLocaleString()} of {order.length.toLocaleString()}
+            {from.toLocaleString()}–{to.toLocaleString()} {t("common.of")}{" "}
+            {order.length.toLocaleString()}
           </span>
           <IconBtn
             icon="chevron_left"
-            title="Previous page"
+            title={t("ws.pager.prev")}
             disabled={offset === 0}
             onClick={() => setOffset(Math.max(0, offset - size))}
           />
           <IconBtn
             icon="chevron_right"
-            title="Next page"
+            title={t("ws.pager.next")}
             disabled={offset + size >= order.length}
             onClick={() => setOffset(offset + size < order.length ? offset + size : offset)}
           />
@@ -669,8 +668,8 @@ export function DataFileDataTab({
         isStagedNew={(inspectFileRow ?? 0) < 0}
         pkLabel={
           inspectFileRow !== undefined && inspectFileRow >= 0
-            ? "row " + (inspectFileRow + 1)
-            : "new row"
+            ? t("dfile.rowN", { n: inspectFileRow + 1 })
+            : t("dfile.newRow")
         }
         position={(inspect?.row ?? 0) + 1}
         total={pageRows.length}

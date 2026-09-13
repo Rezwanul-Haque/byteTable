@@ -29,6 +29,7 @@ import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Modal, ModalActions, ModalTitle } from "../../../shared/ui/Modal";
 import { appErrorMessage } from "../../../shared/api/error";
+import { useT } from "../../../shared/i18n/useT";
 import { kvCommand } from "../../browse/redis/api";
 import {
   formatReply,
@@ -65,6 +66,7 @@ export function RedisTerminalSession({ workspace, session, embedded }: RedisTerm
   const handleId = workspace.handleId;
   const connName = workspace.name;
   const isProduction = workspace.saved.env === "production";
+  const t = useT();
 
   // Initial db = the connection's configured dbIndex (mirrors RedisWorkspace).
   const params = workspace.saved.params;
@@ -104,8 +106,7 @@ export function RedisTerminalSession({ workspace, session, embedded }: RedisTerm
         lines: [
           {
             cls: "cli-info",
-            text:
-              "Connected to " + connName + " · " + banner + ". Type a command, ↑/↓ for history.",
+            text: t("term.redis.connected", { conn: connName, banner }),
           },
         ],
       });
@@ -161,7 +162,10 @@ export function RedisTerminalSession({ workspace, session, embedded }: RedisTerm
       })
       .catch((e: unknown) => {
         appendLines([
-          { cls: "cli-error", text: "(error) " + appErrorMessage(e, "command failed") },
+          {
+            cls: "cli-error",
+            text: "(error) " + appErrorMessage(e, t("term.redis.commandFailed")),
+          },
         ]);
       })
       .finally(() => {
@@ -233,7 +237,7 @@ export function RedisTerminalSession({ workspace, session, embedded }: RedisTerm
     <div className="rcli term">
       <div className="rcli-toolbar">
         <Icon name="terminal" size={15} style={{ color: "var(--accent)" }} />
-        {!embedded ? <span className="rcli-title">redis-cli</span> : null}
+        {!embedded ? <span className="rcli-title">{t("term.redis.title")}</span> : null}
         <div className="sql-snippets">
           {REDIS_CLI_PRESETS.map((c) => (
             <button
@@ -253,7 +257,7 @@ export function RedisTerminalSession({ workspace, session, embedded }: RedisTerm
         <IconBtn
           icon="delete_sweep"
           size={15}
-          title="Clear console (Ctrl+L)"
+          title={t("term.redis.clear")}
           onClick={() => setLines([])}
         />
       </div>
@@ -282,7 +286,7 @@ export function RedisTerminalSession({ workspace, session, embedded }: RedisTerm
             autoComplete="off"
             autoCapitalize="off"
             autoCorrect="off"
-            aria-label="redis-cli command"
+            aria-label={t("term.redis.aria")}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKey}
           />
@@ -290,22 +294,18 @@ export function RedisTerminalSession({ workspace, session, embedded }: RedisTerm
       </div>
 
       {confirm ? (
-        <Modal onClose={() => setConfirm(null)} label="Confirm destructive command" width={460}>
+        <Modal onClose={() => setConfirm(null)} label={t("term.confirm.title")} width={460}>
           <ModalTitle>
-            <Icon name="warning" size={18} style={{ color: "#e06c75" }} /> Run a destructive command
-            on a production connection?
+            <Icon name="warning" size={18} style={{ color: "#e06c75" }} /> {t("term.confirm.body")}
           </ModalTitle>
-          <p className="dg-confirm-body">
-            This connection points at <b>production</b>. The following command will run against{" "}
-            <b>db{dbIndex}</b>:
-          </p>
+          <p className="dg-confirm-body">{t("term.confirm.desc", { db: dbIndex })}</p>
           <code className="dg-confirm-sql">{confirm.raw}</code>
           <ModalActions>
             <Btn variant="text" onClick={() => setConfirm(null)}>
-              Cancel
+              {t("common.cancel")}
             </Btn>
             <Btn variant="filled" className="rinfo-del-btn" onClick={confirmRun}>
-              Run command
+              {t("term.confirm.run")}
             </Btn>
           </ModalActions>
         </Modal>

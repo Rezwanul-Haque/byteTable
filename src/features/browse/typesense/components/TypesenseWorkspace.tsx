@@ -18,6 +18,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { isAppErrorPayload } from "../../../../shared/api/error";
+import { useT } from "../../../../shared/i18n/useT";
+import type { StringKey } from "../../../../shared/i18n/strings/en";
 import { Icon } from "../../../../shared/ui/Icon";
 import { BuiltByCredit } from "../../../../shared/ui/BuiltByCredit";
 import { ResourceMeter } from "../../../app_metrics/components/ResourceMeter";
@@ -90,11 +92,11 @@ export interface TsTab {
   seedQuery?: string;
 }
 
-const SECTION_TITLE: Record<TsSectionKind, string> = {
-  schema: "Schema",
-  docs: "Documents",
-  curation: "Curation",
-  keys: "API keys",
+const SECTION_TITLE: Record<TsSectionKind, StringKey> = {
+  schema: "tsx.section.schema",
+  docs: "tsx.section.docs",
+  curation: "tsx.section.curation",
+  keys: "tsx.section.keys",
 };
 
 // Unique per tab, not per module load — see the note in DynamoWorkspace: a
@@ -102,6 +104,7 @@ const SECTION_TITLE: Record<TsSectionKind, string> = {
 const nextId = (p: string) => "ts-" + p + "-" + crypto.randomUUID();
 
 export function TypesenseWorkspace({ workspace }: { workspace: Workspace }) {
+  const t = useT();
   const closeWorkspace = useWorkspacesStore((state) => state.closeWorkspace);
   const toast = useToast();
   const openPanel = usePanelStore((s) => s.openPanel);
@@ -115,7 +118,9 @@ export function TypesenseWorkspace({ workspace }: { workspace: Workspace }) {
   const ensureTabs = useTsTabsStore((s) => s.ensure);
   const patchTabs = useTsTabsStore((s) => s.patch);
   const tabState = useTsTabsStore((s) => s.byWorkspace[workspace.id]);
-  const tabs: TsTab[] = tabState?.tabs ?? [{ id: "ts-dash", kind: "dashboard", title: "Cluster" }];
+  const tabs: TsTab[] = tabState?.tabs ?? [
+    { id: "ts-dash", kind: "dashboard", title: t("tsx.ws.clusterTab") },
+  ];
   const activeId = tabState?.activeId ?? "ts-dash";
   const coll = tabState?.coll ?? "";
 
@@ -199,7 +204,7 @@ export function TypesenseWorkspace({ workspace }: { workspace: Workspace }) {
         if (target && target !== stored) setColl(target);
       } catch (e) {
         if (!live) return;
-        setError(isAppErrorPayload(e) ? e.message : "Could not reach the Typesense cluster.");
+        setError(isAppErrorPayload(e) ? e.message : t("tsx.ws.unreachable"));
       } finally {
         if (live) setLoading(false);
       }
@@ -241,7 +246,7 @@ export function TypesenseWorkspace({ workspace }: { workspace: Workspace }) {
     const tab: TsTab = {
       id: nextId("s-" + name),
       kind: "search",
-      title: "Search · " + name,
+      title: t("tsx.ws.searchTab", { name }),
       coll: name,
       seedQuery,
     };
@@ -256,7 +261,7 @@ export function TypesenseWorkspace({ workspace }: { workspace: Workspace }) {
       setActiveId(existing.id);
       return;
     }
-    const tab: TsTab = { id: nextId(kind), kind, title: SECTION_TITLE[kind] };
+    const tab: TsTab = { id: nextId(kind), kind, title: t(SECTION_TITLE[kind]) };
     setTabs((ts) => [...ts, tab]);
     setActiveId(tab.id);
   };
@@ -267,7 +272,7 @@ export function TypesenseWorkspace({ workspace }: { workspace: Workspace }) {
       setActiveId(existing.id);
       return;
     }
-    const tab: TsTab = { id: nextId("dash"), kind: "dashboard", title: "Cluster" };
+    const tab: TsTab = { id: nextId("dash"), kind: "dashboard", title: t("tsx.ws.clusterTab") };
     setTabs((ts) => [...ts, tab]);
     setActiveId(tab.id);
   };
@@ -284,7 +289,7 @@ export function TypesenseWorkspace({ workspace }: { workspace: Workspace }) {
   const refresh = () => {
     void loadAll().catch(() => {});
     setReloadKey((k) => k + 1);
-    toast("Cluster metadata refreshed", "ok");
+    toast(t("tsx.ws.clusterRefreshed"), "ok");
   };
 
   // Settings-driven auto-refresh of the collection list (silent — no toast).
@@ -413,7 +418,7 @@ export function TypesenseWorkspace({ workspace }: { workspace: Workspace }) {
           <button
             className="tab-new"
             onClick={() => openSearch()}
-            title="New search playground (⌘T)"
+            title={t("tsx.ws.newPlayground")}
             disabled={!coll}
           >
             <Icon name="add" size={16} />
@@ -422,10 +427,10 @@ export function TypesenseWorkspace({ workspace }: { workspace: Workspace }) {
             <button
               className="tabbar-tool"
               onClick={toggleShell}
-              title="HTTP console (⌘` / Ctrl+`)"
+              title={t("tsx.ws.httpConsoleTitle")}
             >
               <Icon name="terminal" size={15} />
-              <span>HTTP console</span>
+              <span>{t("tsx.sidebar.httpConsole")}</span>
             </button>
           </div>
           {tabMenu.element}
@@ -509,14 +514,19 @@ export function TypesenseWorkspace({ workspace }: { workspace: Workspace }) {
         {collection ? (
           <span className="status-dim">
             <Icon name="database" size={11} /> {collection.name} ·{" "}
-            {tsCount(collection.numDocuments)} docs
+            {t("tsx.ws.docsCount", {
+              name: collection.name,
+              count: tsCount(collection.numDocuments),
+            })}
           </span>
         ) : null}
         <div style={{ flex: 1 }} />
-        {!adminKey ? <span className="status-dim">search-only key</span> : null}
+        {!adminKey ? <span className="status-dim">{t("tsx.ws.searchOnlyKey")}</span> : null}
         <span className="status-dim">
-          {nodes.length || 1} {(nodes.length || 1) === 1 ? "node" : "nodes"} ·{" "}
-          {(stats?.healthy ?? nodes.every((n) => n.healthy)) ? "healthy" : "degraded"}
+          {t("tsx.dash.nodeCount", { count: nodes.length || 1 })} ·{" "}
+          {(stats?.healthy ?? nodes.every((n) => n.healthy))
+            ? t("tsx.dash.healthy")
+            : t("tsx.dash.degraded")}
         </span>
         <ResourceMeter />
         <BuiltByCredit className="status-dim" />

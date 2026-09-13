@@ -9,6 +9,7 @@ import { useEffect, useRef } from "react";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { Select } from "../../../../shared/ui/Select";
+import { useT } from "../../../../shared/i18n/useT";
 import { PIPELINE_STAGES, stagePlaceholder, type Stage } from "../pipeline";
 
 const STAGE_OPTIONS = PIPELINE_STAGES.map((op) => ({ value: op, label: op }));
@@ -29,6 +30,7 @@ export function MongoStageRail({
   onClear?: () => void;
 }) {
   const railRef = useRef<HTMLDivElement | null>(null);
+  const t = useT();
 
   // Keep every pipeline stage editor the same height (tallest content, capped).
   useEffect(() => {
@@ -75,14 +77,14 @@ export function MongoStageRail({
                 // body shows; anything typed for the old operator stays, since
                 // most switches ($match → $project) keep the fields.
                 onChange={(op) => setStage(i, { op })}
-                aria-label={"Stage " + (i + 1) + " operator"}
+                aria-label={t("mongo.stageOpAria", { n: i + 1 })}
               />
               <div style={{ flex: 1 }} />
               <button
                 className="mg-stage-btn"
                 onClick={() => moveStage(i, -1)}
                 disabled={i === 0}
-                title="Move up"
+                title={t("mongo.moveUp")}
               >
                 <Icon name="arrow_upward" size={13} />
               </button>
@@ -90,14 +92,14 @@ export function MongoStageRail({
                 className="mg-stage-btn"
                 onClick={() => moveStage(i, 1)}
                 disabled={i === stages.length - 1}
-                title="Move down"
+                title={t("mongo.moveDown")}
               >
                 <Icon name="arrow_downward" size={13} />
               </button>
               <button
                 className="mg-stage-btn mg-stage-del"
                 onClick={() => removeStage(i)}
-                title="Remove stage"
+                title={t("mongo.removeStage")}
               >
                 <Icon name="close" size={13} />
               </button>
@@ -106,14 +108,14 @@ export function MongoStageRail({
               className="mg-stage-body mg-mono"
               value={s.body}
               placeholder={stagePlaceholder(s.op)}
-              aria-label={"Stage " + (i + 1) + " body"}
+              aria-label={t("mongo.stageBodyAria", { n: i + 1 })}
               onChange={(e) => setStage(i, { body: e.target.value })}
               spellCheck={false}
             />
           </div>
         ))}
         <button className="mg-add-stage" onClick={addStage}>
-          <Icon name="add" size={15} /> Add stage
+          <Icon name="add" size={15} /> {t("mongo.addStage")}
         </button>
       </div>
       <div className="mg-pipeline-run">
@@ -121,28 +123,26 @@ export function MongoStageRail({
           icon="play_arrow"
           variant="filled"
           small
-          title="Run this pipeline (⌘↵ / Ctrl+↵)"
+          title={t("mongo.runPipelineTitle")}
           onClick={onRun}
         >
-          Run pipeline
+          {t("mongo.runPipeline")}
         </Btn>
         <Btn icon="content_copy" variant="tonal" small onClick={onCopy}>
-          Copy pipeline
+          {t("mongo.copyPipeline")}
         </Btn>
         {onClear ? (
           <Btn
             icon="clear_all"
             variant="text"
             small
-            title="Clear the stages and the last result"
+            title={t("mongo.clearPipelineTitle")}
             onClick={onClear}
           >
-            Clear pipeline
+            {t("mongo.clearPipeline")}
           </Btn>
         ) : null}
-        <span className="sql-hint">
-          {stages.length} stage{stages.length === 1 ? "" : "s"}
-        </span>
+        <span className="sql-hint">{t("mongo.nStages", { count: stages.length })}</span>
       </div>
     </div>
   );

@@ -17,7 +17,8 @@ import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Modal, ModalActions, ModalTitle } from "../../../shared/ui/Modal";
-import { ENGINE_META } from "../../../shared/ui/engineMeta";
+import { ENGINE_META, engineLabel } from "../../../shared/ui/engineMeta";
+import { useT } from "../../../shared/i18n/useT";
 import { IMP_DBLABEL, isImportError, parseConnUri, type ImportedConnection } from "../urlImport";
 import "./ImportUrlSheet.css";
 
@@ -50,6 +51,7 @@ interface ImportUrlSheetProps {
 }
 
 export function ImportUrlSheet({ onClose, onApply }: ImportUrlSheetProps) {
+  const t = useT();
   const [text, setText] = useState("");
   // The sheet exists to receive a paste, so the caret belongs here on open —
   // not on the close button, which is what `Modal` would focus by default.
@@ -76,21 +78,18 @@ export function ImportUrlSheet({ onClose, onApply }: ImportUrlSheetProps) {
 
   return (
     <Modal
-      label="Import connection"
+      label={t("conn.import")}
       onClose={onClose}
       className="imp-sheet"
       initialFocusRef={inputRef}
     >
       <ModalTitle>
-        <span>Import connection</span>
-        <IconBtn icon="close" onClick={onClose} title="Close (Esc)" />
+        <span>{t("conn.import")}</span>
+        <IconBtn icon="close" onClick={onClose} title={t("grid.closeEsc")} />
       </ModalTitle>
 
       <div className="imp-body">
-        <p className="imp-lede">
-          Paste a connection URL or an ODBC-style connection string. Everything ByteTable can map is
-          filled into the form — nothing is saved until you do.
-        </p>
+        <p className="imp-lede">{t("conn.import.lede")}</p>
 
         <div className={"imp-field" + (error ? " bad" : parsed ? " good" : "")}>
           <textarea
@@ -98,7 +97,7 @@ export function ImportUrlSheet({ onClose, onApply }: ImportUrlSheetProps) {
             rows={3}
             value={text}
             spellCheck={false}
-            aria-label="Connection URL or connection string"
+            aria-label={t("conn.import.aria")}
             placeholder="postgres://user:password@host:5432/dbname?sslmode=require"
             onChange={(e) => setText(e.target.value)}
             onKeyDown={onKeyDown}
@@ -110,20 +109,20 @@ export function ImportUrlSheet({ onClose, onApply }: ImportUrlSheetProps) {
                   className="imp-eng-dot"
                   style={{ background: ENGINE_META[parsed.engine].color }}
                 />
-                {ENGINE_META[parsed.engine].label}
+                {engineLabel(parsed.engine)}
                 <code>{parsed.scheme + (parsed.kv ? "" : "://")}</code>
-                {parsed.confident ? null : <em>best guess — confirm the engine</em>}
+                {parsed.confident ? null : <em>{t("conn.import.bestGuess")}</em>}
               </span>
             ) : error ? (
               <span className="imp-detect err">
                 <Icon name="error" size={12} /> {error}
               </span>
             ) : (
-              <span className="imp-detect idle">Waiting for a URL…</span>
+              <span className="imp-detect idle">{t("conn.import.waiting")}</span>
             )}
             {text ? (
               <button type="button" className="imp-clear" onClick={() => setText("")}>
-                Clear
+                {t("conn.import.clear")}
               </button>
             ) : null}
           </div>
@@ -132,10 +131,10 @@ export function ImportUrlSheet({ onClose, onApply }: ImportUrlSheetProps) {
         {parsed ? (
           <div className="imp-map">
             <div className="imp-map-head">
-              <Icon name="south" size={13} /> Fields to fill
+              <Icon name="south" size={13} /> {t("conn.import.fields")}
             </div>
             <dl className="imp-dl">
-              {mapRows(parsed).map(([label, value, cls]) => (
+              {mapRows(parsed, t).map(([label, value, cls]) => (
                 <Fragment key={label}>
                   <dt>{label}</dt>
                   <dd className={cls ?? ""}>{value}</dd>
@@ -144,7 +143,7 @@ export function ImportUrlSheet({ onClose, onApply }: ImportUrlSheetProps) {
             </dl>
             {parsed.opts.length ? (
               <div className="imp-extra">
-                <span className="imp-extra-lbl">Driver options carried over</span>
+                <span className="imp-extra-lbl">{t("conn.import.options")}</span>
                 <div className="imp-tags">
                   {parsed.opts.map((o) => (
                     <code key={o.k}>{o.k + "=" + o.v}</code>
@@ -160,7 +159,7 @@ export function ImportUrlSheet({ onClose, onApply }: ImportUrlSheetProps) {
           </div>
         ) : (
           <div className="imp-support">
-            <span className="imp-extra-lbl">Recognised</span>
+            <span className="imp-extra-lbl">{t("conn.import.recognised")}</span>
             <div className="imp-tags">
               {RECOGNISED.map((prefix) => (
                 <code key={prefix}>{prefix}</code>
@@ -172,10 +171,10 @@ export function ImportUrlSheet({ onClose, onApply }: ImportUrlSheetProps) {
 
       <ModalActions>
         <Btn variant="text" onClick={onClose}>
-          Cancel
+          {t("common.cancel")}
         </Btn>
         <Btn variant="filled" disabled={!parsed} onClick={submit}>
-          Fill the form
+          {t("conn.import.fill")}
         </Btn>
       </ModalActions>
     </Modal>
@@ -190,26 +189,29 @@ type MapRow = [string, string, string?];
  * was actually parsed appears — a row for an absent field would imply the
  * import is about to blank it.
  */
-function mapRows(parsed: ImportedConnection): MapRow[] {
+function mapRows(parsed: ImportedConnection, t: ReturnType<typeof useT>): MapRow[] {
   const rows: MapRow[] = [];
-  const dbLabel = IMP_DBLABEL[parsed.engine] ?? "Database";
+  const dbLabel = t(IMP_DBLABEL[parsed.engine] ?? "conn.row.database");
   if (parsed.host) {
     rows.push([
-      "Host",
-      parsed.host + (parsed.extraHosts ? "  +" + parsed.extraHosts + " more" : ""),
+      t("conn.row.host"),
+      parsed.host +
+        (parsed.extraHosts ? "  " + t("conn.row.moreHosts", { count: parsed.extraHosts }) : ""),
     ]);
   }
-  if (parsed.port) rows.push(["Port", parsed.port]);
+  if (parsed.port) rows.push([t("conn.row.port"), parsed.port]);
   if (parsed.db) rows.push([dbLabel, parsed.db]);
-  if (parsed.file) rows.push(["File", parsed.file]);
-  if (parsed.user) rows.push(["User", parsed.user]);
-  if (parsed.password) rows.push(["Password", MASK, "secret"]);
-  if (parsed.apiKey) rows.push(["API key", MASK, "secret"]);
+  if (parsed.file) rows.push([t("conn.row.file"), parsed.file]);
+  if (parsed.user) rows.push([t("conn.row.user"), parsed.user]);
+  if (parsed.password) rows.push([t("conn.row.password"), MASK, "secret"]);
+  if (parsed.apiKey) rows.push([t("conn.row.apiKey"), MASK, "secret"]);
   if (parsed.tls) {
     rows.push(
-      parsed.engine === "typesense" ? ["Protocol", parsed.scheme] : ["TLS mode", parsed.tls],
+      parsed.engine === "typesense"
+        ? [t("conn.row.protocol"), parsed.scheme]
+        : [t("conn.row.tls"), parsed.tls],
     );
   }
-  if (parsed.datacenter) rows.push(["Datacenter", parsed.datacenter]);
+  if (parsed.datacenter) rows.push([t("conn.row.datacenter"), parsed.datacenter]);
   return rows;
 }

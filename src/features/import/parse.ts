@@ -10,6 +10,8 @@
 // null → NULL — so a CSV cell never breaks the generated INSERT on a quote.
 
 import type { ColumnInfo } from "../../shared/api/engine";
+// Module-level i18n: the preview error lines below are user-visible.
+import { t } from "../../shared/i18n";
 
 /** A parsed value: the cell types the prototype's parsers produce. */
 export type ParsedValue = string | number | boolean | null;
@@ -286,12 +288,7 @@ export function previewTable(
     return { error: err instanceof Error ? err.message : String(err) };
   }
   if (!parsed.columns.length || !parsed.rows.length) {
-    return {
-      error:
-        "No rows found. Provide " +
-        (format === "sql" ? "INSERT statements" : "CSV with a header row") +
-        ".",
-    };
+    return { error: format === "sql" ? t("io.noRowsSql") : t("io.noRowsCsv") };
   }
   const known = new Set(columns.map((c) => c.name));
   const objects = toObjects(parsed.columns, parsed.rows, columns, format === "csv");
@@ -339,9 +336,7 @@ export function previewSchema(text: string): SchemaPreviewResult {
     return { error: err instanceof Error ? err.message : String(err) };
   }
   if (!groups.length) {
-    return {
-      error: "No INSERT statements found. Provide a .sql dump containing INSERT INTO … VALUES …;",
-    };
+    return { error: t("io.noInserts") };
   }
   let total = 0;
   const summary = groups.map((g) => {

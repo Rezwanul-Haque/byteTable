@@ -5,20 +5,25 @@
 
 import { open } from "@tauri-apps/plugin-dialog";
 
+import { t } from "../../shared/i18n";
+
 /**
  * Show the native open-file dialog filtered to SQLite databases.
  * Resolves to the picked absolute path, or null when the user cancels.
  *
  * In plain browser dev the dialog plugin is unavailable and this rejects —
  * callers catch and show the "requires the desktop app" info toast.
+ *
+ * The filter names are read from the locale at call time (not module load), so
+ * the OS dialog is labelled in the language the user picked.
  */
 export async function pickSqliteFile(): Promise<string | null> {
   return await open({
     multiple: false,
     directory: false,
     filters: [
-      { name: "SQLite database", extensions: ["db", "sqlite", "sqlite3", "db3"] },
-      { name: "All files", extensions: ["*"] },
+      { name: t("conn.dlg.sqlite"), extensions: ["db", "sqlite", "sqlite3", "db3"] },
+      { name: t("common.allFiles"), extensions: ["*"] },
     ],
   });
 }

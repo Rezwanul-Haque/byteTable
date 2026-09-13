@@ -13,11 +13,12 @@ import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { Modal, ModalActions } from "../../../../shared/ui/Modal";
 import { Select } from "../../../../shared/ui/Select";
+import { useT } from "../../../../shared/i18n/useT";
 import {
   binaryBytes,
   generateUuidVersion,
   looksUuid,
-  UUID_VERSIONS,
+  uuidVersions,
   validateBinary,
   type UuidVersion,
 } from "../../shared/binaryCell";
@@ -48,6 +49,7 @@ export function BinaryEditorModal({
   const expect = binaryBytes(type) ?? 16;
   const init = looksUuid(value) ? String(value).toLowerCase() : value == null ? "" : String(value);
   const [text, setText] = useState(init);
+  const t = useT();
   // UUID generator version (16-byte columns). Defaults to v7; shared with the
   // text-UUID editor via the same localStorage key.
   const [version, setVersion] = useState<UuidVersion>(
@@ -94,7 +96,7 @@ export function BinaryEditorModal({
     <Modal
       className="binary-modal"
       width={460}
-      label={readOnly ? "View binary value" : "Edit binary value"}
+      label={readOnly ? t("grid.viewBinValue") : t("grid.editBinValue")}
       onClose={onClose}
     >
       <div className="modal-title">
@@ -105,12 +107,13 @@ export function BinaryEditorModal({
           </span>
           <span className="json-type-tag">{type}</span>
         </span>
-        <IconBtn icon="close" onClick={onClose} title="Close (Esc)" />
+        <IconBtn icon="close" onClick={onClose} title={t("grid.closeEsc")} />
       </div>
 
       <label className="binary-field">
         <span className="binary-label">
-          Value <span className="binary-sub">UUID or 0x-hex · {expect} bytes</span>
+          {t("grid.valueLabel")}{" "}
+          <span className="binary-sub">{t("grid.binSub", { count: expect })}</span>
         </span>
         <input
           ref={inputRef}
@@ -131,7 +134,7 @@ export function BinaryEditorModal({
           <code>{uuidRepr}</code>
         </div>
         <div className="binary-repr-row">
-          <span>Stored bytes</span>
+          <span>{t("grid.storedBytes")}</span>
           <code>{bytesRepr}</code>
         </div>
       </div>
@@ -141,8 +144,8 @@ export function BinaryEditorModal({
         <span>
           {res.ok
             ? res.empty
-              ? "Empty → will save as NULL"
-              : "Valid · " + expect + " bytes"
+              ? t("grid.emptySavesNull")
+              : t("grid.validBytes", { count: expect })
             : res.message}
         </span>
       </div>
@@ -152,7 +155,7 @@ export function BinaryEditorModal({
           <>
             <div style={{ flex: 1 }} />
             <Btn variant="filled" onClick={onClose}>
-              Close
+              {t("common.close")}
             </Btn>
           </>
         ) : (
@@ -161,24 +164,24 @@ export function BinaryEditorModal({
               type="button"
               className="json-tool"
               onClick={() => generate(version)}
-              title={`Generate a ${version.toUpperCase()} UUID`}
+              title={t("grid.genBtnTitle", { version: version.toUpperCase(), label: "UUID" })}
             >
-              <Icon name="autorenew" size={14} /> Generate
+              <Icon name="autorenew" size={14} /> {t("grid.generate")}
             </button>
             <Select
               className="uuid-ver-select"
               value={version}
-              options={UUID_VERSIONS.map((v) => ({ value: v.id, label: v.label }))}
+              options={uuidVersions().map((v) => ({ value: v.id, label: v.label }))}
               onChange={(v) => generate(v as UuidVersion)}
-              title="UUID version"
-              aria-label="UUID version"
+              title={t("grid.uuidVerTitle")}
+              aria-label={t("grid.uuidVerTitle")}
             />
             <div style={{ flex: 1 }} />
             <Btn variant="text" onClick={onClose}>
-              Cancel
+              {t("common.cancel")}
             </Btn>
             <Btn variant="filled" icon="check" onClick={save} disabled={!res.ok || !dirty}>
-              Save
+              {t("common.save")}
             </Btn>
           </>
         )}

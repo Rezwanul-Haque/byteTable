@@ -14,6 +14,8 @@
 
 import { useMemo, useState } from "react";
 
+import { useT } from "../../../shared/i18n/useT";
+import { SCOPE_NOUN_KEYS } from "../scopes";
 import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
@@ -81,6 +83,12 @@ export function ScopeSwitcherModal({
   onClose,
 }: ScopeSwitcherModalProps) {
   const [q, setQ] = useState("");
+  const t = useT();
+  // The noun arrives as an English string from the engine caller; known nouns
+  // translate through their keys, unknown ones keep the English fallbacks.
+  const nounKeys = SCOPE_NOUN_KEYS[noun];
+  const nounText = nounKeys ? t(nounKeys.noun) : noun;
+  const titleText = nounKeys ? t(nounKeys.plural) : title(noun);
 
   const { user, systemItems } = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -116,7 +124,7 @@ export function ScopeSwitcherModal({
         <span className="ssm-row-name">{s.name}</span>
         {s.count !== undefined ? (
           <span className="ssm-row-count">
-            {s.count === null ? "—" : s.count + (s.count === 1 ? " table" : " tables")}
+            {s.count === null ? "—" : t("ws.palette.tablesHint", { count: s.count })}
           </span>
         ) : null}
         {/* The tick sits BEFORE the split action, and keeps its slot when the
@@ -140,13 +148,18 @@ export function ScopeSwitcherModal({
   };
 
   return (
-    <Modal width={520} className="ssm-modal" label={"Switch " + noun} onClose={onClose}>
+    <Modal
+      width={520}
+      className="ssm-modal"
+      label={t("ws.scope.switch", { noun: nounText })}
+      onClose={onClose}
+    >
       <ModalTitle>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
           {/* Matches the sidebar button that opens this, so the modal visibly
               belongs to it. A SYSTEM row's icon is a lock instead, which marks
               a different thing: the server's own scope vs the user's. */}
-          <Icon name={icon} size={17} style={{ color: "var(--accent)" }} /> {title(noun)}
+          <Icon name={icon} size={17} style={{ color: "var(--accent)" }} /> {titleText}
         </span>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
           {onCreate ? (
@@ -160,10 +173,10 @@ export function ScopeSwitcherModal({
                 onCreate();
               }}
             >
-              Create {noun}
+              {t("ws.scope.create", { noun: nounText })}
             </Btn>
           ) : null}
-          <IconBtn icon="close" onClick={onClose} title="Close" />
+          <IconBtn icon="close" onClick={onClose} title={t("common.close")} />
         </span>
       </ModalTitle>
 
@@ -171,34 +184,41 @@ export function ScopeSwitcherModal({
         <Icon name="search" size={15} style={{ color: "var(--text-faint)" }} />
         <input
           autoFocus
-          placeholder={"Filter " + noun + "s…"}
+          placeholder={t("ws.scope.filterPlaceholder", { noun: nounText })}
           value={q}
           onChange={(e) => setQ(e.target.value)}
           spellCheck={false}
-          aria-label={"Filter " + noun + "s"}
+          aria-label={t("ws.scope.filterAria", { noun: nounText })}
         />
         {q ? (
-          <button type="button" className="ssm-search-clear" title="Clear" onClick={() => setQ("")}>
+          <button
+            type="button"
+            className="ssm-search-clear"
+            title={t("ws.scope.clear")}
+            onClick={() => setQ("")}
+          >
             <Icon name="close" size={14} />
           </button>
         ) : null}
       </div>
 
-      <div className="ssm-list" role="menu" aria-label={"Switch " + noun}>
+      <div className="ssm-list" role="menu" aria-label={t("ws.scope.switch", { noun: nounText })}>
         {user.map(row)}
 
         {/* The server's own scopes, opt-in and grouped after the user ones so
             the list never opens on `information_schema`. */}
         {system && showSystem && systemItems.length > 0 ? (
           <>
-            <div className="ssm-group">System</div>
+            <div className="ssm-group">{t("ws.scope.system")}</div>
             {systemItems.map(row)}
           </>
         ) : null}
 
         {total === 0 ? (
           <div className="ssm-empty">
-            {q ? "No " + noun + "s match “" + q + "”" : "This connection has no " + noun + "s."}
+            {q
+              ? t("ws.scope.noMatch", { noun: nounText, q })
+              : t("ws.scope.none", { noun: nounText })}
           </div>
         ) : null}
       </div>
@@ -214,7 +234,7 @@ export function ScopeSwitcherModal({
             onClick={() => system.onToggle(!system.show)}
           >
             <Icon name={system.show ? "check_box" : "check_box_outline_blank"} size={15} />
-            <span>Show system {noun}s</span>
+            <span>{t("ws.scope.showSystem", { noun: nounText })}</span>
           </button>
         ) : (
           // Holds the left end so `space-between` still parks the hint at the
@@ -222,7 +242,7 @@ export function ScopeSwitcherModal({
           <span />
         )}
         <span className="ssm-hint">
-          <Icon name="open_in_new" size={13} /> open as its own workspace
+          <Icon name="open_in_new" size={13} /> {t("ws.scope.splitHint")}
         </span>
       </div>
     </Modal>

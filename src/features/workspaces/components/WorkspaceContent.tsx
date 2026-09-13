@@ -18,6 +18,7 @@ import { SchemaMap } from "../../schema_map/components/SchemaMap";
 import { selectPanel, shellLabel, usePanelStore } from "../../console/state";
 import { BTLogo } from "../../../shared/ui/BTLogo";
 import { Kbd } from "../../../shared/ui/Kbd";
+import { useLocale, useT } from "../../../shared/i18n/useT";
 import { ObjectViewer } from "../../db_objects/components/ObjectViewer";
 import { ObjectExplorer } from "../../db_objects/components/ObjectExplorer";
 import { TableOverview } from "../../browse/sql/components/TableOverview";
@@ -34,13 +35,14 @@ import "./WorkspaceContent.css";
 
 /** No-tabs state (prototype workspace.jsx empty-state copy). */
 function NoTabs() {
+  const t = useT();
   return (
     <div className="empty-state">
       <BTLogo size={40} accent="var(--text-faint)" fg="var(--text-faint)" />
-      <p>No open tabs</p>
+      <p>{t("ws.empty.title")}</p>
       <span>
-        Pick a table from the sidebar, press <Kbd>⌘K</Kbd> / <Kbd>Ctrl+K</Kbd> to jump, or{" "}
-        <Kbd>⌘T</Kbd> / <Kbd>Ctrl+T</Kbd> for a SQL query.
+        {t("ws.empty.pre")} <Kbd>⌘K</Kbd> / <Kbd>Ctrl+K</Kbd> {t("ws.empty.mid")} <Kbd>⌘T</Kbd> /{" "}
+        <Kbd>Ctrl+T</Kbd> {t("ws.empty.post")}
       </span>
     </div>
   );
@@ -157,7 +159,9 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
   };
   // Tabs still open + still dirty when the prompt renders, with the label the
   // strip shows them under (ordinal included, so "trees (2)" is unambiguous).
-  const labels = useMemo(() => tabLabels(tabs, currentSchema), [tabs, currentSchema]);
+  // `locale` in the deps: tabLabels reads t() at call time.
+  const locale = useLocale();
+  const labels = useMemo(() => tabLabels(tabs, currentSchema), [tabs, currentSchema, locale]);
   const describe = (ids: string[]): UnsavedTab[] =>
     ids
       .filter((id) => unsaved.has(id))

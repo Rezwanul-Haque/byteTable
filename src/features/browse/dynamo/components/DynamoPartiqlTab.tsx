@@ -7,6 +7,7 @@
 import { useState } from "react";
 
 import { isAppErrorPayload } from "../../../../shared/api/error";
+import { useT } from "../../../../shared/i18n/useT";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { dynamoExecuteStatement, type StatementResult, type TableDescriptor } from "../api";
@@ -34,6 +35,7 @@ export function DynamoPartiqlTab({
   const [result, setResult] = useState<StatementResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
+  const t = useT();
 
   // Presets seeded from the actual tables (first table + a couple of generic
   // shapes), mirroring the prototype's preset chips.
@@ -55,7 +57,7 @@ export function DynamoPartiqlTab({
       const next = [statement, ...history.filter((h) => h !== statement)].slice(0, HISTORY_MAX);
       onChange({ history: next });
     } catch (e) {
-      setError(isAppErrorPayload(e) ? e.message : "PartiQL requires the desktop app");
+      setError(isAppErrorPayload(e) ? e.message : t("dyn.pq.needApp"));
       setResult(null);
     } finally {
       setRunning(false);
@@ -71,7 +73,7 @@ export function DynamoPartiqlTab({
     <div className="ddb-pq-tab">
       <div className="ddb-pq-toolbar">
         <Btn icon="play_arrow" variant="filled" small onClick={() => void run()} disabled={running}>
-          Run
+          {t("dyn.pq.run")}
         </Btn>
         <span className="ddb-pq-hint">PartiQL · ⌘↩ / Ctrl+Enter</span>
         <div className="ddb-pq-snippets">
@@ -105,7 +107,7 @@ export function DynamoPartiqlTab({
         />
         {history.length ? (
           <div className="ddb-pq-history">
-            <div className="ddb-pq-history-label">History</div>
+            <div className="ddb-pq-history-label">{t("dyn.pq.history")}</div>
             {history.map((h, i) => (
               <button
                 key={i}
@@ -126,7 +128,7 @@ export function DynamoPartiqlTab({
           <div className="ddb-sql-error">
             <Icon name="error" size={18} />
             <div>
-              <div className="ddb-sql-error-title">PartiQL error</div>
+              <div className="ddb-sql-error-title">{t("dyn.pq.error")}</div>
               <div className="ddb-sql-error-msg">{error}</div>
             </div>
           </div>
@@ -136,7 +138,7 @@ export function DynamoPartiqlTab({
               <span className={"ddb-op-tag " + (result.op === "Query" ? "q" : "s")}>
                 {result.op}
               </span>
-              <span>{result.count} items</span>
+              <span>{t("dyn.statusItems", { count: result.count })}</span>
             </div>
             <div className="ddb-pq-grid">
               <DynamoItemGrid items={result.items} keySchema={gridKeySchema} />
@@ -145,7 +147,7 @@ export function DynamoPartiqlTab({
         ) : (
           <div className="ddb-sql-placeholder">
             <Icon name="terminal" size={26} style={{ color: "var(--text-faint)" }} />
-            <span>Run a PartiQL statement to see items</span>
+            <span>{t("dyn.pq.placeholderHint")}</span>
           </div>
         )}
       </div>

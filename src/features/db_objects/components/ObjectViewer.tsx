@@ -18,6 +18,7 @@ import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
 import { ENV_COLOR } from "../../../shared/ui/envColors";
 import { useToast } from "../../../shared/ui/toastContext";
+import { useT } from "../../../shared/i18n/useT";
 import { objectDefKey, useIntrospectionStore } from "../../introspection/state";
 import { useWorkspacesStore } from "../../workspaces/state";
 import type { Workspace } from "../../workspaces/types";
@@ -71,6 +72,7 @@ export function ObjectViewer({
   const env = workspace.saved.env;
   const envColor = workspace.saved.color ?? ENV_COLOR[env];
   const toast = useToast();
+  const t = useT();
   const sec = OBJ_SECTIONS[objectKind];
 
   const loadDef = useIntrospectionStore((s) => s.loadObjectDefinition);
@@ -109,9 +111,9 @@ export function ObjectViewer({
     setRefreshing(true);
     try {
       await runObjectDdl(handleId, [refreshMatviewSql(engine, schema, name)]);
-      toast(`Refreshed ${name}`, "ok");
+      toast(t("obj.refreshed", { name }), "ok");
     } catch (e) {
-      toast(appErrorMessage(e, "Could not refresh."), "err");
+      toast(appErrorMessage(e, t("obj.err.refresh")), "err");
     } finally {
       setRefreshing(false);
     }
@@ -123,11 +125,11 @@ export function ObjectViewer({
       const { dropObject } = await import("../api");
       await dropObject(handleId, schema, objectKind, name, detail);
       invalidateObjects(handleId, schema, objectKind);
-      toast(`DROP ${typeBadge(objectKind)} ${name} — dropped`, "ok");
+      toast(t("obj.droppedObject", { type: typeBadge(objectKind), name }), "ok");
       setDropOpen(false);
       closeTab(tabId);
     } catch (e) {
-      toast(appErrorMessage(e, "Could not drop the object."), "err");
+      toast(appErrorMessage(e, t("obj.err.drop")), "err");
       setDropping(false);
     }
   };
@@ -140,8 +142,8 @@ export function ObjectViewer({
   const copyDdl = () => {
     if (ddl === null) return;
     void navigator.clipboard.writeText(ddl).then(
-      () => toast("Copied to clipboard", "ok"),
-      () => toast("Couldn't copy to clipboard", "err"),
+      () => toast(t("obj.copiedClipboard"), "ok"),
+      () => toast(t("uix.copy.fail"), "err"),
     );
   };
 
@@ -150,37 +152,53 @@ export function ObjectViewer({
   const chips: { icon: string; label: string; value: string | number; tone?: string }[] = [];
   if (m) {
     if (m.returns)
-      chips.push({ icon: "output", label: "returns", value: m.returns, tone: sec.accent });
-    if (m.language) chips.push({ icon: "code", label: "language", value: m.language });
-    if (m.volatility) chips.push({ icon: "bolt", label: "volatility", value: m.volatility });
+      chips.push({
+        icon: "output",
+        label: t("obj.chip.returns"),
+        value: m.returns,
+        tone: sec.accent,
+      });
+    if (m.language) chips.push({ icon: "code", label: t("obj.chip.language"), value: m.language });
+    if (m.volatility)
+      chips.push({ icon: "bolt", label: t("obj.chip.volatility"), value: m.volatility });
     if (objectKind === "function" || objectKind === "procedure")
-      chips.push({ icon: "data_array", label: "args", value: m.args?.length ?? 0 });
-    if (m.table) chips.push({ icon: "table", label: "table", value: m.table, tone: sec.accent });
-    if (m.timing) chips.push({ icon: "schedule", label: "timing", value: m.timing });
+      chips.push({ icon: "data_array", label: t("obj.chip.args"), value: m.args?.length ?? 0 });
+    if (m.table)
+      chips.push({ icon: "table", label: t("obj.chip.table"), value: m.table, tone: sec.accent });
+    if (m.timing) chips.push({ icon: "schedule", label: t("obj.chip.timing"), value: m.timing });
     if (m.events && m.events.length)
-      chips.push({ icon: "flash_on", label: "events", value: m.events.join(", ") });
-    if (m.level) chips.push({ icon: "layers", label: "level", value: `FOR EACH ${m.level}` });
+      chips.push({ icon: "flash_on", label: t("obj.chip.events"), value: m.events.join(", ") });
+    if (m.level)
+      chips.push({
+        icon: "layers",
+        label: t("obj.chip.level"),
+        value: t("obj.chip.levelValue", { level: m.level }),
+      });
     if (m.populated !== null && m.populated !== undefined)
       chips.push({
         icon: "check_circle",
-        label: "populated",
-        value: m.populated ? "yes" : "no",
+        label: t("obj.chip.populated"),
+        value: m.populated ? t("obj.chip.yes") : t("obj.chip.no"),
         tone: sec.accent,
       });
     if (m.approxRows !== null && m.approxRows !== undefined)
-      chips.push({ icon: "tag", label: "rows", value: m.approxRows });
-    if (m.size) chips.push({ icon: "hard_drive", label: "size", value: m.size });
+      chips.push({ icon: "tag", label: t("obj.chip.rows"), value: m.approxRows });
+    if (m.size) chips.push({ icon: "hard_drive", label: t("obj.chip.size"), value: m.size });
     if (m.dependsOn && m.dependsOn.length)
-      chips.push({ icon: "account_tree", label: "reads", value: m.dependsOn.join(", ") });
+      chips.push({
+        icon: "account_tree",
+        label: t("obj.chip.reads"),
+        value: m.dependsOn.join(", "),
+      });
   }
   const args = m?.args ?? [];
   const disabledTrigger = objectKind === "trigger" && m?.enabled === false;
   const ddlLabel =
     objectKind === "view" || objectKind === "materialized_view"
-      ? "Definition"
+      ? t("obj.ddl.definition")
       : objectKind === "trigger"
-        ? "Trigger DDL"
-        : "Source";
+        ? t("obj.ddl.trigger")
+        : t("obj.ddl.source");
 
   return (
     <div className="obj-view">
@@ -206,14 +224,16 @@ export function ObjectViewer({
             >
               {typeBadge(objectKind)}
             </span>
-            {disabledTrigger ? <span className="obj-type-badge obj-disabled">DISABLED</span> : null}
+            {disabledTrigger ? (
+              <span className="obj-type-badge obj-disabled">{t("obj.badge.disabled")}</span>
+            ) : null}
           </div>
           {m?.comment ? <div className="obj-head-comment">{m.comment}</div> : null}
         </div>
         <div className="obj-head-actions">
           {browsable ? (
             <Btn icon="table_rows" variant="tonal" small onClick={() => openTableTab(schema, name)}>
-              Browse data
+              {t("obj.browseData")}
             </Btn>
           ) : null}
           {objectKind === "materialized_view" ? (
@@ -224,14 +244,14 @@ export function ObjectViewer({
               disabled={refreshing}
               onClick={() => void refresh()}
             >
-              {refreshing ? "Refreshing…" : "Refresh"}
+              {refreshing ? t("obj.refreshing") : t("obj.refresh")}
             </Btn>
           ) : null}
           <Btn icon="edit" variant="tonal" small disabled={ddl === null} onClick={onEdit}>
-            Edit definition
+            {t("obj.editDef")}
           </Btn>
           <Btn icon="content_copy" variant="tonal" small disabled={ddl === null} onClick={copyDdl}>
-            Copy DDL
+            {t("obj.copyDdl")}
           </Btn>
           <Btn
             icon="delete"
@@ -240,7 +260,7 @@ export function ObjectViewer({
             className="obj-drop-btn"
             onClick={() => setDropOpen(true)}
           >
-            Drop
+            {t("obj.drop")}
           </Btn>
         </div>
       </div>
@@ -255,14 +275,14 @@ export function ObjectViewer({
 
       {(objectKind === "function" || objectKind === "procedure") && args.length ? (
         <div className="obj-args">
-          <div className="obj-args-title">Arguments</div>
+          <div className="obj-args-title">{t("obj.args")}</div>
           <table className="obj-args-table">
             <thead>
               <tr>
                 <th>#</th>
-                <th>Mode</th>
-                <th>Name</th>
-                <th>Type</th>
+                <th>{t("obj.args.mode")}</th>
+                <th>{t("obj.args.name")}</th>
+                <th>{t("obj.args.type")}</th>
               </tr>
             </thead>
             <tbody>
@@ -282,13 +302,13 @@ export function ObjectViewer({
       {loading ? (
         <div className="dg-state">
           <Icon name="hourglass_top" size={24} style={{ opacity: 0.5 }} />
-          <span>Loading definition…</span>
+          <span>{t("obj.loadingDef")}</span>
         </div>
       ) : error ? (
         <div className="dg-state">
           <Icon name="error" size={24} style={{ color: "#e06c75" }} />
           <div className="dg-error">
-            Could not load the definition.
+            {t("obj.err.loadDef")}
             <code>{error}</code>
           </div>
         </div>

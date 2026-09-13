@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { exportSave } from "../../../../shared/api/engine";
 import { isAppErrorPayload } from "../../../../shared/api/error";
+import { useT } from "../../../../shared/i18n/useT";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
@@ -68,6 +69,7 @@ export function DynamoTableTab({
   onDelete,
   active,
 }: DynamoTableTabProps) {
+  const tr = useT();
   const t = table;
   // Projection — chosen via a checkbox picker of the attributes seen so far
   // (DynamoDB is schemaless, so the column list is discovered from scanned data
@@ -268,14 +270,17 @@ export function DynamoTableTab({
           return s.size === prev.length ? prev : [...s];
         });
       } catch (e) {
-        const verb = src.kind === "scan" ? "Scan" : "Query";
-        setError(isAppErrorPayload(e) ? e.message : `${verb} requires the desktop app`);
+        setError(
+          isAppErrorPayload(e)
+            ? e.message
+            : tr(src.kind === "scan" ? "dyn.tt.scanNeedApp" : "dyn.tt.queryNeedApp"),
+        );
         setResult(null);
       } finally {
         setLoading(false);
       }
     },
-    [handleId, t.name],
+    [handleId, t.name, tr],
   );
 
   // Start a fresh scan from page 0 (resets the cursor stack).
@@ -301,7 +306,7 @@ export function DynamoTableTab({
   // Start a fresh query from page 0 with the current inputs (frozen for paging).
   const runQuery = () => {
     if (!pkVal.trim()) {
-      toast("Enter a partition-key value to Query", "err");
+      toast(tr("dyn.tt.enterPk"), "err");
       return;
     }
     const query: QueryRequest = {
@@ -453,13 +458,7 @@ export function DynamoTableTab({
     const list = [...staged.values()];
     if (
       isProduction &&
-      !window.confirm(
-        "This connection is a PRODUCTION environment.\n\nWrite " +
-          list.length +
-          " item(s) to " +
-          t.name +
-          "? Existing items with these keys will be overwritten.",
-      )
+      !window.confirm(tr("dyn.tt.prodConfirm", { count: list.length, table: t.name }))
     ) {
       return;
     }
@@ -474,11 +473,16 @@ export function DynamoTableTab({
         // Partial success is real: DynamoDB returns what it could not write.
         // Keep the whole batch staged rather than guess which ones landed.
         toast(
-          res.written + " item(s) written · " + res.unprocessed + " could not be — still staged",
+          tr("dyn.tt.writePartial", { written: res.written, unprocessed: res.unprocessed }),
           "err",
         );
       } else {
-        toast(res.written + " item" + (res.written === 1 ? "" : "s") + " saved", "ok");
+        toast(
+          res.written === 1
+            ? tr("dyn.tt.saved1", { count: res.written })
+            : tr("dyn.tt.savedN", { count: res.written }),
+          "ok",
+        );
         setStaged(new Map());
       }
       // Re-read page 0 so the grid shows what the table now holds, not what we
@@ -488,11 +492,11 @@ export function DynamoTableTab({
       setTokens([undefined]);
       void fetchAt(0, undefined, sourceRef.current);
     } catch (e) {
-      toast(isAppErrorPayload(e) ? e.message : "Saving items requires the desktop app", "err");
+      toast(isAppErrorPayload(e) ? e.message : tr("dyn.tt.saveNeedApp"), "err");
     } finally {
       setSavingEdits(false);
     }
-  }, [staged, savingEdits, isProduction, handleId, t.name, toast, fetchAt]);
+  }, [staged, savingEdits, isProduction, handleId, t.name, toast, fetchAt, tr]);
 
   useEffect(() => {
     saveStagedRef.current = () => void saveStaged();
@@ -605,16 +609,21 @@ export function DynamoTableTab({
         filters: [{ name: "CSV", extensions: ["csv"] }],
       });
     } catch {
-      toast("Exporting requires the ByteTable desktop app.", "info");
+      toast(tr("dyn.exportNeedApp"), "info");
       return;
     }
     if (!path) return; // cancelled
     try {
       await exportSave(path, csv);
       const file = path.split(/[\\/]/).pop() ?? "export.csv";
-      toast(`Exported ${rows.length} item${rows.length === 1 ? "" : "s"} to ${file}`, "ok");
+      toast(
+        rows.length === 1
+          ? tr("dyn.tt.exported1", { count: rows.length, file })
+          : tr("dyn.tt.exportedN", { count: rows.length, file }),
+        "ok",
+      );
     } catch (e) {
-      toast(isAppErrorPayload(e) ? e.message : "Could not write the CSV file", "err");
+      toast(isAppErrorPayload(e) ? e.message : tr("dyn.tt.csvFail"), "err");
     }
   };
 
@@ -635,7 +644,7 @@ export function DynamoTableTab({
       icon="play_arrow"
       variant="filled"
       small
-      title="Run this query (⌘↵ / Ctrl+↵)"
+      title={tr("dyn.tt.runQueryTitle")}
       onClick={() => void runQuery()}
     >
       Query
@@ -643,7 +652,7 @@ export function DynamoTableTab({
   );
 
   const indexOptions = [
-    { value: "", label: `${t.name} (base table)` },
+    { value: "", label: tr("dyn.tt.baseTable", { name: t.name }) },
     ...t.gsis.map((g) => ({ value: g.name, label: `${g.name} (GSI)` })),
     ...t.lsis.map((g) => ({ value: g.name, label: `${g.name} (LSI)` })),
   ];
@@ -653,8 +662,8 @@ export function DynamoTableTab({
     { value: "lte", label: "≤" },
     { value: "gt", label: ">" },
     { value: "gte", label: "≥" },
-    { value: "begins_with", label: "begins with" },
-    { value: "between", label: "between" },
+    { value: "begins_with", label: tr("dyn.tt.opBegins") },
+    { value: "between", label: tr("dyn.tt.opBetween") },
   ];
 
   return (
@@ -671,7 +680,7 @@ export function DynamoTableTab({
           <button
             type="button"
             className={"seg-btn" + (mode === "query" ? " active" : "")}
-            title="Query — narrow by partition key (⌘F / Ctrl+F)"
+            title={tr("dyn.tt.queryTitle")}
             onClick={() => onModeChange("query")}
           >
             <Icon name="search" size={14} /> Query
@@ -681,13 +690,13 @@ export function DynamoTableTab({
             className={"seg-btn" + (mode === "structure" ? " active" : "")}
             onClick={() => onModeChange("structure")}
           >
-            <Icon name="account_tree" size={14} /> Indexes
+            <Icon name="account_tree" size={14} /> {tr("dyn.tt.indexes")}
           </button>
         </div>
         {mode !== "structure" ? (
           <div className="ddb-tb-proj">
             <span className="ddb-proj-label">
-              <Icon name="filter_list" size={13} /> Projection
+              <Icon name="filter_list" size={13} /> {tr("dyn.tt.projection")}
             </span>
             <div className="ddb-proj">
               <button
@@ -697,7 +706,7 @@ export function DynamoTableTab({
                 disabled={projCols.length === 0}
               >
                 {projSel.size === 0 ? (
-                  <span className="ddb-proj-all">All attributes</span>
+                  <span className="ddb-proj-all">{tr("dyn.tt.allAttrs")}</span>
                 ) : (
                   <span className="ddb-proj-chips">
                     {projCols
@@ -725,13 +734,13 @@ export function DynamoTableTab({
               {projOpen ? (
                 <div className="ddb-proj-pop">
                   <div className="ddb-proj-pop-head">
-                    <span>Return attributes</span>
+                    <span>{tr("dyn.tt.returnAttrs")}</span>
                     <button
                       type="button"
                       className="ddb-proj-clear"
                       onClick={() => setProjSel(new Set())}
                     >
-                      All
+                      {tr("dyn.tt.all")}
                     </button>
                   </div>
                   <div className="ddb-proj-list">
@@ -749,7 +758,7 @@ export function DynamoTableTab({
                   </div>
                   <div className="ddb-proj-foot">
                     <Btn variant="filled" small icon="bolt" onClick={applyProjection}>
-                      Apply
+                      {tr("dyn.tt.apply")}
                     </Btn>
                   </div>
                 </div>
@@ -759,7 +768,7 @@ export function DynamoTableTab({
         ) : null}
         {mode === "scan" ? (
           <span className="ddb-scan-note">
-            <Icon name="warning" size={12} style={{ color: "#e2b340" }} /> Scan reads every item
+            <Icon name="warning" size={12} style={{ color: "#e2b340" }} /> {tr("dyn.tt.scanNote")}
           </span>
         ) : null}
         {/* Everything below is the toolbar's action cluster — run, new item,
@@ -771,23 +780,23 @@ export function DynamoTableTab({
             icon="play_arrow"
             variant="filled"
             small
-            title="Read a page of this table (⌘↵ / Ctrl+↵)"
+            title={tr("dyn.tt.runScanTitle")}
             onClick={() => void runScan()}
           >
-            Run scan
+            {tr("dyn.tt.runScan")}
           </Btn>
         ) : null}
         {mode !== "structure" ? (
           <IconBtn
             icon="add_box"
-            title="New item (⌘I / Ctrl+I)"
+            title={tr("dyn.tt.newItemTitle")}
             onClick={() => setCreating(true)}
           />
         ) : null}
         <div className="ddb-table-actions" style={{ position: "relative" }}>
           <IconBtn
             icon="more_vert"
-            title="Table actions"
+            title={tr("dyn.tt.tableActions")}
             active={actionsOpen}
             onClick={() => setActionsOpen((o) => !o)}
           />
@@ -801,7 +810,7 @@ export function DynamoTableTab({
                   onExport(t.name);
                 }}
               >
-                <Icon name="download" size={15} /> Export table
+                <Icon name="download" size={15} /> {tr("dyn.ctx.exportTable")}
               </button>
               <button
                 type="button"
@@ -811,7 +820,7 @@ export function DynamoTableTab({
                   onImport(t.name);
                 }}
               >
-                <Icon name="upload" size={15} /> Import items
+                <Icon name="upload" size={15} /> {tr("dyn.ctx.importItems")}
               </button>
               {/* Destructive last, behind a separator — same order as the
                   sidebar's per-table menu. */}
@@ -824,7 +833,7 @@ export function DynamoTableTab({
                   onTruncate(t.name);
                 }}
               >
-                <Icon name="delete_sweep" size={15} /> Empty table
+                <Icon name="delete_sweep" size={15} /> {tr("dyn.ctx.emptyTable")}
               </button>
               <button
                 type="button"
@@ -834,7 +843,7 @@ export function DynamoTableTab({
                   onDelete(t.name);
                 }}
               >
-                <Icon name="delete_forever" size={15} /> Delete table
+                <Icon name="delete_forever" size={15} /> {tr("dyn.ctx.deleteTable")}
               </button>
             </div>
           ) : null}
@@ -844,10 +853,10 @@ export function DynamoTableTab({
       {mode === "query" ? (
         <div className="ddb-query-bar">
           <div className="ddb-q-field ddb-q-index">
-            <span>Index</span>
+            <span>{tr("dyn.tt.index")}</span>
             <Select
               className="ddb-q-select"
-              aria-label="Index"
+              aria-label={tr("dyn.tt.index")}
               mono={false}
               value={useIndex}
               options={indexOptions}
@@ -868,7 +877,7 @@ export function DynamoTableTab({
             <input
               ref={pkRef}
               className="ddb-where-input"
-              placeholder="partition key value"
+              placeholder={tr("dyn.tt.pkPh")}
               value={pkVal}
               onChange={(e) => setPkVal(e.target.value)}
               onKeyDown={(e) => {
@@ -886,7 +895,7 @@ export function DynamoTableTab({
               <div className="ddb-sk-row">
                 <Select
                   className="ddb-sk-op"
-                  aria-label="Sort key operator"
+                  aria-label={tr("dyn.tt.skOpAria")}
                   mono={false}
                   value={skOp}
                   options={skOpOptions}
@@ -894,7 +903,9 @@ export function DynamoTableTab({
                 />
                 <input
                   className="ddb-where-input"
-                  placeholder={skOp === "begins_with" ? "prefix" : "value"}
+                  placeholder={
+                    skOp === "begins_with" ? tr("dyn.tt.prefixPh") : tr("dyn.tt.valuePh")
+                  }
                   value={skVal}
                   onChange={(e) => setSkVal(e.target.value)}
                   onKeyDown={(e) => {
@@ -905,7 +916,7 @@ export function DynamoTableTab({
                 {skOp === "between" ? (
                   <input
                     className="ddb-where-input"
-                    placeholder="and…"
+                    placeholder={tr("dyn.tt.andPh")}
                     value={skVal2}
                     onChange={(e) => setSkVal2(e.target.value)}
                     onKeyDown={(e) => {
@@ -928,12 +939,12 @@ export function DynamoTableTab({
           {selected.size > 0 ? (
             <div className="ddb-selbar">
               <span className="ddb-selbar-count">
-                {selected.size} selected
-                {result?.nextToken ? " (this page)" : ""}
+                {tr("ws.grid.selected", { count: selected.size })}
+                {result?.nextToken ? tr("dyn.tt.thisPage") : ""}
               </span>
               <div style={{ flex: 1 }} />
               <Btn icon="download" variant="tonal" small onClick={() => void exportSelectedCsv()}>
-                Export CSV
+                {tr("dyn.tt.exportCsv")}
               </Btn>
               <Btn
                 icon="delete"
@@ -942,9 +953,14 @@ export function DynamoTableTab({
                 className="ddb-selbar-del"
                 onClick={() => setDeleteOpen(true)}
               >
-                Delete selected
+                {tr("dyn.tt.deleteSelected")}
               </Btn>
-              <IconBtn icon="close" title="Clear selection" size={16} onClick={clearSelection} />
+              <IconBtn
+                icon="close"
+                title={tr("dyn.tt.clearSel")}
+                size={16}
+                onClick={clearSelection}
+              />
             </div>
           ) : null}
           {/* The rows on screen outlive a mode switch, because re-reading the
@@ -956,7 +972,9 @@ export function DynamoTableTab({
               {/* No Run scan button here — the toolbar's own sits directly
                   above it, and a scan is not an action to offer twice. */}
               <span>
-                These rows came from a Query on <code>{shownQuery}</code> — not a scan of the table.
+                {tr("dyn.tt.stalePre")}
+                <code>{shownQuery}</code>
+                {tr("dyn.tt.stalePost")}
               </span>
             </div>
           ) : null}
@@ -981,12 +999,14 @@ export function DynamoTableTab({
             <div className="save-bar">
               <Icon name="edit_note" size={16} style={{ color: "var(--accent)" }} />
               <span className="save-bar-count">
-                {staged.size} item{staged.size === 1 ? "" : "s"} edited · unsaved
+                {staged.size === 1
+                  ? tr("dyn.tt.edited1", { count: staged.size })
+                  : tr("dyn.tt.editedN", { count: staged.size })}
               </span>
-              <span className="save-bar-hint">nothing is written to DynamoDB until you save</span>
+              <span className="save-bar-hint">{tr("dyn.tt.unsavedHint")}</span>
               <div style={{ flex: 1 }} />
               <Btn variant="text" small onClick={discardStaged} disabled={savingEdits}>
-                Discard
+                {tr("dyn.discard")}
               </Btn>
               <Btn
                 variant="filled"
@@ -995,27 +1015,30 @@ export function DynamoTableTab({
                 disabled={savingEdits}
                 onClick={() => void saveStaged()}
               >
-                {savingEdits ? "Saving…" : "Save · ⌘S"}
+                {savingEdits ? tr("dyn.tt.saving") : tr("dyn.tt.saveBtn")}
               </Btn>
             </div>
           ) : null}
           <div className="ddb-table-foot">
             <span className="ddb-table-hint">
-              {loading ? "Loading…" : shownQuery ? "Query" : "Scan"} · click any item to view &amp;
-              edit · ⌘E inspect · ⌘I add · ⌘S save · keys are immutable
+              {loading ? tr("dyn.loading") : shownQuery ? "Query" : "Scan"}
+              {tr("dyn.tt.footRest")}
             </span>
             <div style={{ flex: 1 }} />
             {result ? (
               <span className="ddb-rowcount">
-                {result.count} items · {result.scannedCount} scanned · {result.capacity.toFixed(1)}{" "}
-                RCU
+                {tr("dyn.tt.footStats", {
+                  count: result.count,
+                  scanned: result.scannedCount,
+                  rcu: result.capacity.toFixed(1),
+                })}
               </span>
             ) : null}
             <div className="ddb-pagesize">
-              <span>Page size</span>
+              <span>{tr("dyn.tt.pageSize")}</span>
               <Select
                 className="ddb-pagesize-select"
-                aria-label="Page size"
+                aria-label={tr("dyn.tt.pageSize")}
                 mono={false}
                 placement="up"
                 value={String(pageLimit)}
@@ -1027,15 +1050,15 @@ export function DynamoTableTab({
               <div className="ddb-pager">
                 <IconBtn
                   icon="chevron_left"
-                  title="Previous page"
+                  title={tr("dyn.tt.prevPage")}
                   size={16}
                   disabled={!canPrev}
                   onClick={goPrev}
                 />
-                <span className="ddb-pager-label">Page {pageIndex + 1}</span>
+                <span className="ddb-pager-label">{tr("dyn.tt.pageN", { n: pageIndex + 1 })}</span>
                 <IconBtn
                   icon="chevron_right"
-                  title={canNext ? "Next page" : "No more items"}
+                  title={canNext ? tr("dyn.tt.nextPage") : tr("dyn.tt.noMore")}
                   size={16}
                   disabled={!canNext}
                   onClick={goNext}
@@ -1129,10 +1152,11 @@ function MetaRow({ label, val }: { label: string; val: string }) {
 }
 
 function DynamoStructure({ t }: { t: TableDescriptor }) {
+  const tr = useT();
   return (
     <div className="ddb-structure-view">
       <h3 className="ddb-h">
-        <Icon name="key" size={15} style={{ color: "var(--accent)" }} /> Primary key
+        <Icon name="key" size={15} style={{ color: "var(--accent)" }} /> {tr("dyn.tt.primaryKey")}
       </h3>
       <div className="ddb-structure-card">
         <div className="ddb-structure-card-name">
@@ -1145,17 +1169,17 @@ function DynamoStructure({ t }: { t: TableDescriptor }) {
               <span className="ddb-tag">{t.attrTypes[t.keySchema.sk] ?? "S"}</span>
             </>
           ) : (
-            <span className="ddb-idx-keys"> · partition-only</span>
+            <span className="ddb-idx-keys"> · {tr("dyn.partitionOnly")}</span>
           )}
         </div>
       </div>
 
       <h3 className="ddb-h" style={{ marginTop: 18 }}>
-        <Icon name="bolt" size={15} style={{ color: "#e2b340" }} /> Global secondary indexes{" "}
+        <Icon name="bolt" size={15} style={{ color: "#e2b340" }} /> {tr("dyn.tt.gsiTitle")}{" "}
         <span className="ddb-rail-count">{t.gsis.length}</span>
       </h3>
       {t.gsis.length === 0 ? (
-        <div className="ddb-structure-none">None</div>
+        <div className="ddb-structure-none">{tr("dyn.tt.none")}</div>
       ) : (
         t.gsis.map((g) => (
           <div key={g.name} className="ddb-structure-card">
@@ -1178,7 +1202,7 @@ function DynamoStructure({ t }: { t: TableDescriptor }) {
       {t.lsis.length ? (
         <>
           <h3 className="ddb-h" style={{ marginTop: 18 }}>
-            <Icon name="bolt" size={15} style={{ color: "#e2b340" }} /> Local secondary indexes{" "}
+            <Icon name="bolt" size={15} style={{ color: "#e2b340" }} /> {tr("dyn.tt.lsiTitle")}{" "}
             <span className="ddb-rail-count">{t.lsis.length}</span>
           </h3>
           {t.lsis.map((g) => (
@@ -1201,21 +1225,31 @@ function DynamoStructure({ t }: { t: TableDescriptor }) {
       ) : null}
 
       <h3 className="ddb-h" style={{ marginTop: 18 }}>
-        <Icon name="settings" size={15} /> Settings
+        <Icon name="settings" size={15} /> {tr("dyn.tt.settings")}
       </h3>
       <div className="ddb-meta">
-        <MetaRow label="Status" val={t.status} />
+        <MetaRow label={tr("dyn.tt.mStatus")} val={t.status} />
         <MetaRow
-          label="Billing mode"
-          val={t.billing === "PAY_PER_REQUEST" ? "On-demand" : "Provisioned"}
+          label={tr("dyn.tt.mBilling")}
+          val={
+            t.billing === "PAY_PER_REQUEST"
+              ? tr("dyn.billing.onDemand")
+              : tr("dyn.billing.provisioned")
+          }
         />
         {t.billing === "PROVISIONED" ? (
-          <MetaRow label="Capacity" val={(t.rcu ?? 0) + " RCU / " + (t.wcu ?? 0) + " WCU"} />
+          <MetaRow
+            label={tr("dyn.tt.mCapacity")}
+            val={(t.rcu ?? 0) + " RCU / " + (t.wcu ?? 0) + " WCU"}
+          />
         ) : null}
-        {t.ttlAttribute ? <MetaRow label="TTL attribute" val={t.ttlAttribute} /> : null}
-        <MetaRow label="Item count" val={t.itemCount.toLocaleString()} />
-        <MetaRow label="Table size" val={(t.sizeBytes / 1024).toFixed(1) + " KB"} />
-        {t.created ? <MetaRow label="Created" val={t.created.slice(0, 10)} /> : null}
+        {t.ttlAttribute ? <MetaRow label={tr("dyn.tt.mTtl")} val={t.ttlAttribute} /> : null}
+        <MetaRow label={tr("dyn.tt.mItemCount")} val={t.itemCount.toLocaleString()} />
+        <MetaRow
+          label={tr("dyn.tt.mSize")}
+          val={tr("dyn.kb", { count: (t.sizeBytes / 1024).toFixed(1) })}
+        />
+        {t.created ? <MetaRow label={tr("dyn.tt.mCreated")} val={t.created.slice(0, 10)} /> : null}
       </div>
     </div>
   );

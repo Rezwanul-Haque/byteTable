@@ -12,6 +12,7 @@
 import { useCallback } from "react";
 
 import { appErrorMessage } from "../../shared/api/error";
+import { t } from "../../shared/i18n";
 import { useToast } from "../../shared/ui/toastContext";
 import {
   connectionOpen,
@@ -59,7 +60,7 @@ export function useConnectAndOpen(): (saved: SavedConnection) => Promise<boolean
         openWorkspace(toWorkspaceConnection(saved, opened));
         return true;
       } catch (error) {
-        toast(appErrorMessage(error, "Could not connect to “" + saved.name + "”"), "err");
+        toast(appErrorMessage(error, t("ws.connect.fail", { name: saved.name })), "err");
         return false;
       }
     },
@@ -96,7 +97,7 @@ export function useOpenSqliteFile(): (path: string) => Promise<string | null> {
       try {
         opened = await connectionOpen({ params });
       } catch (error) {
-        toast(appErrorMessage(error, "Could not open " + path), "err");
+        toast(appErrorMessage(error, t("dfile.openFail", { name: path })), "err");
         return null;
       }
 
@@ -122,10 +123,7 @@ export function useOpenSqliteFile(): (path: string) => Promise<string | null> {
       try {
         saved = await saveConnection(saved);
       } catch (error) {
-        toast(
-          appErrorMessage(error, "Connected, but the file could not be added to saved connections"),
-          "err",
-        );
+        toast(appErrorMessage(error, t("ws.openFile.saveFail")), "err");
       }
 
       openWorkspace(toWorkspaceConnection(saved, opened));

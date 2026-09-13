@@ -10,12 +10,30 @@ import { useEffect, useState } from "react";
 import { Icon } from "../../../shared/ui/Icon";
 import type { Engine, Env } from "../../../shared/types";
 import { useToast } from "../../../shared/ui/toastContext";
+import { useT } from "../../../shared/i18n/useT";
+import type { StringKey } from "../../../shared/i18n";
 import { appErrorMessage } from "../../../shared/api/error";
 import { objectsKey, useIntrospectionStore } from "../../introspection/state";
 import { useWorkspacesStore } from "../../workspaces/state";
 import { dropObject, type DbObjectInfo, type DbObjectKind } from "../api";
 import { newObjectTemplate, objectClassesFor, OBJ_SECTIONS } from "../kinds";
 import { ObjectDropModal } from "./ObjectDropModal";
+
+/** Object kind → its translated section-group / singular-kind keys. */
+const GROUP_KEY: Record<DbObjectKind, StringKey> = {
+  view: "obj.group.views",
+  materialized_view: "obj.group.materializedViews",
+  function: "obj.group.functions",
+  procedure: "obj.group.procedures",
+  trigger: "obj.group.triggers",
+};
+const KIND_KEY: Record<DbObjectKind, StringKey> = {
+  view: "obj.kind.view",
+  materialized_view: "obj.kind.materializedView",
+  function: "obj.kind.function",
+  procedure: "obj.kind.procedure",
+  trigger: "obj.kind.trigger",
+};
 
 export function SidebarObjectGroups({
   handleId,
@@ -43,6 +61,7 @@ export function SidebarObjectGroups({
   const openSqlTabWith = useWorkspacesStore((s) => s.openSqlTabWith);
   const openObjExplorer = useWorkspacesStore((s) => s.openObjExplorer);
   const toast = useToast();
+  const t = useT();
 
   // Cap each class' inline list; the overflow escalates into the Object Explorer.
   const CAP = 12;
@@ -80,10 +99,10 @@ export function SidebarObjectGroups({
     try {
       await dropObject(handleId, schema, dropTarget.kind, dropTarget.name, dropTarget.detail);
       invalidateObjects(handleId, schema, dropTarget.kind);
-      toast(`Dropped ${dropTarget.name}`, "ok");
+      toast(t("obj.droppedName", { name: dropTarget.name }), "ok");
       setDropTarget(null);
     } catch (e) {
-      toast(appErrorMessage(e, "Could not drop the object."), "err");
+      toast(appErrorMessage(e, t("obj.err.drop")), "err");
     } finally {
       setDropping(false);
     }
@@ -93,14 +112,14 @@ export function SidebarObjectGroups({
     <div className="sidebar-other">
       <div className="obj-other-head">
         <Icon name="category" size={13} style={{ color: "var(--text-faint)" }} />
-        <span className="obj-other-head-label">Objects</span>
+        <span className="obj-other-head-label">{t("obj.objects")}</span>
         <button
           type="button"
           className="obj-explore-all"
-          title="Open Object Explorer"
+          title={t("obj.openExplorer")}
           onClick={() => openObjExplorer(schema, "all")}
         >
-          <Icon name="open_in_full" size={12} /> Explore all
+          <Icon name="open_in_full" size={12} /> {t("obj.exploreAll")}
         </button>
       </div>
       {visible.map((kind) => {
@@ -122,11 +141,11 @@ export function SidebarObjectGroups({
                 style={{ transform: isOpen ? "rotate(90deg)" : "none", color: "var(--text-faint)" }}
               />
               <Icon name={sec.icon} size={14} style={{ color: sec.accent }} />
-              <span className="obj-sec-label">{sec.group}</span>
+              <span className="obj-sec-label">{t(GROUP_KEY[kind])}</span>
               {engine === "postgres" && kind === "trigger" ? (
                 <span
                   className="obj-sec-info"
-                  title="A Postgres trigger runs a trigger function — create the function (RETURNS trigger) first, then the CREATE TRIGGER that EXECUTEs it."
+                  title={t("obj.explorerTriggerTip")}
                   onClick={(e) => e.stopPropagation()}
                 >
                   <Icon name="info" size={13} />
@@ -136,7 +155,7 @@ export function SidebarObjectGroups({
               <button
                 type="button"
                 className="sec-new-btn"
-                title={`New ${sec.label.toLowerCase()}… (opens SQL editor)`}
+                title={t("obj.newObject", { label: t(KIND_KEY[kind]) })}
                 onClick={(e) => {
                   e.stopPropagation();
                   openSqlTabWith(newObjectTemplate(engine, kind));
@@ -148,9 +167,11 @@ export function SidebarObjectGroups({
             {isOpen ? (
               <div className="obj-sec-body obj-sec-body-scroll">
                 {list === null ? (
-                  <div className="sb-obj-loading">Loading…</div>
+                  <div className="sb-obj-loading">{t("obj.loading")}</div>
                 ) : list.length === 0 ? (
-                  <div className="sb-obj-loading">No {sec.group.toLowerCase()}</div>
+                  <div className="sb-obj-loading">
+                    {t("obj.emptyNo", { group: t(GROUP_KEY[kind]).toLowerCase() })}
+                  </div>
                 ) : (
                   <>
                     {(filter !== "" ? list : list.slice(0, CAP)).map((obj) => (
@@ -171,7 +192,7 @@ export function SidebarObjectGroups({
                         <button
                           type="button"
                           className="obj-item-drop"
-                          title={"Drop " + obj.name}
+                          title={t("obj.item.drop", { name: obj.name })}
                           onClick={(e) => {
                             e.stopPropagation();
                             setDropTarget(obj);
@@ -187,7 +208,8 @@ export function SidebarObjectGroups({
                         className="obj-showall"
                         onClick={() => openObjExplorer(schema, kind)}
                       >
-                        <Icon name="expand_more" size={13} /> Show all {list.length} in Explorer →
+                        <Icon name="expand_more" size={13} />{" "}
+                        {t("obj.showAll", { count: list.length })}
                       </button>
                     ) : null}
                   </>

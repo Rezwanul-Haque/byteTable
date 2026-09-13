@@ -7,6 +7,8 @@
 // by the existing importer. Everything the viewer renders is derived here;
 // detection NEVER lives in a view.
 
+import { t, type StringKey } from "../../shared/i18n";
+
 /**
  * Tokens that mean "no value". A CSV has no NULL, so these are the strings
  * exporters conventionally write for one; they become real nulls on parse.
@@ -28,16 +30,17 @@ export const NULLS = [
 
 /** Candidate delimiters {@link sniff} scores, with their display names. */
 export const DELIMS = [
-  { ch: ",", label: "Comma" },
-  { ch: ";", label: "Semicolon" },
-  { ch: "\t", label: "Tab" },
-  { ch: "|", label: "Pipe" },
-  { ch: ":", label: "Colon" },
+  { ch: ",", label: "dfile.delimComma" },
+  { ch: ";", label: "dfile.delimSemicolon" },
+  { ch: "\t", label: "dfile.delimTab" },
+  { ch: "|", label: "dfile.delimPipe" },
+  { ch: ":", label: "dfile.delimColon" },
 ] as const;
 
 /** Human name for a delimiter character ("Custom" for anything unlisted). */
 export function delimLabel(ch: string): string {
-  return DELIMS.find((d) => d.ch === ch)?.label ?? "Custom";
+  const hit = DELIMS.find((d) => d.ch === ch)?.label;
+  return hit === undefined ? t("dfile.delimCustom") : t(hit as StringKey);
 }
 
 /** The ten inferable column types. */
@@ -798,11 +801,6 @@ export interface Issue {
 
 const SEVERITY_RANK: Record<IssueSeverity, number> = { error: 0, warn: 1, note: 2 };
 
-/** `1 row has` / `2 rows have` — one helper, never an inline `+ "s"`. */
-function plural(n: number, one: string, many: string): string {
-  return n + " " + (n === 1 ? one : many);
-}
-
 /**
  * Every check the Data quality tab renders, sorted error → warning → note.
  * Lives here, in the core, so the view only ever displays what was found.
@@ -817,19 +815,17 @@ export function findIssues(parsed: Parsed, cols: ColumnProfile[], dups: Duplicat
       id: "ragged",
       sev: "error",
       icon: "report",
-      title: plural(r.length, "row has", "rows have") + " the wrong number of fields",
-      detail:
-        "Expected " +
-        parsed.columns.length +
-        " fields. " +
-        r
-          .slice(0, 4)
-          .map((x) => "line " + x.line + " → " + x.got)
-          .join(", ") +
-        (r.length > 4 ? ", …" : "") +
-        ". Short rows are padded with nulls; extra fields are dropped.",
+      title: t("dq.raggedTitle", { count: r.length }),
+      detail: t("dq.raggedDetail", {
+        cols: parsed.columns.length,
+        lines:
+          r
+            .slice(0, 4)
+            .map((x) => t("dq.lineGot", { line: x.line, got: x.got }))
+            .join(", ") + (r.length > 4 ? ", …" : ""),
+      }),
       rows: r.map((x) => x.row),
-      fix: "Usually an unquoted delimiter inside a value.",
+      fix: t("dq.raggedFix"),
     });
   }
 
@@ -841,18 +837,15 @@ export function findIssues(parsed: Parsed, cols: ColumnProfile[], dups: Duplicat
         sev: "error",
         icon: "rule",
         title:
-          plural(c.bad.length, "value", "values") +
-          " in " +
-          c.name +
-          (c.bad.length === 1 ? " is not " : " are not ") +
-          c.type,
-        detail:
-          "Samples: " +
-          samples.map((s) => "“" + String(s) + "”").join(", ") +
-          ". These stay text and will break arithmetic or sorting.",
+          c.bad.length === 1
+            ? t("dq.badTypeOne", { name: c.name, type: c.type })
+            : t("dq.badTypeMany", { count: c.bad.length, name: c.name, type: c.type }),
+        detail: t("dq.badTypeDetail", {
+          samples: samples.map((s) => "“" + String(s) + "”").join(", "),
+        }),
         rows: c.bad,
         col: c.name,
-        fix: "Clean the source, or treat the column as text.",
+        fix: t("dq.badTypeFix"),
       });
     }
 
@@ -861,20 +854,20 @@ export function findIssues(parsed: Parsed, cols: ColumnProfile[], dups: Duplicat
         id: "empty-" + c.name,
         sev: "warn",
         icon: "block",
-        title: c.name + " is completely empty",
-        detail: "All " + total + " rows are null or blank — the column carries no information.",
+        title: t("dq.emptyTitle", { name: c.name }),
+        detail: t("dq.emptyDetail", { count: total }),
         col: c.name,
-        fix: "Safe to drop.",
+        fix: t("dq.emptyFix"),
       });
     } else if (c.distinct === 1) {
       out.push({
         id: "const-" + c.name,
         sev: "note",
         icon: "remove",
-        title: c.name + " has a single value",
-        detail: "Every non-null row is “" + (c.top[0]?.v ?? "") + "”.",
+        title: t("dq.constTitle", { name: c.name }),
+        detail: t("dq.constDetail", { value: c.top[0]?.v ?? "" }),
         col: c.name,
-        fix: "Constant column — useful as metadata, not as a dimension.",
+        fix: t("dq.constFix"),
       });
     }
 
@@ -883,11 +876,16 @@ export function findIssues(parsed: Parsed, cols: ColumnProfile[], dups: Duplicat
         id: "sparse-" + c.name,
         sev: "warn",
         icon: "water_drop",
-        title: c.name + " is " + Math.min(99, Math.round((c.nulls / c.count) * 100)) + "% empty",
-        detail:
-          c.nulls.toLocaleString() + " of " + c.count.toLocaleString() + " rows have no value.",
+        title: t("dq.sparseTitle", {
+          name: c.name,
+          pct: Math.min(99, Math.round((c.nulls / c.count) * 100)),
+        }),
+        detail: t("dq.sparseDetail", {
+          nulls: c.nulls.toLocaleString(),
+          count: c.count.toLocaleString(),
+        }),
         col: c.name,
-        fix: "Check whether blank means zero, unknown, or not-applicable.",
+        fix: t("dq.sparseFix"),
       });
     }
 
@@ -897,15 +895,12 @@ export function findIssues(parsed: Parsed, cols: ColumnProfile[], dups: Duplicat
         sev: "warn",
         icon: "space_bar",
         title:
-          plural(c.padded, "value", "values") +
-          " in " +
-          c.name +
-          (c.padded === 1 ? " has" : " have") +
-          " stray whitespace",
-        detail:
-          "Leading or trailing spaces make values compare unequal even when they look identical.",
+          c.padded === 1
+            ? t("dq.padOne", { name: c.name })
+            : t("dq.padMany", { count: c.padded, name: c.name }),
+        detail: t("dq.padDetail"),
         col: c.name,
-        fix: "Re-open with “Trim whitespace” on.",
+        fix: t("dq.padFix"),
       });
     }
 
@@ -917,16 +912,13 @@ export function findIssues(parsed: Parsed, cols: ColumnProfile[], dups: Duplicat
         id: "dupkey-" + c.name,
         sev: "warn",
         icon: "content_copy",
-        title: c.name + " looks like a key but repeats",
-        detail:
-          repeats.toLocaleString() +
-          " duplicate value" +
-          (repeats === 1 ? "" : "s") +
-          " across " +
-          c.present.toLocaleString() +
-          " rows.",
+        title: t("dq.dupKeyTitle", { name: c.name }),
+        detail: t("dq.dupKeyDetail", {
+          repeats,
+          count: c.present.toLocaleString(),
+        }),
         col: c.name,
-        fix: "Fine for a fact table; a problem for an upsert target.",
+        fix: t("dq.dupKeyFix"),
       });
     }
   }
@@ -936,10 +928,10 @@ export function findIssues(parsed: Parsed, cols: ColumnProfile[], dups: Duplicat
       id: "duprows",
       sev: "warn",
       icon: "file_copy",
-      title: plural(dups.length, "exact duplicate row", "exact duplicate rows"),
-      detail: "Every field matches an earlier row (first at row " + (dups[0]!.first + 1) + ").",
+      title: t("dq.dupRowsTitle", { count: dups.length }),
+      detail: t("dq.dupRowsDetail", { row: dups[0]!.first + 1 }),
       rows: dups.map((d) => d.row),
-      fix: "De-duplicate before loading.",
+      fix: t("dq.dupRowsFix"),
     });
   }
 

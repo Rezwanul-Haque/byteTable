@@ -17,6 +17,8 @@ import { Btn } from "../../../shared/ui/Btn";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Modal } from "../../../shared/ui/Modal";
 import { useToast } from "../../../shared/ui/toastContext";
+import { useT } from "../../../shared/i18n/useT";
+import type { StringKey } from "../../../shared/i18n";
 import "./DonateModal.css";
 
 // Donation targets.
@@ -72,6 +74,7 @@ interface DonateModalProps {
 
 export function DonateModal({ onClose }: DonateModalProps) {
   const toast = useToast();
+  const t = useT();
   // The chosen amount (default $5 one-off "big coffee"); a provider button
   // then opens that provider carrying this amount. Picking a card does NOT
   // open a link.
@@ -89,27 +92,29 @@ export function DonateModal({ onClose }: DonateModalProps) {
     try {
       await openExternal(url);
     } catch {
-      toast("Couldn't open browser — visit " + url, "err");
+      toast(t("don.err.open", { url }), "err");
       return;
     }
-    toast(`Thank you! ($${selected.amount}${selected.recurring ? "/mo" : ""})`, "ok");
+    toast(
+      t("don.thanks", {
+        amount: `$${selected.amount}${selected.recurring ? "/mo" : ""}`,
+      }),
+      "ok",
+    );
     onClose();
   };
 
   return (
-    <Modal className="donate-modal" label="Support ByteTable" onClose={onClose}>
+    <Modal className="donate-modal" label={t("don.title")} onClose={onClose}>
       <div className="donate-head">
         <BrandMark size={26} />
         <div>
-          <div className="modal-title-text">Support ByteTable</div>
-          <p className="donate-sub">
-            ByteTable is free and open source, with no pro tier and no subscription. Donations keep
-            it that way.
-          </p>
+          <div className="modal-title-text">{t("don.title")}</div>
+          <p className="donate-sub">{t("don.sub")}</p>
         </div>
-        <IconBtn icon="close" onClick={onClose} title="Close" />
+        <IconBtn icon="close" onClick={onClose} title={t("common.close")} />
       </div>
-      <div className="donate-amounts" role="radiogroup" aria-label="Donation amount">
+      <div className="donate-amounts" role="radiogroup" aria-label={t("don.amountAria")}>
         {AMOUNTS.map((a) => (
           <button
             key={a.id}
@@ -127,28 +132,24 @@ export function DonateModal({ onClose }: DonateModalProps) {
               ${a.amount}
               {a.recurring ? <small>/mo</small> : null}
             </span>
-            <span>{a.label}</span>
-            {a.popular ? <span className="donate-pop-tag">popular</span> : null}
+            <span>{t(`don.tier.${a.label}` as StringKey)}</span>
+            {a.popular ? <span className="donate-pop-tag">{t("don.popular")}</span> : null}
           </button>
         ))}
       </div>
-      <p className="donate-amount-note">
-        Amount applies to GitHub Sponsors. Buy Me a Coffee opens its page to choose there.
-      </p>
+      <p className="donate-amount-note">{t("don.note")}</p>
       <div className="donate-links">
         <Btn icon="favorite" variant="filled" onClick={() => void donate("sponsors")}>
-          GitHub Sponsors
+          {t("don.sponsors")}
         </Btn>
         <Btn icon="local_cafe" variant="tonal" onClick={() => void donate("bmc")}>
-          Buy Me a Coffee
+          {t("don.bmc")}
         </Btn>
         <Btn variant="text" onClick={onClose}>
-          Maybe later
+          {t("don.later")}
         </Btn>
       </div>
-      <div className="donate-foot">
-        100% of donations fund development. No feature is ever paywalled.
-      </div>
+      <div className="donate-foot">{t("don.foot")}</div>
     </Modal>
   );
 }

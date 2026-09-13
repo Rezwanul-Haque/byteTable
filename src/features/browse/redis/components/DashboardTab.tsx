@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { appErrorMessage } from "../../../../shared/api/error";
+import { useT } from "../../../../shared/i18n/useT";
 import { EngineBadge } from "../../../../shared/ui/EngineBadge";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
@@ -68,6 +69,7 @@ export function DashboardTab({
   onSelectDb,
   onOpenClients,
 }: DashboardTabProps) {
+  const t = useT();
   const [stats, setStats] = useState<KvServerStats | null>(null);
   // The connected-clients panel + the Clients stat both read one `CLIENT LIST`,
   // so the number on the dashboard is the number of rows in the tab — INFO's
@@ -131,12 +133,12 @@ export function DashboardTab({
         setError(null);
       } catch (err) {
         if (!signal.live) return;
-        setError(appErrorMessage(err, "Could not load dashboard stats."));
+        setError(appErrorMessage(err, t("redis.dashFail")));
       } finally {
         if (signal.live) setLoading(false);
       }
     },
-    [handleId, dbIndex],
+    [handleId, dbIndex, t],
   );
 
   // Manual refresh (the header `sync` button) — a local nonce folded into the
@@ -175,65 +177,83 @@ export function DashboardTab({
     <div className="rdash" data-screen-label="Redis keyspace dashboard">
       <div className="rdash-head">
         <EngineBadge engine="redis" size={22} />
-        <h2>Keyspace dashboard</h2>
+        <h2>{t("redis.tab.dashTitle")}</h2>
         {serverInfo ? (
           <span className="rdash-sub">
             {serverInfo.mode} · {serverInfo.role} · Redis {serverInfo.serverVersion}
           </span>
         ) : null}
         <div className="rdash-head-spacer" />
-        <IconBtn icon="sync" title="Refresh stats" onClick={refresh} disabled={loading} />
+        <IconBtn icon="sync" title={t("redis.refreshStats")} onClick={refresh} disabled={loading} />
       </div>
 
       {error ? <div className="rdash-error">{error}</div> : null}
 
       <div className="rdash-grid">
-        {stat("Total keys", humanNum(totalKeys), "across 16 databases")}
+        {stat(t("redis.stat.keys"), humanNum(totalKeys), t("redis.stat.keysSub"))}
         {stat(
-          "Memory used",
+          t("redis.stat.mem"),
           stats ? humanBytes(stats.usedMemory) : "—",
-          stats && stats.maxmemory > 0 ? "of " + humanBytes(stats.maxmemory) : "no limit set",
+          stats && stats.maxmemory > 0
+            ? t("redis.stat.memOf", { mem: humanBytes(stats.maxmemory) })
+            : t("redis.stat.memNoLimit"),
         )}
         {stat(
-          "Hit rate",
+          t("redis.stat.hitRate"),
           stats ? hitRate + "%" : "—",
-          humanNum(hits) + " hits · " + humanNum(misses) + " misses",
+          t("redis.stat.hitsMisses", { hits: humanNum(hits), misses: humanNum(misses) }),
         )}
-        {stat("Ops/sec", stats ? humanNum(stats.instantaneousOpsPerSec) : "—", "instantaneous")}
+        {stat(
+          t("redis.stat.ops"),
+          stats ? humanNum(stats.instantaneousOpsPerSec) : "—",
+          t("redis.stat.opsSub"),
+        )}
         <button
           type="button"
           className="rdash-stat rdash-stat-btn"
           onClick={onOpenClients}
-          title="Review connected clients · CLIENT LIST"
+          title={t("redis.reviewClientsTitle")}
         >
-          <div className="rdash-stat-label">Clients</div>
+          <div className="rdash-stat-label">{t("redis.stat.clients")}</div>
           <div className="rdash-stat-value">{clientTotal ?? "—"}</div>
           <div className="rdash-stat-go">
             <Icon name="monitor_heart" size={12} />
-            Review clients
+            {t("redis.reviewClients")}
           </div>
         </button>
-        {stat("Uptime", stats ? stats.uptimeInDays + "d" : "—", "since last restart")}
-        {stat("Expired", stats ? humanNum(stats.expiredKeys) : "—", "keys total")}
-        {stat("Evicted", stats ? humanNum(stats.evictedKeys) : "—", "keys total")}
+        {stat(
+          t("redis.stat.uptime"),
+          stats ? stats.uptimeInDays + "d" : "—",
+          t("redis.stat.uptimeSub"),
+        )}
+        {stat(
+          t("redis.stat.expired"),
+          stats ? humanNum(stats.expiredKeys) : "—",
+          t("redis.stat.keysTotal"),
+        )}
+        {stat(
+          t("redis.stat.evicted"),
+          stats ? humanNum(stats.evictedKeys) : "—",
+          t("redis.stat.keysTotal"),
+        )}
       </div>
 
       <div className="rdash-cols">
         <div className="rdash-panel">
           <h3>
-            <Icon name="data_usage" size={15} /> Keys by type
+            <Icon name="data_usage" size={15} /> {t("redis.byType")}
           </h3>
           {typesWithKeys.length === 0 ? (
             <div className="rdash-panel-empty">
-              {loading ? "Sampling…" : "No keys sampled in db" + dbIndex + "."}
+              {loading ? t("redis.sampling") : t("redis.noSampled", { db: dbIndex })}
             </div>
           ) : (
-            typesWithKeys.map((t) => {
-              const n = typeCounts[t] ?? 0;
-              const meta = REDIS_TYPES[t];
+            typesWithKeys.map((ty) => {
+              const n = typeCounts[ty] ?? 0;
+              const meta = REDIS_TYPES[ty];
               return (
-                <div className="rdash-bar-row" key={t}>
-                  <RedisTypeBadge type={t} size={16} />
+                <div className="rdash-bar-row" key={ty}>
+                  <RedisTypeBadge type={ty} size={16} />
                   <span className="rdash-bar-label">{meta.label}</span>
                   <span className="rdash-bar-track">
                     <span
@@ -248,16 +268,16 @@ export function DashboardTab({
           )}
           <div className="rdash-panel-caption">
             {sampleTruncated
-              ? "Sampled " + sampled + "+ keys in db" + dbIndex + " (distribution is an estimate)."
+              ? t("redis.sampledEst", { count: sampled, db: dbIndex })
               : sampled > 0
-                ? "From " + sampled + " keys in db" + dbIndex + "."
+                ? t("redis.sampledFrom", { count: sampled, db: dbIndex })
                 : null}
           </div>
         </div>
 
         <div className="rdash-panel">
           <h3>
-            <Icon name="storage" size={15} /> Keys per database
+            <Icon name="storage" size={15} /> {t("redis.perDb")}
           </h3>
           <div className="rdash-dbgrid">
             {dbCounts.map((c, i) => (
@@ -268,7 +288,7 @@ export function DashboardTab({
                   "rdash-db" + (c === 0 ? " empty" : "") + (i === dbIndex ? " active" : "")
                 }
                 onClick={() => onSelectDb(i)}
-                title={"Switch to db" + i + " · " + c + " keys"}
+                title={t("redis.switchDbTitle", { db: i }) + " · " + t("redis.nKeys", { count: c })}
               >
                 <span className="rdash-db-name">db{i}</span>
                 <span className="rdash-db-count">{c}</span>
@@ -279,15 +299,15 @@ export function DashboardTab({
 
         <div className="rdash-panel">
           <h3>
-            <Icon name="monitor_heart" size={15} /> Connected clients
+            <Icon name="monitor_heart" size={15} /> {t("redis.connectedClients")}
           </h3>
           {cl ? (
             <>
               {(
                 [
-                  ["normal", "Normal", CLIENT_TYPE_COLOR.normal],
-                  ["pubsub", "Pub/Sub", CLIENT_TYPE_COLOR.pubsub],
-                  ["replica", "Replica", CLIENT_TYPE_COLOR.replica],
+                  ["normal", t("redis.clientNormal"), CLIENT_TYPE_COLOR.normal],
+                  ["pubsub", t("redis.clientPubsub"), CLIENT_TYPE_COLOR.pubsub],
+                  ["replica", t("redis.clientReplica"), CLIENT_TYPE_COLOR.replica],
                 ] as const
               ).map(([key, label, color]) => (
                 <div className="rdash-cl-row" key={key}>
@@ -308,25 +328,17 @@ export function DashboardTab({
               <div className="rdash-cl-note">
                 <Icon name="info" size={12} />
                 <span>
-                  {cl.stale
-                    ? cl.stale +
-                      (cl.stale === 1
-                        ? " normal client has been idle over 5 minutes"
-                        : " normal clients have been idle over 5 minutes") +
-                      " — usually leaked pool connections worth closing."
-                    : "No client has been idle long enough to look leaked."}
+                  {cl.stale ? t("redis.staleNote", { count: cl.stale }) : t("redis.noStale")}
                 </span>
               </div>
             </>
           ) : (
             <div className="rdash-panel-empty">
-              {loading
-                ? "Reading CLIENT LIST…"
-                : "CLIENT LIST is not available on this connection."}
+              {loading ? t("redis.readingClients") : t("redis.clientsUnavailable")}
             </div>
           )}
           <Btn icon="monitor_heart" variant="tonal" small onClick={onOpenClients}>
-            Review clients
+            {t("redis.reviewClients")}
           </Btn>
         </div>
       </div>

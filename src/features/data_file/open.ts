@@ -9,6 +9,7 @@
 import { useCallback } from "react";
 
 import { appErrorMessage } from "../../shared/api/error";
+import { useT } from "../../shared/i18n/useT";
 import { useToast } from "../../shared/ui/toastContext";
 import type { SavedConnection } from "../connections/api";
 import { useWorkspacesStore } from "../workspaces/state";
@@ -63,6 +64,7 @@ async function connectFile(file: DataFileRef): Promise<WorkspaceConnection> {
 export function useOpenDataFile(): (file: DataFileRef) => Promise<string | null> {
   const openFileWorkspace = useWorkspacesStore((state) => state.openFileWorkspace);
   const toast = useToast();
+  const t = useT();
 
   return useCallback(
     async (file) => {
@@ -70,11 +72,11 @@ export function useOpenDataFile(): (file: DataFileRef) => Promise<string | null>
         openFileWorkspace(await connectFile(file), file);
         return file.name;
       } catch (error) {
-        toast(appErrorMessage(error, "Could not open “" + file.name + "”"), "err");
+        toast(appErrorMessage(error, t("dfile.openFail", { name: file.name })), "err");
         return null;
       }
     },
-    [openFileWorkspace, toast],
+    [openFileWorkspace, toast, t],
   );
 }
 
@@ -93,6 +95,7 @@ export function useReplaceDataFile(): (
 ) => Promise<string | null> {
   const replaceWorkspaceFile = useWorkspacesStore((state) => state.replaceWorkspaceFile);
   const toast = useToast();
+  const t = useT();
 
   return useCallback(
     async (workspaceId, previousHandleId, file) => {
@@ -107,11 +110,11 @@ export function useReplaceDataFile(): (
         if (previousHandleId !== connection.handleId) closeScratchDatabase(previousHandleId);
         return file.name;
       } catch (error) {
-        toast(appErrorMessage(error, "Could not open “" + file.name + "”"), "err");
+        toast(appErrorMessage(error, t("dfile.openFail", { name: file.name })), "err");
         return null;
       }
     },
-    [replaceWorkspaceFile, toast],
+    [replaceWorkspaceFile, toast, t],
   );
 }
 
@@ -149,6 +152,7 @@ export function useSaveDataFile(): (
 ) => Promise<string | null> {
   const replaceWorkspaceFile = useWorkspacesStore((state) => state.replaceWorkspaceFile);
   const toast = useToast();
+  const t = useT();
 
   return useCallback(
     async (workspaceId, previousHandleId, file, batch, target) => {
@@ -157,7 +161,7 @@ export function useSaveDataFile(): (
       try {
         text = await saveDataFile(target.path, file.text, parsed, batch, target.backup);
       } catch (error) {
-        toast(appErrorMessage(error, "Could not save “" + file.name + "”"), "err");
+        toast(appErrorMessage(error, t("dfile.saveFailToast", { name: file.name })), "err");
         return null;
       }
 
@@ -183,16 +187,10 @@ export function useSaveDataFile(): (
       } catch (error) {
         // The file IS saved; only the queryable copy is stale. Say so rather
         // than implying the save failed.
-        toast(
-          appErrorMessage(
-            error,
-            "Saved, but the SQL view could not be refreshed — re-open the file.",
-          ),
-          "err",
-        );
+        toast(appErrorMessage(error, t("dfile.refreshFail")), "err");
       }
       return target.name;
     },
-    [replaceWorkspaceFile, toast],
+    [replaceWorkspaceFile, toast, t],
   );
 }

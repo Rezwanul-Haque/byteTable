@@ -16,6 +16,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { exportSave, type ExportScope } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
+import type { StringKey } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n/useT";
 import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
 import { Modal, ModalActions, ModalTitle } from "../../../shared/ui/Modal";
@@ -30,21 +32,22 @@ import {
 } from "../exportFlow";
 import "./ExportProgressModal.css";
 
-/** The three scope options, mirroring the prototype's `EXPORT_CONTENTS`. */
-const SCOPES: { id: ExportScope; label: string; icon: string; desc: string }[] = [
+/** The three scope options, mirroring the prototype's `EXPORT_CONTENTS`.
+ *  Labels are i18n keys, resolved at render time. */
+const SCOPES: { id: ExportScope; label: StringKey; icon: string; desc: StringKey }[] = [
   {
     id: "both",
-    label: "Structure + data",
+    label: "io.scopeBoth",
     icon: "database",
-    desc: "CREATE statements and all rows",
+    desc: "io.scopeBothDesc",
   },
   {
     id: "schema",
-    label: "Structure only",
+    label: "io.scopeSchema",
     icon: "account_tree",
-    desc: "CREATE statements — no rows",
+    desc: "io.scopeSchemaDesc",
   },
-  { id: "data", label: "Data only", icon: "table_rows", desc: "INSERT statements — no DDL" },
+  { id: "data", label: "io.scopeData", icon: "table_rows", desc: "io.scopeDataDesc" },
 ];
 
 type Stage = "choose" | "building" | "done";
@@ -67,6 +70,7 @@ export function ExportProgressModal({
   onClose: () => void;
 }) {
   const toast = useToast();
+  const t = useT();
   const isSql = kind === "tableSql" || kind === "schemaSql";
   // SQL exports start on the scope-choice step; CSV goes straight to building.
   const [stage, setStage] = useState<Stage>(isSql ? "choose" : "building");
@@ -83,8 +87,7 @@ export function ExportProgressModal({
   const autoStarted = useRef(false);
 
   // The progress unit differs by kind: table exports page rows, a schema dump
-  // advances per table.
-  const unit = kind === "schemaSql" ? "tables" : "rows";
+  // advances per table (rendered via io.unitRows / io.unitTables below).
   const baseName = kind === "schemaSql" ? schema : (table ?? "");
   // One stamp for the modal's lifetime so the preview below and the name handed
   // to the save dialog agree (a fresh `exportStamp()` per render would drift).
@@ -105,10 +108,10 @@ export function ExportProgressModal({
         const { name, ext, label } = exportTarget(kind, schema, table, chosenScope, stamp);
         let path: string | null;
         try {
-          path = await saveDialog(name, ext, label);
+          path = await saveDialog(name, ext, t(label as StringKey));
         } catch {
           // Dialog plugin unavailable (browser dev) → not a real failure.
-          if (!cancelled.current) toast("Export requires the desktop app", "info");
+          if (!cancelled.current) toast(t("io.exportNeedsApp"), "info");
           onClose();
           return;
         }
@@ -134,12 +137,12 @@ export function ExportProgressModal({
         setPct(100);
         setStage("done");
         const file = path.split(/[\\/]/).pop() ?? name;
-        toast("Exported " + file, "ok");
+        toast(t("io.exportedFile", { name: file }), "ok");
         setTimeout(() => {
           if (!cancelled.current) onClose();
         }, 700);
       } catch (err) {
-        if (!cancelled.current) toast(appErrorMessage(err, "Could not export."), "err");
+        if (!cancelled.current) toast(appErrorMessage(err, t("io.exportFail")), "err");
         onClose();
       }
     })();
@@ -161,12 +164,16 @@ export function ExportProgressModal({
   };
 
   const titleText =
-    stage === "done" ? "Export complete" : stage === "choose" ? "Export " + baseName : "Exporting…";
+    stage === "done"
+      ? t("io.exportComplete")
+      : stage === "choose"
+        ? t("io.exportTitle", { name: baseName })
+        : t("io.exporting");
 
   return (
     <Modal
       onClose={stage === "building" ? () => {} : onClose}
-      label={"Export " + baseName}
+      label={t("io.exportTitle", { name: baseName })}
       width={460}
       className="export-progress-modal"
     >
@@ -202,8 +209,8 @@ export function ExportProgressModal({
                   style={{ color: scope === c.id ? "var(--accent)" : "var(--text-dim)" }}
                 />
                 <span className="export-opt-text">
-                  <b>{c.label}</b>
-                  <span>{c.desc}</span>
+                  <b>{t(c.label)}</b>
+                  <span>{t(c.desc)}</span>
                 </span>
               </button>
             ))}
@@ -214,10 +221,10 @@ export function ExportProgressModal({
           </div>
           <ModalActions>
             <Btn variant="text" onClick={onClose}>
-              Cancel
+              {t("common.cancel")}
             </Btn>
             <Btn variant="filled" icon="download" onClick={() => run(scope)}>
-              Export
+              {t("io.exportBtn")}
             </Btn>
           </ModalActions>
         </>
@@ -235,19 +242,23 @@ export function ExportProgressModal({
             <span className="export-bar-fill" style={{ width: pct + "%" }} />
           </div>
           <div className="export-meta">
-            <span>{stage === "done" ? "Done" : pct + "%"}</span>
+            <span>{stage === "done" ? t("io.done") : pct + "%"}</span>
             <span>
               {scope === "schema" && kind !== "schemaSql"
-                ? "structure only"
+                ? t("io.structureOnly")
                 : total
-                  ? done.toLocaleString() + " / " + total.toLocaleString() + " " + unit
+                  ? done.toLocaleString() +
+                    " / " +
+                    total.toLocaleString() +
+                    " " +
+                    t(kind === "schemaSql" ? "io.unitTables" : "io.unitRows")
                   : ""}
             </span>
           </div>
           {stage !== "done" ? (
             <ModalActions>
               <Btn variant="text" onClick={cancel}>
-                Cancel
+                {t("common.cancel")}
               </Btn>
             </ModalActions>
           ) : null}

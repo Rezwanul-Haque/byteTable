@@ -9,6 +9,7 @@
 
 import { create } from "zustand";
 
+import type { StringKey } from "../../shared/i18n";
 import type { SortSpec } from "../../shared/api/engine";
 import type { TabFilterState } from "../workspaces/types";
 import { emptyBatch, type EditBatch } from "./csvWrite";
@@ -20,15 +21,16 @@ export type DataFileTabKind = "data" | "profile" | "issues" | "sql";
 export interface DataFileTab {
   id: DataFileTabKind;
   kind: DataFileTabKind;
-  title: string;
+  /** i18n key for the tab's display name (resolved at render time). */
+  title: StringKey;
 }
 
 /** Icon + title per view — the tab strip and the sidebar read the same table. */
-export const DATA_FILE_TABS: Record<DataFileTabKind, { icon: string; title: string }> = {
-  data: { icon: "table_rows", title: "Data" },
-  profile: { icon: "insights", title: "Column profile" },
-  issues: { icon: "rule", title: "Data quality" },
-  sql: { icon: "code", title: "SQL" },
+export const DATA_FILE_TABS: Record<DataFileTabKind, { icon: string; title: StringKey }> = {
+  data: { icon: "table_rows", title: "dfile.tabData" },
+  profile: { icon: "insights", title: "dfile.tabProfile" },
+  issues: { icon: "rule", title: "dfile.tabQuality" },
+  sql: { icon: "code", title: "dfile.tabSql" },
 };
 
 /** The Data tab's row filter: a named subset of row indexes to show. */

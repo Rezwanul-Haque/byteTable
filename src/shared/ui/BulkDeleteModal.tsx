@@ -8,6 +8,8 @@
 import { useState } from "react";
 
 import { appErrorMessage } from "../api/error";
+import type { StringKey } from "../i18n";
+import { useT } from "../i18n/useT";
 import { Btn } from "./Btn";
 import { Icon } from "./Icon";
 import { Modal, ModalActions, ModalTitle } from "./Modal";
@@ -15,6 +17,15 @@ import { Modal, ModalActions, ModalTitle } from "./Modal";
 import "../../features/export/components/TruncateModal.css";
 
 const DANGER = "#e06c75";
+
+// The engine caller passes the row noun as an English string; known nouns are
+// translated through plural keys, unknown ones fall back to noun + "s".
+const NOUN_KEYS: Record<string, { one: StringKey; other: StringKey }> = {
+  row: { one: "uix.noun.row.one", other: "uix.noun.row.other" },
+  document: { one: "uix.noun.document.one", other: "uix.noun.document.other" },
+  key: { one: "uix.noun.key.one", other: "uix.noun.key.other" },
+  item: { one: "uix.noun.item.one", other: "uix.noun.item.other" },
+};
 
 export function BulkDeleteModal({
   count,
@@ -41,8 +52,12 @@ export function BulkDeleteModal({
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const t = useT();
 
-  const plural = (n: number) => `${noun}${n === 1 ? "" : "s"}`;
+  const nounKeys = NOUN_KEYS[noun];
+  const pluralNoun = nounKeys
+    ? t(count === 1 ? nounKeys.one : nounKeys.other)
+    : noun + (count === 1 ? "" : "s");
   const armed = !isProduction || typed.trim() === target;
 
   const confirm = () => {
@@ -55,7 +70,7 @@ export function BulkDeleteModal({
         onDone();
         onClose();
       } catch (err) {
-        setError(appErrorMessage(err, `Could not delete the selected ${plural(count)}.`));
+        setError(appErrorMessage(err, t("uix.bulkDelete.error", { count, noun: pluralNoun })));
         setBusy(false);
       }
     })();
@@ -64,20 +79,22 @@ export function BulkDeleteModal({
   return (
     <Modal
       onClose={onClose}
-      label={"Delete selected " + plural(count)}
+      label={t("uix.bulkDelete.title", { count, noun: pluralNoun })}
       width={460}
       className="truncate-modal"
     >
       <ModalTitle>
-        <Icon name="warning" size={18} style={{ color: DANGER }} /> Delete selected {plural(count)}
+        <Icon name="warning" size={18} style={{ color: DANGER }} />{" "}
+        {t("uix.bulkDelete.title", { count, noun: pluralNoun })}
       </ModalTitle>
       <div className="truncate-body">
         <p>
-          This permanently deletes{" "}
+          {t("uix.bulkDelete.bodyPre")}{" "}
           <b>
-            {count} {plural(count)}
+            {count} {pluralNoun}
           </b>{" "}
-          from <code>{target}</code>. This cannot be undone.
+          {t("uix.bulkDelete.bodyMid")} <code>{target}</code>
+          {t("uix.bulkDelete.bodyPost")}
         </p>
         {isProduction ? (
           <div className="truncate-prod">
@@ -85,17 +102,17 @@ export function BulkDeleteModal({
               className="truncate-prod-tag"
               style={{ color: DANGER, borderColor: DANGER + "66", background: DANGER + "14" }}
             >
-              <Icon name="public" size={13} /> production
+              <Icon name="public" size={13} /> {t("uix.bulkDelete.prodTag")}
             </div>
             <label>
-              Type <b>{target}</b> to confirm
+              {t("uix.bulkDelete.typePre")} <b>{target}</b> {t("uix.bulkDelete.typePost")}
               <input
                 value={typed}
                 onChange={(e) => setTyped(e.target.value)}
                 placeholder={target}
                 spellCheck="false"
                 autoFocus
-                aria-label={"Type " + target + " to confirm"}
+                aria-label={t("uix.bulkDelete.typeAria", { target })}
               />
             </label>
           </div>
@@ -104,7 +121,7 @@ export function BulkDeleteModal({
       </div>
       <ModalActions>
         <Btn variant="text" onClick={onClose} disabled={busy}>
-          Cancel
+          {t("common.cancel")}
         </Btn>
         <button
           type="button"
@@ -113,7 +130,11 @@ export function BulkDeleteModal({
           onClick={confirm}
         >
           <Icon name="delete_forever" size={16} />
-          <span>{busy ? "Deleting…" : `Delete ${count} ${plural(count)}`}</span>
+          <span>
+            {busy
+              ? t("uix.bulkDelete.deleting")
+              : t("uix.bulkDelete.delete", { count, noun: pluralNoun })}
+          </span>
         </button>
       </ModalActions>
     </Modal>

@@ -7,6 +7,7 @@
 
 import { create } from "zustand";
 
+import { t } from "../../../shared/i18n";
 import type { CassTab } from "./components/CassandraWorkspace";
 
 export interface CassTabsState {
@@ -19,7 +20,10 @@ export interface CassTabsState {
 export function initialCassTabs(): CassTabsState {
   return {
     ks: "",
-    tabs: [{ id: "cs-dash", kind: "dashboard", title: "Dashboard" }],
+    // Seeded outside render (the store is created on demand), so the module-level
+    // `t` is used rather than the `useT` hook. Only the initial tab is affected:
+    // every tab opened or retitled afterwards goes through the component.
+    tabs: [{ id: "cs-dash", kind: "dashboard", title: t("cass.ws.dashboardTab") }],
     activeId: "cs-dash",
   };
 }

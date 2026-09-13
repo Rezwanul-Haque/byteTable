@@ -29,6 +29,7 @@ import { Icon } from "../../../shared/ui/Icon";
 import { Modal, ModalActions, ModalTitle } from "../../../shared/ui/Modal";
 import { ENV_COLOR } from "../../../shared/ui/envColors";
 import { useToast } from "../../../shared/ui/toastContext";
+import { useT } from "../../../shared/i18n/useT";
 import { normalizeEnv } from "../../../shared/types";
 import { useIntrospectionStore } from "../../introspection/state";
 import { useWorkspacesStore } from "../../workspaces/state";
@@ -57,6 +58,7 @@ export function EmptySchemaModal({
   onDone?: () => void;
 }) {
   const toast = useToast();
+  const t = useT();
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -93,41 +95,39 @@ export function EmptySchemaModal({
             if (tab.kind === "table" && tab.schema === schemaName) requestRefetch(tab.id);
           }
         }
-        toast("Emptied schema " + schemaName, "ok");
+        toast(t("io.emptied", { name: schemaName }), "ok");
         onDone?.();
         onClose();
       } catch (err) {
-        setError(appErrorMessage(err, "Could not empty the schema."));
+        setError(appErrorMessage(err, t("io.emptyFail")));
         setBusy(false);
       }
     })();
   };
 
   return (
-    <Modal onClose={onClose} label="Empty schema" width={480} className="truncate-modal">
+    <Modal onClose={onClose} label={t("io.emptySchema")} width={480} className="truncate-modal">
       <ModalTitle>
-        <Icon name="warning" size={18} style={{ color: DANGER }} /> Empty schema
+        <Icon name="warning" size={18} style={{ color: DANGER }} /> {t("io.emptySchema")}
       </ModalTitle>
       <div className="truncate-body">
         <p>
-          This drops{" "}
-          <b>
-            all {tableCount} table{tableCount === 1 ? "" : "s"}
-          </b>{" "}
-          in <code>{schemaName}</code> and their <b>{totalRows.toLocaleString()} rows</b>, then
-          leaves the schema itself in place, ready to re-import into. This cannot be undone.
+          {t("io.emptyBodyPre")} <b>{t("io.allTablesN", { count: tableCount })}</b>{" "}
+          {t("io.emptyBodyIn")} <code>{schemaName}</code> {t("io.emptyBodyAnd")}{" "}
+          <b>{t("io.rowsN", { count: totalRows })}</b>
+          {t("io.emptyBodyPost")}
         </p>
         <pre className="truncate-sql">
           DROP SCHEMA {schemaName} CASCADE;{"\n"}CREATE SCHEMA {schemaName};
         </pre>
         {tableCount > 0 ? (
           <div className="schema-import-list">
-            {tables.map((t) => (
-              <div key={t.name} className="schema-import-row">
+            {tables.map((tbl) => (
+              <div key={tbl.name} className="schema-import-row">
                 <Icon name="table" size={14} style={{ color: "var(--text-faint)" }} />
-                <span className="schema-import-name">{t.name}</span>
+                <span className="schema-import-name">{tbl.name}</span>
                 <span className="schema-import-rows">
-                  {t.approxRowCount === null ? "—" : t.approxRowCount.toLocaleString() + " rows"}
+                  {tbl.approxRowCount === null ? "—" : t("io.rowsN", { count: tbl.approxRowCount })}
                 </span>
               </div>
             ))}
@@ -143,17 +143,17 @@ export function EmptySchemaModal({
                 background: envColor + "14",
               }}
             >
-              <Icon name="public" size={13} /> production
+              <Icon name="public" size={13} /> {t("uix.bulkDelete.prodTag")}
             </div>
             <label>
-              Type <b>{schemaName}</b> to confirm
+              {t("uix.bulkDelete.typePre")} <b>{schemaName}</b> {t("uix.bulkDelete.typePost")}
               <input
                 value={typed}
                 onChange={(e) => setTyped(e.target.value)}
                 placeholder={schemaName}
                 spellCheck="false"
                 autoFocus
-                aria-label={"Type " + schemaName + " to confirm"}
+                aria-label={t("uix.bulkDelete.typeAria", { target: schemaName })}
               />
             </label>
           </div>
@@ -162,7 +162,7 @@ export function EmptySchemaModal({
       </div>
       <ModalActions>
         <Btn variant="text" onClick={onClose} disabled={busy}>
-          Cancel
+          {t("common.cancel")}
         </Btn>
         <button
           type="button"
@@ -171,7 +171,7 @@ export function EmptySchemaModal({
           onClick={confirm}
         >
           <Icon name="delete_sweep" size={16} />
-          <span>{busy ? "Emptying…" : "Empty schema"}</span>
+          <span>{busy ? t("io.emptying") : t("io.emptyBtn")}</span>
         </button>
       </ModalActions>
     </Modal>

@@ -13,6 +13,7 @@
 //   intent="discard"  the tab bar's reload button, which drops every tab's
 //                     staged batch and leaves the tabs open.
 
+import { useT } from "../../../shared/i18n/useT";
 import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
 import { Modal, ModalActions, ModalTitle } from "../../../shared/ui/Modal";
@@ -47,11 +48,12 @@ export function UnsavedTabsModal({
 }) {
   const closing = intent === "close";
   const one = unsaved.length === 1;
+  const t = useT();
   const heading = one
     ? closing
-      ? "Discard unsaved changes?"
-      : "Discard staged changes?"
-    : "Discard staged changes in " + unsaved.length + " tabs?";
+      ? t("ws.unsaved.headingCloseOne")
+      : t("ws.unsaved.headingDiscardOne")
+    : t("ws.unsaved.headingMany", { count: unsaved.length });
   const alsoClean = total - unsaved.length;
 
   return (
@@ -61,13 +63,13 @@ export function UnsavedTabsModal({
       </ModalTitle>
       <div className="truncate-body">
         <p>
-          {one ? "This tab has" : "These tabs have"} changes that are not in the database yet.{" "}
           {closing
-            ? "Closing " + (one ? "it" : "them") + " throws them away"
-            : "Discarding reloads " +
-              (one ? "the row" : "every row") +
-              " from the database and throws them away"}{" "}
-          — there is no undo.
+            ? one
+              ? t("ws.unsaved.bodyCloseOne")
+              : t("ws.unsaved.bodyCloseMany")
+            : one
+              ? t("ws.unsaved.bodyDiscardOne")
+              : t("ws.unsaved.bodyDiscardMany")}
         </p>
         <ul className="unsaved-tabs-list">
           {unsaved.map((tab) => (
@@ -78,24 +80,21 @@ export function UnsavedTabsModal({
           ))}
         </ul>
         {alsoClean > 0 ? (
-          <p className="unsaved-tabs-note">
-            {alsoClean} other {alsoClean === 1 ? "tab" : "tabs"} in this action{" "}
-            {alsoClean === 1 ? "has" : "have"} nothing unsaved.
-          </p>
+          <p className="unsaved-tabs-note">{t("ws.unsaved.cleanNote", { count: alsoClean })}</p>
         ) : null}
       </div>
       <ModalActions>
         <Btn variant="text" onClick={onCancel}>
-          Keep editing
+          {t("ws.unsaved.keepEditing")}
         </Btn>
         <button type="button" className="btn btn-danger" onClick={onConfirm}>
           <Icon name={closing ? "close" : "refresh"} size={16} />
           <span>
             {closing
               ? total === 1
-                ? "Discard & close"
-                : "Discard & close " + total + " tabs"
-              : "Discard " + total + " tabs’ changes"}
+                ? t("ws.unsaved.btnDiscardClose")
+                : t("ws.unsaved.btnDiscardCloseMany", { count: total })
+              : t("ws.unsaved.btnDiscardTabs", { count: total })}
           </span>
         </button>
       </ModalActions>

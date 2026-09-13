@@ -9,6 +9,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 
 import { exportSave } from "../../../../shared/api/engine";
 import { appErrorMessage } from "../../../../shared/api/error";
+import { useT } from "../../../../shared/i18n/useT";
 import { BulkDeleteModal } from "../../../../shared/ui/BulkDeleteModal";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
@@ -95,6 +96,7 @@ export function MongoCollectionTab({
   onDataChanged: () => void;
 }) {
   const toast = useToast();
+  const t = useT();
   const coll = tab.coll;
   const mode = tab.mode ?? "find";
   const view = tab.view ?? "tree";
@@ -142,10 +144,10 @@ export function MongoCollectionTab({
       setResult({ kind: "find", ...r, filterObj: f, sortObj });
       setError(null);
     } catch (e) {
-      setError(appErrorMessage(e, "Query failed"));
+      setError(appErrorMessage(e, t("mongo.queryFailed")));
       setResult(null);
     }
-  }, [filter, proj, sort, limit, db, coll, handleId]);
+  }, [filter, proj, sort, limit, db, coll, handleId, t]);
 
   // Re-run find on collection/db/version change (mirrors the prototype).
   useEffect(() => {
@@ -174,7 +176,7 @@ export function MongoCollectionTab({
       setResult({ kind: "agg", pipelineObj: pipeline, ...r });
       setError(null);
     } catch (e) {
-      setError(appErrorMessage(e, "Aggregation failed"));
+      setError(appErrorMessage(e, t("mongo.aggFailed")));
       setResult(null);
     }
   };
@@ -194,18 +196,14 @@ export function MongoCollectionTab({
     try {
       pipeline = compilePipeline(stages);
     } catch (e) {
-      toast("Fix stage JSON before copying — " + (e instanceof Error ? e.message : ""), "err");
+      toast(t("mongo.copyStageFix", { err: e instanceof Error ? e.message : String(e) }));
       return;
     }
     const snippet = "db." + coll + ".aggregate(" + JSON.stringify(pipeline, null, 2) + ")";
     copyToClipboard(
       snippet,
-      () =>
-        toast(
-          "Pipeline copied · " + stages.length + " stage" + (stages.length === 1 ? "" : "s"),
-          "ok",
-        ),
-      () => toast("Copy failed — select the text manually", "err"),
+      () => toast(t("mongo.pipelineCopied", { count: stages.length }), "ok"),
+      () => toast(t("mongo.copyFail"), "err"),
     );
   };
 
@@ -214,7 +212,7 @@ export function MongoCollectionTab({
   // here does not block in the app's webview — the row went without a prompt.
   const deleteDoc = async (d: MongoDoc) => {
     await mongoDeleteOne(handleId, db, coll, d._id);
-    toast("Document deleted · " + db + "." + coll, "ok");
+    toast(t("mongo.docDeleted", { ns: db + "." + coll }), "ok");
   };
 
   const docs = result ? result.docs : [];
@@ -268,7 +266,7 @@ export function MongoCollectionTab({
   const deleteSelected = async () => {
     const ids = selectedDocs().map((d) => d._id);
     const res = await mongoDeleteMany(handleId, db, coll, ids);
-    toast(`Deleted ${res.deleted} document${res.deleted === 1 ? "" : "s"} · ${db}.${coll}`, "ok");
+    toast(t("mongo.deletedMany", { count: res.deleted, ns: db + "." + coll }), "ok");
     void runFind();
     onDataChanged();
   };
@@ -296,9 +294,9 @@ export function MongoCollectionTab({
       });
       if (!path) return;
       await exportSave(path, csv);
-      toast(`Exported ${rows.length} document${rows.length === 1 ? "" : "s"} to CSV`, "ok");
+      toast(t("mongo.exportedCsv", { count: rows.length }), "ok");
     } catch (e) {
-      toast(appErrorMessage(e, "Could not export CSV"), "err");
+      toast(appErrorMessage(e, t("mongo.exportCsvFail")), "err");
     }
   };
   const limitOptions = FIND_LIMITS.includes(Number(limit) as never)
@@ -313,47 +311,51 @@ export function MongoCollectionTab({
             className={"seg-btn" + (mode === "find" ? " active" : "")}
             onClick={() => onUpdateTab({ mode: "find" })}
           >
-            <Icon name="search" size={14} /> Find
+            <Icon name="search" size={14} /> {t("mongo.segFind")}
           </button>
           <button
             className={"seg-btn" + (mode === "aggregate" ? " active" : "")}
             onClick={() => onUpdateTab({ mode: "aggregate" })}
           >
-            <Icon name="account_tree" size={14} /> Aggregate
+            <Icon name="account_tree" size={14} /> {t("mongo.segAggregate")}
           </button>
           <button
             className={"seg-btn" + (mode === "structure" ? " active" : "")}
             onClick={() => onUpdateTab({ mode: "structure" })}
           >
-            <Icon name="schema" size={14} /> Structure
+            <Icon name="schema" size={14} /> {t("mongo.segStructure")}
           </button>
         </div>
         {mode !== "structure" ? (
-          <div className="seg mg-view-seg" title="Document view">
+          <div className="seg mg-view-seg" title={t("mongo.viewSegTitle")}>
             <button
               className={"seg-btn" + (view === "tree" ? " active" : "")}
               onClick={() => onUpdateTab({ view: "tree" })}
             >
-              <Icon name="account_tree" size={13} /> Tree
+              <Icon name="account_tree" size={13} /> {t("mongo.viewTree")}
             </button>
             <button
               className={"seg-btn" + (view === "grid" ? " active" : "")}
               onClick={() => onUpdateTab({ view: "grid" })}
             >
-              <Icon name="grid_on" size={13} /> Table
+              <Icon name="grid_on" size={13} /> {t("mongo.viewTable")}
             </button>
           </div>
         ) : null}
         <div style={{ flex: 1 }} />
         {result && mode === "find" ? (
           <span className="table-rowcount">
-            {result.returned} of {result.matched} · {result.ms.toFixed(1)} ms
+            {t("mongo.readoutFind", {
+              returned: result.returned,
+              matched: result.matched ?? 0,
+              ms: result.ms.toFixed(1),
+            })}
             {result.usedIndex ? " · " + result.usedIndex : " · COLLSCAN"}
           </span>
         ) : null}
         {result && mode === "aggregate" ? (
           <span className="table-rowcount">
-            {result.returned} docs · {result.ms.toFixed(1)} ms
+            {t("mongo.readoutAgg", { returned: result.returned, ms: result.ms.toFixed(1) })}
           </span>
         ) : null}
         {mode !== "structure" ? (
@@ -364,20 +366,20 @@ export function MongoCollectionTab({
             onClick={() => setShowExplain((s) => !s)}
             className={showExplain ? "active" : undefined}
           >
-            Explain
+            {t("mongo.explain")}
           </Btn>
         ) : null}
         {mode !== "structure" ? (
           <IconBtn
             icon="add_box"
-            title="Insert document (⌘I / Ctrl+I)"
+            title={t("mongo.insertDocTitle")}
             onClick={() => setNewDoc(true)}
           />
         ) : null}
         <div className="table-actions" style={{ position: "relative" }}>
           <IconBtn
             icon="more_vert"
-            title="Collection actions"
+            title={t("mongo.collActions")}
             active={actionsOpen}
             onClick={() => setActionsOpen((o) => !o)}
           />
@@ -390,7 +392,7 @@ export function MongoCollectionTab({
                   onExport(coll);
                 }}
               >
-                <Icon name="download" size={15} /> Export collection
+                <Icon name="download" size={15} /> {t("mongo.menu.exportColl")}
               </div>
               <div
                 className="ctx-item"
@@ -399,7 +401,7 @@ export function MongoCollectionTab({
                   onImport(coll);
                 }}
               >
-                <Icon name="upload" size={15} /> Import documents
+                <Icon name="upload" size={15} /> {t("mongo.menu.importDocs")}
               </div>
               {/* Destructive last, behind a separator — same order as the
                   sidebar's collection menu and the SQL table menu. */}
@@ -411,7 +413,7 @@ export function MongoCollectionTab({
                   onTruncate(coll);
                 }}
               >
-                <Icon name="delete_sweep" size={15} /> Empty collection
+                <Icon name="delete_sweep" size={15} /> {t("mongo.menu.emptyColl")}
               </div>
               <div
                 className="ctx-item danger"
@@ -420,7 +422,7 @@ export function MongoCollectionTab({
                   onDrop(coll);
                 }}
               >
-                <Icon name="delete_forever" size={15} /> Drop collection
+                <Icon name="delete_forever" size={15} /> {t("mongo.menu.dropColl")}
               </div>
             </div>
           ) : null}
@@ -431,7 +433,7 @@ export function MongoCollectionTab({
         <div className="mg-find-bar">
           <label className="mg-find-field mg-find-filter">
             <span className="mg-find-label">
-              <Icon name="filter_alt" size={12} /> Filter
+              <Icon name="filter_alt" size={12} /> {t("mongo.filter")}
             </span>
             <input
               className="where-input mg-mono"
@@ -445,7 +447,7 @@ export function MongoCollectionTab({
             />
           </label>
           <label className="mg-find-field">
-            <span className="mg-find-label">Projection</span>
+            <span className="mg-find-label">{t("mongo.projection")}</span>
             <input
               className="where-input mg-mono"
               value={proj}
@@ -458,7 +460,7 @@ export function MongoCollectionTab({
             />
           </label>
           <label className="mg-find-field">
-            <span className="mg-find-label">Sort</span>
+            <span className="mg-find-label">{t("mongo.sort")}</span>
             <input
               className="where-input mg-mono"
               value={sort}
@@ -471,26 +473,26 @@ export function MongoCollectionTab({
             />
           </label>
           <div className="mg-find-field mg-find-limit">
-            <span className="mg-find-label">Limit</span>
+            <span className="mg-find-label">{t("mongo.limit")}</span>
             <Select
               className="mg-limit-sel"
               value={String(Number(limit) || 0)}
               options={[
                 ...limitOptions.map((n) => ({ value: String(n), label: String(n) })),
-                { value: "0", label: "All" },
+                { value: "0", label: t("mongo.limitAll") },
               ]}
               onChange={(v) => setLimit(Number(v))}
-              aria-label="Limit"
+              aria-label={t("mongo.limit")}
             />
           </div>
           <Btn
             icon="play_arrow"
             variant="filled"
             small
-            title="Run this find (⌘↵ / Ctrl+↵)"
+            title={t("mongo.runFindTitle")}
             onClick={() => void runFind()}
           >
-            Find
+            {t("mongo.segFind")}
           </Btn>
         </div>
       ) : null}
@@ -527,7 +529,7 @@ export function MongoCollectionTab({
             <Icon name="error" size={18} />
             <div>
               <div className="sql-error-title">
-                {mode === "aggregate" ? "Aggregation error" : "Query error"}
+                {mode === "aggregate" ? t("mongo.errTitleAgg") : t("mongo.errTitleQuery")}
               </div>
               <div className="sql-error-msg">{error}</div>
             </div>
@@ -545,10 +547,12 @@ export function MongoCollectionTab({
         <>
           {view === "grid" && selected.size > 0 ? (
             <div className="ddb-selbar">
-              <span className="ddb-selbar-count">{selected.size} selected</span>
+              <span className="ddb-selbar-count">
+                {t("ws.grid.selected", { count: selected.size })}
+              </span>
               <div style={{ flex: 1 }} />
               <Btn icon="download" variant="tonal" small onClick={() => void exportSelectedCsv()}>
-                Export CSV
+                {t("mongo.exportCsvBtn")}
               </Btn>
               <Btn
                 icon="delete"
@@ -557,7 +561,7 @@ export function MongoCollectionTab({
                 className="ddb-selbar-del"
                 onClick={() => setDeleteOpen(true)}
               >
-                Delete selected
+                {t("mongo.deleteSelected")}
               </Btn>
             </div>
           ) : null}
@@ -578,11 +582,12 @@ export function MongoCollectionTab({
           )}
           <div className="table-hint">
             {mode === "aggregate"
-              ? "Aggregation result"
+              ? t("mongo.hintAgg")
               : view === "tree"
-                ? "Tree view · click ✎ to edit a document"
-                : "Table view · click a row to edit"}{" "}
-            · ⌘I insert · {db}.{coll}
+                ? t("mongo.hintTree")
+                : t("mongo.hintGrid")}{" "}
+            {t("mongo.hintKeys")}
+            {db}.{coll}
           </div>
         </>
       )}

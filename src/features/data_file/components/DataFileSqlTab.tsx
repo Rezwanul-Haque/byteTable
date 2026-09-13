@@ -15,6 +15,7 @@ import type { QueryResult } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
 import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
+import { useT } from "../../../shared/i18n/useT";
 import { SqlResultGrid } from "../../workspaces/components/SqlResultGrid";
 import type { DataFileDoc } from "../doc";
 import { runDataFileQuery, sampleQueries } from "../sqlSession";
@@ -38,6 +39,7 @@ export function DataFileSqlTab({
   seedSql,
   onSeedConsumed,
 }: DataFileSqlTabProps) {
+  const t = useT();
   const samples = sampleQueries(doc.schema, doc.analysis.cols);
   const starter = samples[0]!.sql;
 
@@ -61,12 +63,12 @@ export function DataFileSqlTab({
           setError(null);
         })
         .catch((e: unknown) => {
-          setError(appErrorMessage(e, "The query could not be run."));
+          setError(appErrorMessage(e, t("dfile.queryFail")));
           setResult(null);
         })
         .finally(() => setRunning(false));
     },
-    [handleId],
+    [handleId, t],
   );
 
   // Run the starter query once, on mount. The workspace keys this tab by the
@@ -109,9 +111,7 @@ export function DataFileSqlTab({
     <div className="csvv-pane" data-screen-label={"Data file SQL: " + doc.name}>
       <div className="csvv-sql-head">
         <Icon name="code" size={14} style={{ color: "var(--accent)" }} />
-        <span>
-          Querying <code>{doc.table}</code> — a virtual table backed by this file
-        </span>
+        <span>{t("dfile.queryingTable", { table: doc.table })}</span>
         <div style={{ flex: 1 }} />
         <div className="csvv-sql-samples">
           {samples.map((s) => (
@@ -138,11 +138,11 @@ export function DataFileSqlTab({
           onChange={(e) => setSql(e.target.value)}
           spellCheck={false}
           rows={4}
-          aria-label={"SQL over " + doc.name}
+          aria-label={t("dfile.sqlAria", { name: doc.name })}
         />
         <div className="csvv-sql-actions">
           <Btn icon="play_arrow" variant="filled" disabled={running} onClick={() => run()}>
-            {running ? "Running…" : "Run"}
+            {running ? t("ws.sql.running") : t("menu.query.run")}
           </Btn>
           <span className="csvv-sql-hint">⌘↩ / Ctrl+Enter</span>
         </div>
@@ -152,7 +152,7 @@ export function DataFileSqlTab({
         <div className="sql-error" style={{ margin: "12px 16px" }}>
           <Icon name="error" size={18} />
           <div>
-            <div className="sql-error-title">Query failed</div>
+            <div className="sql-error-title">{t("ws.sql.queryFailedTitle")}</div>
             <div className="sql-error-msg">{error}</div>
           </div>
         </div>
@@ -161,10 +161,9 @@ export function DataFileSqlTab({
           <SqlResultGrid result={result} exportName={doc.table + "-query.csv"} />
           <div className="table-footer">
             <span className="table-hint">
-              {result.rowCount.toLocaleString()} row{result.rowCount === 1 ? "" : "s"} ·{" "}
-              {result.elapsedMs} ms
-              {result.truncated ? " · truncated by the row limit" : ""} · queries never change the
-              file
+              {t("dfile.resultSummary", { count: result.rowCount, ms: result.elapsedMs })}
+              {result.truncated ? " · " + t("dfile.truncatedByLimit") : ""} ·{" "}
+              {t("dfile.readOnlyNote")}
             </span>
             <div className="pager">
               <span className="pager-range">SELECT only</span>

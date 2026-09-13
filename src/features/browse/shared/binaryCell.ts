@@ -6,6 +6,7 @@
 // UUID / hex / blob display and validate edits back to the right byte length.
 
 import type { CellValue } from "../../../shared/api/engine";
+import { t } from "../../../shared/i18n";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HEX_RE = /^(0x)?[0-9a-f]*$/i;
@@ -100,13 +101,13 @@ export type BinaryValidation =
  *  `0x`-hex of exactly the column's byte length. Empty → NULL. */
 export function validateBinary(text: string, type: string | undefined): BinaryValidation {
   const expect = binaryBytes(type) ?? 16;
-  const t = text.trim();
-  if (t === "") return { ok: true, empty: true };
-  if (expect === 16 && UUID_RE.test(t)) {
-    return { ok: true, uuid: t.toLowerCase(), hex: uuidToHex(t) };
+  const trimmed = text.trim();
+  if (trimmed === "") return { ok: true, empty: true };
+  if (expect === 16 && UUID_RE.test(trimmed)) {
+    return { ok: true, uuid: trimmed.toLowerCase(), hex: uuidToHex(trimmed) };
   }
-  if (HEX_RE.test(t)) {
-    const hex = t.replace(/^0x/i, "");
+  if (HEX_RE.test(trimmed)) {
+    const hex = trimmed.replace(/^0x/i, "");
     if (hex.length === expect * 2) {
       return { ok: true, uuid: expect === 16 ? hexToUuid(hex) : null, hex: hex.toLowerCase() };
     }
@@ -114,16 +115,15 @@ export function validateBinary(text: string, type: string | undefined): BinaryVa
       ok: false,
       message:
         hex.length % 2 === 1
-          ? "Hex must have an even number of digits"
-          : "Expected " +
-            expect +
-            " bytes (" +
-            expect * 2 +
-            " hex digits), got " +
-            Math.floor(hex.length / 2),
+          ? t("bin.err.oddHex")
+          : t("bin.err.length", {
+              bytes: expect,
+              digits: expect * 2,
+              got: Math.floor(hex.length / 2),
+            }),
     };
   }
-  return { ok: false, message: "Enter a UUID (xxxxxxxx-xxxx-…) or 0x-hex" };
+  return { ok: false, message: t("bin.err.format") };
 }
 
 /** True for a text UUID/GUID column: Postgres `uuid`, SQL Server
@@ -135,13 +135,16 @@ export function isUuidType(type: string | undefined): boolean {
 }
 
 /** The UUID versions the editor can generate. v7 is the default: time-ordered,
- *  so it indexes far better than v4 as a key. */
+ *  so it indexes far better than v4 as a key. A function so the hints are read
+ *  in the active locale at render time. */
 export type UuidVersion = "v7" | "v4" | "v1";
-export const UUID_VERSIONS: { id: UuidVersion; label: string; hint: string }[] = [
-  { id: "v7", label: "v7", hint: "Time-ordered (recommended for keys)" },
-  { id: "v4", label: "v4", hint: "Random" },
-  { id: "v1", label: "v1", hint: "Timestamp + random node" },
-];
+export function uuidVersions(): { id: UuidVersion; label: string; hint: string }[] {
+  return [
+    { id: "v7", label: "v7", hint: t("bin.uuidVersion.v7.hint") },
+    { id: "v4", label: "v4", hint: t("bin.uuidVersion.v4.hint") },
+    { id: "v1", label: "v1", hint: t("bin.uuidVersion.v1.hint") },
+  ];
+}
 
 /** Random lowercase hex of `len` digits, from a CSPRNG when available. */
 function randomHex(len: number): string {

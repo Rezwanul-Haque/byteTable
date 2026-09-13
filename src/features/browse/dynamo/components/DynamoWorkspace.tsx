@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { isAppErrorPayload } from "../../../../shared/api/error";
+import { useT } from "../../../../shared/i18n/useT";
 import { connectionDetail } from "../../../connections/api";
 import { TerminalPanel } from "../../../console/components/TerminalPanel";
 import { shellLabel, usePanelStore } from "../../../console/state";
@@ -64,6 +65,7 @@ const TAB_ICON: Record<TabKind, string> = {
 const nextId = () => "ddb-" + crypto.randomUUID();
 
 export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
+  const tr = useT();
   const closeWorkspace = useWorkspacesStore((state) => state.closeWorkspace);
   const handleId = workspace.handleId;
   const params = workspace.saved.params;
@@ -156,13 +158,11 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
         );
       }
     } catch (e) {
-      setTablesError(
-        isAppErrorPayload(e) ? e.message : "Could not list tables (desktop app required)",
-      );
+      setTablesError(isAppErrorPayload(e) ? e.message : tr("dyn.ws.listFail"));
     } finally {
       setTablesLoading(false);
     }
-  }, [handleId, isLocal]);
+  }, [handleId, isLocal, tr]);
 
   useEffect(() => {
     void refreshTables();
@@ -174,8 +174,18 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
 
   const activeTab = tabs.find((t) => t.id === activeId);
   // Two tabs on the same table would otherwise render the same label; repeats
-  // are numbered, so "Open in new tab" stays legible.
-  const tabTitles = dynamoTabTitles(tabs);
+  // are numbered, so "Open in new tab" stays legible. The store keeps canonical
+  // English titles — the dashboard/map/query kinds translate at render time.
+  const dynTabLabel = (tab: Tab): string => {
+    if (tab.kind === "dashboard") return tr("dyn.tab.dashboard");
+    if (tab.kind === "map") return tr("dyn.tab.map");
+    if (tab.kind === "query") {
+      const m = /^Query (\d+)$/.exec(tab.title);
+      return m ? tr("dyn.tab.query", { n: m[1] ?? "" }) : tab.title;
+    }
+    return tab.title;
+  };
+  const tabTitles = dynamoTabTitles(tabs, dynTabLabel);
 
   /**
    * Open a table's data tab. `newTab` opens a SECOND tab for a table that
@@ -357,7 +367,7 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
               type="button"
               className="ddb-tab-add"
               onClick={openQuery}
-              title="New query (pick a table, build a Scan/Query)"
+              title={tr("dyn.ws.newQueryTitle")}
             >
               <Icon name="add" size={16} />
             </button>
@@ -367,7 +377,7 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
               type="button"
               className="ddb-tabbar-tool"
               onClick={openPartiql}
-              title="PartiQL editor (⌘` / Ctrl+`)"
+              title={tr("dyn.ws.partiqlTitle")}
             >
               <Icon name="terminal" size={15} />
               <span>PartiQL</span>
@@ -423,7 +433,9 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
                   onDelete={(tbl) => setDeleteTarget(tbl)}
                 />
               ) : (
-                <div className="ddb-dash-empty">Table “{t.table}” is no longer available.</div>
+                <div className="ddb-dash-empty">
+                  {tr("dyn.ws.tableGone", { table: t.table ?? "" })}
+                </div>
               )}
             </div>
           ))}
@@ -448,7 +460,9 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
         <div style={{ flex: 1 }} />
         {activeTab?.kind === "table" && descOf(activeTab.table) ? (
           <span className="ddb-status-dim">
-            {descOf(activeTab.table)?.itemCount.toLocaleString()} items
+            {tr("dyn.statusItems", {
+              count: descOf(activeTab.table)?.itemCount.toLocaleString() ?? "",
+            })}
           </span>
         ) : null}
         <ResourceMeter className="ddb-status-dim" />

@@ -12,9 +12,10 @@
 
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
+import { useT } from "../../../../shared/i18n/useT";
 import {
   CLIENT_TYPE_COLOR,
-  FIELD_DOC,
+  fieldDoc,
   clientField,
   clientRisk,
   flagSummary,
@@ -26,19 +27,27 @@ import {
 import type { KvClient } from "../api";
 import "./RedisClientsTab.css";
 
-/** The inspector's field groups, in the order they are shown. */
-const GROUPS: [string, string[]][] = [
-  ["Connection", ["id", "addr", "laddr", "fd", "name", "user", "resp", "lib-name"]],
-  ["Activity", ["cmd", "flags", "events", "age", "idle", "db"]],
-  ["Pub/Sub & transactions", ["sub", "psub", "ssub", "multi", "watch"]],
+/** The inspector's field groups, in the order they are shown — headers are
+ *  i18n keys resolved at render time. */
+const GROUPS: [
+  "redis.ig.connection" | "redis.ig.activity" | "redis.ig.pubsub" | "redis.ig.buffers",
+  string[],
+][] = [
+  ["redis.ig.connection", ["id", "addr", "laddr", "fd", "name", "user", "resp", "lib-name"]],
+  ["redis.ig.activity", ["cmd", "flags", "events", "age", "idle", "db"]],
+  ["redis.ig.pubsub", ["sub", "psub", "ssub", "multi", "watch"]],
   [
-    "Buffers & memory",
+    "redis.ig.buffers",
     ["tot-mem", "qbuf", "argv-mem", "obl", "oll", "omem", "tot-net-in", "tot-net-out"],
   ],
 ];
 
 /** Humanize one field for display; anything unrecognised shows verbatim. */
-function formatField(client: KvClient, field: string): string {
+function formatField(
+  client: KvClient,
+  field: string,
+  t: (key: "redis.ig.noTxn" | "redis.ig.queued", vars?: { count: number }) => string,
+): string {
   const raw = clientField(client, field);
   const num = (fallback: number) => {
     const n = Number(raw);
@@ -67,7 +76,7 @@ function formatField(client: KvClient, field: string): string {
       return lib ? (version ? lib + " " + version : lib) : "—";
     }
     case "multi":
-      return num(-1) < 0 ? "no transaction" : num(-1) + " queued";
+      return num(-1) < 0 ? t("redis.ig.noTxn") : t("redis.ig.queued", { count: num(-1) });
     case "name":
       return raw || "—";
     default:
@@ -90,24 +99,25 @@ export function RedisClientInspector({
   onCopyInfoLine: (line: string) => void;
   onClose: () => void;
 }) {
+  const t = useT();
   const risk = clientRisk(client);
   const line = infoLine(client);
   const typeColor = CLIENT_TYPE_COLOR[client.clientType] ?? "var(--text-faint)";
 
   return (
-    <aside className="rc-inspect" aria-label={"Client " + client.id}>
+    <aside className="rc-inspect" aria-label={t("redis.ig.clientAria", { id: client.id })}>
       <div className="rc-inspect-head">
         <span className="rc-type-dot" style={{ background: typeColor }} />
         <div className="rc-inspect-id">
           <b>#{client.id}</b>
-          <span>{client.name || "unnamed client"}</span>
+          <span>{client.name || t("redis.ig.unnamedClient")}</span>
         </div>
-        <IconBtn icon="close" size={15} title="Close inspector" onClick={onClose} />
+        <IconBtn icon="close" size={15} title={t("redis.ig.closeTitle")} onClick={onClose} />
       </div>
       <div className="rc-inspect-sub">
         {client.addr}
         {client.isSelf ? (
-          <span className="proc-self" title="This connection">
+          <span className="proc-self" title={t("redis.ct.thisConn")}>
             me
           </span>
         ) : null}
@@ -116,7 +126,7 @@ export function RedisClientInspector({
       {risk ? (
         <div className={"rc-risk " + risk.sev}>
           <Icon name={risk.sev === "warn" ? "warning" : "info"} size={13} />
-          <span>{risk.text}</span>
+          <span>{t(risk.key, risk.vars)}</span>
         </div>
       ) : null}
 
@@ -128,12 +138,12 @@ export function RedisClientInspector({
           if (present.length === 0) return null;
           return (
             <div className="rc-igroup" key={group}>
-              <div className="rc-igroup-h">{group}</div>
+              <div className="rc-igroup-h">{t(group)}</div>
               {present.map((f) => (
-                <div className="rc-ifield" key={f} title={FIELD_DOC[f] ?? ""}>
+                <div className="rc-ifield" key={f} title={fieldDoc(f) ?? ""}>
                   <span className="rc-ifield-k">{f}</span>
-                  <span className="rc-ifield-v">{formatField(client, f)}</span>
-                  {FIELD_DOC[f] ? <Icon name="help" size={11} className="rc-ifield-q" /> : null}
+                  <span className="rc-ifield-v">{formatField(client, f, t)}</span>
+                  {fieldDoc(f) ? <Icon name="help" size={11} className="rc-ifield-q" /> : null}
                 </div>
               ))}
             </div>
@@ -144,7 +154,7 @@ export function RedisClientInspector({
           <pre className="rc-infoline">{line}</pre>
           <button type="button" className="rc-copy" onClick={() => onCopyInfoLine(line)}>
             <Icon name="content_copy" size={12} />
-            Copy line
+            {t("redis.ig.copyLine")}
           </button>
         </div>
       </div>
@@ -154,35 +164,31 @@ export function RedisClientInspector({
           type="button"
           className="rc-act"
           disabled={!client.isSelf}
-          title={
-            client.isSelf
-              ? "CLIENT NO-EVICT on — exempt this connection from client eviction"
-              : "Redis applies CLIENT NO-EVICT to the calling connection only, so it cannot target another client"
-          }
+          title={client.isSelf ? t("redis.ig.noEvictSelf") : t("redis.ig.noEvictOther")}
           onClick={onNoEvict}
         >
           <Icon name="shield" size={13} />
-          No-evict
+          {t("redis.ig.noEvictBtn")}
         </button>
         <button
           type="button"
           className="rc-act"
-          title="CLIENT UNPAUSE — resume every paused client"
+          title={t("redis.ig.unpauseTitle")}
           onClick={onUnpause}
         >
           <Icon name="play_arrow" size={13} />
-          Unpause
+          {t("redis.ig.unpauseBtn")}
         </button>
         <div style={{ flex: 1 }} />
         <button
           type="button"
           className="btn btn-danger btn-small"
           disabled={client.isSelf}
-          title={client.isSelf ? "This is your own connection" : "CLIENT KILL ID " + client.id}
+          title={client.isSelf ? t("redis.ct.selfTitle") : "CLIENT KILL ID " + client.id}
           onClick={() => onKill(client)}
         >
           <Icon name="dangerous" size={14} />
-          <span>Kill</span>
+          <span>{t("redis.ig.killBtn")}</span>
         </button>
       </div>
     </aside>

@@ -20,13 +20,21 @@ export interface DynamoWorkspaceTab {
  * table on the strip twice, which would render two identical titles; repeats are
  * numbered (`ShopApp`, `ShopApp (2)`) and anything unique is left untouched.
  * Mirrors the SQL shell's `tabLabels`.
+ *
+ * The store keeps canonical (English) titles; `translate` maps each to the
+ * active locale at render time, and the dedupe counts run on the TRANSLATED
+ * titles so two tables translating to the same label still get numbered.
  */
-export function dynamoTabTitles(tabs: DynamoWorkspaceTab[]): string[] {
+export function dynamoTabTitles(
+  tabs: DynamoWorkspaceTab[],
+  translate: (tab: DynamoWorkspaceTab) => string = (tab) => tab.title,
+): string[] {
   const seen = new Map<string, number>();
   return tabs.map((tab) => {
-    const nth = (seen.get(tab.title) ?? 0) + 1;
-    seen.set(tab.title, nth);
-    return nth > 1 ? tab.title + " (" + nth + ")" : tab.title;
+    const title = translate(tab);
+    const nth = (seen.get(title) ?? 0) + 1;
+    seen.set(title, nth);
+    return nth > 1 ? title + " (" + nth + ")" : title;
   });
 }
 

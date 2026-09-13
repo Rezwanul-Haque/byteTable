@@ -29,6 +29,7 @@ import { useIntrospectionStore, columnsKey } from "../../introspection/state";
 import { useSettingsStore } from "../../settings/state";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Icon } from "../../../shared/ui/Icon";
+import { useT } from "../../../shared/i18n/useT";
 import { Select } from "../../../shared/ui/Select";
 import { useFilterShortcut } from "../../../shared/hooks/useFilterShortcut";
 import type { ColumnInfo, SortSpec } from "../../../shared/api/engine";
@@ -55,6 +56,7 @@ export function TableTab({
   handleId: string;
   currentSchema: string;
 }) {
+  const t = useT();
   const setTableTabMode = useWorkspacesStore((state) => state.setTableTabMode);
   // Open the filter panel's generated query in a new SQL tab (Show query strip).
   const openSqlTabWith = useWorkspacesStore((state) => state.openSqlTabWith);
@@ -267,18 +269,16 @@ export function TableTab({
   // orientation "· Page {p} of {pages}" so it's clear it's rows, not pages.
   const pagerRange =
     pagerTotal === null
-      ? "— of —"
+      ? t("ws.pager.none")
       : pagerTotal === 0
-        ? "0 of 0 · Page 1 of 1"
-        : (offset + 1).toLocaleString() +
-          "–" +
-          Math.min(offset + pageSize, pagerTotal).toLocaleString() +
-          " of " +
-          pagerTotal.toLocaleString() +
-          " · Page " +
-          (Math.floor(offset / pageSize) + 1).toLocaleString() +
-          " of " +
-          Math.max(1, Math.ceil(pagerTotal / pageSize)).toLocaleString();
+        ? t("ws.pager.zero")
+        : t("ws.pager.range", {
+            from: (offset + 1).toLocaleString(),
+            to: Math.min(offset + pageSize, pagerTotal).toLocaleString(),
+            total: pagerTotal.toLocaleString(),
+            page: (Math.floor(offset / pageSize) + 1).toLocaleString(),
+            pages: Math.max(1, Math.ceil(pagerTotal / pageSize)).toLocaleString(),
+          });
 
   // Ensure a draft exists (lazily) when the panel opens.
   const ensuredState: TabFilterState = filterState ?? {
@@ -308,7 +308,7 @@ export function TableTab({
   return (
     <div className="table-tab">
       <div className="table-toolbar">
-        <div className="seg" role="tablist" aria-label="View mode">
+        <div className="seg" role="tablist" aria-label={t("ws.table.viewMode")}>
           <button
             type="button"
             role="tab"
@@ -318,7 +318,7 @@ export function TableTab({
               if (tab.mode !== "data") setTableTabMode(tab.id, "data");
             }}
           >
-            <Icon name="table" size={14} /> Data
+            <Icon name="table" size={14} /> {t("ws.table.data")}
           </button>
           <button
             type="button"
@@ -329,7 +329,7 @@ export function TableTab({
               if (tab.mode !== "structure") setTableTabMode(tab.id, "structure");
             }}
           >
-            <Icon name="account_tree" size={14} /> Structure
+            <Icon name="account_tree" size={14} /> {t("ws.table.structure")}
           </button>
         </div>
 
@@ -346,7 +346,7 @@ export function TableTab({
               onClick={openPanel}
               aria-expanded={panelOpen}
             >
-              <Icon name="filter_list" size={15} /> Filters
+              <Icon name="filter_list" size={15} /> {t("ws.table.filters")}
               {hasApplied ? <span className="filter-dot" /> : null}
               <Icon name="expand_more" size={14} style={{ color: "var(--text-faint)" }} />
             </button>
@@ -359,12 +359,12 @@ export function TableTab({
                 type="button"
                 className={"filter-toggle col-btn" + (hiddenCols.size ? " has-applied" : "")}
                 onClick={() => setColOpen((o) => !o)}
-                title="Choose which columns are shown"
+                title={t("ws.table.colsTitle")}
                 aria-haspopup="dialog"
                 aria-expanded={colOpen}
                 disabled={columns.length === 0}
               >
-                <Icon name="view_column" size={15} /> Columns
+                <Icon name="view_column" size={15} /> {t("ws.table.columns")}
                 {hiddenCols.size ? (
                   <span className="col-count">
                     {visibleCount}/{columns.length}
@@ -377,18 +377,18 @@ export function TableTab({
                 />
               </button>
               {colOpen ? (
-                <div className="col-pop" role="dialog" aria-label="Show or hide columns">
+                <div className="col-pop" role="dialog" aria-label={t("ws.table.colsAria")}>
                   <div className="col-pop-head">
-                    <span>Columns</span>
+                    <span>{t("ws.table.columns")}</span>
                     <div className="col-pop-actions">
                       <button type="button" onClick={() => setHiddenCols(new Set())}>
-                        All
+                        {t("ws.table.all")}
                       </button>
                       <button
                         type="button"
                         onClick={() => setHiddenCols(new Set(columns.map((c) => c.name)))}
                       >
-                        None
+                        {t("ws.table.none")}
                       </button>
                     </div>
                   </div>
@@ -436,23 +436,31 @@ export function TableTab({
 
             {/* Clear-filters icon — appears only when a filter is applied. */}
             {hasApplied ? (
-              <IconBtn icon="filter_alt_off" title="Clear filters" onClick={clearFilters} />
+              <IconBtn
+                icon="filter_alt_off"
+                title={t("ws.table.clearFilters")}
+                onClick={clearFilters}
+              />
             ) : null}
 
             <div style={{ flex: 1 }} />
 
             <IconBtn
               icon="add_box"
-              title="Add row (⌘I / Ctrl+I)"
+              title={t("ws.table.addRow")}
               onClick={() => gridRef.current?.addRow()}
             />
-            <IconBtn icon="refresh" title="Refresh" onClick={() => requestRefetch(tab.id)} />
+            <IconBtn
+              icon="refresh"
+              title={t("common.refresh")}
+              onClick={() => requestRefetch(tab.id)}
+            />
 
             {/* Table-actions menu (M15 Task 2): export CSV / SQL, truncate. */}
             <div className="table-actions" ref={actionsRef} style={{ position: "relative" }}>
               <IconBtn
                 icon="more_vert"
-                title="Table actions"
+                title={t("ws.table.actions")}
                 active={actionsOpen}
                 aria-haspopup="menu"
                 aria-expanded={actionsOpen}
@@ -613,13 +621,13 @@ export function TableTab({
               <span className="pager-range">{pagerRange}</span>
               <IconBtn
                 icon="chevron_left"
-                title="Previous page"
+                title={t("ws.pager.prev")}
                 disabled={offset === 0}
                 onClick={() => setOffset((o) => Math.max(0, o - pageSize))}
               />
               <IconBtn
                 icon="chevron_right"
-                title="Next page"
+                title={t("ws.pager.next")}
                 disabled={pagerTotal === null || offset + pageSize >= pagerTotal}
                 onClick={() =>
                   setOffset((o) =>

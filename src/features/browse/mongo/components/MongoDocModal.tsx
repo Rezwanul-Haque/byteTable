@@ -8,6 +8,7 @@
 import { useRef, useState } from "react";
 
 import { appErrorMessage } from "../../../../shared/api/error";
+import { useT } from "../../../../shared/i18n/useT";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
@@ -40,6 +41,7 @@ export function MongoDocModal({
   onSaved: () => void;
 }) {
   const toast = useToast();
+  const t = useT();
   const [text, setText] = useState(() => mongoStringify(doc));
   const [dirty, setDirty] = useState(!!isNew);
   const [busy, setBusy] = useState(false);
@@ -67,26 +69,26 @@ export function MongoDocModal({
 
   const save = async () => {
     if (error || !parsed) {
-      toast("Invalid document JSON", "err");
+      toast(t("mongo.invalidJson"), "err");
       return;
     }
     if (validationErr) {
-      toast("Schema validation failed: " + validationErr, "err");
+      toast(t("mongo.schemaFail", { err: validationErr }), "err");
       return;
     }
     setBusy(true);
     try {
       if (isNew) {
         await mongoInsertOne(handleId, db, coll, parsed);
-        toast("Inserted into " + db + "." + coll, "ok");
+        toast(t("mongo.inserted", { ns: db + "." + coll }), "ok");
       } else {
         await mongoReplaceOne(handleId, db, coll, doc._id, parsed);
-        toast("Saved " + db + "." + coll, "ok");
+        toast(t("mongo.saved", { ns: db + "." + coll }), "ok");
       }
       onSaved();
       onClose();
     } catch (e) {
-      toast(appErrorMessage(e, "Could not save document"), "err");
+      toast(appErrorMessage(e, t("mongo.saveFail")), "err");
     } finally {
       setBusy(false);
     }
@@ -99,7 +101,7 @@ export function MongoDocModal({
   // through and the document was gone without a prompt.
   const del = async () => {
     await mongoDeleteOne(handleId, db, coll, doc._id);
-    toast("Document deleted · " + db + "." + coll, "ok");
+    toast(t("mongo.docDeleted", { ns: db + "." + coll }), "ok");
   };
 
   return (
@@ -108,18 +110,18 @@ export function MongoDocModal({
         <div className="modal-title">
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
             <Icon name="data_object" size={17} style={{ color: "var(--accent)" }} />{" "}
-            {isNew ? "Insert document" : "Edit document"}
+            {isNew ? t("mongo.titleInsert") : t("mongo.titleEdit")}
             <span className="json-type-tag">
               {db}.{coll}
             </span>
             {validator ? (
               <span className="mg-validated">
-                <Icon name="verified" size={12} /> validated
+                <Icon name="verified" size={12} /> {t("mongo.validated")}
               </span>
             ) : null}
-            {dirty ? <span className="ddb-edit-dot" title="Unsaved changes" /> : null}
+            {dirty ? <span className="ddb-edit-dot" title={t("mongo.unsavedChanges")} /> : null}
           </span>
-          <IconBtn icon="close" onClick={onClose} title="Close" />
+          <IconBtn icon="close" onClick={onClose} title={t("common.close")} />
         </div>
         {/* Transparent-text textarea over a <pre> highlight layer, their scroll
           positions kept in sync — the same shape as the shared JsonField, but
@@ -139,7 +141,7 @@ export function MongoDocModal({
             spellCheck={false}
             autoCapitalize="off"
             autoComplete="off"
-            aria-label={isNew ? "New document JSON" : "Document JSON"}
+            aria-label={isNew ? t("mongo.ariaNewDocJson") : t("mongo.ariaDocJson")}
             value={text}
             onChange={(e) => {
               setText(e.target.value);
@@ -159,10 +161,11 @@ export function MongoDocModal({
             </span>
           ) : (
             <span className="mg-doc-ok">
-              <Icon name="check_circle" size={13} /> valid {validator ? "· passes schema" : "JSON"}
+              <Icon name="check_circle" size={13} />{" "}
+              {validator ? t("mongo.validSchema") : t("mongo.validJson")}
             </span>
           )}
-          <span className="mg-doc-hint">ObjectId("…") and ISODate("…") are preserved</span>
+          <span className="mg-doc-hint">{t("mongo.oidHint")}</span>
         </div>
         <div className="modal-actions ddb-item-actions">
           {!isNew ? (
@@ -173,12 +176,12 @@ export function MongoDocModal({
               onClick={() => setConfirmDel(true)}
               className="mg-del-btn"
             >
-              Delete
+              {t("common.delete")}
             </Btn>
           ) : null}
           <div style={{ flex: 1 }} />
           <Btn variant="text" small onClick={onClose}>
-            Cancel
+            {t("common.cancel")}
           </Btn>
           <Btn
             icon="save"
@@ -187,7 +190,7 @@ export function MongoDocModal({
             disabled={!dirty || !!error || !!validationErr || busy}
             onClick={() => void save()}
           >
-            {isNew ? "Insert" : "Save changes"}
+            {isNew ? t("mongo.insert") : t("mongo.saveChanges")}
           </Btn>
         </div>
       </Modal>

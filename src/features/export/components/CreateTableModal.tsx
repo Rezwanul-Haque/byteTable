@@ -16,6 +16,7 @@ import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Modal, ModalActions, ModalTitle } from "../../../shared/ui/Modal";
 import { Select } from "../../../shared/ui/Select";
 import { useToast } from "../../../shared/ui/toastContext";
+import { useT } from "../../../shared/i18n/useT";
 import type { Engine } from "../../../shared/types";
 import "./CreateTableModal.css";
 
@@ -146,6 +147,7 @@ export function CreateTableModal({
   onClose: () => void;
 }) {
   const toast = useToast();
+  const t = useT();
   // Engine-specific column types (fall back to Postgres' set defensively).
   const types = TYPES_BY_ENGINE[engine] ?? TYPES_BY_ENGINE.postgres;
   const [name, setName] = useState("");
@@ -243,11 +245,11 @@ export function CreateTableModal({
       try {
         await executeScriptText(handleId, schemaName, ddl);
       } catch (err) {
-        setError(appErrorMessage(err, "Could not create the table."));
+        setError(appErrorMessage(err, t("io.createTableFail")));
         setBusy(false);
         return;
       }
-      toast("Table “" + clean + "” created", "ok");
+      toast(t("io.tableCreated", { name: clean }), "ok");
       onCreated(clean);
       onClose();
     })();
@@ -257,23 +259,23 @@ export function CreateTableModal({
   const status = error
     ? error
     : dupe
-      ? "Table “" + clean + "” already exists"
+      ? t("io.tableExists", { name: clean })
       : ok
-        ? validCols.length + " column" + (validCols.length === 1 ? "" : "s") + " · ready to create"
-        : "Name the table and add at least one column";
+        ? t("io.readyToCreate", { count: validCols.length })
+        : t("io.nameAndColumn");
 
   return (
-    <Modal onClose={onClose} label="Create table" width={600} className="createtable-modal">
+    <Modal onClose={onClose} label={t("io.createTable")} width={600} className="createtable-modal">
       <ModalTitle>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-          <Icon name="add" size={17} style={{ color: "var(--accent)" }} /> Create table
-          <span className="ct-schema">in {schemaName}</span>
+          <Icon name="add" size={17} style={{ color: "var(--accent)" }} /> {t("io.createTable")}
+          <span className="ct-schema">{t("io.inSchema", { name: schemaName })}</span>
         </span>
-        <IconBtn icon="close" onClick={onClose} title="Close" />
+        <IconBtn icon="close" onClick={onClose} title={t("common.close")} />
       </ModalTitle>
 
       <label className="binary-field">
-        <span className="binary-label">Table name</span>
+        <span className="binary-label">{t("io.tableName")}</span>
         <input
           className={"binary-input" + (bad ? " err" : "")}
           value={name}
@@ -288,18 +290,18 @@ export function CreateTableModal({
       </label>
 
       <div className="ct-cols-head">
-        <span className="form-section-label">Columns</span>
-        <button type="button" className="rail-add" onClick={addCol} title="Add column">
+        <span className="form-section-label">{t("ws.table.columns")}</span>
+        <button type="button" className="rail-add" onClick={addCol} title={t("stv.addColumn")}>
           <Icon name="add" size={15} />
         </button>
       </div>
       <div className="ct-cols">
         <div className="ct-row ct-row-head">
-          <span>Name</span>
-          <span>Type</span>
-          <span title="Primary key">PK</span>
-          <span title="Nullable">Null</span>
-          <span>Default</span>
+          <span>{t("stv.hName")}</span>
+          <span>{t("stv.hType")}</span>
+          <span title={t("io.pkTitle")}>PK</span>
+          <span title={t("io.nullableTitle")}>{t("io.nullHeader")}</span>
+          <span>{t("stv.hDefault")}</span>
           <span />
         </div>
         {cols.map((c) => (
@@ -313,7 +315,7 @@ export function CreateTableModal({
             />
             <Select
               className="ct-sel sel-block"
-              aria-label="Column type"
+              aria-label={t("stv.colTypeAria")}
               value={c.type}
               options={[...new Set([c.type, ...types])].map((t) => ({ value: t, label: t }))}
               onChange={(v) => patch(c.id, { type: v })}
@@ -322,7 +324,7 @@ export function CreateTableModal({
               type="button"
               className={"ct-flag" + (c.pk ? " on" : "")}
               onClick={() => togglePk(c.id)}
-              title="Primary key"
+              title={t("io.pkTitle")}
             >
               <Icon
                 name="key"
@@ -335,9 +337,9 @@ export function CreateTableModal({
               className={"ct-flag" + (c.nullable && !c.pk ? " on" : "")}
               onClick={() => patch(c.id, { nullable: !c.nullable })}
               disabled={c.pk}
-              title="Nullable"
+              title={t("io.nullableTitle")}
             >
-              {c.pk ? "—" : c.nullable ? "yes" : "no"}
+              {c.pk ? "—" : c.nullable ? t("io.yes") : t("io.no")}
             </button>
             <input
               className="ct-in"
@@ -351,7 +353,7 @@ export function CreateTableModal({
               className="ct-drop"
               onClick={() => remove(c.id)}
               disabled={cols.length === 1}
-              title="Remove column"
+              title={t("io.removeColumn")}
             >
               <Icon name="delete" size={14} />
             </button>
@@ -359,7 +361,7 @@ export function CreateTableModal({
         ))}
       </div>
 
-      <div className="ct-ddl-label">Preview</div>
+      <div className="ct-ddl-label">{t("io.preview")}</div>
       <pre className="ddl-block ct-ddl" dangerouslySetInnerHTML={{ __html: highlightSql(ddl) }} />
 
       <div className={"json-status" + (bad ? " err" : " ok")}>
@@ -370,10 +372,10 @@ export function CreateTableModal({
       <ModalActions>
         <div style={{ flex: 1 }} />
         <Btn variant="text" onClick={onClose} disabled={busy}>
-          Cancel
+          {t("common.cancel")}
         </Btn>
         <Btn variant="filled" icon="add" disabled={!ok} onClick={create}>
-          {busy ? "Creating…" : "Create table"}
+          {busy ? t("io.creating") : t("io.createTable")}
         </Btn>
       </ModalActions>
     </Modal>

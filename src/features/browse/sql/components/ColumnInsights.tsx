@@ -16,6 +16,7 @@ import type { ColumnStats, FilterSpec } from "../../../../shared/api/engine";
 import { columnStats } from "../../../../shared/api/engine";
 import { appErrorMessage } from "../../../../shared/api/error";
 import { Icon } from "../../../../shared/ui/Icon";
+import { useT } from "../../../../shared/i18n/useT";
 import "./Popovers.css";
 
 export interface InsightsAnchor {
@@ -58,6 +59,7 @@ export function ColumnInsights({
   const [stats, setStats] = useState<ColumnStats | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const t = useT();
 
   const { column } = anchor;
 
@@ -74,7 +76,7 @@ export function ColumnInsights({
         setLoading(false);
       } catch (err: unknown) {
         if (!alive) return;
-        setError(appErrorMessage(err, "Could not compute insights."));
+        setError(appErrorMessage(err, t("grid.insightsFail")));
         setLoading(false);
       }
     })();
@@ -111,18 +113,20 @@ export function ColumnInsights({
       className="dg-popover insight-pop"
       style={pos}
       role="dialog"
-      aria-label={"Insights for " + column}
+      aria-label={t("grid.insightsFor", { name: column })}
     >
       <div className="dg-pop-title">
         <Icon name="monitoring" size={14} style={{ color: "var(--accent)" }} />
         <span className="dg-pop-mono">{column}</span>
-        {stats ? <span className="dg-pop-dim">{stats.total} rows shown</span> : null}
+        {stats ? (
+          <span className="dg-pop-dim">{t("grid.rowsShown", { count: stats.total })}</span>
+        ) : null}
       </div>
 
       {loading ? (
         <div className="dg-pop-loading">
           <span className="dg-pop-spinner" />
-          <span className="dg-pop-dim">Computing…</span>
+          <span className="dg-pop-dim">{t("grid.computing")}</span>
         </div>
       ) : error ? (
         <div className="dg-pop-empty">{error}</div>
@@ -130,30 +134,30 @@ export function ColumnInsights({
         <>
           <div className="insight-stats">
             <div className="insight-stat">
-              <span>distinct</span>
+              <span>{t("grid.statDistinct")}</span>
               <b>{stats.distinct}</b>
             </div>
             <div className="insight-stat">
-              <span>nulls</span>
+              <span>{t("grid.statNulls")}</span>
               <b>
                 {stats.nulls} ({nullPct}%)
               </b>
             </div>
             {stats.min !== null ? (
               <div className="insight-stat">
-                <span>min</span>
+                <span>{t("grid.statMin")}</span>
                 <b title={String(stats.min)}>{String(stats.min)}</b>
               </div>
             ) : null}
             {stats.max !== null ? (
               <div className="insight-stat">
-                <span>max</span>
+                <span>{t("grid.statMax")}</span>
                 <b title={String(stats.max)}>{String(stats.max)}</b>
               </div>
             ) : null}
             {stats.numeric && stats.avg !== null ? (
               <div className="insight-stat">
-                <span>avg</span>
+                <span>{t("grid.statAvg")}</span>
                 <b>{stats.avg}</b>
               </div>
             ) : null}
@@ -162,7 +166,7 @@ export function ColumnInsights({
           {stats.top.length ? (
             <div className="insight-bars">
               <div className="dg-pop-dim" style={{ marginBottom: 5 }}>
-                Most frequent
+                {t("grid.mostFrequent")}
               </div>
               {stats.top.map((entry, i) => {
                 const label = String(entry.value);

@@ -10,6 +10,7 @@
 
 import { create } from "zustand";
 
+import { t } from "../../../shared/i18n";
 import type { TsTab } from "./components/TypesenseWorkspace";
 
 export interface TsTabsState {
@@ -23,7 +24,8 @@ export interface TsTabsState {
 export function initialTsTabs(): TsTabsState {
   return {
     coll: "",
-    tabs: [{ id: "ts-dash", kind: "dashboard", title: "Cluster" }],
+    // Seeded outside render, so the module-level `t` (see the Cassandra store).
+    tabs: [{ id: "ts-dash", kind: "dashboard", title: t("tsx.ws.clusterTab") }],
     activeId: "ts-dash",
   };
 }

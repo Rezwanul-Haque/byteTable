@@ -338,7 +338,9 @@ export function keyMap(t: TableDescriptor, row: Row): Row {
 }
 
 /** Pretty replication label for the dashboard, e.g. "NetworkTopologyStrategy ·
- *  dc1:3" or "SimpleStrategy · RF 1". */
+ *  dc1:3" or "SimpleStrategy · RF 1". Fully technical ("RF", the strategy class
+ *  name and its options are Cassandra's own vocabulary), so it is not localised
+ *  — only the em dash used for a missing class is shared. */
 export function replicationLabel(r: Record<string, string>): string {
   const cls = r.class ?? "—";
   if (cls === "SimpleStrategy") {

@@ -6,6 +6,7 @@
 // transforms the editor, grid, tree, terminal, and IO modals share.
 
 import type { MongoDoc, OidTag, DateTag } from "./api";
+import { t } from "../../../shared/i18n";
 
 export type MongoType =
   | "null"
@@ -168,12 +169,14 @@ interface JsonSchema {
 }
 
 /** Validate a parsed doc against a `$jsonSchema` validator object, returning the
- *  first failure message or null. Mirrors the prototype's MongoDocModal check. */
+ *  first failure message or null. Mirrors the prototype's MongoDocModal check.
+ *  Messages go through the module-level `t` (call-time locale): every caller is
+ *  a component that re-renders on a locale switch through `useT()`. */
 export function validateAgainstSchema(parsed: MongoDoc, validator: unknown): string | null {
   const sc = (validator as { $jsonSchema?: JsonSchema } | null)?.$jsonSchema;
   if (!sc) return null;
   for (const req of sc.required ?? []) {
-    if (!(req in parsed)) return `missing required field "${req}"`;
+    if (!(req in parsed)) return t("mongo.schemaMissingField", { field: req });
   }
   for (const [f, rule] of Object.entries(sc.properties ?? {})) {
     const val = parsed[f];
@@ -182,11 +185,11 @@ export function validateAgainstSchema(parsed: MongoDoc, validator: unknown): str
     if (rule.bsonType) {
       const allowed = Array.isArray(rule.bsonType) ? rule.bsonType : [rule.bsonType];
       if (!allowed.includes(bt)) {
-        return `field "${f}" must be ${allowed.join("|")} (got ${bt})`;
+        return t("mongo.schemaTypeField", { field: f, allowed: allowed.join("|"), got: bt });
       }
     }
     if (rule.minimum != null && typeof val === "number" && val < rule.minimum) {
-      return `field "${f}" must be ≥ ${rule.minimum}`;
+      return t("mongo.schemaMinField", { field: f, min: rule.minimum });
     }
   }
   return null;
@@ -360,7 +363,7 @@ export function parseDocs(format: "json" | "csv", text: string): MongoDoc[] {
     );
   }
   if (!Array.isArray(data)) {
-    throw new Error('Expected a JSON array of documents (or an object with a "documents" array).');
+    throw new Error(t("mongo.expectArray"));
   }
   return (data as unknown[]).map((d) => normalize(d) as MongoDoc);
 }
@@ -383,10 +386,7 @@ export function previewImport(format: "json" | "csv", text: string): ImportPrevi
   }
   if (!docs.length) {
     return {
-      error:
-        "No documents found. Paste " +
-        (format === "csv" ? "CSV with a header row" : "a JSON array of documents") +
-        ".",
+      error: format === "csv" ? t("mongo.noDocsCsv") : t("mongo.noDocsJson"),
     };
   }
   return {

@@ -14,6 +14,7 @@
 
 import { create } from "zustand";
 
+import { t } from "../../shared/i18n";
 import type { CellValue, ColumnMeta } from "../../shared/api/engine";
 
 /**
@@ -180,12 +181,17 @@ export const useTabMetaStore = create<TabMetaState>((set) => ({
  * Returns "— rows" before the first fetch resolves (the M4 placeholder the
  * task calls for). Shared by the table toolbar and the status bar so they
  * never drift.
+ *
+ * Module-level (not a hook): `t` is read at call time, and every caller is a
+ * component that re-renders on locale change through `useT()`.
  */
 export function rowCountLabel(meta: TabResultMeta | undefined): string {
-  if (!meta || meta.totalRows === undefined) return "— rows";
-  if (meta.totalRows === null) return "— rows";
+  if (!meta || meta.totalRows === undefined || meta.totalRows === null) return t("ws.rows.none");
   if (meta.shownRows !== undefined && meta.shownRows !== meta.totalRows) {
-    return meta.shownRows.toLocaleString() + " of " + meta.totalRows.toLocaleString() + " rows";
+    return t("ws.rows.shown", {
+      shown: meta.shownRows.toLocaleString(),
+      total: meta.totalRows.toLocaleString(),
+    });
   }
-  return meta.totalRows.toLocaleString() + " rows";
+  return t("ws.rows.count", { count: meta.totalRows });
 }

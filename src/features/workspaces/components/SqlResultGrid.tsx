@@ -19,6 +19,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import { exportSave } from "../../../shared/api/engine";
 import type { CellValue, QueryResult, SortSpec } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
+import { useT } from "../../../shared/i18n/useT";
 import { Btn } from "../../../shared/ui/Btn";
 import { CopyButton } from "../../../shared/ui/CopyButton";
 import { Icon } from "../../../shared/ui/Icon";
@@ -179,6 +180,7 @@ export function SqlResultGrid({
   const scrollRef = useRef<HTMLDivElement>(null);
   const { columns, rows } = result;
   const toast = useToast();
+  const t = useT();
   const controlled = onSort !== undefined;
 
   // The focused cell (single click). Purely presentational — it draws the
@@ -270,9 +272,9 @@ export function SqlResultGrid({
       });
       if (!path) return;
       await exportSave(path, csv);
-      toast(`Exported ${idxs.length} row${idxs.length === 1 ? "" : "s"} to CSV`, "ok");
+      toast(t("ws.grid.exported", { count: idxs.length }), "ok");
     } catch (e) {
-      toast(appErrorMessage(e, "Could not export CSV"), "err");
+      toast(appErrorMessage(e, t("ws.grid.exportFail")), "err");
     }
   };
 
@@ -430,13 +432,13 @@ export function SqlResultGrid({
       <div className="dg-selbar dg-result-selbar">
         <span className="dg-selbar-count">
           {selected.size > 0
-            ? `${selected.size} selected`
-            : `${rows.length} row${rows.length === 1 ? "" : "s"}`}
+            ? t("ws.grid.selected", { count: selected.size })
+            : t("ws.rows.count", { count: rows.length })}
         </span>
         <div style={{ flex: 1 }} />
         {selectionActions?.([...selected])}
         <Btn icon="download" variant="tonal" small onClick={() => void exportCsv()}>
-          {selected.size > 0 ? "Export CSV" : "Export all CSV"}
+          {selected.size > 0 ? t("ws.grid.exportCsv") : t("ws.grid.exportAllCsv")}
         </Btn>
       </div>
       <div className="datagrid-wrap" ref={scrollRef}>
@@ -451,7 +453,7 @@ export function SqlResultGrid({
                   if (el) el.indeterminate = someSelected;
                 }}
                 onChange={toggleAll}
-                aria-label="Select all rows"
+                aria-label={t("ws.grid.selectAll")}
               />
             </div>
             <div className="dg-rownum-h">#</div>
@@ -466,7 +468,8 @@ export function SqlResultGrid({
                   onClick={() => clickHeader(c.name)}
                   title={
                     (c.typeHint ? c.name + " · " + c.typeHint : c.name) +
-                    " · click to sort these results"
+                    " · " +
+                    t("ws.grid.sortHint")
                   }
                 >
                   <span className="dg-head">
@@ -486,7 +489,7 @@ export function SqlResultGrid({
                       double-click to auto-fit. */}
                   <span
                     className={"dg-col-resize" + (draggingCol === c.name ? " active" : "")}
-                    title="Drag to resize · double-click to auto-fit"
+                    title={t("ws.grid.colResizeHint")}
                     onMouseDown={(e) => startColResize(e, c.name, colWidths[ci]!)}
                     onDoubleClick={(e) => {
                       e.stopPropagation();
@@ -522,12 +525,12 @@ export function SqlResultGrid({
                       className="dg-check"
                       checked={selected.has(rowIdx)}
                       onChange={() => toggleRow(rowIdx)}
-                      aria-label={"Select row " + (vr.index + 1)}
+                      aria-label={t("ws.grid.selectRowN", { n: vr.index + 1 })}
                     />
                   </div>
                   <div
                     className={"dg-rownum" + (inspecting?.openRow === rowIdx ? " inspecting" : "")}
-                    title={inspecting ? "Inspect row (⌘E / Ctrl+E)" : undefined}
+                    title={inspecting ? t("ws.grid.inspectRow") : undefined}
                     onClick={inspecting ? () => inspecting.onOpen(rowIdx, null) : undefined}
                   >
                     {inspecting ? (
@@ -568,7 +571,7 @@ export function SqlResultGrid({
                           if (inspecting && !inspecting.dirty) inspecting.onOpen(rowIdx, ci);
                         }}
                         onDoubleClick={() => beginEdit(rowIdx, ci, cellVal)}
-                        title={editing && !isEditing ? "Double-click to edit" : undefined}
+                        title={editing && !isEditing ? t("ws.grid.dblClickEdit") : undefined}
                       >
                         {isEditing ? (
                           <input
@@ -588,7 +591,7 @@ export function SqlResultGrid({
                                 setEditCell(null);
                               }
                             }}
-                            aria-label={"Edit " + c.name}
+                            aria-label={t("ws.grid.editCol", { name: c.name })}
                           />
                         ) : (
                           <>
@@ -597,7 +600,7 @@ export function SqlResultGrid({
                             {cellVal !== null ? (
                               <CopyButton
                                 className="dg-copy"
-                                label={"Copy " + c.name + " value"}
+                                label={t("ws.grid.copyCol", { name: c.name })}
                                 text={cellText(cellVal)}
                               />
                             ) : null}

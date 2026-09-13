@@ -24,6 +24,7 @@ import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
 import { Modal, ModalActions, ModalTitle } from "../../../shared/ui/Modal";
 import { useToast } from "../../../shared/ui/toastContext";
+import { useT } from "../../../shared/i18n/useT";
 import type { Engine } from "../../../shared/types";
 import { useIntrospectionStore } from "../../introspection/state";
 import { useSettingsStore } from "../../settings/state";
@@ -53,6 +54,7 @@ export function TruncateModal({
   onDone?: () => void;
 }) {
   const toast = useToast();
+  const t = useT();
   const loadTables = useIntrospectionStore((s) => s.loadTables);
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
@@ -81,28 +83,28 @@ export function TruncateModal({
         // and let the caller re-fetch the open grid for this table.
         void loadTables(handleId, schemaName, { force: true });
         onDone?.();
-        toast("Truncated " + table + " — " + affected.toLocaleString() + " rows removed", "ok");
+        toast(t("io.truncated", { table, count: affected }), "ok");
         onClose();
       } catch (err) {
         // Keep the modal open and show the §5 message where the action was.
-        setError(appErrorMessage(err, "Could not truncate the table."));
+        setError(appErrorMessage(err, t("io.truncateFail")));
         setBusy(false);
       }
     })();
   };
 
   return (
-    <Modal onClose={onClose} label="Truncate table" width={460} className="truncate-modal">
+    <Modal onClose={onClose} label={t("ws.sb.truncate")} width={460} className="truncate-modal">
       <ModalTitle>
-        <Icon name="warning" size={18} style={{ color: DANGER }} /> Truncate table
+        <Icon name="warning" size={18} style={{ color: DANGER }} /> {t("ws.sb.truncate")}
       </ModalTitle>
       <div className="truncate-body">
         <p>
-          This permanently deletes <b>all rows</b> from{" "}
+          {t("io.truncateBodyPre")} <b>{t("io.truncateAllRows")}</b> {t("io.truncateBodyMid")}{" "}
           <code>
             {schemaName}.{table}
           </code>
-          . The table structure is kept. This cannot be undone.
+          {t("io.truncateBodyPost")}
         </p>
         <pre className="truncate-sql">{truncateSql(engine, table, force && !!fk)}</pre>
         {fk ? (
@@ -114,8 +116,8 @@ export function TruncateModal({
               disabled={busy}
             />
             <span className="truncate-fk-text">
-              <span className="truncate-fk-label">{fk.label}</span>
-              <span className="truncate-fk-hint">{fk.hint}</span>
+              <span className="truncate-fk-label">{t(fk.label)}</span>
+              <span className="truncate-fk-hint">{t(fk.hint)}</span>
             </span>
           </label>
         ) : null}
@@ -129,17 +131,17 @@ export function TruncateModal({
                 background: DANGER + "14",
               }}
             >
-              <Icon name="public" size={13} /> production
+              <Icon name="public" size={13} /> {t("uix.bulkDelete.prodTag")}
             </div>
             <label>
-              Type <b>{table}</b> to confirm
+              {t("uix.bulkDelete.typePre")} <b>{table}</b> {t("uix.bulkDelete.typePost")}
               <input
                 value={typed}
                 onChange={(e) => setTyped(e.target.value)}
                 placeholder={table}
                 spellCheck="false"
                 autoFocus
-                aria-label={"Type " + table + " to confirm"}
+                aria-label={t("uix.bulkDelete.typeAria", { target: table })}
               />
             </label>
           </div>
@@ -148,7 +150,7 @@ export function TruncateModal({
       </div>
       <ModalActions>
         <Btn variant="text" onClick={onClose} disabled={busy}>
-          Cancel
+          {t("common.cancel")}
         </Btn>
         <button
           type="button"
@@ -157,7 +159,7 @@ export function TruncateModal({
           onClick={confirm}
         >
           <Icon name="delete_forever" size={16} />
-          <span>{busy ? "Truncating…" : "Truncate"}</span>
+          <span>{busy ? t("io.truncating") : t("io.truncateBtn")}</span>
         </button>
       </ModalActions>
     </Modal>

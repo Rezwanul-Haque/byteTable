@@ -12,6 +12,7 @@ import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
 import { Modal, ModalActions, ModalTitle } from "../../../shared/ui/Modal";
 import { ENV_COLOR } from "../../../shared/ui/envColors";
+import { useT } from "../../../shared/i18n/useT";
 import { normalizeEnv } from "../../../shared/types";
 import { type GenerateSize, type TableRole } from "../api";
 import { useGenerateStore } from "../state";
@@ -53,6 +54,7 @@ export function GenerateModal() {
   } = useGenerateStore();
 
   const [typed, setTyped] = useState("");
+  const t = useT();
 
   const normEnv = normalizeEnv(env);
   const isProd = normEnv === "production";
@@ -71,15 +73,15 @@ export function GenerateModal() {
   if (!open) return null;
 
   return (
-    <Modal onClose={close} label="Generate data" width={640} className="gen-modal">
+    <Modal onClose={close} label={t("ws.sb.generateData")} width={640} className="gen-modal">
       <ModalTitle>
-        <Icon name="auto_awesome" /> Generate data
+        <Icon name="auto_awesome" /> {t("ws.sb.generateData")}
         {schema ? <span className="gen-schema">· {schema}</span> : null}
       </ModalTitle>
 
       {/* Step 1: size picker */}
       <div className="gen-sizes">
-        <span className="gen-label">Target size</span>
+        <span className="gen-label">{t("gen.targetSize")}</span>
         <div className="gen-size-row">
           {SIZES.map((s) => (
             <Btn
@@ -92,19 +94,16 @@ export function GenerateModal() {
             </Btn>
           ))}
         </div>
-        <p className="gen-hint">
-          Base row count for entity tables. Lookup tables stay small; join tables scale up. Data is
-          appended — nothing is deleted.
-        </p>
+        <p className="gen-hint">{t("gen.hint")}</p>
       </div>
 
-      {status === "previewing" ? <p className="gen-muted">Analyzing schema…</p> : null}
+      {status === "previewing" ? <p className="gen-muted">{t("gen.analyzing")}</p> : null}
 
       {/* Step 2: preview */}
       {plan && status !== "running" && status !== "done" ? (
         <div className="gen-preview">
           <div className="gen-summary-line">
-            {totals.tables} tables · ~{fmt(totals.rows)} rows
+            {t("gen.summaryLine", { tables: totals.tables, rows: fmt(totals.rows) })}
           </div>
           {plan.warnings.length > 0 ? (
             <ul className="gen-warnings">
@@ -116,17 +115,27 @@ export function GenerateModal() {
             </ul>
           ) : null}
           <div className="gen-table-list">
-            {plan.order.map((t) => (
-              <details key={t.table} className="gen-table">
+            {plan.order.map((tbl) => (
+              <details key={tbl.table} className="gen-table">
                 <summary>
-                  <Icon name={ROLE_ICON[t.role]} size={16} />
-                  <span className="gen-table-name">{t.table}</span>
-                  <span className="gen-role">{t.role}</span>
-                  <span className="gen-count">{fmt(t.rowCount)} rows</span>
+                  <Icon name={ROLE_ICON[tbl.role]} size={16} />
+                  <span className="gen-table-name">{tbl.table}</span>
+                  <span className="gen-role">
+                    {t(
+                      tbl.role === "lookup"
+                        ? "gen.roleLookup"
+                        : tbl.role === "junction"
+                          ? "gen.roleJunction"
+                          : "gen.roleEntity",
+                    )}
+                  </span>
+                  <span className="gen-count">
+                    {fmt(tbl.rowCount)} {t("common.rows")}
+                  </span>
                 </summary>
                 <table className="gen-cols">
                   <tbody>
-                    {t.columns.map((c) => (
+                    {tbl.columns.map((c) => (
                       <tr key={c.name} className={c.omit ? "gen-omit" : ""}>
                         <td>{c.name}</td>
                         <td>{c.omit ? "—" : c.generator}</td>
@@ -150,12 +159,12 @@ export function GenerateModal() {
                   background: envColor + "14",
                 }}
               >
-                <Icon name="public" size={13} /> production
+                <Icon name="public" size={13} /> {t("uix.bulkDelete.prodTag")}
               </div>
               <label>
                 <span className="gen-prod-text">
-                  This appends data to a <b>production</b> database. Type <b>{schema}</b> to
-                  confirm.
+                  {t("gen.prodPre")} <b>{t("uix.bulkDelete.prodTag")}</b> {t("gen.prodMid")}{" "}
+                  <b>{schema}</b> {t("uix.bulkDelete.typePost")}.
                 </span>
                 <input
                   value={typed}
@@ -163,7 +172,7 @@ export function GenerateModal() {
                   placeholder={schema ?? ""}
                   spellCheck="false"
                   autoFocus
-                  aria-label={"Type " + (schema ?? "") + " to confirm"}
+                  aria-label={t("uix.bulkDelete.typeAria", { target: schema ?? "" })}
                 />
               </label>
             </div>
@@ -174,17 +183,17 @@ export function GenerateModal() {
       {/* Step 3: running */}
       {status === "running" ? (
         <div className="gen-progress">
-          {plan?.order.map((t) => {
-            const p = progress[t.table];
+          {plan?.order.map((tbl) => {
+            const p = progress[tbl.table];
             const pct = p && p.total > 0 ? Math.round((p.done / p.total) * 100) : 0;
             return (
-              <div key={t.table} className="gen-prow">
-                <span className="gen-prow-name">{t.table}</span>
+              <div key={tbl.table} className="gen-prow">
+                <span className="gen-prow-name">{tbl.table}</span>
                 <div className="gen-bar">
                   <div className="gen-bar-fill" style={{ width: `${pct}%` }} />
                 </div>
                 <span className="gen-prow-pct">
-                  {p ? `${fmt(p.done)}/${fmt(p.total)}` : "queued"}
+                  {p ? `${fmt(p.done)}/${fmt(p.total)}` : t("gen.queued")}
                 </span>
               </div>
             );
@@ -197,15 +206,19 @@ export function GenerateModal() {
         <div className="gen-done">
           <p>
             <Icon name={summary.cancelled ? "cancel" : "check_circle"} />{" "}
-            {summary.cancelled ? "Cancelled — " : "Done — "}
-            {fmt(summary.totalInserted)} rows inserted
+            {summary.cancelled ? t("gen.cancelledPrefix") : t("gen.donePrefix")}
+            {t("gen.insertedTotal", { count: fmt(summary.totalInserted) })}
           </p>
           <table className="gen-cols">
             <tbody>
               {summary.tables.map((r) => (
                 <tr key={r.table} className={r.error ? "gen-omit" : ""}>
                   <td>{r.table}</td>
-                  <td>{r.error ? `error: ${r.error}` : `${fmt(r.inserted)} rows`}</td>
+                  <td>
+                    {r.error
+                      ? t("gen.errorRow", { message: r.error })
+                      : `${fmt(r.inserted)} ${t("common.rows")}`}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -218,11 +231,11 @@ export function GenerateModal() {
       <ModalActions>
         {status === "running" ? (
           <Btn variant="tonal" icon="stop" onClick={() => void cancel()}>
-            Cancel
+            {t("common.cancel")}
           </Btn>
         ) : (
           <Btn variant="text" onClick={close}>
-            {status === "done" ? "Close" : "Cancel"}
+            {status === "done" ? t("common.close") : t("common.cancel")}
           </Btn>
         )}
         {plan && (status === "idle" || status === "error") ? (
@@ -231,9 +244,9 @@ export function GenerateModal() {
             icon="bolt"
             onClick={() => void run()}
             disabled={!armed}
-            title={armed ? undefined : "Type the schema name to confirm"}
+            title={armed ? undefined : t("gen.confirmTitle")}
           >
-            Generate
+            {t("grid.generate")}
           </Btn>
         ) : null}
       </ModalActions>

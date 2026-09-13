@@ -5,6 +5,7 @@
 
 import { useEffect, type MouseEvent as ReactMouseEvent } from "react";
 
+import { useT } from "../i18n/useT";
 import "./SidebarResizer.css";
 
 const STORAGE_KEY = "bytetable.sidebar.w";
@@ -25,6 +26,7 @@ function applySavedWidth(): void {
 applySavedWidth();
 
 export function SidebarResizer() {
+  const t = useT();
   useEffect(applySavedWidth, []);
 
   const onMouseDown = (e: ReactMouseEvent) => {
@@ -78,8 +80,8 @@ export function SidebarResizer() {
       className="sidebar-resizer"
       role="separator"
       aria-orientation="vertical"
-      aria-label="Resize sidebar"
-      title="Drag to resize · double-click to reset"
+      aria-label={t("uix.resize.aria")}
+      title={t("uix.resize.hint")}
       onMouseDown={onMouseDown}
       onDoubleClick={onDoubleClick}
     />

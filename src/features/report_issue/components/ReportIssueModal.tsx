@@ -16,11 +16,13 @@ import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Modal } from "../../../shared/ui/Modal";
 import { Select } from "../../../shared/ui/Select";
 import { useToast } from "../../../shared/ui/toastContext";
+import { useT } from "../../../shared/i18n/useT";
+import type { StringKey } from "../../../shared/i18n";
 import type { Engine } from "../../../shared/types";
 import {
   AFFECTED_ENGINES,
-  BUG_SEVERITY,
-  BUG_TYPES,
+  bugSeverities,
+  bugTypes,
   buildIssueBody,
   collectDiagnostics,
   issueUrl,
@@ -30,6 +32,14 @@ import {
   type BugTypeId,
 } from "../api";
 import "./ReportIssueModal.css";
+
+/** Diagnostics chip keys that are labels (not values) — the brand name is not. */
+const DIAG_LABEL: Record<string, StringKey> = {
+  OS: "bug.diag.os",
+  Engine: "bug.diag.engine",
+  Theme: "bug.diag.theme",
+  Locale: "bug.diag.locale",
+};
 
 /**
  * Open a URL in the OS default browser. Inside Tauri the opener plugin routes
@@ -55,6 +65,7 @@ interface ReportIssueModalProps {
 
 export function ReportIssueModal({ activeEngine, version, onClose }: ReportIssueModalProps) {
   const toast = useToast();
+  const tr = useT();
   const [type, setType] = useState<BugTypeId>("bug");
   const [title, setTitle] = useState("");
   const [includeDiag, setIncludeDiag] = useState(true);
@@ -73,7 +84,9 @@ export function ReportIssueModal({ activeEngine, version, onClose }: ReportIssue
   });
   const setF = (k: keyof BugFields, v: string) => setFields((f) => ({ ...f, [k]: v }));
 
-  const meta = BUG_TYPES.find((t) => t.id === type)!;
+  const types = bugTypes();
+  const severities = bugSeverities();
+  const meta = types.find((ty) => ty.id === type)!;
   const diags = useMemo(() => collectDiagnostics(engine, version), [engine, version]);
   const body = useMemo(
     () => buildIssueBody(type, fields, diags, includeDiag),
@@ -87,15 +100,15 @@ export function ReportIssueModal({ activeEngine, version, onClose }: ReportIssue
     try {
       await openExternal(issueUrl(type, title, fields, diags, includeDiag));
     } catch {
-      toast("Couldn't open browser — copy the body and open GitHub manually", "err");
+      toast(tr("bug.err.open"), "err");
       return;
     }
-    toast("Opening GitHub with your issue pre-filled…", "ok");
+    toast(tr("bug.opening"), "ok");
     onClose();
   };
 
   const copyBody = async () => {
-    const done = () => toast("Issue body copied to clipboard", "ok");
+    const done = () => toast(tr("bug.copied"), "ok");
     if (navigator.clipboard?.writeText) {
       try {
         await navigator.clipboard.writeText(body);
@@ -119,7 +132,7 @@ export function ReportIssueModal({ activeEngine, version, onClose }: ReportIssue
   };
 
   return (
-    <Modal className="bug-modal" label="Report an issue" onClose={onClose}>
+    <Modal className="bug-modal" label={tr("bug.title")} onClose={onClose}>
       <div className="bug-head">
         <div
           className="bug-head-mark"
@@ -128,35 +141,32 @@ export function ReportIssueModal({ activeEngine, version, onClose }: ReportIssue
           <Icon name={meta.icon} size={19} />
         </div>
         <div className="bug-head-txt">
-          <div className="modal-title-text">Report an issue</div>
-          <p className="bug-sub">
-            Opens a pre-filled issue on <span className="bug-repo">{REPORT_REPO}</span>. Nothing is
-            sent without your review on GitHub.
-          </p>
+          <div className="modal-title-text">{tr("bug.title")}</div>
+          <p className="bug-sub">{tr("bug.sub", { repo: REPORT_REPO })}</p>
         </div>
-        <IconBtn icon="close" onClick={onClose} title="Close" />
+        <IconBtn icon="close" onClick={onClose} title={tr("common.close")} />
       </div>
 
       <div className="bug-types">
-        {BUG_TYPES.map((t) => (
+        {types.map((ty) => (
           <button
-            key={t.id}
+            key={ty.id}
             type="button"
-            className={"bug-type" + (type === t.id ? " on" : "")}
+            className={"bug-type" + (type === ty.id ? " on" : "")}
             style={
-              type === t.id
-                ? ({ borderColor: t.accent, background: t.accent + "14" } as CSSProperties)
+              type === ty.id
+                ? ({ borderColor: ty.accent, background: ty.accent + "14" } as CSSProperties)
                 : undefined
             }
-            onClick={() => setType(t.id)}
+            onClick={() => setType(ty.id)}
           >
             <Icon
-              name={t.icon}
+              name={ty.icon}
               size={16}
-              style={{ color: type === t.id ? t.accent : "var(--text-dim)" }}
+              style={{ color: type === ty.id ? ty.accent : "var(--text-dim)" }}
             />
-            <span className="bug-type-label">{t.label}</span>
-            <span className="bug-type-blurb">{t.blurb}</span>
+            <span className="bug-type-label">{ty.label}</span>
+            <span className="bug-type-blurb">{ty.blurb}</span>
           </button>
         ))}
       </div>
@@ -164,8 +174,8 @@ export function ReportIssueModal({ activeEngine, version, onClose }: ReportIssue
       <div className="bug-body">
         <label className="bug-field">
           <span className="bug-label">
-            Title{" "}
-            <span className="bug-star" title="required" aria-label="required">
+            {tr("bug.field.title")}{" "}
+            <span className="bug-star" title={tr("bug.required")} aria-label={tr("bug.required")}>
               *
             </span>
           </span>
@@ -174,21 +184,15 @@ export function ReportIssueModal({ activeEngine, version, onClose }: ReportIssue
             value={title}
             autoFocus
             spellCheck={false}
-            placeholder={
-              type === "bug"
-                ? "Row inspector drawer overlaps the title bar"
-                : type === "feature"
-                  ? "Add saved-connection folders"
-                  : "How do I export only the schema?"
-            }
+            placeholder={tr(`bug.ph.title.${type}` as StringKey)}
             onChange={(e) => setTitle(e.target.value)}
           />
         </label>
 
         <label className="bug-field">
           <span className="bug-label">
-            {type === "feature" ? "Problem" : type === "question" ? "Question" : "Description"}{" "}
-            <span className="bug-star" title="required" aria-label="required">
+            {tr(`bug.desc.${type}` as StringKey)}{" "}
+            <span className="bug-star" title={tr("bug.required")} aria-label={tr("bug.required")}>
               *
             </span>
           </span>
@@ -197,13 +201,7 @@ export function ReportIssueModal({ activeEngine, version, onClose }: ReportIssue
             rows={3}
             value={fields.desc}
             spellCheck
-            placeholder={
-              type === "bug"
-                ? "What happened? Include the engine, tab, and any error text."
-                : type === "feature"
-                  ? "What is painful or missing today?"
-                  : "Describe what you are trying to do."
-            }
+            placeholder={tr(`bug.ph.desc.${type}` as StringKey)}
             onChange={(e) => setF("desc", e.target.value)}
           />
         </label>
@@ -211,9 +209,9 @@ export function ReportIssueModal({ activeEngine, version, onClose }: ReportIssue
         {type === "bug" ? (
           <>
             <div className="bug-field">
-              <span className="bug-label">Severity</span>
+              <span className="bug-label">{tr("bug.severity")}</span>
               <div className="bug-sev">
-                {BUG_SEVERITY.map((s) => (
+                {severities.map((s) => (
                   <button
                     key={s.id}
                     type="button"
@@ -228,33 +226,33 @@ export function ReportIssueModal({ activeEngine, version, onClose }: ReportIssue
             </div>
             <div className="bug-grid2">
               <label className="bug-field">
-                <span className="bug-label">Steps to reproduce</span>
+                <span className="bug-label">{tr("bug.steps")}</span>
                 <textarea
                   className="bug-input bug-ta"
                   rows={3}
                   value={fields.steps}
-                  placeholder={"1. Open a MySQL table\n2. Click a row\n3. …"}
+                  placeholder={tr("bug.ph.steps")}
                   onChange={(e) => setF("steps", e.target.value)}
                 />
               </label>
               <div className="bug-col">
                 <label className="bug-field">
-                  <span className="bug-label">Expected</span>
+                  <span className="bug-label">{tr("bug.expected")}</span>
                   <textarea
                     className="bug-input bug-ta sm"
                     rows={1}
                     value={fields.expected}
-                    placeholder="Drawer stays below the title bar"
+                    placeholder={tr("bug.ph.expected")}
                     onChange={(e) => setF("expected", e.target.value)}
                   />
                 </label>
                 <label className="bug-field">
-                  <span className="bug-label">Actual</span>
+                  <span className="bug-label">{tr("bug.actual")}</span>
                   <textarea
                     className="bug-input bug-ta sm"
                     rows={1}
                     value={fields.actual}
-                    placeholder="Drawer covers the traffic lights"
+                    placeholder={tr("bug.ph.actual")}
                     onChange={(e) => setF("actual", e.target.value)}
                   />
                 </label>
@@ -263,12 +261,12 @@ export function ReportIssueModal({ activeEngine, version, onClose }: ReportIssue
           </>
         ) : type === "feature" ? (
           <label className="bug-field">
-            <span className="bug-label">Proposed solution</span>
+            <span className="bug-label">{tr("bug.solution")}</span>
             <textarea
               className="bug-input bug-ta"
               rows={2}
               value={fields.solution}
-              placeholder="Describe the ideal behavior, or a rough sketch of the UI."
+              placeholder={tr("bug.ph.solution")}
               onChange={(e) => setF("solution", e.target.value)}
             />
           </label>
@@ -276,7 +274,7 @@ export function ReportIssueModal({ activeEngine, version, onClose }: ReportIssue
 
         <label className="bug-field">
           <span className="bug-label">
-            GitHub handle <span className="bug-req">optional</span>
+            {tr("bug.handle")} <span className="bug-req">{tr("bug.optionalTag")}</span>
           </span>
           <input
             className="bug-input"
@@ -284,7 +282,7 @@ export function ReportIssueModal({ activeEngine, version, onClose }: ReportIssue
             spellCheck={false}
             autoCapitalize="none"
             autoCorrect="off"
-            placeholder="e.g. octocat — so maintainers can follow up"
+            placeholder={tr("bug.ph.handle")}
             onChange={(e) => setF("handle", e.target.value)}
           />
         </label>
@@ -299,7 +297,7 @@ export function ReportIssueModal({ activeEngine, version, onClose }: ReportIssue
             <span className={"bug-check" + (includeDiag ? " on" : "")}>
               {includeDiag ? <Icon name="check" size={11} /> : null}
             </span>
-            Attach diagnostics
+            {tr("bug.attachDiag")}
           </button>
           <div className={"bug-diag-body" + (includeDiag ? "" : " off")}>
             {/* When a workspace is open its engine is auto-detected and shown
@@ -307,14 +305,17 @@ export function ReportIssueModal({ activeEngine, version, onClose }: ReportIssue
                 detect, so offer a dropdown to name the affected engine. */}
             {activeEngine === null ? (
               <div className="bug-diag-engine">
-                <span className="bug-diag-engine-label">Affected engine</span>
+                <span className="bug-diag-engine-label">{tr("bug.affectedEngine")}</span>
                 <Select<AffectedEngine>
                   value={engine}
-                  options={AFFECTED_ENGINES.map((e) => ({ value: e.id, label: e.label }))}
+                  options={AFFECTED_ENGINES.map((e) => ({
+                    value: e.id,
+                    label: e.id === "na" ? tr("bug.engine.na") : e.label,
+                  }))}
                   onChange={setEngine}
                   disabled={!includeDiag}
                   mono={false}
-                  aria-label="Affected engine"
+                  aria-label={tr("bug.affectedEngine")}
                 />
               </div>
             ) : null}
@@ -323,7 +324,7 @@ export function ReportIssueModal({ activeEngine, version, onClose }: ReportIssue
                 .filter((d) => d.k !== "Engine" || activeEngine !== null)
                 .map((d) => (
                   <span key={d.k} className="bug-diag-chip">
-                    <b>{d.k}</b> {d.v}
+                    <b>{DIAG_LABEL[d.k] ? tr(DIAG_LABEL[d.k]!) : d.k}</b> {d.v}
                   </span>
                 ))}
             </div>
@@ -338,23 +339,23 @@ export function ReportIssueModal({ activeEngine, version, onClose }: ReportIssue
             aria-expanded={showPreview}
           >
             <Icon name={showPreview ? "expand_less" : "expand_more"} size={15} />
-            {showPreview ? "Hide" : "Preview"} issue markdown
+            {tr("bug.previewLabel", { action: showPreview ? tr("bug.hide") : tr("bug.preview") })}
           </button>
           <div style={{ flex: 1 }} />
           <IconBtn
             icon="image"
             size={15}
             className="bug-infobtn"
-            title="Have a screenshot or recording? Attach it on GitHub after clicking Open — the form supports drag-and-drop. Redact sensitive values first."
-            aria-label="About attaching screenshots"
+            title={tr("bug.attachTip")}
+            aria-label={tr("bug.attachAria")}
           />
           <button
             type="button"
             className="bug-linkbtn"
             onClick={() => void copyBody()}
-            title="Copy the markdown body"
+            title={tr("bug.copyBodyTitle")}
           >
-            <Icon name="content_copy" size={13} /> Copy body
+            <Icon name="content_copy" size={13} /> {tr("bug.copyBody")}
           </button>
         </div>
         {showPreview ? <pre className="bug-preview">{body}</pre> : null}
@@ -363,7 +364,7 @@ export function ReportIssueModal({ activeEngine, version, onClose }: ReportIssue
       <div className="bug-foot">
         <div style={{ flex: 1 }} />
         <Btn variant="text" onClick={onClose}>
-          Cancel
+          {tr("common.cancel")}
         </Btn>
         <Btn
           variant="filled"
@@ -371,12 +372,10 @@ export function ReportIssueModal({ activeEngine, version, onClose }: ReportIssue
           onClick={() => void submit()}
           disabled={!canSubmit}
         >
-          Open on GitHub
+          {tr("bug.openGithub")}
         </Btn>
       </div>
-      {!canSubmit ? (
-        <div className="bug-hint">Add a title (6+ chars) and a description to continue.</div>
-      ) : null}
+      {!canSubmit ? <div className="bug-hint">{tr("bug.hint")}</div> : null}
     </Modal>
   );
 }

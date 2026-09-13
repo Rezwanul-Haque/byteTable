@@ -24,6 +24,9 @@ import type {
   SchemaInfo,
 } from "../connections/api";
 import type { BadgeEngine } from "../../shared/types";
+// Module-level summary builders read t() directly at call time; every caller
+// re-renders on locale change through useT().
+import { t } from "../../shared/i18n";
 
 /**
  * One editing row in the filter builder (M5). The UI-side mirror of a wire
@@ -376,13 +379,16 @@ export function unsavedTabIds(ui: WorkspaceUiState): Set<string> {
  * "unsaved changes".
  */
 export function unsavedSummary(ui: WorkspaceUiState, tabId: string): string {
-  const plural = (n: number, noun: string) => n + " " + noun + (n === 1 ? "" : "s");
   const parts: string[] = [];
   const grid = ui.gridEdits?.[tabId];
-  if (grid && grid.rows.length > 0) parts.push(plural(grid.rows.length, "edited row"));
-  if (grid && grid.newRows.length > 0) parts.push(plural(grid.newRows.length, "new row"));
+  if (grid && grid.rows.length > 0) {
+    parts.push(t("ws.unsaved.editedRows", { count: grid.rows.length }));
+  }
+  if (grid && grid.newRows.length > 0) {
+    parts.push(t("ws.unsaved.newRows", { count: grid.newRows.length }));
+  }
   const ops = ui.structureEdits?.[tabId]?.length ?? 0;
-  if (ops > 0) parts.push(plural(ops, "structure change"));
+  if (ops > 0) parts.push(t("ws.unsaved.structureChanges", { count: ops }));
   return parts.join(", ");
 }
 

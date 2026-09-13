@@ -42,9 +42,8 @@ import "./ConnectScreen.css";
 // ids are UUIDs (or "" pre-save), so this can never collide with a card.
 const FILE_OPEN_ID = "__open-sqlite-file__";
 
-const OPENED_TOAST_SUFFIX = "” opened — right-click its tile to rename or recolor";
-
-/** The pseudo-group holding connections with no project. */
+/** The pseudo-group holding connections with no project. Rendered through
+ *  `ws.connect.ungrouped`; the raw English name stays the logic value. */
 const UNGROUPED = "Ungrouped";
 
 /** How far the pointer must travel before a press becomes a drag rather than a
@@ -139,14 +138,11 @@ export function ConnectScreen() {
     try {
       await connectionDelete(u.id);
     } catch (error) {
-      toast(
-        isAppErrorPayload(error) ? error.message : "Removing connections requires the desktop app",
-        "err",
-      );
+      toast(isAppErrorPayload(error) ? error.message : t("ws.connect.removeNeedsApp"), "err");
       return;
     }
     refreshUnsupported();
-    toast("Removed connection “" + u.name + "”", "ok");
+    toast(t("ws.connect.removed", { name: u.name }), "ok");
   };
 
   // Remove a saved connection (the card's trash button) — drops the registry
@@ -155,20 +151,17 @@ export function ConnectScreen() {
     try {
       await removeConnection(conn.id);
     } catch (error) {
-      toast(
-        isAppErrorPayload(error) ? error.message : "Removing connections requires the desktop app",
-        "err",
-      );
+      toast(isAppErrorPayload(error) ? error.message : t("ws.connect.removeNeedsApp"), "err");
       return;
     }
-    toast("Removed connection “" + conn.name + "”", "ok");
+    toast(t("ws.connect.removed", { name: conn.name }), "ok");
   };
 
   const connect = async (conn: SavedConnection) => {
     setConnecting(conn.id);
     // Failures are already toasted inside the connect flow (falsy = handled).
     const opened = await connectAndOpen(conn);
-    if (opened) toast("Workspace “" + conn.name + OPENED_TOAST_SUFFIX, "ok");
+    if (opened) toast(t("ws.connect.openedRename", { name: conn.name }), "ok");
     setConnecting(null);
   };
 
@@ -182,7 +175,7 @@ export function ConnectScreen() {
         toast(error.message, "err");
       } else {
         // Plain browser dev: the dialog plugin needs the Tauri shell.
-        toast("Native file dialog requires the desktop app", "info");
+        toast(t("shell.fileOpen.noDialog"), "info");
       }
       return;
     }
@@ -190,7 +183,7 @@ export function ConnectScreen() {
     setConnecting(FILE_OPEN_ID);
     // Failures are already toasted inside the connect flow (falsy = handled).
     const name = await openSqliteFile(path);
-    if (name) toast("Workspace “" + name + OPENED_TOAST_SUFFIX, "ok");
+    if (name) toast(t("ws.connect.openedRename", { name }), "ok");
     setConnecting(null);
   };
 
@@ -202,23 +195,22 @@ export function ConnectScreen() {
     try {
       copy = await duplicateConnection(conn.id);
     } catch (error) {
-      toast(
-        isAppErrorPayload(error)
-          ? error.message
-          : "Duplicating connections requires the desktop app",
-        "err",
-      );
+      toast(isAppErrorPayload(error) ? error.message : t("ws.connect.dupNeedsApp"), "err");
       return;
     }
-    toast("Created “" + copy.name + "”", "ok");
+    toast(t("ws.connect.created", { name: copy.name }), "ok");
   };
 
   // Right-click menu on a connection card. Same actions as the hover icons,
   // plus Duplicate, which has no hover affordance of its own.
   const cardMenu = useContextMenu<SavedConnection>((c) => [
-    { label: "Edit connection", icon: "edit", onSelect: () => setEditConn(c) },
-    { label: "Duplicate", icon: "content_copy", onSelect: () => void duplicateConn(c) },
-    { label: "Delete", icon: "delete", danger: true, onSelect: () => void removeConn(c) },
+    { label: t("connect.edit"), icon: "edit", onSelect: () => setEditConn(c) },
+    {
+      label: t("ws.connect.duplicate"),
+      icon: "content_copy",
+      onSelect: () => void duplicateConn(c),
+    },
+    { label: t("common.delete"), icon: "delete", danger: true, onSelect: () => void removeConn(c) },
   ]);
 
   // ---- project grouping + filtering ------------------------------------
@@ -269,13 +261,19 @@ export function ConnectScreen() {
       await saveConnection({ ...c, project });
     } catch (error) {
       if (isAppErrorPayload(error)) toast(error.message, "err");
-      else toast("Moving connections requires the desktop app", "info");
+      else toast(t("ws.connect.moveNeedsApp"), "info");
       return;
     }
     // Expand the destination so the card is visibly *there* — more convincing
     // than a toast alone, and it orients you after the list regroups.
     setOpenGroup(target);
-    toast("Moved “" + c.name + "” to " + target, "ok");
+    toast(
+      t("ws.connect.moved", {
+        name: c.name,
+        target: target === UNGROUPED ? t("ws.connect.ungrouped") : target,
+      }),
+      "ok",
+    );
   };
 
   /** Set both the rendered drag state and the ref the handlers read. */
@@ -436,7 +434,12 @@ export function ConnectScreen() {
               spellCheck={false}
             />
             {filter ? (
-              <IconBtn icon="close" size={13} title="Clear" onClick={() => setFilter("")} />
+              <IconBtn
+                icon="close"
+                size={13}
+                title={t("ws.connect.clear")}
+                onClick={() => setFilter("")}
+              />
             ) : null}
           </div>
         ) : null}
@@ -445,9 +448,7 @@ export function ConnectScreen() {
           // list would have been.
           <div className="connect-load-error">{loadError}</div>
         ) : loaded && !hasConnections ? (
-          <div className="connect-empty">
-            No saved connections yet — open a SQLite file below to get started.
-          </div>
+          <div className="connect-empty">{t("ws.connect.emptyAll")}</div>
         ) : (
           <div className="connect-list">
             {groupKeys.map((proj) => {
@@ -476,7 +477,9 @@ export function ConnectScreen() {
                       size={14}
                       style={{ color: isOpen ? "var(--accent)" : "var(--text-dim)" }}
                     />
-                    <span className="proj-group-name">{proj}</span>
+                    <span className="proj-group-name">
+                      {proj === UNGROUPED ? t("ws.connect.ungrouped") : proj}
+                    </span>
                     <span className="connect-group-n">{groups[proj]!.length}</span>
                   </button>
                   {isOpen ? (
@@ -527,7 +530,7 @@ export function ConnectScreen() {
                             <IconBtn
                               icon="edit"
                               size={15}
-                              title="Edit connection"
+                              title={t("connect.edit")}
                               disabled={connecting !== null}
                               onClick={() => setEditConn(c)}
                             />
@@ -535,7 +538,7 @@ export function ConnectScreen() {
                               icon="delete"
                               size={15}
                               danger
-                              title="Remove connection"
+                              title={t("ws.connect.removeConn")}
                               disabled={connecting !== null}
                               onClick={() => void removeConn(c)}
                             />
@@ -548,13 +551,13 @@ export function ConnectScreen() {
               );
             })}
             {hasConnections && shown.length === 0 ? (
-              <div className="connect-empty">No connections match “{filter}”</div>
+              <div className="connect-empty">{t("ws.connect.noMatch", { filter })}</div>
             ) : null}
             {unsupported.length > 0 ? (
               <div className="connect-unsupported">
                 <div className="connect-unsupported-head">
                   <Icon name="warning" size={13} />
-                  Unavailable in this version
+                  {t("ws.connect.unavailable")}
                 </div>
                 {unsupported.map((u) => (
                   <div key={u.id} className="connect-card-wrap">
@@ -573,7 +576,7 @@ export function ConnectScreen() {
                           <span className="unsupported-tag">{u.engine}</span>
                         </div>
                         <div className="connect-card-detail">
-                          Unsupported engine — click for details
+                          {t("ws.connect.unsupportedEngine")}
                         </div>
                       </div>
                       <Icon name="error" size={17} className="unsupported-icon" />
@@ -583,7 +586,7 @@ export function ConnectScreen() {
                         icon="delete"
                         size={15}
                         danger
-                        title="Remove connection"
+                        title={t("ws.connect.removeConn")}
                         disabled={connecting !== null}
                         onClick={() => void removeUnsupported(u)}
                       />
@@ -625,7 +628,7 @@ export function ConnectScreen() {
                 type="button"
                 className={"conn-openfile-btn" + (fileMenu ? " open" : "")}
                 disabled={connecting !== null}
-                title="Open a database or data file"
+                title={t("ws.connect.openFileTitle")}
                 onClick={(e) => {
                   e.stopPropagation();
                   setFileMenu((o) => !o);
@@ -668,10 +671,7 @@ export function ConnectScreen() {
         </div>
       </div>
 
-      <div className="connect-footnote">
-        SQLite · MySQL · PostgreSQL · SQL Server · Redis · DynamoDB · MongoDB · Cassandra ·
-        ClickHouse · Typesense — more engines coming. Your credentials never leave this machine.
-      </div>
+      <div className="connect-footnote">{t("ws.connect.footnote")}</div>
 
       {cardMenu.element}
 
@@ -682,7 +682,9 @@ export function ConnectScreen() {
           <EngineBadge engine={drag.connection.engine} size={18} />
           <span className="connect-drag-name">{drag.connection.name}</span>
           <span className="connect-drag-to">
-            {drag.over ? "→ " + drag.over : "drop on a project"}
+            {drag.over
+              ? "→ " + (drag.over === UNGROUPED ? t("ws.connect.ungrouped") : drag.over)
+              : t("ws.connect.dropOnProject")}
           </span>
         </div>
       ) : null}
@@ -705,7 +707,7 @@ export function ConnectScreen() {
           onOpen={(file) => {
             setDataFileOpen(false);
             void openDataFile(file).then((name) => {
-              if (name) toast("Opened “" + name + "” — editable, and queryable with SQL", "ok");
+              if (name) toast(t("shell.fileOpen.openedEditable", { name }), "ok");
             });
           }}
         />

@@ -17,6 +17,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 
 import { exportSave } from "../../../../shared/api/engine";
 import { appErrorMessage } from "../../../../shared/api/error";
+import { useT } from "../../../../shared/i18n/useT";
 import { BulkDeleteModal } from "../../../../shared/ui/BulkDeleteModal";
 import { Btn } from "../../../../shared/ui/Btn";
 import { EngineBadge } from "../../../../shared/ui/EngineBadge";
@@ -151,6 +152,8 @@ export function RedisSidebar(props: RedisSidebarProps) {
     onCloseWorkspace,
   } = props;
 
+  const t = useT();
+
   // Transient local UI (prototype keeps these local; reset with the component).
   const [pattern, setPattern] = useState("*");
   const [typeFilter, setTypeFilter] = useState<KeyType | "all">("all");
@@ -217,13 +220,13 @@ export function RedisSidebar(props: RedisSidebarProps) {
         setCursor(page.cursor);
         setError(null);
       } catch (err) {
-        setError(appErrorMessage(err, "Could not scan the keyspace."));
+        setError(appErrorMessage(err, t("redis.scanFail")));
         if (!append) setKeys([]);
       } finally {
         setLoading(false);
       }
     },
-    [handleId, dbIndex, pattern, typeFilter],
+    [handleId, dbIndex, pattern, typeFilter, t],
   );
 
   // How many pages the user has paged in. A refresh has to restore this depth:
@@ -258,13 +261,13 @@ export function RedisSidebar(props: RedisSidebarProps) {
         setCursor(cur);
         setError(null);
       } catch (err) {
-        setError(appErrorMessage(err, "Could not scan the keyspace."));
+        setError(appErrorMessage(err, t("redis.scanFail")));
         setKeys([]);
       } finally {
         setLoading(false);
       }
     },
-    [handleId, dbIndex, pattern, typeFilter],
+    [handleId, dbIndex, pattern, typeFilter, t],
   );
 
   // Reload whenever the query inputs change or `version` bumps (manual refresh,
@@ -412,9 +415,9 @@ export function RedisSidebar(props: RedisSidebarProps) {
     try {
       const view = await kvGetKey(handleId, dbIndex, name);
       await navigator.clipboard.writeText(name + "\t" + valueToText(view.value));
-      toast("Key + value copied", "ok");
+      toast(t("redis.kvCopied"), "ok");
     } catch (err) {
-      toast(appErrorMessage(err, "Couldn't copy this key's value."), "err");
+      toast(appErrorMessage(err, t("redis.kvCopyFail")), "err");
     }
   };
 
@@ -423,10 +426,10 @@ export function RedisSidebar(props: RedisSidebarProps) {
   const deleteKey = async (name: string) => {
     try {
       await kvDeleteKey(handleId, dbIndex, name);
-      toast("DEL " + name + " — OK", "ok");
+      toast(t("redis.delOk", { name }), "ok");
       onRefresh();
     } catch (err) {
-      toast(appErrorMessage(err, "Couldn't delete this key."), "err");
+      toast(appErrorMessage(err, t("redis.delFail")), "err");
     }
   };
 
@@ -461,7 +464,7 @@ export function RedisSidebar(props: RedisSidebarProps) {
             checked={checked}
             onClick={(e) => e.stopPropagation()}
             onChange={() => toggleKey(name)}
-            aria-label={"Select " + name}
+            aria-label={t("redis.selectKeyAria", { name })}
           />
         ) : null}
         <RedisTypeBadge type={keyType} size={16} />
@@ -472,7 +475,7 @@ export function RedisSidebar(props: RedisSidebarProps) {
               icon="content_copy"
               size={12}
               className="rkey-copy"
-              title="Copy key + value"
+              title={t("redis.copyKeyVal")}
               onClick={(e) => {
                 e.stopPropagation();
                 void copyKeyValue(name);
@@ -483,7 +486,7 @@ export function RedisSidebar(props: RedisSidebarProps) {
               size={12}
               danger
               className="rkey-del"
-              title="Delete key (DEL)"
+              title={t("redis.delKeyBtn")}
               onClick={(e) => {
                 e.stopPropagation();
                 void deleteKey(name);
@@ -566,15 +569,10 @@ export function RedisSidebar(props: RedisSidebarProps) {
       ? matchCount + " / " + dbTotal
       : matchCount + "+";
   const countTitle = done
-    ? matchCount + (matchCount === 1 ? " key" : " keys")
+    ? t("redis.countExact", { count: matchCount })
     : showTotal
-      ? matchCount +
-        " of " +
-        dbTotal +
-        " keys loaded — the list pages through SCAN, so Load more fetches the rest"
-      : matchCount +
-        (matchCount === 1 ? " key" : " keys") +
-        " loaded so far — Load more to keep scanning";
+      ? t("redis.countPaged", { count: matchCount, total: dbTotal })
+      : t("redis.countSoFar", { count: matchCount });
 
   // Drop the selection whenever the query inputs change (the list is replaced).
   useEffect(() => {
@@ -601,7 +599,7 @@ export function RedisSidebar(props: RedisSidebarProps) {
     const reply = await kvCommand(handleId, dbIndex, ["DEL", ...names]);
     if (reply.kind === "error") throw new Error(reply.value);
     const removed = reply.kind === "int" ? reply.value : names.length;
-    toast(`Deleted ${removed} key${removed === 1 ? "" : "s"} · db${dbIndex}`, "ok");
+    toast(t("redis.deletedMany", { count: removed, db: dbIndex }), "ok");
     onRefresh();
   };
 
@@ -644,9 +642,9 @@ export function RedisSidebar(props: RedisSidebarProps) {
       });
       if (!path) return;
       await exportSave(path, csv);
-      toast(`Exported ${names.length} key${names.length === 1 ? "" : "s"} to CSV`, "ok");
+      toast(t("redis.exportedMany", { count: names.length }), "ok");
     } catch (e) {
-      toast(appErrorMessage(e, "Could not export CSV"), "err");
+      toast(appErrorMessage(e, t("redis.exportFail")), "err");
     }
   };
 
@@ -676,7 +674,7 @@ export function RedisSidebar(props: RedisSidebarProps) {
         <LanguageChip />
         <IconBtn
           icon="power_settings_new"
-          title="Close workspace"
+          title={t("dfile.closeWorkspace")}
           size={16}
           danger
           onClick={onCloseWorkspace}
@@ -702,23 +700,21 @@ export function RedisSidebar(props: RedisSidebarProps) {
               aria-expanded={nodeOpen}
               title={
                 currentNode
-                  ? "Browsing the " +
-                    currentNode.role +
-                    " " +
-                    currentNode.host +
-                    ":" +
-                    currentNode.port +
-                    (currentShard ? " of " + shardName(currentShard) : "") +
-                    (currentNode.role === "replica"
-                      ? " — reads are served in READONLY mode and may lag its master."
-                      : ".") +
-                    " Click to browse another node; a cluster has one database, so SELECT is not available."
-                  : "Cluster mode exposes a single logical keyspace — SELECT is not available"
+                  ? t("redis.chipBrowse", {
+                      role: currentNode.role,
+                      node: currentNode.host + ":" + currentNode.port,
+                    }) +
+                    (currentShard
+                      ? t("redis.chipOfShard", { shard: shardName(currentShard) })
+                      : "") +
+                    (currentNode.role === "replica" ? t("redis.chipReplicaNote") : ".") +
+                    t("redis.chipHint")
+                  : t("redis.chipNoNode")
               }
             >
               <Icon name="lan" size={15} style={{ color: "var(--accent)" }} />
               <span className="cl-scope-name">
-                {currentShard ? shardName(currentShard) : "cluster keyspace"}
+                {currentShard ? shardName(currentShard) : t("redis.clusterKeyspace")}
               </span>
               {/* A shard is a master AND its replicas, so the shard name alone
                   does not say which one you are on — and it matters: a replica
@@ -756,13 +752,15 @@ export function RedisSidebar(props: RedisSidebarProps) {
               type="button"
               className="schema-btn redis-db-btn"
               onClick={() => setDbOpen((o) => !o)}
-              title="Switch database"
+              title={t("redis.switchDb")}
               aria-haspopup="menu"
               aria-expanded={dbOpen}
             >
               <Icon name="storage" size={15} style={{ color: "var(--accent)" }} />
               <span className="schema-btn-name">db{dbIndex}</span>
-              <span className="rdb-keycount">{dbCounts[dbIndex]} keys</span>
+              <span className="rdb-keycount">
+                {t("redis.nKeys", { count: dbCounts[dbIndex] ?? 0 })}
+              </span>
               <Icon name="expand_more" size={15} style={{ color: "var(--text-faint)" }} />
             </button>
             {dbOpen ? (
@@ -770,7 +768,7 @@ export function RedisSidebar(props: RedisSidebarProps) {
                 ref={dbPopRef}
                 className="schema-pop rdb-pop"
                 role="menu"
-                aria-label="Switch database"
+                aria-label={t("redis.switchDb")}
                 onKeyDown={onPopKeyDown}
               >
                 {dbCounts.map((count, index) => (
@@ -807,12 +805,12 @@ export function RedisSidebar(props: RedisSidebarProps) {
         )}
         <IconBtn
           icon={cluster ? "lan" : "monitoring"}
-          title={cluster ? "Cluster dashboard" : "Keyspace dashboard"}
+          title={cluster ? t("redis.tab.clusterTitle") : t("redis.tab.dashTitle")}
           onClick={onOpenDashboard}
         />
         <IconBtn
           icon="sync"
-          title="Refresh keyspace"
+          title={t("redis.refreshKeyspace")}
           onClick={onRefresh}
           className={refreshSpin || loading ? "sidebar-sync-spinning" : undefined}
         />
@@ -825,51 +823,56 @@ export function RedisSidebar(props: RedisSidebarProps) {
           value={pattern}
           onChange={(event) => setPattern(event.target.value)}
           spellCheck="false"
-          aria-label="MATCH glob pattern"
+          aria-label={t("redis.matchAria")}
         />
         {pattern && pattern !== "*" ? (
-          <IconBtn icon="close" size={13} title="Reset" onClick={() => setPattern("*")} />
+          <IconBtn
+            icon="close"
+            size={13}
+            title={t("redis.reset")}
+            onClick={() => setPattern("*")}
+          />
         ) : null}
       </div>
 
-      <div className="rtype-chips" role="group" aria-label="Filter by type">
+      <div className="rtype-chips" role="group" aria-label={t("redis.filterTypeAria")}>
         <button
           type="button"
           className={"rtype-chip" + (typeFilter === "all" ? " active" : "")}
           aria-pressed={typeFilter === "all"}
           onClick={() => setTypeFilter("all")}
         >
-          all
+          {t("redis.typeAll")}
         </button>
-        {REDIS_TYPE_ORDER.map((t) => {
-          const active = typeFilter === t;
+        {REDIS_TYPE_ORDER.map((ty) => {
+          const active = typeFilter === ty;
           return (
             <button
-              key={t}
+              key={ty}
               type="button"
               className={"rtype-chip" + (active ? " active" : "")}
               aria-pressed={active}
               style={
                 active
-                  ? { color: REDIS_TYPES[t].color, borderColor: REDIS_TYPES[t].color + "88" }
+                  ? { color: REDIS_TYPES[ty].color, borderColor: REDIS_TYPES[ty].color + "88" }
                   : undefined
               }
-              onClick={() => setTypeFilter(active ? "all" : t)}
+              onClick={() => setTypeFilter(active ? "all" : ty)}
             >
-              {REDIS_TYPES[t].label}
+              {REDIS_TYPES[ty].label}
             </button>
           );
         })}
       </div>
 
       <div className="sidebar-section-label">
-        <span>Keys</span>
+        <span>{t("redis.keysLabel")}</span>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <button
             type="button"
             className={"rview-toggle" + (selectMode ? " active" : "")}
-            title={selectMode ? "Exit selection" : "Select keys (bulk delete / export)"}
-            aria-label={selectMode ? "Exit selection" : "Select keys"}
+            title={selectMode ? t("redis.exitSelect") : t("redis.selectKeysHint")}
+            aria-label={selectMode ? t("redis.exitSelect") : t("redis.selectKeys")}
             aria-pressed={selectMode}
             onClick={() => (selectMode ? exitSelect() : setSelectMode(true))}
           >
@@ -878,8 +881,8 @@ export function RedisSidebar(props: RedisSidebarProps) {
           <button
             type="button"
             className="rview-toggle"
-            title={view === "tree" ? "Switch to flat list" : "Switch to tree"}
-            aria-label={view === "tree" ? "Switch to flat list" : "Switch to tree"}
+            title={view === "tree" ? t("redis.toFlat") : t("redis.toTree")}
+            aria-label={view === "tree" ? t("redis.toFlat") : t("redis.toTree")}
             onClick={() => setView(view === "tree" ? "flat" : "tree")}
           >
             <Icon name={view === "tree" ? "account_tree" : "list"} size={14} />
@@ -901,22 +904,22 @@ export function RedisSidebar(props: RedisSidebarProps) {
                 if (el) el.indeterminate = selectedKeys.size > 0 && !allLoadedSelected;
               }}
               onChange={toggleSelectAll}
-              aria-label="Select all loaded keys"
+              aria-label={t("redis.selectAllLoaded")}
             />
-            <span>{selectedKeys.size} selected</span>
+            <span>{t("ws.grid.selected", { count: selectedKeys.size })}</span>
           </label>
           <div style={{ flex: 1 }} />
           <IconBtn
             icon="download"
             size={15}
-            title="Export selected to CSV"
+            title={t("redis.exportSelected")}
             disabled={selectedKeys.size === 0}
             onClick={() => void exportSelectedCsv()}
           />
           <IconBtn
             icon="delete"
             size={15}
-            title="Delete selected"
+            title={t("redis.deleteSelected")}
             className="rkey-selbar-del"
             disabled={selectedKeys.size === 0}
             onClick={() => setDeleteOpen(true)}
@@ -929,11 +932,12 @@ export function RedisSidebar(props: RedisSidebarProps) {
           <div className="sidebar-error">{error}</div>
         ) : loading && keys.length === 0 ? (
           <div className="sidebar-loading">
-            <span className="spinner" /> Scanning keys…
+            <span className="spinner" /> {t("redis.scanning")}
           </div>
         ) : matchCount === 0 ? (
           <div className="sidebar-nomatch">
-            No keys match “{pattern}”{typeFilter !== "all" ? " · " + typeFilter : ""}
+            {t("redis.noMatch", { pattern })}
+            {typeFilter !== "all" ? " · " + typeFilter : ""}
           </div>
         ) : (
           <>
@@ -942,11 +946,11 @@ export function RedisSidebar(props: RedisSidebarProps) {
               <div className="rkey-loadmore">
                 {loading ? (
                   <>
-                    <span className="spinner" /> Loading more…
+                    <span className="spinner" /> {t("redis.loadingMore")}
                   </>
                 ) : (
                   <Btn variant="text" small onClick={loadMore}>
-                    Load more
+                    {t("redis.loadMore")}
                   </Btn>
                 )}
               </div>
@@ -962,7 +966,7 @@ export function RedisSidebar(props: RedisSidebarProps) {
           onClick={onOpenCli}
           style={{ width: "100%", justifyContent: "center" }}
         >
-          New CLI console
+          {t("redis.newCli")}
         </Btn>
       </div>
 

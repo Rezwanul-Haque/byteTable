@@ -12,10 +12,11 @@ import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { Modal, ModalActions } from "../../../../shared/ui/Modal";
 import { Select } from "../../../../shared/ui/Select";
+import { useT } from "../../../../shared/i18n/useT";
 import {
   generateUuidVersion,
   looksUuid,
-  UUID_VERSIONS,
+  uuidVersions,
   type UuidVersion,
 } from "../../shared/binaryCell";
 import "../../shared/styles/CellEditors.css";
@@ -50,6 +51,7 @@ export function UuidEditorModal({
   const label = uuidLabel(type);
   const init = value == null ? "" : String(value);
   const [text, setText] = useState(init);
+  const t = useT();
   // Default the generator to v7; remember the last choice across opens.
   const [version, setVersion] = useState<UuidVersion>(
     () => (localStorage.getItem("bt.uuidGenVersion") as UuidVersion) || "v7",
@@ -89,7 +91,7 @@ export function UuidEditorModal({
     <Modal
       className="binary-modal"
       width={460}
-      label={readOnly ? `View ${label} value` : `Edit ${label} value`}
+      label={readOnly ? t("grid.viewValueTitle", { label }) : t("grid.editValueTitle", { label })}
       onClose={onClose}
     >
       <div className="modal-title">
@@ -100,12 +102,12 @@ export function UuidEditorModal({
           </span>
           <span className="json-type-tag">{type}</span>
         </span>
-        <IconBtn icon="close" onClick={onClose} title="Close (Esc)" />
+        <IconBtn icon="close" onClick={onClose} title={t("grid.closeEsc")} />
       </div>
 
       <label className="binary-field">
         <span className="binary-label">
-          Value <span className="binary-sub">canonical 8-4-4-4-12 {label}</span>
+          {t("grid.valueLabel")} <span className="binary-sub">{t("grid.uuidSub", { label })}</span>
         </span>
         <input
           ref={inputRef}
@@ -125,9 +127,9 @@ export function UuidEditorModal({
         <span>
           {valid
             ? empty
-              ? "Empty → will save as NULL"
-              : `Valid ${label}`
-            : `Not a valid ${label} (expected 8-4-4-4-12 hex)`}
+              ? t("grid.emptySavesNull")
+              : t("grid.validLabel", { label })
+            : t("grid.invalidLabel", { label })}
         </span>
       </div>
 
@@ -136,7 +138,7 @@ export function UuidEditorModal({
           <>
             <div style={{ flex: 1 }} />
             <Btn variant="filled" onClick={onClose}>
-              Close
+              {t("common.close")}
             </Btn>
           </>
         ) : (
@@ -145,24 +147,24 @@ export function UuidEditorModal({
               type="button"
               className="json-tool"
               onClick={() => generate(version)}
-              title={`Generate a ${version.toUpperCase()} ${label}`}
+              title={t("grid.genBtnTitle", { version: version.toUpperCase(), label })}
             >
-              <Icon name="autorenew" size={14} /> Generate
+              <Icon name="autorenew" size={14} /> {t("grid.generate")}
             </button>
             <Select
               className="uuid-ver-select"
               value={version}
-              options={UUID_VERSIONS.map((v) => ({ value: v.id, label: v.label }))}
+              options={uuidVersions().map((v) => ({ value: v.id, label: v.label }))}
               onChange={(v) => generate(v as UuidVersion)}
-              title="UUID version"
-              aria-label="UUID version"
+              title={t("grid.uuidVerTitle")}
+              aria-label={t("grid.uuidVerTitle")}
             />
             <div style={{ flex: 1 }} />
             <Btn variant="text" onClick={onClose}>
-              Cancel
+              {t("common.cancel")}
             </Btn>
             <Btn variant="filled" icon="check" onClick={save} disabled={!valid || !dirty}>
-              Save
+              {t("common.save")}
             </Btn>
           </>
         )}

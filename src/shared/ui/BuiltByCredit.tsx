@@ -15,6 +15,7 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 import { UPDATE_REPO } from "../../features/updater/api";
+import { useT } from "../i18n/useT";
 
 import "./BuiltByCredit.css";
 
@@ -33,14 +34,17 @@ function openExternal(url: string): void {
 }
 
 export function BuiltByCredit({ className }: { className?: string }) {
+  // pre/post split so locales can reorder around the name.
+  const t = useT();
   return (
     <button
       type="button"
       className={"status-credit" + (className ? " " + className : "")}
-      title="View ByteTable source on GitHub"
+      title={t("uix.credit.title")}
       onClick={() => openExternal(REPO_URL)}
     >
-      Built by <b>Rezwanul-Haque</b>
+      {t("uix.credit.pre")} <b>Rezwanul-Haque</b>
+      {t("uix.credit.post")}
     </button>
   );
 }

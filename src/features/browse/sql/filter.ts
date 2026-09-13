@@ -19,6 +19,9 @@ import type { ColumnInfo } from "../../../shared/api/engine";
 import type { CellValue, Condition, FilterOp, FilterSpec } from "../../../shared/api/engine";
 import type { FilterDraft, UiCondition } from "../../workspaces/types";
 import { isBinaryType } from "../shared/binaryCell";
+// Module-level i18n: `t` resolves against the active locale at call time (the
+// text operator labels below are user-visible in the operator select).
+import { t, type StringKey } from "../../../shared/i18n";
 
 /** One operator's display label + whether it takes a value input. */
 export interface FilterOpDef {
@@ -40,13 +43,13 @@ export const FILTER_OPS: FilterOpDef[] = [
   { op: "gte", label: "≥", needsValue: true },
   { op: "lt", label: "<", needsValue: true },
   { op: "lte", label: "≤", needsValue: true },
-  { op: "contains", label: "contains", needsValue: true },
-  { op: "notContains", label: "not contains", needsValue: true },
-  { op: "beginsWith", label: "begins with", needsValue: true },
-  { op: "endsWith", label: "ends with", needsValue: true },
-  { op: "inList", label: "in list", needsValue: true },
-  { op: "isNull", label: "is null", needsValue: false },
-  { op: "isNotNull", label: "is not null", needsValue: false },
+  { op: "contains", label: "flt.contains", needsValue: true },
+  { op: "notContains", label: "flt.notContains", needsValue: true },
+  { op: "beginsWith", label: "flt.beginsWith", needsValue: true },
+  { op: "endsWith", label: "flt.endsWith", needsValue: true },
+  { op: "inList", label: "flt.inList", needsValue: true },
+  { op: "isNull", label: "flt.isNull", needsValue: false },
+  { op: "isNotNull", label: "flt.isNotNull", needsValue: false },
 ];
 
 const NEEDS_VALUE = new Set<FilterOp>(FILTER_OPS.filter((o) => o.needsValue).map((o) => o.op));
@@ -217,7 +220,10 @@ export function appliedDisplaySql(applied: FilterDraft | null, columns: ColumnIn
 
 /** Display label for an operator (the select option text). */
 export function opLabel(op: FilterOp): string {
-  return OP_LABELS.get(op) ?? op;
+  const label = OP_LABELS.get(op);
+  // Symbol operators ("=", ">") are locale-independent; the text labels are
+  // i18n keys. `t()` falls back to the key itself, which also covers symbols.
+  return label === undefined ? op : t(label as StringKey);
 }
 
 let condSeq = 0;

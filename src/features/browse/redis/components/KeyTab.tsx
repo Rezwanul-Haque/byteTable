@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { appErrorMessage } from "../../../../shared/api/error";
+import { useT } from "../../../../shared/i18n/useT";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
@@ -93,6 +94,7 @@ export function KeyTab({
   onClose,
   onMeta,
 }: KeyTabProps) {
+  const t = useT();
   const toast = useToast();
   // Keep the latest onMeta in a ref so reporting it never re-creates `load`
   // (which would re-fetch the key on every parent render).
@@ -119,12 +121,12 @@ export function KeyTab({
           onMetaRef.current?.({ keyType: v.keyType, memory: v.memory });
       } catch (err) {
         if (!signal.live) return;
-        setError(appErrorMessage(err, "Could not load this key."));
+        setError(appErrorMessage(err, t("redis.kt.loadFail")));
       } finally {
         if (signal.live) setLoading(false);
       }
     },
-    [handleId, db, keyName],
+    [handleId, db, keyName, t],
   );
 
   useEffect(() => {
@@ -143,7 +145,7 @@ export function KeyTab({
   if (loading && !view) {
     return (
       <div className="rkey-state">
-        <span className="spinner" /> Loading key…
+        <span className="spinner" /> {t("redis.kt.loading")}
       </div>
     );
   }
@@ -154,22 +156,25 @@ export function KeyTab({
     return (
       <div className="rkey-state">
         <p>
-          Key <code>{keyName}</code> no longer exists — it may have been deleted or expired.
+          {t("redis.kt.gonePre")} <code>{keyName}</code> {t("redis.kt.gonePost")}
         </p>
         <Btn variant="tonal" small icon="close" onClick={onClose}>
-          Close tab
+          {t("redis.closeTab")}
         </Btn>
       </div>
     );
   }
 
   const count = elementCount(view.value);
-  const sizeReadout = view.keyType === "string" ? count + " bytes" : count + " items";
+  const sizeReadout =
+    view.keyType === "string"
+      ? t("redis.kt.sizeBytes", { count })
+      : t("redis.kt.sizeItems", { count });
 
   return (
     <div className="rkey-tab" data-screen-label={"Redis key: " + keyName}>
       <div className="rkey-toolbar">
-        <div className="seg" role="tablist" aria-label="Key view mode">
+        <div className="seg" role="tablist" aria-label={t("redis.kt.viewModeAria")}>
           <button
             type="button"
             role="tab"
@@ -177,7 +182,7 @@ export function KeyTab({
             className={"seg-btn" + (mode === "value" ? " active" : "")}
             onClick={() => setMode("value")}
           >
-            <RedisTypeBadge type={view.keyType} size={13} /> Value
+            <RedisTypeBadge type={view.keyType} size={13} /> {t("redis.kt.segValue")}
           </button>
           <button
             type="button"
@@ -186,18 +191,18 @@ export function KeyTab({
             className={"seg-btn" + (mode === "info" ? " active" : "")}
             onClick={() => setMode("info")}
           >
-            <Icon name="info" size={14} /> Info
+            <Icon name="info" size={14} /> {t("redis.kt.segInfo")}
           </button>
         </div>
         <code className="rkey-tab-name">{keyName}</code>
         <IconBtn
           icon="content_copy"
           size={13}
-          title="Copy key name"
+          title={t("redis.kt.copyKeyName")}
           onClick={() => {
             void navigator.clipboard.writeText(keyName).then(
-              () => toast("Key name copied", "ok"),
-              () => toast("Couldn't copy to clipboard", "err"),
+              () => toast(t("redis.kt.keyNameCopied"), "ok"),
+              () => toast(t("uix.copy.fail"), "err"),
             );
           }}
         />
@@ -250,6 +255,7 @@ interface ViewerProps {
 }
 
 function ValueViewer({ handleId, db, keyName, view, toast, onMutated }: ViewerProps) {
+  const t = useT();
   const v = view.value;
   switch (v.type) {
     case "str":
@@ -310,7 +316,7 @@ function ValueViewer({ handleId, db, keyName, view, toast, onMutated }: ViewerPr
     case "stream":
       return <StreamViewer entries={v.entries} />;
     case "missing":
-      return <div className="grid-empty">Key no longer exists.</div>;
+      return <div className="grid-empty">{t("redis.kt.goneShort")}</div>;
   }
 }
 
@@ -341,6 +347,7 @@ function StringViewer({
   toast: ToastFn;
   onMutated: () => void;
 }) {
+  const t = useT();
   const json = isJsonish(value);
   const pretty = json ? JSON.stringify(JSON.parse(value), null, 2) : value;
   // Always editable: `draft` is the working copy (pretty-printed for JSON). A
@@ -373,10 +380,10 @@ function StringViewer({
         }
       }
       await kvSetString(handleId, db, keyName, toStore);
-      toast("SET " + keyName + " — OK", "ok");
+      toast(t("redis.kt.setOk", { name: keyName }), "ok");
       onMutated();
     } catch (err) {
-      toast(appErrorMessage(err, "SET failed."), "err");
+      toast(appErrorMessage(err, t("redis.kt.setFail")), "err");
     }
   };
 
@@ -384,28 +391,28 @@ function StringViewer({
     <div className="rstr">
       <div className="rstr-bar">
         <span className="rstr-meta">
-          {json ? "JSON" : "string"} · {value.length} bytes
-          {dirty ? <span className="rstr-unsaved"> · unsaved</span> : null}
+          {json ? "JSON" : "string"} · {t("redis.kt.sizeBytes", { count: value.length })}
+          {dirty ? <span className="rstr-unsaved"> · {t("redis.kt.unsaved")}</span> : null}
         </span>
         <div className="rstr-bar-spacer" />
         <IconBtn
           icon="content_copy"
           size={14}
-          title="Copy value"
+          title={t("redis.kt.copyValue")}
           onClick={() => {
             void navigator.clipboard.writeText(draft).then(
-              () => toast("Value copied", "ok"),
-              () => toast("Couldn't copy to clipboard", "err"),
+              () => toast(t("redis.kt.valueCopied"), "ok"),
+              () => toast(t("uix.copy.fail"), "err"),
             );
           }}
         />
         {dirty ? (
           <>
             <Btn variant="text" small onClick={() => setDraft(pretty)}>
-              Discard
+              {t("redis.kt.discard")}
             </Btn>
             <Btn variant="filled" icon="check" small onClick={save}>
-              Save (SET)
+              {t("redis.kt.saveSet")}
             </Btn>
           </>
         ) : null}
@@ -433,7 +440,7 @@ function StringViewer({
               }
             }}
             spellCheck={false}
-            aria-label={"Edit value of " + keyName}
+            aria-label={t("redis.kt.editValueAria", { name: keyName })}
           />
         </div>
       ) : (
@@ -442,7 +449,7 @@ function StringViewer({
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           spellCheck={false}
-          aria-label={"Edit value of " + keyName}
+          aria-label={t("redis.kt.editValueAria", { name: keyName })}
         />
       )}
     </div>
@@ -472,6 +479,7 @@ interface KeyGridProps {
 }
 
 function KeyGrid({ columns, rows, onEdit, empty }: KeyGridProps) {
+  const t = useT();
   const [editing, setEditing] = useState<{ row: number; col: number; draft: string } | null>(null);
   // Staged edits keyed "row,col" — nothing is written until Save (the SQL-grid
   // pattern). Survives the auto-refresh re-fetch because it's local state.
@@ -573,13 +581,13 @@ function KeyGrid({ columns, rows, onEdit, empty }: KeyGridProps) {
                           ? () => setEditing({ row: ri, col: ci, draft: String(cellValue ?? "") })
                           : undefined
                       }
-                      title={c.editable && onEdit ? "Double-click to edit" : undefined}
+                      title={c.editable && onEdit ? t("redis.kt.dblClickEdit") : undefined}
                     >
                       {isEditing ? (
                         <input
                           ref={inputRef}
                           className="cell-input"
-                          aria-label={"Edit " + c.name}
+                          aria-label={t("redis.kt.editColAria", { name: c.name })}
                           value={editing.draft}
                           onChange={(e) =>
                             setEditing((prev) => (prev ? { ...prev, draft: e.target.value } : prev))
@@ -609,14 +617,14 @@ function KeyGrid({ columns, rows, onEdit, empty }: KeyGridProps) {
       {staged.size > 0 ? (
         <div className="rkey-savebar">
           <span className="rkey-savebar-msg">
-            {staged.size} cell{staged.size === 1 ? "" : "s"} edited · unsaved
+            {t("redis.kt.cellsEdited", { count: staged.size })}
           </span>
           <div style={{ flex: 1 }} />
           <Btn variant="text" small disabled={saving} onClick={discard}>
-            Discard
+            {t("redis.kt.discard")}
           </Btn>
           <Btn variant="filled" icon="check" small disabled={saving} onClick={() => void saveAll()}>
-            Save
+            {t("common.save")}
           </Btn>
         </div>
       ) : null}
@@ -639,6 +647,7 @@ function HashViewer({
   toast: ToastFn;
   onMutated: () => void;
 }) {
+  const t = useT();
   const rows = fields.map((f) => [f.field, f.value]);
   const onEdit = async (ri: number, ci: number, draft: string) => {
     const row = fields[ri];
@@ -647,16 +656,16 @@ function HashViewer({
       if (ci === 1) {
         // Edit value → HSET key field value.
         await kvHashSet(handleId, db, keyName, row.field, draft);
-        toast("HSET " + keyName + " " + row.field + " — OK", "ok");
+        toast(t("redis.kt.hsetOk", { name: keyName, field: row.field }), "ok");
       } else {
         // Edit field → HDEL old + HSET new (carry the value over).
         await kvHashDel(handleId, db, keyName, row.field);
         await kvHashSet(handleId, db, keyName, draft, row.value);
-        toast("HDEL " + row.field + " + HSET " + draft + " — OK", "ok");
+        toast(t("redis.kt.hdelHsetOk", { field: row.field, new: draft }), "ok");
       }
       onMutated();
     } catch (err) {
-      toast(appErrorMessage(err, "Hash update failed."), "err");
+      toast(appErrorMessage(err, t("redis.kt.hashFail")), "err");
     }
   };
   return (
@@ -667,7 +676,7 @@ function HashViewer({
       ]}
       rows={rows}
       onEdit={onEdit}
-      empty="empty hash"
+      empty={t("redis.kt.emptyHash")}
     />
   );
 }
@@ -687,14 +696,15 @@ function ListViewer({
   toast: ToastFn;
   onMutated: () => void;
 }) {
+  const t = useT();
   const rows = items.map((v, i) => [i, v]);
   const onEdit = async (ri: number, _ci: number, draft: string) => {
     try {
       await kvListSet(handleId, db, keyName, ri, draft);
-      toast("LSET " + keyName + " " + ri + " — OK", "ok");
+      toast(t("redis.kt.lsetOk", { name: keyName, index: ri }), "ok");
       onMutated();
     } catch (err) {
-      toast(appErrorMessage(err, "LSET failed."), "err");
+      toast(appErrorMessage(err, t("redis.kt.lsetFail")), "err");
     }
   };
   return (
@@ -702,7 +712,7 @@ function ListViewer({
       columns={[{ name: "index" }, { name: "value", editable: true }]}
       rows={rows}
       onEdit={onEdit}
-      empty="empty list"
+      empty={t("redis.kt.emptyList")}
     />
   );
 }
@@ -722,6 +732,7 @@ function SetViewer({
   toast: ToastFn;
   onMutated: () => void;
 }) {
+  const t = useT();
   const [adding, setAdding] = useState("");
   const rows = members.map((m) => [m]);
 
@@ -732,10 +743,10 @@ function SetViewer({
     try {
       await kvSetRemove(handleId, db, keyName, old);
       await kvSetAdd(handleId, db, keyName, draft);
-      toast("SREM " + old + " + SADD " + draft + " — OK", "ok");
+      toast(t("redis.kt.sremSaddOk", { old, new: draft }), "ok");
       onMutated();
     } catch (err) {
-      toast(appErrorMessage(err, "Set update failed."), "err");
+      toast(appErrorMessage(err, t("redis.kt.setUpdateFail")), "err");
     }
   };
 
@@ -745,20 +756,20 @@ function SetViewer({
     try {
       await kvSetAdd(handleId, db, keyName, m);
       setAdding("");
-      toast("SADD " + keyName + " " + m + " — OK", "ok");
+      toast(t("redis.kt.saddOk", { name: keyName, member: m }), "ok");
       onMutated();
     } catch (err) {
-      toast(appErrorMessage(err, "SADD failed."), "err");
+      toast(appErrorMessage(err, t("redis.kt.saddFail")), "err");
     }
   };
 
   const remove = async (member: string) => {
     try {
       await kvSetRemove(handleId, db, keyName, member);
-      toast("SREM " + keyName + " " + member + " — OK", "ok");
+      toast(t("redis.kt.sremOk", { name: keyName, member }), "ok");
       onMutated();
     } catch (err) {
-      toast(appErrorMessage(err, "SREM failed."), "err");
+      toast(appErrorMessage(err, t("redis.kt.sremFail")), "err");
     }
   };
 
@@ -767,17 +778,17 @@ function SetViewer({
       <div className="rset-add">
         <input
           className="rinfo-ttl-input rset-add-input"
-          placeholder="new member"
+          placeholder={t("redis.kt.newMember")}
           value={adding}
           spellCheck={false}
-          aria-label={"Add member to " + keyName}
+          aria-label={t("redis.kt.addMemberAria", { name: keyName })}
           onChange={(e) => setAdding(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") void add();
           }}
         />
         <Btn variant="tonal" icon="add" small onClick={add}>
-          Add (SADD)
+          {t("redis.kt.addSadd")}
         </Btn>
       </div>
       <SetGrid members={members} rows={rows} onEdit={onEdit} onRemove={remove} />
@@ -797,6 +808,7 @@ function SetGrid({
   onEdit: (ri: number, ci: number, draft: string) => void | Promise<void>;
   onRemove: (member: string) => void;
 }) {
+  const t = useT();
   const [editing, setEditing] = useState<{ row: number; draft: string } | null>(null);
   // Staged member edits keyed by row index — nothing written until Save.
   const [staged, setStaged] = useState<Map<number, string>>(new Map());
@@ -840,7 +852,7 @@ function SetGrid({
     }
   };
 
-  if (rows.length === 0) return <div className="grid-empty">empty set</div>;
+  if (rows.length === 0) return <div className="grid-empty">{t("redis.kt.emptySet")}</div>;
 
   return (
     <div className="rkey-gridwrap">
@@ -873,13 +885,13 @@ function SetGrid({
                       (isEdited ? " cell-edited" : "")
                     }
                     onDoubleClick={() => setEditing({ row: ri, draft: shown })}
-                    title="Double-click to edit"
+                    title={t("redis.kt.dblClickEdit")}
                   >
                     {isEditing ? (
                       <input
                         ref={inputRef}
                         className="cell-input"
-                        aria-label="Edit member"
+                        aria-label={t("redis.kt.editColAria", { name: "member" })}
                         value={editing.draft}
                         onChange={(e) =>
                           setEditing((prev) => (prev ? { ...prev, draft: e.target.value } : prev))
@@ -903,7 +915,7 @@ function SetGrid({
                     <IconBtn
                       icon="close"
                       size={14}
-                      title={"Remove " + m}
+                      title={t("redis.kt.removeMember", { member: m })}
                       onClick={() => onRemove(m)}
                     />
                   </div>
@@ -916,14 +928,14 @@ function SetGrid({
       {staged.size > 0 ? (
         <div className="rkey-savebar">
           <span className="rkey-savebar-msg">
-            {staged.size} member{staged.size === 1 ? "" : "s"} edited · unsaved
+            {t("redis.kt.membersEdited", { count: staged.size })}
           </span>
           <div style={{ flex: 1 }} />
           <Btn variant="text" small disabled={saving} onClick={discard}>
-            Discard
+            {t("redis.kt.discard")}
           </Btn>
           <Btn variant="filled" icon="check" small disabled={saving} onClick={() => void saveAll()}>
-            Save
+            {t("common.save")}
           </Btn>
         </div>
       ) : null}
@@ -946,6 +958,7 @@ function ZsetViewer({
   toast: ToastFn;
   onMutated: () => void;
 }) {
+  const t = useT();
   // Sorted by score (REDIS_SPEC §6); rank is the sorted index, read-only.
   const sorted = entries.slice().sort((a, b) => a.score - b.score);
   const rows = sorted.map((e, i) => [i, e.member, e.score]);
@@ -956,15 +969,15 @@ function ZsetViewer({
     if (!entry) return;
     const score = Number(draft);
     if (Number.isNaN(score)) {
-      toast("Score must be a number.", "err");
+      toast(t("redis.kt.scoreNum"), "err");
       return;
     }
     try {
       await kvZsetAdd(handleId, db, keyName, entry.member, score);
-      toast("ZADD " + keyName + " " + score + " " + entry.member + " — OK", "ok");
+      toast(t("redis.kt.zaddOk", { name: keyName, score, member: entry.member }), "ok");
       onMutated();
     } catch (err) {
-      toast(appErrorMessage(err, "ZADD failed."), "err");
+      toast(appErrorMessage(err, t("redis.kt.zaddFail")), "err");
     }
   };
 
@@ -973,7 +986,7 @@ function ZsetViewer({
       columns={[{ name: "rank" }, { name: "member" }, { name: "score", editable: true }]}
       rows={rows}
       onEdit={onEdit}
-      empty="empty zset"
+      empty={t("redis.kt.emptyZset")}
     />
   );
 }
@@ -983,9 +996,14 @@ function StreamViewer({
 }: {
   entries: { id: string; fields: { field: string; value: string }[] }[];
 }) {
+  const t = useT();
   const rows = entries.map((e) => [e.id, e.fields.map((f) => f.field + "=" + f.value).join("  ")]);
   return (
-    <KeyGrid columns={[{ name: "id" }, { name: "fields" }]} rows={rows} empty="empty stream" />
+    <KeyGrid
+      columns={[{ name: "id" }, { name: "fields" }]}
+      rows={rows}
+      empty={t("redis.kt.emptyStream")}
+    />
   );
 }
 
@@ -1014,6 +1032,7 @@ function InfoPanel({
   onMutated: () => void;
   onClose: () => void;
 }) {
+  const t = useT();
   const [ttlDraft, setTtlDraft] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const meta = REDIS_TYPES[view.keyType];
@@ -1021,35 +1040,35 @@ function InfoPanel({
   const copyKey = async () => {
     try {
       await navigator.clipboard.writeText(keyName);
-      toast("Key copied", "info");
+      toast(t("redis.kt.keyCopied"), "info");
     } catch {
-      toast("Could not copy key.", "err");
+      toast(t("redis.kt.keyCopyFail"), "err");
     }
   };
 
   const setTtl = async () => {
     const seconds = parseInt(ttlDraft, 10);
     if (Number.isNaN(seconds)) {
-      toast("TTL must be a number of seconds.", "err");
+      toast(t("redis.kt.ttlNum"), "err");
       return;
     }
     try {
       await kvExpire(handleId, db, keyName, seconds);
       setTtlDraft("");
-      toast("EXPIRE " + keyName + " " + seconds + " — OK", "ok");
+      toast(t("redis.kt.expireOk", { name: keyName, seconds }), "ok");
       onMutated();
     } catch (err) {
-      toast(appErrorMessage(err, "EXPIRE failed."), "err");
+      toast(appErrorMessage(err, t("redis.kt.expireFail")), "err");
     }
   };
 
   const persist = async () => {
     try {
       await kvPersist(handleId, db, keyName);
-      toast("PERSIST " + keyName + " — OK", "ok");
+      toast(t("redis.kt.persistOk", { name: keyName }), "ok");
       onMutated();
     } catch (err) {
-      toast(appErrorMessage(err, "PERSIST failed."), "err");
+      toast(appErrorMessage(err, t("redis.kt.persistFail")), "err");
     }
   };
 
@@ -1057,11 +1076,11 @@ function InfoPanel({
     setConfirmDelete(false);
     try {
       await kvDeleteKey(handleId, db, keyName);
-      toast("DEL " + keyName + " — OK", "ok");
+      toast(t("redis.delOk", { name: keyName }), "ok");
       onMutated();
       onClose();
     } catch (err) {
-      toast(appErrorMessage(err, "DEL failed."), "err");
+      toast(appErrorMessage(err, t("redis.kt.delFailCmd")), "err");
     }
   };
 
@@ -1084,75 +1103,85 @@ function InfoPanel({
       <div className="rinfo-head">
         <RedisTypeBadge type={view.keyType} size={22} />
         <code className="rinfo-key">{keyName}</code>
-        <IconBtn icon="content_copy" size={15} title="Copy key" onClick={copyKey} />
+        <IconBtn icon="content_copy" size={15} title={t("redis.kt.copyKey")} onClick={copyKey} />
       </div>
 
       <div className="rinfo-grid">
-        {row("Type", <span style={{ color: meta.color }}>{view.keyType}</span>)}
-        {row("Encoding", <code>{view.encoding ?? "—"}</code>)}
-        {row("Elements", view.keyType === "string" ? "—" : count)}
-        {row("Size", view.keyType === "string" ? count + " bytes" : count + " items")}
-        {row("Memory", view.memory !== null ? humanBytes(view.memory) : "—")}
-        {row("Idle", view.idle !== null ? humanTTL(view.idle) : "—")}
+        {row(t("redis.kt.infoType"), <span style={{ color: meta.color }}>{view.keyType}</span>)}
+        {row(t("redis.kt.infoEncoding"), <code>{view.encoding ?? "—"}</code>)}
+        {row(t("redis.kt.infoElements"), view.keyType === "string" ? "—" : count)}
         {row(
-          "TTL",
+          t("redis.kt.infoSize"),
+          view.keyType === "string"
+            ? t("redis.kt.sizeBytes", { count })
+            : t("redis.kt.sizeItems", { count }),
+        )}
+        {row(t("redis.kt.infoMemory"), view.memory !== null ? humanBytes(view.memory) : "—")}
+        {row(t("redis.kt.infoIdle"), view.idle !== null ? humanTTL(view.idle) : "—")}
+        {row(
+          t("redis.kt.infoTtl"),
           hasTtl ? (
             <span className="cell-true">
               {humanTTL(view.ttl)} ({view.ttl}s)
             </span>
           ) : (
-            <span className="cell-dim">no expiry (∞)</span>
+            <span className="cell-dim">{t("redis.kt.noExpiry")}</span>
           ),
         )}
       </div>
 
       <div className="rinfo-actions">
         <h3>
-          <Icon name="bolt" size={14} /> Quick actions
+          <Icon name="bolt" size={14} /> {t("redis.kt.quickActions")}
         </h3>
         <div className="rinfo-act-row">
           <input
             className="rinfo-ttl-input"
-            placeholder="seconds"
+            placeholder={t("redis.kt.seconds")}
             value={ttlDraft}
             spellCheck={false}
-            aria-label="TTL in seconds"
+            aria-label={t("redis.kt.ttlAria")}
             onChange={(e) => setTtlDraft(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") void setTtl();
             }}
           />
           <Btn variant="tonal" icon="schedule" small onClick={setTtl}>
-            Set TTL (EXPIRE)
+            {t("redis.kt.setTtl")}
           </Btn>
           {hasTtl ? (
             <Btn variant="text" small onClick={persist}>
-              Persist
+              {t("redis.kt.persistBtn")}
             </Btn>
           ) : null}
           <div className="rinfo-act-spacer" />
           <Btn variant="text" icon="delete" small className="rinfo-del-btn" onClick={requestDelete}>
-            Delete key (DEL)
+            {t("redis.delKeyBtn")}
           </Btn>
         </div>
       </div>
 
       {confirmDelete ? (
-        <Modal onClose={() => setConfirmDelete(false)} label="Confirm delete" width={460}>
+        <Modal
+          onClose={() => setConfirmDelete(false)}
+          label={t("redis.kt.confirmDeleteAria")}
+          width={460}
+        >
           <ModalTitle>
-            <Icon name="warning" size={18} style={{ color: "#e06c75" }} /> Delete a key on a
-            production connection?
+            <Icon name="warning" size={18} style={{ color: "#e06c75" }} />{" "}
+            {t("redis.kt.delProdTitle")}
           </ModalTitle>
           <p className="dg-confirm-body">
-            This connection points at <b>production</b>. The following command will run:
+            {t("redis.kt.delProdPre")} <b>production</b>
+            {t("redis.kt.delProdPost")}
           </p>
           <code className="dg-confirm-sql">DEL {keyName}</code>
           <ModalActions>
             <Btn variant="text" onClick={() => setConfirmDelete(false)}>
-              Cancel
+              {t("common.cancel")}
             </Btn>
             <Btn variant="filled" className="rinfo-del-btn" onClick={doDelete}>
-              Delete key
+              {t("redis.kt.deleteKeyBtn")}
             </Btn>
           </ModalActions>
         </Modal>

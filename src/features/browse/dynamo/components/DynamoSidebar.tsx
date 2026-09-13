@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from "react";
 
+import { useT } from "../../../../shared/i18n/useT";
 import { Btn } from "../../../../shared/ui/Btn";
 import { EngineBadge } from "../../../../shared/ui/EngineBadge";
 import { dropWordSelection } from "../../../../shared/ui/dropWordSelection";
@@ -82,6 +83,7 @@ export function DynamoSidebar({
   onCloseWorkspace,
   showDashboard = true,
 }: DynamoSidebarProps) {
+  const t = useT();
   const [q, setQ] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
@@ -116,7 +118,7 @@ export function DynamoSidebar({
         <LanguageChip />
         <IconBtn
           icon="power_settings_new"
-          title="Close workspace"
+          title={t("dfile.closeWorkspace")}
           onClick={onCloseWorkspace}
           size={16}
           danger
@@ -124,18 +126,23 @@ export function DynamoSidebar({
       </div>
 
       <div className="ddb-schema-row">
-        <button type="button" className="ddb-schema-btn" style={{ flex: 1 }} title="AWS region">
+        <button
+          type="button"
+          className="ddb-schema-btn"
+          style={{ flex: 1 }}
+          title={t("dyn.sb.regionTitle")}
+        >
           <Icon name="public" size={15} style={{ color: "var(--accent)" }} />
           <span className="ddb-schema-btn-name">{region}</span>
         </button>
-        <IconBtn icon="schema" title="Schema map (single-table design)" onClick={onOpenMap} />
-        <IconBtn icon="download" title="Export all tables" onClick={onExportAll} />
+        <IconBtn icon="schema" title={t("dyn.sb.schemaMapTitle")} onClick={onOpenMap} />
+        <IconBtn icon="download" title={t("dyn.ctx.exportAll")} onClick={onExportAll} />
         {showDashboard ? (
-          <IconBtn icon="monitoring" title="Tables dashboard" onClick={onOpenDashboard} />
+          <IconBtn icon="monitoring" title={t("dyn.sb.dashboard")} onClick={onOpenDashboard} />
         ) : null}
         <IconBtn
           icon="sync"
-          title="Refresh tables"
+          title={t("dyn.sb.refresh")}
           onClick={onRefresh}
           className={refreshing ? "sidebar-sync-spinning" : undefined}
         />
@@ -144,7 +151,7 @@ export function DynamoSidebar({
       <div className="ddb-sidebar-search">
         <Icon name="search" size={15} style={{ color: "var(--text-faint)" }} />
         <input
-          placeholder="Filter tables…"
+          placeholder={t("dyn.sb.filterPh")}
           value={q}
           onChange={(e) => setQ(e.target.value)}
           spellCheck={false}
@@ -152,7 +159,7 @@ export function DynamoSidebar({
       </div>
 
       <div className="ddb-sidebar-section-label">
-        <span>Tables</span>
+        <span>{t("dyn.sb.tablesLabel")}</span>
         <div
           className="sec-actions"
           style={{ display: "flex", alignItems: "center", gap: 6, position: "relative" }}
@@ -161,7 +168,7 @@ export function DynamoSidebar({
           <button
             type="button"
             className="sec-actions-btn"
-            title="Database actions"
+            title={t("dyn.sb.dbActions")}
             onClick={(e) => {
               e.stopPropagation();
               // Toggle: a second press on the open db-actions menu closes it.
@@ -179,7 +186,9 @@ export function DynamoSidebar({
       </div>
 
       <div className="ddb-sidebar-tables">
-        {loading && tables.length === 0 ? <div className="ddb-sidebar-empty">Loading…</div> : null}
+        {loading && tables.length === 0 ? (
+          <div className="ddb-sidebar-empty">{t("dyn.loading")}</div>
+        ) : null}
         {filtered.map((t) => {
           const open = expanded[t.name];
           return (
@@ -268,7 +277,7 @@ export function DynamoSidebar({
           onClick={onNewQuery}
           style={{ width: "100%", justifyContent: "center" }}
         >
-          New query
+          {t("dyn.sb.newQuery")}
         </Btn>
       </div>
 
@@ -291,7 +300,7 @@ export function DynamoSidebar({
                   onCreateTable();
                 }}
               >
-                <Icon name="add_box" size={15} /> Create table
+                <Icon name="add_box" size={15} /> {t("dyn.ctx.createTable")}
               </button>
               <button
                 type="button"
@@ -301,7 +310,7 @@ export function DynamoSidebar({
                   onExportAll();
                 }}
               >
-                <Icon name="download" size={15} /> Export all tables
+                <Icon name="download" size={15} /> {t("dyn.ctx.exportAll")}
               </button>
               {/* No Refresh item: the region row's own sync icon already does
                   it, and no other engine's scope menu carries one. */}
@@ -318,7 +327,7 @@ export function DynamoSidebar({
                   onEmptyAllTables();
                 }}
               >
-                <Icon name="delete_sweep" size={15} /> Empty all tables
+                <Icon name="delete_sweep" size={15} /> {t("dyn.ctx.emptyAll")}
               </button>
               <button
                 type="button"
@@ -329,7 +338,7 @@ export function DynamoSidebar({
                   onDropAllTables();
                 }}
               >
-                <Icon name="delete_forever" size={15} /> Drop all tables
+                <Icon name="delete_forever" size={15} /> {t("dyn.ctx.dropAll")}
               </button>
             </>
           ) : (
@@ -342,7 +351,7 @@ export function DynamoSidebar({
                   setCtxMenu(null);
                 }}
               >
-                <Icon name="table_chart" size={15} /> Open data
+                <Icon name="table_chart" size={15} /> {t("dyn.ctx.openData")}
               </button>
               <button
                 type="button"
@@ -353,7 +362,7 @@ export function DynamoSidebar({
                   if (tbl) onOpenTableInNewTab(tbl);
                 }}
               >
-                <Icon name="open_in_new" size={15} /> Open in new tab
+                <Icon name="open_in_new" size={15} /> {t("dyn.ctx.newTab")}
               </button>
               <button
                 type="button"
@@ -363,7 +372,7 @@ export function DynamoSidebar({
                   setCtxMenu(null);
                 }}
               >
-                <Icon name="schema" size={15} /> Show in schema map
+                <Icon name="schema" size={15} /> {t("dyn.ctx.showMap")}
               </button>
               <div className="ddb-ctx-sep" />
               <button
@@ -375,7 +384,7 @@ export function DynamoSidebar({
                   if (tbl) onExportTable(tbl);
                 }}
               >
-                <Icon name="download" size={15} /> Export table
+                <Icon name="download" size={15} /> {t("dyn.ctx.exportTable")}
               </button>
               <button
                 type="button"
@@ -386,7 +395,7 @@ export function DynamoSidebar({
                   if (tbl) onImportTable(tbl);
                 }}
               >
-                <Icon name="upload" size={15} /> Import items
+                <Icon name="upload" size={15} /> {t("dyn.ctx.importItems")}
               </button>
               {/* Destructive last, behind a separator — the same placement the
                   SQL, Cassandra and Mongo sidebars use. */}
@@ -400,7 +409,7 @@ export function DynamoSidebar({
                   if (tbl) onTruncateTable(tbl);
                 }}
               >
-                <Icon name="delete_sweep" size={15} /> Empty table
+                <Icon name="delete_sweep" size={15} /> {t("dyn.ctx.emptyTable")}
               </button>
               <button
                 type="button"
@@ -411,7 +420,7 @@ export function DynamoSidebar({
                   if (tbl) onDeleteTable(tbl);
                 }}
               >
-                <Icon name="delete_forever" size={15} /> Delete table
+                <Icon name="delete_forever" size={15} /> {t("dyn.ctx.deleteTable")}
               </button>
             </>
           )}

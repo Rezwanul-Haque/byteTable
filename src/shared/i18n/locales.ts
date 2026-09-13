@@ -80,20 +80,25 @@ export function isLocaleId(value: unknown): value is LocaleId {
  * Region choices for the Formats section. `auto` follows the language's own
  * default region; `ISO` is not a real BCP-47 tag — it maps to `en-CA` so dates
  * render as `YYYY-MM-DD` (see `intlTag()`).
+ *
+ * Ids only — no display copy: the picker labels these via `set.region.*`
+ * (SettingsModal's `regionKey()`), because a locale table cannot be built from
+ * this module without a cycle (see strings/index.ts). The country name next to
+ * each tag is therefore translated like any other string.
  */
 export const REGIONS = [
-  { id: "auto", label: "Follow language" },
-  { id: "en-US", label: "United States · en-US" },
-  { id: "en-GB", label: "United Kingdom · en-GB" },
-  { id: "bn-BD", label: "Bangladesh · bn-BD" },
-  { id: "de-DE", label: "Germany · de-DE" },
-  { id: "es-ES", label: "Spain · es-ES" },
-  { id: "ja-JP", label: "Japan · ja-JP" },
-  { id: "zh-CN", label: "中国大陆 · zh-CN" },
-  { id: "zh-TW", label: "台灣 · zh-TW" },
-  { id: "zh-HK", label: "香港 · zh-HK" },
-  { id: "ar-SA", label: "Saudi Arabia · ar-SA" },
-  { id: "ISO", label: "ISO 8601 · 2026-08-10" },
+  { id: "auto" },
+  { id: "en-US" },
+  { id: "en-GB" },
+  { id: "bn-BD" },
+  { id: "de-DE" },
+  { id: "es-ES" },
+  { id: "ja-JP" },
+  { id: "zh-CN" },
+  { id: "zh-TW" },
+  { id: "zh-HK" },
+  { id: "ar-SA" },
+  { id: "ISO" },
 ] as const;
 
 export type RegionId = (typeof REGIONS)[number]["id"];

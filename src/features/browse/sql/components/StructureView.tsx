@@ -49,6 +49,7 @@ import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { Modal, ModalTitle } from "../../../../shared/ui/Modal";
 import { Select } from "../../../../shared/ui/Select";
 import { useToast } from "../../../../shared/ui/toastContext";
+import { useT } from "../../../../shared/i18n/useT";
 import "../../shared/styles/StructureView.css";
 import { StructureRailResizer } from "../../shared/components/StructureRailResizer";
 
@@ -82,6 +83,7 @@ export function StructureView({
   currentSchema,
 }: StructureViewProps) {
   const toast = useToast();
+  const t = useT();
   const [colQuery, setColQuery] = useState("");
   const [ddlOpen, setDdlOpen] = useState(false);
   // Collapse the details rail (Indexes / FKs / Referenced by / DDL) to widen the
@@ -198,7 +200,7 @@ export function StructureView({
     const newName = normalizeName(raw);
     if (!newName || newName === col.name) return;
     if (working.some((c) => c !== col && c.name === newName)) {
-      toast(`Column "${newName}" already exists on ${table}`, "err");
+      toast(t("stv.dupName", { name: newName, table }), "err");
       return;
     }
     if (col.origin === null) {
@@ -400,14 +402,14 @@ export function StructureView({
       } catch (err) {
         if (!cancelled) {
           setPreviewStatements(null);
-          setPreviewError(appErrorMessage(err, "Could not preview the changes."));
+          setPreviewError(appErrorMessage(err, t("stv.previewFail")));
         }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [reviewOpen, wireBatch, handleId, schema, table]);
+  }, [reviewOpen, wireBatch, handleId, schema, table, t]);
 
   const applyPending = async () => {
     if (wireBatch.length === 0 || applying) return;
@@ -423,11 +425,11 @@ export function StructureView({
       await loadTableMeta(handleId, schema, table);
       void loadTables(handleId, schema, { force: true });
       requestRefetch(tabId);
-      toast(`Applied ${wireBatch.length} change${wireBatch.length === 1 ? "" : "s"}`, "ok");
+      toast(t("stv.applied", { count: wireBatch.length }), "ok");
     } catch (err) {
       // Backend rolled back (DB unchanged). Keep pendingOps so the user can
       // adjust; show the engine error IN THE PENDING BAR (acceptance §5).
-      setApplyError(appErrorMessage(err, "Could not apply the changes."));
+      setApplyError(appErrorMessage(err, t("stv.applyFail")));
     } finally {
       setApplying(false);
     }
@@ -441,7 +443,7 @@ export function StructureView({
     setPreviewError(null);
     setEditingCell(null);
     setAutoEditName(null);
-    toast("Pending changes discarded");
+    toast(t("stv.discarded"));
   };
 
   // ⌘/Ctrl+S applies the pending batch — the same keystroke that commits the
@@ -489,7 +491,7 @@ export function StructureView({
   const ddl = meta?.ddl ?? "";
   const copyDdl = () => {
     if (navigator.clipboard?.writeText) void navigator.clipboard.writeText(ddl);
-    toast("DDL copied to clipboard", "ok");
+    toast(t("stv.ddlCopied"), "ok");
   };
 
   // --- error / loading states (§5 inline red; no modal) ------------------
@@ -499,7 +501,7 @@ export function StructureView({
         <div className="dg-state">
           <Icon name="error" size={28} style={{ color: "#e06c75" }} />
           <div className="dg-error">
-            Could not load table structure.
+            {t("stv.loadFail")}
             <code>{error}</code>
           </div>
           <button
@@ -507,7 +509,7 @@ export function StructureView({
             className="dg-retry"
             onClick={() => void loadTableMeta(handleId, schema, table)}
           >
-            Retry
+            {t("stv.retry")}
           </button>
         </div>
       </div>
@@ -519,7 +521,7 @@ export function StructureView({
       <div className="structure-view">
         <div className="dg-state">
           <Icon name="account_tree" size={28} style={{ opacity: 0.5 }} />
-          <span>Loading structure of {qualified}…</span>
+          <span>{t("stv.loading", { name: qualified })}</span>
         </div>
       </div>
     );
@@ -540,20 +542,20 @@ export function StructureView({
         <div style={{ flex: 1 }} />
         <div className="structure-chips">
           <span className="structure-chip">
-            <b>{colCount}</b> columns
+            <b>{colCount}</b> {t("stv.chipColumns")}
           </span>
           <span className="structure-chip">
-            <b>{workingIndexes.filter((ix) => !ix.markedForDrop).length}</b> indexes
+            <b>{workingIndexes.filter((ix) => !ix.markedForDrop).length}</b> {t("stv.chipIndexes")}
           </span>
           <span className="structure-chip">
-            <b>{workingForeignKeys.filter((fk) => !fk.markedForDrop).length}</b> FKs
+            <b>{workingForeignKeys.filter((fk) => !fk.markedForDrop).length}</b> {t("stv.chipFks")}
           </span>
           <span className="structure-chip">
-            <b>{inbound.length}</b> referenced by
+            <b>{inbound.length}</b> {t("stv.chipReferencedBy")}
           </span>
           {typeof totalRows === "number" ? (
             <span className="structure-chip">
-              <b>{totalRows.toLocaleString()}</b> rows
+              <b>{totalRows.toLocaleString()}</b> {t("common.rows")}
             </span>
           ) : null}
         </div>
@@ -564,31 +566,36 @@ export function StructureView({
         <section className="columns-pane">
           <div className="columns-pane-head">
             <h3>
-              <Icon name="view_column" size={15} /> Columns
+              <Icon name="view_column" size={15} /> {t("ws.table.columns")}
             </h3>
             <div className="columns-search">
               <Icon name="search" size={14} style={{ color: "var(--text-faint)" }} />
               <input
-                aria-label={"Filter " + colCount + " columns"}
-                placeholder={"Filter " + colCount + " columns…"}
+                aria-label={t("stv.filterCols", { count: colCount })}
+                placeholder={t("stv.filterColsDots", { count: colCount })}
                 value={colQuery}
                 onChange={(e) => setColQuery(e.target.value)}
                 spellCheck={false}
               />
               {colQuery ? (
-                <IconBtn icon="close" size={12} title="Clear" onClick={() => setColQuery("")} />
+                <IconBtn
+                  icon="close"
+                  size={12}
+                  title={t("ws.scope.clear")}
+                  onClick={() => setColQuery("")}
+                />
               ) : null}
             </div>
             <span className="columns-count">
-              {q ? filteredCols.length + " of " + colCount : colCount}
+              {q ? filteredCols.length + " " + t("common.of") + " " + colCount : colCount}
             </span>
             <button type="button" className="add-col-btn" onClick={addColumn}>
-              <Icon name="add" size={14} /> Add column
+              <Icon name="add" size={14} /> {t("stv.addColumn")}
             </button>
             <IconBtn
               icon={railCollapsed ? "right_panel_open" : "right_panel_close"}
               size={16}
-              title={railCollapsed ? "Show details panel" : "Hide details panel"}
+              title={railCollapsed ? t("stv.showRail") : t("stv.hideRail")}
               onClick={toggleRail}
             />
           </div>
@@ -598,11 +605,11 @@ export function StructureView({
                 <tr>
                   <th className="st-num-h">#</th>
                   <th />
-                  <th>Name</th>
-                  <th>Type</th>
-                  <th>Nullable</th>
-                  <th>Default</th>
-                  {supportsComments ? <th>Comment</th> : null}
+                  <th>{t("stv.hName")}</th>
+                  <th>{t("stv.hType")}</th>
+                  <th>{t("stv.hNullable")}</th>
+                  <th>{t("stv.hDefault")}</th>
+                  {supportsComments ? <th>{t("stv.hComment")}</th> : null}
                   <th />
                 </tr>
               </thead>
@@ -610,7 +617,7 @@ export function StructureView({
                 {filteredCols.length === 0 ? (
                   <tr>
                     <td colSpan={supportsComments ? 8 : 7} className="grid-empty-cell">
-                      No columns match “{colQuery}”
+                      {t("stv.noColMatch", { query: colQuery })}
                     </td>
                   </tr>
                 ) : (
@@ -638,8 +645,7 @@ export function StructureView({
               </tbody>
             </table>
             <div className="st-edit-hint">
-              Double-click a name, type{supportsComments ? ", default or comment" : " or default"}{" "}
-              to edit · click nullable to toggle · changes stage below before applying
+              {supportsComments ? t("stv.editHintComments") : t("stv.editHint")}
             </div>
           </div>
         </section>
@@ -649,11 +655,11 @@ export function StructureView({
             open={openSection === "indexes"}
             onToggle={() => setOpenSection((s) => (s === "indexes" ? null : "indexes"))}
             icon="speed"
-            label="Indexes"
+            label={t("stv.railIndexes")}
             count={workingIndexes.filter((ix) => !ix.markedForDrop).length}
             add={{
               active: addingIndex,
-              title: "Add index",
+              title: t("stv.addIndex"),
               onToggle: () => {
                 setOpenSection("indexes");
                 setAddingIndex((v) => !v);
@@ -670,7 +676,7 @@ export function StructureView({
             ) : null}
             <div className="acc-scroll">
               {workingIndexes.length === 0 ? (
-                <div className="structure-none">No indexes</div>
+                <div className="structure-none">{t("stv.noIndexes")}</div>
               ) : (
                 workingIndexes.map((ix) => (
                   <div
@@ -693,7 +699,7 @@ export function StructureView({
                         <button
                           type="button"
                           className="card-drop"
-                          title={"Keep " + ix.name}
+                          title={t("stv.keepName", { name: ix.name })}
                           onClick={() => undropIndex(ix)}
                         >
                           <Icon name="undo" size={13} />
@@ -702,7 +708,7 @@ export function StructureView({
                         <button
                           type="button"
                           className="card-drop"
-                          title={"Drop " + ix.name}
+                          title={t("stv.dropName", { name: ix.name })}
                           onClick={() => dropIndex(ix)}
                         >
                           <Icon name="delete" size={13} />
@@ -720,11 +726,11 @@ export function StructureView({
             open={openSection === "fks"}
             onToggle={() => setOpenSection((s) => (s === "fks" ? null : "fks"))}
             icon="link"
-            label="Foreign keys"
+            label={t("stv.railFks")}
             count={workingForeignKeys.filter((fk) => !fk.markedForDrop).length}
             add={{
               active: addingFk,
-              title: "Add foreign key",
+              title: t("stv.addFk"),
               onToggle: () => {
                 setOpenSection("fks");
                 setAddingFk((v) => !v);
@@ -744,7 +750,7 @@ export function StructureView({
             ) : null}
             <div className="acc-scroll">
               {workingForeignKeys.length === 0 && !addingFk ? (
-                <div className="structure-none">No foreign keys</div>
+                <div className="structure-none">{t("stv.noFks")}</div>
               ) : (
                 workingForeignKeys.map((fk) => (
                   <div
@@ -762,7 +768,7 @@ export function StructureView({
                         <button
                           type="button"
                           className="card-drop"
-                          title={"Keep " + fk.name}
+                          title={t("stv.keepName", { name: fk.name })}
                           onClick={() => undropForeignKey(fk)}
                         >
                           <Icon name="undo" size={13} />
@@ -771,7 +777,7 @@ export function StructureView({
                         <button
                           type="button"
                           className="card-drop"
-                          title={"Drop " + fk.name}
+                          title={t("stv.dropName", { name: fk.name })}
                           onClick={() => dropForeignKey(fk)}
                         >
                           <Icon name="delete" size={13} />
@@ -796,12 +802,12 @@ export function StructureView({
             open={openSection === "refs"}
             onToggle={() => setOpenSection((s) => (s === "refs" ? null : "refs"))}
             icon="call_received"
-            label="Referenced by"
+            label={t("stv.railReferencedBy")}
             count={inbound.length}
           >
             <div className="acc-scroll">
               {inbound.length === 0 ? (
-                <div className="structure-none">No tables reference {table}</div>
+                <div className="structure-none">{t("stv.noRefs", { name: table })}</div>
               ) : (
                 inbound.map((fk, i) => (
                   <div key={fk.table + "-" + i} className="structure-card">
@@ -818,14 +824,14 @@ export function StructureView({
                 ))
               )}
             </div>
-            <div className="rail-readonly-note">Edit these on the referencing table</div>
+            <div className="rail-readonly-note">{t("stv.editOnRefTable")}</div>
           </AccSection>
 
           <AccSection
             open={openSection === "ddl"}
             onToggle={() => setOpenSection((s) => (s === "ddl" ? null : "ddl"))}
             icon="code"
-            label="DDL"
+            label={t("stv.railDdl")}
             actions={
               ddl ? (
                 <>
@@ -833,7 +839,7 @@ export function StructureView({
                     className="ddl-copy"
                     role="button"
                     tabIndex={0}
-                    title="Copy DDL"
+                    title={t("stv.copyDdlTitle")}
                     onClick={(e) => {
                       e.stopPropagation();
                       copyDdl();
@@ -846,13 +852,13 @@ export function StructureView({
                       }
                     }}
                   >
-                    <Icon name="content_copy" size={13} /> copy
+                    <Icon name="content_copy" size={13} /> {t("stv.copyAction")}
                   </span>
                   <span
                     className="ddl-copy"
                     role="button"
                     tabIndex={0}
-                    title="View full DDL"
+                    title={t("stv.viewDdlTitle")}
                     onClick={(e) => {
                       e.stopPropagation();
                       setDdlOpen(true);
@@ -865,7 +871,7 @@ export function StructureView({
                       }
                     }}
                   >
-                    <Icon name="open_in_full" size={13} /> expand
+                    <Icon name="open_in_full" size={13} /> {t("stv.expandAction")}
                   </span>
                 </>
               ) : null
@@ -877,7 +883,7 @@ export function StructureView({
                 dangerouslySetInnerHTML={{ __html: highlightSql(ddl) }}
               />
             ) : (
-              <div className="structure-none">No DDL available</div>
+              <div className="structure-none">{t("stv.noDdl")}</div>
             )}
           </AccSection>
         </aside>
@@ -887,7 +893,7 @@ export function StructureView({
         <div className="pending-bar">
           {reviewOpen ? (
             <div className="pending-list">
-              <div className="pending-list-title">Pending statements</div>
+              <div className="pending-list-title">{t("stv.pendingStatements")}</div>
               {previewError ? (
                 <div className="pending-error" role="alert">
                   {previewError}
@@ -901,7 +907,7 @@ export function StructureView({
                   />
                 ))
               ) : (
-                <div className="structure-none">Loading SQL…</div>
+                <div className="structure-none">{t("stv.loadingSql")}</div>
               )}
             </div>
           ) : null}
@@ -913,9 +919,7 @@ export function StructureView({
           ) : null}
           <div className="pending-bar-row">
             <Icon name="pending_actions" size={16} style={{ color: "var(--accent)" }} />
-            <span className="pending-count">
-              {ops.length} pending change{ops.length === 1 ? "" : "s"}
-            </span>
+            <span className="pending-count">{t("stv.pendingCount", { count: ops.length })}</span>
             <button
               type="button"
               className="pending-review"
@@ -923,14 +927,14 @@ export function StructureView({
               aria-expanded={reviewOpen}
             >
               <Icon name={reviewOpen ? "expand_more" : "expand_less"} size={14} />
-              {reviewOpen ? "Hide SQL" : "Review SQL"}
+              {reviewOpen ? t("stv.hideSql") : t("stv.reviewSql")}
             </button>
             <div style={{ flex: 1 }} />
             <Btn variant="text" small onClick={discardPending} disabled={applying}>
-              Discard
+              {t("grid.discard")}
             </Btn>
             <Btn variant="filled" icon="check" small onClick={applyPending} disabled={applying}>
-              {applying ? "Applying…" : "Apply changes · ⌘S"}
+              {applying ? t("stv.applying") : t("stv.applyBtn")}
             </Btn>
           </div>
         </div>
@@ -940,17 +944,18 @@ export function StructureView({
         <Modal
           onClose={() => setDdlOpen(false)}
           className="ddl-modal"
-          label={"DDL for " + qualified}
+          label={t("stv.ddlFor", { name: qualified })}
         >
           <ModalTitle>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-              <Icon name="code" size={17} style={{ color: "var(--accent)" }} /> DDL · {qualified}
+              <Icon name="code" size={17} style={{ color: "var(--accent)" }} />{" "}
+              {t("stv.ddlTitle", { name: qualified })}
             </span>
             <div style={{ display: "flex", gap: 6 }}>
               <Btn icon="content_copy" variant="tonal" small onClick={copyDdl}>
-                Copy
+                {t("stv.copy")}
               </Btn>
-              <IconBtn icon="close" onClick={() => setDdlOpen(false)} title="Close" />
+              <IconBtn icon="close" onClick={() => setDdlOpen(false)} title={t("common.close")} />
             </div>
           </ModalTitle>
           <pre
@@ -1007,6 +1012,7 @@ function ColumnRow({
 }: ColumnRowProps) {
   const cellId = (kind: string) => (col.origin ?? "new:" + col.name) + ":" + kind;
   const rowClass = (col.isNew ? "st-row-new" : "") + (col.markedForDrop ? " st-row-drop" : "");
+  const t = useT();
 
   // Auto-focus into name editing right after Add column.
   const startNameEdit = autoEditName === col.name && col.origin === null;
@@ -1034,15 +1040,12 @@ function ColumnRow({
           onEdit={() => setEditingCell(cellId("name"))}
           onDone={() => setEditingCell(null)}
           onCommit={(v) => onRename(col, v)}
-          title="Double-click to rename"
+          title={t("stv.dblRename")}
           render={() => (
             <>
               {col.name}
               {col.autoIncrement ? (
-                <span
-                  className="tag tag-accent st-auto-tag"
-                  title="Auto-increment — the database assigns this value on insert"
-                >
+                <span className="tag tag-accent st-auto-tag" title={t("stv.autoIncTitle")}>
                   AUTO INC
                 </span>
               ) : null}
@@ -1073,7 +1076,7 @@ function ColumnRow({
           className={"st-null-toggle" + (col.pk ? " locked" : "")}
           onClick={() => onToggleNullable(col)}
           disabled={col.pk}
-          title={col.pk ? "Primary key — always NOT NULL" : "Click to toggle nullability"}
+          title={col.pk ? t("stv.pkNotNull") : t("stv.toggleNullable")}
         >
           {col.nullable ? (
             <span className="cell-dim">NULL</span>
@@ -1090,7 +1093,7 @@ function ColumnRow({
           onEdit={() => setEditingCell(cellId("default"))}
           onDone={() => setEditingCell(null)}
           onCommit={(v) => onChangeDefault(col, v)}
-          title="Double-click to edit default"
+          title={t("stv.dblEditDefault")}
           render={() =>
             col.default === null || col.default === "" ? (
               <span className="cell-null">NULL</span>
@@ -1104,7 +1107,7 @@ function ColumnRow({
         <td className="st-comment">
           {col.origin === null ? (
             // A new column has no comment op yet — set it after applying.
-            <span className="cell-null" title="Set the comment after applying the new column">
+            <span className="cell-null" title={t("stv.commentAfterApply")}>
               —
             </span>
           ) : (
@@ -1115,7 +1118,7 @@ function ColumnRow({
               onEdit={() => setEditingCell(cellId("comment"))}
               onDone={() => setEditingCell(null)}
               onCommit={(v) => onChangeComment(col, v)}
-              title="Double-click to edit comment"
+              title={t("stv.dblEditComment")}
               render={() =>
                 col.comment ? (
                   <span className="st-comment-text">{col.comment}</span>
@@ -1132,7 +1135,7 @@ function ColumnRow({
           <button
             type="button"
             className="st-drop st-undrop"
-            title={"Keep column " + col.name}
+            title={t("stv.keepCol", { name: col.name })}
             onClick={() => onUndrop(col)}
           >
             <Icon name="undo" size={14} />
@@ -1141,7 +1144,7 @@ function ColumnRow({
           <button
             type="button"
             className="st-drop"
-            title={"Drop column " + col.name}
+            title={t("stv.dropCol", { name: col.name })}
             onClick={() => onDrop(col)}
           >
             <Icon name="delete" size={14} />
@@ -1249,6 +1252,7 @@ interface TypeCellProps {
 }
 
 function TypeCell({ value, typeOptions, pk, editing, onEdit, onDone, onCommit }: TypeCellProps) {
+  const t = useT();
   const options = useMemo(() => {
     const base: string[] = [...typeOptions];
     // Always include the column's current declared type so the select shows it
@@ -1259,7 +1263,7 @@ function TypeCell({ value, typeOptions, pk, editing, onEdit, onDone, onCommit }:
   if (pk) {
     // PK columns can't be retyped (backend rejects; disable the affordance).
     return (
-      <span className="st-type" title="Primary key column — type is locked">
+      <span className="st-type" title={t("stv.pkTypeLocked")}>
         {value.toLowerCase() || "—"}
       </span>
     );
@@ -1274,8 +1278,8 @@ function TypeCell({ value, typeOptions, pk, editing, onEdit, onDone, onCommit }:
         className="st-type-select"
         autoOpen
         editable
-        placeholder="type…"
-        aria-label="Column type"
+        placeholder={t("stv.typePlaceholder")}
+        aria-label={t("stv.colTypeAria")}
         value={value}
         options={options.map((t) => ({ value: t, label: t }))}
         onChange={onCommit}
@@ -1286,7 +1290,7 @@ function TypeCell({ value, typeOptions, pk, editing, onEdit, onDone, onCommit }:
   return (
     <span
       className="st-editable st-type"
-      title="Double-click to change type"
+      title={t("stv.dblChangeType")}
       role="button"
       tabIndex={0}
       onDoubleClick={onEdit}
@@ -1386,6 +1390,7 @@ interface AddIndexFormProps {
 function AddIndexForm({ columns, onAdd, onCancel }: AddIndexFormProps) {
   const [picked, setPicked] = useState<string[]>([]);
   const [unique, setUnique] = useState(false);
+  const t = useT();
   const toggle = (n: string) =>
     setPicked((p) => (p.includes(n) ? p.filter((x) => x !== n) : [...p, n]));
   return (
@@ -1404,11 +1409,11 @@ function AddIndexForm({ columns, onAdd, onCancel }: AddIndexFormProps) {
       </div>
       <label className="st-addform-row">
         <input type="checkbox" checked={unique} onChange={(e) => setUnique(e.target.checked)} />{" "}
-        Unique index
+        {t("stv.uniqueIndex")}
       </label>
       <div className="st-addform-actions">
         <Btn variant="text" small onClick={onCancel}>
-          Cancel
+          {t("common.cancel")}
         </Btn>
         <Btn
           variant="filled"
@@ -1417,7 +1422,7 @@ function AddIndexForm({ columns, onAdd, onCancel }: AddIndexFormProps) {
           disabled={picked.length === 0}
           onClick={() => onAdd(picked, unique)}
         >
-          Add index
+          {t("stv.addIndex")}
         </Btn>
       </div>
     </div>
@@ -1447,6 +1452,7 @@ function AddFkForm({ handleId, schema, table, columns, onAdd, onCancel }: AddFkF
   const loadTables = useIntrospectionStore((s) => s.loadTables);
   const loadTableMeta = useIntrospectionStore((s) => s.loadTableMeta);
   const tablesEntry = useIntrospectionStore((s) => s.tables[tablesKey(handleId, schema)]);
+  const t = useT();
 
   useEffect(() => {
     void loadTables(handleId, schema);
@@ -1482,10 +1488,10 @@ function AddFkForm({ handleId, schema, table, columns, onAdd, onCancel }: AddFkF
   if (otherTables.length === 0) {
     return (
       <div className="st-addform">
-        <div className="structure-none">No other tables in this schema to reference.</div>
+        <div className="structure-none">{t("stv.noOtherTables")}</div>
         <div className="st-addform-actions">
           <Btn variant="text" small onClick={onCancel}>
-            Cancel
+            {t("common.cancel")}
           </Btn>
         </div>
       </div>
@@ -1498,14 +1504,14 @@ function AddFkForm({ handleId, schema, table, columns, onAdd, onCancel }: AddFkF
     <div className="st-addform">
       <div className="st-fk-grid">
         <Select
-          aria-label="Local column"
+          aria-label={t("stv.localColAria")}
           value={col}
           options={columns.map((c) => ({ value: c.name, label: c.name }))}
           onChange={setCol}
         />
         <span className="st-fk-arrow">→</span>
         <Select
-          aria-label="Referenced table"
+          aria-label={t("stv.refTableAria")}
           value={refTable}
           options={otherTables.map((t) => ({ value: t, label: t }))}
           onChange={(t) => {
@@ -1514,7 +1520,7 @@ function AddFkForm({ handleId, schema, table, columns, onAdd, onCancel }: AddFkF
           }}
         />
         <Select
-          aria-label="Referenced column"
+          aria-label={t("stv.refColAria")}
           value={refCol}
           options={refCols.map((c) => ({ value: c.name, label: c.name }))}
           onChange={setRefCol}
@@ -1532,7 +1538,7 @@ function AddFkForm({ handleId, schema, table, columns, onAdd, onCancel }: AddFkF
       </label>
       <div className="st-addform-actions">
         <Btn variant="text" small onClick={onCancel}>
-          Cancel
+          {t("common.cancel")}
         </Btn>
         <Btn
           variant="filled"
@@ -1541,7 +1547,7 @@ function AddFkForm({ handleId, schema, table, columns, onAdd, onCancel }: AddFkF
           disabled={!canAdd}
           onClick={() => onAdd([col], refTable, [refCol], onDelete)}
         >
-          Add FK
+          {t("stv.addFkBtn")}
         </Btn>
       </div>
     </div>

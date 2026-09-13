@@ -18,6 +18,7 @@
 import { useState } from "react";
 
 import { appErrorMessage } from "../../../../shared/api/error";
+import { useT } from "../../../../shared/i18n/useT";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { Modal, ModalActions, ModalTitle } from "../../../../shared/ui/Modal";
@@ -55,6 +56,7 @@ export function RedisKillClientsModal({
   onClose: () => void;
 }) {
   const confirmProd = useSettingsStore((s) => s.settings.confirmProd);
+  const t = useT();
   const n = target.clients.length;
   const prod = env === "production" && confirmProd;
   const bulk = n > BULK_THRESHOLD;
@@ -76,7 +78,7 @@ export function RedisKillClientsModal({
         onConfirm(target.clients, closed, target.cmd);
         onClose();
       } catch (err) {
-        setError(appErrorMessage(err, "Could not kill the connection."));
+        setError(appErrorMessage(err, t("redis.km.fail")));
         setBusy(false);
       }
     })();
@@ -95,11 +97,9 @@ export function RedisKillClientsModal({
         </span>
       </ModalTitle>
       <p className="modal-desc">
-        {n === 1
-          ? "The connection is closed immediately."
-          : n + " connections are closed immediately."}{" "}
-        Redis does not warn the client — a well-behaved library reconnects, a blocked{" "}
-        <code>BLPOP</code> returns an error, and any open <code>MULTI</code> is discarded.
+        {t("redis.km.closed", { count: n })} {t("redis.km.conseqA")} <code>BLPOP</code>{" "}
+        {t("redis.km.conseqB")} <code>MULTI</code>
+        {t("redis.km.conseqC")}
       </p>
       <pre className="proc-kill-preview">{target.cmd}</pre>
       {n > 1 ? (
@@ -107,12 +107,14 @@ export function RedisKillClientsModal({
           {target.clients.slice(0, 6).map((c) => (
             <div className="rc-kill-row" key={c.id}>
               <span className="rc-kill-id">#{c.id}</span>
-              <span className="rc-kill-name">{c.name || <em>unnamed</em>}</span>
+              <span className="rc-kill-name">{c.name || <em>{t("redis.km.unnamed")}</em>}</span>
               <span className="rc-kill-addr">{c.addr}</span>
               <span className="rc-kill-age">{humanAge(c.age)}</span>
             </div>
           ))}
-          {n > 6 ? <div className="rc-kill-more">+{n - 6} more</div> : null}
+          {n > 6 ? (
+            <div className="rc-kill-more">{t("redis.km.more", { count: n - 6 })}</div>
+          ) : null}
         </div>
       ) : null}
       {guard ? (
@@ -120,13 +122,15 @@ export function RedisKillClientsModal({
           <span>
             {prod ? (
               <>
-                Connection is tagged <b style={{ color: envColor }}>{env}</b>. Type{" "}
-                <code>{word}</code> to confirm.
+                {t("redis.km.armEnvPre")} <b style={{ color: envColor }}>{env}</b>.{" "}
+                {t("redis.km.armType")} <code>{word}</code> {t("redis.km.armConfirm")}
               </>
             ) : (
               <>
-                This closes <b style={{ color: "var(--danger)" }}>{n} connections</b> at once. Type{" "}
-                <code>{word}</code> to confirm.
+                {t("redis.km.armBulkPre")}{" "}
+                <b style={{ color: "var(--danger)" }}>{t("redis.km.nConn", { count: n })}</b>{" "}
+                {t("redis.km.armBulkMid")} {t("redis.km.armType")} <code>{word}</code>{" "}
+                {t("redis.km.armConfirm")}
               </>
             )}
           </span>
@@ -142,7 +146,7 @@ export function RedisKillClientsModal({
       {error ? <div className="proc-kill-error">{error}</div> : null}
       <ModalActions>
         <Btn variant="text" onClick={onClose} disabled={busy}>
-          Cancel
+          {t("common.cancel")}
         </Btn>
         <button
           type="button"
@@ -151,7 +155,7 @@ export function RedisKillClientsModal({
           onClick={confirm}
         >
           <Icon name="dangerous" size={16} />
-          <span>{busy ? "Killing…" : n === 1 ? "Kill client" : "Kill " + n + " clients"}</span>
+          <span>{busy ? t("redis.km.killing") : t("redis.km.killBtn", { count: n })}</span>
         </button>
       </ModalActions>
     </Modal>

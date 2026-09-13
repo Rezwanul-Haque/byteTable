@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from "react";
 
+import { useT } from "../../../../shared/i18n/useT";
 import type { Env } from "../../../../shared/types";
 import { Btn } from "../../../../shared/ui/Btn";
 import { EngineBadge } from "../../../../shared/ui/EngineBadge";
@@ -25,10 +26,10 @@ interface CtxMenu {
 
 /** The section-nav buttons — the four singleton tabs (Task 5). */
 const SECTIONS = [
-  { kind: "schema", label: "Schema", icon: "schema" },
-  { kind: "docs", label: "Documents", icon: "data_object" },
-  { kind: "curation", label: "Curation", icon: "tune" },
-  { kind: "keys", label: "API keys", icon: "key" },
+  { kind: "schema", labelKey: "tsx.section.schema", icon: "schema" },
+  { kind: "docs", labelKey: "tsx.section.docs", icon: "data_object" },
+  { kind: "curation", labelKey: "tsx.section.curation", icon: "tune" },
+  { kind: "keys", labelKey: "tsx.section.keys", icon: "key" },
 ] as const;
 
 export type TsSectionKind = (typeof SECTIONS)[number]["kind"];
@@ -82,6 +83,7 @@ export function TypesenseSidebar({
   refreshing,
   onCloseWorkspace,
 }: TypesenseSidebarProps) {
+  const t = useT();
   const [q, setQ] = useState("");
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
 
@@ -124,7 +126,7 @@ export function TypesenseSidebar({
         <LanguageChip />
         <IconBtn
           icon="power_settings_new"
-          title="Close workspace"
+          title={t("tsx.sidebar.close")}
           onClick={onCloseWorkspace}
           size={16}
           danger
@@ -132,23 +134,23 @@ export function TypesenseSidebar({
       </div>
 
       <div className="schema-row">
-        <div className="ts-cluster-pill" title={nodeCount + (nodeCount === 1 ? " node" : " nodes")}>
+        <div className="ts-cluster-pill" title={t("tsx.sidebar.nodeCount", { count: nodeCount })}>
           <span className={"ts-health" + (healthy ? "" : " bad")} />
-          <span>{nodeCount}-node cluster</span>
+          <span>{t("tsx.sidebar.clusterNodes", { count: nodeCount })}</span>
           {version ? <span className="ts-cluster-ver">v{version}</span> : null}
         </div>
         <IconBtn
           icon="search"
-          title="Search playground (⌘T)"
+          title={t("tsx.sidebar.searchPlayground")}
           onClick={() => onOpenSearch(coll)}
           disabled={!coll}
         />
-        <IconBtn icon="monitoring" title="Cluster dashboard" onClick={onOpenDashboard} />
+        <IconBtn icon="monitoring" title={t("tsx.sidebar.dashboard")} onClick={onOpenDashboard} />
         {/* `sync` last, matching every other engine's sidebar (Cassandra, Mongo,
             Dynamo, Redis all end their header row with it). */}
         <IconBtn
           icon="sync"
-          title="Refresh"
+          title={t("tsx.sidebar.refresh")}
           onClick={onRefresh}
           className={refreshing ? "sidebar-sync-spinning" : undefined}
         />
@@ -157,7 +159,7 @@ export function TypesenseSidebar({
       <div className="sidebar-search">
         <Icon name="search" size={15} style={{ color: "var(--text-faint)" }} />
         <input
-          placeholder="Filter collections…"
+          placeholder={t("tsx.sidebar.filterCollections")}
           value={q}
           onChange={(e) => setQ(e.target.value)}
           spellCheck={false}
@@ -165,7 +167,7 @@ export function TypesenseSidebar({
       </div>
 
       <div className="sidebar-section-label">
-        <span>Collections</span>
+        <span>{t("tsx.sidebar.collections")}</span>
         <span className="sidebar-count">{collections.length}</span>
       </div>
       <div className="sidebar-tables">
@@ -193,12 +195,12 @@ export function TypesenseSidebar({
           <div className="sidebar-nomatch">
             {collections.length === 0
               ? adminKey
-                ? "This cluster has no collections yet"
+                ? t("tsx.sidebar.noCollections")
                 : // A scoped key's allowed collections are baked into the key and
                   // Typesense exposes no way to read them back, so there is
                   // genuinely nothing to list. Say why rather than looking broken.
-                  "A search-only key cannot list collections. Set a default collection on the connection to browse one."
-              : "No collections match “" + q + "”"}
+                  t("tsx.sidebar.scopedKeyNoList")
+              : t("tsx.sidebar.noMatch", { q })}
           </div>
         ) : null}
       </div>
@@ -206,7 +208,7 @@ export function TypesenseSidebar({
       {aliases.length > 0 ? (
         <>
           <div className="sidebar-section-label">
-            <span>Aliases</span>
+            <span>{t("tsx.sidebar.aliases")}</span>
             <span className="sidebar-count">{aliases.length}</span>
           </div>
           <div className="sidebar-tables ts-alias-list">
@@ -234,7 +236,7 @@ export function TypesenseSidebar({
             className={"ts-nav-btn" + (activeKind === s.kind ? " active" : "")}
             onClick={() => onOpenSection(s.kind)}
           >
-            <Icon name={s.icon} size={14} /> {s.label}
+            <Icon name={s.icon} size={14} /> {t(s.labelKey)}
           </button>
         ))}
       </div>
@@ -246,7 +248,7 @@ export function TypesenseSidebar({
           onClick={onOpenConsole}
           style={{ width: "100%", justifyContent: "center" }}
         >
-          HTTP console
+          {t("tsx.sidebar.httpConsole")}
         </Btn>
       </div>
 
@@ -263,7 +265,7 @@ export function TypesenseSidebar({
               setCtxMenu(null);
             }}
           >
-            <Icon name="search" size={15} /> Search playground
+            <Icon name="search" size={15} /> {t("tsx.ctx.searchPlayground")}
           </div>
           <div
             className="ctx-item"
@@ -272,7 +274,7 @@ export function TypesenseSidebar({
               setCtxMenu(null);
             }}
           >
-            <Icon name="schema" size={15} /> Schema
+            <Icon name="schema" size={15} /> {t("tsx.ctx.schema")}
           </div>
           <div
             className="ctx-item"
@@ -281,7 +283,7 @@ export function TypesenseSidebar({
               setCtxMenu(null);
             }}
           >
-            <Icon name="data_object" size={15} /> Documents
+            <Icon name="data_object" size={15} /> {t("tsx.ctx.documents")}
           </div>
           <div
             className="ctx-item"
@@ -290,7 +292,7 @@ export function TypesenseSidebar({
               setCtxMenu(null);
             }}
           >
-            <Icon name="tune" size={15} /> Curation
+            <Icon name="tune" size={15} /> {t("tsx.ctx.curation")}
           </div>
         </div>
       ) : null}

@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 
 import { highlightSql } from "../../shared/highlightSql";
 import { isAppErrorPayload } from "../../../../shared/api/error";
+import { useT } from "../../../../shared/i18n/useT";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
@@ -32,11 +33,13 @@ type PendingOp =
   | { kind: "createMv"; name: string; partitionKey: string[]; clustering: string[]; cql: string }
   | { kind: "dropMv"; name: string; cql: string };
 
-function kindCell(c: CassColumn) {
-  if (c.kind === "partition_key") return <span className="cass-kbadge pk">partition key</span>;
-  if (c.kind === "clustering") return <span className="cass-kbadge ck">clustering</span>;
-  if (c.kind === "static") return <span className="cass-kbadge st">static</span>;
-  return <span className="cass-kind-reg">regular</span>;
+function kindCell(t: ReturnType<typeof useT>, c: CassColumn) {
+  if (c.kind === "partition_key")
+    return <span className="cass-kbadge pk">{t("cass.kind.partitionKey")}</span>;
+  if (c.kind === "clustering")
+    return <span className="cass-kbadge ck">{t("cass.kind.clustering")}</span>;
+  if (c.kind === "static") return <span className="cass-kbadge st">{t("cass.kind.static")}</span>;
+  return <span className="cass-kind-reg">{t("cass.kind.regular")}</span>;
 }
 
 function CassAddIndexForm({
@@ -48,6 +51,7 @@ function CassAddIndexForm({
   onAdd: (col: string) => void;
   onCancel: () => void;
 }) {
+  const t = useT();
   const candidates = table.columns.filter(
     (c) => c.kind === "regular" || c.kind === "static" || c.kind === "clustering",
   );
@@ -55,7 +59,7 @@ function CassAddIndexForm({
   return (
     <div className="st-addform">
       <div className="st-addform-field">
-        <label className="st-addform-lbl">Column to index</label>
+        <label className="st-addform-lbl">{t("cass.struct.colToIndex")}</label>
         <select className="filter-select" value={col} onChange={(e) => setCol(e.target.value)}>
           {candidates.map((c) => (
             <option key={c.name} value={c.name}>
@@ -66,10 +70,10 @@ function CassAddIndexForm({
       </div>
       <div className="st-addform-actions">
         <Btn variant="text" small onClick={onCancel}>
-          Cancel
+          {t("cass.struct.cancel")}
         </Btn>
         <Btn variant="filled" small icon="add" disabled={!col} onClick={() => onAdd(col)}>
-          Add index
+          {t("cass.struct.addIndex")}
         </Btn>
       </div>
     </div>
@@ -85,6 +89,7 @@ function CassAddMvForm({
   onAdd: (name: string, pk: string[], ck: string[]) => void;
   onCancel: () => void;
 }) {
+  const t = useT();
   const [name, setName] = useState("");
   const [pk, setPk] = useState<string[]>([]);
   const [ck, setCk] = useState<string[]>([]);
@@ -94,17 +99,17 @@ function CassAddMvForm({
   return (
     <div className="st-addform">
       <div className="st-addform-field">
-        <label className="st-addform-lbl">View name</label>
+        <label className="st-addform-lbl">{t("cass.struct.viewName")}</label>
         <input
           className="where-input"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder={table.name + "_by_…"}
+          placeholder={t("cass.struct.mvNamePh", { name: table.name })}
           spellCheck={false}
         />
       </div>
       <div className="st-addform-field">
-        <label className="st-addform-lbl">Partition key</label>
+        <label className="st-addform-lbl">{t("cass.struct.partitionKeyLabel")}</label>
         <div className="st-addform-cols">
           {table.columns.map((c) => (
             <button
@@ -119,7 +124,8 @@ function CassAddMvForm({
       </div>
       <div className="st-addform-field">
         <label className="st-addform-lbl">
-          Clustering <span className="st-addform-opt">optional</span>
+          {t("cass.struct.clustering")}{" "}
+          <span className="st-addform-opt">{t("cass.struct.optional")}</span>
         </label>
         <div className="st-addform-cols">
           {table.columns
@@ -137,7 +143,7 @@ function CassAddMvForm({
       </div>
       <div className="st-addform-actions">
         <Btn variant="text" small onClick={onCancel}>
-          Cancel
+          {t("cass.struct.cancel")}
         </Btn>
         <Btn
           variant="filled"
@@ -146,7 +152,7 @@ function CassAddMvForm({
           disabled={!valid}
           onClick={() => onAdd(name.trim(), pk, ck)}
         >
-          Add view
+          {t("cass.struct.addView")}
         </Btn>
       </div>
     </div>
@@ -168,6 +174,7 @@ export function CassStructure({
   isProduction,
   onChanged,
 }: CassStructureProps) {
+  const t = useT();
   const toast = useToast();
   const [colQuery, setColQuery] = useState("");
   const [openSection, setOpenSection] = useState<"indexes" | "mvs" | "ddl" | null>("indexes");
@@ -209,7 +216,7 @@ export function CassStructure({
   const addIndex = (col: string) => {
     const name = table.name + "_" + col + "_idx";
     if (shownIndexes.some((i) => i.name === name)) {
-      toast("Index " + name + " already exists", "info");
+      toast(t("cass.struct.indexExists", { name }), "info");
       return;
     }
     setPending((p) => [
@@ -230,7 +237,7 @@ export function CassStructure({
     ]);
   const addMv = (name: string, pk: string[], ck: string[]) => {
     if (shownMvs.some((m) => m.name === name)) {
-      toast("View " + name + " already exists", "info");
+      toast(t("cass.struct.viewExists", { name }), "info");
       return;
     }
     const keyStr = "((" + pk.join(", ") + ")" + (ck.length ? ", " + ck.join(", ") : "") + ")";
@@ -276,7 +283,10 @@ export function CassStructure({
     if (
       isProduction &&
       !window.confirm(
-        "Apply " + pending.length + " DDL change(s) to production " + ks + "." + table.name + "?",
+        t("cass.struct.confirmApply", {
+          count: pending.length,
+          target: ks + "." + table.name,
+        }),
       )
     ) {
       return;
@@ -295,12 +305,9 @@ export function CassStructure({
       setPending([]);
       setReviewOpen(false);
       onChanged();
-      toast(
-        "Applied " + n + " statement" + (n === 1 ? "" : "s") + " to " + ks + "." + table.name,
-        "ok",
-      );
+      toast(t("cass.struct.applied", { count: n, target: ks + "." + table.name }), "ok");
     } catch (e) {
-      toast(isAppErrorPayload(e) ? e.message : "Apply failed", "err");
+      toast(isAppErrorPayload(e) ? e.message : t("cass.struct.applyFailed"), "err");
     } finally {
       setBusy(false);
     }
@@ -311,7 +318,7 @@ export function CassStructure({
     (c) => !q || c.name.toLowerCase().includes(q) || c.type.toLowerCase().includes(q),
   );
   const copyDdl = () => {
-    void navigator.clipboard?.writeText(ddl).then(() => toast("CQL copied to clipboard", "ok"));
+    void navigator.clipboard?.writeText(ddl).then(() => toast(t("cass.struct.cqlCopied"), "ok"));
   };
 
   return (
@@ -325,19 +332,19 @@ export function CassStructure({
         <div style={{ flex: 1 }} />
         <div className="structure-chips">
           <span className="structure-chip">
-            <b>{table.columns.length}</b> columns
+            <b>{table.columns.length}</b> {t("cass.struct.chipColumns")}
           </span>
           <span className="structure-chip">
-            <b>{table.partitionKey.length}</b> partition
+            <b>{table.partitionKey.length}</b> {t("cass.struct.chipPartition")}
           </span>
           <span className="structure-chip">
-            <b>{table.clustering.length}</b> clustering
+            <b>{table.clustering.length}</b> {t("cass.struct.chipClustering")}
           </span>
           <span className="structure-chip">
-            <b>{idxCount}</b> indexes
+            <b>{idxCount}</b> {t("cass.struct.chipIndexes")}
           </span>
           <span className="structure-chip">
-            <b>{mvCount}</b> views
+            <b>{mvCount}</b> {t("cass.struct.chipViews")}
           </span>
         </div>
       </div>
@@ -347,31 +354,43 @@ export function CassStructure({
         <section className="columns-pane">
           <div className="columns-pane-head">
             <h3>
-              <Icon name="view_column" size={15} /> Columns
+              <Icon name="view_column" size={15} /> {t("cass.struct.columns")}
             </h3>
             <div className="columns-search">
               <Icon name="search" size={14} style={{ color: "var(--text-faint)" }} />
               <input
-                placeholder={"Filter " + table.columns.length + " columns…"}
+                placeholder={t("cass.struct.filterColumns")}
                 value={colQuery}
                 onChange={(e) => setColQuery(e.target.value)}
                 spellCheck={false}
               />
               {colQuery ? (
-                <IconBtn icon="close" size={12} title="Clear" onClick={() => setColQuery("")} />
+                <IconBtn
+                  icon="close"
+                  size={12}
+                  title={t("cass.struct.clear")}
+                  onClick={() => setColQuery("")}
+                />
               ) : null}
             </div>
             <span className="columns-count">
-              {q ? filteredCols.length + " of " + table.columns.length : table.columns.length}
+              {q
+                ? t("cass.struct.colCount", {
+                    shown: filteredCols.length,
+                    total: table.columns.length,
+                  })
+                : table.columns.length}
             </span>
           </div>
           <div className="cass-pk-summary">
             <span>
-              <b>PRIMARY KEY</b> <span className="mg-mono">{table.primaryKey}</span>
+              <b>{t("cass.struct.primaryKey")}</b>{" "}
+              <span className="mg-mono">{table.primaryKey}</span>
             </span>
             {table.clustering.length ? (
               <span className="cass-pk-clustering">
-                CLUSTERING ORDER {table.clustering.map((c) => c.name + " " + c.order).join(", ")}
+                {t("cass.struct.clusteringOrder")}{" "}
+                {table.clustering.map((c) => c.name + " " + c.order).join(", ")}
               </span>
             ) : null}
           </div>
@@ -381,16 +400,16 @@ export function CassStructure({
                 <tr>
                   <th className="st-num-h">#</th>
                   <th />
-                  <th>Name</th>
-                  <th>Type</th>
-                  <th>Kind</th>
+                  <th>{t("cass.struct.thName")}</th>
+                  <th>{t("cass.struct.thType")}</th>
+                  <th>{t("cass.struct.thKind")}</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredCols.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="grid-empty-cell">
-                      No columns match “{colQuery}”
+                      {t("cass.struct.noColumnsMatch", { q: colQuery })}
                     </td>
                   </tr>
                 ) : (
@@ -419,15 +438,14 @@ export function CassStructure({
                           {c.type}
                         </span>
                       </td>
-                      <td>{kindCell(c)}</td>
+                      <td>{kindCell(t, c)}</td>
                     </tr>
                   ))
                 )}
               </tbody>
             </table>
             <div className="st-edit-hint">
-              Columns are defined at <code>CREATE TABLE</code> time · alter indexes and views in the
-              panel at right
+              <code>CREATE TABLE</code> {t("cass.struct.columnsHint")}
             </div>
           </div>
         </section>
@@ -443,7 +461,7 @@ export function CassStructure({
                 size={16}
                 style={{ color: "var(--text-faint)" }}
               />
-              <Icon name="bolt" size={15} /> Secondary indexes{" "}
+              <Icon name="bolt" size={15} /> {t("cass.struct.secondaryIndexes")}{" "}
               <span className="rail-count">{idxCount}</span>
               <span style={{ flex: 1 }} />
               <span
@@ -455,7 +473,7 @@ export function CassStructure({
                   setAddingIndex(!addingIndex);
                   setAddingMv(false);
                 }}
-                title="Add index"
+                title={t("cass.struct.addIndex")}
               >
                 <Icon name={addingIndex && openSection === "indexes" ? "close" : "add"} size={15} />
               </span>
@@ -471,7 +489,7 @@ export function CassStructure({
                 ) : null}
                 <div className="acc-scroll">
                   {idxCount === 0 && !addingIndex ? (
-                    <div className="structure-none">No secondary indexes</div>
+                    <div className="structure-none">{t("cass.struct.noSecondaryIndexes")}</div>
                   ) : (
                     shownIndexes.map((idx) => (
                       <div key={idx.name} className="structure-card">
@@ -480,14 +498,14 @@ export function CassStructure({
                           <span style={{ flex: 1 }} />
                           <button
                             className="card-drop"
-                            title={"Drop " + idx.name}
+                            title={t("cass.struct.dropIndex", { name: idx.name })}
                             onClick={() => dropIndex(idx.name)}
                           >
                             <Icon name="delete" size={13} />
                           </button>
                         </div>
                         <div className="structure-card-detail mg-mono">
-                          ON {table.name} ({idx.target})
+                          {t("cass.struct.on")} {table.name} ({idx.target})
                         </div>
                       </div>
                     ))
@@ -507,7 +525,7 @@ export function CassStructure({
                 size={16}
                 style={{ color: "var(--text-faint)" }}
               />
-              <Icon name="dvr" size={15} /> Materialized views{" "}
+              <Icon name="dvr" size={15} /> {t("cass.struct.materializedViews")}{" "}
               <span className="rail-count">{mvCount}</span>
               <span style={{ flex: 1 }} />
               <span
@@ -519,7 +537,7 @@ export function CassStructure({
                   setAddingMv(!addingMv);
                   setAddingIndex(false);
                 }}
-                title="Add materialized view"
+                title={t("cass.struct.addMv")}
               >
                 <Icon name={addingMv && openSection === "mvs" ? "close" : "add"} size={15} />
               </span>
@@ -531,23 +549,23 @@ export function CassStructure({
                 ) : null}
                 <div className="acc-scroll">
                   {mvCount === 0 && !addingMv ? (
-                    <div className="structure-none">No materialized views</div>
+                    <div className="structure-none">{t("cass.struct.noMvs")}</div>
                   ) : (
                     shownMvs.map((mv) => (
                       <div key={mv.name} className="structure-card">
                         <div className="structure-card-name">
-                          {mv.name} <span className="tag">view</span>
+                          {mv.name} <span className="tag">{t("cass.struct.view")}</span>
                           <span style={{ flex: 1 }} />
                           <button
                             className="card-drop"
-                            title={"Drop " + mv.name}
+                            title={t("cass.struct.dropMv", { name: mv.name })}
                             onClick={() => dropMv(mv.name)}
                           >
                             <Icon name="delete" size={13} />
                           </button>
                         </div>
                         <div className="structure-card-detail mg-mono">
-                          PRIMARY KEY (({mv.partitionKey.join(", ")})
+                          {t("cass.struct.primaryKey")} (({mv.partitionKey.join(", ")})
                           {mv.clustering.length ? ", " + mv.clustering.join(", ") : ""})
                         </div>
                       </div>
@@ -568,7 +586,7 @@ export function CassStructure({
                 size={16}
                 style={{ color: "var(--text-faint)" }}
               />
-              <Icon name="code" size={15} /> CQL
+              <Icon name="code" size={15} /> {t("cass.struct.cql")}
               <span style={{ flex: 1 }} />
               <span
                 className="ddl-copy"
@@ -577,9 +595,9 @@ export function CassStructure({
                   e.stopPropagation();
                   copyDdl();
                 }}
-                title="Copy CQL"
+                title={t("cass.struct.copyCql")}
               >
-                <Icon name="content_copy" size={13} /> copy
+                <Icon name="content_copy" size={13} /> {t("cass.struct.copy")}
               </span>
             </button>
             {openSection === "ddl" ? (
@@ -598,7 +616,7 @@ export function CassStructure({
         <div className="pending-bar">
           {reviewOpen ? (
             <div className="pending-list">
-              <div className="pending-list-title">Pending statements</div>
+              <div className="pending-list-title">{t("cass.struct.pendingStatements")}</div>
               {pending.map((op, i) => (
                 <pre key={i} className="pending-sql">
                   {op.cql}
@@ -609,15 +627,15 @@ export function CassStructure({
           <div className="pending-bar-row">
             <Icon name="pending_actions" size={16} style={{ color: "var(--accent)" }} />
             <span className="pending-count">
-              {pending.length} pending change{pending.length === 1 ? "" : "s"}
+              {t("cass.struct.pendingCount", { count: pending.length })}
             </span>
             <button className="pending-review" onClick={() => setReviewOpen(!reviewOpen)}>
               <Icon name={reviewOpen ? "expand_more" : "expand_less"} size={14} />
-              {reviewOpen ? "Hide CQL" : "Review CQL"}
+              {reviewOpen ? t("cass.struct.hideCql") : t("cass.struct.reviewCql")}
             </button>
             <div style={{ flex: 1 }} />
             <Btn variant="text" small onClick={discardPending} disabled={busy}>
-              Discard
+              {t("cass.struct.discard")}
             </Btn>
             <Btn
               variant="filled"
@@ -626,7 +644,7 @@ export function CassStructure({
               onClick={() => void applyPending()}
               disabled={busy}
             >
-              Apply changes
+              {t("cass.struct.applyChanges")}
             </Btn>
           </div>
         </div>

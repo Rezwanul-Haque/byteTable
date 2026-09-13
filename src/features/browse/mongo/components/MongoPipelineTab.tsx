@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { appErrorMessage } from "../../../../shared/api/error";
+import { useT } from "../../../../shared/i18n/useT";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { Select } from "../../../../shared/ui/Select";
@@ -47,6 +48,7 @@ export function MongoPipelineTab({
   onUpdateTab: (patch: Partial<MongoPipelineTabState>) => void;
 }) {
   const toast = useToast();
+  const t = useT();
   const [coll, setColl] = useState(tab.coll ?? collNames[0] ?? "");
   const [stages, setStages] = useState<Stage[]>(() => restoreStages(tab.stages));
   const [view, setView] = useState<"tree" | "grid">(tab.view ?? "tree");
@@ -77,7 +79,7 @@ export function MongoPipelineTab({
       setResult(r);
       setError(null);
     } catch (e) {
-      setError(appErrorMessage(e, "Aggregation failed"));
+      setError(appErrorMessage(e, t("mongo.aggFailed")));
       setResult(null);
     }
   };
@@ -109,7 +111,7 @@ export function MongoPipelineTab({
     try {
       setExplainPipeline(compilePipeline(stages));
     } catch (e) {
-      toast("Fix stage JSON before explaining — " + (e instanceof Error ? e.message : ""), "err");
+      toast(t("mongo.explainFix", { err: e instanceof Error ? e.message : String(e) }), "err");
     }
   };
 
@@ -127,18 +129,14 @@ export function MongoPipelineTab({
     try {
       pipeline = compilePipeline(stages);
     } catch (e) {
-      toast("Fix stage JSON before copying — " + (e instanceof Error ? e.message : ""), "err");
+      toast(t("mongo.copyStageFix", { err: e instanceof Error ? e.message : String(e) }), "err");
       return;
     }
     const snippet = "db." + coll + ".aggregate(" + JSON.stringify(pipeline, null, 2) + ")";
     copyToClipboard(
       snippet,
-      () =>
-        toast(
-          "Pipeline copied · " + stages.length + " stage" + (stages.length === 1 ? "" : "s"),
-          "ok",
-        ),
-      () => toast("Copy failed — select the text manually", "err"),
+      () => toast(t("mongo.pipelineCopied", { count: stages.length }), "ok"),
+      () => toast(t("mongo.copyFail"), "err"),
     );
   };
 
@@ -148,7 +146,8 @@ export function MongoPipelineTab({
     <div className="table-tab" ref={rootRef}>
       <div className="table-toolbar ddb-toolbar">
         <span className="mg-pipe-title">
-          <Icon name="account_tree" size={15} style={{ color: "var(--accent)" }} /> Aggregation
+          <Icon name="account_tree" size={15} style={{ color: "var(--accent)" }} />{" "}
+          {t("mongo.aggTitle")}
         </span>
         <span className="mg-pipe-coll">
           <span>db.</span>
@@ -161,28 +160,28 @@ export function MongoPipelineTab({
               setResult(null);
               setError(null);
             }}
-            aria-label="Aggregate a collection"
+            aria-label={t("mongo.aggCollAria")}
           />
           <span>.aggregate()</span>
         </span>
-        <div className="seg mg-view-seg" title="Document view">
+        <div className="seg mg-view-seg" title={t("mongo.viewSegTitle")}>
           <button
             className={"seg-btn" + (view === "tree" ? " active" : "")}
             onClick={() => setView("tree")}
           >
-            <Icon name="account_tree" size={13} /> Tree
+            <Icon name="account_tree" size={13} /> {t("mongo.viewTree")}
           </button>
           <button
             className={"seg-btn" + (view === "grid" ? " active" : "")}
             onClick={() => setView("grid")}
           >
-            <Icon name="grid_on" size={13} /> Table
+            <Icon name="grid_on" size={13} /> {t("mongo.viewTable")}
           </button>
         </div>
         <div style={{ flex: 1 }} />
         {result ? (
           <span className="table-rowcount">
-            {result.returned} docs · {result.ms.toFixed(1)} ms
+            {t("mongo.readoutAgg", { returned: result.returned, ms: result.ms.toFixed(1) })}
           </span>
         ) : null}
         <Btn
@@ -192,7 +191,7 @@ export function MongoPipelineTab({
           onClick={toggleExplain}
           className={explainPipeline ? "active" : undefined}
         >
-          Explain
+          {t("mongo.explain")}
         </Btn>
       </div>
 
@@ -219,7 +218,7 @@ export function MongoPipelineTab({
           <div className="sql-error">
             <Icon name="error" size={18} />
             <div>
-              <div className="sql-error-title">Aggregation error</div>
+              <div className="sql-error-title">{t("mongo.errTitleAgg")}</div>
               <div className="sql-error-msg">{error}</div>
             </div>
           </div>
@@ -231,15 +230,15 @@ export function MongoPipelineTab({
           ) : (
             <MongoDocGrid docs={docs} onOpenDoc={setDocView} />
           )}
-          <div className="table-hint">
-            Aggregation result · {db}.{coll}
-          </div>
+          <div className="table-hint">{t("mongo.aggResultNs", { ns: db + "." + coll })}</div>
         </>
       ) : (
         <div className="grid-empty mg-pipe-empty">
           <Icon name="account_tree" size={26} style={{ color: "var(--text-faint)" }} />
           <div>
-            Build a pipeline and press <b>Run pipeline</b> to see results.
+            {t("mongo.pipeEmptyPre")}
+            <b>{t("mongo.runPipeline")}</b>
+            {t("mongo.pipeEmptyPost")}
           </div>
         </div>
       )}

@@ -7,6 +7,7 @@
 import { useState } from "react";
 
 import { appErrorMessage } from "../../../../shared/api/error";
+import { useT } from "../../../../shared/i18n/useT";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { Modal, ModalActions, ModalTitle } from "../../../../shared/ui/Modal";
@@ -35,6 +36,7 @@ export function DynamoDeleteModal({
   onDone: () => void;
 }) {
   const toast = useToast();
+  const t = useT();
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,31 +53,32 @@ export function DynamoDeleteModal({
       try {
         const res = await dynamoBatchDelete(handleId, table, keys);
         toast(
-          `Deleted ${res.written} item${res.written === 1 ? "" : "s"} from ${table}` +
-            (res.unprocessed ? ` · ${res.unprocessed} unprocessed` : ""),
+          (res.written === 1
+            ? t("dyn.dm.toast1", { count: res.written, table })
+            : t("dyn.dm.toastN", { count: res.written, table })) +
+            (res.unprocessed ? " · " + res.unprocessed + " unprocessed" : ""),
           "ok",
         );
         onDone();
         onClose();
       } catch (err) {
-        setError(appErrorMessage(err, "Could not delete the selected items."));
+        setError(appErrorMessage(err, t("dyn.dm.fail")));
         setBusy(false);
       }
     })();
   };
 
   return (
-    <Modal onClose={onClose} label="Delete selected items" width={460} className="truncate-modal">
+    <Modal onClose={onClose} label={t("dyn.dm.title")} width={460} className="truncate-modal">
       <ModalTitle>
-        <Icon name="warning" size={18} style={{ color: DANGER }} /> Delete selected items
+        <Icon name="warning" size={18} style={{ color: DANGER }} /> {t("dyn.dm.title")}
       </ModalTitle>
       <div className="truncate-body">
         <p>
-          This permanently deletes{" "}
-          <b>
-            {n} item{n === 1 ? "" : "s"}
-          </b>{" "}
-          from <code>{table}</code>. This cannot be undone.
+          {t("dyn.dm.bodyPre")}
+          <b>{n === 1 ? t("dyn.dm.bodyMid1", { count: n }) : t("dyn.dm.bodyMidN", { count: n })}</b>
+          {t("dyn.dm.bodyPost")} <code>{table}</code>
+          {t("dyn.dm.bodyTail")}
         </p>
         {isProduction ? (
           <div className="truncate-prod">
@@ -86,14 +89,15 @@ export function DynamoDeleteModal({
               <Icon name="public" size={13} /> production
             </div>
             <label>
-              Type <b>{table}</b> to confirm
+              {t("dyn.ddl.typeToConfirmPre")} <b>{table}</b>
+              {t("dyn.ddl.typeToConfirmPost")}
               <input
                 value={typed}
                 onChange={(e) => setTyped(e.target.value)}
                 placeholder={table}
                 spellCheck="false"
                 autoFocus
-                aria-label={"Type " + table + " to confirm"}
+                aria-label={t("dyn.ddl.typeToConfirmAria", { name: table })}
               />
             </label>
           </div>
@@ -102,7 +106,7 @@ export function DynamoDeleteModal({
       </div>
       <ModalActions>
         <Btn variant="text" onClick={onClose} disabled={busy}>
-          Cancel
+          {t("common.cancel")}
         </Btn>
         <button
           type="button"
@@ -111,7 +115,13 @@ export function DynamoDeleteModal({
           onClick={confirm}
         >
           <Icon name="delete_forever" size={16} />
-          <span>{busy ? "Deleting…" : `Delete ${n} item${n === 1 ? "" : "s"}`}</span>
+          <span>
+            {busy
+              ? t("dyn.dm.deleting")
+              : n === 1
+                ? t("dyn.dm.btn1", { count: n })
+                : t("dyn.dm.btnN", { count: n })}
+          </span>
         </button>
       </ModalActions>
     </Modal>

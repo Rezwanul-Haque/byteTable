@@ -19,6 +19,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { appErrorMessage } from "../../../../shared/api/error";
+import { useT } from "../../../../shared/i18n/useT";
 import { EngineBadge } from "../../../../shared/ui/EngineBadge";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
@@ -108,14 +109,15 @@ function ClusterSlotMap({
 }) {
   const [hover, setHover] = useState<{ slot: number; shard: ClusterShard | null } | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  const t = useT();
   const segments = useMemo(() => bandSegments(shards), [shards]);
 
   return (
     <div className="cl-map">
       <div className="cl-map-head">
-        <span className="cl-map-title">Hash slot coverage</span>
+        <span className="cl-map-title">{t("redis.cl.mapTitle")}</span>
         <span className="cl-map-sub">
-          {SLOTS.toLocaleString()} slots · every key hashes into exactly one
+          {t("redis.cl.mapSub", { count: SLOTS.toLocaleString() })}
         </span>
         <button
           type="button"
@@ -124,20 +126,20 @@ function ClusterSlotMap({
           onClick={() => setHelpOpen((open) => !open)}
         >
           <Icon name="help" size={12} />
-          What is a slot?
+          {t("redis.cl.slotHelp")}
         </button>
         <div style={{ flex: 1 }} />
         {hover ? (
           <span className="cl-map-hover">
-            {"slot " +
-              hover.slot.toLocaleString() +
-              " → " +
-              (hover.shard
+            {t("redis.cl.hoverSlot", {
+              slot: hover.slot.toLocaleString(),
+              target: hover.shard
                 ? shardName(hover.shard) + " · " + hover.shard.master.host
-                : "unassigned")}
+                : t("redis.cl.unassigned"),
+            })}
           </span>
         ) : (
-          <span className="cl-map-hover dim">hover the band to resolve a slot</span>
+          <span className="cl-map-hover dim">{t("redis.cl.hoverHint")}</span>
         )}
       </div>
       {/* Collapsed by default: the band is self-explanatory once you know what
@@ -145,32 +147,25 @@ function ClusterSlotMap({
       {helpOpen ? (
         <div className="cl-help">
           <p>
-            A <b>hash slot</b> is one of {SLOTS.toLocaleString()} numbered buckets that every key
-            belongs to. Redis takes <code>CRC16(key) % {SLOTS}</code> and that number is the
-            key&apos;s slot — fixed, computed the same way by every client and every node, and never
-            stored anywhere.
+            {t("redis.cl.h1a")} <b>{t("redis.cl.h1b")}</b>
+            {t("redis.cl.h1c", { n: SLOTS.toLocaleString() })} <code>CRC16(key) % {SLOTS}</code>{" "}
+            {t("redis.cl.h1d")}
           </p>
           <p>
-            Each master then <b>owns a range of slots</b>, which is what the band above shows. A key
-            lives on whichever node owns its slot, so any client can work out where a key belongs
-            without asking anyone. Ask the wrong node and it replies{" "}
-            <code>MOVED &lt;slot&gt; &lt;node&gt;</code>.
+            {t("redis.cl.h2a")} <b>{t("redis.cl.h2b")}</b>
+            {t("redis.cl.h2c")} <code>MOVED &lt;slot&gt; &lt;node&gt;</code>.
           </p>
           <p>
-            The indirection is the point: keys are not hashed to <em>nodes</em>. Adding a node means
-            handing it some slots — the keys in them move, everything else stays put. If keys hashed
-            straight to nodes, changing the node count would relocate nearly the whole keyspace.
+            {t("redis.cl.h3a")} <em>{t("redis.cl.h3b")}</em>
+            {t("redis.cl.h3c")}
           </p>
           <p>
-            All {SLOTS.toLocaleString()} must be owned by someone for the cluster to serve traffic —
-            that is what <b>slots covered</b> means. A gap in the band is slots nobody serves, and
-            with <code>cluster-require-full-coverage</code> on (the default) the whole cluster stops
-            until it is filled.
+            {t("redis.cl.h4a", { n: SLOTS.toLocaleString() })} <b>{t("redis.cl.h4b")}</b>{" "}
+            {t("redis.cl.h4c")} <code>cluster-require-full-coverage</code> {t("redis.cl.h4d")}
           </p>
           <p className="cl-help-try">
             <Icon name="my_location" size={12} />
-            Try it: type a key into <b>Which node owns a key</b> below, or hover the band to see
-            which shard a slot belongs to.
+            {t("redis.cl.tryA")} <b>{t("redis.cl.tryB")}</b> {t("redis.cl.tryC")}
           </p>
         </div>
       ) : null}
@@ -194,13 +189,10 @@ function ClusterSlotMap({
                 key={"gap-" + seg.from}
                 className="cl-seg cl-gap"
                 style={{ width }}
-                title={
-                  "Slots " +
-                  seg.from.toLocaleString() +
-                  "–" +
-                  seg.to.toLocaleString() +
-                  " are unassigned — no node serves them"
-                }
+                title={t("redis.cl.gapTitle", {
+                  from: seg.from.toLocaleString(),
+                  to: seg.to.toLocaleString(),
+                })}
               />
             );
           }
@@ -214,10 +206,11 @@ function ClusterSlotMap({
               onClick={() => onPickShard(active === shard.index ? null : shard.index)}
               title={
                 shardName(shard) +
-                " · slots " +
-                seg.from.toLocaleString() +
-                "–" +
-                seg.to.toLocaleString()
+                " · " +
+                t("redis.cl.slotsRange", {
+                  from: seg.from.toLocaleString(),
+                  to: seg.to.toLocaleString(),
+                })
               }
             >
               <span className="cl-seg-label">{shardName(shard)}</span>
@@ -235,7 +228,7 @@ function ClusterSlotMap({
               left: (w.from / SLOTS) * 100 + "%",
               width: ((w.to - w.from + 1) / SLOTS) * 100 + "%",
             }}
-            title={"Slots " + w.from + "–" + w.to + " are " + w.direction}
+            title={t("redis.cl.migTitle", { from: w.from, to: w.to, direction: w.direction })}
           />
         ))}
         {hover ? (
@@ -252,9 +245,9 @@ function ClusterSlotMap({
         {windows.length ? (
           <span className="cl-lg">
             <i className="cl-lg-mig" />
-            {"migrating " +
-              windows.reduce((n, w) => n + (w.to - w.from + 1), 0).toLocaleString() +
-              " slots"}
+            {t("redis.cl.migratingN", {
+              count: windows.reduce((n, w) => n + (w.to - w.from + 1), 0).toLocaleString(),
+            })}
           </span>
         ) : null}
       </div>
@@ -267,6 +260,7 @@ function ClusterSlotMap({
 // ---------------------------------------------------------------------------
 
 function ClusterNodeRow({ node, color }: { node: ClusterNode; color: string }) {
+  const t = useT();
   const health = HEALTH[node.health] ?? HEALTH.online!;
   const lagging = node.role === "replica" && (node.lagSeconds ?? 0) > 10;
   return (
@@ -283,18 +277,20 @@ function ClusterNodeRow({ node, color }: { node: ClusterNode; color: string }) {
           </span>
           <span className={"cl-role " + node.role}>{node.role}</span>
           {node.myself ? (
-            <span className="cl-me" title="The node this workspace is attached to">
+            <span className="cl-me" title={t("redis.cl.meTitle")}>
               me
             </span>
           ) : null}
-          {lagging ? <span className="cl-lag">{node.lagSeconds}s behind</span> : null}
+          {lagging ? (
+            <span className="cl-lag">{t("redis.cl.lagBehind", { n: node.lagSeconds ?? 0 })}</span>
+          ) : null}
         </div>
         <div className="cl-node-meta">
-          <span title={"Node id " + node.id}>{node.id.slice(0, 12)}…</span>
+          <span title={t("redis.cl.nodeIdTitle", { id: node.id })}>{node.id.slice(0, 12)}…</span>
           {node.hostname ? <span>{node.hostname}</span> : null}
-          <span>{measured(node.keys, (n) => humanNum(n) + " keys")}</span>
+          <span>{measured(node.keys, (n) => t("redis.nKeys", { count: humanNum(n) }))}</span>
           <span>{measured(node.memory, humanBytes)}</span>
-          <span>{measured(node.ops, (n) => humanNum(n) + " ops/s")}</span>
+          <span>{measured(node.ops, (n) => t("redis.cl.opsPerSec", { n: humanNum(n) }))}</span>
         </div>
       </div>
       <span className="cl-health" style={{ color: health.color }} title={"link " + node.link}>
@@ -314,6 +310,7 @@ function ClusterShardCard({
   dimmed: boolean;
   onFocus: () => void;
 }) {
+  const t = useT();
   const healthy = shard.replicas.filter((r) => r.health === "online").length;
   const color = shardColor(shard.index);
   const first = shard.slots[0];
@@ -325,15 +322,21 @@ function ClusterShardCard({
         <b>{shardName(shard)}</b>
         <span className="cl-shard-slots">
           {first && last
-            ? "slots " + first.from.toLocaleString() + "–" + last.to.toLocaleString()
-            : "no slots"}
+            ? t("redis.cl.slotsRange", {
+                from: first.from.toLocaleString(),
+                to: last.to.toLocaleString(),
+              })
+            : t("redis.cl.noSlots")}
         </span>
         <div style={{ flex: 1 }} />
         <span className={"cl-shard-rep" + (healthy === 0 ? " bad" : "")}>
           {healthy +
             "/" +
             shard.replicas.length +
-            (shard.replicas.length === 1 ? " replica healthy" : " replicas healthy")}
+            " " +
+            (shard.replicas.length === 1
+              ? t("redis.cl.replicaHealthy")
+              : t("redis.cl.replicasHealthy"))}
         </span>
       </div>
       <ClusterNodeRow node={shard.master} color={color} />
@@ -355,6 +358,7 @@ function ClusterKeyResolver({
   topology: ClusterTopology;
   windows: MigrationWindow[];
 }) {
+  const t = useT();
   const [key, setKey] = useState(SAMPLE_KEYS[0] ?? "");
   const resolved = useMemo(
     () => (key ? resolveKey(topology, key, windows) : null),
@@ -380,15 +384,15 @@ function ClusterKeyResolver({
   return (
     <div className="rdash-panel">
       <h3>
-        <Icon name="my_location" size={15} /> Which node owns a key
+        <Icon name="my_location" size={15} /> {t("redis.cl.resolverTitle")}
       </h3>
       <div className="cl-res-in">
         <Icon name="vpn_key" size={14} style={{ color: "var(--text-faint)" }} />
         <input
           value={key}
           spellCheck="false"
-          placeholder="key name"
-          aria-label="Key to resolve"
+          placeholder={t("redis.cl.keyNamePh")}
+          aria-label={t("redis.cl.resolveAria")}
           onChange={(e) => setKey(e.target.value)}
         />
       </div>
@@ -403,25 +407,25 @@ function ClusterKeyResolver({
         <>
           <div className="cl-res-out">
             <div className="cl-res-row">
-              <span>Hashed input</span>
+              <span>{t("redis.cl.hashedInput")}</span>
               <b>{resolved.tag === null ? resolved.key : "{" + resolved.tag + "}"}</b>
             </div>
             <div className="cl-res-row">
               <span>CRC16 mod 16384</span>
-              <b>slot {resolved.slot.toLocaleString()}</b>
+              <b>{t("redis.cl.slotN", { n: resolved.slot.toLocaleString() })}</b>
             </div>
             <div className="cl-res-row">
-              <span>Owned by</span>
+              <span>{t("redis.cl.ownedBy")}</span>
               <b style={{ color: resolved.shard ? shardColor(resolved.shard.index) : undefined }}>
                 {resolved.shard
                   ? shardName(resolved.shard) + " · " + resolved.shard.master.host
-                  : "nobody — the slot is unassigned"}
+                  : t("redis.cl.nobody")}
               </b>
             </div>
             {resolved.migrating ? (
               <div className="cl-res-row">
-                <span>State</span>
-                <b style={{ color: "var(--warn)" }}>slot is migrating — expect ASK</b>
+                <span>{t("redis.cl.state")}</span>
+                <b style={{ color: "var(--warn)" }}>{t("redis.cl.migratingState")}</b>
               </div>
             ) : null}
           </div>
@@ -429,16 +433,16 @@ function ClusterKeyResolver({
             <div className="cl-res-note ok">
               <Icon name="link" size={12} />
               <span>
-                The hash tag <code>{"{" + resolved.tag + "}"}</code> pins this key to the same slot
-                as every other key sharing that tag — which is what makes multi-key commands legal.
+                {t("redis.cl.tagNoteA")} <code>{"{" + resolved.tag + "}"}</code>{" "}
+                {t("redis.cl.tagNoteB")}
               </span>
             </div>
           ) : (
             <div className="cl-res-note">
               <Icon name="info" size={12} />
               <span>
-                No hash tag, so the whole key name hashes. Two such keys almost never share a slot,
-                so <code>MGET</code> across them fails with <code>CROSSSLOT</code>.
+                {t("redis.cl.noTagA")} <code>MGET</code> {t("redis.cl.noTagB")}{" "}
+                <code>CROSSSLOT</code>.
               </span>
             </div>
           )}
@@ -449,7 +453,7 @@ function ClusterKeyResolver({
                 <code>
                   MGET {resolved.key} {pair.other}
                 </code>{" "}
-                — {pair.same ? "same slot, allowed" : "different slots, CROSSSLOT error"}
+                — {pair.same ? t("redis.cl.sameSlot") : t("redis.cl.diffSlot")}
               </span>
             </div>
           ) : null}
@@ -478,6 +482,7 @@ export function ClusterDashboard({
   version: number;
   onOpenClients: () => void;
 }) {
+  const t = useT();
   // Seeded with the topology the workspace already fetched, then kept fresh.
   const [live, setLive] = useState(topology);
   const [error, setError] = useState<string | null>(null);
@@ -501,7 +506,7 @@ export function ClusterDashboard({
         setLive(next);
         setError(null);
       } catch (err) {
-        if (alive) setError(appErrorMessage(err, "Could not read the cluster topology."));
+        if (alive) setError(appErrorMessage(err, t("redis.cl.readFail")));
       } finally {
         if (alive) setLoading(false);
       }
@@ -536,11 +541,11 @@ export function ClusterDashboard({
     <div className="rdash cl-dash" data-screen-label="Redis cluster dashboard">
       <div className="rdash-head">
         <EngineBadge engine="redis" size={22} />
-        <h2>Cluster dashboard</h2>
+        <h2>{t("redis.tab.clusterTitle")}</h2>
         <span className="rdash-sub">
           {"cluster · " +
-            shards.length +
-            (shards.length === 1 ? " shard · Redis " : " shards · Redis ") +
+            t("redis.cl.shardsN", { count: shards.length }) +
+            " · Redis " +
             serverVersion}
         </span>
         <div className="rdash-head-spacer" />
@@ -551,17 +556,14 @@ export function ClusterDashboard({
           {"cluster_state: " + state}
         </span>
         {errs ? (
-          <span
-            className="cl-state warn"
-            title="All slots are served, but a node or replica needs attention"
-          >
+          <span className="cl-state warn" title={t("redis.cl.warnPillTitle")}>
             <Icon name="warning" size={13} />
-            <span>{errs + (errs === 1 ? " node issue" : " node issues")}</span>
+            <span>{t("redis.cl.nodeIssues", { count: errs })}</span>
           </span>
         ) : null}
         <IconBtn
           icon="sync"
-          title="Re-read CLUSTER NODES"
+          title={t("redis.cl.rereadNodes")}
           disabled={loading}
           onClick={() => setRefreshNonce((n) => n + 1)}
         />
@@ -571,39 +573,46 @@ export function ClusterDashboard({
 
       <div className="rdash-grid cl-grid">
         <div className="rdash-stat">
-          <div className="rdash-stat-label">Slots covered</div>
+          <div className="rdash-stat-label">{t("redis.cl.statSlots")}</div>
           <div className="rdash-stat-value">
             {((slotsOk / SLOTS) * 100).toFixed(0)}
             {"%"}
           </div>
           <div className="rdash-stat-sub">
-            {slotsAssigned.toLocaleString() + " of " + SLOTS.toLocaleString() + " assigned"}
+            {t("redis.cl.statSlotsSub", {
+              count: slotsAssigned.toLocaleString(),
+              total: SLOTS.toLocaleString(),
+            })}
           </div>
         </div>
         <div className="rdash-stat">
-          <div className="rdash-stat-label">Shards</div>
+          <div className="rdash-stat-label">{t("redis.cl.statShards")}</div>
           <div className="rdash-stat-value">{shards.length}</div>
-          <div className="rdash-stat-sub">{masters + " masters · " + replicas + " replicas"}</div>
+          <div className="rdash-stat-sub">
+            {t("redis.cl.mastersN", { count: masters }) +
+              " · " +
+              t("redis.cl.replicasN", { count: replicas })}
+          </div>
         </div>
         <div className="rdash-stat">
-          <div className="rdash-stat-label">Keys</div>
+          <div className="rdash-stat-label">{t("redis.cl.statKeys")}</div>
           <div className="rdash-stat-value">{measured(totalKeys(shards), humanNum)}</div>
           <div className="rdash-stat-sub">
-            {live.nodeStatsMeasured ? "across all shards · db0 only" : "nodes not reachable"}
+            {live.nodeStatsMeasured ? t("redis.cl.keysSubCluster") : t("redis.cl.keysUnreachable")}
           </div>
         </div>
         <div className="rdash-stat">
-          <div className="rdash-stat-label">Memory</div>
+          <div className="rdash-stat-label">{t("redis.cl.statMem")}</div>
           <div className="rdash-stat-value">{measured(masterMemory(shards), humanBytes)}</div>
-          <div className="rdash-stat-sub">masters, replicas excluded</div>
+          <div className="rdash-stat-sub">{t("redis.cl.memSub")}</div>
         </div>
         <div className="rdash-stat">
-          <div className="rdash-stat-label">Ops/sec</div>
+          <div className="rdash-stat-label">{t("redis.stat.ops")}</div>
           <div className="rdash-stat-value">{measured(totalOps(shards), humanNum)}</div>
-          <div className="rdash-stat-sub">summed across nodes</div>
+          <div className="rdash-stat-sub">{t("redis.cl.opsSub")}</div>
         </div>
         <div className={"rdash-stat" + (bad ? " cl-stat-bad" : "")}>
-          <div className="rdash-stat-label">Nodes</div>
+          <div className="rdash-stat-label">{t("redis.cl.statNodes")}</div>
           <div className="rdash-stat-value">
             {knownNodes}
             {bad ? <em className="cl-bad-n"> {bad} PFAIL</em> : null}
@@ -614,19 +623,19 @@ export function ClusterDashboard({
           type="button"
           className="rdash-stat rdash-stat-btn"
           onClick={onOpenClients}
-          title="Review connected clients on this node"
+          title={t("redis.cl.reviewClientsTitle")}
         >
-          <div className="rdash-stat-label">Clients</div>
+          <div className="rdash-stat-label">{t("redis.stat.clients")}</div>
           <div className="rdash-stat-value">{nodeClients ?? "—"}</div>
           <div className="rdash-stat-go">
             <Icon name="monitor_heart" size={12} />
-            On this node
+            {t("redis.cl.onThisNode")}
           </div>
         </button>
         <div className="rdash-stat">
-          <div className="rdash-stat-label">Gossip</div>
+          <div className="rdash-stat-label">{t("redis.cl.statGossip")}</div>
           <div className="rdash-stat-value">{humanNum(gossipSent)}</div>
-          <div className="rdash-stat-sub">bus messages sent</div>
+          <div className="rdash-stat-sub">{t("redis.cl.gossipSub")}</div>
         </div>
       </div>
 
@@ -646,12 +655,12 @@ export function ClusterDashboard({
       <div className="rdash-cols cl-cols">
         <div className="rdash-panel">
           <h3>
-            <Icon name="rule" size={15} /> Cluster health
+            <Icon name="rule" size={15} /> {t("redis.cl.healthTitle")}
           </h3>
           {warns.length === 0 ? (
             <div className="cl-clean">
               <Icon name="verified" size={18} style={{ color: "var(--accent)" }} />
-              <span>Every slot is covered, every node is online, and no replica is lagging.</span>
+              <span>{t("redis.cl.cleanMsg")}</span>
             </div>
           ) : (
             warns.map((w, i) => (

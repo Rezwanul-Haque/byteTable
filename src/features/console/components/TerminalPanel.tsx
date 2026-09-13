@@ -19,6 +19,7 @@ import { useRef } from "react";
 
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
+import { useT } from "../../../shared/i18n/useT";
 import { useTabMenu } from "../../../shared/hooks/useTabMenu";
 import type { Workspace } from "../../workspaces/types";
 import { CassandraShellSession } from "./CassandraShellSession";
@@ -40,6 +41,7 @@ import "./TerminalPanel.css";
 
 export function TerminalPanel({ workspace }: { workspace: Workspace }) {
   const wsId = workspace.id;
+  const t = useT();
   const panel = usePanelStore((s) => selectPanel(s, wsId));
   const setHeight = usePanelStore((s) => s.setHeight);
   const toggleMax = usePanelStore((s) => s.toggleMax);
@@ -125,8 +127,8 @@ export function TerminalPanel({ workspace }: { workspace: Workspace }) {
         ref={dragRef}
         role="separator"
         aria-orientation="horizontal"
-        aria-label="Resize terminal"
-        title="Drag to resize"
+        aria-label={t("term.resizeAria")}
+        title={t("term.resizeTitle")}
         onPointerDown={onHandlePointerDown}
       />
       <div className="term-panel-head">
@@ -154,8 +156,8 @@ export function TerminalPanel({ workspace }: { workspace: Workspace }) {
                     e.stopPropagation();
                     closeSession(wsId, s.id);
                   }}
-                  title="Kill terminal"
-                  aria-label={"Kill " + s.title}
+                  title={t("term.kill")}
+                  aria-label={t("term.killAria", { title: s.title })}
                 >
                   <Icon name="close" size={11} />
                 </button>
@@ -166,8 +168,8 @@ export function TerminalPanel({ workspace }: { workspace: Workspace }) {
             type="button"
             className="term-newtab"
             onClick={() => newSession(wsId, label)}
-            title="New terminal session"
-            aria-label="New terminal session"
+            title={t("term.new")}
+            aria-label={t("term.new")}
           >
             <Icon name="add" size={15} />
           </button>
@@ -176,13 +178,13 @@ export function TerminalPanel({ workspace }: { workspace: Workspace }) {
           <IconBtn
             icon={panel.maximized ? "close_fullscreen" : "open_in_full"}
             size={15}
-            title={panel.maximized ? "Restore" : "Maximize"}
+            title={panel.maximized ? t("term.restore") : t("term.maximize")}
             onClick={() => toggleMax(wsId)}
           />
           <IconBtn
             icon="keyboard_arrow_down"
             size={17}
-            title="Hide panel (⌘` / Ctrl+`)"
+            title={t("term.hidePanel")}
             onClick={() => closePanel(wsId)}
           />
         </div>

@@ -14,6 +14,7 @@
 // - `warnings()` turns the topology into the ordered, explained problem list
 //   the health panel shows.
 
+import { t } from "../../../shared/i18n";
 import type { ClusterNode, ClusterShard, ClusterTopology, SlotRange } from "./api";
 
 /** Redis Cluster's fixed hash-slot space. */
@@ -191,13 +192,9 @@ export function warnings(topology: ClusterTopology): ClusterWarning[] {
     out.push({
       sev: "error",
       icon: "heart_broken",
-      title: n.role + " " + n.host + " is flagged " + n.health,
-      detail:
-        "The node has missed enough gossip pings for other masters to mark it PFAIL. If a majority agrees it becomes FAIL and, for a master, a replica is promoted.",
-      fix:
-        "Check the node and its cluster bus port (" +
-        n.busPort +
-        ") before the failover threshold elapses.",
+      title: t("redis.warn.pfailTitle", { role: n.role, host: n.host, health: n.health }),
+      detail: t("redis.warn.pfailDetail"),
+      fix: t("redis.warn.pfailFix", { port: n.busPort }),
     });
   }
 
@@ -206,12 +203,9 @@ export function warnings(topology: ClusterTopology): ClusterWarning[] {
     out.push({
       sev: "warn",
       icon: "schedule",
-      title: "Replica " + n.host + " is " + n.lagSeconds + "s behind",
-      detail:
-        "Promoting this replica now would lose up to " +
-        n.lagSeconds +
-        "s of writes. Reads served from it are stale by the same margin.",
-      fix: "Check the replication link and network before relying on this replica for failover.",
+      title: t("redis.warn.lagTitle", { host: n.host, n: n.lagSeconds ?? 0 }),
+      detail: t("redis.warn.lagDetail", { n: n.lagSeconds ?? 0 }),
+      fix: t("redis.warn.lagFix"),
     });
   }
 
@@ -221,15 +215,12 @@ export function warnings(topology: ClusterTopology): ClusterWarning[] {
     out.push({
       sev: "error",
       icon: "warning",
-      title: shardName(s) + " has no healthy replica",
-      detail:
-        "Losing its master takes " +
-        slots.toLocaleString() +
-        " slots offline. With cluster-require-full-coverage on, the whole cluster stops serving.",
+      title: t("redis.warn.noReplicaTitle", { shard: shardName(s) }),
+      detail: t("redis.warn.noReplicaDetail", { slots: slots.toLocaleString() }),
       fix:
         s.replicas.length === 0
-          ? "Attach a replica with CLUSTER REPLICATE."
-          : "Recover the replica or attach a new one with CLUSTER REPLICATE.",
+          ? t("redis.warn.noReplicaFixNone")
+          : t("redis.warn.noReplicaFixRecover"),
     });
   }
 
@@ -240,16 +231,15 @@ export function warnings(topology: ClusterTopology): ClusterWarning[] {
     out.push({
       sev: "note",
       icon: "swap_horiz",
-      title: count.toLocaleString() + (count === 1 ? " slot is migrating" : " slots are migrating"),
+      title: t("redis.warn.migTitle", { count }),
       detail:
-        "Slots " +
-        w.from +
-        "–" +
-        w.to +
-        (w.direction === "migrating" ? " are moving to " : " are arriving from ") +
+        t("redis.warn.migDetail", { from: w.from, to: w.to }) +
+        (w.direction === "migrating"
+          ? t("redis.warn.migMovingTo")
+          : t("redis.warn.migArrivingFrom")) +
         peerLabel +
-        ". Keys in flight answer with ASK redirects, which is normal.",
-      fix: "Nothing to do — but avoid multi-key operations against these slots until it finishes.",
+        t("redis.warn.migDetailPost"),
+      fix: t("redis.warn.migFix"),
     });
   }
 
@@ -263,15 +253,14 @@ export function warnings(topology: ClusterTopology): ClusterWarning[] {
       out.push({
         sev: "warn",
         icon: "balance",
-        title: "Key distribution is uneven",
-        detail:
-          shards
+        title: t("redis.warn.skewTitle"),
+        detail: t("redis.warn.skewDetail", {
+          list: shards
             .map((s) => shardName(s) + " " + (s.master.keys ?? 0).toLocaleString())
-            .join(" · ") +
-          " — a " +
-          Math.round(spread * 100) +
-          "% spread. Usually a hot hash tag pinning many keys to one slot.",
-        fix: "Look for a hash tag used by too many keys before resharding.",
+            .join(" · "),
+          n: Math.round(spread * 100),
+        }),
+        fix: t("redis.warn.skewFix"),
       });
     }
   }

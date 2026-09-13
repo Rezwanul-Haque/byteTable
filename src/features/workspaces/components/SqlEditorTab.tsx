@@ -27,6 +27,8 @@ import { highlightSql } from "../../browse/shared/highlightSql";
 import type { QueryResult } from "../../../shared/api/engine";
 import { queryRun, queryRunBatch, readTextFile } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
+import type { StringKey } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n/useT";
 import type { Engine } from "../../../shared/types";
 import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
@@ -73,7 +75,9 @@ function previewHtml(sql: string): string {
  * The placeholder `table_name` is meant to be replaced with a real table.
  * `schema_name` resolves the introspection chips to the tab's active schema.
  */
-type Snippet = { label: string; sql: string };
+// Module-level (engine dialects select outside React): the label is a KEY, and
+// the chip renders it through t() so a language switch relabels in place.
+type Snippet = { labelKey: StringKey; sql: string };
 
 /** A statement that creates/drops/alters/refreshes a schema OBJECT (not a
  *  table) — used to invalidate the object caches after an editor run so the
@@ -98,42 +102,54 @@ function snippetsFor(engine: Engine, schemaName: string): Snippet[] {
     case "mysql":
       return [
         {
-          label: "list tables",
+          labelKey: "ws.sql.snipListTables",
           sql: `SELECT table_name, table_type\nFROM information_schema.tables\nWHERE table_schema = '${schemaName}'\nORDER BY table_name;`,
         },
         {
-          label: "table columns",
+          labelKey: "ws.sql.snipTableColumns",
           sql: `SELECT column_name, data_type, is_nullable, column_default\nFROM information_schema.columns\nWHERE table_schema = '${schemaName}' AND table_name = 'table_name'\nORDER BY ordinal_position;`,
         },
-        { label: "row counts", sql: "SELECT COUNT(*) AS row_count\nFROM table_name;" },
-        { label: "recent rows", sql: "SELECT *\nFROM table_name\nLIMIT 50;" },
+        {
+          labelKey: "ws.sql.snipRowCounts",
+          sql: "SELECT COUNT(*) AS row_count\nFROM table_name;",
+        },
+        { labelKey: "ws.sql.snipRecentRows", sql: "SELECT *\nFROM table_name\nLIMIT 50;" },
       ];
     case "postgres":
       return [
         {
-          label: "list tables",
+          labelKey: "ws.sql.snipListTables",
           sql: `SELECT table_name, table_type\nFROM information_schema.tables\nWHERE table_schema = '${schemaName}'\nORDER BY table_name;`,
         },
         {
-          label: "table columns",
+          labelKey: "ws.sql.snipTableColumns",
           sql: `SELECT column_name, data_type, is_nullable, column_default\nFROM information_schema.columns\nWHERE table_schema = '${schemaName}' AND table_name = 'table_name'\nORDER BY ordinal_position;`,
         },
-        { label: "row counts", sql: "SELECT COUNT(*) AS row_count\nFROM table_name;" },
-        { label: "recent rows", sql: "SELECT *\nFROM table_name\nLIMIT 50;" },
+        {
+          labelKey: "ws.sql.snipRowCounts",
+          sql: "SELECT COUNT(*) AS row_count\nFROM table_name;",
+        },
+        { labelKey: "ws.sql.snipRecentRows", sql: "SELECT *\nFROM table_name\nLIMIT 50;" },
       ];
     case "sqlite":
     default:
       return [
         {
-          label: "list tables",
+          labelKey: "ws.sql.snipListTables",
           sql: "SELECT name, type\nFROM sqlite_master\nWHERE type = 'table'\nORDER BY name;",
         },
         {
-          label: "table columns",
+          labelKey: "ws.sql.snipTableColumns",
           sql: "SELECT name, type, \"notnull\", dflt_value\nFROM pragma_table_info('table_name');",
         },
-        { label: "row counts", sql: "SELECT COUNT(*) AS row_count\nFROM table_name;" },
-        { label: "recent rows", sql: "SELECT *\nFROM table_name\nORDER BY rowid DESC\nLIMIT 50;" },
+        {
+          labelKey: "ws.sql.snipRowCounts",
+          sql: "SELECT COUNT(*) AS row_count\nFROM table_name;",
+        },
+        {
+          labelKey: "ws.sql.snipRecentRows",
+          sql: "SELECT *\nFROM table_name\nORDER BY rowid DESC\nLIMIT 50;",
+        },
       ];
   }
 }
@@ -159,6 +175,7 @@ type Popover = "save" | null;
 
 export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: SqlTab }) {
   const toast = useToast();
+  const t = useT();
   const setSqlText = useWorkspacesStore((s) => s.setSqlText);
   const setSqlRuns = useWorkspacesStore((s) => s.setSqlRuns);
   const setActiveRun = useWorkspacesStore((s) => s.setActiveRun);
@@ -433,7 +450,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
             const result = await queryRun(workspace.handleId, stmt, { schema: schemaName });
             record(0, stmt, result, null);
           } catch (err: unknown) {
-            record(0, stmt, null, appErrorMessage(err, "Query failed."));
+            record(0, stmt, null, appErrorMessage(err, t("ws.sql.queryFailed")));
           }
         } else {
           // Multiple statements: one session-pinned batch. Per-statement errors
@@ -446,7 +463,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
             });
             outcomes.forEach((o, i) => record(i, o.sql, o.result, o.error));
           } catch (err: unknown) {
-            record(0, source, null, appErrorMessage(err, "Query failed."));
+            record(0, source, null, appErrorMessage(err, t("ws.sql.queryFailed")));
           }
         }
       } catch (err: unknown) {
@@ -457,7 +474,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
           id: `r${runs.length}`,
           sql: source,
           result: null,
-          error: appErrorMessage(err, "Query failed."),
+          error: appErrorMessage(err, t("ws.sql.queryFailed")),
         });
       } finally {
         setSqlRuns(tab.id, runs); // focuses the first tab
@@ -491,7 +508,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
       try {
         chosen = await openSqlFileDialog();
       } catch {
-        toast("Opening a file requires the desktop app", "info");
+        toast(t("ws.sql.openNeedsApp"), "info");
         return;
       }
       if (!chosen) return; // cancelled
@@ -500,9 +517,9 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
         editorRef.current?.dismissCompletion();
         load(contents);
         const fileName = chosen.split(/[\\/]/).pop() ?? chosen;
-        toast(`Opened “${fileName}”`, "ok");
+        toast(t("ws.sql.opened", { name: fileName }), "ok");
       } catch (err) {
-        toast(appErrorMessage(err, "Could not read the file."), "err");
+        toast(appErrorMessage(err, t("ws.sql.readFail")), "err");
       }
     })();
   };
@@ -511,14 +528,12 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   const format = () => setSqlText(tab.id, formatSql(text));
 
   const doSave = () => {
-    const name = saveName.trim() || "Untitled query";
+    const name = saveName.trim() || t("ws.sql.untitled");
     const connectionId = attach ? workspace.saved.id : null;
     void saveQuery({ name, sql: text, connectionId })
       .then(() => {
         toast(
-          attach
-            ? `Saved “${name}” — attached to this workspace`
-            : `Saved “${name}” — shared across all workspaces`,
+          attach ? t("ws.sql.savedAttached", { name }) : t("ws.sql.savedGlobal", { name }),
           "ok",
         );
         setSaveName("");
@@ -526,7 +541,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
         setPop(null);
       })
       .catch((err: unknown) => {
-        toast(appErrorMessage(err, "Could not save query."), "err");
+        toast(appErrorMessage(err, t("ws.sql.saveFail")), "err");
       });
   };
 
@@ -580,8 +595,8 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
     <button
       type="button"
       className="results-min"
-      title={resultsMin ? "Expand" : "Minimize"}
-      aria-label={resultsMin ? "Expand results" : "Minimize results"}
+      title={resultsMin ? t("ws.sql.expand") : t("ws.sql.minimize")}
+      aria-label={resultsMin ? t("ws.sql.expandResults") : t("ws.sql.minimizeResults")}
       onClick={() => setResultsMin((m) => !m)}
     >
       <Icon name={resultsMin ? "expand_less" : "expand_more"} size={16} />
@@ -598,7 +613,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
           disabled={runDisabled}
           small
         >
-          {running ? "Running…" : allSelected ? "Run All" : "Run"}
+          {running ? t("ws.sql.running") : allSelected ? t("ws.sql.runAll") : t("menu.query.run")}
         </Btn>
         <Btn
           icon="account_tree"
@@ -617,42 +632,42 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
               setView("explain");
             }
           }}
-          title="Explain & analyze the execution plan"
+          title={t("ws.sql.explainTitle")}
         >
-          {allSelected ? "Explain All" : "Explain"}
+          {allSelected ? t("ws.sql.explainAll") : t("ws.sql.explain")}
         </Btn>
         <span className="sql-hint">⌘↩ / Ctrl+Enter</span>
         <div className="sql-snippets">
           {snippets.map((s) => (
             <button
-              key={s.label}
+              key={s.labelKey}
               type="button"
               className="snippet-chip"
               onClick={() => load(s.sql)}
             >
-              {s.label}
+              {t(s.labelKey)}
             </button>
           ))}
         </div>
         <div style={{ flex: 1 }} />
 
         {/* open a .sql/.txt file into the editor */}
-        <IconBtn icon="folder_open" title="Open .sql file" onClick={openFile} />
+        <IconBtn icon="folder_open" title={t("menu.file.openSqlFile")} onClick={openFile} />
 
         {/* save-query popover */}
         <div className="editor-pop-anchor" style={{ position: "relative" }}>
           <IconBtn
             icon="bookmark_add"
-            title="Save this query"
+            title={t("ws.sql.saveTitle")}
             active={pop === "save"}
             onClick={() => setPop(pop === "save" ? null : "save")}
           />
           {pop === "save" ? (
-            <div className="editor-pop save-pop" role="dialog" aria-label="Save query">
-              <div className="history-pop-title">Save query</div>
+            <div className="editor-pop save-pop" role="dialog" aria-label={t("ws.sql.saveQuery")}>
+              <div className="history-pop-title">{t("ws.sql.saveQuery")}</div>
               <input
                 className="save-pop-input"
-                placeholder="Query name…"
+                placeholder={t("ws.sql.queryName")}
                 value={saveName}
                 autoFocus
                 onChange={(e) => setSaveName(e.target.value)}
@@ -667,13 +682,15 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
                   checked={attach}
                   onChange={(e) => setAttach(e.target.checked)}
                 />
-                <span>Attach to this workspace</span>
+                <span>{t("ws.sql.attach")}</span>
               </label>
               <div className="save-pop-note">
-                {attach ? `Only visible in ${workspace.name}` : "Shared across all workspaces"}
+                {attach
+                  ? t("ws.sql.noteAttached", { name: workspace.name })
+                  : t("ws.sql.noteGlobal")}
               </div>
               <Btn variant="filled" small onClick={doSave} style={{ alignSelf: "flex-end" }}>
-                Save
+                {t("common.save")}
               </Btn>
             </div>
           ) : null}
@@ -682,7 +699,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
         {/* saved-queries drawer opener (Prompt 1) */}
         <IconBtn
           icon="bookmarks"
-          title="Saved queries"
+          title={t("ws.sql.savedQueries")}
           active={drawerOpen}
           onClick={() => setDrawerOpen(true)}
         />
@@ -690,7 +707,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
         {/* this-tab history drawer opener (Prompt 2) */}
         <IconBtn
           icon="history"
-          title="Query history"
+          title={t("menu.query.history")}
           active={historyOpen}
           onClick={() => setHistoryOpen(true)}
         />
@@ -707,8 +724,8 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
           <button
             type="button"
             className="sql-format-fab"
-            title="Beautify / format SQL (⇧⌥F)"
-            aria-label="Format SQL"
+            title={t("ws.sql.formatTitle")}
+            aria-label={t("ws.sql.formatAria")}
             onClick={format}
           >
             <Icon name="auto_fix_high" size={15} />
@@ -737,8 +754,8 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
           className={"sql-vsplit" + (dragging ? " dragging" : "")}
           role="separator"
           aria-orientation="horizontal"
-          aria-label="Resize results"
-          title="Drag to resize"
+          aria-label={t("ws.sql.resizeResults")}
+          title={t("ws.sql.dragResize")}
           onPointerDown={startResize}
         />
       ) : null}
@@ -766,7 +783,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
                       size={13}
                       style={{ color: r.error ? "#e06c75" : "var(--accent)" }}
                     />
-                    <span className="sqlres-tab-title">Result {i + 1}</span>
+                    <span className="sqlres-tab-title">{t("ws.sql.resultN", { n: i + 1 })}</span>
                     <button
                       type="button"
                       className="sqlres-tab-close"
@@ -774,8 +791,8 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
                         e.stopPropagation();
                         closeRun(tab.id, r.id);
                       }}
-                      title="Close result"
-                      aria-label={`Close result ${i + 1}`}
+                      title={t("ws.sql.closeResult")}
+                      aria-label={t("ws.sql.closeResultN", { n: i + 1 })}
                     >
                       <Icon name="close" size={11} />
                     </button>
@@ -790,10 +807,10 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
               <div className="sql-result-bar explain-bar">
                 {minBtn}
                 <button type="button" className="result-tab" onClick={() => setView("result")}>
-                  <Icon name="arrow_back" size={13} /> Results
+                  <Icon name="arrow_back" size={13} /> {t("ws.sql.results")}
                 </button>
                 <span className="result-tab active">
-                  <Icon name="account_tree" size={13} /> Explain &amp; analyze
+                  <Icon name="account_tree" size={13} /> {t("ws.sql.explainTab")}
                 </span>
                 <div style={{ flex: 1 }} />
                 <span className="dim">{schemaName}</span>
@@ -817,7 +834,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
                           color: i === explainActiveIdx ? "var(--accent)" : "var(--text-faint)",
                         }}
                       />
-                      <span className="sqlres-tab-title">Query {i + 1}</span>
+                      <span className="sqlres-tab-title">{t("ws.sql.queryN", { n: i + 1 })}</span>
                     </div>
                   ))}
                 </div>
@@ -839,12 +856,12 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
               <div className="sql-result-bar error-bar" role="alert">
                 {minBtn}
                 <Icon name="error" size={14} style={{ color: "#e06c75" }} />
-                <span style={{ color: "#e06c75" }}>Query failed</span>
+                <span style={{ color: "#e06c75" }}>{t("ws.sql.queryFailedTitle")}</span>
                 <div style={{ flex: 1 }} />
                 <IconBtn
                   icon="close"
                   size={14}
-                  title="Dismiss results"
+                  title={t("ws.sql.dismissResults")}
                   onClick={() => clearSqlRuns(tab.id)}
                 />
               </div>
@@ -852,7 +869,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
                 <div className="sql-error">
                   <Icon name="error" size={18} />
                   <div>
-                    <div className="sql-error-title">Query failed</div>
+                    <div className="sql-error-title">{t("ws.sql.queryFailedTitle")}</div>
                     <div className="sql-error-msg">{error}</div>
                   </div>
                 </div>
@@ -865,7 +882,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
                 {result.columns.length === 0 ? (
                   <>
                     <Icon name="check_circle" size={14} style={{ color: "var(--accent)" }} />
-                    <span>Query OK</span>
+                    <span>{t("ws.sql.queryOk")}</span>
                     <span className="dim">·</span>
                     <span className="dim">{result.elapsedMs} ms</span>
                     <span className="dim">·</span>
@@ -874,10 +891,8 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
                 ) : (
                   <>
                     <Icon name="check_circle" size={14} style={{ color: "var(--accent)" }} />
-                    <span>
-                      {result.rowCount} row{result.rowCount === 1 ? "" : "s"}
-                    </span>
-                    {result.truncated ? <span className="dim">(truncated)</span> : null}
+                    <span>{t("ws.rows.count", { count: result.rowCount })}</span>
+                    {result.truncated ? <span className="dim">{t("ws.sql.truncated")}</span> : null}
                     <span className="dim">·</span>
                     <span className="dim">{result.elapsedMs} ms</span>
                     <span className="dim">·</span>
@@ -888,7 +903,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
                 <IconBtn
                   icon="close"
                   size={14}
-                  title="Close results"
+                  title={t("ws.sql.closeResults")}
                   onClick={() => clearSqlRuns(tab.id)}
                 />
               </div>
@@ -911,11 +926,11 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
         onLoad={(q) => {
           load(q.sql);
           setDrawerOpen(false);
-          toast(`Loaded “${q.name}”`, "ok");
+          toast(t("ws.sql.loaded", { name: q.name }), "ok");
         }}
         onDelete={(id) =>
           void removeQuery(id).catch((err: unknown) =>
-            toast(appErrorMessage(err, "Could not delete query."), "err"),
+            toast(appErrorMessage(err, t("ws.sql.deleteFail")), "err"),
           )
         }
       />
@@ -953,6 +968,7 @@ function SavedQueriesDrawer({
   onDelete: (id: string) => void;
 }) {
   const [q, setQ] = useState("");
+  const t = useT();
   // Esc closes the drawer (matches the popover dismissal it replaces).
   useEffect(() => {
     if (!open) return;
@@ -974,27 +990,30 @@ function SavedQueriesDrawer({
       <aside className={"sq-drawer" + (open ? " open" : "")} aria-hidden={!open}>
         <div className="sq-drawer-head">
           <span className="sq-drawer-title">
-            <Icon name="bookmarks" size={16} style={{ color: "var(--accent)" }} /> Saved queries
+            <Icon name="bookmarks" size={16} style={{ color: "var(--accent)" }} />{" "}
+            {t("ws.sql.savedQueries")}
           </span>
-          <IconBtn icon="close" onClick={onClose} title="Close" />
+          <IconBtn icon="close" onClick={onClose} title={t("common.close")} />
         </div>
-        <div className="sq-drawer-sub">Shared across all workspaces</div>
+        <div className="sq-drawer-sub">{t("ws.sql.noteGlobal")}</div>
         <div className="sq-search">
           <Icon name="search" size={15} style={{ color: "var(--text-faint)" }} />
           <input
-            placeholder="Search name or SQL…"
+            placeholder={t("ws.sql.searchSaved")}
             value={q}
             onChange={(e) => setQ(e.target.value)}
             spellCheck={false}
           />
-          {q ? <IconBtn icon="close" size={13} title="Clear" onClick={() => setQ("")} /> : null}
+          {q ? (
+            <IconBtn icon="close" size={13} title={t("ws.scope.clear")} onClick={() => setQ("")} />
+          ) : null}
         </div>
         <div className="sq-list">
           {list.length === 0 ? (
             <div className="sq-empty">
               {queries.length === 0
-                ? "Nothing saved yet — write a query and use the bookmark button."
-                : `No saved queries match “${q}”.`}
+                ? t("ws.sql.emptySaved")
+                : t("ws.sql.noSavedMatch", { query: q })}
             </div>
           ) : (
             list.map((item) => {
@@ -1004,14 +1023,17 @@ function SavedQueriesDrawer({
                   <div className="sq-item-head">
                     <Icon name="bookmark" size={14} style={{ color: "var(--accent)" }} />
                     <span className="sq-item-name">{item.name}</span>
-                    <span className="saved-scope" title={scoped ? "This workspace" : "Global"}>
-                      {scoped ? "this workspace" : "global"}
+                    <span
+                      className="saved-scope"
+                      title={scoped ? t("ws.sql.scopeThis") : t("ws.sql.scopeGlobal")}
+                    >
+                      {scoped ? t("ws.sql.chipThis") : t("ws.sql.chipGlobal")}
                     </span>
                     <button
                       type="button"
                       className="sq-item-del"
-                      title="Delete"
-                      aria-label={"Delete " + item.name}
+                      title={t("common.delete")}
+                      aria-label={t("ws.sql.deleteAria", { name: item.name })}
                       onClick={(e) => {
                         e.stopPropagation();
                         onDelete(item.id);
@@ -1049,6 +1071,7 @@ function HistoryDrawer({
   onClose: () => void;
   onLoad: (h: SqlHistoryEntry) => void;
 }) {
+  const t = useT();
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -1064,14 +1087,15 @@ function HistoryDrawer({
       <aside className={"sq-drawer" + (open ? " open" : "")} aria-hidden={!open}>
         <div className="sq-drawer-head">
           <span className="sq-drawer-title">
-            <Icon name="history" size={16} style={{ color: "var(--accent)" }} /> Query history
+            <Icon name="history" size={16} style={{ color: "var(--accent)" }} />{" "}
+            {t("menu.query.history")}
           </span>
-          <IconBtn icon="close" onClick={onClose} title="Close" />
+          <IconBtn icon="close" onClick={onClose} title={t("common.close")} />
         </div>
-        <div className="sq-drawer-sub">Recent queries · this tab</div>
+        <div className="sq-drawer-sub">{t("ws.sql.historySub")}</div>
         <div className="sq-list">
           {history.length === 0 ? (
-            <div className="sq-empty">Nothing yet — run a query and it shows up here.</div>
+            <div className="sq-empty">{t("ws.sql.emptyHistory")}</div>
           ) : (
             history.map((h, i) => (
               <div key={i} className="sq-item" onClick={() => onLoad(h)}>
@@ -1084,9 +1108,9 @@ function HistoryDrawer({
                   <span className="sq-item-name">
                     {h.ok
                       ? h.rowCount !== undefined
-                        ? `${h.rowCount} row${h.rowCount === 1 ? "" : "s"}`
-                        : "Query OK"
-                      : "failed"}
+                        ? t("ws.rows.count", { count: h.rowCount })
+                        : t("ws.sql.queryOk")
+                      : t("ws.sql.failed")}
                   </span>
                 </div>
                 <pre

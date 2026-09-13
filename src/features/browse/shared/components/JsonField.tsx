@@ -16,6 +16,7 @@
 import { useRef } from "react";
 
 import { Icon } from "../../../../shared/ui/Icon";
+import { useT } from "../../../../shared/i18n/useT";
 import { highlightJSON, validateJSON } from "../jsonCell";
 import "../styles/CellEditors.css";
 import "./JsonField.css";
@@ -40,6 +41,7 @@ export function JsonField({
 }) {
   const taRef = useRef<HTMLTextAreaElement>(null);
   const hlRef = useRef<HTMLPreElement>(null);
+  const t = useT();
 
   const check = validateJSON(text);
   // The highlight layer must scroll with the textarea or the colours slide off
@@ -73,13 +75,13 @@ export function JsonField({
           placeholder={placeholder}
           onChange={(e) => onChange(e.target.value)}
           onScroll={syncScroll}
-          aria-label="JSON value"
+          aria-label={t("grid.jsonValueAria")}
         />
       </div>
       <div className="ri-json-foot">
         {check.ok ? (
           <span className="ri-json-ok">
-            <Icon name="check_circle" size={12} /> valid json
+            <Icon name="check_circle" size={12} /> {t("grid.validJsonLower")}
           </span>
         ) : (
           <span className="ri-json-err">
@@ -91,19 +93,19 @@ export function JsonField({
           type="button"
           className="ri-mini-btn"
           disabled={!check.ok || check.empty}
-          title="Pretty-print"
+          title={t("grid.prettyPrint")}
           onClick={() => onChange(JSON.stringify(JSON.parse(text), null, 2))}
         >
-          format
+          {t("grid.formatLower")}
         </button>
         <button
           type="button"
           className="ri-mini-btn"
           disabled={!check.ok || check.empty}
-          title="Minify"
+          title={t("grid.minify")}
           onClick={() => onChange(JSON.stringify(JSON.parse(text)))}
         >
-          minify
+          {t("grid.minifyLower")}
         </button>
       </div>
     </div>

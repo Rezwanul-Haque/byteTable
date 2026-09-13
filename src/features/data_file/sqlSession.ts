@@ -15,6 +15,7 @@
 
 import { connectionClose, connectionOpen, type OpenResult } from "../connections/api";
 import { executeScriptText, queryRun, type QueryResult } from "../../shared/api/engine";
+import { t } from "../../shared/i18n";
 import { sqlLiteral } from "../import/parse";
 import type { AdhocSchema, ColumnProfile, DataFileValue } from "./core";
 import { toObjects } from "./core";
@@ -144,10 +145,7 @@ const SELECT_ONLY = /^\s*(select|with|explain|pragma)\b/i;
 /** Thrown for a non-SELECT statement; the SQL tab shows it in its error card. */
 export class ReadOnlyError extends Error {
   constructor() {
-    super(
-      "Only SELECT queries run here. To change the file, edit it in the Data tab " +
-        "and save from there.",
-    );
+    super(t("dfile.readOnlyError"));
     this.name = "ReadOnlyError";
   }
 }
@@ -216,10 +214,10 @@ export function sampleQueries(
   const textCol = first((c) => c.type === "text" && c.distinct > 1 && c.distinct < 40);
   const numCol = first((c) => c.type === "integer" || c.type === "decimal");
   return [
-    { label: "First 50 rows", sql: "SELECT * FROM " + table + " LIMIT 50" },
-    { label: "Count rows", sql: 'SELECT COUNT(*) AS "rows" FROM ' + table },
+    { label: t("dfile.sampleFirst"), sql: "SELECT * FROM " + table + " LIMIT 50" },
+    { label: t("dfile.sampleCount"), sql: 'SELECT COUNT(*) AS "rows" FROM ' + table },
     {
-      label: "Group by " + textCol,
+      label: t("dfile.sampleGroup", { col: textCol }),
       sql:
         "SELECT " +
         quoteIdent(textCol) +
@@ -230,7 +228,7 @@ export function sampleQueries(
         " ORDER BY n DESC",
     },
     {
-      label: "Top " + numCol,
+      label: t("dfile.sampleTop", { col: numCol }),
       sql: "SELECT * FROM " + table + " ORDER BY " + quoteIdent(numCol) + " DESC LIMIT 20",
     },
   ];

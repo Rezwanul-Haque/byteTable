@@ -11,10 +11,20 @@ import { createPortal } from "react-dom";
 import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
+import { useT } from "../../../shared/i18n/useT";
+import type { StringKey } from "../../../shared/i18n";
 import type { Engine, Env } from "../../../shared/types";
 import type { DbObjectKind } from "../api";
 import { dropPrefix } from "../ddl";
-import { OBJ_SECTIONS, typeBadge } from "../kinds";
+
+/** Object kind → its translated singular noun (for the drop copy). */
+const KIND_KEY: Record<DbObjectKind, StringKey> = {
+  view: "obj.kind.view",
+  materialized_view: "obj.kind.materializedView",
+  function: "obj.kind.function",
+  procedure: "obj.kind.procedure",
+  trigger: "obj.kind.trigger",
+};
 
 export function ObjectDropModal({
   engine,
@@ -40,8 +50,9 @@ export function ObjectDropModal({
   onClose: () => void;
 }) {
   const [typed, setTyped] = useState("");
+  const t = useT();
   const isProd = env === "production";
-  const clsLabel = OBJ_SECTIONS[kind].label.toLowerCase();
+  const clsLabel = t(KIND_KEY[kind]);
   const stmt = dropPrefix(engine, kind, schema, name, detail);
   const armed = (!isProd || typed.trim() === name) && !busy;
 
@@ -64,18 +75,13 @@ export function ObjectDropModal({
       <div className="modal truncate-modal" role="dialog" aria-modal="true">
         <div className="modal-title">
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-            <Icon name="warning" size={18} style={{ color: "var(--danger)" }} /> Drop {clsLabel}
+            <Icon name="warning" size={18} style={{ color: "var(--danger)" }} />{" "}
+            {t("obj.dropOne.title", { type: clsLabel })}
           </span>
-          <IconBtn icon="close" onClick={onClose} title="Close" />
+          <IconBtn icon="close" onClick={onClose} title={t("common.close")} />
         </div>
         <div className="truncate-body">
-          <p>
-            This permanently drops the {clsLabel}{" "}
-            <code>
-              {schema}.{name}
-            </code>
-            . This cannot be undone.
-          </p>
+          <p>{t("obj.dropOne.body", { type: clsLabel, name: `${schema}.${name}` })}</p>
           <pre className="truncate-sql obj-drop-sql">{stmt}</pre>
           {isProd ? (
             <div className="truncate-prod">
@@ -87,14 +93,15 @@ export function ObjectDropModal({
                   background: envColor + "14",
                 }}
               >
-                <Icon name="public" size={13} /> production
+                <Icon name="public" size={13} /> {t("uix.bulkDelete.prodTag")}
               </div>
               <label>
-                Type <b>{name}</b> to confirm
+                {t("uix.bulkDelete.typePre")} <b>{name}</b> {t("uix.bulkDelete.typePost")}
                 <input
                   value={typed}
                   onChange={(e) => setTyped(e.target.value)}
                   placeholder={name}
+                  aria-label={t("uix.bulkDelete.typeAria", { target: name })}
                   spellCheck={false}
                   autoFocus
                 />
@@ -105,7 +112,7 @@ export function ObjectDropModal({
         <div className="modal-actions">
           <div style={{ flex: 1 }} />
           <Btn variant="text" onClick={onClose}>
-            Cancel
+            {t("common.cancel")}
           </Btn>
           <Btn
             variant="filled"
@@ -114,7 +121,7 @@ export function ObjectDropModal({
             disabled={!armed}
             onClick={() => armed && onConfirm()}
           >
-            Drop {typeBadge(kind).toLowerCase().replace("materialized view", "view")}
+            {t("obj.dropOne.btn", { type: clsLabel })}
           </Btn>
         </div>
       </div>

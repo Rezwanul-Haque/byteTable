@@ -48,6 +48,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 import type { TableMeta } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
+import { useT } from "../../../shared/i18n/useT";
 import { highlightSql } from "../../browse/shared/highlightSql";
 import { Btn } from "../../../shared/ui/Btn";
 import { BTLogo } from "../../../shared/ui/BTLogo";
@@ -259,6 +260,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
   const connectionId = workspace.saved.id;
 
   const toast = useToast();
+  const t = useT();
   const loadTables = useIntrospectionStore((s) => s.loadTables);
   const loadTableMeta = useIntrospectionStore((s) => s.loadTableMeta);
   const openTableTab = useWorkspacesStore((s) => s.openTableTab);
@@ -285,7 +287,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
       if (!list) {
         const key = `${handleId}\u0000${schema}`;
         const err = useIntrospectionStore.getState().errors[key];
-        setLoadError(err ?? "Could not load tables.");
+        setLoadError(err ?? t("smap.err.tables"));
         setLoading(false);
         return;
       }
@@ -297,12 +299,12 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
       let firstError: string | null = null;
       for (const [name, meta] of results) {
         if (meta) map[name] = meta;
-        else if (!firstError) firstError = `Could not load structure of ${name}.`;
+        else if (!firstError) firstError = t("smap.err.meta", { name });
       }
       // A table with no resolvable meta is dropped from the map rather than
       // failing the whole diagram; only a total wipe-out surfaces an error.
       if (Object.keys(map).length === 0 && list.length > 0) {
-        setLoadError(firstError ?? "Could not load schema metadata.");
+        setLoadError(firstError ?? t("smap.err.metadata"));
         setLoading(false);
         return;
       }
@@ -411,7 +413,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
   const toggleEditing = () => {
     if (editing) {
       if (editor.pending.length) {
-        toast("Commit or discard pending changes first", "err");
+        toast(t("smap.err.pending"), "err");
         return;
       }
       setEditing(false);
@@ -1213,7 +1215,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         ? scopeToGroup(scopeBox, cards, edges)
         : { cards, edges, groups: boxes };
       if (scoped.cards.length === 0) {
-        toast("Nothing to export yet.", "info");
+        toast(t("smap.err.nothingExport"), "info");
         return;
       }
       try {
@@ -1228,11 +1230,11 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
           path = await saveDialog(
             defaultName,
             format,
-            format === "png" ? "PNG image" : "SVG image",
+            format === "png" ? t("smap.save.png") : t("smap.save.svg"),
           );
         } catch {
           // Dialog plugin unavailable (browser dev) → not a real failure.
-          toast("Exporting requires the ByteTable desktop app.", "info");
+          toast(t("smap.err.exportDesktop"), "info");
           return;
         }
         if (!path) return; // user cancelled
@@ -1245,11 +1247,13 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         await diagramExport(path, format, svg);
         const file = path.split(/[\\/]/).pop() ?? defaultName;
         toast(
-          scopeBox ? `Exported ${scopeBox.name} to ${file}` : `Exported schema map to ${file}`,
+          scopeBox
+            ? t("smap.exportedScope", { name: scopeBox.name, file })
+            : t("smap.exported", { file }),
           "ok",
         );
       } catch (err) {
-        toast(appErrorMessage(err, "Could not export the schema map."), "err");
+        toast(appErrorMessage(err, t("smap.err.export")), "err");
       } finally {
         setExporting(false);
       }
@@ -1287,7 +1291,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
       <div className="schema-map">
         <div className="dg-state">
           <Icon name="schema" size={28} style={{ opacity: 0.5 }} />
-          <span>Loading schema map for {schema}…</span>
+          <span>{t("smap.loading", { schema })}</span>
         </div>
       </div>
     );
@@ -1299,11 +1303,11 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         <div className="dg-state">
           <Icon name="error" size={28} style={{ color: "#e06c75" }} />
           <div className="dg-error">
-            Could not load the schema map.
+            {t("smap.loadError")}
             <code>{loadError}</code>
           </div>
           <button type="button" className="dg-retry" onClick={() => setReloadKey((k) => k + 1)}>
-            Retry
+            {t("smap.retry")}
           </button>
         </div>
       </div>
@@ -1315,34 +1319,34 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
       <div className="map-toolbar">
         <Icon name="schema" size={16} style={{ color: "var(--accent)" }} />
         <span className="map-title">
-          {schema} · schema {editing ? "designer" : "map"}
+          {editing ? t("smap.title.designer", { schema }) : t("smap.title.map", { schema })}
         </span>
         <span className="map-sub">
-          {tables.length} {tables.length === 1 ? "table" : "tables"} · {edges.length}{" "}
-          {edges.length === 1 ? "relationship" : "relationships"}
-          {boxes.length > 0 ? ` · ${boxes.length} ${boxes.length === 1 ? "group" : "groups"}` : ""}
+          {t("smap.noun.table", { count: tables.length })} ·{" "}
+          {t("smap.noun.relationship", { count: edges.length })}
+          {boxes.length > 0 ? ` · ${t("smap.noun.group", { count: boxes.length })}` : ""}
         </span>
         <div style={{ flex: 1 }} />
         {editing ? (
           <button type="button" className="map-addtable" onClick={editor.addTable}>
             <Icon name="add" size={15} />
-            Add table
+            {t("smap.addTable")}
           </button>
         ) : (
           <span className="map-hint">
             {selectMode
-              ? "click tables, or drag a box around them"
+              ? t("smap.hint.pick")
               : boxes.length > 0
-                ? "drag tables in or out of a frame · drag its edges to resize"
-                : "drag to rearrange"}
+                ? t("smap.hint.frames")
+                : t("smap.hint.drag")}
           </span>
         )}
         {/* Select tables — the same pick that shift-click/shift-drag does, as a
             latched mode, so it doesn't depend on knowing the shortcut. */}
         <IconBtn
           icon="select_all"
-          title="Select tables to group (or hold shift)"
-          aria-label="Select tables to group"
+          title={t("smap.selectTables")}
+          aria-label={t("smap.selectTablesAria")}
           aria-pressed={selectMode}
           active={selectMode}
           hidden={editing}
@@ -1354,8 +1358,8 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         {editable ? (
           <IconBtn
             icon={editing ? "edit_off" : "edit"}
-            title={editing ? "Leave the schema designer" : "Edit schema"}
-            aria-label={editing ? "Leave the schema designer" : "Edit schema"}
+            title={editing ? t("smap.edit.leave") : t("smap.edit")}
+            aria-label={editing ? t("smap.edit.leave") : t("smap.edit")}
             aria-pressed={editing}
             active={editing}
             onClick={toggleEditing}
@@ -1363,8 +1367,8 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         ) : null}
         <IconBtn
           icon="zoom_out"
-          title="Zoom out (⌘/Ctrl −)"
-          aria-label="Zoom out"
+          title={t("smap.zoomOutTitle")}
+          aria-label={t("smap.zoomOut")}
           onClick={() => applyZoom(zoom - ZOOM_STEP)}
           disabled={zoom <= ZOOM_MIN}
         />
@@ -1373,23 +1377,23 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         </span>
         <IconBtn
           icon="zoom_in"
-          title="Zoom in (⌘/Ctrl +)"
-          aria-label="Zoom in"
+          title={t("smap.zoomInTitle")}
+          aria-label={t("smap.zoomIn")}
           onClick={() => applyZoom(zoom + ZOOM_STEP)}
           disabled={zoom >= ZOOM_MAX}
         />
         {hasBentEdges ? (
           <IconBtn
             icon="ink_eraser"
-            title="Reset curves — straighten all edges to their default route"
-            aria-label="Reset curved edges to straight"
+            title={t("smap.resetCurves")}
+            aria-label={t("smap.resetCurvesAria")}
             onClick={resetCurves}
           />
         ) : null}
         <IconBtn
           icon="fit_screen"
-          title="Fit the whole schema in the window"
-          aria-label="Fit the whole schema in the window"
+          title={t("smap.fit")}
+          aria-label={t("smap.fit")}
           hidden={editing}
           // Wrapped, not passed by reference: the click event would land in the
           // `save` parameter.
@@ -1397,8 +1401,8 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         />
         <IconBtn
           icon="restart_alt"
-          title="Reset view & re-run layout (also straightens edges)"
-          aria-label="Reset view, re-run auto-layout, and straighten edges"
+          title={t("smap.resetView")}
+          aria-label={t("smap.resetViewAria")}
           onClick={resetView}
         />
         {/* Export (PNG / SVG) — a small popover anchored to this button.
@@ -1406,8 +1410,8 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         <div className="map-export" hidden={editing}>
           <IconBtn
             icon={exporting ? "hourglass_top" : "download"}
-            title={scopeBox ? `Export ${scopeBox.name}` : "Export diagram"}
-            aria-label="Export diagram"
+            title={scopeBox ? t("smap.export.scope", { name: scopeBox.name }) : t("smap.export")}
+            aria-label={t("smap.export")}
             aria-haspopup="menu"
             aria-expanded={exportMenuOpen}
             disabled={exporting}
@@ -1420,7 +1424,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
                   scope keeps the menu open; the format button below runs it. */}
               {boxes.length > 0 ? (
                 <>
-                  <div className="map-export-head">Export</div>
+                  <div className="map-export-head">{t("smap.export.head")}</div>
                   <button
                     type="button"
                     role="menuitemradio"
@@ -1429,7 +1433,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
                     onClick={() => setExportScope(null)}
                   >
                     <span className="map-export-swatch is-full" />
-                    <span className="map-export-scope-name">Full diagram</span>
+                    <span className="map-export-scope-name">{t("smap.export.full")}</span>
                     <span className="map-export-n">{cards.length}</span>
                   </button>
                   {boxes.map((b) => (
@@ -1456,7 +1460,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
                 onClick={() => void runExport("png")}
               >
                 <Icon name="image" size={15} />
-                <span>PNG image</span>
+                <span>{t("smap.export.png")}</span>
               </button>
               <button
                 type="button"
@@ -1465,7 +1469,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
                 onClick={() => void runExport("svg")}
               >
                 <Icon name="shape_line" size={15} />
-                <span>SVG vector</span>
+                <span>{t("smap.export.svg")}</span>
               </button>
             </div>
           ) : null}
@@ -1613,14 +1617,14 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         <div className="map-selection">
           <Icon name="select_all" size={16} style={{ color: "var(--accent)" }} />
           <span className="map-sel-count">
-            {selected.length} table{selected.length === 1 ? "" : "s"} selected
+            {t("smap.selectedTables", { count: selected.length })}
           </span>
           <button type="button" className="map-sel-btn primary" onClick={groupSelection}>
             <Icon name="add" size={14} />
-            Frame as group
+            {t("smap.frameAsGroup")}
           </button>
           <button type="button" className="map-sel-btn ghost" onClick={() => setSelected([])}>
-            Clear
+            {t("smap.clear")}
           </button>
         </div>
       ) : null}
@@ -1632,7 +1636,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         <div className="map-selection">
           <span className="map-sel-dot" style={{ background: selectedBox.color }} />
           <span className="map-sel-count">{selectedBox.name}</span>
-          <span className="map-sel-label">colour</span>
+          <span className="map-sel-label">{t("smap.colour")}</span>
           <div className="map-swatches">
             {swatches.map((c) => (
               <button
@@ -1644,17 +1648,17 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
                 }
                 style={{ background: c }}
                 title={c}
-                aria-label={`Colour this group ${c}`}
+                aria-label={t("smap.colourAria", { color: c })}
                 aria-pressed={c.toLowerCase() === selectedBox.color.toLowerCase()}
                 onClick={() => setGroupColor(selectedBox.id, c)}
               />
             ))}
             {/* Anything else: the platform colour picker, live as you drag it. */}
-            <span className="map-swatch-custom" title="Pick any colour">
+            <span className="map-swatch-custom" title={t("smap.pickColour")}>
               <input
                 type="color"
                 value={selectedBox.color}
-                aria-label="Pick any colour for this group"
+                aria-label={t("smap.pickColourAria")}
                 onChange={(e) => setGroupColor(selectedBox.id, e.currentTarget.value)}
               />
             </span>
@@ -1664,7 +1668,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
             className="map-sel-btn ghost"
             onClick={() => setSelectedGroup(null)}
           >
-            Done
+            {t("smap.done")}
           </button>
         </div>
       ) : null}
@@ -1675,7 +1679,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         <div className="map-pending">
           {reviewOpen ? (
             <div className="pending-list">
-              <div className="pending-list-title">Pending migration</div>
+              <div className="pending-list-title">{t("smap.pending")}</div>
               {editor.pending.map((op, i) => (
                 <div
                   key={i}
@@ -1690,7 +1694,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
                 >
                   <span
                     className="pending-sql-grip"
-                    title="Drag to reorder"
+                    title={t("smap.dragReorder")}
                     onMouseDown={(e) => startPendingDrag(e, i)}
                   >
                     <Icon name="drag_indicator" size={15} />
@@ -1702,7 +1706,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
                   <button
                     type="button"
                     className="pending-sql-remove"
-                    title="Remove this statement"
+                    title={t("smap.removeStatement")}
                     onClick={() => editor.unstage(i)}
                   >
                     <Icon name="close" size={13} />
@@ -1714,7 +1718,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
           <div className="pending-bar-row">
             <Icon name="pending_actions" size={16} style={{ color: "var(--accent)" }} />
             <span className="pending-count">
-              {editor.pending.length} pending change{editor.pending.length === 1 ? "" : "s"}
+              {t("smap.pendingCount", { count: editor.pending.length })}
             </span>
             <button
               type="button"
@@ -1722,11 +1726,11 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
               onClick={() => setReviewOpen((v) => !v)}
             >
               <Icon name={reviewOpen ? "expand_more" : "expand_less"} size={14} />
-              {reviewOpen ? "Hide SQL" : "Review SQL"}
+              {reviewOpen ? t("smap.hideSql") : t("smap.reviewSql")}
             </button>
             <div style={{ flex: 1 }} />
             <Btn variant="text" small onClick={editor.discard}>
-              Discard
+              {t("smap.discard")}
             </Btn>
             <Btn
               variant="filled"
@@ -1734,7 +1738,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
               small
               onClick={() => setCommitOpen(true)}
             >
-              Commit changes
+              {t("smap.commitChanges")}
             </Btn>
           </div>
         </div>
@@ -1761,7 +1765,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
             <div className="map-export-logo">
               <BTLogo size={44} blink />
             </div>
-            <span className="map-export-label">Exporting schema map…</span>
+            <span className="map-export-label">{t("smap.exporting")}</span>
           </div>
         </div>
       ) : null}
@@ -1815,6 +1819,7 @@ function Edge({
   onHandlePointerDown: (e: React.PointerEvent) => void;
   onResetEdge: () => void;
 }) {
+  const t = useT();
   return (
     <g
       className={
@@ -1850,7 +1855,7 @@ function Edge({
           r={5}
           role="button"
           tabIndex={0}
-          aria-label="Drag to bend relationship; double-click to straighten"
+          aria-label={t("smap.edgeAria")}
           onPointerDown={onHandlePointerDown}
           onDoubleClick={onResetEdge}
         />
@@ -1874,6 +1879,7 @@ function CardinalityPopover({
   override: CardinalityKind | undefined;
   onSetCardinality: (kind: CardinalityKind | null) => void;
 }) {
+  const t = useT();
   return (
     <foreignObject x={edge.mx - 78} y={edge.my + 12} width={156} height={26}>
       <div className="map-card-pop" onPointerDown={(e) => e.stopPropagation()}>
@@ -1886,7 +1892,7 @@ function CardinalityPopover({
               className={"map-card-pop-btn" + (active ? " active" : "")}
               onClick={() => onSetCardinality(o.kind)}
             >
-              {o.label}
+              {o.kind === null ? t("smap.card.auto") : o.label}
             </button>
           );
         })}
@@ -1945,6 +1951,7 @@ function GroupFrame({
   /** Grab-band width in world units (screen pixels ÷ zoom). */
   grab: number;
 }) {
+  const t = useT();
   const style = { "--group-color": box.color } as React.CSSProperties;
   const label = truncate(box.name, 28);
   const count = String(box.tables.length);
@@ -2002,7 +2009,7 @@ function GroupFrame({
             className="map-group-input"
             defaultValue={box.name}
             autoFocus
-            aria-label="Group name"
+            aria-label={t("smap.groupAria")}
             onPointerDown={(e) => e.stopPropagation()}
             onBlur={(e) => onRename(e.currentTarget.value)}
             onKeyDown={(e) => {
@@ -2023,7 +2030,7 @@ function GroupFrame({
             onPointerDown={onHeaderPointerDown}
             onDoubleClick={onStartRename}
           >
-            <title>Drag to move this group · double-click to rename</title>
+            <title>{t("smap.groupDrag")}</title>
           </rect>
           <text className="map-group-name" x={hx + 10} y={cy} dominantBaseline="central">
             {label}
@@ -2057,6 +2064,7 @@ function Card({
   onResizePointerDown: (e: React.PointerEvent) => void;
   onOpen: () => void;
 }) {
+  const t = useT();
   const { x, y, w, h, shownColumns, hiddenCount } = card;
   // Truncation budgets scale with width (widen-only), so a resized card reveals
   // more of long table/column names rather than just adding whitespace. The
@@ -2100,7 +2108,7 @@ function Card({
           className="map-card-open"
           role="button"
           tabIndex={0}
-          aria-label={`Open ${card.table}`}
+          aria-label={t("smap.openTable", { table: card.table })}
           onPointerDown={(e) => e.stopPropagation()}
           onClick={onOpen}
           onKeyDown={(e) => {
@@ -2178,7 +2186,7 @@ function Card({
           y={HEAD_H + CARD_PAD_T + shownColumns.length * ROW_H + ROW_H / 2}
           dominantBaseline="central"
         >
-          + {hiddenCount} more columns…
+          {t("smap.moreColumns", { count: hiddenCount })}
         </text>
       ) : null}
 

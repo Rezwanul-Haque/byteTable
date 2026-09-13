@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { isAppErrorPayload } from "../../../../shared/api/error";
+import { useT } from "../../../../shared/i18n/useT";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
@@ -42,6 +43,7 @@ interface TsDocsTabProps {
 }
 
 export function TsDocsTab({ handleId, collection, reloadKey, onChanged }: TsDocsTabProps) {
+  const t = useT();
   const [docs, setDocs] = useState<Doc[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -66,7 +68,7 @@ export function TsDocsTab({ handleId, collection, reloadKey, onChanged }: TsDocs
       setDocs(result.documents);
       setTotal(result.total);
     } catch (e) {
-      setError(isAppErrorPayload(e) ? e.message : "Could not load documents.");
+      setError(isAppErrorPayload(e) ? e.message : t("tsx.docs.loadFailed"));
       setDocs([]);
     } finally {
       setLoading(false);
@@ -107,8 +109,8 @@ export function TsDocsTab({ handleId, collection, reloadKey, onChanged }: TsDocs
     return (
       <div className="ts-empty">
         <Icon name="data_object" size={26} style={{ color: "var(--text-faint)" }} />
-        <p>No collection selected.</p>
-        <span className="ts-empty-hint">Pick a collection in the sidebar to browse documents.</span>
+        <p>{t("tsx.docs.noCollection")}</p>
+        <span className="ts-empty-hint">{t("tsx.docs.noCollectionHint")}</span>
       </div>
     );
   }
@@ -123,13 +125,13 @@ export function TsDocsTab({ handleId, collection, reloadKey, onChanged }: TsDocs
         <h2>{collection.name}</h2>
         <span className="structure-sub">
           {q.trim() ? tsCount(shown.length) + " of " : ""}
-          {tsCount(docs.length)} loaded · {tsCount(total)} documents
+          {t("tsx.docs.loaded", { shown: tsCount(docs.length), total: tsCount(total) })}
         </span>
         <div className="ts-docs-search">
           <Icon name="search" size={14} style={{ color: "var(--text-faint)" }} />
           <input
-            placeholder="Filter loaded documents…"
-            title="Filters the documents on this page. Use the Search playground to query the index."
+            placeholder={t("tsx.docs.filterPh")}
+            title={t("tsx.docs.filterTitle")}
             value={q}
             onChange={(e) => setQ(e.target.value)}
             spellCheck={false}
@@ -141,12 +143,10 @@ export function TsDocsTab({ handleId, collection, reloadKey, onChanged }: TsDocs
         {error ? (
           <TsError message={error} />
         ) : loading && docs.length === 0 ? (
-          <TsLoading what="documents" />
+          <TsLoading what="tsx.whatDocuments" />
         ) : shown.length === 0 ? (
           <div className="ts-facet-none">
-            {docs.length === 0
-              ? "this collection has no documents"
-              : "nothing on this page matches"}
+            {docs.length === 0 ? t("tsx.docs.empty") : t("tsx.docs.noMatch")}
           </div>
         ) : (
           <table className="structure-table" style={{ width: "100%" }}>
@@ -180,12 +180,10 @@ export function TsDocsTab({ handleId, collection, reloadKey, onChanged }: TsDocs
       </div>
 
       <div className="table-footer">
-        <span className="table-hint">
-          Click a row to edit its JSON · upsert replaces the whole document by <code>id</code>
-        </span>
+        <span className="table-hint">{t("tsx.docs.footerHint")}</span>
         <div className="pager">
           <span className="pager-label" id="ts-docs-pager-label">
-            Documents per page
+            {t("tsx.docs.perPage")}
           </span>
           <Select
             className="pager-size"
@@ -199,17 +197,23 @@ export function TsDocsTab({ handleId, collection, reloadKey, onChanged }: TsDocs
             }}
           />
           <span className="pager-range">
-            {tsCount(from)}–{tsCount(to)} of {tsCount(total)} · Page {page} of {pageCount}
+            {t("tsx.docs.pageRange", {
+              from: tsCount(from),
+              to: tsCount(to),
+              total: tsCount(total),
+              page,
+              pages: pageCount,
+            })}
           </span>
           <IconBtn
             icon="chevron_left"
-            title="Previous page"
+            title={t("tsx.docs.prevPage")}
             disabled={page <= 1}
             onClick={() => setPage((p) => Math.max(1, p - 1))}
           />
           <IconBtn
             icon="chevron_right"
-            title="Next page"
+            title={t("tsx.docs.nextPage")}
             disabled={page >= pageCount}
             onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
           />
@@ -245,6 +249,7 @@ function TsDocDrawer({
   onClose: () => void;
   onChanged: () => void;
 }) {
+  const t = useT();
   const toast = useToast();
   const [text, setText] = useState(() => JSON.stringify(doc, null, 2));
   const [error, setError] = useState<string | null>(null);
@@ -263,19 +268,19 @@ function TsDocDrawer({
       parsed = JSON.parse(text);
     } catch (e) {
       // A parse failure changes nothing — no request is sent.
-      setError(e instanceof Error ? e.message : "That is not valid JSON.");
+      setError(e instanceof Error ? e.message : t("tsx.docs.invalidJson"));
       return;
     }
     setBusy(true);
     try {
       await typesenseUpsertDocument(handleId, collection, parsed);
       const savedId = typeof (parsed as Doc)?.id === "string" ? ((parsed as Doc).id as string) : id;
-      toast("Document " + savedId + " upserted", "ok");
+      toast(t("tsx.docs.upserted", { id: savedId }), "ok");
       setError(null);
       onChanged();
       onClose();
     } catch (e) {
-      setError(isAppErrorPayload(e) ? e.message : "The upsert failed.");
+      setError(isAppErrorPayload(e) ? e.message : t("tsx.docs.upsertFailed"));
     } finally {
       setBusy(false);
     }
@@ -285,11 +290,11 @@ function TsDocDrawer({
     setBusy(true);
     try {
       await typesenseDeleteDocument(handleId, collection, id);
-      toast("Deleted " + id, "ok");
+      toast(t("tsx.docs.deleted", { id }), "ok");
       onChanged();
       onClose();
     } catch (e) {
-      setError(isAppErrorPayload(e) ? e.message : "The delete failed.");
+      setError(isAppErrorPayload(e) ? e.message : t("tsx.docs.deleteFailed"));
     } finally {
       setBusy(false);
     }
@@ -300,10 +305,10 @@ function TsDocDrawer({
       <div className="ts-drawer-head">
         <Icon name="data_object" size={15} style={{ color: "var(--accent)" }} />
         <span className="ts-drawer-id">
-          {collection} / {id || "(no id)"}
+          {collection} / {id || t("tsx.docs.noId")}
         </span>
         <div style={{ flex: 1 }} />
-        <IconBtn icon="close" title="Close" onClick={onClose} size={15} />
+        <IconBtn icon="close" title={t("tsx.docs.drawerClose")} onClick={onClose} size={15} />
       </div>
       <textarea
         className="ts-drawer-json"
@@ -322,16 +327,16 @@ function TsDocDrawer({
           className="btn btn-danger-text"
           onClick={() => void remove()}
           disabled={busy || !id}
-          title={id ? "Delete this document" : "This document has no id to delete by"}
+          title={id ? t("tsx.docs.deleteTitle") : t("tsx.docs.noIdToDelete")}
         >
-          <Icon name="delete" size={14} /> Delete
+          <Icon name="delete" size={14} /> {t("tsx.docs.delete")}
         </button>
         <div style={{ flex: 1 }} />
         <Btn variant="text" onClick={onClose}>
-          Cancel
+          {t("tsx.docs.cancel")}
         </Btn>
         <Btn variant="filled" icon="save" onClick={() => void save()} disabled={busy}>
-          Upsert
+          {t("tsx.docs.upsert")}
         </Btn>
       </div>
     </div>

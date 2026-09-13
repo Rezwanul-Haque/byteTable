@@ -20,6 +20,7 @@ import {
   REGIONS,
   type FirstDay,
   type LocaleId,
+  type RegionId,
   type StringKey,
 } from "../../../shared/i18n";
 import { useT } from "../../../shared/i18n/useT";
@@ -65,6 +66,13 @@ const TABS: { id: SettingsTabId; key: StringKey; icon: string }[] = [
   { id: "language", key: "set.tab.language", icon: "translate" },
   { id: "behavior", key: "set.tab.behavior", icon: "tune" },
 ];
+
+// The region picker reads its labels through the locale (`set.region.*`) rather
+// than from the `REGIONS` metadata, which carries ids only — so the list follows
+// the interface language, exactly like the tabs above.
+function regionKey(id: RegionId): StringKey {
+  return `set.region.${id}` as StringKey;
+}
 
 // ---- small controls (ported from settings.jsx) ----
 
@@ -446,7 +454,7 @@ function LanguagePane({
           value={settings.region}
           onChange={(id) => setSetting("region", id)}
           mono={false}
-          options={REGIONS.map((r) => ({ value: r.id, label: r.label }))}
+          options={REGIONS.map((r) => ({ value: r.id, label: t(regionKey(r.id)) }))}
         />
       </SetRow>
       <SetRow label={t("set.lang.clock")}>
@@ -554,7 +562,7 @@ export function SettingsModal({ tab: initialTab, onClose }: SettingsModalProps) 
         <Icon name="settings" size={18} style={{ color: "var(--accent)" }} />
         <div className="modal-title-text">{t("set.title")}</div>
         <div style={{ flex: 1 }} />
-        <IconBtn icon="close" onClick={onClose} title="Close (Esc)" />
+        <IconBtn icon="close" onClick={onClose} title={t("grid.closeEsc")} />
       </div>
 
       <div className="set-body">
@@ -709,7 +717,7 @@ export function SettingsModal({ tab: initialTab, onClose }: SettingsModalProps) 
                     type="button"
                     className="set-size-btn"
                     onClick={() => setSetting("fontSize", Math.max(10, settings.fontSize - 1))}
-                    aria-label="Decrease size"
+                    aria-label={t("set.size.decrease")}
                   >
                     <Icon name="remove" size={15} />
                   </button>
@@ -721,13 +729,13 @@ export function SettingsModal({ tab: initialTab, onClose }: SettingsModalProps) 
                     value={settings.fontSize}
                     onChange={(e) => setSetting("fontSize", Number(e.target.value))}
                     className="set-range"
-                    aria-label="Monospace size"
+                    aria-label={t("set.size.monospace")}
                   />
                   <button
                     type="button"
                     className="set-size-btn"
                     onClick={() => setSetting("fontSize", Math.min(18, settings.fontSize + 1))}
-                    aria-label="Increase size"
+                    aria-label={t("set.size.increase")}
                   >
                     <Icon name="add" size={15} />
                   </button>

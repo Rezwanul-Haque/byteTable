@@ -29,6 +29,7 @@ import { isDataFileWorkspace } from "./features/workspaces/types";
 import { pickSqliteFile } from "./features/connections/dialog";
 import { useOpenSqliteFile } from "./features/workspaces/connect";
 import { useToast } from "./shared/ui/toastContext";
+import { useT } from "./shared/i18n/useT";
 import { isAppErrorPayload } from "./shared/api/error";
 import { useTrayWorkspaces } from "./features/workspaces/trayMenu";
 import {
@@ -63,6 +64,7 @@ const Gallery = import.meta.env.DEV
 
 export function App() {
   useRepaintOnRestore();
+  const t = useT();
 
   // Set platform and track maximized/fullscreen state: maximized drives the
   // rounded-corner CSS, and fullscreen (macOS) hides the OS traffic lights, so
@@ -386,23 +388,26 @@ export function App() {
       ) : null}
 
       {quitConfirmOpen ? (
-        <Modal width={380} label="Close ByteTable" onClose={() => setQuitConfirmOpen(false)}>
+        <Modal
+          width={380}
+          label={t("shell.quit.title", { app: "ByteTable" })}
+          onClose={() => setQuitConfirmOpen(false)}
+        >
           <div style={{ padding: "6px 4px 2px" }}>
             <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", marginBottom: 6 }}>
-              Close Byte<span style={{ color: "var(--accent)" }}>Table</span>?
+              {t("shell.quit.pre")} Byte<span style={{ color: "var(--accent)" }}>Table</span>
+              {t("shell.quit.post")}
             </div>
-            <div style={{ fontSize: 13, color: "var(--text-dim)" }}>
-              Do you really want to close?
-            </div>
+            <div style={{ fontSize: 13, color: "var(--text-dim)" }}>{t("shell.quit.body")}</div>
           </div>
           <ModalActions>
             <div style={{ flex: 1 }} />
             <Btn variant="text" small onClick={() => setQuitConfirmOpen(false)}>
-              Cancel
+              {t("common.cancel")}
             </Btn>
             <button type="button" className="btn btn-danger btn-small" onClick={confirmQuit}>
               <Icon name="logout" size={15} />
-              <span>Close ByteTable</span>
+              <span>{t("shell.quit.title", { app: "ByteTable" })}</span>
             </button>
           </ModalActions>
         </Modal>
@@ -442,6 +447,7 @@ function FileOpenBridge({
   const openDataFile = useOpenDataFile();
   const openSqliteFile = useOpenSqliteFile();
   const toast = useToast();
+  const t = useT();
 
   useEffect(() => {
     if (request !== "sqlite") return;
@@ -454,7 +460,7 @@ function FileOpenBridge({
         // The desktop shell is there but the dialog failed, vs plain-browser
         // dev where the plugin is not present at all.
         toast(
-          isAppErrorPayload(error) ? error.message : "Native file dialog requires the desktop app",
+          isAppErrorPayload(error) ? error.message : t("shell.fileOpen.noDialog"),
           isAppErrorPayload(error) ? "err" : "info",
         );
         onDone();
@@ -464,7 +470,7 @@ function FileOpenBridge({
       if (path !== null) {
         // Failures are already toasted inside the connect flow.
         const name = await openSqliteFile(path);
-        if (name) toast("Workspace “" + name + "” opened", "ok");
+        if (name) toast(t("shell.fileOpen.opened", { name }), "ok");
       }
       onDone();
     })();
@@ -482,7 +488,7 @@ function FileOpenBridge({
       onOpen={(file) => {
         onDone();
         void openDataFile(file).then((name) => {
-          if (name) toast("Opened “" + name + "” — editable, and queryable with SQL", "ok");
+          if (name) toast(t("shell.fileOpen.openedEditable", { name }), "ok");
         });
       }}
     />

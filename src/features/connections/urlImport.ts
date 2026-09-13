@@ -11,6 +11,7 @@
 // Nothing here throws: it runs on every keystroke in the import sheet, so a
 // half-typed URL must produce an `error` string rather than an exception.
 
+import { t, type StringKey } from "../../shared/i18n";
 import type { Engine } from "../../shared/types";
 import type { TlsMode } from "./api";
 
@@ -72,13 +73,13 @@ const IMP_SECURE = new Set([
  * list. Cassandra's is a keyspace, Redis's a numeric db index, and so on —
  * calling every one of them "Database" would misdescribe most of them.
  */
-export const IMP_DBLABEL: Record<string, string> = {
-  cassandra: "Keyspace",
-  oracle: "Service name",
-  neo4j: "Database",
-  typesense: "Collection",
-  redis: "Database index",
-  sqlite: "File",
+export const IMP_DBLABEL: Record<string, StringKey> = {
+  cassandra: "conn.keyspace",
+  oracle: "conn.row.serviceName",
+  neo4j: "conn.row.database",
+  typesense: "conn.row.collection",
+  redis: "conn.dbIndex",
+  sqlite: "conn.row.file",
 };
 
 /** ODBC / ADO.NET key (lowercased) → the field it maps onto. */
@@ -226,16 +227,13 @@ function parseKvConnStr(text: string): ImportResult {
       out.opts.push({ k: key, v: value });
     }
   }
-  if (!out.host) return { error: "No Server / Host key found in that connection string." };
+  if (!out.host) return { error: t("conn.import.err.kvHost") };
   out.engine = out.port === "3306" ? "mysql" : out.port === "5432" ? "postgres" : "mssql";
   out.confident = out.port === "3306" || out.port === "5432";
   if (!out.port) out.port = out.engine === "mssql" ? "1433" : "5432";
-  if (out.password) out.warnings.push(PASSWORD_WARNING);
+  if (out.password) out.warnings.push(t("conn.import.warnPassword"));
   return out;
 }
-
-const PASSWORD_WARNING =
-  "A password is embedded in this URL. It goes to your OS keychain on save and is never written into the connection file.";
 
 /**
  * Parse a pasted connection string. Returns null for empty input, an
@@ -252,25 +250,16 @@ export function parseConnUri(raw: string): ImportResult {
   // `jdbc:postgresql://…` — the JDBC prefix wraps an otherwise ordinary URL.
   const m = /^([a-z0-9+.-]+):\/\/(.*)$/i.exec(s.replace(/^jdbc:/i, ""));
   if (!m) {
-    return {
-      error: "Not a connection URL — expected something like postgres://user@host:5432/shop",
-    };
+    return { error: t("conn.import.err.notUrl") };
   }
   const scheme = m[1]!.toLowerCase();
   const unsupported = IMP_UNSUPPORTED[scheme];
   if (unsupported) {
-    return {
-      error: "“" + scheme + "://” is " + unsupported + ", which this build has no engine for yet.",
-    };
+    return { error: t("conn.import.err.unsupported", { scheme, name: unsupported }) };
   }
   const meta = IMP_SCHEMES[scheme];
   if (!meta) {
-    return {
-      error:
-        "“" +
-        scheme +
-        "://” isn’t a supported scheme. Try postgres, mysql, sqlserver, clickhouse, redis, mongodb, cassandra or http (Typesense).",
-    };
+    return { error: t("conn.import.err.scheme", { scheme }) };
   }
 
   const out: ImportedConnection = {
@@ -320,17 +309,14 @@ export function parseConnUri(raw: string): ImportResult {
   }
 
   const hosts = rest.split(",").filter(Boolean);
-  if (!hosts.length) return { error: "No host found in that URL." };
+  if (!hosts.length) return { error: t("conn.import.err.noHost") };
   // `[::1]:6379` — the bracketed IPv6 form, or a plain host, then `:port`.
   const hp = /^(\[[^\]]+\]|[^:]+)(?::(\d+))?$/.exec(hosts[0]!);
   out.host = hp ? hp[1] : hosts[0];
   if (hp?.[2]) out.port = hp[2];
   if (hosts.length > 1) {
     out.extraHosts = hosts.length - 1;
-    out.warnings.push(
-      hosts.length +
-        " hosts in the URL — only the first is used for the fields; keep the full URI to preserve the seed list.",
-    );
+    out.warnings.push(t("conn.import.warnHosts", { count: hosts.length }));
   }
 
   if (path) {
@@ -383,10 +369,8 @@ export function parseConnUri(raw: string): ImportResult {
   // driver's own options do not survive being split into fields.
   if (out.engine === "mongodb") out.uri = s;
   if (scheme === "mongodb+srv") {
-    out.warnings.push(
-      "SRV URI — the host list is resolved from DNS at connect time. ByteTable keeps the URI as given.",
-    );
+    out.warnings.push(t("conn.import.warnSrv"));
   }
-  if (out.password) out.warnings.push(PASSWORD_WARNING);
+  if (out.password) out.warnings.push(t("conn.import.warnPassword"));
   return out;
 }

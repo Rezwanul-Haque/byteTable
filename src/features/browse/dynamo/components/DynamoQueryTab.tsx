@@ -4,6 +4,7 @@
 // `DynamoTableTab` (key-condition row, projection picker, grid, paging) bound to
 // that table; switching the dropdown rebinds it (the `key` resets its state).
 
+import { useT } from "../../../../shared/i18n/useT";
 import { Icon } from "../../../../shared/ui/Icon";
 import { Select } from "../../../../shared/ui/Select";
 import type { TableDescriptor } from "../api";
@@ -46,17 +47,18 @@ export function DynamoQueryTab({
   onDelete,
   active,
 }: DynamoQueryTabProps) {
-  const desc = tables.find((t) => t.name === table);
+  const t = useT();
+  const desc = tables.find((tb) => tb.name === table);
   const options = [
-    { value: "", label: "Select a table…" },
-    ...tables.map((t) => ({ value: t.name, label: t.name })),
+    { value: "", label: t("dyn.qt.selectPh") },
+    ...tables.map((tb) => ({ value: tb.name, label: tb.name })),
   ];
 
   return (
     <div className="ddb-qb">
       <div className="ddb-qb-head">
         <span className="ddb-proj-label">
-          <Icon name="table_chart" size={13} /> Table
+          <Icon name="table_chart" size={13} /> {t("dyn.qt.table")}
         </span>
         <Select
           className="ddb-q-select ddb-qb-select"
@@ -64,7 +66,7 @@ export function DynamoQueryTab({
           options={options}
           onChange={onTableChange}
           autoOpen={pickTable && !table}
-          aria-label="Query a table"
+          aria-label={t("dyn.qt.aria")}
         />
         {desc ? (
           <span className="ddb-qb-keys">
@@ -93,7 +95,7 @@ export function DynamoQueryTab({
       ) : (
         <div className="ddb-qb-empty">
           <Icon name="search" size={32} />
-          <p>Pick a table above to build a Scan or Query.</p>
+          <p>{t("dyn.qt.hint")}</p>
         </div>
       )}
     </div>

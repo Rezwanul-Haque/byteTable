@@ -8,6 +8,7 @@
 import { useMemo, useRef, useState } from "react";
 
 import { appErrorMessage } from "../../../../shared/api/error";
+import { useT } from "../../../../shared/i18n/useT";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
@@ -115,6 +116,7 @@ export function MongoExportModal({
   onClose: () => void;
 }) {
   const toast = useToast();
+  const t = useT();
   const [stage, setStage] = useState<"choose" | "building" | "done">("choose");
   const [format, setFormat] = useState<ExportFormat>("extended");
   const [mode, setMode] = useState<"both" | "data">("both");
@@ -174,17 +176,17 @@ export function MongoExportModal({
       setPct(100);
       setStage("done");
       download(fname, content, mime);
-      toast("Exported " + fname, "ok");
+      toast(t("mongo.exportedFile", { name: fname }), "ok");
       setTimeout(onClose, 700);
     } catch (e) {
-      toast(appErrorMessage(e, "Export failed"), "err");
+      toast(appErrorMessage(e, t("mongo.exportFail")), "err");
       setStage("choose");
     }
   };
 
   const FORMATS: { id: ExportFormat; label: string; icon: string }[] = [
     { id: "extended", label: "JSON", icon: "data_object" },
-    { id: "shell", label: "mongosh script", icon: "code" },
+    { id: "shell", label: t("mongo.fmtShell"), icon: "code" },
     { id: "csv", label: "CSV", icon: "table_view" },
   ];
 
@@ -198,19 +200,21 @@ export function MongoExportModal({
             style={{ color: "var(--accent)" }}
           />
           {stage === "done"
-            ? "Export complete"
+            ? t("mongo.exportDone")
             : stage === "choose"
               ? isAll
-                ? "Export database " + db
-                : "Export " + coll
-              : "Exporting…"}
+                ? t("mongo.exportDbTitle", { db })
+                : t("mongo.exportCollTitle", { coll: coll ?? "" })
+              : t("mongo.exporting")}
         </span>
-        {stage !== "building" ? <IconBtn icon="close" onClick={onClose} title="Close" /> : null}
+        {stage !== "building" ? (
+          <IconBtn icon="close" onClick={onClose} title={t("common.close")} />
+        ) : null}
       </div>
 
       {stage === "choose" ? (
         <>
-          <div className="ddb-io-label">Format</div>
+          <div className="ddb-io-label">{t("mongo.format")}</div>
           <div className="seg ddb-io-seg">
             {FORMATS.map((f) => {
               const disabled = isAll && f.id === "csv";
@@ -219,7 +223,7 @@ export function MongoExportModal({
                   key={f.id}
                   className={"seg-btn" + (format === f.id ? " active" : "")}
                   disabled={disabled}
-                  title={disabled ? "CSV is per-collection only" : ""}
+                  title={disabled ? t("mongo.csvOnly") : ""}
                   onClick={() => setFormat(f.id)}
                 >
                   <Icon name={f.icon} size={14} /> {f.label}
@@ -228,13 +232,11 @@ export function MongoExportModal({
             })}
           </div>
 
-          <div className="ddb-io-label">Contents</div>
+          <div className="ddb-io-label">{t("mongo.contents")}</div>
           {isCsv ? (
             <div className="export-file" style={{ marginTop: 0 }}>
               <Icon name="table_view" size={15} style={{ color: "var(--text-dim)" }} />
-              <span className="export-file-name">
-                CSV flattens nested fields to dotted columns; arrays become JSON strings.
-              </span>
+              <span className="export-file-name">{t("mongo.csvNote")}</span>
             </div>
           ) : (
             <div className="export-choose">
@@ -254,10 +256,10 @@ export function MongoExportModal({
                   style={{ color: mode === "both" ? "var(--accent)" : "var(--text-dim)" }}
                 />
                 <span className="export-opt-text">
-                  <b>Documents + indexes</b>
+                  <b>{t("mongo.modeBoth")}</b>
                   <span>
-                    Indexes &amp; $jsonSchema validator
-                    {format === "shell" ? " as createIndex/createCollection" : ""}
+                    {t("mongo.modeBothSub")}
+                    {format === "shell" ? t("mongo.modeBothSubShell") : ""}
                   </span>
                 </span>
               </button>
@@ -277,8 +279,8 @@ export function MongoExportModal({
                   style={{ color: mode === "data" ? "var(--accent)" : "var(--text-dim)" }}
                 />
                 <span className="export-opt-text">
-                  <b>Documents only</b>
-                  <span>Just the documents, no indexes</span>
+                  <b>{t("mongo.modeData")}</b>
+                  <span>{t("mongo.modeDataSub")}</span>
                 </span>
               </button>
             </div>
@@ -291,15 +293,19 @@ export function MongoExportModal({
               style={{ color: "var(--text-dim)" }}
             />
             <span className="export-file-name">{fname}</span>
-            {isAll ? <span className="export-cur">{collections.length} collections</span> : null}
+            {isAll ? (
+              <span className="export-cur">
+                {t("mongo.nCollections", { count: collections.length })}
+              </span>
+            ) : null}
           </div>
           <div className="modal-actions">
             <div style={{ flex: 1 }} />
             <Btn variant="text" onClick={onClose}>
-              Cancel
+              {t("common.cancel")}
             </Btn>
             <Btn variant="filled" icon="download" onClick={() => void build()}>
-              Export
+              {t("mongo.exportBtn")}
             </Btn>
           </div>
         </>
@@ -317,7 +323,7 @@ export function MongoExportModal({
             <div className="export-bar-fill" style={{ width: pct + "%" }} />
           </div>
           <div className="export-meta">
-            <span>{stage === "done" ? "Done" : pct + "%"}</span>
+            <span>{stage === "done" ? t("mongo.done") : pct + "%"}</span>
           </div>
         </>
       )}
@@ -341,6 +347,7 @@ export function MongoImportModal({
   onDone: () => void;
 }) {
   const toast = useToast();
+  const t = useT();
   const [target, setTarget] = useState(coll ?? collNames[0] ?? "");
   const [format, setFormat] = useState<"json" | "csv">("json");
   const [text, setText] = useState("");
@@ -377,47 +384,35 @@ export function MongoImportModal({
       const docs = withIds(prev.docs);
       const r = await mongoInsertMany(handleId, db, target, docs);
       setBusy({ pct: 100 });
-      toast(
-        "insertMany · imported " +
-          r.inserted.toLocaleString() +
-          " doc" +
-          (r.inserted === 1 ? "" : "s") +
-          " into " +
-          db +
-          "." +
-          target,
-        "ok",
-      );
+      toast(t("mongo.importOk", { count: r.inserted, ns: db + "." + target }), "ok");
       onDone();
     } catch (e) {
-      toast(appErrorMessage(e, "Import failed"), "err");
+      toast(appErrorMessage(e, t("mongo.importFail")), "err");
       setBusy(null);
     }
   };
 
-  const placeholder =
-    format === "csv"
-      ? "Paste CSV — first row is the header (dotted keys allowed):\n_id,name,country,address.city"
-      : 'Paste a JSON array of documents (Extended JSON or mongosh ObjectId()/ISODate() both work):\n[\n  { "name": "Ada", "country": "GB" }\n]';
+  const placeholder = format === "csv" ? t("mongo.phCsv") : t("mongo.phJson");
 
   return (
     <Modal onClose={onClose} className="import-modal">
       <div className="modal-title">
         <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-          <Icon name="upload" size={17} style={{ color: "var(--accent)" }} /> Import documents
+          <Icon name="upload" size={17} style={{ color: "var(--accent)" }} />{" "}
+          {t("mongo.importTitle")}
         </span>
-        <IconBtn icon="close" onClick={onClose} title="Close" />
+        <IconBtn icon="close" onClick={onClose} title={t("common.close")} />
       </div>
 
       <div className="import-format">
         <div className="mg-import-target">
-          <span>Into</span>
+          <span>{t("mongo.into")}</span>
           <Select
             className="mg-import-sel"
             value={target}
             options={collNames.map((c) => ({ value: c, label: db + "." + c }))}
             onChange={setTarget}
-            aria-label="Import into collection"
+            aria-label={t("mongo.menu.importIntoAria")}
           />
         </div>
         <div className="seg">
@@ -442,7 +437,7 @@ export function MongoImportModal({
         </div>
         <div style={{ flex: 1 }} />
         <Btn icon="folder_open" variant="tonal" small onClick={() => fileRef.current?.click()}>
-          Choose file…
+          {t("mongo.chooseFile")}
         </Btn>
         <input
           ref={fileRef}
@@ -474,14 +469,14 @@ export function MongoImportModal({
             <div className="import-preview-bar">
               <span className="import-ready">
                 <Icon name="check_circle" size={14} style={{ color: "var(--accent)" }} />{" "}
-                {prev.count?.toLocaleString()} doc{prev.count === 1 ? "" : "s"} ready
+                {t("mongo.nReady", { count: prev.count ?? 0 })}
               </span>
               <span className="import-match">
-                {prev.columns?.length} top-level field{prev.columns?.length === 1 ? "" : "s"}
+                {t("mongo.nTopFields", { count: prev.columns?.length ?? 0 })}
               </span>
               {prev.noId ? (
                 <span className="import-unknown">
-                  <Icon name="info" size={12} /> {prev.noId} without _id (auto-assigned)
+                  <Icon name="info" size={12} /> {t("mongo.noIdNote", { count: prev.noId })}
                 </span>
               ) : null}
             </div>
@@ -498,17 +493,14 @@ export function MongoImportModal({
             <div className="export-bar-fill" style={{ width: busy.pct + "%" }} />
           </div>
           <div className="export-meta">
-            <span>insertMany… {busy.pct}%</span>
+            <span>{t("mongo.importing", { pct: busy.pct })}</span>
           </div>
         </div>
       ) : (
         <div className="modal-actions">
-          <div className="import-note">
-            Documents are appended (insertMany). MongoDB is schemaless — extra fields are kept; a
-            $jsonSchema validator would reject invalid docs.
-          </div>
+          <div className="import-note">{t("mongo.importNote")}</div>
           <Btn variant="text" onClick={onClose}>
-            Cancel
+            {t("common.cancel")}
           </Btn>
           <Btn
             variant="filled"
@@ -516,7 +508,7 @@ export function MongoImportModal({
             onClick={() => void doImport()}
             disabled={!prev || !!prev.error || !prev.count}
           >
-            Import
+            {t("mongo.importBtn")}
           </Btn>
         </div>
       )}

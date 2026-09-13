@@ -9,6 +9,8 @@
 
 import { useEffect, type MouseEvent as ReactMouseEvent } from "react";
 
+import { useT } from "../../../../shared/i18n/useT";
+
 const STORAGE_KEY = "bytetable.structureRail.w";
 const CSS_VAR = "--struct-rail-w";
 const DEFAULT_WIDTH = 348;
@@ -29,6 +31,7 @@ function applySavedWidth(): void {
 applySavedWidth();
 
 export function StructureRailResizer() {
+  const t = useT();
   useEffect(applySavedWidth, []);
 
   const onMouseDown = (e: ReactMouseEvent) => {
@@ -78,8 +81,8 @@ export function StructureRailResizer() {
       className="structure-rail-resizer"
       role="separator"
       aria-orientation="vertical"
-      aria-label="Resize the structure panel"
-      title="Drag to resize · double-click to reset"
+      aria-label={t("stv.railAria")}
+      title={t("stv.railResizeHint")}
       onMouseDown={onMouseDown}
       onDoubleClick={onDoubleClick}
     />

@@ -12,13 +12,14 @@
 // existing file in the save dialog.
 
 import { saveTextFileAtomic } from "../../shared/api/engine";
+import { t } from "../../shared/i18n";
 import type { Parsed } from "./core";
 import { serializeFile, type EditBatch } from "./csvWrite";
 
 /** Extensions the "Save a copy" dialog offers. */
 const SAVE_FILTERS = [
-  { name: "Delimited text", extensions: ["csv", "tsv", "txt"] },
-  { name: "All files", extensions: ["*"] },
+  { name: t("io.filterDelimited"), extensions: ["csv", "tsv", "txt"] },
+  { name: t("io.filterAllFiles"), extensions: ["*"] },
 ];
 
 /**

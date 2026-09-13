@@ -21,6 +21,8 @@
 import { useRef, useState, type RefObject } from "react";
 
 import { appErrorMessage } from "../../../../shared/api/error";
+import { t } from "../../../../shared/i18n";
+import { useT } from "../../../../shared/i18n/useT";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { Modal, ModalActions, ModalTitle } from "../../../../shared/ui/Modal";
@@ -40,15 +42,15 @@ import "../../../export/components/TruncateModal.css";
 
 const DANGER = "#e06c75";
 
-const KEY_TYPES: readonly { value: KeyAttrType; label: string }[] = [
-  { value: "S", label: "String (S)" },
-  { value: "N", label: "Number (N)" },
-  { value: "B", label: "Binary (B)" },
+const KEY_TYPES: readonly { value: KeyAttrType; labelKey: string }[] = [
+  { value: "S", labelKey: "dyn.ddl.typeString" },
+  { value: "N", labelKey: "dyn.ddl.typeNumber" },
+  { value: "B", labelKey: "dyn.ddl.typeBinary" },
 ];
 
 const BILLING = [
-  { value: "PAY_PER_REQUEST" as const, label: "On-demand" },
-  { value: "PROVISIONED" as const, label: "Provisioned" },
+  { value: "PAY_PER_REQUEST" as const, labelKey: "dyn.billing.onDemand" },
+  { value: "PROVISIONED" as const, labelKey: "dyn.billing.provisioned" },
 ];
 
 /**
@@ -59,11 +61,10 @@ const BILLING = [
 function tableNameError(name: string, existing: string[]): string | null {
   const n = name.trim();
   if (n === "") return null; // nothing typed yet — not an error, just not ready
-  if (n.length < 3) return "A table name must be at least 3 characters.";
-  if (n.length > 255) return "A table name is limited to 255 characters.";
-  if (!/^[A-Za-z0-9_.-]+$/.test(n))
-    return "A table name may only contain letters, numbers, and _ . -";
-  if (existing.includes(n)) return "A table called “" + n + "” already exists.";
+  if (n.length < 3) return t("dyn.ddl.nameMin");
+  if (n.length > 255) return t("dyn.ddl.nameMax");
+  if (!/^[A-Za-z0-9_.-]+$/.test(n)) return t("dyn.ddl.nameChars");
+  if (existing.includes(n)) return t("dyn.ddl.nameExists", { name: n });
   return null;
 }
 
@@ -71,7 +72,7 @@ function tableNameError(name: string, existing: string[]): string | null {
 function attrNameError(name: string, role: string): string | null {
   const n = name.trim();
   if (n === "") return null;
-  if (n.length > 255) return "The " + role + " attribute name is limited to 255 characters.";
+  if (n.length > 255) return t("dyn.ddl.attrMax", { role });
   return null;
 }
 
@@ -92,6 +93,7 @@ function ConfirmName({
 }) {
   const normEnv = normalizeEnv(env);
   const envColor = ENV_COLOR[normEnv];
+  const t = useT();
   return (
     <div className="truncate-prod">
       {normEnv === "production" ? (
@@ -103,7 +105,8 @@ function ConfirmName({
         </div>
       ) : null}
       <label>
-        Type <b>{name}</b> to confirm
+        {t("dyn.ddl.typeToConfirmPre")} <b>{name}</b>
+        {t("dyn.ddl.typeToConfirmPost")}
         {/* No `autoFocus`: Modal focuses the first tabbable element in its own
             effect, which runs AFTER a child's and would overwrite it — hence
             `initialFocusRef` (documented on Modal). */}
@@ -113,7 +116,7 @@ function ConfirmName({
           onChange={(e) => onTyped(e.target.value)}
           placeholder={name}
           spellCheck="false"
-          aria-label={"Type " + name + " to confirm"}
+          aria-label={t("dyn.ddl.typeToConfirmAria", { name })}
         />
       </label>
     </div>
@@ -138,6 +141,7 @@ export function DynamoCreateTableModal({
   onCreated: (table: TableDescriptor) => void;
 }) {
   const toast = useToast();
+  const t = useT();
   const [name, setName] = useState("");
   const [pk, setPk] = useState("");
   const [pkType, setPkType] = useState<KeyAttrType>("S");
@@ -152,11 +156,11 @@ export function DynamoCreateTableModal({
   const nameRef = useRef<HTMLInputElement | null>(null);
 
   const nameInvalid = tableNameError(name, existing);
-  const pkInvalid = attrNameError(pk, "partition key");
+  const pkInvalid = attrNameError(pk, t("dyn.ddl.partitionKey"));
   const skInvalid = withSk
     ? sk.trim() !== "" && sk.trim() === pk.trim()
-      ? "The sort key must be a different attribute from the partition key."
-      : attrNameError(sk, "sort key")
+      ? t("dyn.ddl.pkSameSk")
+      : attrNameError(sk, t("dyn.ddl.sortKey"))
     : null;
   const invalid = nameInvalid ?? pkInvalid ?? skInvalid;
   const armed =
@@ -186,14 +190,14 @@ export function DynamoCreateTableModal({
         // that is merely slow, so say which of the two happened.
         toast(
           desc.status === "ACTIVE"
-            ? "Created table “" + desc.name + "”"
-            : "Table “" + desc.name + "” is " + desc.status.toLowerCase() + " — refresh shortly",
+            ? t("dyn.ddl.created", { name: desc.name })
+            : t("dyn.ddl.createdPending", { name: desc.name, status: desc.status.toLowerCase() }),
           "ok",
         );
         onCreated(desc);
         onClose();
       } catch (err) {
-        setError(appErrorMessage(err, "Could not create the table."));
+        setError(appErrorMessage(err, t("dyn.ddl.createFail")));
         setBusy(false);
       }
     })();
@@ -202,22 +206,24 @@ export function DynamoCreateTableModal({
   return (
     <Modal
       onClose={onClose}
-      label="Create table"
+      label={t("dyn.ddl.createLabel")}
       width={520}
       className="truncate-modal"
       initialFocusRef={nameRef}
     >
       <ModalTitle>
-        <Icon name="add_box" size={18} style={{ color: "var(--accent)" }} /> Create table
+        <Icon name="add_box" size={18} style={{ color: "var(--accent)" }} />{" "}
+        {t("dyn.ddl.createLabel")}
       </ModalTitle>
       <div className="truncate-body">
         <p>
-          A table's <b>primary key is permanent</b> — DynamoDB cannot change it later, and every
-          query you can run is shaped by it. Everything else about an item stays schemaless.
+          {t("dyn.ddl.createLeadA")}
+          <b>{t("dyn.ddl.createLeadPk")}</b>
+          {t("dyn.ddl.createLeadB")}
         </p>
         <div className="truncate-prod">
           <label>
-            Table name
+            {t("dyn.ddl.tableName")}
             <input
               ref={nameRef}
               value={name}
@@ -227,13 +233,13 @@ export function DynamoCreateTableModal({
               }}
               placeholder="Orders"
               spellCheck="false"
-              aria-label="Table name"
+              aria-label={t("dyn.ddl.tableNameAria")}
             />
           </label>
 
           <div className="ddb-ddl-row">
             <label className="ddb-ddl-grow">
-              Partition key
+              {t("dyn.ddl.pkLabel")}
               <input
                 value={pk}
                 onChange={(e) => setPk(e.target.value)}
@@ -242,18 +248,21 @@ export function DynamoCreateTableModal({
                 }}
                 placeholder="PK"
                 spellCheck="false"
-                aria-label="Partition key attribute"
+                aria-label={t("dyn.ddl.pkAria")}
               />
             </label>
             <label className="ddb-ddl-type">
-              Type
+              {t("dyn.typeLabel")}
               <Select
                 className="sel-block"
                 value={pkType}
-                options={KEY_TYPES}
+                options={KEY_TYPES.map((k) => ({
+                  value: k.value,
+                  label: t(k.labelKey as "dyn.ddl.typeString"),
+                }))}
                 onChange={setPkType}
                 mono={false}
-                aria-label="Partition key type"
+                aria-label={t("dyn.ddl.pkTypeAria")}
               />
             </label>
           </div>
@@ -266,15 +275,15 @@ export function DynamoCreateTableModal({
               type="checkbox"
               checked={withSk}
               onChange={(e) => setWithSk(e.target.checked)}
-              aria-label="Add a sort key"
+              aria-label={t("dyn.ddl.addSkAria")}
             />
-            <span>Composite key — add a sort key</span>
+            <span>{t("dyn.ddl.addSk")}</span>
           </label>
 
           {withSk ? (
             <div className="ddb-ddl-row">
               <label className="ddb-ddl-grow">
-                Sort key
+                {t("dyn.ddl.skLabel")}
                 <input
                   value={sk}
                   onChange={(e) => setSk(e.target.value)}
@@ -283,18 +292,21 @@ export function DynamoCreateTableModal({
                   }}
                   placeholder="SK"
                   spellCheck="false"
-                  aria-label="Sort key attribute"
+                  aria-label={t("dyn.ddl.skAria")}
                 />
               </label>
               <label className="ddb-ddl-type">
-                Type
+                {t("dyn.typeLabel")}
                 <Select
                   className="sel-block"
                   value={skType}
-                  options={KEY_TYPES}
+                  options={KEY_TYPES.map((k) => ({
+                    value: k.value,
+                    label: t(k.labelKey as "dyn.ddl.typeString"),
+                  }))}
                   onChange={setSkType}
                   mono={false}
-                  aria-label="Sort key type"
+                  aria-label={t("dyn.ddl.skTypeAria")}
                 />
               </label>
             </div>
@@ -302,34 +314,37 @@ export function DynamoCreateTableModal({
 
           <div className="ddb-ddl-row">
             <label className="ddb-ddl-grow">
-              Capacity
+              {t("dyn.ddl.capacity")}
               <Select
                 className="sel-block"
                 value={billing}
-                options={BILLING}
+                options={BILLING.map((b) => ({
+                  value: b.value,
+                  label: t(b.labelKey as "dyn.billing.onDemand"),
+                }))}
                 onChange={setBilling}
                 mono={false}
-                aria-label="Billing mode"
+                aria-label={t("dyn.ddl.billingAria")}
               />
             </label>
             {billing === "PROVISIONED" ? (
               <>
                 <label className="ddb-ddl-type">
-                  Read units
+                  {t("dyn.ddl.readUnits")}
                   <input
                     value={rcu}
                     onChange={(e) => setRcu(e.target.value.replace(/\D/g, ""))}
                     inputMode="numeric"
-                    aria-label="Read capacity units"
+                    aria-label={t("dyn.ddl.rcuAria")}
                   />
                 </label>
                 <label className="ddb-ddl-type">
-                  Write units
+                  {t("dyn.ddl.writeUnits")}
                   <input
                     value={wcu}
                     onChange={(e) => setWcu(e.target.value.replace(/\D/g, ""))}
                     inputMode="numeric"
-                    aria-label="Write capacity units"
+                    aria-label={t("dyn.ddl.wcuAria")}
                   />
                 </label>
               </>
@@ -337,8 +352,8 @@ export function DynamoCreateTableModal({
           </div>
           <p className="ddb-ddl-hint">
             {billing === "PAY_PER_REQUEST"
-              ? "On-demand bills per request with no capacity to plan — the safe default."
-              : "Provisioned reserves capacity around the clock, billed whether it is used or not."}
+              ? t("dyn.ddl.hintOnDemand")
+              : t("dyn.ddl.hintProvisioned")}
           </p>
         </div>
         {invalid ? (
@@ -354,10 +369,10 @@ export function DynamoCreateTableModal({
       </div>
       <ModalActions>
         <Btn variant="text" onClick={onClose}>
-          Cancel
+          {t("common.cancel")}
         </Btn>
         <Btn icon="add" variant="filled" disabled={!armed} onClick={confirm}>
-          {busy ? "Creating…" : "Create table"}
+          {busy ? t("dyn.ddl.creating") : t("dyn.ddl.createLabel")}
         </Btn>
       </ModalActions>
     </Modal>
@@ -385,6 +400,7 @@ export function DynamoTruncateTableModal({
   onTruncated: (table: string) => void;
 }) {
   const toast = useToast();
+  const t = useT();
   const confirmProd = useSettingsStore((s) => s.settings.confirmProd);
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
@@ -405,13 +421,10 @@ export function DynamoTruncateTableModal({
       try {
         const removed = await dynamoTruncateTable(handleId, table);
         toast(
-          "Emptied “" +
-            table +
-            "” — " +
-            removed.toLocaleString() +
-            " item" +
-            (removed === 1 ? "" : "s") +
-            " deleted",
+          t("dyn.ddl.emptiedPre", { table }) +
+            (removed === 1
+              ? t("dyn.ddl.deleted1", { count: removed })
+              : t("dyn.ddl.deletedN", { count: removed })),
           "ok",
         );
         onTruncated(table);
@@ -419,7 +432,7 @@ export function DynamoTruncateTableModal({
       } catch (err) {
         // Partial progress is real here: whatever was deleted before the
         // failure stays deleted, so the caller refreshes either way.
-        setError(appErrorMessage(err, "Could not empty the table."));
+        setError(appErrorMessage(err, t("dyn.ddl.emptyFail")));
         onTruncated(table);
         setBusy(false);
       }
@@ -429,31 +442,32 @@ export function DynamoTruncateTableModal({
   return (
     <Modal
       onClose={onClose}
-      label="Empty table"
+      label={t("dyn.ddl.emptyLabel")}
       width={500}
       className="truncate-modal"
       initialFocusRef={isProd ? nameRef : cancelRef}
     >
       <ModalTitle>
-        <Icon name="delete_sweep" size={18} style={{ color: DANGER }} /> Empty table
+        <Icon name="delete_sweep" size={18} style={{ color: DANGER }} /> {t("dyn.ddl.emptyLabel")}
       </ModalTitle>
       <div className="truncate-body">
         <p>
-          This deletes <b>every item</b>
+          {t("dyn.ddl.truncA")}
+          <b>{t("dyn.ddl.truncEvery")}</b>
           {count !== null && count !== undefined ? (
             <>
-              {" "}
-              — about <b>{count.toLocaleString()}</b> of them
+              {t("dyn.ddl.truncCountA")}
+              <b>{count.toLocaleString()}</b>
+              {t("dyn.ddl.truncCountB")}
             </>
-          ) : null}{" "}
-          from <code>{table}</code>. The table, its key schema, its indexes and its TTL settings all
-          stay.
+          ) : null}
+          {t("dyn.ddl.truncFrom")} <code>{table}</code>
+          {t("dyn.ddl.truncTail")}
         </p>
         <p>
-          DynamoDB has no TRUNCATE, so this scans the keys and deletes them in batches:{" "}
-          <b>one write unit per item</b>, and it runs for as long as that takes. On a large table it
-          is cheaper to delete the table and create it again — at the cost of rebuilding its
-          indexes.
+          {t("dyn.ddl.truncPara2A")}
+          <b>{t("dyn.ddl.truncPara2Bold")}</b>
+          {t("dyn.ddl.truncPara2B")}
         </p>
         <pre className="truncate-sql">
           Scan {table} (keys only) → BatchWriteItem DeleteRequest ×N
@@ -469,11 +483,11 @@ export function DynamoTruncateTableModal({
       </div>
       <ModalActions>
         <Btn ref={cancelRef} variant="text" onClick={onClose}>
-          Cancel
+          {t("common.cancel")}
         </Btn>
         <button type="button" className="btn btn-danger" disabled={!armed} onClick={confirm}>
           <Icon name="delete_sweep" size={16} />
-          <span>{busy ? "Emptying…" : "Empty table"}</span>
+          <span>{busy ? t("dyn.ddl.emptying") : t("dyn.ddl.emptyLabel")}</span>
         </button>
       </ModalActions>
     </Modal>
@@ -504,6 +518,7 @@ export function DynamoDeleteTableModal({
   onDeleted: (table: string) => void;
 }) {
   const toast = useToast();
+  const t = useT();
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -520,11 +535,11 @@ export function DynamoDeleteTableModal({
     void (async () => {
       try {
         await dynamoDeleteTable(handleId, table);
-        toast("Deleted table “" + table + "”", "ok");
+        toast(t("dyn.ddl.deletedTable", { table }), "ok");
         onDeleted(table);
         onClose();
       } catch (err) {
-        setError(appErrorMessage(err, "Could not delete the table."));
+        setError(appErrorMessage(err, t("dyn.ddl.deleteFail")));
         setBusy(false);
       }
     })();
@@ -533,33 +548,40 @@ export function DynamoDeleteTableModal({
   return (
     <Modal
       onClose={onClose}
-      label="Delete table"
+      label={t("dyn.ddl.deleteLabel")}
       width={500}
       className="truncate-modal"
       initialFocusRef={nameRef}
     >
       <ModalTitle>
-        <Icon name="delete_forever" size={18} style={{ color: DANGER }} /> Delete table
+        <Icon name="delete_forever" size={18} style={{ color: DANGER }} />{" "}
+        {t("dyn.ddl.deleteLabel")}
       </ModalTitle>
       <div className="truncate-body">
         <p>
-          This deletes <code>{table}</code> itself
+          {t("dyn.ddl.delA")} <code>{table}</code>
+          {t("dyn.ddl.delSelf")}
           {count !== null && count !== undefined ? (
             <>
-              {" "}
-              — about <b>{count.toLocaleString()}</b> item{count === 1 ? "" : "s"}
+              {t("dyn.ddl.delCountA")}
+              <b>{count.toLocaleString()}</b>
+              {count === 1
+                ? t("dyn.ddl.delCountB1", { count })
+                : t("dyn.ddl.delCountBN", { count })}
             </>
           ) : null}
           {indexes.length > 0 ? (
             <>
-              , and its{" "}
+              {t("dyn.ddl.delIdxA")}{" "}
               <b>
-                {indexes.length} secondary {indexes.length === 1 ? "index" : "indexes"}
+                {indexes.length === 1
+                  ? t("dyn.ddl.delIdx1", { count: indexes.length })
+                  : t("dyn.ddl.delIdxN", { count: indexes.length })}
               </b>{" "}
               ({indexes.join(", ")})
             </>
           ) : null}
-          . Unless point-in-time recovery is on, there is nothing to restore from.
+          {t("dyn.ddl.delTail")}
         </p>
         <pre className="truncate-sql">DeleteTable {table}</pre>
         <ConfirmName name={table} env={env} typed={typed} onTyped={setTyped} inputRef={nameRef} />
@@ -571,11 +593,11 @@ export function DynamoDeleteTableModal({
       </div>
       <ModalActions>
         <Btn variant="text" onClick={onClose}>
-          Cancel
+          {t("common.cancel")}
         </Btn>
         <button type="button" className="btn btn-danger" disabled={!armed} onClick={confirm}>
           <Icon name="delete_forever" size={16} />
-          <span>{busy ? "Deleting…" : "Delete table"}</span>
+          <span>{busy ? t("dyn.ddl.deleting") : t("dyn.ddl.deleteLabel")}</span>
         </button>
       </ModalActions>
     </Modal>
@@ -623,6 +645,7 @@ export function DynamoBulkTableModal({
   onDone: () => void;
 }) {
   const toast = useToast();
+  const t = useT();
   const [typed, setTyped] = useState("");
   const [running, setRunning] = useState(false);
   const [doneCount, setDoneCount] = useState(0);
@@ -631,7 +654,6 @@ export function DynamoBulkTableModal({
   const nameRef = useRef<HTMLInputElement | null>(null);
 
   const isDrop = action === "drop";
-  const verb = isDrop ? "Drop" : "Empty";
   // Always typed: both act on every table in the region at once, and neither has
   // an undo. The region name is the scope's own identifier.
   const armed = typed.trim() === region && !running && tables.length > 0;
@@ -644,13 +666,13 @@ export function DynamoBulkTableModal({
     setDoneCount(0);
     void (async () => {
       const errors: { table: string; message: string }[] = [];
-      for (const t of tables) {
-        setCurrent(t.name);
+      for (const tb of tables) {
+        setCurrent(tb.name);
         try {
-          if (isDrop) await dynamoDeleteTable(handleId, t.name);
-          else await dynamoTruncateTable(handleId, t.name);
+          if (isDrop) await dynamoDeleteTable(handleId, tb.name);
+          else await dynamoTruncateTable(handleId, tb.name);
         } catch (err) {
-          errors.push({ table: t.name, message: appErrorMessage(err, "Failed.") });
+          errors.push({ table: tb.name, message: appErrorMessage(err, t("dyn.ddl.bulkFail")) });
         }
         setDoneCount((n) => n + 1);
       }
@@ -660,10 +682,14 @@ export function DynamoBulkTableModal({
       onDone();
       const ok = tables.length - errors.length;
       if (errors.length === 0) {
-        toast((isDrop ? "Dropped " : "Emptied ") + ok + " table" + (ok === 1 ? "" : "s"), "ok");
+        toast(
+          (isDrop ? t("dyn.ddl.bulkDropped") : t("dyn.ddl.bulkEmptied")) +
+            (ok === 1 ? t("dyn.ddl.tables1", { count: ok }) : t("dyn.ddl.tablesN", { count: ok })),
+          "ok",
+        );
         onClose();
       } else {
-        toast(ok + " of " + tables.length + " tables done · " + errors.length + " failed", "err");
+        toast(t("dyn.ddl.bulkPartial", { ok, total: tables.length, failed: errors.length }), "err");
       }
     })();
   };
@@ -671,7 +697,7 @@ export function DynamoBulkTableModal({
   return (
     <Modal
       onClose={running ? () => {} : onClose}
-      label={verb + " all tables"}
+      label={isDrop ? t("dyn.ddl.dropAll") : t("dyn.ddl.emptyAll")}
       width={520}
       className="truncate-modal"
       initialFocusRef={nameRef}
@@ -682,41 +708,47 @@ export function DynamoBulkTableModal({
           size={18}
           style={{ color: DANGER }}
         />{" "}
-        {verb} all tables
+        {isDrop ? t("dyn.ddl.dropAll") : t("dyn.ddl.emptyAll")}
       </ModalTitle>
       <div className="truncate-body">
         <p>
-          This {isDrop ? "deletes" : "empties"} <b>all {tables.length} tables</b> in{" "}
+          {isDrop ? t("dyn.ddl.bulkVerbDrop") : t("dyn.ddl.bulkVerbEmpty")}
+          <b>
+            {tables.length === 1
+              ? t("dyn.ddl.bulkAll1", { count: tables.length })
+              : t("dyn.ddl.bulkAllN", { count: tables.length })}
+          </b>
+          {t("dyn.ddl.bulkIn")}
           <code>{region}</code>
           {isDrop ? (
-            <>
-              {" "}
-              — with their items, secondary indexes, TTL settings, tags and point-in-time-recovery
-              history. Nothing here can be restored.
-            </>
+            t("dyn.ddl.bulkDropTail")
           ) : (
             <>
-              {" "}
-              — about <b>{totalItems.toLocaleString()}</b> items in total. The tables and their
-              indexes stay.
+              {t("dyn.ddl.bulkEmptyMid")}
+              <b>{totalItems.toLocaleString()}</b>
+              {t("dyn.ddl.bulkEmptyTail")}
             </>
           )}
         </p>
         {isDrop ? (
           <p>
-            DeleteTable is a control-plane call, so this is <b>free</b> and its speed does not
-            depend on how much data the tables hold.
+            {t("dyn.ddl.bulkFreeA")}
+            <b>{t("dyn.ddl.bulkFree")}</b>
+            {t("dyn.ddl.bulkFreeB")}
           </p>
         ) : (
           <p>
-            DynamoDB has no TRUNCATE: <b>every table is scanned in full</b> for its keys, then the
-            items are deleted in batches. That is read capacity for the whole region — billed on
-            each item's full size, not the keys returned — plus <b>one write unit per item</b>.
-            Dropping is free by comparison, at the price of rebuilding every index.
+            {t("dyn.ddl.bulkNoTruncA")}
+            <b>{t("dyn.ddl.bulkScanAll")}</b>
+            {t("dyn.ddl.bulkNoTruncB")}
+            <b>{t("dyn.ddl.bulkWriteUnit")}</b>
+            {t("dyn.ddl.bulkNoTruncC")}
           </p>
         )}
         <pre className="truncate-sql">
-          {tables.map((t) => (isDrop ? "DeleteTable " : "Empty ") + t.name).join("\n")}
+          {tables
+            .map((tb) => (isDrop ? "DeleteTable " : t("dyn.ddl.verbEmpty") + " ") + tb.name)
+            .join("\n")}
         </pre>
 
         {running || doneCount > 0 ? (
@@ -733,7 +765,10 @@ export function DynamoBulkTableModal({
           <div className="truncate-error">
             <Icon name="error" size={15} />
             <span>
-              {failed.length} failed: {failed.map((f) => f.table).join(", ")}
+              {t("dyn.ddl.bulkFailed", {
+                count: failed.length,
+                list: failed.map((f) => f.table).join(", "),
+              })}
             </span>
           </div>
         ) : null}
@@ -742,16 +777,18 @@ export function DynamoBulkTableModal({
       </div>
       <ModalActions>
         <Btn variant="text" disabled={running} onClick={onClose}>
-          {failed.length > 0 ? "Close" : "Cancel"}
+          {failed.length > 0 ? t("common.close") : t("common.cancel")}
         </Btn>
         <button type="button" className="btn btn-danger" disabled={!armed} onClick={run}>
           <Icon name={isDrop ? "delete_forever" : "delete_sweep"} size={16} />
           <span>
             {running
               ? isDrop
-                ? "Dropping…"
-                : "Emptying…"
-              : verb + " all " + tables.length + " tables"}
+                ? t("dyn.ddl.dropping")
+                : t("dyn.ddl.emptying")
+              : isDrop
+                ? t("dyn.ddl.bulkBtnDrop", { count: tables.length })
+                : t("dyn.ddl.bulkBtnEmpty", { count: tables.length })}
           </span>
         </button>
       </ModalActions>

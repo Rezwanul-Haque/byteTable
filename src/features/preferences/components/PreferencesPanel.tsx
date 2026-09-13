@@ -4,6 +4,8 @@
 // Shown in the dev gallery for now; final placement comes in later milestones.
 
 import type { Accent, Darkness, Density } from "../api";
+import { useT } from "../../../shared/i18n/useT";
+import type { StringKey } from "../../../shared/i18n";
 import { usePreferencesStore } from "../state";
 import "./PreferencesPanel.css";
 
@@ -24,11 +26,14 @@ function Segmented<T extends string>({
   value,
   options,
   onChange,
+  labelOf = (option) => option,
 }: {
   label: string;
   value: T;
   options: T[];
   onChange: (value: T) => void;
+  /** Display text per option (defaults to the raw value). */
+  labelOf?: (value: T) => string;
 }) {
   const idx = Math.max(0, options.indexOf(value));
   const n = options.length;
@@ -49,7 +54,7 @@ function Segmented<T extends string>({
           aria-checked={option === value}
           onClick={() => onChange(option)}
         >
-          {option}
+          {labelOf(option)}
         </button>
       ))}
     </div>
@@ -59,14 +64,16 @@ function Segmented<T extends string>({
 export function PreferencesPanel() {
   const preferences = usePreferencesStore((state) => state.preferences);
   const setPreferences = usePreferencesStore((state) => state.setPreferences);
+  const t = useT();
+  const optLabel = (value: string) => t(`pref.opt.${value}` as StringKey);
 
   return (
     <div className="prefs-panel">
-      <div className="prefs-sect">Theme</div>
+      <div className="prefs-sect">{t("pref.theme")}</div>
 
       <div className="prefs-row">
-        <div className="prefs-lbl">Accent</div>
-        <div className="prefs-chips" role="radiogroup" aria-label="Accent">
+        <div className="prefs-lbl">{t("pref.accent")}</div>
+        <div className="prefs-chips" role="radiogroup" aria-label={t("pref.accent")}>
           {ACCENTS.map((a) => {
             const on = preferences.accent === a.value;
             return (
@@ -103,23 +110,25 @@ export function PreferencesPanel() {
       </div>
 
       <div className="prefs-row">
-        <div className="prefs-lbl">Darkness</div>
+        <div className="prefs-lbl">{t("pref.darkness")}</div>
         <Segmented
-          label="Darkness"
+          label={t("pref.darkness")}
           value={preferences.darkness}
           options={DARKNESS_OPTIONS}
+          labelOf={optLabel}
           onChange={(darkness) => void setPreferences({ ...preferences, darkness })}
         />
       </div>
 
-      <div className="prefs-sect">Data grid</div>
+      <div className="prefs-sect">{t("pref.dataGrid")}</div>
 
       <div className="prefs-row">
-        <div className="prefs-lbl">Density</div>
+        <div className="prefs-lbl">{t("pref.density")}</div>
         <Segmented
-          label="Density"
+          label={t("pref.density")}
           value={preferences.density}
           options={DENSITY_OPTIONS}
+          labelOf={optLabel}
           onChange={(density) => void setPreferences({ ...preferences, density })}
         />
       </div>

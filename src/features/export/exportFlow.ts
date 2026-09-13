@@ -100,11 +100,11 @@ export function exportTarget(
   const suffix = scopeSuffix(scope) + stamp;
   switch (kind) {
     case "tableCsv":
-      return { name: `${table}${stamp}.csv`, ext: "csv", label: "CSV file" };
+      return { name: `${table}${stamp}.csv`, ext: "csv", label: "io.filterCsvFile" };
     case "tableSql":
-      return { name: `${table}${suffix}.sql`, ext: "sql", label: "SQL file" };
+      return { name: `${table}${suffix}.sql`, ext: "sql", label: "io.filterSqlFile" };
     case "schemaSql":
-      return { name: `${schema}${suffix}.sql`, ext: "sql", label: "SQL file" };
+      return { name: `${schema}${suffix}.sql`, ext: "sql", label: "io.filterSqlFile" };
   }
 }
 

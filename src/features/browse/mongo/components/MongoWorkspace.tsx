@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { isAppErrorPayload } from "../../../../shared/api/error";
+import { useT } from "../../../../shared/i18n/useT";
 import { ENV_COLOR } from "../../../../shared/ui/envColors";
 import { BuiltByCredit } from "../../../../shared/ui/BuiltByCredit";
 import { Icon } from "../../../../shared/ui/Icon";
@@ -40,7 +41,7 @@ import {
 import { SidebarResizer } from "../../../../shared/ui/SidebarResizer";
 import { useAutoRefresh } from "../../../settings/hooks/useAutoRefresh";
 import { useMongoActiveDbStore, useMongoShellStore } from "../shellState";
-import { useMongoTabsStore, type MongoWorkspaceTab as Tab } from "../workspaceTabs";
+import { useMongoTabsStore, mongoTabTitle, type MongoWorkspaceTab as Tab } from "../workspaceTabs";
 // Shared chrome the Mongo slice REUSES (per MILESTONE_18: "do not re-style it").
 // These classes live in other slices' CSS files; in a production build they're
 // all bundled into one stylesheet, but `vite dev` only injects a file's CSS when
@@ -79,6 +80,7 @@ const TAB_ICON: Record<string, string> = {
 const nextId = (p: string) => "mg-" + p + "-" + crypto.randomUUID();
 
 export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
+  const t = useT();
   const closeWorkspace = useWorkspacesStore((state) => state.closeWorkspace);
   const handleId = workspace.handleId;
   const params = workspace.saved.params;
@@ -147,9 +149,7 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
         const list = await mongoListCollections(handleId, database);
         setCollections(list);
       } catch (e) {
-        setError(
-          isAppErrorPayload(e) ? e.message : "Could not list collections (desktop app required)",
-        );
+        setError(isAppErrorPayload(e) ? e.message : t("mongo.listCollFail"));
         // Keep the last-known collections on a silent-refresh failure so the UI
         // shows stale data instead of blanking.
         if (!silent) setCollections([]);
@@ -183,9 +183,7 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
         else setLoading(false);
       } catch (e) {
         if (!live) return;
-        setError(
-          isAppErrorPayload(e) ? e.message : "Could not list databases (desktop app required)",
-        );
+        setError(isAppErrorPayload(e) ? e.message : t("mongo.listDbFail"));
         setLoading(false);
       }
     })();
@@ -373,33 +371,33 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
       <div className="main-col">
         <div className="tabbar" data-screen-label="MongoDB tab bar">
           <div className="tabbar-tabs">
-            {tabs.map((t) => (
+            {tabs.map((tab) => (
               <div
-                key={t.id}
-                ref={t.id === activeId ? activeTabRef : undefined}
-                className={"tab" + (t.id === activeId ? " active" : "")}
-                onClick={() => setActiveId(t.id)}
+                key={tab.id}
+                ref={tab.id === activeId ? activeTabRef : undefined}
+                className={"tab" + (tab.id === activeId ? " active" : "")}
+                onClick={() => setActiveId(tab.id)}
                 onMouseDown={(e) => {
                   if (e.button === 1) {
                     e.preventDefault();
-                    closeTab(t.id);
+                    closeTab(tab.id);
                   }
                 }}
-                onContextMenu={(e) => tabMenu.onContextMenu(e, t.id)}
-                title={t.title}
+                onContextMenu={(e) => tabMenu.onContextMenu(e, tab.id)}
+                title={mongoTabTitle(tab)}
               >
                 <Icon
-                  name={TAB_ICON[t.kind] ?? "circle"}
+                  name={TAB_ICON[tab.kind] ?? "circle"}
                   size={14}
-                  style={{ color: t.id === activeId ? "var(--accent)" : "var(--text-faint)" }}
+                  style={{ color: tab.id === activeId ? "var(--accent)" : "var(--text-faint)" }}
                 />
-                <span className="tab-title">{t.title}</span>
-                {t.kind !== "dashboard" ? (
+                <span className="tab-title">{mongoTabTitle(tab)}</span>
+                {tab.kind !== "dashboard" ? (
                   <button
                     className="tab-close"
                     onClick={(e) => {
                       e.stopPropagation();
-                      closeTab(t.id);
+                      closeTab(tab.id);
                     }}
                   >
                     <Icon name="close" size={12} />
@@ -408,7 +406,7 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
               </div>
             ))}
           </div>
-          <button className="tab-new" onClick={openPipeline} title="New aggregation pipeline">
+          <button className="tab-new" onClick={openPipeline} title={t("mongo.newPipeline")}>
             <Icon name="add" size={16} />
           </button>
           <div className="tabbar-tools">
@@ -421,8 +419,8 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
             <button
               type="button"
               className="tabbar-tool tabbar-tool-icon"
-              title="Running processes (Ctrl+Shift+P)"
-              aria-label="Running processes (Ctrl+Shift+P)"
+              title={t("mongo.processesTitle")}
+              aria-label={t("mongo.processesTitle")}
               onClick={() => openSingleton("processes", "Processes")}
             >
               <Icon name="monitor_heart" size={15} />
@@ -432,9 +430,9 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
         </div>
 
         <div className="tab-content">
-          {tabs.map((t) => (
-            <div key={t.id} style={{ display: t.id === activeId ? "contents" : "none" }}>
-              {t.kind === "dashboard" ? (
+          {tabs.map((tab) => (
+            <div key={tab.id} style={{ display: tab.id === activeId ? "contents" : "none" }}>
+              {tab.kind === "dashboard" ? (
                 <MongoDashboard
                   db={db}
                   collections={collections}
@@ -442,39 +440,39 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
                   loading={loading}
                   error={error}
                 />
-              ) : t.kind === "map" ? (
+              ) : tab.kind === "map" ? (
                 <MongoSchemaMap
                   handleId={handleId}
                   db={db}
                   collections={collections}
                   onOpenColl={openColl}
                 />
-              ) : t.kind === "processes" ? (
+              ) : tab.kind === "processes" ? (
                 <ProcessesTab
                   handleId={handleId}
                   engine="mongodb"
                   env={env}
                   schemaName={db}
-                  isActive={t.id === activeId}
+                  isActive={tab.id === activeId}
                 />
-              ) : t.kind === "pipeline" ? (
+              ) : tab.kind === "pipeline" ? (
                 <MongoPipelineTab
-                  tab={t as MongoPipelineTabState}
+                  tab={tab as MongoPipelineTabState}
                   db={db}
                   handleId={handleId}
                   collNames={collNames}
                   isProduction={isProduction}
-                  onUpdateTab={(p) => updateTab(t.id, p as Partial<Tab>)}
+                  onUpdateTab={(p) => updateTab(tab.id, p as Partial<Tab>)}
                 />
               ) : (
                 <MongoCollectionTab
-                  tab={t as MongoTab}
+                  tab={tab as MongoTab}
                   db={db}
                   handleId={handleId}
-                  descriptor={descOf((t as MongoTab).coll)}
+                  descriptor={descOf((tab as MongoTab).coll)}
                   isProduction={isProduction}
                   version={version}
-                  onUpdateTab={(p) => updateTab(t.id, p as Partial<Tab>)}
+                  onUpdateTab={(p) => updateTab(tab.id, p as Partial<Tab>)}
                   onExport={(c) => setExportJob({ scope: "collection", coll: c })}
                   onImport={(c) => setImportTarget({ coll: c })}
                   onTruncate={(c) => setTruncateColl(c)}
@@ -506,7 +504,9 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
         <div style={{ flex: 1 }} />
         {activeTab?.kind === "collection" && descOf((activeTab as MongoTab).coll) ? (
           <span className="status-dim">
-            {descOf((activeTab as MongoTab).coll)?.count.toLocaleString()} docs
+            {t("mongo.statusDocs", {
+              count: descOf((activeTab as MongoTab).coll)?.count.toLocaleString() ?? "0",
+            })}
           </span>
         ) : null}
         <button
@@ -515,7 +515,7 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
           title="db.currentOp()"
           onClick={() => openSingleton("processes", "Processes")}
         >
-          <Icon name="monitor_heart" size={13} /> processes
+          <Icon name="monitor_heart" size={13} /> {t("mongo.processesLabel")}
         </button>
         <ResourceMeter />
         <BuiltByCredit className="status-dim" />

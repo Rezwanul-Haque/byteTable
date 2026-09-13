@@ -27,6 +27,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { appErrorMessage } from "../../../shared/api/error";
+import { useT } from "../../../shared/i18n/useT";
 import { CopyButton } from "../../../shared/ui/CopyButton";
 import { Icon } from "../../../shared/ui/Icon";
 import { normalizeEnv, type Engine } from "../../../shared/types";
@@ -79,6 +80,7 @@ import { statementContextAt } from "../sqlStatement";
  * statement.
  */
 export function ExecutionMinimap({ sql, caret = 0 }: { sql: string; caret?: number }) {
+  const t = useT();
   const stmt = statementContextAt(sql, caret);
   const c = detectClauses(stmt.text);
 
@@ -102,7 +104,7 @@ export function ExecutionMinimap({ sql, caret = 0 }: { sql: string; caret?: numb
               className={
                 "exec-mini-step" + (on ? " on" : "") + (nested ? " exec-mini-step-nested" : "")
               }
-              title={def.desc}
+              title={t(def.descKey)}
             >
               <span className="exec-mini-num">{nested ? "↳" : on ? n : "·"}</span>
               <span className="exec-mini-kw">{def.kw}</span>
@@ -116,31 +118,22 @@ export function ExecutionMinimap({ sql, caret = 0 }: { sql: string; caret?: numb
   return (
     <div className="exec-minimap">
       <div className="exec-mini-title">
-        <Icon name="account_tree" size={13} style={{ color: "var(--accent)" }} /> Clause order
+        <Icon name="account_tree" size={13} style={{ color: "var(--accent)" }} />{" "}
+        {t("expl.clauseOrder")}
       </div>
       {stmt.count > 1 ? (
         <div className="exec-mini-stmt">
-          <Icon name="my_location" size={11} style={{ color: "var(--accent)" }} /> Statement{" "}
-          {stmt.index + 1} of {stmt.count}{" "}
-          <span className="exec-mini-stmt-hint">· where the cursor is</span>
+          <Icon name="my_location" size={11} style={{ color: "var(--accent)" }} />{" "}
+          {t("expl.statement", { index: stmt.index + 1, count: stmt.count })}{" "}
+          <span className="exec-mini-stmt-hint">{t("expl.cursorHint")}</span>
         </div>
       ) : null}
       <div className="exec-mini-cols">
-        {renderCol("Written", "how you type it", WRITTEN_ORDER, true)}
-        {renderCol("Run", "how it executes", RUN_ORDER, false)}
+        {renderCol(t("expl.written"), t("expl.writtenSub"), WRITTEN_ORDER, true)}
+        {renderCol(t("expl.run"), t("expl.runSub"), RUN_ORDER, false)}
       </div>
       <div className="exec-mini-foot">
-        {c.outerJoin ? (
-          <>
-            ON runs with the JOIN, WHERE runs after it — so a WHERE on the joined table drops the
-            NULL rows an OUTER JOIN just added, making it an inner join.
-          </>
-        ) : (
-          <>
-            SELECT is written 1st but runs 5th — that’s why ORDER BY can use its aliases but WHERE
-            can’t.
-          </>
-        )}
+        {c.outerJoin ? <>{t("expl.mini.outerJoin")}</> : <>{t("expl.mini.clause")}</>}
       </div>
     </div>
   );
@@ -210,6 +203,7 @@ function PsqlPlanView({
 }) {
   const [analyze, setAnalyze] = useState(false);
   const [copied, setCopied] = useState(false);
+  const t = useT();
   // Keyed by (connection, schema, form, statement) and kept per form, not
   // replaced: flipping back to EXPLAIN ANALYZE would otherwise re-execute the
   // query every time, which is exactly the cost that toggle is warning about.
@@ -244,11 +238,11 @@ function PsqlPlanView({
     explainRaw(handleId, sql, schemaName, analyze)
       .then((data) => setPlans((p) => ({ ...p, [key]: data })))
       .catch((e: unknown) => {
-        const message = appErrorMessage(e, "The server refused the EXPLAIN");
+        const message = appErrorMessage(e, t("expl.err.refused"));
         setFailures((f) => ({ ...f, [key]: message }));
       })
       .finally(() => inflight.current.delete(key));
-  }, [available, key, handleId, schemaName, sql, analyze, plans, failures]);
+  }, [available, key, handleId, schemaName, sql, analyze, plans, failures, t]);
 
   // Fall back to the modelled renderers whenever the server's plan is not
   // available — unsupported engine, or a failed call.
@@ -279,13 +273,14 @@ function PsqlPlanView({
   return (
     <div className="ex-psql-pane">
       <div className="explain-h">
-        <Icon name="terminal" size={14} style={{ color: "var(--accent)" }} /> Server output
+        <Icon name="terminal" size={14} style={{ color: "var(--accent)" }} />{" "}
+        {t("expl.serverOutput")}
         <div className="seg ex-psql-modes">
           <button
             type="button"
             className={"seg-btn" + (!analyze ? " active" : "")}
             onClick={() => setAnalyze(false)}
-            title="Plan only — the access path the optimizer chose; the query is not executed"
+            title={t("expl.mode.planTitle")}
           >
             EXPLAIN
           </button>
@@ -296,8 +291,8 @@ function PsqlPlanView({
             disabled={!support?.analyze}
             title={
               support?.analyze
-                ? "Runs the query and adds actual time, rows and loops per node"
-                : (support?.note ?? "Not available on this engine")
+                ? t("expl.mode.analyzeTitle")
+                : (support?.note ?? t("expl.mode.analyzeUnavailable"))
             }
           >
             EXPLAIN ANALYZE
@@ -308,12 +303,13 @@ function PsqlPlanView({
         <div className="ex-psql-bar">
           <code>bytetable&gt; {shown.length > 90 ? shown.slice(0, 90) + "…" : shown}</code>
           <button type="button" className="ex-copy" onClick={copy}>
-            <Icon name={copied ? "check" : "content_copy"} size={12} /> {copied ? "Copied" : "Copy"}
+            <Icon name={copied ? "check" : "content_copy"} size={12} />{" "}
+            {copied ? t("expl.copied") : t("expl.copy")}
           </button>
         </div>
         {loading ? (
           <div className="ex-psql-wait">
-            <span className="spinner" /> Asking the server for its plan…
+            <span className="spinner" /> {t("expl.asking")}
           </div>
         ) : server ? (
           server.text ? (
@@ -348,9 +344,7 @@ function PsqlPlanView({
                   ))}
                 </tbody>
               </table>
-              <div className="ex-my-count">
-                ({server.rows.length} row{server.rows.length === 1 ? "" : "s"})
-              </div>
+              <div className="ex-my-count">{t("expl.rowCount", { count: server.rows.length })}</div>
             </div>
           )
         ) : analyze ? (
@@ -369,9 +363,7 @@ function PsqlPlanView({
                 {r + "\n"}
               </span>
             ))}
-            <span className="pq-count">
-              {"(" + modelLines.length + " row" + (modelLines.length === 1 ? "" : "s") + ")"}
-            </span>
+            <span className="pq-count">{t("expl.rowCount", { count: modelLines.length })}</span>
           </pre>
         ) : (
           <div className="ex-my-wrap">
@@ -406,7 +398,9 @@ function PsqlPlanView({
                 ))}
               </tbody>
             </table>
-            <div className="ex-my-count">({mysqlExplainRows(a).length} rows)</div>
+            <div className="ex-my-count">
+              {t("expl.rowCount", { count: mysqlExplainRows(a).length })}
+            </div>
           </div>
         )}
       </div>
@@ -426,21 +420,11 @@ function PsqlPlanView({
       ) : null}
       <div className="explain-note">
         {modelled ? (
-          <>
-            This plan is <b>modelled</b> by ByteTable from the statement, not reported by the server
-            — <code>type</code>, <code>possible_keys</code> and <code>key</code> are not known here.
-          </>
+          <>{t("expl.note.modelled")}</>
         ) : analyze ? (
-          <>
-            <b>EXPLAIN ANALYZE</b> executes the query and prints the plan tree: each node carries
-            estimates <i>and</i> actual time, rows and loops — compare the two to spot bad
-            estimates.
-          </>
+          <>{t("expl.note.analyze")}</>
         ) : (
-          <>
-            <b>EXPLAIN</b> only plans the query — nothing is executed. This is {engineLabel(engine)}
-            &rsquo;s own output, so the index columns are the ones it really chose.
-          </>
+          <>{t("expl.note.explain", { engine: engineLabel(engine) })}</>
         )}
       </div>
     </div>
@@ -455,6 +439,7 @@ function PsqlPlanView({
  * in one cell and "(1 row)" over eight lines would just look wrong.
  */
 function ServerTextPlan({ plan }: { plan: RawPlan }) {
+  const t = useT();
   const lines = rawPlanTextOf(plan).split("\n");
   const head = plan.columns[0] ?? "QUERY PLAN";
   const width = Math.max(head.length, ...lines.map((l) => l.length));
@@ -475,9 +460,7 @@ function ServerTextPlan({ plan }: { plan: RawPlan }) {
           {line + "\n"}
         </span>
       ))}
-      <span className="pq-count">
-        {"(" + lines.length + " row" + (lines.length === 1 ? "" : "s") + ")"}
-      </span>
+      <span className="pq-count">{t("expl.rowCount", { count: lines.length })}</span>
     </pre>
   );
 }
@@ -535,6 +518,7 @@ export function ExplainPanel({
   approxRows,
   columnCount = null,
 }: ExplainPanelProps) {
+  const t = useT();
   const [mode, setMode] = useState<"plan" | "steps" | "psql">("plan");
   const [raw, setRaw] = useState(false);
   // Every per-statement piece of state is tagged with the statement it belongs
@@ -596,10 +580,10 @@ export function ExplainPanel({
     measureQuery(handleId, schemaName, sql, shape, approxRows)
       .then((s) => setResult({ key, stats: s }))
       .catch((e: unknown) =>
-        setFailure({ key, message: appErrorMessage(e, "Could not analyze this query") }),
+        setFailure({ key, message: appErrorMessage(e, t("expl.err.analyze")) }),
       )
       .finally(() => inflight.current.delete(key));
-  }, [shouldMeasure, key, handleId, schemaName, sql, shape, approxRows, result, failure]);
+  }, [shouldMeasure, key, handleId, schemaName, sql, shape, approxRows, result, failure, t]);
 
   // The structured plan is fetched unconditionally, production included: it is
   // the plan-only form, so it executes nothing. A failure is not surfaced —
@@ -633,7 +617,7 @@ export function ExplainPanel({
         <div className="sql-error" style={{ margin: 14 }}>
           <Icon name="error" size={18} />
           <div>
-            <div className="sql-error-title">Can’t analyze this query</div>
+            <div className="sql-error-title">{t("expl.canAnalyze")}</div>
             <div className="sql-error-msg">{a.error}</div>
           </div>
         </div>
@@ -646,7 +630,7 @@ export function ExplainPanel({
         <div className="sql-error" style={{ margin: 14 }}>
           <Icon name="error" size={18} />
           <div>
-            <div className="sql-error-title">Can’t analyze this query</div>
+            <div className="sql-error-title">{t("expl.canAnalyze")}</div>
             <div className="sql-error-msg">{runError}</div>
           </div>
         </div>
@@ -660,7 +644,7 @@ export function ExplainPanel({
   const rowsOut = a.final == null ? "—" : (a.truncated ? "≥ " : "") + a.final.toLocaleString();
   const steps = a.steps.map((s, i) =>
     i === 0 && columnCount != null && s.extra
-      ? { ...s, extra: `${s.extra} · ${columnCount} cols` }
+      ? { ...s, extra: `${s.extra} ${t("expl.colsCount", { count: columnCount })}` }
       : s,
   );
 
@@ -668,33 +652,30 @@ export function ExplainPanel({
     <div className="explain-panel">
       <div className="ex-summary">
         <div className="ex-stat">
-          <span>Total time</span>
+          <span>{t("expl.totalTime")}</span>
           <b>{a.ms == null ? "—" : a.ms + " ms"}</b>
         </div>
         <div className="ex-stat">
-          <span>Rows returned</span>
+          <span>{t("expl.rowsReturned")}</span>
           <b>{rowsOut}</b>
         </div>
         <div className="ex-stat">
-          <span>Rows read</span>
+          <span>{t("expl.rowsRead")}</span>
           <b>{fmtRows(a.base)}</b>
         </div>
         <div className="ex-stat">
-          <span>Selectivity</span>
+          <span>{t("expl.selectivity")}</span>
           <b className={kept != null && kept > 60 ? "warn" : ""}>
             {kept == null ? "—" : kept + "%"}
-            <i> of rows read kept</i>
+            <i> {t("expl.kept")}</i>
           </b>
         </div>
         <div className="ex-stat">
-          <span>{a.share === "cost" ? "Costliest node" : "Slowest node"}</span>
+          <span>{a.share === "cost" ? t("expl.costliest") : t("expl.slowest")}</span>
           <b>
             {a.slowest ? a.slowest.node.replace(/ on .*/, "") : "—"}
             {a.slowest ? (
-              <i>
-                {" "}
-                {Math.round(a.slowest.pct)}% of {a.share}
-              </i>
+              <i> {t("expl.pctOf", { pct: Math.round(a.slowest.pct), share: a.share ?? "" })}</i>
             ) : null}
           </b>
         </div>
@@ -705,12 +686,14 @@ export function ExplainPanel({
           className={"ex-source" + (a.source === "modelled" ? " modelled" : "")}
           title={
             a.source === "modelled"
-              ? "Derived from the statement — node types are assumed, not reported by the server"
-              : "Fetched from " + engineLabel(a.source) + " with EXPLAIN; nothing was executed"
+              ? t("expl.modelledTitle")
+              : t("expl.fetchedTitle", { engine: engineLabel(a.source) })
           }
         >
           <Icon name={a.source === "modelled" ? "draw" : "dns"} size={12} />
-          {a.source === "modelled" ? "modelled plan" : engineLabel(a.source) + " plan"}
+          {a.source === "modelled"
+            ? t("expl.modelled")
+            : t("expl.enginePlan", { engine: engineLabel(a.source) })}
         </span>
         {!a.measured ? (
           <button
@@ -718,14 +701,10 @@ export function ExplainPanel({
             className="ex-measure"
             onClick={measure}
             disabled={busy}
-            title={
-              isProd
-                ? "Runs the statement against this production connection to measure rows and time"
-                : "Run the statement to measure rows and time"
-            }
+            title={isProd ? t("expl.measureTitleProd") : t("expl.measureTitle")}
           >
             <Icon name={busy ? "hourglass_top" : "speed"} size={13} />
-            {busy ? "Measuring…" : "Measure"}
+            {busy ? t("expl.measuring") : t("expl.measure")}
           </button>
         ) : null}
         <div className="seg ex-modes">
@@ -734,22 +713,22 @@ export function ExplainPanel({
             className={"seg-btn" + (mode === "plan" ? " active" : "")}
             onClick={() => setMode("plan")}
           >
-            Plan
+            {t("expl.mode.plan")}
           </button>
           <button
             type="button"
             className={"seg-btn" + (mode === "steps" ? " active" : "")}
             onClick={() => setMode("steps")}
           >
-            How it runs
+            {t("expl.mode.steps")}
           </button>
           <button
             type="button"
             className={"seg-btn" + (mode === "psql" ? " active" : "")}
             onClick={() => setMode("psql")}
-            title="Raw server output, exactly as EXPLAIN ANALYZE prints it in a terminal"
+            title={t("expl.mode.rawTitle")}
           >
-            Raw output
+            {t("expl.mode.raw")}
           </button>
         </div>
       </div>
@@ -758,18 +737,21 @@ export function ExplainPanel({
         <div className="ex-cols">
           <div className="ex-pane">
             <div className="explain-h">
-              <Icon name="table_chart" size={14} style={{ color: "var(--accent)" }} /> Plan nodes
-              <span className="ex-h-note">in execution order</span>
+              <Icon name="table_chart" size={14} style={{ color: "var(--accent)" }} />{" "}
+              {t("expl.planNodes")}
+              <span className="ex-h-note">{t("expl.execOrder")}</span>
             </div>
             <div className="ex-table-wrap">
               <table className="ex-table">
                 <thead>
                   <tr>
                     <th className="num">#</th>
-                    <th>Node</th>
-                    <th className="num">Rows out</th>
-                    <th className="num">{a.share === "cost" ? "Cost" : "Time"}</th>
-                    <th className="share">{a.share === null ? "Share" : "Share of " + a.share}</th>
+                    <th>{t("expl.node")}</th>
+                    <th className="num">{t("expl.rowsOut")}</th>
+                    <th className="num">{a.share === "cost" ? t("expl.cost") : t("expl.time")}</th>
+                    <th className="share">
+                      {a.share === null ? t("expl.share") : t("expl.shareOf", { share: a.share })}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -794,7 +776,9 @@ export function ExplainPanel({
                               <div className="ex-node-name">{p.node}</div>
                               <div className="ex-node-detail">
                                 {p.detail}
-                                {p.removed ? " · removed " + p.removed.toLocaleString() : ""}
+                                {p.removed
+                                  ? " " + t("expl.removed", { count: p.removed.toLocaleString() })
+                                  : ""}
                               </div>
                             </div>
                           </div>
@@ -802,7 +786,7 @@ export function ExplainPanel({
                         <td className="num ex-rows">
                           {fmtRows(p.rows)}
                           {p.kind === "scan" && p.scanned != null && p.scanned !== p.rows ? (
-                            <i> of {p.scanned.toLocaleString()}</i>
+                            <i> {t("expl.of", { count: p.scanned.toLocaleString() })}</i>
                           ) : null}
                         </td>
                         <td className="num ex-ms">
@@ -839,8 +823,8 @@ export function ExplainPanel({
 
           <div className="ex-pane ex-treepane">
             <div className="explain-h">
-              <Icon name="lan" size={14} style={{ color: "var(--accent)" }} /> Plan tree
-              <span className="ex-h-note">data flows upward</span>
+              <Icon name="lan" size={14} style={{ color: "var(--accent)" }} /> {t("expl.planTree")}
+              <span className="ex-h-note">{t("expl.dataUp")}</span>
             </div>
             <div className="ex-tree">
               {a.plan.map((p) => (
@@ -858,10 +842,10 @@ export function ExplainPanel({
                         {a.share === "cost"
                           ? p.cost == null
                             ? "—"
-                            : "cost " + p.cost.toLocaleString()
+                            : t("expl.costValue", { cost: p.cost.toLocaleString() })
                           : p.ms == null
                             ? "—"
-                            : fmtMs(p.ms) + " ms"}
+                            : t("expl.ms", { ms: fmtMs(p.ms) })}
                       </span>
                     </div>
                     <div className="ex-tnode-detail">
@@ -869,15 +853,17 @@ export function ExplainPanel({
                       {p.index ? (
                         <>
                           {p.detail ? " · " : ""}
-                          <span className="ex-tnode-index">index {p.index}</span>
+                          <span className="ex-tnode-index">
+                            {t("expl.index", { index: p.index })}
+                          </span>
                         </>
                       ) : null}
                     </div>
                     <div className="ex-tnode-foot">
                       <span className="ex-tnode-rows">
                         {p.rows == null
-                          ? "— rows out"
-                          : p.rows.toLocaleString() + " row" + (p.rows === 1 ? "" : "s") + " out"}
+                          ? t("expl.noRows")
+                          : t("expl.rowsOutCount", { count: p.rows.toLocaleString() })}
                       </span>
                       {a.share === null ? null : (
                         <ShareBar pct={p.pct} hot={p === a.slowest} small />
@@ -890,14 +876,14 @@ export function ExplainPanel({
             <div className="ex-tree-foot">
               <div className="ex-tree-foot-bar">
                 <button type="button" className="ex-raw-toggle" onClick={() => setRaw((r) => !r)}>
-                  <Icon name={raw ? "expand_less" : "expand_more"} size={13} /> Compact text plan
+                  <Icon name={raw ? "expand_less" : "expand_more"} size={13} /> {t("expl.compact")}
                 </button>
                 {/* Only once the plan is showing — a copy button for content
                     that is still collapsed invites copying something unseen. */}
                 {raw ? (
                   <CopyButton
                     className="ex-copy ex-plan-copy"
-                    label="Copy text plan"
+                    label={t("expl.copyPlan")}
                     text={rawPlanText(a)}
                   />
                 ) : null}
@@ -907,22 +893,18 @@ export function ExplainPanel({
                 {a.source === "modelled" ? (
                   <>
                     {a.measured
-                      ? "Row counts and the total time are measured against this connection; the per-node split distributes that total across nodes by relative work."
-                      : "No numbers yet — measuring runs the statement against this connection."}{" "}
-                    This tree is read from the statement, so it assumes a sequential scan per
-                    relation and names no indexes. <b>Raw output</b> shows the plan the server
-                    actually chose.
+                      ? t("expl.note.treeModelledMeasured")
+                      : t("expl.note.treeModelledNoData")}{" "}
+                    {t("expl.note.treeModelledTail")}
                   </>
                 ) : (
                   <>
-                    This tree is <b>{engineLabel(a.source)}</b>&rsquo;s own plan, from{" "}
-                    <code>EXPLAIN</code> — node types, access paths and indexes are the ones it
-                    chose.{" "}
+                    {t("expl.note.treeServerHead", { engine: engineLabel(a.source) })}{" "}
                     {a.share === "cost"
-                      ? "Rows and cost are its estimates, not measurements; EXPLAIN ANALYZE under Raw output executes the query and reports actual time per node."
+                      ? t("expl.note.treeServerCost")
                       : a.share === "time"
-                        ? "Rows and times are actuals from an executed plan."
-                        : "This engine reports no row or cost figures with its plan, so those columns stay empty rather than being filled in from somewhere else."}
+                        ? t("expl.note.treeServerTime")
+                        : t("expl.note.treeServerNone")}
                   </>
                 )}
               </div>
@@ -941,8 +923,9 @@ export function ExplainPanel({
       ) : (
         <div className="ex-steps-pane">
           <div className="explain-h">
-            <Icon name="account_tree" size={14} style={{ color: "var(--accent)" }} /> How this query
-            runs<span className="ex-h-note">logical clause order</span>
+            <Icon name="account_tree" size={14} style={{ color: "var(--accent)" }} />{" "}
+            {t("expl.stepsTitle")}
+            <span className="ex-h-note">{t("expl.logicalOrder")}</span>
           </div>
           <div className="ex-steps-grid">
             {steps.map((s, i) => (
@@ -954,11 +937,11 @@ export function ExplainPanel({
                     {s.extra ? <code className="explain-step-extra">{s.extra}</code> : null}
                     {s.rows != null ? (
                       <span className="explain-step-rows">
-                        {s.rows.toLocaleString()} row{s.rows === 1 ? "" : "s"}
+                        {t("expl.rowsPlain", { count: s.rows.toLocaleString() })}
                       </span>
                     ) : null}
                   </div>
-                  <div className="explain-step-desc">{s.desc}</div>
+                  <div className="explain-step-desc">{t(s.descKey)}</div>
                 </div>
               </div>
             ))}

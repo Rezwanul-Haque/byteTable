@@ -11,14 +11,9 @@ import { IconBtn } from "../../../shared/ui/IconBtn";
 import { ENV_COLOR } from "../../../shared/ui/envColors";
 import { normalizeEnv, type Engine } from "../../../shared/types";
 import { useToast } from "../../../shared/ui/toastContext";
-import {
-  PROC_SOURCES,
-  fmtProcTime,
-  procNounPlural,
-  procStateCls,
-  processList,
-  type ProcessInfo,
-} from "../api";
+import { useT } from "../../../shared/i18n/useT";
+import type { StringKey } from "../../../shared/i18n";
+import { PROC_SOURCES, fmtProcTime, procStateCls, processList, type ProcessInfo } from "../api";
 import { KillProcessModal } from "./KillProcessModal";
 import "../../browse/shared/styles/DataGrid.css";
 import "./ProcessList.css";
@@ -58,6 +53,7 @@ export function ProcessesTab({
   isActive?: boolean;
 }) {
   const toast = useToast();
+  const tr = useT();
   const cfg = PROC_SOURCES[engine];
   const envColor = ENV_COLOR[normalizeEnv(env)] ?? ENV_COLOR.dev;
 
@@ -90,7 +86,7 @@ export function ProcessesTab({
         setSel((s) => new Set([...s].filter((pid) => present.has(pid))));
         setError(null);
       } catch (err) {
-        setError(appErrorMessage(err, "Could not read the process list."));
+        setError(appErrorMessage(err, tr("proc.err.read")));
       } finally {
         setLastRefresh(new Date());
         setLoaded(true);
@@ -122,7 +118,10 @@ export function ProcessesTab({
 
   const active = procs.filter((p) => p.state === "active").length;
   const waiting = procs.filter((p) => procStateCls(p.state) === "warn").length;
-  const noun = procNounPlural(engine);
+  // The row noun follows the engine (sessions / operations / clients).
+  const nounKind = engine === "redis" ? "client" : engine === "mongodb" ? "operation" : "session";
+  const noun = tr(`proc.noun.${nounKind}s` as StringKey);
+  const nounOne = tr(`proc.noun.${nounKind}` as StringKey);
 
   const toggleSel = (p: ProcessInfo) => {
     if (p.isSelf) return; // never select the app's own connection
@@ -143,7 +142,7 @@ export function ProcessesTab({
       return n;
     });
     const stmts = cfg ? killed.map((p) => cfg.kill(p)).join(" ") : "";
-    toast(stmts + " — terminated", "ok");
+    toast(tr("proc.terminated", { stmts }), "ok");
   };
 
   // SQLite / DynamoDB / Cassandra: no server session list.
@@ -152,10 +151,9 @@ export function ProcessesTab({
       <div className="proc-tab">
         <div className="empty-state">
           <Icon name="monitor_heart" size={40} style={{ color: "var(--text-faint)" }} />
-          <p>No server processes</p>
+          <p>{tr("proc.noServer")}</p>
           <span>
-            {engine === "sqlite" ? "SQLite" : engine} is an embedded database — there is no server
-            session list to inspect.
+            {tr("proc.noServerBody", { engine: engine === "sqlite" ? "SQLite" : engine })}
           </span>
         </div>
       </div>
@@ -180,15 +178,17 @@ export function ProcessesTab({
       return n;
     });
 
-  // Per-engine column headers + the resizable-column machinery.
+  // Per-engine column headers + the resizable-column machinery. The engine
+  // overrides (Mongo / Redis) and the PID header are i18n keys, not literals, so
+  // the header follows the interface language.
   const colLabel: Record<string, string> = {
-    pid: cfg.pidLabel,
-    user: L.user ?? "User",
-    host: L.host ?? "Host",
-    db: L.db ?? "DB",
-    state: L.state ?? "State",
-    time: L.time ?? "Time",
-    query: L.query ?? "Query",
+    pid: tr(cfg.pidKey),
+    user: L.user ? tr(L.user) : tr("proc.col.user"),
+    host: L.host ? tr(L.host) : tr("proc.col.host"),
+    db: L.db ? tr(L.db) : tr("proc.col.db"),
+    state: L.state ? tr(L.state) : tr("proc.col.state"),
+    time: L.time ? tr(L.time) : tr("proc.col.time"),
+    query: L.query ? tr(L.query) : tr("proc.col.query"),
   };
   // Shared grid template (check gutter + data columns + kill gutter), applied to
   // the header and every row so they stay aligned. A drag override in `colW`
@@ -230,15 +230,15 @@ export function ProcessesTab({
     <div className="proc-tab" data-screen-label="Processes">
       <div className="proc-toolbar">
         <Icon name="monitor_heart" size={16} style={{ color: "var(--accent)" }} />
-        <span className="proc-title">Processes</span>
-        <span className="proc-src" title="System source">
+        <span className="proc-title">{tr("proc.title")}</span>
+        <span className="proc-src" title={tr("proc.source")}>
           {cfg.src}
         </span>
         <div className="proc-search">
           <Icon name="search" size={14} />
           <input
             value={query}
-            placeholder="Filter by user, host, state, query…"
+            placeholder={tr("proc.filterPlaceholder")}
             spellCheck="false"
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -253,35 +253,35 @@ export function ProcessesTab({
           <b>{procs.length}</b> {noun}
         </span>
         <span className="proc-stat run">
-          <b>{active}</b> active
+          <b>{active}</b> {tr("proc.active")}
         </span>
         {waiting ? (
           <span className="proc-stat warn">
-            <b>{waiting}</b> waiting
+            <b>{waiting}</b> {tr("proc.waiting")}
           </span>
         ) : null}
         <button
           className={"proc-auto" + (auto ? " on" : "")}
           onClick={() => setAuto(!auto)}
-          title="Auto-refresh every 2.5s"
+          title={tr("proc.autoTitle")}
         >
-          <Icon name="autorenew" size={13} /> auto
+          <Icon name="autorenew" size={13} /> {tr("proc.auto")}
         </button>
         {/* Manual refresh only matters while auto is off — with the 2.5s poll
             running the list is already current, so the button would be noise. */}
         {auto ? null : (
-          <IconBtn icon="refresh" title="Refresh now" onClick={() => refresh.current()} />
+          <IconBtn icon="refresh" title={tr("proc.refreshNow")} onClick={() => refresh.current()} />
         )}
       </div>
       {selProcs.length ? (
         <div className="dg-selbar">
-          <span className="dg-selbar-count">{selProcs.length} selected</span>
+          <span className="dg-selbar-count">{tr("proc.selected", { count: selProcs.length })}</span>
           <button className="proc-clear" onClick={() => setSel(new Set())}>
-            Clear
+            {tr("proc.clear")}
           </button>
           <div style={{ flex: 1 }}></div>
           <button className="btn btn-danger proc-kill-sel" onClick={() => setKillTarget(selProcs)}>
-            <Icon name="dangerous" size={15} /> <span>Kill selected…</span>
+            <Icon name="dangerous" size={15} /> <span>{tr("proc.killSelected")}</span>
           </button>
         </div>
       ) : null}
@@ -305,7 +305,7 @@ export function ProcessesTab({
                 <span className="dg-colname">{colLabel[c.key]}</span>
                 <span
                   className="dg-col-resize"
-                  title="Drag to resize · double-click to reset"
+                  title={tr("proc.resize")}
                   onMouseDown={(e) => startResize(e, c.key)}
                   onDoubleClick={() => resetCol(c.key)}
                 />
@@ -333,8 +333,8 @@ export function ProcessesTab({
               <div className="dg-td">
                 {engine === "clickhouse" ? (p.qid ?? p.pid) : p.pid}
                 {p.isSelf ? (
-                  <span className="proc-self" title="This connection">
-                    me
+                  <span className="proc-self" title={tr("proc.self")}>
+                    {tr("proc.me")}
                   </span>
                 ) : null}
               </div>
@@ -351,7 +351,7 @@ export function ProcessesTab({
               <div className="dg-td proc-kill-cell">
                 <button
                   className="proc-kill"
-                  title={p.isSelf ? "This is your own connection" : "Kill process"}
+                  title={p.isSelf ? tr("proc.ownConn") : tr("proc.kill")}
                   disabled={p.isSelf}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -371,15 +371,15 @@ export function ProcessesTab({
                 </span>
               ) : !loaded ? (
                 <>
-                  <Icon name="autorenew" size={22} /> Loading…
+                  <Icon name="autorenew" size={22} /> {tr("proc.loading")}
                 </>
               ) : query ? (
                 <>
-                  <Icon name="search_off" size={22} /> No processes match “{query}”
+                  <Icon name="search_off" size={22} /> {tr("proc.noMatch", { query })}
                 </>
               ) : (
                 <>
-                  <Icon name="monitor_heart" size={22} /> No active {noun}
+                  <Icon name="monitor_heart" size={22} /> {tr("proc.noActive", { noun })}
                 </>
               )}
             </div>
@@ -387,11 +387,11 @@ export function ProcessesTab({
         </div>
       </div>
       <div className="proc-foot">
-        <span>Updated {lastRefresh ? lastRefresh.toLocaleTimeString() : "—"}</span>
-        <div style={{ flex: 1 }}></div>
-        <span className="dim">
-          Click a row to select · kill terminates the {noun.slice(0, -1)} immediately
+        <span>
+          {tr("proc.updated", { time: lastRefresh ? lastRefresh.toLocaleTimeString() : "—" })}
         </span>
+        <div style={{ flex: 1 }}></div>
+        <span className="dim">{tr("proc.foot", { noun: nounOne })}</span>
       </div>
       {killTarget ? (
         <KillProcessModal

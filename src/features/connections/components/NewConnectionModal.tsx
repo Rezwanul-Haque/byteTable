@@ -423,6 +423,7 @@ function ProjectField({
   onChange: (value: string) => void;
   known: string[];
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
@@ -504,7 +505,7 @@ function ProjectField({
                 <input
                   autoFocus
                   value={draft}
-                  placeholder="New project name"
+                  placeholder={t("conn.project.newPlaceholder")}
                   spellCheck={false}
                   onChange={(e) => setDraft(e.target.value)}
                   onKeyDown={(e) => {
@@ -1006,11 +1007,11 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
             type="button"
             className="imp-trigger"
             onClick={() => setImpOpen(true)}
-            title="Fill the form from a connection URL or connection string"
+            title={t("conn.importFromUrlTitle")}
           >
             <Icon name="content_paste_go" size={13} /> Import From URL
           </button>
-          <IconBtn icon="close" onClick={onClose} title="Close" />
+          <IconBtn icon="close" onClick={onClose} title={t("common.close")} />
         </ModalTitle>
 
         <div className="form-grid name-grid">
@@ -1033,7 +1034,7 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
 
         <div className="ee-block">
           <span className="form-section-label">Engine</span>
-          <div className="engine-picker" role="radiogroup" aria-label="Database engine">
+          <div className="engine-picker" role="radiogroup" aria-label={t("conn.engineAria")}>
             {ENGINES.map((e) => (
               <button
                 key={e.engine}
@@ -1105,7 +1106,7 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
           <div
             className="modal-tabs"
             role="tablist"
-            aria-label="Server connection settings"
+            aria-label={t("conn.tabsAria")}
             onKeyDown={onTablistKeyDown}
           >
             <button
@@ -1176,7 +1177,7 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
                   <span className="form-field-label">Credentials</span>
                   <Select
                     className="sel-block"
-                    aria-label="Credential mode"
+                    aria-label={t("conn.credAria")}
                     value={awsAuth}
                     options={[
                       { value: "profile", label: "Shared profile" },
@@ -1247,7 +1248,7 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
                   </span>
                   <Select
                     className="sel-block"
-                    aria-label="Region label"
+                    aria-label={t("conn.regionLabelAria")}
                     value={region}
                     options={AWS_REGIONS.map((r) => ({ value: r, label: r }))}
                     onChange={(v) => field({ region: v })}
@@ -1382,7 +1383,7 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
                   className="lbl-info"
                   tabIndex={0}
                   role="img"
-                  aria-label="Cassandra connects to contact points and discovers the rest of the ring. Set the host(s), the native-protocol port (9042), and the local datacenter for token-aware routing."
+                  aria-label={t("conn.cass.hostTip")}
                   data-tip="Cassandra connects to contact points and discovers the rest of the ring. Set the host(s), the native-protocol port (9042), and the local datacenter for token-aware routing."
                 >
                   <Icon name="info" size={13} />
@@ -1742,7 +1743,7 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
                     <span className="form-field-label">Auth method</span>
                     <Select
                       className="sel-block"
-                      aria-label="Auth method"
+                      aria-label={t("conn.ssh.auth")}
                       value={sshAuth}
                       options={[
                         { value: "key", label: "Private key" },

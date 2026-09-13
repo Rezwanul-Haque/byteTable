@@ -19,8 +19,9 @@
 
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
+import { useT } from "../../../../shared/i18n/useT";
 import { allNodes, shardColor, shardName, shardSlots } from "../cluster";
-import { humanBytes, humanNum } from "../helpers";
+import { humanBytes } from "../helpers";
 import type { ClusterNode, ClusterShard, ClusterTopology } from "../api";
 import "./ClusterDashboard.css";
 
@@ -45,6 +46,7 @@ export function ClusterNodePicker({
   onPick: (node: ClusterNode) => void;
   onClose: () => void;
 }) {
+  const t = useT();
   const nodes = allNodes(topology.shards);
   const current = nodes.find((n) => n.myself) ?? null;
 
@@ -52,6 +54,7 @@ export function ClusterNodePicker({
     const health = HEALTH[node.health] ?? HEALTH.online!;
     const isCurrent = current?.id === node.id;
     const isReplica = node.role === "replica";
+    const nodeAddr = node.host + ":" + node.port;
     return (
       <button
         key={node.id}
@@ -60,22 +63,10 @@ export function ClusterNodePicker({
         disabled={busy || isCurrent}
         title={
           isCurrent
-            ? "Already browsing this node"
+            ? t("redis.np.already")
             : isReplica
-              ? "Browse " +
-                node.host +
-                ":" +
-                node.port +
-                " — a replica of " +
-                shardName(shard) +
-                ". Reads are served in READONLY mode and may lag its master."
-              : "Browse " +
-                node.host +
-                ":" +
-                node.port +
-                " — the master for " +
-                shardName(shard) +
-                "'s slots"
+              ? t("redis.np.browseReplica", { node: nodeAddr, shard: shardName(shard) })
+              : t("redis.np.browseMaster", { node: nodeAddr, shard: shardName(shard) })
         }
         onClick={() => onPick(node)}
       >
@@ -88,10 +79,10 @@ export function ClusterNodePicker({
           {node.host}:{node.port}
         </span>
         <span className={"cl-role " + node.role}>{node.role}</span>
-        {isCurrent ? <span className="cl-me">here</span> : null}
+        {isCurrent ? <span className="cl-me">{t("redis.np.here")}</span> : null}
         <div style={{ flex: 1 }} />
         <span className="cl-np-keys">
-          {node.keys === null ? "— keys" : humanNum(node.keys) + " keys"}
+          {node.keys === null ? t("redis.np.noKeys") : t("redis.nKeys", { count: node.keys })}
         </span>
         <span className="cl-health" style={{ color: health.color }}>
           {health.label}
@@ -101,17 +92,16 @@ export function ClusterNodePicker({
   };
 
   return (
-    <div className="cl-np" role="dialog" aria-label="Browse a cluster node">
+    <div className="cl-np" role="dialog" aria-label={t("redis.np.aria")}>
       <div className="cl-np-head">
         <Icon name="lan" size={14} style={{ color: "var(--accent)" }} />
-        Browse a node
+        {t("redis.np.title")}
         <span className="cl-np-n">
-          {topology.shards.length +
-            (topology.shards.length === 1 ? " shard · " : " shards · ") +
-            nodes.length +
-            (nodes.length === 1 ? " node" : " nodes")}
+          {t("redis.cl.shardsN", { count: topology.shards.length }) +
+            " · " +
+            t("redis.cl.nodesN", { count: nodes.length })}
         </span>
-        <IconBtn icon="close" size={14} title="Close" onClick={onClose} />
+        <IconBtn icon="close" size={14} title={t("common.close")} onClick={onClose} />
       </div>
 
       <div className="cl-np-list">
@@ -121,7 +111,7 @@ export function ClusterNodePicker({
               <span className="cl-shard-dot" style={{ background: shardColor(shard.index) }} />
               <b>{shardName(shard)}</b>
               <span className="cl-shard-slots">
-                {shardSlots(shard).toLocaleString() + " slots"}
+                {t("redis.np.nSlots", { count: shardSlots(shard).toLocaleString() })}
               </span>
               <div style={{ flex: 1 }} />
               <span className="cl-np-mem">
@@ -137,9 +127,8 @@ export function ClusterNodePicker({
       <div className="cl-np-foot">
         <Icon name="info" size={12} />
         <span>
-          A node only holds the slots it owns, and <code>SCAN</code> answers for the node you are
-          attached to — so this is how you reach another shard&apos;s keys. There is still no{" "}
-          <code>SELECT</code>: a cluster has one database.
+          {t("redis.np.footA")} <code>SCAN</code> {t("redis.np.footB")} <code>SELECT</code>
+          {t("redis.np.footC")}
         </span>
       </div>
     </div>

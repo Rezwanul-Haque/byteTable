@@ -4,9 +4,20 @@
 // pasted string resolved to) can read the label without a component file
 // exporting a constant, which react-refresh forbids.
 
+import { t, type StringKey } from "../i18n";
 import type { BadgeEngine } from "../types";
 
-export const ENGINE_META: Record<BadgeEngine, { label: string; short: string; color: string }> = {
+interface EngineMeta {
+  label: string;
+  short: string;
+  color: string;
+  /** i18n key overriding `label` — set only where the label is not a product
+   *  name (the data-file workspace). Every engine name is a brand: do not
+   *  translate those. */
+  labelKey?: StringKey;
+}
+
+export const ENGINE_META: Record<BadgeEngine, EngineMeta> = {
   sqlite: { label: "SQLite", short: "SQ", color: "#56b6c2" },
   mysql: { label: "MySQL", short: "My", color: "#e2b340" },
   postgres: { label: "PostgreSQL", short: "Pg", color: "#61afef" },
@@ -32,5 +43,15 @@ export const ENGINE_META: Record<BadgeEngine, { label: string; short: string; co
   // Data file (M35): not a database engine — the violet badge a CSV/TSV
   // workspace wears in the rail, title bar and sidebar (prototype ui.jsx
   // ENGINE_META.csv), distinct from Cassandra's cyan and Redis's vermilion.
-  csv: { label: "Data file", short: "Cv", color: "#a78bfa" },
+  csv: { label: "Data file", short: "Cv", color: "#a78bfa", labelKey: "ws.rail.dataFile" },
 };
+
+/**
+ * Display label for an engine: the localized string where one is keyed (only
+ * the data-file workspace — every other label is a product name that must not
+ * be translated), else the literal `label`.
+ */
+export function engineLabel(engine: BadgeEngine): string {
+  const m = ENGINE_META[engine];
+  return m.labelKey ? t(m.labelKey) : m.label;
+}

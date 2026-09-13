@@ -12,6 +12,8 @@ import { useState } from "react";
 import { EngineBadge } from "../../../shared/ui/EngineBadge";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
+import { useT } from "../../../shared/i18n/useT";
+import type { StringKey } from "../../../shared/i18n";
 import { delimLabel, fmtBytes, TYPES } from "../core";
 import type { DataFileDoc } from "../doc";
 import { DATA_FILE_TABS, type DataFileTabKind } from "../state";
@@ -48,18 +50,19 @@ export function DataFileSidebar({
   const [q, setQ] = useState("");
   const needle = q.trim().toLowerCase();
   const cols = doc.analysis.cols.filter((c) => !needle || c.name.toLowerCase().includes(needle));
+  const t = useT();
 
   const issueCount = doc.analysis.issues.length;
-  const views: { kind: DataFileTabKind; label: string; meta: string; bad?: boolean }[] = [
-    { kind: "data", label: "Data", meta: doc.parsed.rows.length.toLocaleString() },
-    { kind: "profile", label: "Column profile", meta: String(doc.analysis.cols.length) },
+  const views: { kind: DataFileTabKind; label: StringKey; meta: string; bad?: boolean }[] = [
+    { kind: "data", label: "dfile.tabData", meta: doc.parsed.rows.length.toLocaleString() },
+    { kind: "profile", label: "dfile.tabProfile", meta: String(doc.analysis.cols.length) },
     {
       kind: "issues",
-      label: "Data quality",
-      meta: issueCount ? String(issueCount) : "clean",
+      label: "dfile.tabQuality",
+      meta: issueCount ? String(issueCount) : t("dfile.clean"),
       bad: doc.errors > 0,
     },
-    { kind: "sql", label: "Query with SQL", meta: doc.table },
+    { kind: "sql", label: "dfile.viewQuerySql", meta: doc.table },
   ];
 
   return (
@@ -71,14 +74,14 @@ export function DataFileSidebar({
           <div className="sidebar-conn-name">{workspaceName}</div>
           <div className="sidebar-conn-detail">
             <span className="conn-env" style={{ color: "var(--text-faint)" }}>
-              file
+              {t("dfile.statusFile")}
             </span>
             <span className="conn-eng">{fmtBytes(doc.size)}</span>
           </div>
         </div>
         <IconBtn
           icon="power_settings_new"
-          title="Close workspace"
+          title={t("dfile.closeWorkspace")}
           onClick={onCloseWorkspace}
           size={16}
           danger
@@ -90,16 +93,16 @@ export function DataFileSidebar({
           type="button"
           className="csvv-parse-pill"
           onClick={onReopen}
-          title="Re-open with different parse options"
+          title={t("dfile.reopenTitle")}
         >
           <Icon name="tune" size={13} />
           <span>{delimLabel(doc.parsed.opts.delimiter)}</span>
           <span className="csvv-parse-dim">
-            {doc.parsed.opts.header ? "header" : "no header"}
-            {doc.parsed.opts.trim ? " · trimmed" : ""}
+            {doc.parsed.opts.header ? t("dfile.header") : t("dfile.noHeader")}
+            {doc.parsed.opts.trim ? " " + t("dfile.trimmed") : ""}
           </span>
         </button>
-        <IconBtn icon="folder_open" title="Open another file" onClick={onReopen} />
+        <IconBtn icon="folder_open" title={t("dfile.openAnother")} onClick={onReopen} />
       </div>
 
       <div className="csvv-views">
@@ -115,7 +118,7 @@ export function DataFileSidebar({
               size={15}
               style={{ color: activeKind === v.kind ? "var(--accent)" : "var(--text-faint)" }}
             />
-            <span className="csvv-view-label">{v.label}</span>
+            <span className="csvv-view-label">{t(v.label)}</span>
             <span className={"csvv-view-meta" + (v.bad ? " bad" : "")}>{v.meta}</span>
           </button>
         ))}
@@ -124,7 +127,7 @@ export function DataFileSidebar({
       <div className="sidebar-search">
         <Icon name="search" size={15} style={{ color: "var(--text-faint)" }} />
         <input
-          placeholder="Filter columns…"
+          placeholder={t("dfile.filterColsPlaceholder")}
           value={q}
           onChange={(e) => setQ(e.target.value)}
           spellCheck={false}
@@ -132,7 +135,7 @@ export function DataFileSidebar({
       </div>
 
       <div className="sidebar-section-label">
-        <span>Columns</span>
+        <span>{t("ws.table.columns")}</span>
         <span className="sidebar-count">{doc.analysis.cols.length}</span>
       </div>
       <div className="sidebar-tables csvv-cols">
@@ -146,7 +149,7 @@ export function DataFileSidebar({
               key={c.name}
               className={"csvv-col" + (off ? " off" : "")}
               onClick={() => onFocusColumn(c.name)}
-              title={c.name + " · " + c.type + " · " + pct(c.fill) + "% filled"}
+              title={t("dfile.colTitle", { name: c.name, type: c.type, pct: pct(c.fill) })}
             >
               <Icon
                 name={TYPES[c.type].icon}
@@ -167,7 +170,7 @@ export function DataFileSidebar({
               {c.bad.length ? (
                 <span
                   className="csvv-col-bad"
-                  title={c.bad.length + " values do not match " + c.type}
+                  title={t("dfile.badTitle", { count: c.bad.length, type: c.type })}
                 >
                   {c.bad.length}
                 </span>
@@ -175,8 +178,8 @@ export function DataFileSidebar({
               <button
                 type="button"
                 className="csvv-col-eye"
-                title={off ? "Show column" : "Hide column"}
-                aria-label={off ? "Show column" : "Hide column"}
+                title={off ? t("dfile.showColumn") : t("dfile.hideColumn")}
+                aria-label={off ? t("dfile.showColumn") : t("dfile.hideColumn")}
                 onClick={(e) => {
                   // Or the row's own click would also jump to the profile card.
                   e.stopPropagation();
@@ -188,7 +191,9 @@ export function DataFileSidebar({
             </div>
           );
         })}
-        {cols.length === 0 ? <div className="sidebar-nomatch">No columns match “{q}”</div> : null}
+        {cols.length === 0 ? (
+          <div className="sidebar-nomatch">{t("stv.noColMatch", { query: q })}</div>
+        ) : null}
       </div>
     </aside>
   );

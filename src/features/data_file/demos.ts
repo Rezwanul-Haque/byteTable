@@ -7,6 +7,8 @@
 //
 // Kept out of core.ts so the parsing core stays free of sample data.
 
+import { t } from "../../shared/i18n";
+
 /** Deterministic 0–1 generator (numerical-recipes LCG). */
 function rand(seed: number): () => number {
   let s = seed;
@@ -183,17 +185,17 @@ export interface DemoFile {
 export const DEMOS: DemoFile[] = [
   {
     name: "orders_export_2026-08.csv",
-    note: "Messy commerce export — ragged rows, mixed types, blanks",
+    note: t("dfile.demoOrdersNote"),
     build: demoOrders,
   },
   {
     name: "weather_stations.tsv",
-    note: "Tab-separated, clean, wide numeric ranges",
+    note: t("dfile.demoStationsNote"),
     build: demoStations,
   },
   {
     name: "gl_ledger_q3.csv",
-    note: "Semicolon-separated, sparse debit/credit pair",
+    note: t("dfile.demoLedgerNote"),
     build: demoLedger,
   },
 ].map((d) => {

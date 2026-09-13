@@ -299,6 +299,15 @@
   font-family: var(--mono);
   font-size: 11px;
 }
+/* A failed statement's tab. The red cross icon is the primary signal; the
+   tinted title and underline make it readable at a glance in a strip where
+   every other tab is a green tick. */
+.sqlres-tab.failed .sqlres-tab-title {
+  color: var(--error);
+}
+.sqlres-tab.failed.active::after {
+  background: var(--error);
+}
 .sqlres-tab-close {
   display: inline-flex;
   align-items: center;
@@ -1231,6 +1240,40 @@
   font-size: 11.5px;
   margin-top: 3px;
   color: color-mix(in oklab, #e06c75 80%, var(--text));
+}
+
+/* The statement that failed, under the driver message: in a multi-statement
+   run "Result 3" alone doesn't say which SQL broke. Highlighted like the
+   drawer previews, wrapped rather than scrolled so nothing is hidden, and
+   clickable — it jumps the caret to that statement in the editor. */
+.sql-error-stmt {
+  display: block;
+  width: 100%;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.55;
+  text-align: left;
+  margin: 9px 0 0;
+  padding: 7px 9px;
+  border-radius: 7px;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  transition:
+    border-color 0.1s,
+    background 0.1s;
+}
+.sql-error-stmt:hover {
+  background: var(--bg2);
+  border-color: var(--accent);
+}
+/* "Go to statement", when the card carries the action itself (the CQL tab —
+   the SQL tab puts it in the result bar). */
+.sql-error-stmt + .btn {
+  margin-top: 9px;
 }
 
 .sql-placeholder {

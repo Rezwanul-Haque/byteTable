@@ -43,7 +43,7 @@ import { homeSchema } from "../types";
 import { ExecutionMinimap, ExplainPanel } from "./explain";
 import { detectedTable } from "../explainClauses";
 import { formatSql } from "../formatSql";
-import { splitStatements } from "../sqlStatement";
+import { splitStatements, statementRanges } from "../sqlStatement";
 import { type EditorSchema } from "../sqlCompletion";
 import { SqlCodeEditor, type SqlCodeEditorHandle } from "./SqlCodeEditor";
 import { SqlResultGrid } from "./SqlResultGrid";
@@ -92,6 +92,15 @@ const OBJECT_DDL_RE =
  *  start so a `table`/`index` word inside a query body never trips it. */
 const TABLE_DDL_RE =
   /^\s*(?:create(?:\s+(?:global|local))?(?:\s+temp(?:orary)?)?\s+table|(?:drop|alter|rename)\s+table|(?:create(?:\s+unique)?|drop)\s+index)\b/i;
+
+/**
+ * Did this statement fail? Normally that is just "it carries an error", but a
+ * run with neither a result nor an error is treated as a failure too: nothing
+ * came back, so it must never be badged as a success.
+ */
+function runFailed(run: SqlRun): boolean {
+  return run.error != null || run.result == null;
+}
 
 function snippetsFor(engine: Engine, schemaName: string): Snippet[] {
   switch (engine) {
@@ -476,6 +485,36 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
     })();
   };
 
+  // Put the caret on the statement behind a result tab: select it in the
+  // editor, scroll it to the middle and focus — so a failed result walks the
+  // user straight to the SQL that produced it instead of leaving them to find
+  // it in a long buffer.
+  //
+  // The buffer is re-split and matched by statement TEXT rather than by stored
+  // offsets, because the text may have been edited since the run. When the same
+  // statement appears more than once, the occurrence at (or after) the run's own
+  // position wins; a run whose SQL is no longer a whole statement — an edited
+  // buffer, or the whole-selection error tab a failed batch produces — falls
+  // back to a plain substring search before giving up.
+  const goToStatement = (runId: string) => {
+    const idx = tab.runs.findIndex((r) => r.id === runId);
+    const target = tab.runs[idx];
+    if (!target) return;
+    const ranges = statementRanges(text);
+    const isTarget = (r: { from: number; to: number }) => text.slice(r.from, r.to) === target.sql;
+    const hit = ranges.slice(idx).find(isTarget) ?? ranges.find(isTarget);
+    if (hit) {
+      editorRef.current?.revealRange(hit.from, hit.to);
+      return;
+    }
+    const at = text.indexOf(target.sql);
+    if (at === -1) {
+      toast("That statement is no longer in the editor.", "info");
+      return;
+    }
+    editorRef.current?.revealRange(at, at + target.sql.length);
+  };
+
   const load = (sql: string) => {
     setSqlText(tab.id, sql);
     setPop(null);
@@ -562,10 +601,13 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   // Right-click menu on the result tabs — the same one the workspace tab strip
   // and the NoSQL shells use, plus "Close all": a result tab is disposable
   // output, so sweeping the lot is a normal thing to want after a batch run.
+  // "Go to statement" leads it, so the SQL behind a result tab can be found in
+  // the editor straight from its tab.
   const resultMenu = useTabMenu({
     ids: runs.map((r) => r.id),
     close: (ids) => closeRuns(tab.id, ids),
     closeAll: true,
+    actions: [{ label: "Go to statement", icon: "my_location", onSelect: goToStatement }],
   });
   const result = activeRun?.result ?? null;
   const error = activeRun?.error ?? null;
@@ -748,25 +790,30 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
           {/* One result tab per executed statement (only worth showing for a
               multi-statement run). Same design as the terminal's session tabs:
               click focuses that statement's outcome, the × closes it. The first
-              is focused after each run. */}
+              is focused after each run. A failed statement is badged with a red
+              cross (and a red title) so it stands out in a strip of ticks. */}
           {view !== "explain" && runs.length > 1 && !resultsMin ? (
             <div className="sqlres-tabs">
               {runs.map((r, i) => {
                 const active = r.id === activeRun?.id;
+                const failed = runFailed(r);
                 return (
                   <div
                     key={r.id}
-                    className={"sqlres-tab" + (active ? " active" : "")}
+                    className={"sqlres-tab" + (active ? " active" : "") + (failed ? " failed" : "")}
                     onClick={() => setActiveRun(tab.id, r.id)}
                     onContextMenu={(e) => resultMenu.onContextMenu(e, r.id)}
                     title={r.sql}
                   >
                     <Icon
-                      name={r.error ? "error" : "check_circle"}
+                      name={failed ? "cancel" : "check_circle"}
                       size={13}
-                      style={{ color: r.error ? "#e06c75" : "var(--accent)" }}
+                      style={{ color: failed ? "var(--error)" : "var(--accent)" }}
                     />
-                    <span className="sqlres-tab-title">Result {i + 1}</span>
+                    <span className="sqlres-tab-title">
+                      Result {i + 1}
+                      {failed ? " · failed" : null}
+                    </span>
                     <button
                       type="button"
                       className="sqlres-tab-close"
@@ -834,13 +881,24 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
                 />
               )}
             </>
-          ) : error ? (
+          ) : activeRun && runFailed(activeRun) ? (
             <>
               <div className="sql-result-bar error-bar" role="alert">
                 {minBtn}
-                <Icon name="error" size={14} style={{ color: "#e06c75" }} />
-                <span style={{ color: "#e06c75" }}>Query failed</span>
+                <Icon name="cancel" size={14} style={{ color: "var(--error)" }} />
+                <span style={{ color: "var(--error)" }}>Query failed</span>
                 <div style={{ flex: 1 }} />
+                {/* Jump the caret to the SQL that failed, so it can be fixed
+                    and re-run from the editor (⌘↩ on the caret's statement). */}
+                <Btn
+                  icon="my_location"
+                  variant="text"
+                  small
+                  onClick={() => goToStatement(activeRun.id)}
+                  title="Select this statement in the editor"
+                >
+                  Go to statement
+                </Btn>
                 <IconBtn
                   icon="close"
                   size={14}
@@ -850,10 +908,23 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
               </div>
               {resultsMin ? null : (
                 <div className="sql-error">
-                  <Icon name="error" size={18} />
+                  <Icon name="cancel" size={18} />
                   <div>
                     <div className="sql-error-title">Query failed</div>
-                    <div className="sql-error-msg">{error}</div>
+                    <div className="sql-error-msg">
+                      {error ?? "The statement returned no result."}
+                    </div>
+                    {/* Which statement failed — in a multi-statement run the
+                        tab number alone doesn't say, and the tooltip is easy
+                        to miss. Clicking it is the same jump as the bar's "Go
+                        to statement": the SQL is what a user reaches for. */}
+                    <button
+                      type="button"
+                      className="sql-error-stmt"
+                      title="Go to this statement in the editor"
+                      onClick={() => goToStatement(activeRun.id)}
+                      dangerouslySetInnerHTML={{ __html: previewHtml(activeRun.sql) }}
+                    />
                   </div>
                 </div>
               )}

@@ -189,16 +189,25 @@ export function statementRangeAt(doc: string, pos: number): StatementRange | nul
  * multi-statement string would otherwise error.
  */
 export function splitStatements(doc: string): string[] {
+  return statementRanges(doc).map((r) => doc.slice(r.from, r.to));
+}
+
+/**
+ * The same split as {@link splitStatements}, but as OFFSET RANGES into `doc`
+ * instead of strings — for pointing at a statement in the editor ("Go to
+ * statement" on a failed result tab) rather than running it.
+ */
+export function statementRanges(doc: string): StatementRange[] {
   const semis = topLevelSemicolons(doc);
-  const out: string[] = [];
+  const out: StatementRange[] = [];
   let start = 0;
   for (const s of semis) {
     const r = trim(doc, start, s + 1);
-    if (r.to > r.from) out.push(doc.slice(r.from, r.to));
+    if (r.to > r.from) out.push(r);
     start = s + 1;
   }
   const tail = trim(doc, start, doc.length);
-  if (tail.to > tail.from) out.push(doc.slice(tail.from, tail.to));
+  if (tail.to > tail.from) out.push(tail);
   return out;
 }
 

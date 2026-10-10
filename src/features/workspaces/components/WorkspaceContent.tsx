@@ -20,6 +20,7 @@ import { SchemaMap } from "../../schema_map/components/SchemaMap";
 import { selectPanel, shellLabel, usePanelStore } from "../../console/state";
 import { BTLogo } from "../../../shared/ui/BTLogo";
 import { Kbd } from "../../../shared/ui/Kbd";
+import { useLocale, useT } from "../../../shared/i18n/useT";
 import { useToast } from "../../../shared/ui/toastContext";
 import { useBtCmd } from "../../../shared/ui/btCmd";
 import { type SavedQuery } from "../../saved_queries/api";
@@ -185,6 +186,7 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
   // strip shows them under (ordinal included, so "trees (2)" is unambiguous).
   // `locale` in the deps: tabLabels reads t() at call time.
   const locale = useLocale();
+  const t = useT();
   const labels = useMemo(() => tabLabels(tabs, currentSchema), [tabs, currentSchema, locale]);
   const describe = (ids: string[]): UnsavedTab[] =>
     ids
@@ -228,7 +230,7 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
       setSqlSavedLink(activeTab.id, q.id);
     } else openSqlTabWith(q.sql, q.id);
     setSavedOpen(false);
-    toast(`Loaded “${q.name}”`, "ok");
+    toast(t("ws.sql.loaded", { name: q.name }), "ok");
   };
 
   // Only engines with a server process list (PROC_SOURCES) get the toggle.

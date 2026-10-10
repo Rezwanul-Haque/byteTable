@@ -1409,7 +1409,8 @@ function AddIndexForm({ columns, onAdd, onCancel }: AddIndexFormProps) {
         ))}
       </div>
       <label className="st-addform-row">
-        <Checkbox checked={unique} onChange={(e) => setUnique(e.target.checked)} /> Unique index
+        <Checkbox checked={unique} onChange={(e) => setUnique(e.target.checked)} />{" "}
+        {t("stv.uniqueIndex")}
       </label>
       <div className="st-addform-actions">
         <Btn variant="text" small onClick={onCancel}>

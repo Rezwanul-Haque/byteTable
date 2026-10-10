@@ -270,11 +270,11 @@ export function OpenDataFileSheet({ onClose, onOpen }: OpenDataFileSheetProps) {
               </div>
               <label className="csvo-check">
                 <Checkbox checked={header} onChange={(e) => setHeader(e.target.checked)} />
-                First row is a header
+                {t("dfile.headerRow")}
               </label>
               <label className="csvo-check">
                 <Checkbox checked={trim} onChange={(e) => setTrim(e.target.checked)} />
-                Trim whitespace
+                {t("dfile.trimWhitespace")}
               </label>
             </div>
 

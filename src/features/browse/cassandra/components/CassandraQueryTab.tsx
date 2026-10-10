@@ -246,8 +246,9 @@ export function CassandraQueryTab({ handleId, ks, tables }: CassandraQueryTabPro
                       style={{ color: failed ? "var(--error)" : "var(--accent)" }}
                     />
                     <span className="sqlres-tab-title">
-                      Result {i + 1}
-                      {failed ? " · failed" : null}
+                      {failed
+                        ? t("cass.query.resultFailedN", { n: i + 1 })
+                        : t("cass.query.resultN", { n: i + 1 })}
                     </span>
                     <button
                       type="button"
@@ -256,8 +257,8 @@ export function CassandraQueryTab({ handleId, ks, tables }: CassandraQueryTabPro
                         e.stopPropagation();
                         closeRun(r.id);
                       }}
-                      title="Close result"
-                      aria-label={`Close result ${i + 1}`}
+                      title={t("cass.query.closeResultN", { n: i + 1 })}
+                      aria-label={t("cass.query.closeResultN", { n: i + 1 })}
                     >
                       <Icon name="close" size={11} />
                     </button>
@@ -292,6 +293,7 @@ function CassRunResult({
   consistency: string;
   onGoTo: () => void;
 }) {
+  const t = useT();
   const r = run.result;
   // A failed statement (or one that came back with nothing): the §5 message and
   // the CQL that broke — click either it or the button to land on that
@@ -301,18 +303,18 @@ function CassRunResult({
       <div className="sql-error">
         <Icon name="cancel" size={18} />
         <div>
-          <div className="sql-error-title">Query error</div>
-          <div className="sql-error-msg">{run.error ?? "The statement returned no result."}</div>
+          <div className="sql-error-title">{t("cass.query.error")}</div>
+          <div className="sql-error-msg">{run.error ?? t("cass.query.noResult")}</div>
           <button
             type="button"
             className="sql-error-stmt"
-            title="Go to this statement in the editor"
+            title={t("cass.query.goToStmtHint")}
             onClick={onGoTo}
           >
             {run.cql}
           </button>
           <Btn icon="my_location" variant="text" small onClick={onGoTo}>
-            Go to statement
+            {t("cass.query.goToStmt")}
           </Btn>
         </div>
       </div>

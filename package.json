@@ -65,7 +65,7 @@
     "vite": "^6.3.5",
     "vitest": "^4.1.10"
   },
-  "packageManager": "pnpm@12.3.4",
+  "packageManager": "pnpm@10.17.0",
   "pnpm": {
     "onlyBuiltDependencies": [
       "electron"

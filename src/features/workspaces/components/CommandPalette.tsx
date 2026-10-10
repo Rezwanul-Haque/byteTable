@@ -142,7 +142,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
         id: "saved-" + q.id,
         icon: "bookmark",
         label: q.name,
-        hint: "saved query",
+        hint: t("ws.palette.savedHint"),
         run: () => openSqlTabWith(q.sql, q.id),
       }),
     );

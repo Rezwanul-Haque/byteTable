@@ -528,7 +528,7 @@ export function DataFileDataTab({
         </Btn>
         <label className="csvv-toggle">
           <Checkbox checked={markEmpty} onChange={(e) => setMarkEmpty(e.target.checked)} />
-          Mark empty cells
+          {t("dfile.markEmpty")}
         </label>
         <span className="csvv-bar-dim">
           {hidden.size

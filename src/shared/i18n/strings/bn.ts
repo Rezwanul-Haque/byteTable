@@ -109,5 +109,5 @@ export const bn: StringTable = {
   "set.lang.previewRows": "সারি সংখ্যা",
   "set.lang.dataNote": "শুধু ইন্টারফেস অনুবাদ হয় — আপনার স্কিমা, ডেটা ও SQL কখনও বদলানো হয় না।",
 
-  "set.rowsFound": "{count} সারি",
+  "set.rowsFound": "{count, plural, other {# সারি}}",
 };

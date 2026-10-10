@@ -107,5 +107,5 @@ export const ja: StringTable = {
   "set.lang.previewRows": "行数",
   "set.lang.dataNote": "翻訳されるのはUIだけです。スキーマ・データ・SQL は変更されません。",
 
-  "set.rowsFound": "{count} 行",
+  "set.rowsFound": "{count, plural, other {# 行}}",
 };

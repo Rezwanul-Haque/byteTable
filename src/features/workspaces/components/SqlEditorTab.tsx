@@ -594,7 +594,7 @@ export function SqlEditorTab({
    */
   const doSave = (asNew = false) => {
     const updating = !asNew && linked !== null;
-    const name = saveName.trim() || linked?.name || "Untitled query";
+    const name = saveName.trim() || linked?.name || t("ws.sql.untitled");
     const connectionId = attach ? workspace.saved.id : null;
     void saveQuery({
       id: updating ? linked.id : undefined,
@@ -607,10 +607,10 @@ export function SqlEditorTab({
         setSqlSavedLink(tab.id, stored.id);
         toast(
           updating
-            ? `Updated “${name}”`
+            ? t("ws.sql.updated", { name })
             : attach
-              ? `Saved “${name}” — attached to this workspace`
-              : `Saved “${name}” — shared across all workspaces`,
+              ? t("ws.sql.savedAttached", { name })
+              : t("ws.sql.savedGlobal", { name }),
           "ok",
         );
         setSaveName("");
@@ -659,7 +659,7 @@ export function SqlEditorTab({
     ids: runs.map((r) => r.id),
     close: (ids) => closeRuns(tab.id, ids),
     closeAll: true,
-    actions: [{ label: "Go to statement", icon: "my_location", onSelect: goToStatement }],
+    actions: [{ label: t("ws.sql.goToStmt"), icon: "my_location", onSelect: goToStatement }],
   });
   const result = activeRun?.result ?? null;
   const error = activeRun?.error ?? null;
@@ -745,9 +745,11 @@ export function SqlEditorTab({
             <div
               className="editor-pop save-pop"
               role="dialog"
-              aria-label={linked ? "Update saved query" : "Save query"}
+              aria-label={linked ? t("ws.sql.updateSavedQuery") : t("ws.sql.saveQuery")}
             >
-              <div className="history-pop-title">{linked ? "Update query" : "Save query"}</div>
+              <div className="history-pop-title">
+                {linked ? t("ws.sql.updateQuery") : t("ws.sql.saveQuery")}
+              </div>
               <input
                 className="save-pop-input"
                 placeholder={t("ws.sql.queryName")}
@@ -761,7 +763,7 @@ export function SqlEditorTab({
               />
               <label className="save-pop-attach">
                 <Checkbox checked={attach} onChange={(e) => setAttach(e.target.checked)} />
-                <span>Attach to this workspace</span>
+                <span>{t("ws.sql.attach")}</span>
               </label>
               <div className="save-pop-note">
                 {attach
@@ -774,11 +776,11 @@ export function SqlEditorTab({
               <div className="save-pop-actions">
                 {linked ? (
                   <Btn variant="text" small onClick={() => doSave(true)}>
-                    Save as new
+                    {t("ws.sql.saveAsNew")}
                   </Btn>
                 ) : null}
                 <Btn variant="filled" small onClick={() => doSave()}>
-                  {linked ? "Update" : "Save"}
+                  {linked ? t("ws.sql.update") : t("common.save")}
                 </Btn>
               </div>
             </div>
@@ -869,8 +871,9 @@ export function SqlEditorTab({
                       style={{ color: failed ? "var(--error)" : "var(--accent)" }}
                     />
                     <span className="sqlres-tab-title">
-                      Result {i + 1}
-                      {failed ? " · failed" : null}
+                      {failed
+                        ? t("ws.sql.resultFailedN", { n: i + 1 })
+                        : t("ws.sql.resultN", { n: i + 1 })}
                     </span>
                     <button
                       type="button"
@@ -944,7 +947,7 @@ export function SqlEditorTab({
               <div className="sql-result-bar error-bar" role="alert">
                 {minBtn}
                 <Icon name="cancel" size={14} style={{ color: "var(--error)" }} />
-                <span style={{ color: "var(--error)" }}>Query failed</span>
+                <span style={{ color: "var(--error)" }}>{t("ws.sql.queryFailedTitle")}</span>
                 <div style={{ flex: 1 }} />
                 {/* Jump the caret to the SQL that failed, so it can be fixed
                     and re-run from the editor (⌘↩ on the caret's statement). */}
@@ -953,9 +956,9 @@ export function SqlEditorTab({
                   variant="text"
                   small
                   onClick={() => goToStatement(activeRun.id)}
-                  title="Select this statement in the editor"
+                  title={t("ws.sql.selectStmtHint")}
                 >
-                  Go to statement
+                  {t("ws.sql.goToStmt")}
                 </Btn>
                 <IconBtn
                   icon="close"
@@ -968,10 +971,8 @@ export function SqlEditorTab({
                 <div className="sql-error">
                   <Icon name="cancel" size={18} />
                   <div>
-                    <div className="sql-error-title">Query failed</div>
-                    <div className="sql-error-msg">
-                      {error ?? "The statement returned no result."}
-                    </div>
+                    <div className="sql-error-title">{t("ws.sql.queryFailedTitle")}</div>
+                    <div className="sql-error-msg">{error ?? t("ws.sql.noResult")}</div>
                     {/* Which statement failed — in a multi-statement run the
                         tab number alone doesn't say, and the tooltip is easy
                         to miss. Clicking it is the same jump as the bar's "Go
@@ -979,7 +980,7 @@ export function SqlEditorTab({
                     <button
                       type="button"
                       className="sql-error-stmt"
-                      title="Go to this statement in the editor"
+                      title={t("ws.sql.goToStmtHint")}
                       onClick={() => goToStatement(activeRun.id)}
                       dangerouslySetInnerHTML={{ __html: previewHtml(activeRun.sql) }}
                     />

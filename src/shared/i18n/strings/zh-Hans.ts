@@ -17,6 +17,12 @@ export const zhHans: StringTable = {
   "common.page": "页",
   "common.allFiles": "所有文件",
 
+  // 标签条右键菜单（共享 hook：工作区、SQL 结果标签、终端）。
+  "tabs.closeOthers": "关闭其他",
+  "tabs.closeAll": "关闭全部",
+  "tabs.closeRight": "关闭右侧",
+  "tabs.closeLeft": "关闭左侧",
+
   "menu.file": "文件",
   "menu.edit": "编辑",
   "menu.view": "视图",
@@ -130,7 +136,7 @@ export const zhHans: StringTable = {
   "set.lang.dataNote": "仅界面会被翻译。您的结构、数据和 SQL 永不会被改写。",
   "set.lang.contribute": "缺少您的语言？每种语言只需一个文件 — 查看指南",
 
-  "set.rowsFound": "{count} 行",
+  "set.rowsFound": "{count, plural, other {# 行}}",
 
   // uix.* — shared/ui 界面元素：标题栏、快捷键表与共享小组件。
   "uix.titlebar.openTooltip": "ByteTable — 打开一个连接",
@@ -265,7 +271,7 @@ export const zhHans: StringTable = {
   // 行数状态标签（tabMeta.ts rowCountLabel）。
   "ws.rows.none": "— 行",
   "ws.rows.shown": "{shown} / {total} 行",
-  "ws.rows.count": "{count} 行",
+  "ws.rows.count": "{count, plural, other {# 行}}",
 
   // 连接屏幕（ConnectScreen.tsx）。
   "ws.connect.openedRename": "工作区“{name}”已打开 — 右键其磁贴可重命名或改色",
@@ -295,7 +301,7 @@ export const zhHans: StringTable = {
   "ws.palette.searchAria": "搜索命令",
   "ws.palette.noMatches": "无匹配项",
   "ws.palette.switchSchema": "切换结构：{name}",
-  "ws.palette.tablesHint": "{count} 张表",
+  "ws.palette.tablesHint": "{count, plural, other {# 张表}}",
   "ws.palette.newSql": "新建 SQL 查询",
   "ws.palette.openTerminal": "打开 {shell} 终端",
   "ws.palette.procHint": "查看并终止会话",
@@ -323,14 +329,15 @@ export const zhHans: StringTable = {
   "ws.unsaved.bodyCloseMany": "这些标签页有尚未写入数据库的更改。关闭将丢弃这些更改 — 无法撤销。",
   "ws.unsaved.bodyDiscardMany":
     "这些标签页有尚未写入数据库的更改。放弃后将重新从数据库读取每一行，并丢弃这些更改 — 无法撤销。",
-  "ws.unsaved.cleanNote": "此次操作中的其他 {count} 个标签页没有任何未保存的内容。",
+  "ws.unsaved.cleanNote":
+    "此次操作中的其他 {count, plural, other {# 个标签页}}没有任何未保存的内容。",
   "ws.unsaved.keepEditing": "继续编辑",
   "ws.unsaved.btnDiscardClose": "放弃并关闭",
   "ws.unsaved.btnDiscardCloseMany": "放弃并关闭 {count} 个标签页",
   "ws.unsaved.btnDiscardTabs": "放弃 {count} 个标签页的更改",
-  "ws.unsaved.editedRows": "{count} 行已编辑",
-  "ws.unsaved.newRows": "{count} 行新增",
-  "ws.unsaved.structureChanges": "{count} 处结构更改",
+  "ws.unsaved.editedRows": "{count, plural, other {# 行已编辑}}",
+  "ws.unsaved.newRows": "{count, plural, other {# 行新增}}",
+  "ws.unsaved.structureChanges": "{count, plural, other {# 处结构更改}}",
 
   // 状态栏（StatusBar.tsx）。
   "ws.status.schema": "结构：{schema}",
@@ -364,7 +371,7 @@ export const zhHans: StringTable = {
 
   // SQL 侧边栏（Sidebar.tsx）。
   "ws.sb.refreshFail": "无法刷新结构。",
-  "ws.sb.refreshed": "结构“{schema}”已刷新 — {count} 张表",
+  "ws.sb.refreshed": "结构“{schema}”已刷新 — {count, plural, other {# 张表}}",
   "ws.sb.schemaSwitchIcon": "结构：{schema} — 点击切换",
   "ws.sb.schemaSwitchIconAria": "切换结构（当前：{schema}）",
   "ws.sb.switcher": "切换器",
@@ -433,12 +440,18 @@ export const zhHans: StringTable = {
   "ws.sql.formatAria": "格式化 SQL",
   "ws.sql.saveTitle": "保存此查询",
   "ws.sql.saveQuery": "保存查询",
+  "ws.sql.updateSavedQuery": "更新已保存的查询",
+  "ws.sql.updateQuery": "更新查询",
+  "ws.sql.update": "更新",
+  "ws.sql.saveAsNew": "另存为新",
+  "ws.sql.updated": "已更新“{name}”",
   "ws.sql.queryName": "查询名称…",
   "ws.sql.attach": "附加到此工作区",
   "ws.sql.noteAttached": "仅在工作区 {name} 中可见",
   "ws.sql.noteGlobal": "在所有工作区共享",
   "ws.sql.savedQueries": "已保存的查询",
   "ws.sql.searchSaved": "搜索名称或 SQL…",
+  "ws.sql.clear": "清除",
   "ws.sql.emptySaved": "还没有保存任何内容 — 编写查询后点击书签按钮。",
   "ws.sql.noSavedMatch": "没有匹配“{query}”的已保存查询。",
   "ws.sql.scopeThis": "此工作区",
@@ -447,18 +460,24 @@ export const zhHans: StringTable = {
   "ws.sql.chipGlobal": "全局",
   "ws.sql.deleteAria": "删除 {name}",
   "ws.sql.historySub": "最近查询 · 本标签页",
+  "ws.sql.historyTitle": "查询历史",
   "ws.sql.emptyHistory": "暂无内容 — 运行查询后会显示在这里。",
   "ws.sql.queryOk": "查询成功",
   "ws.sql.failed": "失败",
   "ws.sql.resizeResults": "调整结果区大小",
   "ws.sql.dragResize": "拖动调整大小",
   "ws.sql.resultN": "结果 {n}",
+  "ws.sql.resultFailedN": "结果 {n} · 失败",
   "ws.sql.closeResult": "关闭结果",
   "ws.sql.closeResultN": "关闭结果 {n}",
   "ws.sql.results": "结果",
   "ws.sql.explainTab": "解释与分析",
   "ws.sql.queryN": "查询 {n}",
   "ws.sql.queryFailedTitle": "查询失败",
+  "ws.sql.noResult": "该语句未返回结果。",
+  "ws.sql.goToStmt": "跳转到语句",
+  "ws.sql.goToStmtHint": "在编辑器中跳转到此语句",
+  "ws.sql.selectStmtHint": "在编辑器中选中此语句",
   "ws.sql.dismissResults": "放弃结果",
   "ws.sql.closeResults": "关闭结果",
   "ws.sql.truncated": "（已截断）",
@@ -483,7 +502,7 @@ export const zhHans: StringTable = {
   "ws.grid.dblClickEdit": "双击编辑",
   "ws.grid.editCol": "编辑 {name}",
   "ws.grid.copyCol": "复制 {name} 值",
-  "ws.grid.exported": "已导出 {count} 行到 CSV",
+  "ws.grid.exported": "已导出 {count, plural, other {# 行}}到 CSV",
   "ws.grid.exportFail": "无法导出 CSV",
 
   // 表格标签页工具栏（TableTab.tsx）。
@@ -2560,8 +2579,12 @@ export const zhHans: StringTable = {
   "cass.query.resizeEditor": "调整编辑器大小",
   "cass.query.dragToResize": "拖动调整大小",
   "cass.query.resultN": "结果 {n}",
+  "cass.query.resultFailedN": "结果 {n} · 失败",
   "cass.query.closeResultN": "关闭结果 {n}",
   "cass.query.error": "查询错误",
+  "cass.query.noResult": "该语句未返回结果。",
+  "cass.query.goToStmt": "跳转到语句",
+  "cass.query.goToStmtHint": "在编辑器中跳转到此语句",
   "cass.query.usingKeyspace": "当前使用键空间 {ks}",
   "cass.query.selectedCount": "已选 {count} 项",
   "cass.query.exportCsv": "导出 CSV",

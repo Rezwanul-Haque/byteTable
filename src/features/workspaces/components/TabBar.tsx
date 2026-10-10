@@ -208,8 +208,8 @@ export function TabBar({
           <button
             type="button"
             className={"tabbar-tool tabbar-tool-icon" + (savedQueriesOpen ? " active" : "")}
-            title="Saved queries"
-            aria-label="Saved queries"
+            title={t("ws.sql.savedQueries")}
+            aria-label={t("ws.sql.savedQueries")}
             aria-pressed={savedQueriesOpen}
             onClick={onOpenSavedQueries}
           >

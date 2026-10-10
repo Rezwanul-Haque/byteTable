@@ -61,11 +61,14 @@ body.bt-sidebar-right .ddb-sidebar {
   min-height: 0;
 }
 
-/* Dev-only gallery overlay (⌘⇧G) — sits over the whole shell. */
+/* Dev-only gallery overlay (⌘⇧G) — sits over the whole shell (the title bar is
+   positioned but has no z-index, so 49 still covers it), and just UNDER the
+   modal scrim (50): modals portal to <body>, so the gallery's own modal sample
+   would otherwise be painted behind this opaque backdrop. */
 .dev-gallery-overlay {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: 49;
   overflow: auto;
   background: var(--bg0);
 }

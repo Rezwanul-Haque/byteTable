@@ -95,7 +95,11 @@ export function FkTargetNote({
       <span className="fk-target-ref">
         References <code>{target}</code>
       </span>
-      {!checkable ? null : state === null ? (
+      {!checkable ? (
+        // Nothing to look up yet (empty input, or no connection): say what the
+        // rule IS, so the editor is never silent about why it won't generate.
+        <span className="fk-target-state">must already exist</span>
+      ) : state === null ? (
         <span className="fk-target-state">checking…</span>
       ) : (
         <span className={"fk-target-state" + (state.kind === "found" ? " ok" : " err")}>

@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { CellValue, FkRef } from "../../../../shared/api/engine";
 import { Btn } from "../../../../shared/ui/Btn";
+import { CopyButton } from "../../../../shared/ui/CopyButton";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { Modal, ModalActions } from "../../../../shared/ui/Modal";
@@ -119,17 +120,28 @@ export function UuidEditorModal({
         <span className="binary-label">
           Value <span className="binary-sub">canonical 8-4-4-4-12 {label}</span>
         </span>
-        <input
-          ref={inputRef}
-          className={"binary-input" + (valid ? "" : " err")}
-          value={text}
-          spellCheck={false}
-          autoCapitalize="off"
-          readOnly={readOnly}
-          placeholder="b1e7a4c2-3f9d-4a1e-8c77-2d5f6a0b9e34"
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={onKey}
-        />
+        {/* A button inside a <label> is interactive content, so clicking it
+            copies without the label forwarding the click to the input. */}
+        <span className="binary-input-wrap">
+          <input
+            ref={inputRef}
+            className={"binary-input" + (valid ? "" : " err")}
+            value={text}
+            spellCheck={false}
+            autoCapitalize="off"
+            readOnly={readOnly}
+            placeholder="b1e7a4c2-3f9d-4a1e-8c77-2d5f6a0b9e34"
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={onKey}
+          />
+          {empty ? null : (
+            <CopyButton
+              className="binary-copy"
+              label={"Copy " + column + " value"}
+              text={trimmed}
+            />
+          )}
+        </span>
       </label>
 
       {fk ? (
@@ -164,10 +176,9 @@ export function UuidEditorModal({
           <>
             {/* A foreign key has nothing to generate — it has to be a key the
                 parent table already holds, so the generator is left out rather
-                than offering a value that cannot be right. */}
-            {fk ? (
-              <span className="json-hint">Must match an existing {fk.table} row</span>
-            ) : (
+                than offering a value that cannot be right. The note above says
+                so, which keeps this row from wrapping in a narrow panel. */}
+            {fk ? null : (
               <>
                 <button
                   type="button"

@@ -314,6 +314,17 @@
   font-size: 10.5px;
   margin-left: 6px;
 }
+/* Holds the input + its copy button (which overlays the input's right end). */
+.binary-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.binary-input-wrap .binary-input {
+  flex: 1;
+  min-width: 0;
+  padding-right: 38px;
+}
 .binary-input {
   background: var(--bg0);
   border: 1px solid var(--border);
@@ -344,7 +355,8 @@
   padding: 6px 12px;
   font-size: 11.5px;
 }
-.binary-repr-row span {
+/* Direct child only: the copy button's icon is a <span> too. */
+.binary-repr-row > span {
   width: 86px;
   flex: none;
   color: var(--text-faint);
@@ -356,6 +368,50 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ---- copy buttons inside the key editors ----
+   The grid's hover-reveal copy, brought to the binary / UUID modals: every
+   value the editor shows (the input, and each representation row) can be
+   lifted to the clipboard from where it is READ. Faint at rest rather than
+   fully hidden — a modal has no row to hover first, so an invisible control
+   would never be found. */
+.binary-copy {
+  position: absolute;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  opacity: 0.55;
+  transition:
+    opacity 0.1s,
+    color 0.1s,
+    background 0.1s;
+}
+.binary-input-wrap:hover .binary-copy,
+.binary-input-wrap:focus-within .binary-copy,
+.binary-repr-row:hover .binary-copy {
+  opacity: 1;
+}
+.binary-copy:hover {
+  color: var(--text);
+  background: var(--bg3);
+}
+/* In a representation row the button sits at the end of the flex line, not
+   over an input. */
+.binary-repr-row .binary-copy {
+  position: static;
+  margin-left: auto;
+  width: 20px;
+  height: 20px;
 }
 
 /* ---- FK target note (binary / UUID editors on a foreign-key column) ---- */

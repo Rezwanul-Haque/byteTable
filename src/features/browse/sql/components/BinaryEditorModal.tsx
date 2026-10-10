@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { CellValue, FkRef } from "../../../../shared/api/engine";
 import { Btn } from "../../../../shared/ui/Btn";
+import { CopyButton } from "../../../../shared/ui/CopyButton";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { Modal, ModalActions } from "../../../../shared/ui/Modal";
@@ -122,27 +123,51 @@ export function BinaryEditorModal({
         <span className="binary-label">
           Value <span className="binary-sub">UUID or 0x-hex · {expect} bytes</span>
         </span>
-        <input
-          ref={inputRef}
-          className={"binary-input" + (res.ok ? "" : " err")}
-          value={text}
-          spellCheck={false}
-          autoCapitalize="off"
-          readOnly={readOnly}
-          placeholder="b1e7a4c2-3f9d-4a1e-8c77-2d5f6a0b9e34"
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={onKey}
-        />
+        {/* A button inside a <label> is interactive content, so clicking it
+            copies without the label forwarding the click to the input. */}
+        <span className="binary-input-wrap">
+          <input
+            ref={inputRef}
+            className={"binary-input" + (res.ok ? "" : " err")}
+            value={text}
+            spellCheck={false}
+            autoCapitalize="off"
+            readOnly={readOnly}
+            placeholder="b1e7a4c2-3f9d-4a1e-8c77-2d5f6a0b9e34"
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={onKey}
+          />
+          {text.trim() ? (
+            <CopyButton
+              className="binary-copy"
+              label={"Copy " + column + " value"}
+              text={text.trim()}
+            />
+          ) : null}
+        </span>
       </label>
 
+      {/* Both representations are copyable: a query against the column wants
+          the stored bytes, a log line or an API call wants the UUID. */}
       <div className="binary-repr">
         <div className="binary-repr-row">
           <span>UUID</span>
           <code>{uuidRepr}</code>
+          {res.ok && !res.empty && res.uuid ? (
+            <CopyButton className="binary-copy" label="Copy UUID" text={res.uuid} size={11} />
+          ) : null}
         </div>
         <div className="binary-repr-row">
           <span>Stored bytes</span>
           <code>{bytesRepr}</code>
+          {res.ok && !res.empty ? (
+            <CopyButton
+              className="binary-copy"
+              label="Copy stored bytes"
+              text={bytesRepr}
+              size={11}
+            />
+          ) : null}
         </div>
       </div>
 
@@ -173,10 +198,9 @@ export function BinaryEditorModal({
           <>
             {/* A foreign key has nothing to generate — it has to be a key the
                 parent table already holds, so the control is left out rather
-                than offering a value that cannot be right. */}
-            {fk ? (
-              <span className="json-hint">Must match an existing {fk.table} row</span>
-            ) : (
+                than offering a value that cannot be right. The note above says
+                so, which keeps this row from wrapping in a narrow panel. */}
+            {fk ? null : (
               <>
                 <button
                   type="button"

@@ -5,7 +5,16 @@
 // modal (module-level stack registry: push on mount, pop on unmount).
 // Focus is trapped inside the top-most panel (Tab/Shift+Tab wrap) and
 // restored to the previously focused element on unmount.
+//
+// The scrim is PORTALED to <body>. `position: fixed` resolves against the
+// nearest transformed ancestor, not the viewport — so a modal opened from
+// inside the row-inspector drawer (which slides in on `transform:
+// translateX()`) would otherwise take the drawer's 420px box as its window:
+// the scrim dims only the drawer and the panel, being wider, hangs over its
+// edges. The portal keeps every modal centered on the window wherever it is
+// opened from.
 
+import { createPortal } from "react-dom";
 import { useEffect, useId, useRef, type ReactNode, type RefObject } from "react";
 
 import "./Modal.css";
@@ -118,7 +127,7 @@ export function Modal({ children, onClose, label, width, className, initialFocus
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
 
-  return (
+  return createPortal(
     <div
       className="modal-scrim"
       onMouseDown={(e) => {
@@ -145,7 +154,8 @@ export function Modal({ children, onClose, label, width, className, initialFocus
         ) : null}
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

@@ -12,6 +12,7 @@
 // NOTHING here touches the database. `boardDdl` returns text; the DDL sheet
 // shows it, copies it, or opens it in a SQL tab for the user to run.
 
+import { t } from "../../shared/i18n";
 import type { BoardColumn, BoardDoc, LiveSchema, TableObject } from "./model";
 import { boardTables } from "./model";
 
@@ -162,8 +163,10 @@ export function tableStateLabel(
   table: TableObject,
   status: "create" | "changed" | undefined,
 ): string {
-  if (table.origin === "live") return status === "changed" ? "live · changed" : "live";
-  if (status === "create") return "draft · new";
-  if (status === "changed") return "draft · alter";
-  return "draft";
+  if (table.origin === "live") {
+    return status === "changed" ? t("board.table.liveChanged") : t("board.table.live");
+  }
+  if (status === "create") return t("board.table.draftNew");
+  if (status === "changed") return t("board.table.draftAlter");
+  return t("board.table.draft");
 }

@@ -15,6 +15,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 
 import { Icon } from "../../../shared/ui/Icon";
 import { useToast } from "../../../shared/ui/toastContext";
+import { useT } from "../../../shared/i18n/useT";
 import { boardDdl, diffBoard, diffInfoOf, EMPTY_DIFF, EMPTY_DIFF_INFO } from "../diff";
 import {
   addObject,
@@ -53,7 +54,7 @@ import {
 import { singular } from "../naming";
 import { loadBoard } from "../persist";
 import { emptyBoard, SAMPLE_LIVE, seedBoard } from "../seed";
-import { TOOL_GROUPS, TOOL_KEYS, TOOL_LAYER, type ToolId } from "../tools";
+import { TOOL_GROUPS, TOOL_KEYS, TOOL_LAYER, type ToolId, type ToolSpec } from "../tools";
 import { defaultBoardViewState, readBoardViewState, writeBoardViewState } from "../viewState";
 import { useBoardDoc } from "../hooks/useBoardDoc";
 import { useBoardLive } from "../hooks/useBoardLive";
@@ -100,6 +101,7 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
     onOpenInSql,
   } = props;
   const toast = useToast();
+  const t = useT();
 
   // Seeded from what this tab was last left at (the workspace unmounts an
   // inactive tab), else the board's defaults.
@@ -285,7 +287,7 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
           kind,
           x: x - 75,
           y: y - 30,
-          name: FLOW_KINDS[kind].label,
+          name: t(FLOW_KINDS[kind].labelKey),
           detail: "",
         };
       }
@@ -297,7 +299,7 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
       if (activeLayer !== "all" && activeLayer !== object.layer) setActiveLayer(object.layer);
       if (isEditable(object)) setEditingId(object.id, true);
     },
-    [activeLayer, addAndSelect, setEditingId],
+    [activeLayer, addAndSelect, setEditingId, t],
   );
 
   /**
@@ -315,7 +317,7 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
       if (a.type === "table" && b.type === "table") {
         const column = singular(b.name) + "_id";
         if (a.columns.some((c) => c.name === column)) {
-          toast(a.name + " already references " + b.name, "info");
+          toast(t("board.toast.alreadyReferences", { from: a.name, to: b.name }), "info");
           return;
         }
         apply((d) =>
@@ -326,7 +328,7 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
             ],
           }),
         );
-        toast("Added " + a.name + "." + column + " → " + b.name, "ok");
+        toast(t("board.toast.fkAdded", { from: a.name, column, to: b.name }), "ok");
         return;
       }
       if (current.edges.some((e) => e.from === from && e.to === to)) return;
@@ -335,7 +337,7 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
       setSelection({ ids: [], edge: id });
       setToolRaw("select");
     },
-    [apply, docRef, toast],
+    [apply, docRef, toast, t],
   );
 
   const onPromote = useCallback(
@@ -373,12 +375,15 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
       if (activeLayer !== "all") setActiveLayer("schema");
       setSelection({ ids: [id], edge: null });
       toast(
-        `Promoted “${sketch.title}” to draft table ${name} (${preview.columns.length} columns). ` +
-          "Check the types in the inspector",
+        t("board.toast.promoted", {
+          title: sketch.title,
+          name,
+          count: preview.columns.length,
+        }),
         "ok",
       );
     },
-    [activeLayer, apply, docRef, live, sizes, toast],
+    [activeLayer, apply, docRef, live, sizes, toast, t],
   );
 
   /**
@@ -394,7 +399,7 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
         if (!current.edges.some((e) => e.id === target.id)) return;
         apply((d) => removeEdge(d, target.id));
         setSelection((s) => (s.edge === target.id ? { ids: s.ids, edge: null } : s));
-        toast("Edge removed · ⌘Z to undo", "ok");
+        toast(t("board.toast.edgeRemoved"), "ok");
         return;
       }
       const ids =
@@ -417,12 +422,12 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
       setEditingIdRaw((id) => (id && removed.has(id) ? null : id));
       if (target.kind === "group") {
         const name = current.groups.find((g) => g.id === target.id)?.name ?? "Group";
-        toast(`Removed “${name}” and its ${ids.length} objects · ⌘Z to undo`, "ok");
+        toast(t("board.toast.groupRemoved", { name, count: ids.length }), "ok");
       } else {
-        toast(`${objectLabel(current.objects[ids[0]!]!)} removed · ⌘Z to undo`, "ok");
+        toast(t("board.toast.removed", { what: objectLabel(current.objects[ids[0]!]!) }), "ok");
       }
     },
-    [apply, docRef, toast],
+    [apply, docRef, toast, t],
   );
 
   const onJump = useCallback(
@@ -544,22 +549,22 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
     (ids?: string[]) => {
       const target = (ids ?? selection.ids).filter((id) => docRef.current.objects[id]);
       if (target.length < 2) {
-        toast("Select two or more objects to group them", "info");
+        toast(t("board.toast.needTwo"), "info");
         return;
       }
       apply((d) => groupObjects(d, target));
       setSelection({ ids: target, edge: null });
-      toast("Grouped " + target.length + " objects. Rename it in the inspector", "ok");
+      toast(t("board.toast.grouped", { count: target.length }), "ok");
     },
-    [apply, docRef, selection.ids, toast],
+    [apply, docRef, selection.ids, toast, t],
   );
 
   const ungroupSelection = useCallback(() => {
     const touched = groupsTouching(docRef.current, selection.ids);
     if (touched.length === 0) return;
     apply((d) => touched.reduce((acc, g) => ungroup(acc, g.id), d));
-    toast("Ungrouped " + touched.map((g) => g.name).join(", "), "ok");
-  }, [apply, docRef, selection.ids, toast]);
+    toast(t("board.toast.ungroupedNamed", { groups: touched.map((g) => g.name).join(", ") }), "ok");
+  }, [apply, docRef, selection.ids, toast, t]);
 
   const focusGroup = useCallback(
     (groupId: string) => {
@@ -618,7 +623,7 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
       }
       ids = ids.filter((id) => doc.objects[id]);
       if (ids.length === 0) {
-        toast("Nothing to export", "info");
+        toast(t("board.toast.nothingToExport"), "info");
         return;
       }
       // Re-render the canvas scoped to the export BEFORE capturing, then give
@@ -646,20 +651,25 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
         });
         if (result.status === "ok") {
           toast(
-            `Exported “${name}” · ${result.count} objects · ${format.toUpperCase()} → ${result.file}`,
+            t("board.toast.exported", {
+              name,
+              count: result.count,
+              format: format.toUpperCase(),
+              file: result.file,
+            }),
             "ok",
           );
         } else if (result.status === "failed") {
-          toast("Export failed: " + result.message, "err");
+          toast(t("board.toast.exportFailed", { message: result.message }), "err");
         } else if (result.status === "no-dialog") {
-          toast("Image export needs the desktop app", "info");
+          toast(t("board.toast.exportNeedsDesktop"), "info");
         }
       } finally {
         // Always restore the live view, whatever happened.
         setExporting(null);
       }
     },
-    [activeLayer, doc, selection.ids, sizes, toast],
+    [activeLayer, doc, selection.ids, sizes, toast, t],
   );
 
   // --- keyboard --------------------------------------------------------
@@ -796,7 +806,7 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
     fitted.current = false;
     writeBoardViewState(tabId, { fitted: false });
     setSizes({});
-    toast("Loaded the menu-service example · ⌘Z to undo", "ok");
+    toast(t("board.toast.exampleLoaded"), "ok");
   };
 
   /** Back to a blank canvas. Also undoable. */
@@ -804,7 +814,7 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
     replace(emptyBoard(schemaName));
     setSelection({ ids: [], edge: null });
     setLiveSource("workspace");
-    toast("Board cleared · ⌘Z to undo", "ok");
+    toast(t("board.toast.cleared"), "ok");
   };
 
   const patchGroup = (
@@ -843,8 +853,8 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
                   type="button"
                   key={item.id}
                   className={"bb-tool" + (tool === item.id ? " on" : "")}
-                  title={item.label + (item.key ? " (" + item.key + ")" : "")}
-                  aria-label={item.label}
+                  title={t(item.labelKey) + (item.key ? " (" + item.key + ")" : "")}
+                  aria-label={t(item.labelKey)}
                   aria-pressed={tool === item.id}
                   onClick={() => setTool(item.id)}
                 >
@@ -863,8 +873,8 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
                 className={inkColor === color ? "on" : undefined}
                 style={{ background: color }}
                 onClick={() => setInkColor(color)}
-                title="Ink colour"
-                aria-label={"Ink colour " + color}
+                title={t("board.ink.colour")}
+                aria-label={t("board.ink.colourNamed", { colour: color })}
               />
             ))}
           </div>
@@ -908,17 +918,20 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
           <div className="bb-blank">
             <div className="bb-blank-card">
               <Icon name="draw" size={24} />
-              <h2>Nothing on the board yet</h2>
+              <h2>{t("board.empty.title")}</h2>
               <p>
-                Pick a tool on the left and click the canvas — notes and sketches on <b>Domain</b>,
-                data movement on <b>Flow</b>, draft tables on <b>Schema</b>. A sketch becomes a real
-                table, and the board diffs against {schemaName}.
+                {t("board.empty.body", {
+                  domain: t("board.layer.domain"),
+                  flow: t("board.layer.flow"),
+                  schema: t("board.layer.schema"),
+                  target: schemaName,
+                })}
               </p>
               <button type="button" className="bb-btn pri" onClick={onLoadSample}>
                 <Icon name="auto_awesome" size={14} />
-                Load the example board
+                {t("board.empty.loadExample")}
               </button>
-              <span>A worked menu service across all three layers. ⌘Z undoes it.</span>
+              <span>{t("board.empty.exampleHint")}</span>
             </div>
           </div>
         ) : null}
@@ -930,10 +943,10 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
               key={layer.id}
               className={"bb-layer" + (activeLayer === layer.id ? " on" : "")}
               onClick={() => setActiveLayer(layer.id)}
-              title={`Focus the ${layer.label} layer (${index + 1})`}
+              title={t("board.layer.focusTitle", { layer: t(layer.labelKey), key: index + 1 })}
             >
               <i style={{ background: layer.color }} />
-              {layer.label}
+              {t(layer.labelKey)}
               <em>{counts[layer.id] ?? 0}</em>
             </button>
           ))}
@@ -941,29 +954,29 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
             type="button"
             className={"bb-layer" + (activeLayer === "all" ? " on" : "")}
             onClick={() => setActiveLayer("all")}
-            title="Show every layer (0)"
+            title={t("board.layer.allTitle")}
           >
             <Icon name="layers" size={14} />
-            All
+            {t("board.layer.all")}
           </button>
         </div>
 
         <div className="bb-zoom">
-          <button type="button" onClick={undo} title="Undo (⌘Z)" disabled={!canUndo}>
+          <button type="button" onClick={undo} title={t("board.zoom.undo")} disabled={!canUndo}>
             <Icon name="undo" size={16} />
           </button>
-          <button type="button" onClick={redo} title="Redo (⇧⌘Z)" disabled={!canRedo}>
+          <button type="button" onClick={redo} title={t("board.zoom.redo")} disabled={!canRedo}>
             <Icon name="redo" size={16} />
           </button>
           <span className="bb-zsep" />
-          <button type="button" onClick={() => zoomBy(1 / 1.2)} title="Zoom out">
+          <button type="button" onClick={() => zoomBy(1 / 1.2)} title={t("board.zoom.out")}>
             <Icon name="remove" size={16} />
           </button>
           <span className="bb-zpct">{Math.round(view.k * 100)}%</span>
-          <button type="button" onClick={() => zoomBy(1.2)} title="Zoom in">
+          <button type="button" onClick={() => zoomBy(1.2)} title={t("board.zoom.in")}>
             <Icon name="add" size={16} />
           </button>
-          <button type="button" onClick={() => fit()} title="Fit to screen">
+          <button type="button" onClick={() => fit()} title={t("board.zoom.fit")}>
             <Icon name="fit_screen" size={16} />
           </button>
           <span className="bb-zsep" />
@@ -971,7 +984,7 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
             type="button"
             onPointerDown={(e) => e.stopPropagation()}
             onClick={() => setExportMenu((open) => !open)}
-            title="Export image"
+            title={t("board.export.title")}
             className={exportMenu ? "on" : undefined}
             disabled={!!exporting}
           >
@@ -980,7 +993,7 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
           <button
             type="button"
             onClick={() => setInspectorOpen((open) => !open)}
-            title={inspectorOpen ? "Hide inspector" : "Show inspector"}
+            title={inspectorOpen ? t("board.zoom.hideInspector") : t("board.zoom.showInspector")}
             className={inspectorOpen ? "on" : undefined}
           >
             <Icon name={inspectorOpen ? "right_panel_close" : "right_panel_open"} size={16} />
@@ -989,11 +1002,11 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
 
         {exportMenu ? (
           <div className="bb-export" onPointerDown={(e) => e.stopPropagation()}>
-            <div className="bb-export-h">Export image</div>
+            <div className="bb-export-h">{t("board.export.title")}</div>
             {[
               {
                 target: { kind: "board" } as ExportTarget,
-                label: "Whole board",
+                label: t("board.export.wholeBoard"),
                 icon: "dashboard",
                 n: Object.keys(doc.objects).length,
               },
@@ -1001,7 +1014,9 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
                 ? [
                     {
                       target: { kind: "layer" } as ExportTarget,
-                      label: LAYER_BY_ID[activeLayer].label + " layer",
+                      label: t("board.export.layer", {
+                        layer: t(LAYER_BY_ID[activeLayer].labelKey),
+                      }),
                       icon: "layers",
                       n: counts[activeLayer] ?? 0,
                     },
@@ -1011,7 +1026,7 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
                 ? [
                     {
                       target: { kind: "selection" } as ExportTarget,
-                      label: "Selection",
+                      label: t("board.export.selection"),
                       icon: "select_all",
                       n: selection.ids.length,
                     },
@@ -1032,7 +1047,7 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
             ))}
             {doc.groups.length > 0 ? (
               <div className="bb-export-h" style={{ marginTop: 4 }}>
-                Groups
+                {t("board.sec.groups")}
               </div>
             ) : null}
             {doc.groups.map((group) => (
@@ -1054,9 +1069,7 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
                 </button>
               </div>
             ))}
-            <div className="bb-export-foot">
-              PNG at 2× · every layer drawn at full strength · selection outlines left out
-            </div>
+            <div className="bb-export-foot">{t("board.export.foot")}</div>
           </div>
         ) : null}
 
@@ -1064,15 +1077,15 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
           <div className="bb-diffbar">
             <Icon name="difference" size={15} style={{ color: "var(--accent)" }} />
             <span className="bb-diff-l">
-              vs <b>{liveLabel}</b>
+              {t("board.diff.vs")} <b>{liveLabel}</b>
             </span>
             <span>
               <i className="bb-dot" style={{ background: "var(--accent)" }} />
-              <b>+{diff.creates.length}</b> new
+              <b>+{diff.creates.length}</b> {t("board.diff.new")}
             </span>
             <span>
               <i className="bb-dot" style={{ background: "var(--warn)" }} />
-              <b>~{diff.alters.length}</b> changed
+              <b>~{diff.alters.length}</b> {t("board.diff.changed")}
             </span>
             <button
               type="button"
@@ -1081,7 +1094,7 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
               onClick={() => setDdlOpen(true)}
             >
               <Icon name="code" size={14} />
-              Generate DDL
+              {t("board.diff.generate")}
             </button>
           </div>
         ) : null}
@@ -1108,7 +1121,7 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
           onGroup={groupSelection}
           onUngroup={(groupId) => {
             apply((d) => ungroup(d, groupId));
-            toast("Ungrouped", "ok");
+            toast(t("board.toast.ungrouped"), "ok");
           }}
           patchGroup={patchGroup}
           onExport={(target, format) => void exportImage(target, format)}
@@ -1146,7 +1159,7 @@ function FlowFlyout({
   open,
   setOpen,
 }: {
-  items: { id: ToolId; icon: string; label: string }[];
+  items: readonly ToolSpec[];
   flowKind: ToolId;
   setFlowKind: (id: ToolId) => void;
   tool: ToolId;
@@ -1154,6 +1167,7 @@ function FlowFlyout({
   open: boolean;
   setOpen: (open: boolean | ((open: boolean) => boolean)) => void;
 }) {
+  const t = useT();
   const current = items.find((i) => i.id === flowKind) ?? items[0];
   if (!current) return null;
   const active = tool in FLOW_KINDS;
@@ -1163,8 +1177,8 @@ function FlowFlyout({
       <button
         type="button"
         className={"bb-tool" + (active ? " on" : "")}
-        title={"Flow node: " + current.label + " (G) · click again for other kinds"}
-        aria-label={"Flow node: " + current.label}
+        title={t("board.flow.flyoutTitle", { kind: t(current.labelKey) })}
+        aria-label={t("board.flow.flyoutAria", { kind: t(current.labelKey) })}
         aria-expanded={open}
         style={{ color: active ? undefined : kindColor(current.id) }}
         onClick={() => {
@@ -1189,7 +1203,7 @@ function FlowFlyout({
               }}
             >
               <Icon name={item.icon} size={15} style={{ color: kindColor(item.id) }} />
-              {item.label}
+              {t(item.labelKey)}
             </button>
           ))}
         </div>

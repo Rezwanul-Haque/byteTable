@@ -18,11 +18,17 @@
 // The board NEVER writes to the database: `diff.ts` generates DDL that the user
 // reviews and runs themselves.
 
-/** The three layers, in switcher order. `1`/`2`/`3` select them; `0` = All. */
+import { t, type StringKey } from "../../shared/i18n";
+
+/** The three layers, in switcher order. `1`/`2`/`3` select them; `0` = All.
+ *
+ *  `labelKey`, not `label`: this is module-level data, so a baked-in string
+ *  would be resolved once at import and never follow a language switch. Render
+ *  sites call `t(labelKey)` instead, which reads the live locale. */
 export const LAYERS = [
-  { id: "domain", label: "Domain", color: "#f2d675", icon: "sticky_note_2" },
-  { id: "flow", label: "Flow", color: "#c792ea", icon: "alt_route" },
-  { id: "schema", label: "Schema", color: "#2dd4a7", icon: "table_view" },
+  { id: "domain", labelKey: "board.layer.domain", color: "#f2d675", icon: "sticky_note_2" },
+  { id: "flow", labelKey: "board.layer.flow", color: "#c792ea", icon: "alt_route" },
+  { id: "schema", labelKey: "board.layer.schema", color: "#2dd4a7", icon: "table_view" },
 ] as const;
 
 /** A layer id, or `"all"` when nothing is isolated. */
@@ -38,10 +44,10 @@ export const LAYER_BY_ID: Record<LayerId, (typeof LAYERS)[number]> = {
 
 /** The four kinds of flow node, in flyout order. */
 export const FLOW_KINDS = {
-  source: { label: "Source", icon: "input", color: "#61afef" },
-  process: { label: "Process", icon: "memory", color: "#c792ea" },
-  store: { label: "Store", icon: "database", color: "#2dd4a7" },
-  sink: { label: "Sink", icon: "output", color: "#e2b340" },
+  source: { labelKey: "board.flow.source", icon: "input", color: "#61afef" },
+  process: { labelKey: "board.flow.process", icon: "memory", color: "#c792ea" },
+  store: { labelKey: "board.flow.store", icon: "database", color: "#2dd4a7" },
+  sink: { labelKey: "board.flow.sink", icon: "output", color: "#e2b340" },
 } as const;
 
 export type FlowKindId = keyof typeof FLOW_KINDS;
@@ -63,6 +69,16 @@ export type StickyColorId = keyof typeof STICKY_COLORS;
 /** What a sticky is FOR — printed as its eyebrow and picked in the inspector. */
 export const STICKY_TAGS = ["note", "question", "risk", "decision", "idea"] as const;
 export type StickyTag = (typeof STICKY_TAGS)[number];
+
+/** Tag → its label key. A lookup rather than `"board.stickyTag." + tag`, so the
+ *  key set stays statically checkable against the English table. */
+export const STICKY_TAG_KEYS: Record<StickyTag, StringKey> = {
+  note: "board.stickyTag.note",
+  question: "board.stickyTag.question",
+  risk: "board.stickyTag.risk",
+  decision: "board.stickyTag.decision",
+  idea: "board.stickyTag.idea",
+};
 
 /** Column types offered in the inspector's type select. A column whose type
  *  came from a live table and is not in this list is prepended to the options,
@@ -224,21 +240,21 @@ export function isEditable(object: BoardObject): boolean {
 export function objectLabel(object: BoardObject): string {
   switch (object.type) {
     case "sticky":
-      return "Sticky note";
+      return t("board.obj.sticky");
     case "text":
-      return object.text.split("\n")[0]?.trim() || "Text";
+      return object.text.split("\n")[0]?.trim() || t("board.obj.text");
     case "frame":
-      return object.label || "Frame";
+      return object.label || t("board.obj.frame");
     case "sketch":
-      return object.title || "Sketch";
+      return object.title || t("board.obj.sketch");
     case "snippet":
-      return object.title || "Sample data";
+      return object.title || t("board.obj.snippet");
     case "ink":
-      return "Ink stroke";
+      return t("board.obj.ink");
     case "flow":
-      return object.name || "Flow node";
+      return object.name || t("board.obj.flow");
     case "table":
-      return object.name || "Table";
+      return object.name || t("board.obj.table");
   }
 }
 

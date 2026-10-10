@@ -40,6 +40,7 @@ import {
 } from "react";
 
 import { Icon } from "../../../shared/ui/Icon";
+import { useT } from "../../../shared/i18n/useT";
 import type { BoardDiffInfo } from "../diff";
 import { tableStateLabel } from "../diff";
 import { boxOf, clampZoom, edgePath, inkPath, unionBox, volumeWidth } from "../geometry";
@@ -157,6 +158,7 @@ export function BoardCanvas(props: BoardCanvasProps) {
     exportIds,
   } = props;
 
+  const t = useT();
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const worldRef = useRef<HTMLDivElement | null>(null);
   const gesture = useRef<Gesture | null>(null);
@@ -526,12 +528,12 @@ export function BoardCanvas(props: BoardCanvasProps) {
               selectAll={editingSelectAll}
               value={o.text}
               className="hand"
-              placeholder="Write a note"
+              placeholder={t("board.ph.sticky")}
               onCommit={(text) => commit(o.id, { text })}
             />
           ) : (
             <div className="bb-sticky-t">
-              {o.text || <span className="bb-ph">Double-click to write</span>}
+              {o.text || <span className="bb-ph">{t("board.ph.stickyEmpty")}</span>}
             </div>
           )}
         </div>
@@ -552,11 +554,11 @@ export function BoardCanvas(props: BoardCanvasProps) {
               selectAll={editingSelectAll}
               value={o.text}
               className={o.size === "h1" ? "h1" : undefined}
-              placeholder="Heading"
+              placeholder={t("board.ph.heading")}
               onCommit={(text) => commit(o.id, { text })}
             />
           ) : (
-            o.text || <span className="bb-ph">Text</span>
+            o.text || <span className="bb-ph">{t("board.obj.text")}</span>
           )}
         </div>
       );
@@ -577,13 +579,13 @@ export function BoardCanvas(props: BoardCanvasProps) {
               selectAll={editingSelectAll}
               className="hand"
               value={[o.title, ...o.lines].join("\n")}
-              placeholder={"Title\nfield\nfield -> other thing"}
+              placeholder={t("board.ph.sketch")}
               onCommit={(text) => {
                 const lines = text
                   .split("\n")
                   .map((l) => l.trim())
                   .filter(Boolean);
-                commit(o.id, { title: lines[0] || "Untitled", lines: lines.slice(1) });
+                commit(o.id, { title: lines[0] || t("board.ph.untitled"), lines: lines.slice(1) });
               }}
             />
           ) : (
@@ -596,7 +598,7 @@ export function BoardCanvas(props: BoardCanvasProps) {
               </ul>
               {o.lines.length === 0 ? (
                 <div className="bb-ph" style={{ padding: "0 10px 8px" }}>
-                  Double-click: title, then one field per line
+                  {t("board.ph.sketchEmpty")}
                 </div>
               ) : null}
             </>
@@ -607,7 +609,7 @@ export function BoardCanvas(props: BoardCanvasProps) {
               className="bb-linked"
               data-nodrag="1"
               onClick={() => onJump(promoted.id)}
-              title="Show the table this sketch became"
+              title={t("board.sketch.linkedTitle")}
             >
               <Icon name="table_view" size={13} />
               {promoted.name}
@@ -621,7 +623,7 @@ export function BoardCanvas(props: BoardCanvasProps) {
               onClick={() => onPromote(o.id)}
             >
               <Icon name="upgrade" size={13} />
-              Promote to table
+              {t("board.sketch.promote")}
             </button>
           )}
         </div>
@@ -637,7 +639,7 @@ export function BoardCanvas(props: BoardCanvasProps) {
           className={classFor(o, "bb-snip")}
           style={pos}
         >
-          <div className="bb-snip-h">{o.title || "sample data"}</div>
+          <div className="bb-snip-h">{o.title || t("board.obj.snippet")}</div>
           {editing ? (
             // Highlighted while typing, not just when read: a payload you are
             // in the middle of pasting is exactly when the colours help most.
@@ -670,13 +672,13 @@ export function BoardCanvas(props: BoardCanvasProps) {
         >
           <span className="bb-flow-k">
             <Icon name={kind.icon} size={13} />
-            {kind.label}
+            {t(kind.labelKey)}
           </span>
           {editing ? (
             <BoardTextEditor
               selectAll={editingSelectAll}
               value={o.name}
-              onCommit={(name) => commit(o.id, { name: name || kind.label })}
+              onCommit={(name) => commit(o.id, { name: name || t(kind.labelKey) })}
             />
           ) : (
             <span className="bb-flow-n">{o.name}</span>
@@ -727,7 +729,7 @@ export function BoardCanvas(props: BoardCanvasProps) {
               </span>
             </li>
           ))}
-          {o.columns.length === 0 ? <li className="bb-ph">no columns yet</li> : null}
+          {o.columns.length === 0 ? <li className="bb-ph">{t("board.table.noColumns")}</li> : null}
         </ul>
       </div>
     );
@@ -788,11 +790,7 @@ export function BoardCanvas(props: BoardCanvasProps) {
                 } as CSSProperties
               }
             >
-              <div
-                className="bb-group-l"
-                data-gid={group.id}
-                title="Drag to move the group · click to select it"
-              >
+              <div className="bb-group-l" data-gid={group.id} title={t("board.group.labelTitle")}>
                 <Icon name="workspaces" size={13} />
                 {group.name}
                 <em>{group.ids.length}</em>
@@ -814,7 +812,7 @@ export function BoardCanvas(props: BoardCanvasProps) {
                   <BoardTextEditor
                     selectAll={editingSelectAll}
                     value={o.label}
-                    onCommit={(label) => commit(o.id, { label: label || "Frame" })}
+                    onCommit={(label) => commit(o.id, { label: label || t("board.obj.frame") })}
                   />
                 ) : (
                   o.label

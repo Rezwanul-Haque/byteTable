@@ -11,6 +11,7 @@
 // separator above it takes the layer's colour, and picking one of its tools
 // focuses that layer when a layer is currently isolated.
 
+import type { StringKey } from "../../shared/i18n";
 import { FLOW_KINDS, type FlowKindId, type LayerId } from "./model";
 
 /** Every tool the rail can be in. The four flow kinds double as tool ids — the
@@ -32,7 +33,9 @@ export type ToolId =
 export interface ToolSpec {
   id: ToolId;
   icon: string;
-  label: string;
+  /** Translation key — resolved at render, not at import (see LAYERS). Typed as
+   *  `StringKey`, so a key that is not in the English table fails to compile. */
+  labelKey: StringKey;
   /** Single-key shortcut, when the tool has one. */
   key?: string;
 }
@@ -50,20 +53,20 @@ export const TOOL_GROUPS: ToolGroup[] = [
   {
     group: "General",
     items: [
-      { id: "select", icon: "arrow_selector_tool", label: "Select · pan on empty", key: "V" },
+      { id: "select", icon: "arrow_selector_tool", labelKey: "board.tool.select", key: "V" },
       {
         id: "hand",
         icon: "pan_tool",
-        label: "Hand · drag items or groups to move, empty space to pan",
+        labelKey: "board.tool.hand",
         key: "H",
       },
-      { id: "connector", icon: "trending_flat", label: "Connect two objects", key: "C" },
+      { id: "connector", icon: "trending_flat", labelKey: "board.tool.connect", key: "C" },
       // General, not Domain: it erases on every layer, and it erases edges and
       // whole groups as well as objects.
       {
         id: "eraser",
         icon: "ink_eraser",
-        label: "Eraser · click an object, an edge or a group label to remove it",
+        labelKey: "board.tool.eraser",
         key: "X",
       },
     ],
@@ -72,12 +75,12 @@ export const TOOL_GROUPS: ToolGroup[] = [
     group: "Domain",
     layer: "domain",
     items: [
-      { id: "pen", icon: "ink_pen", label: "Freehand pen", key: "P" },
-      { id: "sticky", icon: "sticky_note_2", label: "Sticky note", key: "N" },
-      { id: "text", icon: "title", label: "Text / heading", key: "T" },
-      { id: "frame", icon: "frame_source", label: "Frame / zone", key: "F" },
-      { id: "sketch", icon: "crop_square", label: "Entity sketch", key: "E" },
-      { id: "snippet", icon: "data_object", label: "Sample data", key: "J" },
+      { id: "pen", icon: "ink_pen", labelKey: "board.tool.pen", key: "P" },
+      { id: "sticky", icon: "sticky_note_2", labelKey: "board.tool.sticky", key: "N" },
+      { id: "text", icon: "title", labelKey: "board.tool.text", key: "T" },
+      { id: "frame", icon: "frame_source", labelKey: "board.tool.frame", key: "F" },
+      { id: "sketch", icon: "crop_square", labelKey: "board.tool.sketch", key: "E" },
+      { id: "snippet", icon: "data_object", labelKey: "board.tool.snippet", key: "J" },
     ],
   },
   {
@@ -85,16 +88,21 @@ export const TOOL_GROUPS: ToolGroup[] = [
     layer: "flow",
     flyout: true,
     items: [
-      { id: "source", icon: FLOW_KINDS.source.icon, label: FLOW_KINDS.source.label, key: "G" },
-      { id: "process", icon: FLOW_KINDS.process.icon, label: FLOW_KINDS.process.label },
-      { id: "store", icon: FLOW_KINDS.store.icon, label: FLOW_KINDS.store.label },
-      { id: "sink", icon: FLOW_KINDS.sink.icon, label: FLOW_KINDS.sink.label },
+      {
+        id: "source",
+        icon: FLOW_KINDS.source.icon,
+        labelKey: FLOW_KINDS.source.labelKey,
+        key: "G",
+      },
+      { id: "process", icon: FLOW_KINDS.process.icon, labelKey: FLOW_KINDS.process.labelKey },
+      { id: "store", icon: FLOW_KINDS.store.icon, labelKey: FLOW_KINDS.store.labelKey },
+      { id: "sink", icon: FLOW_KINDS.sink.icon, labelKey: FLOW_KINDS.sink.labelKey },
     ],
   },
   {
     group: "Schema",
     layer: "schema",
-    items: [{ id: "table", icon: "table_view", label: "Draft table", key: "D" }],
+    items: [{ id: "table", icon: "table_view", labelKey: "board.tool.table", key: "D" }],
   },
 ];
 

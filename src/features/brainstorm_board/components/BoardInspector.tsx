@@ -14,6 +14,8 @@
 import type { ReactNode } from "react";
 
 import { Icon } from "../../../shared/ui/Icon";
+import type { StringKey } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n/useT";
 import { Kbd } from "../../../shared/ui/Kbd";
 import type { BoardDiffInfo } from "../diff";
 import { exactGroup, groupsTouching, patchObject, removeObjects } from "../doc";
@@ -29,6 +31,7 @@ import {
   objectLabel,
   STICKY_COLORS,
   STICKY_TAGS,
+  STICKY_TAG_KEYS,
   TYPES,
   type BoardColumn,
   type BoardDoc,
@@ -88,6 +91,7 @@ function Head({ icon, title, sub }: { icon: string; title: string; sub?: string 
 }
 
 export function BoardInspector(props: BoardInspectorProps) {
+  const t = useT();
   const {
     doc,
     selection,
@@ -128,7 +132,7 @@ export function BoardInspector(props: BoardInspectorProps) {
   const deleteButton = (
     <button type="button" className="bb-btn danger" onClick={deleteSelection}>
       <Icon name="delete" size={14} />
-      Delete
+      {t("common.delete")}
     </button>
   );
 
@@ -140,13 +144,16 @@ export function BoardInspector(props: BoardInspectorProps) {
     const endName = (o: BoardObject | undefined) => (o ? objectLabel(o) : "?");
     return (
       <div className="bb-insp">
-        <Head icon="trending_flat" title={isFlow ? "Flow edge" : "Connector"} />
+        <Head
+          icon="trending_flat"
+          title={isFlow ? t("board.edge.flow") : t("board.edge.connector")}
+        />
         <div className="bb-insp-sub">{endName(a) + " → " + endName(b)}</div>
         <label className="bb-field">
-          <span>{isFlow ? "Volume" : "Label"}</span>
+          <span>{isFlow ? t("board.edge.volume") : t("board.edge.label")}</span>
           <input
             value={edge.label}
-            placeholder={isFlow ? "e.g. 600 rows/s" : "label"}
+            placeholder={isFlow ? t("board.edge.volumePh") : t("board.edge.labelPh")}
             // Live typing without history: one undo step per label, not per key.
             onChange={(e) => {
               const label = e.target.value;
@@ -160,11 +167,7 @@ export function BoardInspector(props: BoardInspectorProps) {
             }}
           />
         </label>
-        {isFlow ? (
-          <div className="bb-hint">
-            The line gets thicker as the number grows, so heavy paths stand out.
-          </div>
-        ) : null}
+        {isFlow ? <div className="bb-hint">{t("board.edge.volumeHint")}</div> : null}
         <div className="bb-insp-acts">
           <button
             type="button"
@@ -179,7 +182,7 @@ export function BoardInspector(props: BoardInspectorProps) {
             }
           >
             <Icon name="swap_horiz" size={14} />
-            Reverse
+            {t("board.edge.reverse")}
           </button>
           <button
             type="button"
@@ -190,7 +193,7 @@ export function BoardInspector(props: BoardInspectorProps) {
             }}
           >
             <Icon name="delete" size={14} />
-            Delete
+            {t("common.delete")}
           </button>
         </div>
       </div>
@@ -209,20 +212,20 @@ export function BoardInspector(props: BoardInspectorProps) {
       <div className="bb-insp">
         <div className="bb-insp-h">
           <Icon name="workspaces" size={16} style={{ color: group.color }} />
-          Group
+          {t("board.group.title")}
         </div>
-        <div className="bb-insp-sub">
-          {group.ids.length} objects · drag the label on the board to move them together
-        </div>
+        <div className="bb-insp-sub">{t("board.group.sub", { count: group.ids.length })}</div>
         <label className="bb-field">
-          <span>Name</span>
+          <span>{t("board.field.name")}</span>
           <input
             value={group.name}
             onChange={(e) => patchGroup(group.id, { name: e.target.value }, false)}
-            onBlur={(e) => patchGroup(group.id, { name: e.target.value.trim() || "Group" })}
+            onBlur={(e) =>
+              patchGroup(group.id, { name: e.target.value.trim() || t("board.group.title") })
+            }
           />
         </label>
-        <Section>Colour</Section>
+        <Section>{t("board.sec.colour")}</Section>
         <div className="bb-swatches">
           {GROUP_COLORS.map((color) => (
             <button
@@ -235,19 +238,19 @@ export function BoardInspector(props: BoardInspectorProps) {
             />
           ))}
         </div>
-        <Section>Contains</Section>
+        <Section>{t("board.sec.contains")}</Section>
         <div className="bb-preview">
           {LAYERS.filter((l) => byLayer[l.id]).map((l) => (
             <div key={l.id}>
               <span>
                 <i className="bb-dot" style={{ background: l.color }} />
-                {l.label}
+                {t(l.labelKey)}
               </span>
               <em>{byLayer[l.id]}</em>
             </div>
           ))}
         </div>
-        <Section>Export</Section>
+        <Section>{t("board.sec.export")}</Section>
         <div className="bb-insp-acts" style={{ marginTop: 0 }}>
           <button
             type="button"
@@ -267,17 +270,17 @@ export function BoardInspector(props: BoardInspectorProps) {
           </button>
           <button type="button" className="bb-btn" onClick={() => onFocusGroup(group.id)}>
             <Icon name="center_focus_strong" size={14} />
-            Focus
+            {t("board.group.focus")}
           </button>
         </div>
         <div className="bb-insp-acts">
           <button type="button" className="bb-btn" onClick={() => onUngroup(group.id)}>
             <Icon name="ungroup" size={14} />
-            Ungroup
+            {t("board.group.ungroup")}
           </button>
           <button type="button" className="bb-btn danger" onClick={deleteSelection}>
             <Icon name="delete" size={14} />
-            Delete all
+            {t("board.group.deleteAll")}
           </button>
         </div>
       </div>
@@ -289,19 +292,19 @@ export function BoardInspector(props: BoardInspectorProps) {
     const touched = groupsTouching(doc, ids);
     return (
       <div className="bb-insp">
-        <Head icon="select_all" title={ids.length + " objects"} />
-        <div className="bb-hint">
-          Drag any of them to move them together. Shift-click to add or remove.
-        </div>
+        <Head icon="select_all" title={t("board.multi.title", { count: ids.length })} />
+        <div className="bb-hint">{t("board.multi.hint")}</div>
         <button type="button" className="bb-btn pri" onClick={() => onGroup(ids)}>
           <Icon name="workspaces" size={14} />
-          Group these {ids.length}
+          {t("board.multi.group", { count: ids.length })}
           <kbd className="bb-kbd">⌘G</kbd>
         </button>
         {touched.length > 0 ? (
           <div className="bb-hint">
-            {touched.map((g) => g.name).join(", ")} will lose{" "}
-            {touched.length === 1 ? "these members" : "their overlapping members"}.
+            {t("board.multi.willLose", {
+              groups: touched.map((g) => g.name).join(", "),
+              count: touched.length,
+            })}
           </div>
         ) : null}
         <div className="bb-insp-acts">
@@ -311,11 +314,11 @@ export function BoardInspector(props: BoardInspectorProps) {
             onClick={() => onExport({ kind: "selection" }, "png")}
           >
             <Icon name="image" size={14} />
-            Export selection
+            {t("board.multi.exportSelection")}
           </button>
           <button type="button" className="bb-btn danger" onClick={deleteSelection}>
             <Icon name="delete" size={14} />
-            Delete {ids.length}
+            {t("board.multi.delete", { count: ids.length })}
           </button>
         </div>
       </div>
@@ -328,14 +331,14 @@ export function BoardInspector(props: BoardInspectorProps) {
     const liveNames = Object.entries(live).sort(([a], [b]) => a.localeCompare(b));
     return (
       <div className="bb-insp">
-        <Head icon="draw" title={doc.name} sub="Brainstorm board · saved with this schema" />
-        <Section>Compare against</Section>
+        <Head icon="draw" title={doc.name} sub={t("board.insp.boardSub")} />
+        <Section>{t("board.sec.compare")}</Section>
         <div className="bb-seg">
           {(
             [
-              ["sample", "Sample DB"],
-              ["workspace", "This workspace"],
-              ["none", "Nothing"],
+              ["sample", t("board.source.sample")],
+              ["workspace", t("board.source.workspace")],
+              ["none", t("board.source.none")],
             ] as [LiveSourceId, string][]
           ).map(([value, label]) => (
             <button
@@ -350,33 +353,34 @@ export function BoardInspector(props: BoardInspectorProps) {
         </div>
         <div className="bb-hint">
           {liveSource === "none"
-            ? "Standalone board: no diff, no DDL against a database."
-            : "Diff and DDL are computed against " + liveLabel + "."}
+            ? t("board.insp.standalone")
+            : t("board.insp.comparedWith", { source: liveLabel })}
         </div>
         {liveSource !== "none" ? (
           <>
             <Section>
-              Live tables<em>{liveLoading ? "…" : liveNames.length}</em>
+              {t("board.sec.liveTables")}
+              <em>{liveLoading ? "…" : liveNames.length}</em>
             </Section>
             {liveLoading ? (
-              <div className="bb-hint">Reading the schema…</div>
+              <div className="bb-hint">{t("board.insp.readingSchema")}</div>
             ) : liveNames.length === 0 ? (
-              <div className="bb-hint">No tables found in {liveLabel}.</div>
+              <div className="bb-hint">{t("board.insp.noTables", { source: liveLabel })}</div>
             ) : (
               <div className="bb-live">
                 {liveNames.map(([table, columns]) => (
                   <div key={table} className="bb-live-row">
                     <Icon name="table_rows" size={14} />
                     <span className="bb-live-n">{table}</span>
-                    <em>{columns.length} cols</em>
+                    <em>{t("board.insp.cols", { count: columns.length })}</em>
                     {onBoard.has(table) ? (
-                      <span className="bb-live-on">on board</span>
+                      <span className="bb-live-on">{t("board.insp.onBoard")}</span>
                     ) : (
                       <button
                         type="button"
                         className="bb-mini"
                         onClick={() => onAddLive(table)}
-                        title="Add as a reference card"
+                        title={t("board.insp.addLive")}
                       >
                         <Icon name="add" size={13} />
                       </button>
@@ -388,7 +392,8 @@ export function BoardInspector(props: BoardInspectorProps) {
           </>
         ) : null}
         <Section>
-          Groups<em>{doc.groups.length}</em>
+          {t("board.sec.groups")}
+          <em>{doc.groups.length}</em>
         </Section>
         {doc.groups.length > 0 ? (
           <div className="bb-live">
@@ -399,7 +404,7 @@ export function BoardInspector(props: BoardInspectorProps) {
                 onClick={() =>
                   setSelection({ ids: g.ids.filter((id) => doc.objects[id]), edge: null })
                 }
-                title="Select this group"
+                title={t("board.insp.selectGroup")}
               >
                 <i className="bb-dot" style={{ background: g.color, marginRight: 0 }} />
                 <span className="bb-live-n" style={{ fontFamily: "var(--ui)" }}>
@@ -409,7 +414,7 @@ export function BoardInspector(props: BoardInspectorProps) {
                 <button
                   type="button"
                   className="bb-mini"
-                  title="Focus"
+                  title={t("board.group.focus")}
                   onClick={(e) => {
                     e.stopPropagation();
                     onFocusGroup(g.id);
@@ -420,7 +425,7 @@ export function BoardInspector(props: BoardInspectorProps) {
                 <button
                   type="button"
                   className="bb-mini"
-                  title="Export PNG"
+                  title={t("board.export.png")}
                   onClick={(e) => {
                     e.stopPropagation();
                     onExport({ kind: "group", id: g.id }, "png");
@@ -433,11 +438,10 @@ export function BoardInspector(props: BoardInspectorProps) {
           </div>
         ) : (
           <div className="bb-hint">
-            Select several objects and press <Kbd>⌘G</Kbd> to group a flow, a diagram or a slice of
-            the schema.
+            {t("board.insp.groupsEmptyBefore")} <Kbd>⌘G</Kbd> {t("board.insp.groupsEmptyAfter")}
           </div>
         )}
-        <Section>Shortcuts</Section>
+        <Section>{t("board.sec.shortcuts")}</Section>
         <div className="bb-keys">
           <span>
             <kbd>V</kbd>select
@@ -512,8 +516,8 @@ export function BoardInspector(props: BoardInspectorProps) {
   if (object.type === "sticky") {
     return (
       <div className="bb-insp">
-        <Head icon="sticky_note_2" title="Sticky note" sub="Domain layer · double-click to edit" />
-        <Section>Colour</Section>
+        <Head icon="sticky_note_2" title={t("board.obj.sticky")} sub={t("board.insp.domainEdit")} />
+        <Section>{t("board.sec.colour")}</Section>
         <div className="bb-swatches">
           {Object.entries(STICKY_COLORS).map(([key, color]) => (
             <button
@@ -526,7 +530,7 @@ export function BoardInspector(props: BoardInspectorProps) {
             />
           ))}
         </div>
-        <Section>Kind</Section>
+        <Section>{t("board.sec.kind")}</Section>
         <div className="bb-chips">
           {STICKY_TAGS.map((tag) => (
             <button
@@ -535,7 +539,7 @@ export function BoardInspector(props: BoardInspectorProps) {
               className={"bb-chip" + (object.tag === tag ? " on" : "")}
               onClick={() => patch({ tag })}
             >
-              {tag}
+              {t(STICKY_TAG_KEYS[tag])}
             </button>
           ))}
         </div>
@@ -551,28 +555,21 @@ export function BoardInspector(props: BoardInspectorProps) {
     const preview = promoteSketch(object, tables.map((t) => t.name).concat(Object.keys(live)));
     return (
       <div className="bb-insp">
-        <Head
-          icon="crop_square"
-          title="Entity sketch"
-          sub={'Write a title, then one field per line. "x -> y" means a reference.'}
-        />
+        <Head icon="crop_square" title={t("board.obj.sketch")} sub={t("board.insp.sketchSub")} />
         {promoted && promoted.type === "table" ? (
           <>
-            <Section>Promoted</Section>
+            <Section>{t("board.sec.promoted")}</Section>
             <button type="button" className="bb-linkrow" onClick={() => onJump(promoted.id)}>
               <Icon name="table_view" size={15} />
               {promoted.name}
               <Icon name="arrow_forward" size={15} style={{ marginLeft: "auto" }} />
             </button>
-            <div className="bb-hint">
-              Editing the sketch doesn&apos;t change the table. The sketch stays as the record of
-              your thinking.
-            </div>
+            <div className="bb-hint">{t("board.insp.promotedHint")}</div>
           </>
         ) : (
           <>
             <Section>
-              Will become <code>{preview.name}</code>
+              {t("board.insp.willBecome")} <code>{preview.name}</code>
             </Section>
             <div className="bb-preview">
               {preview.columns.map((c) => (
@@ -588,7 +585,7 @@ export function BoardInspector(props: BoardInspectorProps) {
             </div>
             <button type="button" className="bb-btn pri" onClick={() => onPromote(object.id)}>
               <Icon name="upgrade" size={14} />
-              Promote to draft table
+              {t("board.insp.promote")}
             </button>
           </>
         )}
@@ -603,7 +600,7 @@ export function BoardInspector(props: BoardInspectorProps) {
     const outgoing = doc.edges.filter((e) => e.from === object.id);
     return (
       <div className="bb-insp">
-        <Head icon={kind.icon} title="Flow node" sub="Flow layer" />
+        <Head icon={kind.icon} title={t("board.obj.flow")} sub={t("board.insp.flowLayer")} />
         <div className="bb-seg">
           {FLOW_KIND_IDS.map((id) => (
             <button
@@ -612,27 +609,25 @@ export function BoardInspector(props: BoardInspectorProps) {
               className={"bb-seg-btn" + (object.kind === id ? " active" : "")}
               onClick={() => patch({ kind: id })}
             >
-              {FLOW_KINDS[id].label}
+              {t(FLOW_KINDS[id].labelKey)}
             </button>
           ))}
         </div>
         <label className="bb-field">
-          <span>Name</span>
+          <span>{t("board.field.name")}</span>
           <input value={object.name} onChange={(e) => patch({ name: e.target.value })} />
         </label>
         <label className="bb-field">
-          <span>Detail</span>
+          <span>{t("board.field.detail")}</span>
           <input
             value={object.detail}
-            placeholder="tech · key · shape"
+            placeholder={t("board.field.detailPh")}
             onChange={(e) => patch({ detail: e.target.value })}
           />
         </label>
         <Section>
-          Edges
-          <em>
-            {incoming.length} in · {outgoing.length} out
-          </em>
+          {t("board.sec.edges")}
+          <em>{t("board.insp.inOut", { in: incoming.length, out: outgoing.length })}</em>
         </Section>
         <div className="bb-preview">
           {[...incoming, ...outgoing].map((e) => {
@@ -650,7 +645,7 @@ export function BoardInspector(props: BoardInspectorProps) {
           })}
           {incoming.length === 0 && outgoing.length === 0 ? (
             <div>
-              <span className="bb-ph">Use Connect (C) to draw flow edges</span>
+              <span className="bb-ph">{t("board.insp.noEdges")}</span>
             </div>
           ) : null}
         </div>
@@ -674,19 +669,21 @@ export function BoardInspector(props: BoardInspectorProps) {
       <div className="bb-insp">
         <Head
           icon={object.origin === "live" ? "table_rows" : "edit_square"}
-          title={object.origin === "live" ? "Live table" : "Draft table"}
+          title={
+            object.origin === "live" ? t("board.table.liveTitle") : t("board.table.draftTitle")
+          }
           sub={
             status === "create"
-              ? "New: becomes CREATE TABLE"
+              ? t("board.table.subCreate")
               : status === "changed"
-                ? "Differs from live: becomes ALTER TABLE"
+                ? t("board.table.subAlter")
                 : object.origin === "live"
-                  ? "Matches the live schema"
-                  : "Schema layer"
+                  ? t("board.table.subSame")
+                  : t("board.table.subDraft")
           }
         />
         <label className="bb-field">
-          <span>Name</span>
+          <span>{t("board.field.name")}</span>
           <input
             className="mono"
             value={object.name}
@@ -710,12 +707,12 @@ export function BoardInspector(props: BoardInspectorProps) {
             >
               <input
                 className="mono"
-                aria-label="Column name"
+                aria-label={t("board.col.name")}
                 value={column.name}
                 onChange={(e) => mapColumn(i, { name: e.target.value })}
               />
               <select
-                aria-label="Column type"
+                aria-label={t("board.col.type")}
                 value={column.type}
                 onChange={(e) => mapColumn(i, { type: e.target.value })}
               >
@@ -731,7 +728,7 @@ export function BoardInspector(props: BoardInspectorProps) {
               <button
                 type="button"
                 className={"bb-tg" + (column.pk ? " on" : "")}
-                title="Primary key"
+                title={t("board.col.pk")}
                 onClick={() => mapColumn(i, { pk: !column.pk })}
               >
                 <Icon name="key" size={12} />
@@ -739,7 +736,7 @@ export function BoardInspector(props: BoardInspectorProps) {
               <button
                 type="button"
                 className={"bb-tg" + (column.nullable ? " on" : "")}
-                title="Nullable"
+                title={t("board.col.nullable")}
                 onClick={() => mapColumn(i, { nullable: !column.nullable })}
               >
                 ∅
@@ -747,18 +744,18 @@ export function BoardInspector(props: BoardInspectorProps) {
               <button
                 type="button"
                 className="bb-tg"
-                title="Remove column"
+                title={t("board.col.remove")}
                 onClick={() => setColumns(object.columns.filter((_, j) => j !== i))}
               >
                 <Icon name="close" size={12} />
               </button>
               <select
                 className="bb-fk"
-                aria-label="References"
+                aria-label={t("board.col.references")}
                 value={column.fk ?? ""}
                 onChange={(e) => mapColumn(i, { fk: e.target.value || null })}
               >
-                <option value="">no reference</option>
+                <option value="">{t("board.col.noReference")}</option>
                 {others.map((name) => (
                   <option key={name} value={name}>
                     → {name}
@@ -779,7 +776,7 @@ export function BoardInspector(props: BoardInspectorProps) {
           }
         >
           <Icon name="add" size={14} />
-          Add column
+          {t("board.col.add")}
         </button>
         <div className="bb-insp-acts">
           {object.origin === "live" && live[object.name] ? (
@@ -789,7 +786,7 @@ export function BoardInspector(props: BoardInspectorProps) {
               onClick={() => patch({ columns: cloneColumns(live[object.name] ?? []) })}
             >
               <Icon name="restart_alt" size={14} />
-              Revert to live
+              {t("board.table.revert")}
             </button>
           ) : null}
           {deleteButton}
@@ -799,26 +796,27 @@ export function BoardInspector(props: BoardInspectorProps) {
   }
 
   // text / frame / snippet / ink
-  const META: Record<string, [string, string]> = {
-    text: ["title", "Text"],
-    frame: ["frame_source", "Frame"],
-    snippet: ["data_object", "Sample data"],
-    ink: ["ink_pen", "Ink stroke"],
+  const META: Record<string, [string, StringKey]> = {
+    text: ["title", "board.obj.text"],
+    frame: ["frame_source", "board.obj.frame"],
+    snippet: ["data_object", "board.obj.snippet"],
+    ink: ["ink_pen", "board.obj.ink"],
   };
-  const [icon, title] = META[object.type] ?? ["category", object.type];
+  const [icon, titleKey] = META[object.type] ?? ["category", ""];
+  const title = titleKey ? t(titleKey) : object.type;
   return (
     <div className="bb-insp">
       <Head
         icon={icon}
         title={title}
-        sub={object.type === "ink" ? "Domain layer" : "Domain layer · double-click to edit"}
+        sub={object.type === "ink" ? t("board.insp.domainLayer") : t("board.insp.domainEdit")}
       />
       {object.type === "text" ? (
         <div className="bb-seg">
           {(
             [
-              ["h1", "Heading"],
-              ["body", "Body"],
+              ["h1", t("board.text.heading")],
+              ["body", t("board.text.body")],
             ] as ["h1" | "body", string][]
           ).map(([value, label]) => (
             <button
@@ -834,7 +832,7 @@ export function BoardInspector(props: BoardInspectorProps) {
       ) : null}
       {object.type === "snippet" ? (
         <label className="bb-field">
-          <span>Title</span>
+          <span>{t("board.field.title")}</span>
           <input value={object.title} onChange={(e) => patch({ title: e.target.value })} />
         </label>
       ) : null}
@@ -852,12 +850,7 @@ export function BoardInspector(props: BoardInspectorProps) {
           ))}
         </div>
       ) : null}
-      {object.type === "frame" ? (
-        <div className="bb-hint">
-          Drag the corner handle to resize. Frames are zones, so the objects inside stay
-          independent.
-        </div>
-      ) : null}
+      {object.type === "frame" ? <div className="bb-hint">{t("board.insp.frameHint")}</div> : null}
       <div className="bb-insp-acts">{deleteButton}</div>
     </div>
   );

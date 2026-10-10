@@ -6,6 +6,7 @@
 // touches the database.
 
 import { Icon } from "../../../shared/ui/Icon";
+import { useT } from "../../../shared/i18n/useT";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Modal, ModalTitle } from "../../../shared/ui/Modal";
 import type { ToastFn } from "../../../shared/ui/toastContext";
@@ -26,15 +27,16 @@ export interface BoardDdlSheetProps {
 }
 
 export function BoardDdlSheet({ sql, diff, onClose, onOpenInSql, toast }: BoardDdlSheetProps) {
+  const t = useT();
   const parts = sql.split(KEYWORDS);
   return (
-    <Modal onClose={onClose} className="bb-ddl" label="DDL from the board">
+    <Modal onClose={onClose} className="bb-ddl" label={t("board.ddl.title")}>
       <ModalTitle>
         <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <Icon name="code" size={18} style={{ color: "var(--accent)" }} />
-          DDL from the board
+          {t("board.ddl.title")}
         </span>
-        <IconBtn icon="close" title="Close" onClick={onClose} />
+        <IconBtn icon="close" title={t("common.close")} onClick={onClose} />
       </ModalTitle>
       <div className="bb-ddl-sum">
         {diff.creates.map((table) => (
@@ -75,30 +77,30 @@ export function BoardDdlSheet({ sql, diff, onClose, onOpenInSql, toast }: BoardD
       </pre>
       <div className="bb-ddl-foot">
         <span className="bb-hint" style={{ margin: 0 }}>
-          Review it before running. The board doesn&apos;t touch the database.
+          {t("board.ddl.footnote")}
         </span>
         <button
           type="button"
           className="bb-btn"
           onClick={() => {
             void navigator.clipboard?.writeText(sql);
-            toast("DDL copied", "ok");
+            toast(t("board.ddl.copied"), "ok");
           }}
         >
           <Icon name="content_copy" size={14} />
-          Copy
+          {t("board.ddl.copy")}
         </button>
         <button
           type="button"
           className="bb-btn pri"
           onClick={() => {
             onOpenInSql(sql);
-            toast("Opened in a new SQL tab", "ok");
+            toast(t("board.ddl.openedInSql"), "ok");
             onClose();
           }}
         >
           <Icon name="open_in_new" size={14} />
-          Open in SQL tab
+          {t("board.ddl.openInSql")}
         </button>
       </div>
     </Modal>

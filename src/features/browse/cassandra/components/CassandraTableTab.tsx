@@ -182,7 +182,7 @@ export function CassandraTableTab({
         setResult(null);
       }
     },
-    [handleId, ks, tableName, buildPredicates, consistency],
+    [handleId, ks, tableName, buildPredicates, consistency, tr],
   );
 
   // Freeze a new query and fetch page 0 (resets the cursor stack).

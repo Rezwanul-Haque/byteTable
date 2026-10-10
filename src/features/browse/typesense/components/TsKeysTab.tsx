@@ -43,7 +43,7 @@ export function TsKeysTab({
     } finally {
       setLoading(false);
     }
-  }, [handleId, adminKey]);
+  }, [handleId, adminKey, t]);
 
   useEffect(() => {
     void load();

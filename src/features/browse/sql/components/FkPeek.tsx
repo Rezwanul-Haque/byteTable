@@ -122,7 +122,7 @@ export function FkPeek({
     return () => {
       alive = false;
     };
-  }, [handleId, refSchema, refTable, refColumn, value, binary]);
+  }, [handleId, refSchema, refTable, refColumn, value, binary, t]);
 
   // Outside-click / Esc close (Rail/Sidebar pattern). The anchoring cell lives
   // outside this popover, so any mousedown not inside the popover closes it.

@@ -21,7 +21,7 @@ import { SchemaMap } from "../../schema_map/components/SchemaMap";
 import { selectPanel, shellLabel, usePanelStore } from "../../console/state";
 import { BTLogo } from "../../../shared/ui/BTLogo";
 import { Kbd } from "../../../shared/ui/Kbd";
-import { useLocale, useT } from "../../../shared/i18n/useT";
+import { useT } from "../../../shared/i18n/useT";
 import { useToast } from "../../../shared/ui/toastContext";
 import { useBtCmd } from "../../../shared/ui/btCmd";
 import { type SavedQuery } from "../../saved_queries/api";
@@ -201,10 +201,8 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
   };
   // Tabs still open + still dirty when the prompt renders, with the label the
   // strip shows them under (ordinal included, so "trees (2)" is unambiguous).
-  // `locale` in the deps: tabLabels reads t() at call time.
-  const locale = useLocale();
   const t = useT();
-  const labels = useMemo(() => tabLabels(tabs, currentSchema), [tabs, currentSchema, locale]);
+  const labels = useMemo(() => tabLabels(tabs, currentSchema, t), [tabs, currentSchema, t]);
   const describe = (ids: string[]): UnsavedTab[] =>
     ids
       .filter((id) => unsaved.has(id))

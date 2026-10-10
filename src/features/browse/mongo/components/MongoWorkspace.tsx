@@ -157,7 +157,7 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
         if (!silent) setLoading(false);
       }
     },
-    [handleId],
+    [handleId, t],
   );
 
   // Initial load: databases → (persisted or default) db → its collections.

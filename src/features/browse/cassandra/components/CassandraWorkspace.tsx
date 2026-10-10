@@ -176,7 +176,7 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
         if (!silent) setLoading(false);
       }
     },
-    [handleId],
+    [handleId, t],
   );
 
   // Initial load: keyspaces → (persisted or default) keyspace → its tables +

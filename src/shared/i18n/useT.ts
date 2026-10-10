@@ -10,10 +10,34 @@ import { useSyncExternalStore } from "react";
 
 import { getLocale, getLocaleVersion, subscribe, t, type LocaleId } from ".";
 
-/** The translate function, re-rendering this component when the locale changes. */
+/**
+ * One translate identity per locale, shared by every component.
+ *
+ * Module-level rather than a `useMemo`: the cache key is the locale version,
+ * which the callback never reads, and a dependency array cannot say that. This
+ * also means all components hold the SAME function for a given locale, so a
+ * child memoised on `t` is not invalidated by its parent re-rendering.
+ */
+let translator: { version: number; fn: typeof t } = { version: -1, fn: t };
+function translatorFor(version: number): typeof t {
+  if (translator.version !== version) {
+    translator = { version, fn: (key, vars) => t(key, vars) };
+  }
+  return translator.fn;
+}
+
+/**
+ * The translate function, re-rendering this component when the locale changes.
+ *
+ * A NEW identity per locale, deliberately. Returning the module function itself
+ * re-renders the component but leaves `t` unusable as a hook dependency: a
+ * `useMemo`/`useCallback` that builds translated strings would keep serving the
+ * previous language's cache, because its one relevant input never changed. With
+ * the identity keyed to the locale, listing `t` says exactly what it looks like
+ * it says — and between switches it is stable, so it adds no churn.
+ */
 export function useT(): typeof t {
-  useSyncExternalStore(subscribe, getLocaleVersion, getLocaleVersion);
-  return t;
+  return translatorFor(useSyncExternalStore(subscribe, getLocaleVersion, getLocaleVersion));
 }
 
 /** The active locale id, re-rendering this component when it changes. */

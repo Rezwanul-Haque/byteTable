@@ -601,6 +601,18 @@
    sidebar's "New SQL query" looked like. Same remedy as every other tinted
    control here: mix into `transparent` and take the rim from the highlight, so
    the surface behind shows through. */
+/* The destructive confirm is the other button that owns its colour, so it gets
+   the same lit treatment as `.btn-filled` rather than a glass tint — a
+   "Delete schema" that reads as a translucent chip is not the affordance that
+   action deserves. */
+[data-material] .btn-danger {
+  background: linear-gradient(180deg, color-mix(in oklab, var(--danger) 90%, white), var(--danger));
+  color: #fff;
+  box-shadow:
+    var(--glass-hi),
+    0 8px 20px color-mix(in oklab, var(--danger) 45%, transparent);
+}
+
 [data-material] .btn-tonal {
   background: color-mix(in oklab, var(--accent) 22%, transparent);
   box-shadow: var(--glass-hi);

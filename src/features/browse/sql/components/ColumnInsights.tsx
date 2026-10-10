@@ -83,7 +83,7 @@ export function ColumnInsights({
     return () => {
       alive = false;
     };
-  }, [handleId, schema, table, column, filter]);
+  }, [handleId, schema, table, column, filter, t]);
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {

@@ -60,6 +60,28 @@
    Used by the Cassandra row modal (M19) and the Typesense document drawer
    (M30); the class was referenced by the former before it was defined here,
    which left the delete button untinted. */
+/* Destructive confirm button. Here with the other variants rather than in a
+   modal's stylesheet, because nineteen components use it.
+   `--danger` is applied at runtime by the settings bootstrap (`apply.ts`), which
+   is why it is nowhere in tokens.css; `--error` is the matching declared token
+   and so the fallback. The literal `#e06c75` this used to carry ignored the
+   theme's danger colour entirely. */
+.btn-danger {
+  background: var(--danger, var(--error));
+  color: #fff;
+}
+
+.btn-danger:hover {
+  filter: brightness(1.08);
+}
+
+.btn-danger.disabled,
+.btn-danger:disabled {
+  opacity: 0.45;
+  cursor: default;
+  filter: none;
+}
+
 .btn-danger-text {
   color: var(--danger);
   background: none;

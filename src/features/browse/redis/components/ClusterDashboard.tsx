@@ -518,7 +518,7 @@ export function ClusterDashboard({
     return () => {
       alive = false;
     };
-  }, [handleId, version, refreshNonce]);
+  }, [handleId, version, refreshNonce, t]);
 
   const shards = live.shards;
   const nodes = allNodes(shards);

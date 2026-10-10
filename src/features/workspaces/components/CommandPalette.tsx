@@ -16,8 +16,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { t } from "../../../shared/i18n";
-import { useLocale } from "../../../shared/i18n/useT";
+import { useT } from "../../../shared/i18n/useT";
 import { Icon } from "../../../shared/ui/Icon";
 import { Kbd } from "../../../shared/ui/Kbd";
 import { shellLabel, usePanelStore } from "../../console/state";
@@ -43,6 +42,9 @@ interface CommandPaletteProps {
 }
 
 export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
+  // Through the hook, not the module import: that both re-renders this list on a
+  // language switch and makes `t` a valid dependency for the memo below.
+  const t = useT();
   const openTableTab = useWorkspacesStore((state) => state.openTableTab);
   const openSqlTab = useWorkspacesStore((state) => state.openSqlTab);
   const openSqlTabWith = useWorkspacesStore((state) => state.openSqlTabWith);
@@ -56,7 +58,6 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
   const loadSaved = useSavedQueriesStore((state) => state.load);
   // Subscribe to the locale so the memoised command labels rebuild when the
   // language changes (t() is read at build time inside the memo).
-  const locale = useLocale();
 
   // Warm the global saved-query store so palette items appear even if the user
   // has not opened a SQL tab yet (guarded inside the store; cheap to re-call).
@@ -180,7 +181,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
     openDiffTab,
     patchWorkspaceUi,
     openPanel,
-    locale,
+    t,
   ]);
 
   const trimmed = query.trim().toLowerCase();

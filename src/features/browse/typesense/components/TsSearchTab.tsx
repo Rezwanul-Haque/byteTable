@@ -536,7 +536,7 @@ export function TsSearchTab({
           { value: f.name + ":asc", label: f.name + " ↑" },
         ]),
     ],
-    [collection],
+    [collection, t],
   );
 
   /** Default field weights: the title heaviest, snippet fields lightest. */

@@ -57,7 +57,7 @@ export function TsCurationTab({
     } finally {
       setLoading(false);
     }
-  }, [handleId, collection, adminKey]);
+  }, [handleId, collection, adminKey, t]);
 
   useEffect(() => {
     void load();

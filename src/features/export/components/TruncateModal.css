@@ -1,20 +1,7 @@
 /* Truncate confirm modal (M15 Task 2) — ported byte-exact from ByteTable.html
-   `.truncate-*` + `.btn-danger`. The `.btn-danger` rules live here because this
-   is the destructive button's only use site so far. */
-
-.btn-danger {
-  background: #e06c75;
-  color: #fff;
-}
-.btn-danger:hover {
-  filter: brightness(1.08);
-}
-.btn-danger.disabled,
-.btn-danger:disabled {
-  opacity: 0.45;
-  cursor: default;
-  filter: none;
-}
+   `.truncate-*`. `.btn-danger` moved to Btn.css once it stopped being this
+   modal's private button: nineteen components use it now, and most never load
+   this stylesheet. */
 
 /* truncate modal */
 .truncate-modal {

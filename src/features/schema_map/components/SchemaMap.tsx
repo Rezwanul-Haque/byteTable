@@ -341,7 +341,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
     return () => {
       cancelled = true;
     };
-  }, [handleId, schema, loadTables, loadTableMeta, reloadKey]);
+  }, [handleId, schema, loadTables, loadTableMeta, reloadKey, t]);
 
   const tables = useMemo(() => (metas ? Object.keys(metas) : []), [metas]);
 
@@ -1522,7 +1522,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         setExporting(false);
       }
     },
-    [cards, edges, boxes, linkModels, scopeBox, schema, toast],
+    [cards, edges, boxes, linkModels, scopeBox, schema, toast, t],
   );
 
   // Escape backs out of a grouping or arrow gesture (clears the pick, closes an

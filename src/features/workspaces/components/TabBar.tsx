@@ -16,7 +16,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 
-import { useLocale, useT } from "../../../shared/i18n/useT";
+import { useT } from "../../../shared/i18n/useT";
 import { Icon } from "../../../shared/ui/Icon";
 import { useTabMenu } from "../../../shared/hooks/useTabMenu";
 import { OBJ_SECTIONS } from "../../db_objects/kinds";
@@ -104,11 +104,8 @@ export function TabBar({
   useEffect(() => {
     activeTabRef.current?.scrollIntoView({ inline: "nearest", block: "nearest" });
   }, [activeTabId]);
-  // Labels read t() at build time; `locale` in the deps rebuilds them on a
-  // language switch.
   const t = useT();
-  const locale = useLocale();
-  const labels = useMemo(() => tabLabels(tabs, currentSchema), [tabs, currentSchema, locale]);
+  const labels = useMemo(() => tabLabels(tabs, currentSchema, t), [tabs, currentSchema, t]);
   return (
     <div className="tabbar" role="tablist" aria-label={t("ws.tabs.openAria")}>
       <div className="tabbar-tabs">

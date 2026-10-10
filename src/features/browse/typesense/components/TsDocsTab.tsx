@@ -73,7 +73,7 @@ export function TsDocsTab({ handleId, collection, reloadKey, onChanged }: TsDocs
     } finally {
       setLoading(false);
     }
-  }, [handleId, name, page, perPage]);
+  }, [handleId, name, page, perPage, t]);
 
   useEffect(() => {
     void load();

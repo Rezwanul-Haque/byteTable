@@ -1,6 +1,8 @@
 // Workspace content router (spec §3.4): the tab bar (when ≥1 tab) above the
-// active tab's body. With zero tabs the EmptyState fills the area and no tab
-// bar shows — matching the prototype.
+// active tab's body. With zero tabs the EmptyState fills the content area and
+// no tab bar shows — matching the prototype. The content area itself is always
+// rendered: it also hosts the saved-queries drawer, which the title bar's
+// Query menu can open with nothing else on screen.
 //
 // Tabs + the active tab id live on the active workspace's `ui`; this reads
 // them with a narrow selector and renders the active tab only (the
@@ -18,6 +20,9 @@ import { SchemaMap } from "../../schema_map/components/SchemaMap";
 import { selectPanel, shellLabel, usePanelStore } from "../../console/state";
 import { BTLogo } from "../../../shared/ui/BTLogo";
 import { Kbd } from "../../../shared/ui/Kbd";
+import { useToast } from "../../../shared/ui/toastContext";
+import { useBtCmd } from "../../../shared/ui/btCmd";
+import { type SavedQuery } from "../../saved_queries/api";
 import { ObjectViewer } from "../../db_objects/components/ObjectViewer";
 import { ObjectExplorer } from "../../db_objects/components/ObjectExplorer";
 import { TableOverview } from "../../browse/sql/components/TableOverview";
@@ -26,6 +31,7 @@ import { useTabMetaStore } from "../tabMeta";
 import type { Tab, Workspace } from "../types";
 import { selectedSchema, unsavedSummary, unsavedTabIds } from "../types";
 import { tabLabels } from "../tabLabels";
+import { SavedQueriesDrawer } from "./QueryDrawers";
 import { UnsavedTabsModal, type UnsavedTab } from "./UnsavedTabsModal";
 import { SqlEditorTab } from "./SqlEditorTab";
 import { TabBar } from "./TabBar";
@@ -50,16 +56,22 @@ function TabBody({
   tab,
   workspace,
   currentSchema,
+  onOpenSavedQueries,
 }: {
   tab: Tab;
   workspace: Workspace;
   currentSchema: string;
+  /** Open the saved-queries drawer this component hosts (the query tab offers
+   *  it from its history drawer). */
+  onOpenSavedQueries: () => void;
 }) {
   switch (tab.kind) {
     case "table":
       return <TableTab tab={tab} handleId={workspace.handleId} currentSchema={currentSchema} />;
     case "sql":
-      return <SqlEditorTab workspace={workspace} tab={tab} />;
+      return (
+        <SqlEditorTab workspace={workspace} tab={tab} onOpenSavedQueries={onOpenSavedQueries} />
+      );
     case "map":
       return <SchemaMap workspace={workspace} schema={tab.schema} />;
     case "processes":
@@ -104,9 +116,12 @@ function TabBody({
 }
 
 export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
+  const toast = useToast();
   const setActiveTab = useWorkspacesStore((state) => state.setActiveTab);
   const closeTab = useWorkspacesStore((state) => state.closeTab);
   const openSqlTab = useWorkspacesStore((state) => state.openSqlTab);
+  const openSqlTabWith = useWorkspacesStore((state) => state.openSqlTabWith);
+  const setSqlText = useWorkspacesStore((state) => state.setSqlText);
   const openProcessesTab = useWorkspacesStore((state) => state.openProcessesTab);
   const consoleOpen = usePanelStore((state) => selectPanel(state, workspace.id).open);
   const togglePanel = usePanelStore((state) => state.togglePanel);
@@ -121,6 +136,15 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
   // The bar's discard prompt. Local (not on the seam like the close request):
   // it has exactly one entry point, the button this component renders.
   const [discardOpen, setDiscardOpen] = useState(false);
+  // The saved-queries drawer. Hosted here rather than in the SQL tab because
+  // its openers are the tab strip (always there), the title bar's Query menu
+  // and the query tab's history drawer — a saved query is workspace-wide, so
+  // browsing the list must not depend on a query tab being open.
+  const [savedOpen, setSavedOpen] = useState(false);
+
+  // Query ▸ Saved Queries (bt:cmd bus). Claimed here, not by the SQL tab: the
+  // menu item is enabled for the whole SQL workspace, tabs or not.
+  useBtCmd("saved-queries", () => setSavedOpen(true));
 
   // Memoised so the label/dirty derivations below have a stable dependency.
   const tabs = useMemo(() => workspace.ui.tabs ?? [], [workspace.ui.tabs]);
@@ -186,27 +210,46 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
   // workspace cannot resurface later in another.
   useEffect(() => clearTabClose, [clearTabClose]);
 
+  // Load a saved query where the user can see it: into the active query tab
+  // (replacing its buffer — what the drawer did when it lived in that tab), or
+  // into a fresh one when the drawer was opened from the tab strip over
+  // something else. Same destination rule as the command palette's saved-query
+  // entries, which only ever have the second case.
+  const loadSavedQuery = (q: SavedQuery) => {
+    if (activeTab?.kind === "sql") setSqlText(activeTab.id, q.sql);
+    else openSqlTabWith(q.sql);
+    setSavedOpen(false);
+    toast(`Loaded “${q.name}”`, "ok");
+  };
+
   // Only engines with a server process list (PROC_SOURCES) get the toggle.
   const hasProcesses = workspace.saved.engine in PROC_SOURCES;
 
-  if (tabs.length === 0) return <NoTabs />;
+  // With no tabs the strip is gone, so the Query ▸ Saved Queries menu item is
+  // the only opener left — the drawer is rendered below in that state too.
+  const noTabs = tabs.length === 0;
 
   return (
     <>
-      <TabBar
-        tabs={tabs}
-        activeTabId={activeTabId}
-        currentSchema={currentSchema}
-        unsavedTabIds={unsaved}
-        onSelect={setActiveTab}
-        onClose={requestClose}
-        onNewSql={openSqlTab}
-        consoleOpen={consoleOpen}
-        onToggleConsole={() => togglePanel(workspace.id, shellLabel(workspace.saved.engine))}
-        onOpenProcesses={hasProcesses ? () => openProcessesTab(procSchema) : undefined}
-        onDiscardAll={dirtyTabs.length > 1 ? () => setDiscardOpen(true) : undefined}
-      />
+      {noTabs ? null : (
+        <TabBar
+          tabs={tabs}
+          activeTabId={activeTabId}
+          currentSchema={currentSchema}
+          unsavedTabIds={unsaved}
+          onSelect={setActiveTab}
+          onClose={requestClose}
+          onNewSql={openSqlTab}
+          consoleOpen={consoleOpen}
+          onToggleConsole={() => togglePanel(workspace.id, shellLabel(workspace.saved.engine))}
+          savedQueriesOpen={savedOpen}
+          onOpenSavedQueries={() => setSavedOpen((open) => !open)}
+          onOpenProcesses={hasProcesses ? () => openProcessesTab(procSchema) : undefined}
+          onDiscardAll={dirtyTabs.length > 1 ? () => setDiscardOpen(true) : undefined}
+        />
+      )}
       <div className="tab-content">
+        {noTabs ? <NoTabs /> : null}
         {activeTab ? (
           // Keyed by tab id: only the ACTIVE tab is mounted, so without a key
           // React reuses one TableTab/DataGrid instance across tab switches and
@@ -220,8 +263,17 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
             tab={activeTab}
             workspace={workspace}
             currentSchema={currentSchema}
+            onOpenSavedQueries={() => setSavedOpen(true)}
           />
         ) : null}
+        {/* Slides in over the tab body (`.tab-content` is its positioning
+            context), so the strip it was opened from stays visible. */}
+        <SavedQueriesDrawer
+          open={savedOpen}
+          connectionId={workspace.saved.id}
+          onClose={() => setSavedOpen(false)}
+          onLoad={loadSavedQuery}
+        />
       </div>
       {/* Every close entry point funnels here (see `UnsavedTabsModal`). Rendered
           when the parked set still contains a dirty tab — if the last one was

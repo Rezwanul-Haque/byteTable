@@ -59,6 +59,12 @@ interface TabBarProps {
   consoleOpen: boolean;
   /** Toggle the docked console panel (M14). */
   onToggleConsole: () => void;
+  /** True when the saved-queries drawer is open — lights its toggle. */
+  savedQueriesOpen?: boolean;
+  /** Open the saved-queries drawer. Lives here, not just in the SQL tab's
+   *  toolbar, so the saved list is reachable without opening a query tab.
+   *  Omitted for engines with no saved queries, which hides the button. */
+  onOpenSavedQueries?: () => void;
   /** Open the Processes tab (M26). Omitted for engines with no server process
    *  list, which hides the button. */
   onOpenProcesses?: () => void;
@@ -81,6 +87,8 @@ export function TabBar({
   onNewSql,
   consoleOpen,
   onToggleConsole,
+  savedQueriesOpen = false,
+  onOpenSavedQueries,
   onOpenProcesses,
   onDiscardAll,
 }: TabBarProps) {
@@ -188,6 +196,21 @@ export function TabBar({
           <Icon name="terminal" size={15} />
           <span>Terminal</span>
         </button>
+        {/* Beside Terminal: the saved queries are workspace-wide, not a
+            property of whichever tab happens to be open, so browsing them
+            must not require a query tab. */}
+        {onOpenSavedQueries ? (
+          <button
+            type="button"
+            className={"tabbar-tool tabbar-tool-icon" + (savedQueriesOpen ? " active" : "")}
+            title="Saved queries"
+            aria-label="Saved queries"
+            aria-pressed={savedQueriesOpen}
+            onClick={onOpenSavedQueries}
+          >
+            <Icon name="bookmarks" size={15} />
+          </button>
+        ) : null}
         {onOpenProcesses ? (
           <button
             type="button"

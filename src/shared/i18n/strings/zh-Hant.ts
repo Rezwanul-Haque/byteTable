@@ -48,6 +48,7 @@ export const zhHant: StringTable = {
   "menu.query.format": "格式化查詢",
   "menu.query.explain": "執行計畫",
   "menu.query.save": "儲存查詢",
+  "menu.query.saved": "已儲存的查詢",
   "menu.query.history": "查詢紀錄",
   "menu.help.shortcuts": "鍵盤快速鍵",
   "menu.help.checkUpdates": "檢查更新",

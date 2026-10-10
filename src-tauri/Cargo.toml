@@ -37,7 +37,10 @@ tauri-plugin-process = "2"
 # Single-instance guard: a second launch (e.g. double-clicking the AppImage)
 # focuses the running window instead of spawning another process. Desktop-only.
 tauri-plugin-single-instance = "2"
-async-trait = "0.1.89"
+# ≥0.1.92: earlier versions put `#[must_use]` on the desugared method, which
+# clippy 1.99's `double_must_use` flags (the boxed future is already must_use)
+# — 133 denied warnings in `make clippy`, none of them ours.
+async-trait = "0.1.92"
 uuid = { version = "1.20.0", features = ["v4", "serde"] }
 # `net` + `io-util` + `time` are added in M12 Task 3 for the SSH tunnel
 # (`TcpListener`/`TcpStream`, `copy_bidirectional`, connect timeouts); russh

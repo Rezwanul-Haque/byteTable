@@ -48,6 +48,7 @@ export const ja: StringTable = {
   "menu.query.format": "クエリを整形",
   "menu.query.explain": "実行計画",
   "menu.query.save": "クエリを保存",
+  "menu.query.saved": "保存したクエリ",
   "menu.query.history": "クエリ履歴",
   "menu.help.shortcuts": "キーボードショートカット",
   "menu.help.checkUpdates": "アップデートを確認",

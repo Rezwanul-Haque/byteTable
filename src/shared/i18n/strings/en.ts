@@ -54,6 +54,7 @@ export const en = {
   "menu.query.format": "Format Query",
   "menu.query.explain": "Explain Plan",
   "menu.query.save": "Save Query",
+  "menu.query.saved": "Saved Queries",
   "menu.query.history": "Query History",
   "menu.help.shortcuts": "Keyboard Shortcuts",
   "menu.help.checkUpdates": "Check for Updates",

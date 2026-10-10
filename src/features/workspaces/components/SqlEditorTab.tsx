@@ -1,6 +1,6 @@
 // SQL editor tab (M6, spec §3.7) — ported from the prototype's editor.jsx
-// SqlEditorTab: a toolbar (Run + ⌘↩ hint + snippet chips + save/bookmarks/
-// history popovers), a syntax-highlighted editor (CodeMirror 6, see
+// SqlEditorTab: a toolbar (Run + ⌘↩ hint + snippet chips + save popover +
+// history drawer), a syntax-highlighted editor (CodeMirror 6, see
 // SqlCodeEditor), and a results area (status row + virtualized grid, the §5
 // error card, and the empty state).
 //
@@ -15,15 +15,15 @@
 // editor scale and is the simplest way to guarantee text survives a switch.
 //
 // SAVED QUERIES are a GLOBAL store (features/saved_queries): save in workspace
-// A, load from workspace B. The save popover offers an attachment toggle — when
-// checked the query is scoped to THIS workspace's saved connection
-// (connectionId = workspace.saved.id); unchecked it is global. The list popover
-// shows global + this-workspace-attached entries (selectQueriesForConnection)
-// with a per-row indicator.
+// A, load from workspace B. This tab owns the SAVE half — the popover's
+// attachment toggle scopes a query to THIS workspace's saved connection
+// (connectionId = workspace.saved.id) when checked, global when unchecked. The
+// browse half (SavedQueriesDrawer) is hosted by WorkspaceContent, because its
+// opener sits on the tab strip and must work with no query tab open; this tab
+// reaches it through `onOpenSavedQueries`.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { highlightSql } from "../../browse/shared/highlightSql";
 import type { QueryResult } from "../../../shared/api/engine";
 import { queryRun, queryRunBatch, readTextFile } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
@@ -35,15 +35,16 @@ import { IconBtn } from "../../../shared/ui/IconBtn";
 import { useTabMenu } from "../../../shared/hooks/useTabMenu";
 import { useToast } from "../../../shared/ui/toastContext";
 import { columnsKey, tablesKey, useIntrospectionStore } from "../../introspection/state";
-import { type SavedQuery } from "../../saved_queries/api";
-import { selectQueriesForConnection, useSavedQueriesStore } from "../../saved_queries/state";
+import { useSavedQueriesStore } from "../../saved_queries/state";
 import { useWorkspacesStore } from "../state";
 import { useBtCmd } from "../../../shared/ui/btCmd";
-import type { SqlHistoryEntry, SqlRun, Tab, Workspace } from "../types";
+import type { SqlRun, Tab, Workspace } from "../types";
 import { homeSchema } from "../types";
 import { ExecutionMinimap, ExplainPanel } from "./explain";
 import { detectedTable } from "../explainClauses";
 import { formatSql } from "../formatSql";
+import { HistoryDrawer } from "./QueryDrawers";
+import { previewHtml } from "../sqlPreview";
 import { splitStatements, statementRanges } from "../sqlStatement";
 import { type EditorSchema } from "../sqlCompletion";
 import { SqlCodeEditor, type SqlCodeEditorHandle } from "./SqlCodeEditor";
@@ -52,20 +53,11 @@ import "./SqlEditorTab.css";
 
 type SqlTab = Extract<Tab, { kind: "sql" }>;
 
-/** Cap on the SQL shown in a drawer preview (full multi-line, but bounded). */
-const PREVIEW_MAX = 240;
-
 // Resizable editor/results split floor: below this the editor is too small to
 // use. The dragged height lives on the SQL tab in the workspace store
 // (setSqlEditorHeight), so it survives workspace switches like the rest of the
 // tab's state; null = fall back to the CSS default (38%).
 const EDITOR_H_MIN = 110;
-
-/** Truncate (with ellipsis) then syntax-highlight SQL for a drawer preview. */
-function previewHtml(sql: string): string {
-  const clipped = sql.length > PREVIEW_MAX ? sql.slice(0, PREVIEW_MAX) + "…" : sql;
-  return highlightSql(clipped);
-}
 
 /**
  * Starter snippet chips. These are REAL, runnable introspection queries — but
@@ -167,7 +159,18 @@ async function openSqlFileDialog(): Promise<string | null> {
 /** Only the save popover remains a popover; browse/manage moved to drawers. */
 type Popover = "save" | null;
 
-export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: SqlTab }) {
+export function SqlEditorTab({
+  workspace,
+  tab,
+  onOpenSavedQueries,
+}: {
+  workspace: Workspace;
+  tab: SqlTab;
+  /** Open the workspace's saved-queries drawer (hosted by WorkspaceContent, so
+   *  the tab strip can open it with no query tab). Offered from the history
+   *  drawer — the query tab's route to the saved list. */
+  onOpenSavedQueries?: () => void;
+}) {
   const toast = useToast();
   const setSqlText = useWorkspacesStore((s) => s.setSqlText);
   const setSqlRuns = useWorkspacesStore((s) => s.setSqlRuns);
@@ -179,17 +182,13 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   const clearSqlRuns = useWorkspacesStore((s) => s.clearSqlRuns);
   const setSqlEditorHeight = useWorkspacesStore((s) => s.setSqlEditorHeight);
 
-  const savedQueries = useSavedQueriesStore((s) => s.savedQueries);
-  const loadSaved = useSavedQueriesStore((s) => s.load);
   const saveQuery = useSavedQueriesStore((s) => s.save);
-  const removeQuery = useSavedQueriesStore((s) => s.remove);
 
   const [running, setRunning] = useState(false);
   const [pop, setPop] = useState<Popover>(null);
   const [saveName, setSaveName] = useState("");
   const [attach, setAttach] = useState(false);
-  // Right-side drawers (Prompts 1–2) and results minimize toggle (Prompt 5).
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  // This tab's history drawer (Prompt 2) and results minimize toggle (Prompt 5).
   const [historyOpen, setHistoryOpen] = useState(false);
   const [resultsMin, setResultsMin] = useState(false);
   // The editor handle resolves the statement at the caret for the Run/Explain
@@ -256,12 +255,6 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
 
   // Engine-specific starter chips, resolved to the active schema.
   const snippets = snippetsFor(workspace.info.engine, schemaName);
-
-  // Load the global saved-query store once on first mount (guarded inside the
-  // store: a settled load short-circuits, and re-calling is cheap).
-  useEffect(() => {
-    void loadSaved();
-  }, [loadSaved]);
 
   // Outside-click / Esc closes the open popover (Rail/Sidebar pattern).
   useEffect(() => {
@@ -592,7 +585,6 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   useBtCmd("open-sql-file", openFile);
   useBtCmd("query-history", () => setHistoryOpen(true));
 
-  const visibleSaved = selectQueriesForConnection(savedQueries, workspace.saved.id);
   const { runs, activeRunId, history } = tab;
   const runDisabled = running || text.trim() === "";
 
@@ -718,15 +710,9 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
           ) : null}
         </div>
 
-        {/* saved-queries drawer opener (Prompt 1) */}
-        <IconBtn
-          icon="bookmarks"
-          title="Saved queries"
-          active={drawerOpen}
-          onClick={() => setDrawerOpen(true)}
-        />
-
-        {/* this-tab history drawer opener (Prompt 2) */}
+        {/* this-tab history drawer opener (Prompt 2). The saved-queries opener
+            that used to sit beside it now lives on the tab strip, where it is
+            reachable without a query tab; the history drawer links across. */}
         <IconBtn
           icon="history"
           title="Query history"
@@ -972,22 +958,6 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
         </div>
       ) : null}
 
-      <SavedQueriesDrawer
-        open={drawerOpen}
-        queries={visibleSaved}
-        onClose={() => setDrawerOpen(false)}
-        onLoad={(q) => {
-          load(q.sql);
-          setDrawerOpen(false);
-          toast(`Loaded “${q.name}”`, "ok");
-        }}
-        onDelete={(id) =>
-          void removeQuery(id).catch((err: unknown) =>
-            toast(appErrorMessage(err, "Could not delete query."), "err"),
-          )
-        }
-      />
-
       <HistoryDrawer
         open={historyOpen}
         history={history}
@@ -996,176 +966,16 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
           load(h.sql);
           setHistoryOpen(false);
         }}
+        // Both drawers occupy the same right-hand slot, so handing over closes
+        // this one.
+        onOpenSaved={
+          onOpenSavedQueries &&
+          (() => {
+            setHistoryOpen(false);
+            onOpenSavedQueries();
+          })
+        }
       />
     </div>
-  );
-}
-
-// ---- saved-queries side drawer (browse / search / load / delete) ----------
-// Shared right-side drawer pattern (Prompt 1): a dimmed scrim + a sliding
-// panel. Searches saved queries by name OR SQL content, shows each with a
-// full, multi-line, syntax-highlighted SQL preview, loads on click, and
-// deletes via a hover trash icon. The per-row scope chip (global /
-// this-workspace) preserves this app's workspace-attachment feature.
-function SavedQueriesDrawer({
-  open,
-  queries,
-  onClose,
-  onLoad,
-  onDelete,
-}: {
-  open: boolean;
-  queries: SavedQuery[];
-  onClose: () => void;
-  onLoad: (q: SavedQuery) => void;
-  onDelete: (id: string) => void;
-}) {
-  const [q, setQ] = useState("");
-  // Esc closes the drawer (matches the popover dismissal it replaces).
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  const ql = q.trim().toLowerCase();
-  const list = ql
-    ? queries.filter((x) => x.name.toLowerCase().includes(ql) || x.sql.toLowerCase().includes(ql))
-    : queries;
-
-  return (
-    <>
-      <div className={"drawer-scrim" + (open ? " show" : "")} onClick={onClose} />
-      <aside className={"sq-drawer" + (open ? " open" : "")} aria-hidden={!open}>
-        <div className="sq-drawer-head">
-          <span className="sq-drawer-title">
-            <Icon name="bookmarks" size={16} style={{ color: "var(--accent)" }} /> Saved queries
-          </span>
-          <IconBtn icon="close" onClick={onClose} title="Close" />
-        </div>
-        <div className="sq-drawer-sub">Shared across all workspaces</div>
-        <div className="sq-search">
-          <Icon name="search" size={15} style={{ color: "var(--text-faint)" }} />
-          <input
-            placeholder="Search name or SQL…"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            spellCheck={false}
-          />
-          {q ? <IconBtn icon="close" size={13} title="Clear" onClick={() => setQ("")} /> : null}
-        </div>
-        <div className="sq-list">
-          {list.length === 0 ? (
-            <div className="sq-empty">
-              {queries.length === 0
-                ? "Nothing saved yet — write a query and use the bookmark button."
-                : `No saved queries match “${q}”.`}
-            </div>
-          ) : (
-            list.map((item) => {
-              const scoped = item.connectionId != null;
-              return (
-                <div key={item.id} className="sq-item" onClick={() => onLoad(item)}>
-                  <div className="sq-item-head">
-                    <Icon name="bookmark" size={14} style={{ color: "var(--accent)" }} />
-                    <span className="sq-item-name">{item.name}</span>
-                    <span className="saved-scope" title={scoped ? "This workspace" : "Global"}>
-                      {scoped ? "this workspace" : "global"}
-                    </span>
-                    <button
-                      type="button"
-                      className="sq-item-del"
-                      title="Delete"
-                      aria-label={"Delete " + item.name}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDelete(item.id);
-                      }}
-                    >
-                      <Icon name="delete" size={14} />
-                    </button>
-                  </div>
-                  <pre
-                    className="sq-item-sql"
-                    dangerouslySetInnerHTML={{ __html: previewHtml(item.sql) }}
-                  />
-                </div>
-              );
-            })
-          )}
-        </div>
-      </aside>
-    </>
-  );
-}
-
-// ---- query-history side drawer (this tab) ---------------------------------
-// Reuses the saved-queries drawer/scrim styling (Prompt 2). Shows the recent
-// runs for this tab with a status indicator (accent check / red error), a
-// result badge (row count or "failed"), and a full highlighted SQL preview.
-function HistoryDrawer({
-  open,
-  history,
-  onClose,
-  onLoad,
-}: {
-  open: boolean;
-  history: SqlHistoryEntry[];
-  onClose: () => void;
-  onLoad: (h: SqlHistoryEntry) => void;
-}) {
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  return (
-    <>
-      <div className={"drawer-scrim" + (open ? " show" : "")} onClick={onClose} />
-      <aside className={"sq-drawer" + (open ? " open" : "")} aria-hidden={!open}>
-        <div className="sq-drawer-head">
-          <span className="sq-drawer-title">
-            <Icon name="history" size={16} style={{ color: "var(--accent)" }} /> Query history
-          </span>
-          <IconBtn icon="close" onClick={onClose} title="Close" />
-        </div>
-        <div className="sq-drawer-sub">Recent queries · this tab</div>
-        <div className="sq-list">
-          {history.length === 0 ? (
-            <div className="sq-empty">Nothing yet — run a query and it shows up here.</div>
-          ) : (
-            history.map((h, i) => (
-              <div key={i} className="sq-item" onClick={() => onLoad(h)}>
-                <div className="sq-item-head">
-                  <Icon
-                    name={h.ok ? "check_circle" : "error"}
-                    size={14}
-                    style={{ color: h.ok ? "var(--accent)" : "#e06c75" }}
-                  />
-                  <span className="sq-item-name">
-                    {h.ok
-                      ? h.rowCount !== undefined
-                        ? `${h.rowCount} row${h.rowCount === 1 ? "" : "s"}`
-                        : "Query OK"
-                      : "failed"}
-                  </span>
-                </div>
-                <pre
-                  className="sq-item-sql"
-                  dangerouslySetInnerHTML={{ __html: previewHtml(h.sql) }}
-                />
-              </div>
-            ))
-          )}
-        </div>
-      </aside>
-    </>
   );
 }

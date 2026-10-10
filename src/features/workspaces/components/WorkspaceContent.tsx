@@ -122,6 +122,7 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
   const openSqlTab = useWorkspacesStore((state) => state.openSqlTab);
   const openSqlTabWith = useWorkspacesStore((state) => state.openSqlTabWith);
   const setSqlText = useWorkspacesStore((state) => state.setSqlText);
+  const setSqlSavedLink = useWorkspacesStore((state) => state.setSqlSavedLink);
   const openProcessesTab = useWorkspacesStore((state) => state.openProcessesTab);
   const consoleOpen = usePanelStore((state) => selectPanel(state, workspace.id).open);
   const togglePanel = usePanelStore((state) => state.togglePanel);
@@ -215,9 +216,14 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
   // into a fresh one when the drawer was opened from the tab strip over
   // something else. Same destination rule as the command palette's saved-query
   // entries, which only ever have the second case.
+  //
+  // Either way the tab is linked to the entry, so editing and saving again
+  // updates it rather than leaving a second copy behind.
   const loadSavedQuery = (q: SavedQuery) => {
-    if (activeTab?.kind === "sql") setSqlText(activeTab.id, q.sql);
-    else openSqlTabWith(q.sql);
+    if (activeTab?.kind === "sql") {
+      setSqlText(activeTab.id, q.sql);
+      setSqlSavedLink(activeTab.id, q.id);
+    } else openSqlTabWith(q.sql, q.id);
     setSavedOpen(false);
     toast(`Loaded “${q.name}”`, "ok");
   };

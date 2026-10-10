@@ -194,8 +194,12 @@ interface WorkspacesFeatureState {
    * Open a fresh SQL editor tab pre-loaded with `sql` and focus it (command
    * palette: load a saved query). Like `openSqlTab` but seeds the buffer
    * instead of the starter SQL.
+   *
+   * `savedQueryId` links the new tab to the saved query the SQL came from, so
+   * saving from it updates that entry (see `SqlTabState.savedQueryId`). Omit
+   * for SQL that is not a saved query (object DDL, templates).
    */
-  openSqlTabWith: (sql: string) => void;
+  openSqlTabWith: (sql: string, savedQueryId?: string | null) => void;
   /**
    * Open the schema-map tab for `schema` (one per schema) and focus it; if
    * already open, focus the existing one.
@@ -299,8 +303,13 @@ interface WorkspacesFeatureState {
   // All operate on the active workspace's `ui` tabs and are no-ops when the
   // target is not a SQL tab. Editor state lives on the tab so it survives
   // workspace switches (the WorkspaceUiState rule).
-  /** Set a SQL tab's editor buffer (committed on change — see SqlEditorTab). */
+  /** Set a SQL tab's editor buffer (committed on change — see SqlEditorTab).
+   *  Deliberately leaves `savedQueryId` alone: editing a loaded saved query is
+   *  exactly when the link has to survive. */
   setSqlText: (tabId: string, text: string) => void;
+  /** Link a SQL tab to the saved query its buffer came from (null unlinks), so
+   *  the next save updates that entry. See `SqlTabState.savedQueryId`. */
+  setSqlSavedLink: (tabId: string, savedQueryId: string | null) => void;
   /** Replace a SQL tab's result set with one run-outcome per executed
    *  statement, focusing the first (the × dismiss clears them). */
   setSqlRuns: (tabId: string, runs: SqlRun[]) => void;
@@ -791,13 +800,14 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
             activeRunId: null,
             history: [],
             editorHeight: null,
+            savedQueryId: null,
           };
           return { tabs: [...(ui.tabs ?? []), tab], activeTabId: tab.id };
         }),
       };
     }),
 
-  openSqlTabWith: (sql) =>
+  openSqlTabWith: (sql, savedQueryId = null) =>
     set((state) => {
       const id = state.activeWorkspaceId;
       if (id === null) return state;
@@ -813,6 +823,7 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
             activeRunId: null,
             history: [],
             editorHeight: null,
+            savedQueryId,
           };
           return { tabs: [...(ui.tabs ?? []), tab], activeTabId: tab.id };
         }),
@@ -1057,6 +1068,9 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
 
   setSqlText: (tabId, text) =>
     set((state) => ({ workspaces: patchSqlTab(state, tabId, () => ({ text })) })),
+
+  setSqlSavedLink: (tabId, savedQueryId) =>
+    set((state) => ({ workspaces: patchSqlTab(state, tabId, () => ({ savedQueryId })) })),
 
   setSqlRuns: (tabId, runs) =>
     set((state) => ({

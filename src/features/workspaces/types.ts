@@ -194,6 +194,18 @@ export interface SqlTabState {
   /** Editor-pane height (px) from the editor/results splitter; null = CSS
    *  default (38%). Per-tab so each query keeps its own split. */
   editorHeight: number | null;
+  /**
+   * The saved query this buffer came from — set when one is loaded and after
+   * a save, so saving again UPDATES that entry instead of piling up
+   * near-duplicates. Absent/null = unlinked: a fresh tab, a snippet chip, an
+   * opened .sql file or a history entry, all of which clear it.
+   *
+   * Only the id is kept; the name and attachment are read live from the
+   * saved-query store, so a rename — or a delete, which drops the tab back to
+   * saving a new entry — needs no bookkeeping here. Optional because sessions
+   * stored by earlier builds restore without it.
+   */
+  savedQueryId?: string | null;
 }
 
 /**

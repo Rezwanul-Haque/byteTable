@@ -182,7 +182,14 @@ export function SqlEditorTab({
   const clearSqlRuns = useWorkspacesStore((s) => s.clearSqlRuns);
   const setSqlEditorHeight = useWorkspacesStore((s) => s.setSqlEditorHeight);
 
+  const setSqlSavedLink = useWorkspacesStore((s) => s.setSqlSavedLink);
+
   const saveQuery = useSavedQueriesStore((s) => s.save);
+  // Resolved live rather than cached on the tab: a rename or a delete from the
+  // drawer is picked up without bookkeeping, and a deleted entry simply drops
+  // the popover back to saving a new query.
+  const savedQueries = useSavedQueriesStore((s) => s.savedQueries);
+  const linked = savedQueries.find((q) => q.id === tab.savedQueryId) ?? null;
 
   const [running, setRunning] = useState(false);
   const [pop, setPop] = useState<Popover>(null);
@@ -290,6 +297,18 @@ export function SqlEditorTab({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  // Seed the save popover from the saved query this tab is linked to, every
+  // time it opens — so re-saving a loaded query shows its own name and
+  // attachment, and "Save" means UPDATE rather than a second copy. Keyed off
+  // the open transition (not `linked`), so typing a new name while the popover
+  // is open is never clobbered. Unlinked tabs open blank, as before.
+  useEffect(() => {
+    if (pop !== "save") return;
+    setSaveName(linked?.name ?? "");
+    setAttach(linked?.connectionId != null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pop]);
 
   const text = tab.text;
 
@@ -509,8 +528,13 @@ export function SqlEditorTab({
     editorRef.current?.revealRange(at, at + target.sql.length);
   };
 
+  // Replace the buffer from a snippet chip, a history entry or an opened file.
+  // None of those is a saved query, so the tab stops being linked to one — the
+  // next save must not overwrite the entry the previous text came from. (A
+  // saved query is loaded by WorkspaceContent, which links instead.)
   const load = (sql: string) => {
     setSqlText(tab.id, sql);
+    setSqlSavedLink(tab.id, null);
     setPop(null);
   };
 
@@ -543,15 +567,33 @@ export function SqlEditorTab({
   // Beautify the whole buffer in place (wand FAB / Shift+Alt+F).
   const format = () => setSqlText(tab.id, formatSql(text));
 
-  const doSave = () => {
-    const name = saveName.trim() || "Untitled query";
+  /**
+   * Save the buffer. When this tab was loaded FROM a saved query, the default
+   * is to UPDATE that entry in place (same id, so a tweak-and-save does not
+   * leave a near-duplicate behind) — the entry's `savedAt` rides along because
+   * the backend keeps whatever it is handed on an update. `asNew` forks the
+   * buffer into a fresh entry instead; the tab then follows the copy, so the
+   * next save updates that one.
+   */
+  const doSave = (asNew = false) => {
+    const updating = !asNew && linked !== null;
+    const name = saveName.trim() || linked?.name || "Untitled query";
     const connectionId = attach ? workspace.saved.id : null;
-    void saveQuery({ name, sql: text, connectionId })
-      .then(() => {
+    void saveQuery({
+      id: updating ? linked.id : undefined,
+      savedAt: updating ? linked.savedAt : undefined,
+      name,
+      sql: text,
+      connectionId,
+    })
+      .then((stored) => {
+        setSqlSavedLink(tab.id, stored.id);
         toast(
-          attach
-            ? `Saved “${name}” — attached to this workspace`
-            : `Saved “${name}” — shared across all workspaces`,
+          updating
+            ? `Updated “${name}”`
+            : attach
+              ? `Saved “${name}” — attached to this workspace`
+              : `Saved “${name}” — shared across all workspaces`,
           "ok",
         );
         setSaveName("");
@@ -683,8 +725,12 @@ export function SqlEditorTab({
             onClick={() => setPop(pop === "save" ? null : "save")}
           />
           {pop === "save" ? (
-            <div className="editor-pop save-pop" role="dialog" aria-label="Save query">
-              <div className="history-pop-title">Save query</div>
+            <div
+              className="editor-pop save-pop"
+              role="dialog"
+              aria-label={linked ? "Update saved query" : "Save query"}
+            >
+              <div className="history-pop-title">{linked ? "Update query" : "Save query"}</div>
               <input
                 className="save-pop-input"
                 placeholder="Query name…"
@@ -703,9 +749,19 @@ export function SqlEditorTab({
               <div className="save-pop-note">
                 {attach ? `Only visible in ${workspace.name}` : "Shared across all workspaces"}
               </div>
-              <Btn variant="filled" small onClick={doSave} style={{ alignSelf: "flex-end" }}>
-                Save
-              </Btn>
+              {/* Loaded from the saved list: the primary action overwrites that
+                  entry (renaming it if the field was edited), with the old
+                  behaviour one click away as "Save as new". */}
+              <div className="save-pop-actions">
+                {linked ? (
+                  <Btn variant="text" small onClick={() => doSave(true)}>
+                    Save as new
+                  </Btn>
+                ) : null}
+                <Btn variant="filled" small onClick={() => doSave()}>
+                  {linked ? "Update" : "Save"}
+                </Btn>
+              </div>
             </div>
           ) : null}
         </div>

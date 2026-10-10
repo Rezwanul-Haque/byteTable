@@ -1364,6 +1364,15 @@
   gap: 8px;
 }
 
+/* Footer row: "Save as new" (only when updating an entry) beside the primary
+   Save/Update button, which stays right-aligned either way. */
+.save-pop-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 .save-pop-input {
   background: var(--bg0);
   border: 1px solid var(--border);

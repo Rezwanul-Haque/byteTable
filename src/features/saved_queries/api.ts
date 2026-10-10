@@ -44,6 +44,13 @@ export interface SavedQueryInput {
   name: string;
   sql: string;
   connectionId?: string | null;
+  /**
+   * The entry's existing `savedAt`, for an UPDATE. The backend keeps whatever
+   * it is handed on an update (it only assigns one to brand-new entries), so
+   * re-saving without this would overwrite a real timestamp with 0. Omit for a
+   * new query.
+   */
+  savedAt?: number;
 }
 
 export function savedQueryList(): Promise<SavedQuery[]> {
@@ -52,14 +59,15 @@ export function savedQueryList(): Promise<SavedQuery[]> {
 
 /**
  * Insert or update; returns the stored value (with assigned id/savedAt).
- * `savedAt` is filled in by the backend, so a fresh save sends 0.
+ * A fresh save sends 0 and the backend fills `savedAt` in; an update sends the
+ * entry's own timestamp back, which the backend keeps.
  */
 export function savedQuerySave(query: SavedQueryInput): Promise<SavedQuery> {
   const payload: SavedQuery = {
     id: query.id ?? "",
     name: query.name,
     sql: query.sql,
-    savedAt: 0,
+    savedAt: query.savedAt ?? 0,
     // Pass the attachment through. Rust's Option deserializes from absent or
     // null, so a global query (null/undefined) is fine either way.
     connectionId: query.connectionId ?? null,

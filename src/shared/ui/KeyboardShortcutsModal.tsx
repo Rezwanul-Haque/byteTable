@@ -53,7 +53,10 @@ const GROUPS: Group[] = [
   },
   {
     title: "uix.sc.group.structure",
-    rows: [{ keys: "⌘S", label: "uix.sc.structure.applyPending" }],
+    rows: [
+      { keys: "⌘I", label: "uix.sc.structure.addColumn" },
+      { keys: "⌘S", label: "uix.sc.structure.applyPending" },
+    ],
   },
   {
     title: "uix.sc.group.view",

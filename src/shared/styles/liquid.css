@@ -394,6 +394,9 @@
 [data-material="liquid"] .btn-text {
   border-radius: 99px;
 }
+[data-material="liquid"] .add-col-btn {
+  border-radius: 99px;
+}
 [data-material="liquid"] .ws-tile {
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.08);
@@ -430,6 +433,7 @@
 [data-material="liquid"] .binary-input,
 [data-material="liquid"] .ri-input,
 [data-material="liquid"] .sel-trigger,
+[data-material="liquid"] .proj-filter-btn,
 [data-material="liquid"] .where-input,
 [data-material="liquid"] .filter-value,
 [data-material="liquid"] .set-select {

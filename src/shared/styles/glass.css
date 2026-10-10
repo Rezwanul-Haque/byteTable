@@ -409,10 +409,21 @@
    screen's accordions were flat boxes on a flat panel. */
 [data-material] .structure-card,
 [data-material] .proj-acc,
-[data-material] .connect-card {
+[data-material] .connect-card,
+/* The new-connection modal's engine tiles are the same thing: cards sitting on
+   an already-blurred surface. Flat `--bg2` left them as grey slabs on glass. */
+[data-material] .engine-choice {
   background: rgba(255, 255, 255, 0.07);
   border-color: rgba(255, 255, 255, 0.14);
   box-shadow: var(--glass-hi);
+}
+
+/* Both properties restated rather than inherited from the base `.active` rule:
+   that rule and the one above are both specificity 0-2-0, so which wins would
+   come down to stylesheet order — and component CSS loads after this file. */
+[data-material] .engine-choice.active {
+  background: color-mix(in oklab, var(--accent) 22%, transparent);
+  border-color: var(--accent);
 }
 
 /* The connect panel is the one floating surface that never covers data — it
@@ -448,6 +459,10 @@
 [data-material] .set-select,
 [data-material] .sel-trigger,
 [data-material] .proj-select-btn,
+/* The connect screen's project-scope trigger: a select in all but name, and
+   the last control on that screen still painting flat `--bg2` while the search
+   field beside it and its own popover are both glass. */
+[data-material] .proj-filter-btn,
 [data-material] .binary-input,
 [data-material] .ri-input,
 [data-material] .cs-input,
@@ -514,6 +529,20 @@
   box-shadow: var(--glass-hi);
 }
 
+/* Structure ▸ Add column. Its flat-theme fill mixes the accent into the OPAQUE
+   `--bg2`, which lands on a translucent pane as a solid chip with a hard edge —
+   the one control in that head that ignores the material. Mixed into
+   `transparent` instead, like the active states above, so the pane shows
+   through and the rim comes from the glass highlight. */
+[data-material] .add-col-btn {
+  background: color-mix(in oklab, var(--accent) 22%, transparent);
+  box-shadow: var(--glass-hi);
+}
+
+[data-material] .add-col-btn:hover {
+  background: color-mix(in oklab, var(--accent) 34%, transparent);
+}
+
 /* Menu bar: the dropdown is the glass surface (see the floating tier); these
    are its trigger and its rows. Glassing .tb-menu itself would frost a block
    behind the BUTTON and leave the dropdown opaque. */
@@ -565,6 +594,24 @@
   box-shadow:
     var(--glass-hi),
     0 8px 20px color-mix(in oklab, var(--accent) 45%, transparent);
+}
+
+/* The other two variants were never themed, so they kept mixing the accent into
+   the OPAQUE `--bg2` — a flat slab on a translucent pane, which is what the
+   sidebar's "New SQL query" looked like. Same remedy as every other tinted
+   control here: mix into `transparent` and take the rim from the highlight, so
+   the surface behind shows through. */
+[data-material] .btn-tonal {
+  background: color-mix(in oklab, var(--accent) 22%, transparent);
+  box-shadow: var(--glass-hi);
+}
+
+[data-material] .btn-tonal:hover {
+  background: color-mix(in oklab, var(--accent) 34%, transparent);
+}
+
+[data-material] .btn-text:hover {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 [data-material] ::-webkit-scrollbar-thumb {

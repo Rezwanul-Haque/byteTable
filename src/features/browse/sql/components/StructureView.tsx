@@ -457,21 +457,86 @@ export function StructureView({
   // blurred: that blur is what commits an in-progress rename/type/default into
   // the batch, and it lands via setState, so applying in the same turn would
   // miss it. Deferring by a turn applies the batch the user can see.
+  /**
+   * Escape's counterpart to ⌘I: drop the most recently staged new column.
+   *
+   * One per press, newest first — the same bargain the data grid strikes with a
+   * staged row, so a mis-pressed ⌘I is undone by the key the user already
+   * reaches for. Only ever removes a column that exists nowhere but the batch;
+   * an introspected column is never touched.
+   */
+  const cancelNewColumn = useCallback(() => {
+    const staged = [...ops].reverse().find((o) => o.op === "addColumn");
+    if (!staged) return false;
+    const name = staged.name;
+    // Drop the AddColumn op and anything that edited it; a column that never
+    // reached the server has no other ops worth keeping.
+    setOps(ops.filter((o) => !("name" in o && o.name === name)));
+    setEditingCell((cell) => (cell !== null && cell.startsWith(name + ":") ? null : cell));
+    setAutoEditName((n) => (n === name ? null : n));
+    toast(t("stv.columnDiscarded", { name }));
+    return true;
+  }, [ops, setOps, toast, t]);
+
   const applyRef = useRef(applyPending);
   applyRef.current = applyPending;
+  const addColumnRef = useRef(addColumn);
+  addColumnRef.current = addColumn;
+  const cancelRef = useRef(cancelNewColumn);
+  cancelRef.current = cancelNewColumn;
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() !== "s") return;
-      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
-      // Nothing staged and nothing being typed — leave the keystroke alone.
-      if ((ops.length === 0 && editingCell === null) || applying || ddlOpen) return;
-      event.preventDefault();
-      if (editingCell !== null) {
-        (document.activeElement as HTMLElement | null)?.blur();
-        setTimeout(() => void applyRef.current(), 0);
+      // Escape discards the newest staged column. It is handled here rather than
+      // left to bubble because an un-consumed Escape reaches the OS, which exits
+      // native full screen — so the key has to be claimed to be useful at all.
+      if (event.key === "Escape") {
+        // A press inside a text field (a cell editor, the column filter) belongs
+        // to that field, and a modal above the view answers first.
+        const el = event.target as HTMLElement | null;
+        if (
+          el?.tagName === "INPUT" ||
+          el?.tagName === "TEXTAREA" ||
+          el?.isContentEditable === true
+        ) {
+          return;
+        }
+        if (applying || ddlOpen || editingCell !== null) return;
+        // Nothing staged: let it through, so Escape still leaves full screen
+        // when the view has nothing of its own to cancel.
+        if (cancelRef.current()) event.preventDefault();
         return;
       }
-      void applyRef.current();
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+      const key = event.key.toLowerCase();
+      if (key !== "s" && key !== "i") return;
+      // A modal owns the keyboard while it is up, and an apply in flight owns
+      // the batch.
+      if (applying || ddlOpen) return;
+
+      // Both actions read the staged batch, and an open cell editor only folds
+      // its rename/type/default INTO that batch when it blurs — via setState.
+      // Acting in the same turn would therefore work from the pre-blur `ops`,
+      // so defer by a turn and act on the batch the user can actually see.
+      const afterCommit = (run: () => void) => {
+        if (editingCell === null) {
+          run();
+          return;
+        }
+        (document.activeElement as HTMLElement | null)?.blur();
+        setTimeout(run, 0);
+      };
+
+      // ⌘I stages a new column — the same "add one of these here" binding the
+      // data grid, Cassandra, Mongo and Dynamo tabs all use for a new row.
+      if (key === "i") {
+        event.preventDefault();
+        afterCommit(() => addColumnRef.current());
+        return;
+      }
+      // ⌘S: nothing staged and nothing being typed — leave the keystroke alone.
+      if (ops.length === 0 && editingCell === null) return;
+      event.preventDefault();
+      afterCommit(() => void applyRef.current());
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -1213,7 +1278,14 @@ function EditableText({
         onBlur={commit}
         onKeyDown={(e) => {
           if (e.key === "Enter") commit();
-          if (e.key === "Escape") onDone();
+          if (e.key === "Escape") {
+            // Consume it. Leaving edit mode is this key's whole job here, and
+            // an un-consumed Escape carries on to the window handler below and
+            // then to the OS — which exits native full screen.
+            e.preventDefault();
+            e.stopPropagation();
+            onDone();
+          }
         }}
       />
     );

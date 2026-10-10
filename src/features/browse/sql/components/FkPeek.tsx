@@ -14,13 +14,41 @@ import { useEffect, useRef, useState } from "react";
 import type { CellValue, RowLookup } from "../../../../shared/api/engine";
 import { rowLookup } from "../../../../shared/api/engine";
 import { appErrorMessage } from "../../../../shared/api/error";
+import { CopyButton } from "../../../../shared/ui/CopyButton";
 import { Icon } from "../../../../shared/ui/Icon";
 import { useT } from "../../../../shared/i18n/useT";
+import { binaryClipboardText, formatBinary, isBinaryType } from "../../shared/binaryCell";
 import { CellContent } from "../../shared/components/GridCell";
 import "./Popovers.css";
 
 /** Max referenced-row fields shown in the peek list (prototype truncation). */
 const MAX_FIELDS = 7;
+
+/**
+ * The copy buttons offered for one peeked field. Every value here is shown
+ * TRUNCATED (a 300px popover), so the clipboard is the only way to get a whole
+ * one out — and for a binary key both forms are wanted: the UUID a human reads
+ * and quotes, and the `0x`-hex the column actually stores, which is what a
+ * hand-written `WHERE id = …` needs. A large-blob placeholder ("[N bytes]") is
+ * not a value and gets no button.
+ */
+function copyActions(
+  value: CellValue,
+  type: string | undefined,
+): { label: string; text: string; icon?: string }[] {
+  if (value === null || value === undefined) return [];
+  if (isBinaryType(type)) {
+    const actions: { label: string; text: string; icon?: string }[] = [];
+    const repr = formatBinary(value, type);
+    if (repr?.kind === "uuid") actions.push({ label: "Copy UUID", text: repr.text });
+    const hex = binaryClipboardText(value);
+    if (/^0x[0-9a-f]+$/i.test(hex))
+      actions.push({ label: "Copy stored bytes (0x-hex)", text: hex, icon: "tag" });
+    return actions;
+  }
+  const text = typeof value === "object" ? JSON.stringify(value) : String(value);
+  return text === "" ? [] : [{ label: "Copy value", text }];
+}
 
 export interface FkPeekAnchor {
   /** The clicked cell's bounding rect (drives positioning). */
@@ -149,16 +177,33 @@ export function FkPeek({
         <div className="dg-pop-empty">{error}</div>
       ) : row ? (
         <div className="fk-fields">
-          {cols.slice(0, MAX_FIELDS).map((c, i) => (
-            <div className="fk-field" key={c.name}>
-              <span className="fk-field-name" title={c.name}>
-                {c.name}
-              </span>
-              <span className="fk-field-val">
-                <CellContent value={row[i] ?? null} column={c.name} type={c.typeHint} />
-              </span>
-            </div>
-          ))}
+          {cols.slice(0, MAX_FIELDS).map((c, i) => {
+            const cell = row[i] ?? null;
+            const actions = copyActions(cell, c.typeHint);
+            return (
+              <div className="fk-field" key={c.name}>
+                <span className="fk-field-name" title={c.name}>
+                  {c.name}
+                </span>
+                <span className="fk-field-val">
+                  <CellContent value={cell} column={c.name} type={c.typeHint} />
+                </span>
+                {actions.length > 0 ? (
+                  <span className="fk-copies">
+                    {actions.map((a) => (
+                      <CopyButton
+                        key={a.label}
+                        className="fk-copy"
+                        label={a.label}
+                        text={a.text}
+                        icon={a.icon}
+                      />
+                    ))}
+                  </span>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
       ) : (
         <div className="dg-pop-empty">{t("grid.noMatchingRow")}</div>

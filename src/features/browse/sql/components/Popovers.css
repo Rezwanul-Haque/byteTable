@@ -73,6 +73,7 @@
   gap: 1px;
 }
 .fk-field {
+  position: relative;
   display: flex;
   gap: 10px;
   padding: 3.5px 6px;
@@ -82,6 +83,11 @@
 }
 .fk-field:nth-child(odd) {
   background: color-mix(in oklab, var(--bg3) 50%, transparent);
+}
+/* After the odd-row rule (equal specificity — source order decides), so the
+   hovered row is one flat colour that the copy chips blend into. */
+.fk-field:hover {
+  background: var(--bg3);
 }
 .fk-field-name {
   color: var(--text-faint);
@@ -95,6 +101,40 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* Copy chips over the right end of the row, revealed on hover — like the
+   grid's `.dg-copy`. Absolute so the value keeps its full width (and the same
+   truncation) whether or not the pointer is on the row; the fade hides the
+   text that ends up underneath. */
+.fk-copies {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: none;
+  align-items: center;
+  gap: 1px;
+  background: var(--bg3);
+  box-shadow: -8px 0 8px -3px var(--bg3);
+}
+.fk-field:hover .fk-copies {
+  display: flex;
+}
+.fk-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+.fk-copy:hover {
+  color: var(--text);
+  background: var(--bg2);
 }
 .fk-open-btn {
   display: flex;

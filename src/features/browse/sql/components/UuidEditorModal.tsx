@@ -3,11 +3,16 @@
 // 8-4-4-4-12 form, and generates a fresh id in a chosen version (v7 default —
 // time-ordered, best for keys — plus v4 random and v1). Empty saves NULL. A
 // UUID stored as `binary(16)` uses BinaryEditorModal instead.
+//
+// On a FOREIGN-key column (`fk`) there is nothing to generate: the value must
+// be a key that exists in the parent table. The generator is replaced by the
+// reference + existence check of {@link FkTargetNote}.
 
 import { useEffect, useRef, useState } from "react";
 
-import type { CellValue } from "../../../../shared/api/engine";
+import type { CellValue, FkRef } from "../../../../shared/api/engine";
 import { Btn } from "../../../../shared/ui/Btn";
+import { CopyButton } from "../../../../shared/ui/CopyButton";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { Modal, ModalActions } from "../../../../shared/ui/Modal";
@@ -19,6 +24,7 @@ import {
   uuidVersions,
   type UuidVersion,
 } from "../../shared/binaryCell";
+import { FkTargetNote } from "./FkTargetNote";
 import "../../shared/styles/CellEditors.css";
 
 interface UuidEditorModalProps {
@@ -31,6 +37,11 @@ interface UuidEditorModalProps {
   onClose: () => void;
   /** View-only (e.g. a UUID primary key): no editing, generate, or save. */
   readOnly?: boolean;
+  /** The column's foreign-key target, when it has one: swaps the generator for
+   *  the reference + an existence check of what is in the input. */
+  fk?: FkRef | null;
+  /** Connection for that check. Without it only the reference is shown. */
+  handleId?: string;
 }
 
 /** SQL Server calls it GUID; everything else UUID. */
@@ -47,6 +58,8 @@ export function UuidEditorModal({
   onSave,
   onClose,
   readOnly = false,
+  fk = null,
+  handleId,
 }: UuidEditorModalProps) {
   const label = uuidLabel(type);
   const init = value == null ? "" : String(value);
@@ -109,18 +122,38 @@ export function UuidEditorModal({
         <span className="binary-label">
           {t("grid.valueLabel")} <span className="binary-sub">{t("grid.uuidSub", { label })}</span>
         </span>
-        <input
-          ref={inputRef}
-          className={"binary-input" + (valid ? "" : " err")}
-          value={text}
-          spellCheck={false}
-          autoCapitalize="off"
-          readOnly={readOnly}
-          placeholder="b1e7a4c2-3f9d-4a1e-8c77-2d5f6a0b9e34"
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={onKey}
-        />
+        {/* A button inside a <label> is interactive content, so clicking it
+            copies without the label forwarding the click to the input. */}
+        <span className="binary-input-wrap">
+          <input
+            ref={inputRef}
+            className={"binary-input" + (valid ? "" : " err")}
+            value={text}
+            spellCheck={false}
+            autoCapitalize="off"
+            readOnly={readOnly}
+            placeholder="b1e7a4c2-3f9d-4a1e-8c77-2d5f6a0b9e34"
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={onKey}
+          />
+          {empty ? null : (
+            <CopyButton
+              className="binary-copy"
+              label={"Copy " + column + " value"}
+              text={trimmed}
+            />
+          )}
+        </span>
       </label>
+
+      {fk ? (
+        <FkTargetNote
+          handleId={handleId}
+          refSchema={schemaName}
+          fk={fk}
+          value={valid && !empty ? trimmed.toLowerCase() : null}
+        />
+      ) : null}
 
       <div className={"json-status" + (valid ? " ok" : " err")}>
         <Icon name={valid ? "check_circle" : "error"} size={14} />
@@ -143,22 +176,30 @@ export function UuidEditorModal({
           </>
         ) : (
           <>
-            <button
-              type="button"
-              className="json-tool"
-              onClick={() => generate(version)}
-              title={t("grid.genBtnTitle", { version: version.toUpperCase(), label })}
-            >
-              <Icon name="autorenew" size={14} /> {t("grid.generate")}
-            </button>
-            <Select
-              className="uuid-ver-select"
-              value={version}
-              options={uuidVersions().map((v) => ({ value: v.id, label: v.label }))}
-              onChange={(v) => generate(v as UuidVersion)}
-              title={t("grid.uuidVerTitle")}
-              aria-label={t("grid.uuidVerTitle")}
-            />
+            {/* A foreign key has nothing to generate — it has to be a key the
+                parent table already holds, so the generator is left out rather
+                than offering a value that cannot be right. The note above says
+                so, which keeps this row from wrapping in a narrow panel. */}
+            {fk ? null : (
+              <>
+                <button
+                  type="button"
+                  className="json-tool"
+                  onClick={() => generate(version)}
+                  title={t("grid.genBtnTitle", { version: version.toUpperCase(), label })}
+                >
+                  <Icon name="autorenew" size={14} /> {t("grid.generate")}
+                </button>
+                <Select
+                  className="uuid-ver-select"
+                  value={version}
+                  options={uuidVersions().map((v) => ({ value: v.id, label: v.label }))}
+                  onChange={(v) => generate(v as UuidVersion)}
+                  title={t("grid.uuidVerTitle")}
+                  aria-label={t("grid.uuidVerTitle")}
+                />
+              </>
+            )}
             <div style={{ flex: 1 }} />
             <Btn variant="text" onClick={onClose}>
               {t("common.cancel")}

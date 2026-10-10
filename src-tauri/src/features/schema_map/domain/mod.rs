@@ -88,6 +88,35 @@ pub struct TableGroup {
     pub color: Option<String>,
 }
 
+/// A user-drawn arrow between two things on the map — a group frame or a single
+/// table card, in any combination (e.g. "Billing → Auth", "Billing → events").
+///
+/// `from`/`to` are *identities*, not coordinates: a group id or a table name,
+/// with `from_kind`/`to_kind` saying which (absent = `"group"`, the only kind
+/// that existed when arrows shipped). The renderer works out where the arrow
+/// attaches from the two boxes on every render, so an arrow follows its ends as
+/// they are moved and resized. `dx`/`dy` are an offset on the arrow's midpoint
+/// (its bend), relative for the same reason `EdgeWaypoint`'s are. `label` is an
+/// optional caption. Stored opaquely — nothing here is derived from the schema,
+/// so the backend only round-trips it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GroupLink {
+    pub id: String,
+    pub from: String,
+    pub to: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dx: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dy: Option<f64>,
+}
+
 /// The full saved layout for one (connectionId, schema): every table card's
 /// position, every user-dragged FK edge offset, and the zoom level.
 ///
@@ -119,6 +148,10 @@ pub struct MapLayout {
     /// optional field, non-breaking like `cardinalities`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub groups: Vec<TableGroup>,
+    /// Arrows between groups. Omitted from the wire when empty (a new optional
+    /// field, non-breaking like `groups`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub group_links: Vec<GroupLink>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub zoom: Option<f64>,
 }
@@ -186,6 +219,7 @@ mod tests {
             }],
             cardinalities: Vec::new(),
             groups: Vec::new(),
+            group_links: Vec::new(),
             zoom: Some(1.5),
         }
     }
@@ -302,6 +336,68 @@ mod tests {
         assert_eq!(legacy.rect, None);
         assert_eq!(legacy.tables, vec!["users".to_string()]);
         assert_eq!(legacy.color, None);
+    }
+
+    #[test]
+    fn group_links_are_omitted_when_empty_and_round_trip_when_set() {
+        // No arrows → no `groupLinks` key (a layout saved before them is
+        // byte-identical).
+        assert!(serde_json::to_value(sample())
+            .expect("serialize")
+            .get("groupLinks")
+            .is_none());
+
+        let layout = MapLayout {
+            group_links: vec![
+                GroupLink {
+                    id: "a1".into(),
+                    from: "g1".into(),
+                    to: "g2".into(),
+                    from_kind: None,
+                    to_kind: None,
+                    label: Some("writes to".into()),
+                    dx: Some(12.0),
+                    dy: Some(-30.0),
+                },
+                // An arrow into a single table card names the table and says so.
+                GroupLink {
+                    id: "a2".into(),
+                    from: "g2".into(),
+                    to: "events".into(),
+                    from_kind: None,
+                    to_kind: Some("table".into()),
+                    label: None,
+                    dx: None,
+                    dy: None,
+                },
+            ],
+            ..sample()
+        };
+        let json = serde_json::to_value(&layout).expect("serialize");
+        assert_eq!(
+            json["groupLinks"],
+            serde_json::json!([
+                {
+                    "id": "a1",
+                    "from": "g1",
+                    "to": "g2",
+                    "label": "writes to",
+                    "dx": 12.0,
+                    "dy": -30.0,
+                },
+                { "id": "a2", "from": "g2", "to": "events", "toKind": "table" },
+            ])
+        );
+        let back: MapLayout = serde_json::from_value(json).expect("deserialize");
+        assert_eq!(back, layout);
+
+        // An arrow saved before table endpoints existed joined two frames, and
+        // still parses as exactly that.
+        let legacy: GroupLink =
+            serde_json::from_value(serde_json::json!({ "id": "a3", "from": "g1", "to": "g2" }))
+                .expect("legacy arrow parses");
+        assert_eq!(legacy.from_kind, None);
+        assert_eq!(legacy.to_kind, None);
     }
 
     #[test]

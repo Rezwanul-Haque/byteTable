@@ -12,6 +12,11 @@ import "material-symbols/rounded.css";
 
 import "./shared/styles/tokens.css";
 import "./shared/styles/global.css";
+// Material-theme surface rules (M37): the shared tiers, then Liquid Glass's
+// lensing on top. Inert unless <html data-material> is set; every rule is
+// attribute-scoped, so the flat palettes never pay for them.
+import "./shared/styles/glass.css";
+import "./shared/styles/liquid.css";
 
 // Apply saved settings (theme/accent/fonts/sizes) synchronously off the
 // localStorage fast-path BEFORE React mounts, so the first painted frame is

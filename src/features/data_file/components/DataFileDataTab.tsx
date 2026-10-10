@@ -358,7 +358,7 @@ export function DataFileDataTab({
         // a locked, READ-ONLY value, so claiming one makes that column
         // uneditable.
         pk: false,
-        fk: false,
+        fk: null,
       })),
     [columns],
   );

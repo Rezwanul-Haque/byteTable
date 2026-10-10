@@ -64,6 +64,7 @@ import {
   type CardinalityKind,
   type EdgeCardinality,
   type EdgeWaypoint,
+  type GroupLink,
   type NodePosition,
   type TableGroup,
 } from "../api";
@@ -100,6 +101,22 @@ import {
   type GroupRect,
   type ResizeHandle,
 } from "../groups";
+import {
+  bendGroupLink,
+  buildGroupLinks,
+  createGroupLink,
+  flipGroupLink,
+  hasBentGroupLinks,
+  labelGroupLink,
+  linkGeometry,
+  pruneGroupLinks,
+  removeGroupLink,
+  sameEnd,
+  straightenGroupLink,
+  straightenGroupLinks,
+  type GroupLinkModel,
+  type LinkEnd,
+} from "../groupLinks";
 import { ICON_KEY, ICON_LINK, ICON_OPEN, ICON_TABLE, type IconPath } from "../icons";
 import { buildExportSvg, embeddedFontFaceCss, exportTimestamp, readExportColors } from "../export";
 import { isDestructive } from "../editModel";
@@ -236,6 +253,16 @@ type Drag =
       moved: boolean;
     }
   | {
+      /** Bend a group-to-group arrow (same relative-offset drag as an FK edge). */
+      kind: "glink";
+      id: string;
+      startX: number;
+      startY: number;
+      origDx: number;
+      origDy: number;
+      moved: boolean;
+    }
+  | {
       /** Canvas drag = scroll. The diagram used to move under an SVG transform
        *  instead, inside a box that never grew to match: drag toward the far
        *  side and the content slid out past the SVG's own viewport, which clips
@@ -364,6 +391,21 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
   /** Latched picking mode (the toolbar's select button): clicking or sweeping
    *  picks tables without holding shift. */
   const [selectMode, setSelectMode] = useState(false);
+
+  // --- map arrows (annotations between frames and cards) ----------------
+  // Drawn between two things on the canvas — a group frame or a single table
+  // card — and keyed by identity, so they re-route as either end moves (see
+  // groupLinks.ts). Nothing in the schema implies them: they are the user's own
+  // notes about how the pieces relate.
+  const [groupLinks, setGroupLinks] = useState<GroupLink[]>([]);
+  /** Arrow-drawing mode (the toolbar's connect button). */
+  const [linkMode, setLinkMode] = useState(false);
+  /** The frame or card the pending arrow starts from, once picked. */
+  const [linkFrom, setLinkFrom] = useState<LinkEnd | null>(null);
+  /** Pointer position in world coords while the pending arrow follows it. */
+  const [linkCursor, setLinkCursor] = useState<{ x: number; y: number } | null>(null);
+  /** The clicked arrow: shows its bend handle and takes the Delete key. */
+  const [selectedLink, setSelectedLink] = useState<string | null>(null);
 
   // --- edit mode (visual schema designer) -----------------------------
   const [editing, setEditing] = useState(false);
@@ -509,7 +551,16 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         const ov: Record<string, CardinalityKind> = {};
         for (const c of layout.cardinalities ?? []) ov[c.id] = c.kind;
         setOverrides(ov);
-        setGroups(layout.groups ?? []);
+        const savedGroups = layout.groups ?? [];
+        setGroups(savedGroups);
+        // An arrow whose group is gone has nothing to point at — drop it here
+        // rather than carrying a dangling endpoint around all session.
+        setGroupLinks(
+          pruneGroupLinks(
+            layout.groupLinks ?? [],
+            savedGroups.map((g) => g.id),
+          ),
+        );
         if (typeof layout.zoom === "number") setZoom(clampSavedZoom(layout.zoom));
       } else {
         setPositions(autoLayout(Object.keys(metas), metas));
@@ -517,6 +568,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         setWaypoints({});
         setOverrides({});
         setGroups([]);
+        setGroupLinks([]);
       }
     })();
     return () => {
@@ -539,6 +591,10 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
   // Same for groups: a card drag inside a group must save the group list too.
   const groupsRef = useRef(groups);
   groupsRef.current = groups;
+  // …and for the arrows between them, so any debounced save writes the current
+  // set whichever gesture triggered it.
+  const groupLinksRef = useRef(groupLinks);
+  groupLinksRef.current = groupLinks;
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const persist = useCallback(
     (pos: Positions, z: number) => {
@@ -565,6 +621,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
           edges: edgesArr,
           cardinalities: cardinalitiesArr,
           groups: groupsRef.current,
+          groupLinks: groupLinksRef.current,
           zoom: z,
         });
       }, SAVE_DEBOUNCE);
@@ -649,6 +706,43 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
 
   // --- groups: derived frames + mutations -------------------------------
   const boxes = useMemo<GroupBox[]>(() => groupBoxes(groups, cardsById), [groups, cardsById]);
+
+  // Arrows resolved against the frames and cards as they are RIGHT NOW: moving
+  // or resizing either end re-routes every arrow touching it for free. A table
+  // endpoint with no frame around it wears the app accent.
+  const accentColor = swatches[0] ?? GROUP_COLORS[0];
+  const linkModels = useMemo<GroupLinkModel[]>(
+    () => buildGroupLinks(groupLinks, boxes, cardsById, accentColor),
+    [groupLinks, boxes, cardsById, accentColor],
+  );
+  const hasBentLinks = hasBentGroupLinks(groupLinks);
+  const selectedLinkModel = useMemo(
+    () => (selectedLink ? (linkModels.find((l) => l.id === selectedLink) ?? null) : null),
+    [linkModels, selectedLink],
+  );
+  /** The frame or card a pending arrow starts from, as a box + colour. */
+  const linkFromTarget = useMemo(() => {
+    if (!linkFrom) return null;
+    if (linkFrom.kind === "group") {
+      const box = boxes.find((b) => b.id === linkFrom.id);
+      return box ? { rect: box as GroupRect, color: box.color } : null;
+    }
+    const card = cardsById[linkFrom.id];
+    if (!card) return null;
+    const frame = boxes.find((b) => b.tables.includes(card.table));
+    return {
+      rect: { x: card.x, y: card.y, w: card.w, h: card.h },
+      color: frame?.color ?? accentColor,
+    };
+  }, [linkFrom, boxes, cardsById, accentColor]);
+  /** The arrow that would be drawn right now, aimed at the pointer. */
+  const linkPreview = useMemo(
+    () =>
+      linkFromTarget && linkCursor
+        ? linkGeometry(linkFromTarget.rect, { x: linkCursor.x, y: linkCursor.y, w: 0, h: 0 })
+        : null,
+    [linkFromTarget, linkCursor],
+  );
   // Scroll room covers the cards AND every frame — a frame stretched past the
   // last card must not be cut off by the SVG's own box.
   // The tight box around everything drawn — cards plus frames. Fit-to-window
@@ -665,11 +759,19 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
       right = Math.max(right, g.x + g.w + FIT_PAD);
       bottom = Math.max(bottom, g.y + g.h + FIT_PAD);
     }
+    // A bent arrow can swing clear of every frame; its handle is the furthest
+    // point the curve reaches, so a fit that covers it covers the arrow.
+    for (const l of linkModels) {
+      left = Math.min(left, l.mx - FIT_PAD);
+      top = Math.min(top, l.my - FIT_PAD);
+      right = Math.max(right, l.mx + FIT_PAD);
+      bottom = Math.max(bottom, l.my + FIT_PAD);
+    }
     // Deliberately NOT clamped to the origin: a frame parked at x=0 has its
     // padding at a negative coordinate, and fit-to-window restores that with a
     // pan (scroll cannot go below zero).
     return { x: left, y: top, width: right - left, height: bottom - top };
-  }, [cards, boxes]);
+  }, [cards, boxes, linkModels]);
 
   const extent = useMemo(() => {
     const base = contentExtent(cards);
@@ -679,8 +781,12 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
       width = Math.max(width, b.x + b.w + 80);
       height = Math.max(height, b.y + b.h + 80);
     }
+    for (const l of linkModels) {
+      width = Math.max(width, l.mx + 80);
+      height = Math.max(height, l.my + 80);
+    }
     return { width, height };
-  }, [cards, boxes]);
+  }, [cards, boxes, linkModels]);
 
   // The chosen export scope, resolved to a live frame (null = whole diagram).
   // A scope whose group was ungrouped silently falls back to the whole diagram.
@@ -712,10 +818,31 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
     setRenamingGroup(group.id);
   }, [groups, selected, cardsById, applyGroups]);
 
-  /** Remove a frame. The tables it framed stay exactly where they are. */
+  /** Commit a new arrow list: mirror it to the save ref and persist. */
+  const applyGroupLinks = useCallback(
+    (next: GroupLink[]) => {
+      groupLinksRef.current = next;
+      setGroupLinks(next);
+      if (positions) persist(positions, zoom);
+    },
+    [positions, zoom, persist],
+  );
+
+  /** Remove a frame. The tables it framed stay exactly where they are; its
+   *  arrows go with it, since an endpoint that no longer exists cannot be
+   *  drawn or repaired. */
   const deleteGroup = useCallback(
     (id: string) => {
-      applyGroups(groups.filter((g) => g.id !== id));
+      const nextGroups = groups.filter((g) => g.id !== id);
+      const nextLinks = pruneGroupLinks(
+        groupLinksRef.current,
+        nextGroups.map((g) => g.id),
+      );
+      groupLinksRef.current = nextLinks;
+      setGroupLinks(nextLinks);
+      setSelectedLink((cur) => (nextLinks.some((l) => l.id === cur) ? cur : null));
+      // Last, so the save it schedules carries both lists.
+      applyGroups(nextGroups);
       setSelectedGroup((cur) => (cur === id ? null : cur));
       setRenamingGroup((cur) => (cur === id ? null : cur));
       setExportScope((cur) => (cur === id ? null : cur));
@@ -759,6 +886,84 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
       return next;
     });
   }, []);
+
+  // --- group arrows: arm, draw, edit -----------------------------------
+  /** Arm (or cancel) arrow-drawing. Picking tables and drawing arrows are
+   *  different jobs, so arming one drops the other. */
+  const toggleLinkMode = useCallback(() => {
+    setLinkMode((on) => !on);
+    setLinkFrom(null);
+    setLinkCursor(null);
+    setSelectedLink(null);
+    setSelected([]);
+    setSelectMode(false);
+  }, []);
+
+  /** A frame or card clicked while arrow-drawing is armed: the first click
+   *  picks the source, the second draws the arrow. Clicking the source again
+   *  starts over. The tool STAYS armed afterwards, so several arrows can fan
+   *  out of one group without re-arming between each. */
+  const pickLinkEnd = useCallback(
+    (end: LinkEnd) => {
+      if (!linkFrom) {
+        setLinkFrom(end);
+        return;
+      }
+      if (sameEnd(linkFrom, end)) {
+        setLinkFrom(null);
+        setLinkCursor(null);
+        return;
+      }
+      const made = createGroupLink(groupLinksRef.current, linkFrom, end);
+      setLinkFrom(null);
+      setLinkCursor(null);
+      if (!made) {
+        // One arrow per pair — the second would hide under the first. Flipping
+        // the existing one is how its direction changes.
+        const name = (e: LinkEnd) =>
+          e.kind === "table" ? e.id : (boxes.find((b) => b.id === e.id)?.name ?? "that group");
+        toast(`${name(linkFrom)} and ${name(end)} are already connected.`, "info");
+        return;
+      }
+      applyGroupLinks(made.links);
+      setSelectedLink(made.link.id);
+    },
+    [linkFrom, boxes, applyGroupLinks, toast],
+  );
+
+  /** Reverse an arrow's direction. */
+  const flipLink = useCallback(
+    (id: string) => applyGroupLinks(flipGroupLink(groupLinksRef.current, id)),
+    [applyGroupLinks],
+  );
+
+  /** Caption an arrow (a blank label clears it). */
+  const labelLink = useCallback(
+    (id: string, label: string) =>
+      applyGroupLinks(labelGroupLink(groupLinksRef.current, id, label)),
+    [applyGroupLinks],
+  );
+
+  /** Delete an arrow. The groups it joined are untouched. */
+  const deleteLink = useCallback(
+    (id: string) => {
+      applyGroupLinks(removeGroupLink(groupLinksRef.current, id));
+      setSelectedLink((cur) => (cur === id ? null : cur));
+    },
+    [applyGroupLinks],
+  );
+
+  /** Straighten one arrow — double-click its bend handle. */
+  const straightenLink = useCallback(
+    (id: string) => applyGroupLinks(straightenGroupLink(groupLinksRef.current, id)),
+    [applyGroupLinks],
+  );
+
+  /** Straighten every arrow (the rail's counterpart to "reset curves"). */
+  const straightenLinks = useCallback(
+    () => applyGroupLinks(straightenGroupLinks(groupLinksRef.current)),
+    [applyGroupLinks],
+  );
 
   // --- drag (card move + canvas pan) ----------------------------------
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -832,6 +1037,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
     e.stopPropagation();
     setSelectedGroup(box.id);
     setSelected([]);
+    setSelectedLink(null);
     svgRef.current?.setPointerCapture?.(e.pointerId);
     const orig: Positions = {};
     for (const t of box.tables) orig[t] = positions[t] ?? { x: 0, y: 0 };
@@ -877,9 +1083,11 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
   const onCanvasPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     e.preventDefault();
-    // Clicking empty canvas deselects any selected edge/frame + closes the menu.
+    // Clicking empty canvas deselects any selected edge/frame/arrow + closes
+    // the menu.
     setSelectedEdge(null);
     setSelectedGroup(null);
+    setSelectedLink(null);
     setExportMenuOpen(false);
     (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
     // In picking mode (or with a modifier held) a canvas drag rubber-bands a
@@ -929,7 +1137,40 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
     };
   };
 
+  // Click a group arrow's hit-area → select it (without starting a pan).
+  const onLinkPointerDown = (e: React.PointerEvent, id: string) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    setSelectedLink(id);
+    setSelectedEdge(null);
+    // One floating bar at a time — an arrow, a frame and a table pick each have
+    // their own, and they share the same spot at the canvas edge.
+    setSelectedGroup(null);
+    setSelected([]);
+  };
+
+  // Grab a group arrow's bend handle → drag to offset its midpoint.
+  const onLinkHandlePointerDown = (e: React.PointerEvent, link: GroupLinkModel) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    svgRef.current?.setPointerCapture?.(e.pointerId);
+    setSelectedLink(link.id);
+    const stored = groupLinksRef.current.find((l) => l.id === link.id);
+    dragRef.current = {
+      kind: "glink",
+      id: link.id,
+      startX: e.clientX,
+      startY: e.clientY,
+      origDx: stored?.dx ?? 0,
+      origDy: stored?.dy ?? 0,
+      moved: false,
+    };
+  };
+
   const onPointerMove = (e: React.PointerEvent) => {
+    // The pending arrow follows the pointer — tracked before the drag switch,
+    // since drawing an arrow is a click-then-click gesture, not a drag.
+    if (linkMode && linkFrom) setLinkCursor(toWorld(e.clientX, e.clientY));
     const d = dragRef.current;
     if (!d) return;
     if (d.kind === "move") {
@@ -978,6 +1219,15 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
       const dy = d.origDy + (e.clientY - d.startY) / zoom;
       d.moved = true;
       setWaypoints((prev) => ({ ...prev, [d.id]: { dx, dy } }));
+    } else if (d.kind === "glink") {
+      const dx = d.origDx + (e.clientX - d.startX) / zoom;
+      const dy = d.origDy + (e.clientY - d.startY) / zoom;
+      d.moved = true;
+      setGroupLinks((prev) => {
+        const next = bendGroupLink(prev, d.id, dx, dy);
+        groupLinksRef.current = next;
+        return next;
+      });
     } else {
       // Drag right → content moves right → scroll left decreases.
       const wrap = wrapRef.current;
@@ -998,6 +1248,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
       persist(positions, zoom);
     else if (d?.kind === "resize" && positions) persist(positions, zoom);
     else if (d?.kind === "edge" && d.moved && positions) persist(positions, zoom);
+    else if (d?.kind === "glink" && d.moved && positions) persist(positions, zoom);
     else if (d?.kind === "marquee") {
       const m = marquee;
       setMarquee(null);
@@ -1185,6 +1436,10 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
     setWaypoints({});
     widthsRef.current = {};
     setWidths({});
+    // Group arrows SURVIVE a reset — they are the user's own annotations, not
+    // layout — but their bends are straightened along with the FK edges'.
+    groupLinksRef.current = straightenGroupLinks(groupLinksRef.current);
+    setGroupLinks(groupLinksRef.current);
     persist(next, 1);
   };
 
@@ -1211,9 +1466,11 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
       // Scoped export: just the chosen group's cards + the relationships inside
       // it, framed to that group (see scopeToGroup). Otherwise the whole
       // diagram, with every group frame painted in.
+      // A group-scoped export is a picture of ONE domain, so the arrows between
+      // domains have no place in it (both ends would never be in frame).
       const scoped = scopeBox
-        ? scopeToGroup(scopeBox, cards, edges)
-        : { cards, edges, groups: boxes };
+        ? { ...scopeToGroup(scopeBox, cards, edges), links: [] as GroupLinkModel[] }
+        : { cards, edges, groups: boxes, links: linkModels };
       if (scoped.cards.length === 0) {
         toast(t("smap.err.nothingExport"), "info");
         return;
@@ -1221,7 +1478,14 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
       try {
         const colors = readExportColors();
         const fontCss = await embeddedFontFaceCss();
-        const svg = buildExportSvg(scoped.cards, scoped.edges, colors, fontCss, scoped.groups);
+        const svg = buildExportSvg(
+          scoped.cards,
+          scoped.edges,
+          colors,
+          fontCss,
+          scoped.groups,
+          scoped.links,
+        );
         const slug = scopeBox ? `-${fileSlug(scopeBox.name)}` : "";
         const defaultName = `${schema}${slug}-schema-map-${exportTimestamp()}.${format}`;
 
@@ -1258,13 +1522,22 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         setExporting(false);
       }
     },
-    [cards, edges, boxes, scopeBox, schema, toast],
+    [cards, edges, boxes, linkModels, scopeBox, schema, toast],
   );
 
-  // Escape backs out of a grouping gesture (clears the pick, closes an inline
-  // rename, deselects a frame); Delete removes the selected frame.
+  // Escape backs out of a grouping or arrow gesture (clears the pick, closes an
+  // inline rename, deselects a frame/arrow, disarms the tools); Delete removes
+  // the selected frame, or the selected arrow.
   useEffect(() => {
-    if (selected.length === 0 && !renamingGroup && !selectedGroup && !selectMode) return;
+    if (
+      selected.length === 0 &&
+      !renamingGroup &&
+      !selectedGroup &&
+      !selectMode &&
+      !linkMode &&
+      !selectedLink
+    )
+      return;
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       // While the rename box has focus it owns both keys.
@@ -1276,14 +1549,33 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         setRenamingGroup(null);
         setSelectedGroup(null);
         setSelectMode(false);
-      } else if ((e.key === "Delete" || e.key === "Backspace") && selectedGroup) {
-        e.preventDefault();
-        deleteGroup(selectedGroup);
+        setLinkMode(false);
+        setLinkFrom(null);
+        setLinkCursor(null);
+        setSelectedLink(null);
+      } else if (e.key === "Delete" || e.key === "Backspace") {
+        // A frame takes precedence: deleting it would take the arrow anyway.
+        if (selectedGroup) {
+          e.preventDefault();
+          deleteGroup(selectedGroup);
+        } else if (selectedLink) {
+          e.preventDefault();
+          deleteLink(selectedLink);
+        }
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selected.length, renamingGroup, selectedGroup, selectMode, deleteGroup]);
+  }, [
+    selected.length,
+    renamingGroup,
+    selectedGroup,
+    selectMode,
+    linkMode,
+    selectedLink,
+    deleteGroup,
+    deleteLink,
+  ]);
 
   // --- render ----------------------------------------------------------
   if (loading) {
@@ -1325,6 +1617,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
           {t("smap.noun.table", { count: tables.length })} ·{" "}
           {t("smap.noun.relationship", { count: edges.length })}
           {boxes.length > 0 ? ` · ${t("smap.noun.group", { count: boxes.length })}` : ""}
+          {linkModels.length > 0 ? ` · ${t("smap.noun.link", { count: linkModels.length })}` : ""}
         </span>
         <div style={{ flex: 1 }} />
         {editing ? (
@@ -1334,11 +1627,15 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
           </button>
         ) : (
           <span className="map-hint">
-            {selectMode
-              ? t("smap.hint.pick")
-              : boxes.length > 0
-                ? t("smap.hint.frames")
-                : t("smap.hint.drag")}
+            {linkMode
+              ? linkFrom
+                ? t("smap.hint.linkDone")
+                : t("smap.hint.linkStart")
+              : selectMode
+                ? t("smap.hint.pick")
+                : boxes.length > 0
+                  ? t("smap.hint.frames")
+                  : t("smap.hint.drag")}
           </span>
         )}
         {/* Select tables — the same pick that shift-click/shift-drag does, as a
@@ -1353,7 +1650,29 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
           onClick={() => {
             setSelectMode((on) => !on);
             setSelected([]);
+            // Picking tables and drawing arrows are different jobs.
+            setLinkMode(false);
+            setLinkFrom(null);
           }}
+        />
+        {/* Draw arrows — beside the group tool, since an arrow is usually
+            something you do WITH groups once you have them. Either end may be a
+            whole group or a single table, so it needs two of anything. */}
+        <IconBtn
+          icon="line_end_arrow"
+          title={
+            boxes.length + cards.length < 2
+              ? "Nothing to connect yet"
+              : linkMode
+                ? "Stop drawing arrows"
+                : "Draw an arrow between groups or tables"
+          }
+          aria-label="Draw an arrow between groups or tables"
+          aria-pressed={linkMode}
+          active={linkMode}
+          hidden={editing}
+          disabled={boxes.length + cards.length < 2}
+          onClick={toggleLinkMode}
         />
         {editable ? (
           <IconBtn
@@ -1388,6 +1707,15 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
             title={t("smap.resetCurves")}
             aria-label={t("smap.resetCurvesAria")}
             onClick={resetCurves}
+          />
+        ) : null}
+        {hasBentLinks ? (
+          <IconBtn
+            icon="timeline"
+            title="Straighten all group arrows"
+            aria-label="Straighten all group arrows"
+            hidden={editing}
+            onClick={straightenLinks}
           />
         ) : null}
         <IconBtn
@@ -1552,6 +1880,22 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
                   ))}
                 </g>
 
+                {/* Group arrows: above the frames they join (so a frame's tint
+                    doesn't wash them out), below the cards and FK edges, which
+                    are the diagram's actual subject. */}
+                <g className="map-glinks-layer">
+                  {linkModels.map((link) => (
+                    <GroupArrow
+                      key={link.id}
+                      link={link}
+                      selected={selectedLink === link.id}
+                      onSelectPointerDown={(e) => onLinkPointerDown(e, link.id)}
+                      onHandlePointerDown={(e) => onLinkHandlePointerDown(e, link)}
+                      onStraighten={() => straightenLink(link.id)}
+                    />
+                  ))}
+                </g>
+
                 {/* Edges first so cards paint over their endpoints. */}
                 <g className="map-edges-layer">
                   {orderedEdges.map((edge) => (
@@ -1581,6 +1925,62 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
                     onOpen={() => openTableTab(schema, card.table)}
                   />
                 ))}
+
+                {/* Arrow-drawing overlay — ABOVE the cards, on purpose: while
+                    the tool is armed a frame is one big target, so a click
+                    anywhere in it picks the group instead of grabbing whatever
+                    card happens to sit under the pointer. */}
+                {linkMode ? (
+                  <g className="map-glink-pick-layer">
+                    {boxes.map((box) => (
+                      <LinkTarget
+                        key={box.id}
+                        end={{ kind: "group", id: box.id }}
+                        name={box.name}
+                        what="group"
+                        color={box.color}
+                        x={box.x}
+                        y={box.y}
+                        w={box.w}
+                        h={box.h}
+                        rx={14}
+                        from={linkFrom}
+                        onPick={pickLinkEnd}
+                      />
+                    ))}
+                    {/* Cards go ON TOP of the frames so the more specific
+                        target wins: clicking a card aims at that one table,
+                        clicking the space around it aims at the whole group. */}
+                    {cards.map((card) => (
+                      <LinkTarget
+                        key={card.table}
+                        end={{ kind: "table", id: card.table }}
+                        name={card.table}
+                        what="table"
+                        color={
+                          boxes.find((b) => b.tables.includes(card.table))?.color ?? accentColor
+                        }
+                        x={card.x}
+                        y={card.y}
+                        w={card.w}
+                        h={card.h}
+                        rx={11}
+                        from={linkFrom}
+                        onPick={pickLinkEnd}
+                      />
+                    ))}
+                    {/* The arrow as it would be drawn, following the pointer. */}
+                    {linkPreview && linkFromTarget ? (
+                      <g
+                        className="map-glink is-preview"
+                        style={{ "--link-color": linkFromTarget.color } as React.CSSProperties}
+                      >
+                        <path className="map-glink-path" d={linkPreview.path} />
+                        <path className="map-glink-head" d={linkPreview.head} />
+                      </g>
+                    ) : null}
+                  </g>
+                ) : null}
 
                 {/* Rubber-band selection rectangle (shift-drag on empty canvas). */}
                 {marquee ? (
@@ -1669,6 +2069,58 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
             onClick={() => setSelectedGroup(null)}
           >
             {t("smap.done")}
+          </button>
+        </div>
+      ) : null}
+
+      {/* Selected-arrow bar — everything an arrow can be told to do: what it
+          says, which way it points, and whether it exists. */}
+      {!editing && selectedLinkModel ? (
+        <div className="map-selection">
+          <span className="map-sel-dot" style={{ background: selectedLinkModel.color }} />
+          <span className="map-sel-count">
+            {selectedLinkModel.fromName} → {selectedLinkModel.toName}
+          </span>
+          <input
+            // Keyed by arrow so switching selection re-seeds the box; committed
+            // on blur/Enter (not per keystroke) so a label can contain spaces.
+            key={selectedLinkModel.id}
+            className="map-sel-input"
+            defaultValue={selectedLinkModel.label}
+            placeholder="label this arrow"
+            aria-label="Arrow label"
+            maxLength={40}
+            onBlur={(e) => labelLink(selectedLinkModel.id, e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                labelLink(selectedLinkModel.id, e.currentTarget.value);
+                e.currentTarget.blur();
+              } else if (e.key === "Escape") {
+                e.currentTarget.value = selectedLinkModel.label;
+                e.currentTarget.blur();
+              }
+            }}
+          />
+          <button
+            type="button"
+            className="map-sel-btn"
+            title="Point the arrow the other way"
+            onClick={() => flipLink(selectedLinkModel.id)}
+          >
+            <Icon name="swap_horiz" size={14} />
+            Flip
+          </button>
+          <button
+            type="button"
+            className="map-sel-btn danger"
+            title="Delete this arrow (Delete)"
+            onClick={() => deleteLink(selectedLinkModel.id)}
+          >
+            <Icon name="delete" size={14} />
+            Delete
+          </button>
+          <button type="button" className="map-sel-btn ghost" onClick={() => setSelectedLink(null)}>
+            Done
           </button>
         </div>
       ) : null}
@@ -1898,6 +2350,153 @@ function CardinalityPopover({
         })}
       </div>
     </foreignObject>
+  );
+}
+
+/**
+ * One click target while arrow-drawing is armed: a transparent-ish rectangle
+ * over a group frame or a table card. Drawn above everything so the whole thing
+ * is one target — a click lands on what it looks like it lands on, instead of
+ * being stolen by a card header or a frame grip underneath.
+ */
+function LinkTarget({
+  end,
+  name,
+  what,
+  color,
+  x,
+  y,
+  w,
+  h,
+  rx,
+  from,
+  onPick,
+}: {
+  end: LinkEnd;
+  name: string;
+  /** Word for this target in its tooltip. */
+  what: "group" | "table";
+  color: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  rx: number;
+  /** The source already picked, if any. */
+  from: LinkEnd | null;
+  onPick: (end: LinkEnd) => void;
+}) {
+  const isFrom = from ? sameEnd(from, end) : false;
+  return (
+    <rect
+      className={"map-glink-pick" + (isFrom ? " is-from" : "")}
+      style={{ "--group-color": color } as React.CSSProperties}
+      x={x}
+      y={y}
+      width={w}
+      height={h}
+      rx={rx}
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        e.stopPropagation();
+        e.preventDefault();
+        onPick(end);
+      }}
+    >
+      <title>
+        {isFrom
+          ? `${name} — click what the arrow points at`
+          : from
+            ? `Draw the arrow to this ${what}`
+            : `Start an arrow from this ${what}`}
+      </title>
+    </rect>
+  );
+}
+
+/** Advance width of one 11px JetBrains Mono character — an arrow's caption pill
+ *  is measured from its text, since SVG can't size a rect to a text node. */
+const LABEL_CHAR_W = 6.7;
+/** Longest caption drawn on an arrow (the stored label is capped at 40). */
+const LABEL_MAX = 28;
+/** How far below the curve a labelled arrow's bend handle sits, so the handle
+ *  and the caption pill don't cover each other. */
+const LABEL_HANDLE_DROP = 17;
+
+/**
+ * One group-to-group arrow: the curve, a filled head at the target, an optional
+ * caption pill at the midpoint, and (when selected or already bent) the bend
+ * handle.
+ *
+ * The arrow wears its SOURCE group's colour — `--link-color`, set inline from
+ * the model the way a frame sets `--group-color` — so an arrow reads as leaving
+ * that domain, and so the live canvas and the standalone export agree without
+ * re-deriving anything.
+ */
+function GroupArrow({
+  link,
+  selected,
+  onSelectPointerDown,
+  onHandlePointerDown,
+  onStraighten,
+}: {
+  link: GroupLinkModel;
+  selected: boolean;
+  onSelectPointerDown: (e: React.PointerEvent) => void;
+  onHandlePointerDown: (e: React.PointerEvent) => void;
+  onStraighten: () => void;
+}) {
+  const style = { "--link-color": link.color } as React.CSSProperties;
+  const label = link.label ? truncate(link.label, LABEL_MAX) : "";
+  const labelW = label.length * LABEL_CHAR_W + 14;
+  const handleY = label ? link.my + LABEL_HANDLE_DROP : link.my;
+  return (
+    <g
+      className={"map-glink" + (selected ? " is-selected" : "")}
+      style={style}
+      data-link-id={link.id}
+    >
+      <title>{`${link.fromName} → ${link.toName}${label ? ` · ${label}` : ""}`}</title>
+      {/* Wide transparent stroke so the thin curve is easy to click (§1.5). */}
+      <path className="map-glink-hit" d={link.path} onPointerDown={onSelectPointerDown} />
+      <path className="map-glink-path" d={link.path} />
+      <path className="map-glink-head" d={link.head} />
+      <circle className="map-glink-tail" cx={link.sx} cy={link.sy} r={3} />
+      {label ? (
+        <>
+          <rect
+            className="map-glink-label-bg"
+            x={link.mx - labelW / 2}
+            y={link.my - 9}
+            width={labelW}
+            height={18}
+            rx={6}
+          />
+          <text
+            className="map-glink-label"
+            x={link.mx}
+            y={link.my}
+            textAnchor="middle"
+            dominantBaseline="central"
+          >
+            {label}
+          </text>
+        </>
+      ) : null}
+      {selected || link.bent ? (
+        <circle
+          className="map-glink-handle"
+          cx={link.mx}
+          cy={handleY}
+          r={5}
+          role="button"
+          tabIndex={0}
+          aria-label={`Drag to bend the arrow from ${link.fromName} to ${link.toName}; double-click to straighten`}
+          onPointerDown={onHandlePointerDown}
+          onDoubleClick={onStraighten}
+        />
+      ) : null}
+    </g>
   );
 }
 

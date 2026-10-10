@@ -1,0 +1,216 @@
+/*
+ * Liquid Glass — the lensed material, layered over the shared tiers in
+ * glass.css (`[data-material]`). Everything here keys on `[data-material="liquid"]`.
+ *
+ * WHAT THIS IS NOT. Apple's Liquid Glass REFRACTS: it samples what is behind a
+ * pane and displaces those pixels, bending and dispersing them at the edges
+ * like a real lens, live, as content moves underneath. A webview cannot do
+ * that. `backdrop-filter` only accepts the standard filter functions — blur,
+ * saturate, brightness and friends — not an SVG `url(#...)` reference, so
+ * `feDisplacementMap` can never be pointed at a backdrop. Nothing else exposes
+ * the composited backdrop as a texture either: `element()` is Firefox-only, and
+ * neither WKWebView (macOS) nor WebView2 nor WebKitGTK offers a substitute. The
+ * only way to truly refract would be to rasterize the DOM behind each pane
+ * ourselves every frame and feed it to WebGL, which is not a theme — it is a
+ * renderer, and it would cost more than the whole grid.
+ *
+ * WHAT THIS IS. The cues that make a lens READ as a lens, faked with things a
+ * webview is fast at:
+ *
+ *   1. A lensed RIM. Light entering thick glass concentrates at the edges, so
+ *      the rim is where refraction is visible. Layered inset shadows give a
+ *      bright top edge, a faint bottom one, and a cyan/magenta split down the
+ *      sides — the chromatic dispersion a real lens produces. All in
+ *      --glass-hi, so every tier in glass.css picks it up with no new rules.
+ *   2. An ETCHED EDGE on every bar, continuing that rim onto the boundaries
+ *      the chrome shares with the content it frames.
+ *   3. A THICKER pane: more blur, more saturation, a brightness lift. Apple's
+ *      material is visibly a slab, not a film.
+ *
+ * A pointer-tracked specular highlight was built and removed: a lens that
+ * lights up under the cursor is a toy, and it read as a flashlight dragged
+ * across the window rather than as light in glass. The material is lit from
+ * above, consistently, and does not follow the mouse.
+ *
+ * It is an impression of liquid glass, not the thing itself. On a static
+ * screenshot the two are close; in motion, real refraction warps what is
+ * behind it and this does not.
+ */
+
+[data-material="liquid"] {
+  /* A thicker slab than the frosted material: more blur, more saturation, and
+     a brightness lift so the pane reads as lit rather than smoked. */
+  --glass-blur: 26px;
+  --glass-float-bg: rgba(18, 26, 52, 0.72);
+  --glass-float-filter: blur(34px) saturate(190%) brightness(1.06);
+  --glass-float-border: rgba(255, 255, 255, 0.28);
+
+  /* The lens rim. Top edge bright (the light source is above), bottom edge a
+     whisper, and the two sides split into cyan and magenta — dispersion is
+     what tells the eye "thick glass" rather than "translucent paint". The
+     negative spreads keep all four inside the border radius. */
+  --glass-hi:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 -1px 0 rgba(255, 255, 255, 0.1),
+    inset 3px 0 8px -6px rgba(120, 210, 255, 0.6), inset -3px 0 8px -6px rgba(255, 150, 220, 0.5);
+  --glass-shadow: 0 24px 60px rgba(2, 6, 20, 0.6), 0 2px 10px rgba(2, 6, 20, 0.35);
+
+  /* A lens needs something worth bending — and something of its OWN. Frosted
+     is a cold four-corner wash: indigo, cyan, violet and teal, symmetric,
+     evenly cool. This is the opposite composition on purpose, so the two
+     materials are told apart at a glance rather than by brightness: a warm
+     DIAGONAL over a plum base, magenta falling from the top right into violet
+     on the left, an amber low in the corner, and one cool teal counterpoint to
+     keep it from going pink. It also gives the rim's cyan/magenta dispersion
+     something to belong to — on the frosted backdrop the magenta had nothing
+     in the picture to answer it.
+
+     Like the frosted backdrop, the accent is mixed into every bloom — a tint
+     over this material's own palette, not a replacement for it, so the room is
+     still magenta-into-violet when the accent is green. What differs between
+     the materials is the COMPOSITION and the direction each bloom is pushed:
+     magenta and amber here, cyan and teal there.
+
+     Dimmer than it looks on paper has to be the rule here. Magenta and violet
+     read brighter than frosted's indigo and teal at the same alpha, and these
+     blooms are larger and overlap more, so matching frosted's numbers would
+     still come out hotter than frosted. The alphas are ~30% under it instead,
+     and the two big blooms pulled in. */
+  --glass-backdrop:
+    radial-gradient(
+      1180px 760px at 88% -16%,
+      color-mix(in oklab, color-mix(in oklab, var(--accent) 24%, #ec70c4) 30%, transparent),
+      transparent 62%
+    ),
+    radial-gradient(
+      1080px 720px at -10% 16%,
+      color-mix(in oklab, color-mix(in oklab, var(--accent) 34%, #8e6cff) 36%, transparent),
+      transparent 60%
+    ),
+    radial-gradient(
+      900px 680px at 96% 104%,
+      color-mix(in oklab, color-mix(in oklab, var(--accent) 16%, #56d6e8) 22%, transparent),
+      transparent 60%
+    ),
+    radial-gradient(
+      820px 600px at 10% 110%,
+      color-mix(in oklab, color-mix(in oklab, var(--accent) 12%, #ff9e6c) 18%, transparent),
+      transparent 62%
+    ),
+    color-mix(in oklab, var(--accent) 8%, #0c0a1f);
+
+  /* Frozen gutters stay near-opaque for the same reason as the frosted
+     material — they occlude — but take the warmer base. */
+  --glass-gutter: rgba(10, 15, 34, 0.96);
+  --glass-gutter-hover: rgba(26, 36, 64, 0.96);
+
+  /* The glow that etches an edge — the cool side of the rim's dispersion pair,
+     blurred and pulled inside the box. NOT a hard stroke: the crisp line at a
+     boundary is the bar's own 1px border, and this is the light pooling along
+     it. */
+  --glass-edge: rgba(130, 212, 255, 0.55);
+}
+
+/* The primary button is the one element allowed to look lit, so under this
+   material it is a polished bead: a vertical gloss, the lens rim, and an
+   accent bloom beneath it. */
+[data-material="liquid"] .btn-filled {
+  background-image:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.34),
+      rgba(255, 255, 255, 0.08) 42%,
+      rgba(255, 255, 255, 0) 60%
+    ),
+    linear-gradient(180deg, color-mix(in oklab, var(--accent) 92%, white), var(--accent));
+  box-shadow:
+    var(--glass-hi),
+    0 10px 26px color-mix(in oklab, var(--accent) 50%, transparent);
+}
+
+/* ---- the etched edge, continued onto the horizontal bars ----
+   The rim's dispersion pair glows the LEFT and RIGHT of every surface, which
+   is why the rail/sidebar seam already reads as an etched, lit line. Top and
+   bottom get no such treatment from the rim — its horizontal insets are a
+   1px highlight along the top, nothing along the bottom — so a title bar's
+   lower edge and a status bar's upper edge, the two that actually border the
+   data, stayed flat. Each names its content-facing side and gets the same
+   blurred glow, in the same direction and at the same 8px/-6px geometry the
+   sides use. The fine line itself is the bar's own border; this is the light
+   along it. */
+[data-material="liquid"] .bt-titlebar,
+[data-material="liquid"] .tabbar,
+[data-material="liquid"] .ddb-tabbar,
+[data-material="liquid"] .term-panel-head {
+  --chrome-edge: inset 0 -3px 8px -6px var(--glass-edge);
+}
+[data-material="liquid"] .statusbar,
+[data-material="liquid"] .redis-statusbar,
+[data-material="liquid"] .ddb-statusbar {
+  --chrome-edge: inset 0 3px 8px -6px var(--glass-edge);
+}
+/* The vertical bars take it too. They already glow from the rim's dispersion,
+   so this LAYERS on that edge rather than creating it — the seam runs a little
+   hotter and cooler-toned than the rim alone. Drop these four rules to go back
+   to the rim doing it unaided. */
+[data-material="liquid"] .rail,
+[data-material="liquid"] .sidebar,
+[data-material="liquid"] .redis-sidebar,
+[data-material="liquid"] .ddb-sidebar,
+[data-material="liquid"] .cass-sidebar {
+  --chrome-edge: inset -3px 0 8px -6px var(--glass-edge);
+}
+/* Sidebar on the right: the divider moves to the inner edge, so the glow
+   follows it. The rail is always on the left. */
+[data-material="liquid"] body.bt-sidebar-right .sidebar,
+[data-material="liquid"] body.bt-sidebar-right .redis-sidebar,
+[data-material="liquid"] body.bt-sidebar-right .ddb-sidebar,
+[data-material="liquid"] body.bt-sidebar-right .cass-sidebar {
+  --chrome-edge: inset 3px 0 8px -6px var(--glass-edge);
+}
+
+/* Chrome keeps the frost but takes the rim, so the frame reads as glass with
+   thickness rather than as a flat tint. (The rim is on the overlay, which is
+   what carries the chrome's surface — see glass.css.) */
+[data-material="liquid"] .bt-titlebar::before,
+[data-material="liquid"] .rail::before,
+[data-material="liquid"] .sidebar::before,
+[data-material="liquid"] .redis-sidebar::before,
+[data-material="liquid"] .ddb-sidebar::before,
+[data-material="liquid"] .cass-sidebar::before,
+[data-material="liquid"] .tabbar::before,
+[data-material="liquid"] .ddb-tabbar::before,
+[data-material="liquid"] .statusbar::before,
+[data-material="liquid"] .redis-statusbar::before,
+[data-material="liquid"] .ddb-statusbar::before,
+[data-material="liquid"] .term-panel-head::before {
+  background: rgba(255, 255, 255, 0.07);
+  /* Rim AND the specular edge the bar shares with the content (glass.css sets
+     --chrome-edge per bar). Restated here because this rule replaces the
+     shared overlay's box-shadow rather than adding to it. */
+  box-shadow: var(--glass-hi), var(--chrome-edge, none);
+}
+
+/* A thicker material wants a softer silhouette. Only the free-floating
+   surfaces are rounded up — anything docked to an edge keeps its geometry. */
+[data-material="liquid"] .modal,
+[data-material="liquid"] .palette,
+[data-material="liquid"] .imp-sheet,
+[data-material="liquid"] .csvo-sheet,
+[data-material="liquid"] .connect-panel {
+  border-radius: 18px;
+}
+
+[data-material="liquid"] ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+/* Boot into THIS material's colours, not the shared navy. (The splash normally
+   reads its gradient from localStorage before any CSS loads — see
+   applySettings — so this is the belt-and-braces half of that.) */
+[data-material="liquid"] #bt-splash {
+  background: radial-gradient(
+    900px 560px at 50% 38%,
+    color-mix(in oklab, var(--accent) 20%, #221038),
+    color-mix(in oklab, var(--accent) 8%, #0c0a1f) 72%
+  );
+}

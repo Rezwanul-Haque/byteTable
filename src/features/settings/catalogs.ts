@@ -6,7 +6,7 @@
 /** A full theme palette. `light` flips the `.bt-light` body class. */
 export interface Theme {
   label: string;
-  group: "ByteTable" | "Editor" | "Light";
+  group: "ByteTable" | "Editor" | "Light" | "Material";
   bg0: string;
   bg1: string;
   bg2: string;
@@ -19,6 +19,20 @@ export interface Theme {
   danger: string;
   onAccent: string;
   light?: boolean;
+  /**
+   * A MATERIAL theme: its surface tokens are translucent and the look is
+   * finished by the surface rules in `glass.css` (blur, specular edge, depth),
+   * which a palette alone cannot express. `applySettings` mirrors this onto
+   * `<html data-material>`: the shared tier rules key on the ATTRIBUTE's
+   * presence, so both materials get them, and `liquid.css` adds the lensing
+   * on top of `[data-material="liquid"]`. Also flags the picker swatch to draw
+   * the material rather than the flat colours.
+   */
+  material?: "frosted" | "liquid";
+  /** Swatch-only backdrop: a translucent `bg0` would preview as flat grey. */
+  swatchBg?: string;
+  /** Swatch-only bar colour, for the same reason. */
+  swatchBar?: string;
 }
 
 export type ThemeId =
@@ -35,7 +49,9 @@ export type ThemeId =
   | "githubDark"
   | "daybreak"
   | "parchment"
-  | "sky";
+  | "sky"
+  | "glass"
+  | "liquidGlass";
 
 // One full palette per theme. Order is the display order in the Appearance tab.
 export const THEMES: Record<ThemeId, Theme> = {
@@ -251,6 +267,52 @@ export const THEMES: Record<ThemeId, Theme> = {
     danger: "#d23f54",
     onAccent: "#ffffff",
     light: true,
+  },
+  // Translucent layered surfaces over a luminous backdrop (M37). The surface
+  // tokens are rgba ON PURPOSE: every input, editor and cell editor in the app
+  // is backed by --bg0, so they all pick up glass with no per-component work.
+  // The opaque base colour moves to the backdrop (glass.css). Text tokens stay
+  // fully opaque — the glass belongs to the surfaces, never to the type.
+  glass: {
+    label: "Frosted Glass",
+    group: "Material",
+    bg0: "rgba(6,10,24,.34)",
+    bg1: "rgba(255,255,255,.07)",
+    bg2: "rgba(255,255,255,.11)",
+    bg3: "rgba(255,255,255,.17)",
+    border: "rgba(255,255,255,.17)",
+    text: "#f4f7ff",
+    dim: "#c5cde2",
+    faint: "#8e9ab8",
+    accent: "#7c9cff",
+    danger: "#ff6f7d",
+    onAccent: "#0a1030",
+    material: "frosted",
+    swatchBg: "#1a2342",
+    swatchBar: "rgba(255,255,255,.14)",
+  },
+  // The same three tiers as Frosted Glass, rendered as a THICKER material: a
+  // brighter backdrop for the panes to bend, a lensed rim (bright top edge,
+  // cyan/magenta dispersion down the sides) and a specular highlight that
+  // tracks the pointer across the surface you are on. See liquid.css for what
+  // this can and cannot be in a webview — there is no live refraction.
+  liquidGlass: {
+    label: "Liquid Glass",
+    group: "Material",
+    bg0: "rgba(8,12,30,.30)",
+    bg1: "rgba(255,255,255,.09)",
+    bg2: "rgba(255,255,255,.13)",
+    bg3: "rgba(255,255,255,.19)",
+    border: "rgba(255,255,255,.22)",
+    text: "#f6f8ff",
+    dim: "#cbd4ea",
+    faint: "#93a0bd",
+    accent: "#6ea8ff",
+    danger: "#ff7a86",
+    onAccent: "#061024",
+    material: "liquid",
+    swatchBg: "#17214a",
+    swatchBar: "rgba(255,255,255,.18)",
   },
 };
 

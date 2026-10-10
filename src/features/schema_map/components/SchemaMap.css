@@ -201,6 +201,123 @@
   background: color-mix(in oklab, var(--group-color) 45%, transparent);
 }
 
+/* ---------- group arrows (annotations between frames) ---------- */
+/* Each arrow carries its source group's hue in --link-color (set inline from the
+ * model), so one rule set covers every arrow — the same trick the frames use. */
+.map-glinks-layer,
+.map-glink {
+  /* Like the edge layer: the layer doesn't swallow pointers, each arrow opts
+   * back in via its hit-area and its handle. */
+  pointer-events: none;
+}
+
+.map-glink-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 16;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.map-glink-path {
+  fill: none;
+  stroke: var(--link-color);
+  stroke-opacity: 0.85;
+  stroke-width: 2;
+  stroke-linecap: round;
+  transition:
+    stroke-width 120ms ease,
+    stroke-opacity 120ms ease;
+}
+
+.map-glink-hit:hover ~ .map-glink-path,
+.map-glink.is-selected .map-glink-path {
+  stroke-opacity: 1;
+  stroke-width: 3;
+}
+
+.map-glink-head {
+  fill: var(--link-color);
+  fill-opacity: 0.95;
+}
+
+/* Small dot where the arrow leaves its source frame — the tail reads as
+ * anchored rather than floating off the border. */
+.map-glink-tail {
+  fill: var(--link-color);
+  fill-opacity: 0.85;
+}
+
+.map-glink-label-bg {
+  fill: var(--bg0);
+  stroke: var(--link-color);
+  stroke-opacity: 0.6;
+  stroke-width: 1;
+}
+
+.map-glink-label {
+  fill: var(--link-color);
+  /* Mono, like every other label on the canvas — and like the export, whose PNG
+   * rasterizer only has this face (see export.ts). */
+  font-family: var(--mono);
+  font-size: 11px;
+  user-select: none;
+}
+
+/* Draggable bend handle (shown when selected or already bent). */
+.map-glink-handle {
+  fill: var(--bg1);
+  stroke: var(--link-color);
+  stroke-width: 2;
+  pointer-events: all;
+  cursor: grab;
+  transition: fill 120ms ease;
+}
+
+.map-glink-handle:hover {
+  fill: color-mix(in oklab, var(--link-color) 35%, var(--bg1));
+}
+
+.map-glink-handle:active {
+  cursor: grabbing;
+}
+
+.map-glink.is-selected .map-glink-handle {
+  fill: var(--link-color);
+}
+
+/* The arrow as it is being drawn: dashed, and never in the way of the pointer. */
+.map-glink.is-preview .map-glink-path {
+  stroke-dasharray: 6 5;
+  stroke-opacity: 0.7;
+}
+
+/* Frame targets while the arrow tool is armed. Above the cards, so a whole
+ * frame is one click target (see the pick layer in SchemaMap.tsx). */
+.map-glink-pick {
+  fill: var(--group-color);
+  fill-opacity: 0.07;
+  stroke: var(--group-color);
+  stroke-opacity: 0.7;
+  stroke-width: 1.5;
+  stroke-dasharray: 7 5;
+  pointer-events: fill;
+  cursor: crosshair;
+  transition: fill-opacity 120ms ease;
+}
+
+.map-glink-pick:hover {
+  fill-opacity: 0.16;
+}
+
+/* The frame the pending arrow starts from — solid, so it reads as committed. */
+.map-glink-pick.is-from {
+  fill-opacity: 0.2;
+  stroke-opacity: 1;
+  stroke-dasharray: none;
+  stroke-width: 2.5;
+}
+
 /* Rubber-band selection rectangle. */
 .map-marquee {
   fill: color-mix(in oklab, var(--accent) 12%, transparent);
@@ -733,6 +850,31 @@
   background: transparent;
   border-color: transparent;
   color: var(--text-dim);
+}
+
+.map-sel-btn.danger {
+  color: var(--error);
+}
+
+.map-sel-btn.danger:hover {
+  border-color: color-mix(in oklab, var(--error) 55%, var(--border));
+}
+
+/* Inline text field in a floating bar (an arrow's caption). */
+.map-sel-input {
+  width: 150px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg0);
+  color: var(--text);
+  font-family: var(--ui);
+  font-size: 12px;
+  outline: none;
+}
+
+.map-sel-input:focus {
+  border-color: var(--accent);
 }
 
 /* ============================================================

@@ -73,6 +73,29 @@ export interface TableGroup {
 }
 
 /**
+ * A user-drawn arrow between two things on the map — a group frame or a single
+ * table card, in any combination (e.g. "Billing → Auth", "Billing → events").
+ * The endpoints are identities (a group id or a table name), not coordinates,
+ * so an arrow re-routes itself as either end moves; `dx`/`dy` are an offset on
+ * its midpoint (a bend), relative like {@link EdgeWaypoint}. Nothing in the
+ * schema implies these — they are pure annotation (see `groupLinks.ts`).
+ * Mirrors Rust's `GroupLink`.
+ */
+export interface GroupLink {
+  id: string;
+  from: string;
+  to: string;
+  /** How to read `from` / `to`. Absent = `"group"` (arrows predate table
+   *  endpoints, and every arrow saved then joined two frames). */
+  fromKind?: "group" | "table";
+  toKind?: "group" | "table";
+  /** Optional caption drawn at the arrow's midpoint. */
+  label?: string;
+  dx?: number;
+  dy?: number;
+}
+
+/**
  * The full saved layout for one (connectionId, schema). Mirrors Rust's
  * `MapLayout`: `positions` / `edges` are always present (possibly empty);
  * `zoom` is omitted from the wire when never set, so it arrives `undefined` —
@@ -85,6 +108,8 @@ export interface MapLayout {
   cardinalities?: EdgeCardinality[];
   /** Table groups (named frames). Omitted/empty = an ungrouped diagram. */
   groups?: TableGroup[];
+  /** Arrows between groups. Omitted/empty = no group-level annotations. */
+  groupLinks?: GroupLink[];
   zoom?: number | null;
 }
 

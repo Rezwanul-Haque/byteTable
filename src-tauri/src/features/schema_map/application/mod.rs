@@ -86,6 +86,7 @@ mod tests {
             }],
             cardinalities: Vec::new(),
             groups: Vec::new(),
+            group_links: Vec::new(),
             zoom: Some(1.0),
         }
     }

@@ -6,17 +6,53 @@ PNPM        := pnpm
 CARGO       := cargo
 MANIFEST    := src-tauri/Cargo.toml
 
-# Windows: make shells out to cmd.exe, which can't run the POSIX recipes below.
-# Git for Windows ships a real sh — reached via the 8.3 name so the space in
-# "Program Files" never has to be quoted. (A bash.exe on PATH is usually WSL's,
-# i.e. a different machine, so don't use that.) PATH stays Windows-style with
-# ';' so the msys runtime can convert it for the sub-shell.
+# Windows run from cmd.exe / PowerShell: make shells out to cmd.exe, which
+# can't run the POSIX recipes below, so borrow the real sh that Git for Windows
+# ships. (A bash.exe on PATH is usually WSL's, i.e. a different machine, so
+# don't use that.)
+#
+# ONLY for a native shell: Git Bash / MSYS2 set MSYSTEM, and there make already
+# has a POSIX shell and a POSIX, colon-separated PATH. Rewriting either there
+# would produce a PATH mixing ';' and ':' that the msys runtime cannot convert,
+# so those shells fall through to the Unix branch.
 ifeq ($(OS),Windows_NT)
-SHELL       := C:/Progra~1/Git/usr/bin/sh.exe
+ifndef MSYSTEM
+WINDOWS_NATIVE := 1
+endif
+endif
+
+ifdef WINDOWS_NATIVE
+# Candidates, most common first. Every one must be SPACE-FREE: make splits
+# variables on whitespace, so "C:/Program Files/..." cannot be used even
+# quoted — hence the 8.3 names (~1 = Program Files, ~2 = Program Files (x86)).
+# 8.3 generation can be switched off machine-wide (`fsutil 8dot3name query`),
+# and Git's "install for me only" lands in LOCALAPPDATA, so the list is probed
+# rather than assumed.
+GIT_SH_CANDIDATES := \
+  C:/Progra~1/Git/usr/bin/sh.exe \
+  C:/Progra~2/Git/usr/bin/sh.exe \
+  $(subst \,/,$(LOCALAPPDATA))/Programs/Git/usr/bin/sh.exe \
+  $(subst \,/,$(USERPROFILE))/scoop/apps/git/current/usr/bin/sh.exe
+GIT_SH ?= $(firstword $(wildcard $(GIT_SH_CANDIDATES)))
+
+ifeq ($(origin SHELL),command line)
+# The caller pointed make at their own sh — respect it and probe nothing.
+else ifeq ($(GIT_SH),)
+$(error No Git for Windows sh.exe found. Looked in: $(GIT_SH_CANDIDATES). \
+Install Git for Windows (https://git-scm.com/download/win), or point make at \
+an existing one: make GIT_SH=C:/path/to/Git/usr/bin/sh.exe <target> — the path \
+must not contain spaces)
+else
+SHELL := $(GIT_SH)
+endif
 .SHELLFLAGS := -c
+
 # Git's usr/bin (grep/awk/sed/uname) goes LAST: it also holds an msys link.exe
 # that would shadow MSVC's linker and break cargo builds if it came first.
-export PATH := $(USERPROFILE)\.cargo\bin;$(PATH);C:\Progra~1\Git\usr\bin
+# PATH stays Windows-style with ';' so the msys runtime converts it for the
+# sub-shell. Empty when the caller supplied their own SHELL — nothing to add.
+GIT_SH_BIN := $(subst /,\,$(patsubst %/sh.exe,%,$(GIT_SH)))
+export PATH := $(USERPROFILE)\.cargo\bin;$(PATH)$(if $(GIT_SH_BIN),;$(GIT_SH_BIN))
 else
 # Put a rustup-installed toolchain on PATH for every recipe, so a cargo that
 # `ensure-cargo` just installed (into ~/.cargo/bin) is found without re-sourcing
@@ -39,13 +75,14 @@ hooks: install ## Install the git pre-commit hook (husky + lint-staged)
 
 ensure-cargo: ## Install the Rust toolchain (rustup) if cargo is missing
 	@command -v cargo >/dev/null 2>&1 && exit 0; \
-	echo "cargo not found…"; \
 	case "$$(uname -s)" in \
 	  Linux|Darwin|*BSD) \
+	    echo "cargo not found — installing the Rust toolchain via rustup…"; \
 	    command -v curl >/dev/null 2>&1 || { echo "ERROR: curl is required to install Rust. Install curl or Rust manually: https://rustup.rs"; exit 1; }; \
 	    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path; \
 	    ;; \
 	  MINGW*|MSYS*|CYGWIN*) \
+	    echo "cargo not found."; \
 	    echo "ERROR: install Rust for Windows (the MSVC toolchain Tauri needs):"; \
 	    echo "  winget install --id Rustlang.Rustup -e   # or https://rustup.rs"; \
 	    echo "Then open a new shell and re-run make."; exit 1;; \

@@ -1,0 +1,714 @@
+/*
+ * MATERIAL theme surfaces — the tiers shared by every glass material (M37).
+ *
+ * The other themes are flat palettes: a set of colours, and every surface in
+ * the app already reads them through --bg0..3 / --border. A material theme
+ * also changes how a surface RENDERS — blur, specular edge, depth — which no
+ * palette value can express. So it is a palette (catalogs.ts) PLUS this sheet,
+ * keyed on `data-material`, which `applySettings` writes on <html> for any
+ * theme carrying a `material`. Switching to a flat palette removes the
+ * attribute and every rule here goes with it: no residue, nothing to undo.
+ *
+ * Two materials use it today — Frosted Glass (`frosted`) and Liquid Glass
+ * (`liquid`). Everything below is what they SHARE: the backdrop, the three
+ * tiers, and the hundred small corrections that keep data legible on top of
+ * them. `liquid.css` layers that material's lensing over this.
+ *
+ * Three tiers, assigned by ROLE and never by looks:
+ *
+ *   Chrome    persistent frame (title bar, rail, sidebar, tab bar, status bar)
+ *             — barely-there, 5.5% white over the backdrop.
+ *   Floating  anything that sits OVER content (modals, menus, popovers,
+ *             toasts, sheets, drawers) — deliberately MORE opaque than chrome
+ *             at 78%, because a menu over a busy data grid has to stay
+ *             readable. Drawers go further (86%): they hold editable forms.
+ *   Cards     content inside a pane (stat tiles, connection cards, previews)
+ *             — 7% white, light blur.
+ *
+ * The rule that keeps this coherent as the app grows: anything
+ * `position: absolute | fixed` that sits over content belongs to the floating
+ * tier. Under glass --bg2 is ~11% white, so a popover left on bare var(--bg2)
+ * turns see-through with no blur at all.
+ *
+ * Type is never translucent. Text, icons and data stay fully opaque.
+ */
+
+[data-material] {
+  --glass-blur: 22px;
+  /* The specular "lip": a bright 1px inset top edge and a faint bottom one.
+     Every glass surface uses this rather than hand-rolling a shadow. */
+  --glass-hi: inset 0 1px 0 rgba(255, 255, 255, 0.26), inset 0 -1px 0 rgba(255, 255, 255, 0.04);
+  --glass-shadow: 0 18px 48px rgba(3, 8, 24, 0.55);
+  /* The floating-tier treatment as tokens: a few surfaces paint through a
+     descendant selector of their own and need it re-stated at a higher
+     specificity (see "specificity top-ups" below). The two must not drift. */
+  --glass-float-bg: rgba(20, 28, 52, 0.78);
+  --glass-float-filter: blur(28px) saturate(180%);
+  --glass-float-border: rgba(255, 255, 255, 0.2);
+  /* Frozen grid gutters. A pinned column's whole job is to OCCLUDE the cells
+     sliding under it, so it is the one data surface that cannot be a sheet of
+     translucent white — at --bg1 (7%) the scrolled UUIDs read straight through
+     it. Near-opaque, and deliberately NOT blurred: there is one of these per
+     row, and backdrop-filter is per-element compositing. */
+  --glass-gutter: rgba(12, 18, 36, 0.96);
+  --glass-gutter-hover: rgba(26, 34, 58, 0.96);
+  /* The backdrop — four soft blooms over a deep base. The COLOURS are the
+     material's own (indigo, cyan, violet, teal); the accent is a tint mixed
+     into each, strongest in the lead bloom and barely there in the base. That
+     order matters: letting the accent lead painted the whole window one hue
+     and lost the gradient. A custom accent should colour the room, not become
+     it. Each `color-mix(… X%, transparent)` sets the bloom's alpha, so the
+     nesting reads "tint the hue, then set the alpha"; oklab keeps the tint
+     even, so a dark or vivid accent shifts the wash without muddying it.
+     Declared once as a token because three full-window boxes paint it. */
+  --glass-backdrop:
+    radial-gradient(
+      1100px 700px at 8% -10%,
+      color-mix(in oklab, color-mix(in oklab, var(--accent) 32%, #7c9cff) 46%, transparent),
+      transparent 60%
+    ),
+    radial-gradient(
+      900px 600px at 100% 0%,
+      color-mix(in oklab, color-mix(in oklab, var(--accent) 18%, #7cd5ff) 32%, transparent),
+      transparent 60%
+    ),
+    radial-gradient(
+      900px 700px at 60% 110%,
+      color-mix(in oklab, color-mix(in oklab, var(--accent) 22%, #b08cff) 36%, transparent),
+      transparent 62%
+    ),
+    radial-gradient(
+      700px 500px at 0% 100%,
+      color-mix(in oklab, color-mix(in oklab, var(--accent) 14%, #2dd4a7) 22%, transparent),
+      transparent 60%
+    ),
+    color-mix(in oklab, var(--accent) 6%, #0b1120);
+}
+
+/* ================= Backdrop =================
+   Glass is invisible without something behind it. Painted on the full-window
+   boxes only (body / #root / .bt-app-root) so there is ONE gradient origin —
+   .app-frame starts below the title bar, and painting it there too would put a
+   seam across the window. */
+[data-material] body,
+[data-material] #root,
+[data-material] .bt-app-root {
+  background: var(--glass-backdrop);
+}
+
+/* The shell root is the stacking context the noise overlay below slots into —
+   and the ONLY one this theme adds. Nothing inside it gets a z-index from this
+   sheet: the title bar holds the menu bar's dropdowns at z-index 70–90, and
+   giving the bar a z-index of its own would make it a stacking context that
+   caps them, letting the app body (a later sibling) paint straight over an
+   open File/Edit/Query menu. */
+[data-material] .bt-app-root {
+  position: relative;
+  z-index: 0;
+}
+
+/* Frameless Windows/Linux paint .bt-app-root with --bg0 for the rounded
+   corners, at a specificity this sheet has to beat explicitly. */
+[data-material] body[data-platform="windows"]:not(.window-maximized) .bt-app-root,
+[data-material] body[data-platform="linux"]:not(.window-maximized) .bt-app-root {
+  background: var(--glass-backdrop);
+}
+
+/* Fine fractal noise over the blooms — without it the gradients band visibly
+   on a large display. Fixed, non-interactive, and at z-index -1: that layer
+   paints after the shell root's own background (the backdrop) and before all
+   of its content, so the noise sits over the blooms and under the app without
+   a single child needing to be lifted above it. */
+[data-material] .bt-app-root::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  opacity: 0.5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.08'/%3E%3C/svg%3E");
+}
+/* Layout containers that used to paint --bg0 go transparent so the backdrop
+   shows through. They are NOT made glass themselves: stacking blur on blur
+   turns to mud. */
+[data-material] .app-frame,
+[data-material] .app-body,
+[data-material] .workspace,
+[data-material] .main-col,
+[data-material] .tab-content,
+[data-material] .tab-placeholder,
+[data-material] .connect-screen,
+/* The structure view's right rail is a CONTAINER, not a surface. Left painting
+   its own tint it stacked three sheets — rail, section, card — and the pile
+   read as one flat slab with no backdrop left in it. The glass goes on the
+   sections (below); the rail just holds them. */
+[data-material] .structure-rail,
+/* Same for the tab-level shells that re-declare the content area for their own
+   feature: each washed --bg0 over the whole tab, darkening the backdrop before
+   any of its own panels were drawn. (.oe-wrap keeps its `position: relative` —
+   the selection action bar anchors to it.) */
+[data-material] .oe-wrap,
+[data-material] .redis-tab-content,
+[data-material] .tov,
+[data-material] .sd-app,
+[data-material] .set-pane {
+  background: transparent;
+}
+
+/* Boot into glass rather than flashing the previous theme's charcoal. (The
+   splash normally reads its colours from localStorage before any CSS loads —
+   see index.html — so this is the belt-and-braces half of that.) */
+[data-material] #bt-splash {
+  background: radial-gradient(
+    900px 560px at 50% 38%,
+    color-mix(in oklab, var(--accent) 18%, #18224a),
+    color-mix(in oklab, var(--accent) 6%, #0b1120) 72%
+  );
+}
+
+/* ================= Tier 1: chrome =================
+   The frost goes on a PSEUDO-ELEMENT, not on the chrome box itself. A computed
+   `backdrop-filter` makes an element the containing block for its fixed
+   descendants — and the chrome is full of those: the sidebar's table context
+   menu, the rail's workspace-edit popover and the title bar's menu backdrop
+   are all `position: fixed` with viewport coordinates, rendered inline inside
+   the bar. Blurring the bar directly re-anchors them to it, so a right-click
+   menu would open offset by the sidebar's origin. The ::before carries the
+   filter instead: same frost, no containing block. `position: relative` on the
+   bar only scopes that overlay — it does NOT affect fixed descendants. */
+[data-material] .bt-titlebar,
+[data-material] .rail,
+[data-material] .sidebar,
+[data-material] .redis-sidebar,
+[data-material] .ddb-sidebar,
+[data-material] .cass-sidebar,
+[data-material] .tabbar,
+[data-material] .ddb-tabbar,
+[data-material] .statusbar,
+[data-material] .redis-statusbar,
+[data-material] .ddb-statusbar,
+[data-material] .term-panel-head {
+  position: relative;
+  background: transparent;
+}
+[data-material] .bt-titlebar::before,
+[data-material] .rail::before,
+[data-material] .sidebar::before,
+[data-material] .redis-sidebar::before,
+[data-material] .ddb-sidebar::before,
+[data-material] .cass-sidebar::before,
+[data-material] .tabbar::before,
+[data-material] .ddb-tabbar::before,
+[data-material] .statusbar::before,
+[data-material] .redis-statusbar::before,
+[data-material] .ddb-statusbar::before,
+[data-material] .term-panel-head::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: rgba(255, 255, 255, 0.055);
+  backdrop-filter: blur(var(--glass-blur)) saturate(170%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(170%);
+  box-shadow: var(--chrome-edge, none);
+}
+
+/* `--chrome-edge` is the hook a MATERIAL uses to glow one edge of a bar — the
+   side it shares with the content it frames. Nothing defines it here: the
+   frosted material is deliberately flat-edged, and the overlay above falls
+   back to `none`. Liquid Glass sets it (see liquid.css), where it continues
+   the lens rim onto the horizontal bars. */
+
+/* The settings nav is chrome by ROLE but it is the one piece of chrome that
+   lives INSIDE a floating surface, so it cannot be treated like the rest:
+   there is no backdrop behind it to frost (blurring the modal's flat glass
+   returns the same flat glass), and chrome's 5.5% tint against the pane's
+   transparency reads as no divider at all. It is a raised pane on the modal
+   instead — a real background, not an overlay, which also keeps it visible
+   when reduced transparency strips the modal's stacking context. */
+[data-material] .set-nav {
+  background: rgba(255, 255, 255, 0.07);
+  border-right-color: rgba(255, 255, 255, 0.14);
+  box-shadow: var(--glass-hi);
+}
+
+/* ================= Tier 2: floating =================
+   Everything that sits over content. One list, one treatment — the audit that
+   produced it is "every rule that is position:absolute|fixed and paints a
+   var(--bg1|2|3) background", plus the modals and sheets. */
+[data-material] .modal,
+[data-material] .palette,
+[data-material] .connect-panel,
+[data-material] .conn-openfile-pop,
+[data-material] .imp-sheet,
+[data-material] .csvo-sheet,
+[data-material] .toast,
+[data-material] .schema-pop,
+[data-material] .ctx-menu,
+[data-material] .sql-ctx-menu,
+[data-material] .tabmenu,
+[data-material] .tabmenu-sub,
+[data-material] .tb-menu-pop,
+[data-material] .tb-menu-sub,
+[data-material] .lang-pop,
+[data-material] .mono-picker-menu,
+[data-material] .sel-pop,
+[data-material] .ws-edit-pop,
+[data-material] .ws-tile-opts,
+[data-material] .col-pop,
+[data-material] .dg-popover,
+[data-material] .info-hint-bubble,
+[data-material] .ac-popup,
+[data-material] .history-pop,
+[data-material] .save-pop,
+[data-material] .proj-pop,
+[data-material] .proj-dd,
+[data-material] .ddb-proj-pop,
+[data-material] .obj-drop-confirm,
+[data-material] .oe-actionbar,
+[data-material] .map-export-menu,
+[data-material] .ri-dt-panel,
+[data-material] .ri-dt-tzmenu,
+[data-material] .ri-dt-yrmenu,
+[data-material] .ri-copyrow-menu,
+[data-material] .rc-kf,
+[data-material] .ts-sort-pop {
+  background: var(--glass-float-bg);
+  backdrop-filter: var(--glass-float-filter);
+  -webkit-backdrop-filter: var(--glass-float-filter);
+  border-color: var(--glass-float-border);
+  box-shadow: var(--glass-shadow), var(--glass-hi);
+}
+
+/* Specificity top-ups. Each of these paints its background through a
+   descendant/compound selector that ties with (and, landing later in the
+   bundle, beats) the single-class list above — the Redis sidebar's own schema
+   popover, the autocomplete popup qualified with CodeMirror's classes. Same
+   tier, stated loud enough to win. */
+[data-material] .redis-sidebar .schema-pop,
+[data-material] .cm-tooltip.cm-tooltip-autocomplete.ac-popup {
+  background: var(--glass-float-bg);
+  backdrop-filter: var(--glass-float-filter);
+  -webkit-backdrop-filter: var(--glass-float-filter);
+  border-color: var(--glass-float-border);
+  box-shadow: var(--glass-shadow), var(--glass-hi);
+}
+
+/* ================= Schema-map canvas =================
+   A table card on the map is CONTENT you read line by line, not a surface
+   floating over content, and there are dozens on screen at once. Two reasons
+   it cannot be the floating tier:
+   - Legibility. At 78% the canvas dot-grid came through the column names.
+     These go near-opaque; the glass of this view is its backdrop and its
+     links, not the cards.
+   - Cost. `backdrop-filter` is per-element compositing, and this is a zoomable
+     canvas with 30+ cards — the same rule that keeps blur off grid rows.
+   The main canvas draws cards as SVG (`.map-card-box` / `.map-card-head-bg`),
+   where a backdrop-filter would do nothing anyway; edit mode swaps in HTML
+   cards. Both are listed so the two renderings stay identical. */
+[data-material] .map-card-box {
+  fill: rgba(14, 20, 40, 0.93);
+  stroke: rgba(255, 255, 255, 0.2);
+}
+[data-material] .map-card-head-bg {
+  fill: rgba(255, 255, 255, 0.09);
+}
+[data-material] .map-card,
+[data-material] .ddb-map-card,
+[data-material] .map-inner .map-card,
+[data-material] .cass-map .map-card,
+[data-material] .mg-map .map-card {
+  background: rgba(14, 20, 40, 0.93);
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: var(--glass-shadow), var(--glass-hi);
+}
+/* Small SVG chips on the same canvas — link labels, bend handles, group corner
+   pips — are painted with --bg0/--bg1 and vanish when those turn translucent.
+   They mark positions, so they have to be solid. */
+[data-material] .map-glink-label-bg,
+[data-material] .map-group-pip {
+  fill: rgba(10, 15, 34, 0.95);
+}
+[data-material] .map-glink-handle,
+[data-material] .map-edge-handle {
+  fill: rgba(26, 34, 58, 0.98);
+}
+
+/* Side drawers go one step more opaque: they hold editable forms, which need
+   more contrast than a menu glanced at for a second. */
+[data-material] .ri-drawer,
+[data-material] .sq-drawer,
+[data-material] .ts-drawer {
+  background: rgba(16, 23, 44, 0.86);
+  backdrop-filter: blur(30px) saturate(170%);
+  -webkit-backdrop-filter: blur(30px) saturate(170%);
+}
+
+/* Rows inside a floating surface tint, they do not blur — one compositing
+   layer per menu, not per item. */
+[data-material] .proj-dd-item:hover,
+[data-material] .proj-pop-item:hover,
+[data-material] .tabmenu-item:hover,
+[data-material] .sel-opt:hover,
+[data-material] .lang-item:hover,
+[data-material] .ctx-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+[data-material] .proj-dd-sep,
+[data-material] .tabmenu-sep,
+[data-material] .ctx-sep {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* ================= Tier 3: content cards ================= */
+[data-material] .rdash-stat,
+[data-material] .ddb-dash-stat,
+[data-material] .ddb-structure-card,
+[data-material] .acc-section,
+[data-material] .csvv-card,
+[data-material] .csvv-sev,
+[data-material] .csvv-issue,
+[data-material] .ex-table-wrap,
+[data-material] .ex-tnode,
+[data-material] .ex-stat,
+[data-material] .cl-shard,
+[data-material] .rc-stat,
+[data-material] .mg-estat,
+[data-material] .sd-stat,
+[data-material] .sd-conn-card,
+[data-material] .proc-stat,
+[data-material] .ts-hit,
+[data-material] .lang-preview,
+[data-material] .set-theme-prev:not(.glass) {
+  background: rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: var(--glass-hi);
+}
+
+/* The object explorer's facet rail and toolbar are panes inside the tab, so
+   they frost against the backdrop the wrapper above no longer veils. Blurred
+   here (unlike the settings nav) because there IS a backdrop behind them, and
+   neither holds a fixed-position popover to re-anchor. */
+[data-material] .oe-rail,
+[data-material] .oe-toolbar {
+  background: rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+/* Cards INSIDE a glass surface — the structure rail's index / foreign-key
+   items, and the connect panel's project accordions and connection cards —
+   lift with a tint alone. A second blur inside an already-blurred parent
+   samples a surface that is itself already blurred: it costs a compositing
+   layer and returns mud. The specular lip is what makes them read as glass
+   rather than as grey slabs, so they keep that; without it the connect
+   screen's accordions were flat boxes on a flat panel. */
+[data-material] .structure-card,
+[data-material] .proj-acc,
+[data-material] .connect-card {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow: var(--glass-hi);
+}
+
+/* The connect panel is the one floating surface that never covers data — it
+   floats over an otherwise empty screen — so it can let the backdrop through
+   where a menu over a busy grid could not. Thinning it is what puts the blooms
+   back behind the accordions; mixing down each material's own float colour
+   keeps the two in step. */
+[data-material] .connect-panel {
+  background: color-mix(in oklab, var(--glass-float-bg) 74%, transparent);
+}
+
+/* ================= Inputs =================
+   Plain fields need nothing: --bg0 is translucent in this theme, so every
+   bg0-backed input, editor and search box is already glass. What they need is
+   the RECESSED look — a dark well pressed into the surface, not another raised
+   pane. Wrapper-styled search boxes get it on the wrapper (their inner <input>
+   is already background:none); fields that set their own background get it
+   explicitly, because their own class rule outranks the variable. */
+[data-material] .sidebar-search,
+[data-material] .connect-search,
+[data-material] .columns-search,
+[data-material] .csvv-search,
+[data-material] .sq-search,
+[data-material] .oe-search,
+[data-material] .proc-search,
+[data-material] .ssm-search,
+[data-material] .ts-search,
+[data-material] .ts-docs-search,
+[data-material] .ddb-sidebar-search,
+[data-material] .form-grid input,
+[data-material] .where-input,
+[data-material] .filter-value,
+[data-material] .set-select,
+[data-material] .sel-trigger,
+[data-material] .proj-select-btn,
+[data-material] .binary-input,
+[data-material] .ri-input,
+[data-material] .cs-input,
+[data-material] .ct-in,
+[data-material] .bug-input,
+[data-material] .import-textarea,
+[data-material] .ddb-import-textarea,
+[data-material] .save-pop-input {
+  background: rgba(6, 10, 24, 0.34);
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* The <input> inside a glass wrapper stays transparent — a blanket
+   `[data-material] input {…}` would paint a second dark rectangle inside
+   every one of the wrappers above. */
+[data-material] .sidebar-search input,
+[data-material] .connect-search input,
+[data-material] .columns-search input,
+[data-material] .csvv-search input,
+[data-material] .sq-search input,
+[data-material] .oe-search input,
+[data-material] .proc-search input,
+[data-material] .ssm-search input,
+[data-material] .ts-docs-search input,
+[data-material] .ddb-sidebar-search input {
+  background: none;
+}
+
+/* Native option lists cannot blur, and render transparent-on-white on some
+   platforms if left to a translucent token. (The app uses its own <Select>
+   almost everywhere; this covers the few native ones.) */
+[data-material] select option {
+  background: #141c34;
+  color: var(--text);
+}
+
+/* ================= Interactive states =================
+   Selection reads as a RAISED pane — a brighter sheet of glass with the
+   specular lip — rather than a flat fill. */
+[data-material] .tab.active,
+[data-material] .ddb-tab.active,
+[data-material] .term-tab.active,
+[data-material] .sqlres-tab.active {
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: var(--glass-hi);
+}
+[data-material] .seg,
+[data-material] .ts-seg {
+  background: rgba(255, 255, 255, 0.06);
+}
+[data-material] .seg-btn.active {
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: var(--glass-hi);
+}
+[data-material] .table-item.active,
+[data-material] .obj-item.active,
+[data-material] .csvv-view.active,
+[data-material] .ts-nav-btn.active,
+[data-material] .set-nav-item.active {
+  background: color-mix(in oklab, var(--accent) 28%, transparent);
+  box-shadow: var(--glass-hi);
+}
+
+/* Menu bar: the dropdown is the glass surface (see the floating tier); these
+   are its trigger and its rows. Glassing .tb-menu itself would frost a block
+   behind the BUTTON and leave the dropdown opaque. */
+[data-material] .tb-menu-btn:hover,
+[data-material] .tb-menu-btn.open {
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: var(--glass-hi);
+}
+[data-material] .tb-menu-item:hover,
+[data-material] .tb-menu-parent.hot {
+  background: rgba(255, 255, 255, 0.1);
+}
+[data-material] .tb-menu-sep {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* Rail tiles: frosted, and the active one keeps its workspace-colour ring and
+   gains a coloured glow so the current workspace reads at a glance. */
+[data-material] .ws-tile {
+  background: rgba(255, 255, 255, 0.09);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--glass-hi);
+}
+[data-material] .ws-tile.active {
+  box-shadow:
+    0 0 0 1px var(--ws-color),
+    0 10px 26px color-mix(in oklab, var(--ws-color) 42%, transparent),
+    var(--glass-hi);
+}
+/* The engine abbreviation on a tile is 7.5px of type in a 17%-white chip — on
+   a flat theme that chip is opaque grey and reads fine, but over a frosted
+   tile it is white-on-white at a size with no room to lose contrast. Dark,
+   near-opaque, full-strength text: the badge says WHICH database this is, and
+   it is the only thing on the tile that does. */
+[data-material] .ws-tile-engine {
+  background: rgba(12, 18, 36, 0.92);
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* The primary button is the one element allowed to look lit. */
+[data-material] .btn-filled {
+  background: linear-gradient(180deg, color-mix(in oklab, var(--accent) 90%, white), var(--accent));
+  color: #fff;
+  box-shadow:
+    var(--glass-hi),
+    0 8px 20px color-mix(in oklab, var(--accent) 45%, transparent);
+}
+
+[data-material] ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+/* ================= Code surfaces =================
+   These go DARKER, not lighter: syntax colours need contrast more than they
+   need translucency. */
+[data-material] .term-panel,
+[data-material] .rcli-body,
+[data-material] .sql-editor-wrap,
+[data-material] .cass-cql-editor-wrap,
+[data-material] .cass-cql-preview,
+[data-material] .mg-doc-editor,
+[data-material] .mg-stage-body,
+[data-material] .explain-plan-tree,
+[data-material] .ex-psql,
+[data-material] .ddl-block,
+[data-material] .obj-ddl-block,
+[data-material] .ddb-ddl-block,
+[data-material] .json-editor-wrap,
+[data-material] .json-tree-wrap,
+[data-material] .ts-drawer-json,
+[data-material] .cl-raw-pre,
+[data-material] .bug-preview,
+[data-material] .set-font-prev {
+  background: rgba(0, 0, 0, 0.32);
+}
+
+/* Small chips that sit ON data: the grid's hover copy button (whose job is to
+   MASK the cell text it covers), the Dynamo twin, and the filter bar's SQL
+   peek. Tinted opaque, never blurred — one of these exists per hovered cell,
+   and backdrop-filter is per-element compositing. */
+[data-material] .dg-copy,
+[data-material] .ddb-cell-copy,
+[data-material] .filter-sqlpeek-label {
+  background: rgba(20, 28, 52, 0.92);
+  box-shadow: -6px 0 6px -2px rgba(20, 28, 52, 0.92);
+}
+[data-material] .dg-copy:hover {
+  background: rgba(32, 42, 74, 0.96);
+  box-shadow: -6px 0 6px -2px rgba(32, 42, 74, 0.96);
+}
+
+/* A fade mask has to match what it fades INTO, and the code surfaces above
+   went darker — so this follows them down rather than lightening. */
+[data-material] .ddl-fade {
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.32) 78%);
+}
+
+/* ================= Frozen gutters =================
+   The checkbox and row-number columns pinned to the left of the SQL and
+   DynamoDB grids, the object explorer's check gutter, and the Redis clients
+   kill column pinned to the right. Every state has to stay opaque: the base
+   rules mix their hover/selected/staged tints with --bg1, which is translucent
+   here, so each one needs restating against the gutter colour. */
+[data-material] .dg-check-c,
+[data-material] .dg-check-h,
+[data-material] .dg-rownum,
+[data-material] .dg-rownum-h,
+[data-material] .ddb-vg-check-c,
+[data-material] .ddb-vg-rownum,
+[data-material] .ddb-vg-rownum-h,
+[data-material] .oe-check,
+[data-material] .rc-grid .rc-kill-c,
+[data-material] .rc-grid .dg-header .rc-kill-c {
+  background: var(--glass-gutter);
+}
+[data-material] body:not(.bt-no-rowhover) .dg-tr:hover .dg-rownum,
+[data-material] .ddb-vg-body-row:hover .ddb-vg-rownum,
+[data-material] body:not(.bt-no-rowhover) .rc-tab .proc-grid-row:not(.dg-header):hover .rc-kill-c {
+  background: var(--glass-gutter-hover);
+}
+[data-material] .dg-tr.row-selected .dg-rownum {
+  background: color-mix(in oklab, var(--accent) 16%, var(--glass-gutter));
+}
+[data-material] .dg-tr.row-staged .dg-rownum {
+  background: color-mix(in oklab, var(--accent) 24%, var(--glass-gutter));
+}
+
+/* ================= Grid headers =================
+   A sticky header frosts the rows scrolling under it. Headers ONLY — a
+   backdrop-filter is per-element compositing, and rows/cells run to the
+   hundreds. */
+[data-material] .dg-th,
+[data-material] .tov-th,
+[data-material] .tov-head,
+[data-material] .ex-summary,
+[data-material] .obj-sec-head,
+[data-material] .cass-grid thead th,
+[data-material] .ddb-datagrid thead th,
+[data-material] .ddb-vg-th,
+[data-material] .term-grid th,
+[data-material] .csvo-prev th,
+[data-material] .ex-table th,
+[data-material] .ex-my th,
+[data-material] .import-sample th,
+[data-material] .oe-grid-head,
+[data-material] .columns-scroll .structure-table th {
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* ================= Reduced transparency =================
+   Not optional: this is the OS setting users with low vision rely on. Every
+   blur off, chrome nearly opaque, still on-theme. */
+@media (prefers-reduced-transparency: reduce) {
+  /* The pseudo-elements are listed explicitly: `*` matches elements only, and
+     the chrome's frost lives on a ::before. */
+  [data-material] *,
+  [data-material] *::before,
+  [data-material] *::after {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  [data-material] .bt-titlebar,
+  [data-material] .rail,
+  [data-material] .sidebar,
+  [data-material] .redis-sidebar,
+  [data-material] .ddb-sidebar,
+  [data-material] .cass-sidebar,
+  [data-material] .tabbar,
+  [data-material] .ddb-tabbar,
+  [data-material] .statusbar,
+  [data-material] .redis-statusbar,
+  [data-material] .ddb-statusbar,
+  [data-material] .term-panel-head,
+  /* The chrome tint lives on the overlay, so that is what has to go opaque. */
+  [data-material] .bt-titlebar::before,
+  [data-material] .rail::before,
+  [data-material] .sidebar::before,
+  [data-material] .redis-sidebar::before,
+  [data-material] .ddb-sidebar::before,
+  [data-material] .cass-sidebar::before,
+  [data-material] .tabbar::before,
+  [data-material] .ddb-tabbar::before,
+  [data-material] .statusbar::before,
+  [data-material] .redis-statusbar::before,
+  [data-material] .ddb-statusbar::before,
+  [data-material] .term-panel-head::before {
+    background: rgba(18, 26, 48, 0.94);
+  }
+  /* Inside the (now opaque) settings modal, the nav keeps reading as a panel
+     rather than becoming a second slab of the same colour. */
+  [data-material] .set-nav {
+    background: rgba(255, 255, 255, 0.09);
+  }
+}

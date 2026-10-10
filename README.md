@@ -71,12 +71,21 @@ each with its own tab set and sidebar state.
 
 ## Prerequisites
 
-- **Rust** ≥ 1.77 (stable toolchain via [rustup](https://rustup.rs)). _Optional:_ the `make`
-  targets auto-install it for you if `cargo` is missing (see the note below).
+- **Rust** ≥ 1.77 (stable toolchain via [rustup](https://rustup.rs)). _Optional, Linux/macOS/BSD
+  only:_ the `make` targets auto-install it for you if `cargo` is missing (see the note below).
 - **Node** ≥ 18 and **pnpm** 10 (`corepack enable` or `npm i -g pnpm`).
 - **Tauri 2 system deps** — see the [Tauri prerequisites guide](https://tauri.app/start/prerequisites/).
-  On Linux that means WebKitGTK 4.1 + build essentials; macOS needs Xcode command-line tools.
+  On Linux that means WebKitGTK 4.1 + build essentials; macOS needs Xcode command-line tools;
+  Windows needs the MSVC build tools + WebView2.
 - **Docker** (optional) — only to run the bundled test databases (see below).
+
+> **Windows:** the `make` recipes are POSIX, so from `cmd`/PowerShell they run under the `sh.exe`
+> that [Git for Windows](https://git-scm.com/download/win) ships. Usual install locations are
+> detected automatically; if yours is elsewhere, pass a **space-free** path:
+> `make GIT_SH=C:/path/to/Git/usr/bin/sh.exe dev`. You also need GNU `make` itself (winget /
+> Chocolatey / Scoop / MSYS2 all package it) and Rust's **MSVC** toolchain. Git Bash and MSYS2 are
+> left alone — they already have a POSIX shell. Not using `make` at all works too: run the
+> underlying `pnpm` / `cargo` commands directly.
 
 > **Auto-install:** `make build`/`dev`/`test`/`lint`/`fmt` run `pnpm install` first, and an
 > `ensure-cargo` step that installs the Rust toolchain via the official [rustup](https://rustup.rs)
@@ -84,8 +93,10 @@ each with its own tab set and sidebar state.
 > can build with one command. It is a no-op once Rust is installed. This runs a network install of a
 > toolchain on your machine; if you'd rather control that, install Rust yourself first (then the step
 > just skips), or run the underlying `pnpm`/`cargo` commands directly. Auto-install covers
-> Linux/macOS/BSD and Git-Bash/MSYS on Windows; native Windows `cmd`/PowerShell users install Rust
-> manually from [rustup.rs](https://rustup.rs). (`curl` is required for the auto-install.)
+> Linux/macOS/BSD only (`curl` is required). On **Windows** — including Git Bash and MSYS2 —
+> `ensure-cargo` prints an install instruction instead: the Unix rustup script would give you the
+> `windows-gnu` toolchain, and Tauri needs **MSVC**. Install it yourself with
+> `winget install --id Rustlang.Rustup -e` (or from [rustup.rs](https://rustup.rs)), then re-run.
 
 ## Run it (dev mode)
 

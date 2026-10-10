@@ -1,216 +1,697 @@
 /*
- * Liquid Glass — the lensed material, layered over the shared tiers in
- * glass.css (`[data-material]`). Everything here keys on `[data-material="liquid"]`.
+ * Liquid Glass (M38) — a theme in the style of macOS Tahoe's material.
  *
- * WHAT THIS IS NOT. Apple's Liquid Glass REFRACTS: it samples what is behind a
- * pane and displaces those pixels, bending and dispersing them at the edges
- * like a real lens, live, as content moves underneath. A webview cannot do
- * that. `backdrop-filter` only accepts the standard filter functions — blur,
- * saturate, brightness and friends — not an SVG `url(#...)` reference, so
- * `feDisplacementMap` can never be pointed at a backdrop. Nothing else exposes
- * the composited backdrop as a texture either: `element()` is Firefox-only, and
- * neither WKWebView (macOS) nor WebView2 nor WebKitGTK offers a substitute. The
- * only way to truly refract would be to rasterize the DOM behind each pane
- * ourselves every frame and feed it to WebGL, which is not a theme — it is a
- * renderer, and it would cost more than the whole grid.
+ * Every colour on screen comes from the WALLPAPER behind the window (--lg-wall,
+ * a real image), never from a CSS gradient. Surfaces are translucent and
+ * heavily blurred, so the image bleeds through and the whole app re-colours
+ * when the image changes. Three layers per surface:
+ *   (1) blur + saturate of what is behind, with edge refraction where the
+ *       engine can render it (#bt-lg-lens, Chromium only — see lens.ts),
+ *   (2) a dark tint, just enough for opaque text to stay legible,
+ *   (3) a specular rim.
  *
- * WHAT THIS IS. The cues that make a lens READ as a lens, faked with things a
- * webview is fast at:
+ * Keyed on `[data-material="liquid"]`, which `applySettings` writes for any
+ * theme whose catalog entry carries `material: "liquid"` — the attribute, never
+ * the theme's name, so no component ever checks which theme is on. Rules shared
+ * with Frosted Glass (the stacking ladder and the overlay lift) live in
+ * glass.css under the bare `[data-material]`.
  *
- *   1. A lensed RIM. Light entering thick glass concentrates at the edges, so
- *      the rim is where refraction is visible. Layered inset shadows give a
- *      bright top edge, a faint bottom one, and a cyan/magenta split down the
- *      sides — the chromatic dispersion a real lens produces. All in
- *      --glass-hi, so every tier in glass.css picks it up with no new rules.
- *   2. An ETCHED EDGE on every bar, continuing that rim onto the boundaries
- *      the chrome shares with the content it frames.
- *   3. A THICKER pane: more blur, more saturation, a brightness lift. Apple's
- *      material is visibly a slab, not a film.
- *
- * A pointer-tracked specular highlight was built and removed: a lens that
- * lights up under the cursor is a toy, and it read as a flashlight dragged
- * across the window rather than as light in glass. The material is lit from
- * above, consistently, and does not follow the mouse.
- *
- * It is an impression of liquid glass, not the thing itself. On a static
- * screenshot the two are close; in motion, real refraction warps what is
- * behind it and this does not.
+ * Tokens, one per depth tier. Every surface below uses them; nothing here
+ * hand-writes an rgba, so retuning the theme is a token edit.
  */
 
 [data-material="liquid"] {
-  /* A thicker slab than the frosted material: more blur, more saturation, and
-     a brightness lift so the pane reads as lit rather than smoked. */
-  --glass-blur: 26px;
-  --glass-float-bg: rgba(18, 26, 52, 0.72);
-  --glass-float-filter: blur(34px) saturate(190%) brightness(1.06);
-  --glass-float-border: rgba(255, 255, 255, 0.28);
-
-  /* The lens rim. Top edge bright (the light source is above), bottom edge a
-     whisper, and the two sides split into cyan and magenta — dispersion is
-     what tells the eye "thick glass" rather than "translucent paint". The
-     negative spreads keep all four inside the border radius. */
-  --glass-hi:
-    inset 0 1px 0 rgba(255, 255, 255, 0.55), inset 0 -1px 0 rgba(255, 255, 255, 0.1),
-    inset 3px 0 8px -6px rgba(120, 210, 255, 0.6), inset -3px 0 8px -6px rgba(255, 150, 220, 0.5);
-  --glass-shadow: 0 24px 60px rgba(2, 6, 20, 0.6), 0 2px 10px rgba(2, 6, 20, 0.35);
-
-  /* A lens needs something worth bending — and something of its OWN. Frosted
-     is a cold four-corner wash: indigo, cyan, violet and teal, symmetric,
-     evenly cool. This is the opposite composition on purpose, so the two
-     materials are told apart at a glance rather than by brightness: a warm
-     DIAGONAL over a plum base, magenta falling from the top right into violet
-     on the left, an amber low in the corner, and one cool teal counterpoint to
-     keep it from going pink. It also gives the rim's cyan/magenta dispersion
-     something to belong to — on the frosted backdrop the magenta had nothing
-     in the picture to answer it.
-
-     Like the frosted backdrop, the accent is mixed into every bloom — a tint
-     over this material's own palette, not a replacement for it, so the room is
-     still magenta-into-violet when the accent is green. What differs between
-     the materials is the COMPOSITION and the direction each bloom is pushed:
-     magenta and amber here, cyan and teal there.
-
-     Dimmer than it looks on paper has to be the rule here. Magenta and violet
-     read brighter than frosted's indigo and teal at the same alpha, and these
-     blooms are larger and overlap more, so matching frosted's numbers would
-     still come out hotter than frosted. The alphas are ~30% under it instead,
-     and the two big blooms pulled in. */
-  --glass-backdrop:
-    radial-gradient(
-      1180px 760px at 88% -16%,
-      color-mix(in oklab, color-mix(in oklab, var(--accent) 24%, #ec70c4) 30%, transparent),
-      transparent 62%
-    ),
-    radial-gradient(
-      1080px 720px at -10% 16%,
-      color-mix(in oklab, color-mix(in oklab, var(--accent) 34%, #8e6cff) 36%, transparent),
-      transparent 60%
-    ),
-    radial-gradient(
-      900px 680px at 96% 104%,
-      color-mix(in oklab, color-mix(in oklab, var(--accent) 16%, #56d6e8) 22%, transparent),
-      transparent 60%
-    ),
-    radial-gradient(
-      820px 600px at 10% 110%,
-      color-mix(in oklab, color-mix(in oklab, var(--accent) 12%, #ff9e6c) 18%, transparent),
-      transparent 62%
-    ),
-    color-mix(in oklab, var(--accent) 8%, #0c0a1f);
-
-  /* Frozen gutters stay near-opaque for the same reason as the frosted
-     material — they occlude — but take the warmer base. */
-  --glass-gutter: rgba(10, 15, 34, 0.96);
-  --glass-gutter-hover: rgba(26, 36, 64, 0.96);
-
-  /* The glow that etches an edge — the cool side of the rim's dispersion pair,
-     blurred and pulled inside the box. NOT a hard stroke: the crisp line at a
-     boundary is the bar's own 1px border, and this is the light pooling along
-     it. */
-  --glass-edge: rgba(130, 212, 255, 0.55);
+  --lg-chrome: rgba(16, 18, 24, 0.22);
+  --lg-content: rgba(18, 20, 26, 0.5);
+  --lg-float: rgba(24, 26, 34, 0.72);
+  --lg-rim:
+    inset 0 1px 0 rgba(255, 255, 255, 0.38), inset 0 -1px 0 rgba(255, 255, 255, 0.08),
+    inset 1px 0 0 rgba(255, 255, 255, 0.12), inset -1px 0 0 rgba(255, 255, 255, 0.12),
+    0 0 0 0.5px rgba(255, 255, 255, 0.2);
+  --lg-lift: 0 14px 40px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.2);
+  --lg-filter: blur(30px) saturate(180%);
+  --lg-filter-float: blur(18px) saturate(200%) brightness(1.05);
 }
 
-/* The primary button is the one element allowed to look lit, so under this
-   material it is a polished bead: a vertical gloss, the lens rim, and an
-   accent bloom beneath it. */
-[data-material="liquid"] .btn-filled {
-  background-image:
-    linear-gradient(
-      180deg,
-      rgba(255, 255, 255, 0.34),
-      rgba(255, 255, 255, 0.08) 42%,
-      rgba(255, 255, 255, 0) 60%
-    ),
-    linear-gradient(180deg, color-mix(in oklab, var(--accent) 92%, white), var(--accent));
-  box-shadow:
-    var(--glass-hi),
-    0 10px 26px color-mix(in oklab, var(--accent) 50%, transparent);
+/* ================= The "desktop" =================
+   The wallpaper sits behind the whole window, fixed so it does not scroll with
+   anything, and `cover` so it fills without distorting. `--lg-wall` is written
+   by applySettings, which means the image is never re-decoded by a React
+   render. "None" swaps it for a flat base — the glass still works. */
+[data-material="liquid"] body {
+  background: #0c1220 var(--lg-wall) center / cover no-repeat fixed;
+}
+.bt-lg-nowall[data-material="liquid"] body {
+  background: #15161b;
+}
+[data-material="liquid"] #root,
+[data-material="liquid"] .bt-app-root,
+[data-material="liquid"] .app-frame,
+[data-material="liquid"] .app-body,
+[data-material="liquid"] .workspace,
+[data-material="liquid"] .main-col,
+[data-material="liquid"] .tab-content,
+[data-material="liquid"] .tab-placeholder,
+[data-material="liquid"] .connect-screen,
+[data-material="liquid"] .oe-wrap,
+[data-material="liquid"] .redis-tab-content,
+[data-material="liquid"] .tov,
+[data-material="liquid"] .sd-app,
+[data-material="liquid"] .set-pane,
+[data-material="liquid"] .structure-rail {
+  background: transparent;
+}
+/* The frosted material paints a gradient backdrop on these; this one must not
+   — the wallpaper is the backdrop, and a gradient over it would hide it. */
+[data-material="liquid"] .bt-app-root::after {
+  content: none;
 }
 
-/* ---- the etched edge, continued onto the horizontal bars ----
-   The rim's dispersion pair glows the LEFT and RIGHT of every surface, which
-   is why the rail/sidebar seam already reads as an etched, lit line. Top and
-   bottom get no such treatment from the rim — its horizontal insets are a
-   1px highlight along the top, nothing along the bottom — so a title bar's
-   lower edge and a status bar's upper edge, the two that actually border the
-   data, stayed flat. Each names its content-facing side and gets the same
-   blurred glow, in the same direction and at the same 8px/-6px geometry the
-   sides use. The fine line itself is the bar's own border; this is the light
-   along it. */
-[data-material="liquid"] .bt-titlebar,
-[data-material="liquid"] .tabbar,
-[data-material="liquid"] .ddb-tabbar,
-[data-material="liquid"] .term-panel-head {
-  --chrome-edge: inset 0 -3px 8px -6px var(--glass-edge);
+/* ================= Pane layout =================
+   Tahoe-style chrome: inset, rounded, floating panes with the wallpaper
+   showing in the gaps. `.app-frame` is this app's `.app-main` (the rail +
+   body row); the title bar is its sibling, above. */
+[data-material="liquid"] .app-frame {
+  padding: 0 8px;
+  gap: 8px;
 }
-[data-material="liquid"] .statusbar,
-[data-material="liquid"] .redis-statusbar,
-[data-material="liquid"] .ddb-statusbar {
-  --chrome-edge: inset 0 3px 8px -6px var(--glass-edge);
-}
-/* The vertical bars take it too. They already glow from the rim's dispersion,
-   so this LAYERS on that edge rather than creating it — the seam runs a little
-   hotter and cooler-toned than the rim alone. Drop these four rules to go back
-   to the rim doing it unaided. */
 [data-material="liquid"] .rail,
 [data-material="liquid"] .sidebar,
 [data-material="liquid"] .redis-sidebar,
 [data-material="liquid"] .ddb-sidebar,
-[data-material="liquid"] .cass-sidebar {
-  --chrome-edge: inset -3px 0 8px -6px var(--glass-edge);
+[data-material="liquid"] .cass-sidebar,
+[data-material="liquid"] .main-col {
+  margin: 8px 0;
+  border: none;
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: var(--lg-rim);
 }
-/* Sidebar on the right: the divider moves to the inner edge, so the glow
-   follows it. The rail is always on the left. */
+/* The sidebar sits inside the workspace grid, so its gap to the content is its
+   own margin. Mirrored for a right-hand sidebar. */
+[data-material="liquid"] .sidebar,
+[data-material="liquid"] .redis-sidebar,
+[data-material="liquid"] .ddb-sidebar,
+[data-material="liquid"] .cass-sidebar {
+  margin-inline-end: 8px;
+}
 [data-material="liquid"] body.bt-sidebar-right .sidebar,
 [data-material="liquid"] body.bt-sidebar-right .redis-sidebar,
 [data-material="liquid"] body.bt-sidebar-right .ddb-sidebar,
 [data-material="liquid"] body.bt-sidebar-right .cass-sidebar {
-  --chrome-edge: inset 3px 0 8px -6px var(--glass-edge);
+  margin-inline-end: 0;
+  margin-inline-start: 8px;
+}
+/* The status bar floats as its own rounded pane; the grid row grows to make
+   room for the gap under the panes. */
+[data-material="liquid"] .workspace {
+  grid-template-rows: 1fr 38px;
+}
+[data-material="liquid"] .statusbar,
+[data-material="liquid"] .redis-statusbar,
+[data-material="liquid"] .ddb-statusbar {
+  margin: 0 8px 8px;
+  border: none;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: var(--lg-rim);
+}
+/* Status bar at narrow widths: only the LOW-PRIORITY segments may shrink and
+   ellipsise. The connection name, environment tag and row count must stay
+   whole — without this the right-hand end clips instead. */
+[data-material="liquid"] .statusbar > *,
+[data-material="liquid"] .redis-statusbar > *,
+[data-material="liquid"] .ddb-statusbar > * {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+[data-material="liquid"] .statusbar > .status-dim:not(.mock-tag),
+[data-material="liquid"] .redis-statusbar > .status-dim:not(.mock-tag),
+[data-material="liquid"] .ddb-statusbar > .status-dim:not(.mock-tag) {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* Chrome keeps the frost but takes the rim, so the frame reads as glass with
-   thickness rather than as a flat tint. (The rim is on the overlay, which is
-   what carries the chrome's surface — see glass.css.) */
+/* ================= The glass layer =================
+   The tint and the filter go on a ::before, never on the pane itself. An
+   element with a backdrop-filter becomes the backdrop ROOT and the containing
+   block for its fixed-position children, so a menu or popover opened inside a
+   pane would be clipped by it and could only sample inside it. (glass.css
+   carries the same rule for the frosted chrome, and the stacking ladder both
+   materials need.) */
+[data-material="liquid"] .bt-titlebar,
+[data-material="liquid"] .statusbar,
+[data-material="liquid"] .redis-statusbar,
+[data-material="liquid"] .ddb-statusbar,
+[data-material="liquid"] .rail,
+[data-material="liquid"] .sidebar,
+[data-material="liquid"] .redis-sidebar,
+[data-material="liquid"] .ddb-sidebar,
+[data-material="liquid"] .cass-sidebar,
+[data-material="liquid"] .main-col {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
 [data-material="liquid"] .bt-titlebar::before,
+[data-material="liquid"] .statusbar::before,
+[data-material="liquid"] .redis-statusbar::before,
+[data-material="liquid"] .ddb-statusbar::before,
 [data-material="liquid"] .rail::before,
 [data-material="liquid"] .sidebar::before,
 [data-material="liquid"] .redis-sidebar::before,
 [data-material="liquid"] .ddb-sidebar::before,
 [data-material="liquid"] .cass-sidebar::before,
-[data-material="liquid"] .tabbar::before,
-[data-material="liquid"] .ddb-tabbar::before,
-[data-material="liquid"] .statusbar::before,
-[data-material="liquid"] .redis-statusbar::before,
-[data-material="liquid"] .ddb-statusbar::before,
-[data-material="liquid"] .term-panel-head::before {
-  background: rgba(255, 255, 255, 0.07);
-  /* Rim AND the specular edge the bar shares with the content (glass.css sets
-     --chrome-edge per bar). Restated here because this rule replaces the
-     shared overlay's box-shadow rather than adding to it. */
-  box-shadow: var(--glass-hi), var(--chrome-edge, none);
+[data-material="liquid"] .main-col::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--lg-chrome);
+  backdrop-filter: var(--lg-filter);
+  -webkit-backdrop-filter: var(--lg-filter);
+}
+/* Content carries more tint than chrome: grids and editors have to stay
+   readable over any image. */
+[data-material="liquid"] .main-col::before {
+  background: var(--lg-content);
+}
+[data-material="liquid"] .tabbar,
+[data-material="liquid"] .ddb-tabbar {
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom-color: rgba(255, 255, 255, 0.07);
 }
 
-/* A thicker material wants a softer silhouette. Only the free-floating
-   surfaces are rounded up — anything docked to an edge keeps its geometry. */
+/* ================= Content =================
+   Table headers get a darker frosted fill — on the `th` ONLY. Putting it on
+   the label span inside as well (`.dg-head`) draws a dark chip behind every
+   column name. */
+[data-material="liquid"] .dg-th,
+[data-material="liquid"] .tov-th,
+[data-material="liquid"] .cass-grid thead th,
+[data-material="liquid"] .ddb-datagrid thead th,
+[data-material="liquid"] .ddb-vg-th,
+[data-material="liquid"] .term-grid th,
+[data-material="liquid"] .csvo-prev th,
+[data-material="liquid"] .ex-table th,
+[data-material="liquid"] .ex-my th,
+[data-material="liquid"] .import-sample th,
+[data-material="liquid"] .oe-grid-head,
+[data-material="liquid"] .columns-scroll .structure-table th {
+  background: rgba(30, 32, 40, 0.55);
+  backdrop-filter: var(--lg-filter-float);
+  -webkit-backdrop-filter: var(--lg-filter-float);
+}
+[data-material="liquid"] .connect-panel {
+  background: var(--lg-content);
+  border-color: transparent;
+  border-radius: 24px;
+  box-shadow: var(--lg-lift), var(--lg-rim);
+  backdrop-filter: var(--lg-filter);
+  -webkit-backdrop-filter: var(--lg-filter);
+}
+[data-material="liquid"] .connect-card,
+[data-material="liquid"] .proj-acc,
+[data-material="liquid"] .rdash-stat,
+[data-material="liquid"] .ddb-dash-stat,
+[data-material="liquid"] .ddb-structure-card,
+[data-material="liquid"] .structure-card,
+[data-material="liquid"] .acc-section,
+[data-material="liquid"] .csvv-card,
+[data-material="liquid"] .csvv-sev,
+[data-material="liquid"] .csvv-issue,
+[data-material="liquid"] .ex-table-wrap,
+[data-material="liquid"] .ex-tnode,
+[data-material="liquid"] .ex-stat,
+[data-material="liquid"] .rc-stat,
+[data-material="liquid"] .cl-shard,
+[data-material="liquid"] .mg-estat,
+[data-material="liquid"] .sd-stat,
+[data-material="liquid"] .sd-conn-card,
+[data-material="liquid"] .proc-stat,
+[data-material="liquid"] .ts-hit,
+[data-material="liquid"] .lang-preview {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+/* The settings nav is chrome by role but lives inside a modal, where there is
+   no backdrop to frost. */
+[data-material="liquid"] .set-nav {
+  background: rgba(255, 255, 255, 0.05);
+  border-right-color: rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+/* ================= Floating tier =================
+   Menus, popovers, modals, sheets, toasts — they refract the real UI under
+   them, so they carry the strongest filter and the lift. */
 [data-material="liquid"] .modal,
 [data-material="liquid"] .palette,
+[data-material="liquid"] .schema-pop,
+[data-material="liquid"] .redis-sidebar .schema-pop,
+[data-material="liquid"] .ctx-menu,
+[data-material="liquid"] .sql-ctx-menu,
+[data-material="liquid"] .tabmenu,
+[data-material="liquid"] .tabmenu-sub,
+[data-material="liquid"] .tb-menu-pop,
+[data-material="liquid"] .tb-menu-sub,
+[data-material="liquid"] .lang-pop,
+[data-material="liquid"] .conn-openfile-pop,
+[data-material="liquid"] .toast,
 [data-material="liquid"] .imp-sheet,
 [data-material="liquid"] .csvo-sheet,
-[data-material="liquid"] .connect-panel {
-  border-radius: 18px;
+[data-material="liquid"] .mono-picker-menu,
+[data-material="liquid"] .sel-pop,
+[data-material="liquid"] .ws-edit-pop,
+[data-material="liquid"] .ws-tile-opts,
+[data-material="liquid"] .col-pop,
+[data-material="liquid"] .proj-dd,
+[data-material="liquid"] .proj-pop,
+[data-material="liquid"] .ddb-proj-pop,
+[data-material="liquid"] .cm-tooltip.cm-tooltip-autocomplete.ac-popup,
+[data-material="liquid"] .history-pop,
+[data-material="liquid"] .save-pop,
+[data-material="liquid"] .dg-popover,
+[data-material="liquid"] .info-hint-bubble,
+[data-material="liquid"] .ri-dt-panel,
+[data-material="liquid"] .ri-dt-tzmenu,
+[data-material="liquid"] .ri-dt-yrmenu,
+[data-material="liquid"] .ri-copyrow-menu,
+[data-material="liquid"] .obj-drop-confirm,
+[data-material="liquid"] .oe-actionbar,
+[data-material="liquid"] .map-export-menu,
+[data-material="liquid"] .rc-kf,
+[data-material="liquid"] .ts-sort-pop {
+  background: var(--lg-float);
+  border-color: transparent;
+  backdrop-filter: var(--lg-filter-float);
+  -webkit-backdrop-filter: var(--lg-filter-float);
+  box-shadow: var(--lg-lift), var(--lg-rim);
+}
+[data-material="liquid"] .modal,
+[data-material="liquid"] .imp-sheet,
+[data-material="liquid"] .csvo-sheet,
+[data-material="liquid"] .palette {
+  border-radius: 24px;
+}
+[data-material="liquid"] .schema-pop,
+[data-material="liquid"] .ctx-menu,
+[data-material="liquid"] .sql-ctx-menu,
+[data-material="liquid"] .tabmenu,
+[data-material="liquid"] .tb-menu-pop,
+[data-material="liquid"] .tb-menu-sub,
+[data-material="liquid"] .lang-pop,
+[data-material="liquid"] .sel-pop,
+[data-material="liquid"] .proj-dd,
+[data-material="liquid"] .proj-pop {
+  border-radius: 14px;
+}
+[data-material="liquid"] .toast {
+  border-radius: 99px;
+}
+/* Drawers slide in over the content and hold editable forms. */
+[data-material="liquid"] .ri-drawer,
+[data-material="liquid"] .sq-drawer,
+[data-material="liquid"] .ts-drawer {
+  background: var(--lg-float);
+  backdrop-filter: var(--lg-filter-float);
+  -webkit-backdrop-filter: var(--lg-filter-float);
+  box-shadow: var(--lg-lift);
 }
 
+/* ================= Refraction =================
+   Only where Chromium can render `backdrop-filter: url()`. `.bt-lg-refract` is
+   set by applySettings after an engine check; everywhere else the theme is
+   identical minus the lens. Never unconditional: in WebKit the whole
+   declaration is dropped and the surface loses its blur with it. */
+.bt-lg-refract[data-material="liquid"] .rail::before,
+.bt-lg-refract[data-material="liquid"] .sidebar::before,
+.bt-lg-refract[data-material="liquid"] .redis-sidebar::before,
+.bt-lg-refract[data-material="liquid"] .ddb-sidebar::before,
+.bt-lg-refract[data-material="liquid"] .cass-sidebar::before {
+  backdrop-filter: url(#bt-lg-lens) var(--lg-filter);
+}
+.bt-lg-refract[data-material="liquid"] .modal,
+.bt-lg-refract[data-material="liquid"] .palette,
+.bt-lg-refract[data-material="liquid"] .schema-pop,
+.bt-lg-refract[data-material="liquid"] .ctx-menu,
+.bt-lg-refract[data-material="liquid"] .tabmenu,
+.bt-lg-refract[data-material="liquid"] .tb-menu-pop,
+.bt-lg-refract[data-material="liquid"] .tb-menu-sub,
+.bt-lg-refract[data-material="liquid"] .conn-openfile-pop,
+.bt-lg-refract[data-material="liquid"] .toast,
+.bt-lg-refract[data-material="liquid"] .imp-sheet,
+.bt-lg-refract[data-material="liquid"] .csvo-sheet,
+.bt-lg-refract[data-material="liquid"] .mono-picker-menu,
+.bt-lg-refract[data-material="liquid"] .sel-pop,
+.bt-lg-refract[data-material="liquid"] .ws-edit-pop,
+.bt-lg-refract[data-material="liquid"] .col-pop,
+.bt-lg-refract[data-material="liquid"] .proj-dd,
+.bt-lg-refract[data-material="liquid"] .proj-pop,
+.bt-lg-refract[data-material="liquid"] .history-pop,
+.bt-lg-refract[data-material="liquid"] .dg-popover,
+.bt-lg-refract[data-material="liquid"] .info-hint-bubble,
+.bt-lg-refract[data-material="liquid"] .ri-dt-tzmenu,
+.bt-lg-refract[data-material="liquid"] .ri-dt-yrmenu,
+.bt-lg-refract[data-material="liquid"] .obj-drop-confirm,
+.bt-lg-refract[data-material="liquid"] .rc-kf,
+.bt-lg-refract[data-material="liquid"] .oe-actionbar {
+  backdrop-filter: url(#bt-lg-lens) var(--lg-filter-float);
+}
+
+/* ================= Controls ================= */
+[data-material="liquid"] .seg,
+[data-material="liquid"] .set-seg,
+[data-material="liquid"] .ts-seg {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: transparent;
+  border-radius: 99px;
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.14);
+}
+[data-material="liquid"] .seg-btn,
+[data-material="liquid"] .set-seg-btn {
+  border-radius: 99px;
+}
+[data-material="liquid"] .seg-btn.active,
+[data-material="liquid"] .set-seg-btn.active {
+  background: rgba(255, 255, 255, 0.18);
+  box-shadow: var(--lg-rim);
+}
+[data-material="liquid"] .btn-filled {
+  border-radius: 99px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 6px 16px color-mix(in oklab, var(--accent) 40%, transparent);
+}
+[data-material="liquid"] .btn-tonal,
+[data-material="liquid"] .btn-text {
+  border-radius: 99px;
+}
+[data-material="liquid"] .ws-tile {
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: var(--lg-rim);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+[data-material="liquid"] .ws-tile.active {
+  box-shadow:
+    0 0 0 1.5px var(--ws-color),
+    0 8px 22px color-mix(in oklab, var(--ws-color) 35%, transparent),
+    var(--lg-rim);
+}
+[data-material="liquid"] .tab.active,
+[data-material="liquid"] .ddb-tab.active,
+[data-material="liquid"] .term-tab.active,
+[data-material="liquid"] .sqlres-tab.active {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px 10px 0 0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+[data-material="liquid"] .table-item.active,
+[data-material="liquid"] .obj-item.active,
+[data-material="liquid"] .csvv-view.active,
+[data-material="liquid"] .ts-nav-btn.active,
+[data-material="liquid"] .set-nav-item.active {
+  background: rgba(255, 255, 255, 0.13);
+  box-shadow: var(--lg-rim);
+  border-radius: 9px;
+}
+/* Inputs are recessed wells; standalone search fields are pills. */
+[data-material="liquid"] input,
+[data-material="liquid"] textarea,
+[data-material="liquid"] .binary-input,
+[data-material="liquid"] .ri-input,
+[data-material="liquid"] .sel-trigger,
+[data-material="liquid"] .where-input,
+[data-material="liquid"] .filter-value,
+[data-material="liquid"] .set-select {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 10px;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+}
+[data-material="liquid"] .sidebar-search,
+[data-material="liquid"] .connect-search,
+[data-material="liquid"] .columns-search,
+[data-material="liquid"] .csvv-search,
+[data-material="liquid"] .sq-search,
+[data-material="liquid"] .oe-search,
+[data-material="liquid"] .proc-search,
+[data-material="liquid"] .ssm-search,
+[data-material="liquid"] .ts-search,
+[data-material="liquid"] .ts-docs-search,
+[data-material="liquid"] .ddb-sidebar-search {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 99px;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+}
+[data-material="liquid"] .sidebar-search input,
+[data-material="liquid"] .connect-search input,
+[data-material="liquid"] .columns-search input,
+[data-material="liquid"] .csvv-search input,
+[data-material="liquid"] .sq-search input,
+[data-material="liquid"] .oe-search input,
+[data-material="liquid"] .proc-search input,
+[data-material="liquid"] .ssm-search input,
+[data-material="liquid"] .ts-docs-search input,
+[data-material="liquid"] .ddb-sidebar-search input {
+  background: none;
+}
+/* Code surfaces: a flat dark tint, never blurred — code must stay readable
+   over a busy wallpaper, and these scroll. */
+[data-material="liquid"] .term-panel,
+[data-material="liquid"] .rcli-body,
+[data-material="liquid"] .sql-editor-wrap,
+[data-material="liquid"] .cass-cql-editor-wrap,
+[data-material="liquid"] .cass-cql-preview,
+[data-material="liquid"] .mg-doc-editor,
+[data-material="liquid"] .mg-stage-body,
+[data-material="liquid"] .explain-plan-tree,
+[data-material="liquid"] .ex-psql,
+[data-material="liquid"] .ddl-block,
+[data-material="liquid"] .obj-ddl-block,
+[data-material="liquid"] .ddb-ddl-block,
+[data-material="liquid"] .json-editor-wrap,
+[data-material="liquid"] .json-tree-wrap,
+[data-material="liquid"] .ts-drawer-json,
+[data-material="liquid"] .cl-raw-pre,
+[data-material="liquid"] .bug-preview,
+[data-material="liquid"] .set-font-prev,
+[data-material="liquid"] pre {
+  background: rgba(0, 0, 0, 0.26);
+}
 [data-material="liquid"] ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.2);
 }
 
-/* Boot into THIS material's colours, not the shared navy. (The splash normally
-   reads its gradient from localStorage before any CSS loads — see
-   applySettings — so this is the belt-and-braces half of that.) */
-[data-material="liquid"] #bt-splash {
-  background: radial-gradient(
-    900px 560px at 50% 38%,
-    color-mix(in oklab, var(--accent) 20%, #221038),
-    color-mix(in oklab, var(--accent) 8%, #0c0a1f) 72%
+/* ================= Splash and connect screen =================
+   Neither shows the wallpaper — that appears once a workspace is open. Both
+   use the same calm teal→blue so boot → connect has no colour jump. The
+   gradient goes on the frame, not on `.connect-screen`: painting the screen
+   itself leaves the strip behind the rail showing the wallpaper, and the rail
+   then looks like it sits on a separate square. */
+[data-material="liquid"] #bt-splash,
+[data-material="liquid"] .app-frame:has(.connect-screen) {
+  background:
+    radial-gradient(120% 90% at 15% 0%, rgba(20, 110, 130, 0.55), transparent 60%),
+    radial-gradient(110% 90% at 100% 100%, rgba(30, 70, 140, 0.5), transparent 60%),
+    linear-gradient(160deg, #0b3444 0%, #0c3f52 40%, #0f3557 75%, #10284a 100%);
+}
+
+/* ================= Reduced transparency =================
+   The OS setting or the in-app toggle: every filter off, every surface solid.
+   Required, not optional — this is what users with low vision rely on. */
+[data-material="liquid"] body.bt-reduce-transparency *,
+[data-material="liquid"] body.bt-reduce-transparency *::before,
+[data-material="liquid"] body.bt-reduce-transparency *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+[data-material="liquid"] body.bt-reduce-transparency {
+  background: #15161b;
+}
+[data-material="liquid"] body.bt-reduce-transparency .bt-titlebar::before,
+[data-material="liquid"] body.bt-reduce-transparency .statusbar::before,
+[data-material="liquid"] body.bt-reduce-transparency .redis-statusbar::before,
+[data-material="liquid"] body.bt-reduce-transparency .ddb-statusbar::before,
+[data-material="liquid"] body.bt-reduce-transparency .rail::before,
+[data-material="liquid"] body.bt-reduce-transparency .sidebar::before,
+[data-material="liquid"] body.bt-reduce-transparency .redis-sidebar::before,
+[data-material="liquid"] body.bt-reduce-transparency .ddb-sidebar::before,
+[data-material="liquid"] body.bt-reduce-transparency .cass-sidebar::before,
+[data-material="liquid"] body.bt-reduce-transparency .main-col::before,
+[data-material="liquid"] body.bt-reduce-transparency .modal,
+[data-material="liquid"] body.bt-reduce-transparency .palette,
+[data-material="liquid"] body.bt-reduce-transparency .connect-panel,
+[data-material="liquid"] body.bt-reduce-transparency .schema-pop,
+[data-material="liquid"] body.bt-reduce-transparency .ctx-menu,
+[data-material="liquid"] body.bt-reduce-transparency .sql-ctx-menu,
+[data-material="liquid"] body.bt-reduce-transparency .tabmenu,
+[data-material="liquid"] body.bt-reduce-transparency .tb-menu-pop,
+[data-material="liquid"] body.bt-reduce-transparency .tb-menu-sub,
+[data-material="liquid"] body.bt-reduce-transparency .lang-pop,
+[data-material="liquid"] body.bt-reduce-transparency .conn-openfile-pop,
+[data-material="liquid"] body.bt-reduce-transparency .toast,
+[data-material="liquid"] body.bt-reduce-transparency .imp-sheet,
+[data-material="liquid"] body.bt-reduce-transparency .csvo-sheet,
+[data-material="liquid"] body.bt-reduce-transparency .mono-picker-menu,
+[data-material="liquid"] body.bt-reduce-transparency .sel-pop,
+[data-material="liquid"] body.bt-reduce-transparency .ws-edit-pop,
+[data-material="liquid"] body.bt-reduce-transparency .col-pop,
+[data-material="liquid"] body.bt-reduce-transparency .proj-dd,
+[data-material="liquid"] body.bt-reduce-transparency .proj-pop,
+[data-material="liquid"] body.bt-reduce-transparency .history-pop,
+[data-material="liquid"] body.bt-reduce-transparency .dg-popover,
+[data-material="liquid"] body.bt-reduce-transparency .info-hint-bubble,
+[data-material="liquid"] body.bt-reduce-transparency .ri-drawer,
+[data-material="liquid"] body.bt-reduce-transparency .sq-drawer,
+[data-material="liquid"] body.bt-reduce-transparency .ts-drawer {
+  background: #22252d;
+}
+
+/* ================= Frozen grid gutters =================
+   The checkbox and row-number columns pinned to the left of a grid. They have
+   to OCCLUDE the cells sliding under them — that is the whole job of a frozen
+   column — which under the frosted material is a near-opaque navy. Over a
+   wallpaper that reads as a solid slab bolted onto the glass.
+
+   So: a translucent gradient in the MATERIAL'S OWN TONE — a cool blue-grey
+   lifted from the window, not a neutral near-black, which is what made the
+   first attempt read as a hole punched in the glass. Dense enough that a
+   value sliding underneath does not read through it, light enough that the
+   wallpaper still tints it. Ends differ by ~8% so the strip has depth rather
+   than looking painted on. No blur: there is one of these per row, and
+   backdrop-filter is per-element compositing. */
+[data-material="liquid"] .dg-check-c,
+[data-material="liquid"] .dg-check-h,
+[data-material="liquid"] .dg-rownum,
+[data-material="liquid"] .dg-rownum-h,
+[data-material="liquid"] .ddb-vg-check-c,
+[data-material="liquid"] .ddb-vg-rownum,
+[data-material="liquid"] .ddb-vg-rownum-h,
+[data-material="liquid"] .oe-check,
+[data-material="liquid"] .rc-grid .rc-kill-c,
+[data-material="liquid"] .rc-grid .dg-header .rc-kill-c {
+  background: linear-gradient(90deg, rgba(16, 21, 34, 0.82), rgba(22, 28, 44, 0.74));
+}
+[data-material="liquid"] body:not(.bt-no-rowhover) .dg-tr:hover .dg-rownum,
+[data-material="liquid"] .ddb-vg-body-row:hover .ddb-vg-rownum,
+[data-material="liquid"]
+  body:not(.bt-no-rowhover)
+  .rc-tab
+  .proc-grid-row:not(.dg-header):hover
+  .rc-kill-c {
+  background: linear-gradient(90deg, rgba(32, 40, 58, 0.86), rgba(40, 48, 70, 0.78));
+}
+/* The accent tint goes into the gradient's own stops — `color-mix()` takes
+   colours, not gradients, so the shared rules' approach cannot be reused. */
+[data-material="liquid"] .dg-tr.row-selected .dg-rownum {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--accent) 16%, rgba(16, 21, 34, 0.82)),
+    color-mix(in oklab, var(--accent) 16%, rgba(22, 28, 44, 0.74))
   );
+}
+[data-material="liquid"] .dg-tr.row-staged .dg-rownum {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--accent) 24%, rgba(16, 21, 34, 0.82)),
+    color-mix(in oklab, var(--accent) 24%, rgba(22, 28, 44, 0.74))
+  );
+}
+
+/* ================= Grid surface =================
+   Rows paint no tint of their own. They used to carry --bg0, which left the
+   area BELOW the last row — the dead space a short table leaves — a shade
+   lighter than the data, so the two tones met at the last row and the empty
+   region read as a separate block bolted underneath.
+
+   The fix is to REMOVE that tint, not to move it: the content pane's glass is
+   already the readable surface here, so rows and empty space are the same
+   sheet and there is no seam, with nothing darkened to achieve it. (The row
+   tint exists upstream to force a repaint on WebKitGTK, where a transparent
+   transformed layer ghosts while scrolling. Any material theme had already
+   made it translucent, so that guarantee was gone either way.) */
+[data-material="liquid"] .dg-tr,
+[data-material="liquid"] .ddb-vg-body-row {
+  background: transparent;
+}
+
+/* ================= Frozen grid gutters =================
+   The checkbox and row-number columns pinned to the left of a grid. They have
+   to OCCLUDE the cells sliding under them — that is the whole job of a frozen
+   column — which under the frosted material is a near-opaque navy. Over a
+   wallpaper that reads as a solid slab bolted onto the glass.
+
+   So: a translucent gradient in the MATERIAL'S OWN TONE — a cool blue-grey
+   lifted from the window, not a neutral near-black, which is what made the
+   first attempt read as a hole punched in the glass. Dense enough that a
+   value sliding underneath does not read through it, light enough that the
+   wallpaper still tints it. Ends differ by ~8% so the strip has depth rather
+   than looking painted on. No blur: there is one of these per row, and
+   backdrop-filter is per-element compositing. */
+[data-material="liquid"] .dg-check-c,
+[data-material="liquid"] .dg-check-h,
+[data-material="liquid"] .dg-rownum,
+[data-material="liquid"] .dg-rownum-h,
+[data-material="liquid"] .ddb-vg-check-c,
+[data-material="liquid"] .ddb-vg-rownum,
+[data-material="liquid"] .ddb-vg-rownum-h,
+[data-material="liquid"] .oe-check,
+[data-material="liquid"] .rc-grid .rc-kill-c,
+[data-material="liquid"] .rc-grid .dg-header .rc-kill-c {
+  background: linear-gradient(90deg, rgba(16, 21, 34, 0.82), rgba(22, 28, 44, 0.74));
+}
+[data-material="liquid"] body:not(.bt-no-rowhover) .dg-tr:hover .dg-rownum,
+[data-material="liquid"] .ddb-vg-body-row:hover .ddb-vg-rownum,
+[data-material="liquid"]
+  body:not(.bt-no-rowhover)
+  .rc-tab
+  .proc-grid-row:not(.dg-header):hover
+  .rc-kill-c {
+  background: linear-gradient(90deg, rgba(32, 40, 58, 0.86), rgba(40, 48, 70, 0.78));
+}
+/* The accent tint goes into the gradient's own stops — `color-mix()` takes
+   colours, not gradients, so the shared rules' approach cannot be reused. */
+[data-material="liquid"] .dg-tr.row-selected .dg-rownum {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--accent) 16%, rgba(16, 21, 34, 0.82)),
+    color-mix(in oklab, var(--accent) 16%, rgba(22, 28, 44, 0.74))
+  );
+}
+[data-material="liquid"] .dg-tr.row-staged .dg-rownum {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--accent) 24%, rgba(16, 21, 34, 0.82)),
+    color-mix(in oklab, var(--accent) 24%, rgba(22, 28, 44, 0.74))
+  );
+}
+
+/* ================= Contextual action bars =================
+   The selection bars a grid raises ("6 selected · Export CSV · Delete
+   selected") and the structure editor's staged-changes bar. They are
+   accent-tinted over --bg1, which in a flat palette is an opaque strip and
+   here was a lone slab of grey across the glass. Same accent signal, but as
+   the material: a frosted strip, blurred like a sticky header — there is one
+   of these on screen at a time, so it can afford the filter. */
+[data-material="liquid"] .dg-selbar,
+[data-material="liquid"] .ddb-selbar,
+[data-material="liquid"] .rkey-selbar,
+[data-material="liquid"] .pending-bar {
+  background: color-mix(in oklab, var(--accent) 10%, rgba(30, 32, 40, 0.58));
+  border-color: rgba(255, 255, 255, 0.1);
+  backdrop-filter: var(--lg-filter-float);
+  -webkit-backdrop-filter: var(--lg-filter-float);
 }

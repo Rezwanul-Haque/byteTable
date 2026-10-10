@@ -291,28 +291,26 @@ export const THEMES: Record<ThemeId, Theme> = {
     swatchBg: "#1a2342",
     swatchBar: "rgba(255,255,255,.14)",
   },
-  // The same three tiers as Frosted Glass, rendered as a THICKER material: a
-  // brighter backdrop for the panes to bend, a lensed rim (bright top edge,
-  // cyan/magenta dispersion down the sides) and a specular highlight that
-  // tracks the pointer across the surface you are on. See liquid.css for what
-  // this can and cannot be in a webview — there is no live refraction.
+  // M38: every colour on screen comes from the WALLPAPER behind the window, not
+  // from a palette — these tokens only have to let opaque text sit on top of
+  // whatever that image happens to be. The surface rules live in liquid.css.
   liquidGlass: {
     label: "Liquid Glass",
     group: "Material",
-    bg0: "rgba(8,12,30,.30)",
-    bg1: "rgba(255,255,255,.09)",
-    bg2: "rgba(255,255,255,.13)",
-    bg3: "rgba(255,255,255,.19)",
-    border: "rgba(255,255,255,.22)",
-    text: "#f6f8ff",
-    dim: "#cbd4ea",
-    faint: "#93a0bd",
-    accent: "#6ea8ff",
-    danger: "#ff7a86",
-    onAccent: "#061024",
+    bg0: "rgba(14,16,22,.38)",
+    bg1: "rgba(24,26,33,.46)",
+    bg2: "#2a2c34",
+    bg3: "#353843",
+    border: "rgba(255,255,255,.12)",
+    text: "#f5f6fa",
+    dim: "#c4c8d4",
+    faint: "#9096a6",
+    accent: "#0a84ff",
+    danger: "#ff453a",
+    onAccent: "#ffffff",
     material: "liquid",
-    swatchBg: "#17214a",
-    swatchBar: "rgba(255,255,255,.18)",
+    swatchBg: "#1d2a44",
+    swatchBar: "rgba(255,255,255,.14)",
   },
 };
 

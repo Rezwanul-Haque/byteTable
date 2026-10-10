@@ -484,6 +484,8 @@ pub fn run() {
             features::preferences::commands::prefs_set,
             features::settings::commands::settings_load,
             features::settings::commands::settings_save,
+            features::settings::commands::wallpaper_set,
+            features::settings::commands::wallpaper_path_get,
             features::connections::commands::connection_list,
             features::connections::commands::connection_list_unsupported,
             features::connections::commands::connection_save,

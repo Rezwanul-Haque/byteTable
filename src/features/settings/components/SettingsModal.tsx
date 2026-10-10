@@ -32,6 +32,7 @@ import { Select } from "../../../shared/ui/Select";
 import { useToast } from "../../../shared/ui/toastContext";
 import type {
   AutoRefreshSec,
+  WallpaperChoice,
   ConnectTimeoutSec,
   DefaultLimit,
   Density,
@@ -54,6 +55,8 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { UPDATE_REPO } from "../../updater/api";
 import { detectSystemMonos } from "../fonts";
 import { renderSqlPreview } from "./sqlPreview";
+import { DEFAULT_WALLPAPER, cachedWallpaperUrl, storeCustomWallpaper } from "../wallpaper";
+import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { useSettingsStore, type SettingsTabId } from "../state";
 import "./SettingsModal.css";
 
@@ -95,12 +98,22 @@ function ThemeSwatch({
       title={theme.label}
       aria-pressed={active}
     >
-      {/* A material theme previews the MATERIAL, not only its colours: its own
-          two-bloom gradient (the translucent bg0 would just look grey) and a
-          frosted bar, both from `.set-theme-prev.glass`. */}
+      {/* A material theme previews the MATERIAL, not only its colours — a
+          translucent bg0 would just look grey. Frosted draws its blooms from
+          CSS (`.glass-frosted`); Liquid shows the wallpaper it actually uses,
+          which has to come from here because the bundled asset's URL is a
+          build artefact no stylesheet can name. Both share the frosted bar
+          from `.glass`. */}
       <div
         className={"set-theme-prev" + (theme.material ? " glass glass-" + theme.material : "")}
-        style={{ background: theme.swatchBg ?? theme.bg0, borderColor: theme.border }}
+        style={
+          theme.material === "liquid"
+            ? {
+                background: `#0c1220 url("${DEFAULT_WALLPAPER}") center / cover`,
+                borderColor: theme.border,
+              }
+            : { background: theme.swatchBg ?? theme.bg0, borderColor: theme.border }
+        }
       >
         <div className="set-theme-bar" style={{ background: theme.swatchBar ?? theme.bg1 }}>
           <span style={{ background: theme.accent }} />
@@ -119,6 +132,81 @@ function ThemeSwatch({
         ) : null}
       </div>
     </button>
+  );
+}
+
+/**
+ * Liquid Glass's wallpaper picker (M38 Task 2). Three swatches showing the
+ * actual image — the bundled default, the user's own, and none — plus a
+ * button to choose a file.
+ *
+ * The file goes through the NATIVE dialog and is copied into the app's config
+ * directory by the backend. A browser build would read it as a data URL and
+ * stash it in localStorage; a desktop app has a real filesystem, and a photo
+ * inlined into the settings blob is how you corrupt every other preference.
+ */
+function WallpaperPicker({
+  choice,
+  onPick,
+}: {
+  choice: WallpaperChoice;
+  onPick: (choice: WallpaperChoice) => void;
+}) {
+  const toast = useToast();
+  // The custom image's url(), if one has ever been stored. Kept in state so
+  // the swatch updates the moment a new file is chosen.
+  const [customUrl, setCustomUrl] = useState<string | null>(() =>
+    choice === "custom" ? cachedWallpaperUrl() : null,
+  );
+
+  const chooseFile = async () => {
+    try {
+      const path = await openFileDialog({
+        multiple: false,
+        directory: false,
+        filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "avif", "gif"] }],
+      });
+      if (typeof path !== "string") return;
+      setCustomUrl(await storeCustomWallpaper(path));
+      onPick("custom");
+      toast("Wallpaper set", "ok");
+    } catch {
+      toast("That image could not be used as a wallpaper", "err");
+    }
+  };
+
+  const options: { id: WallpaperChoice; label: string; url: string | null }[] = [
+    { id: "default", label: "Default", url: `url("${DEFAULT_WALLPAPER}")` },
+    { id: "custom", label: "Your image", url: customUrl },
+    { id: "none", label: "None", url: null },
+  ];
+
+  return (
+    <div className="set-walls">
+      {options.map((w) => (
+        <button
+          key={w.id}
+          type="button"
+          className={"set-wall" + (choice === w.id ? " active" : "")}
+          title={w.label}
+          aria-pressed={choice === w.id}
+          style={w.url ? { backgroundImage: w.url } : undefined}
+          onClick={() => {
+            // "Your image" with nothing stored opens the picker instead of
+            // selecting an empty wallpaper.
+            if (w.id === "custom" && !w.url) return void chooseFile();
+            onPick(w.id);
+          }}
+        >
+          {w.id === "custom" && !w.url ? <Icon name="add_photo_alternate" size={16} /> : null}
+          {w.id === "none" ? <Icon name="block" size={15} /> : null}
+          <span className="set-wall-label">{w.label}</span>
+        </button>
+      ))}
+      <button type="button" className="set-wall-pick" onClick={() => void chooseFile()}>
+        <Icon name="upload" size={13} /> {customUrl ? "Replace image" : "Choose image"}
+      </button>
+    </div>
   );
 }
 
@@ -616,6 +704,21 @@ export function SettingsModal({ tab: initialTab, onClose }: SettingsModalProps) 
                   </div>
                 </div>
               ))}
+              {/* Liquid Glass takes every colour from the image behind the
+                  window, so the picker belongs with the theme, and only shows
+                  for that material — a wallpaper means nothing to a flat
+                  palette. Keyed on the catalog flag, never the theme's name. */}
+              {THEMES[settings.theme]?.material === "liquid" ? (
+                <SetRow
+                  label="Wallpaper"
+                  hint="Liquid Glass takes every colour from the image behind the window"
+                >
+                  <WallpaperPicker
+                    choice={settings.wallpaper}
+                    onPick={(v) => setSetting("wallpaper", v)}
+                  />
+                </SetRow>
+              ) : null}
               <div className="set-section-label">{t("set.sec.accent")}</div>
               <SetRow label="Accent" hint="“Auto” follows the theme’s own accent">
                 <div className="set-accents">
@@ -641,6 +744,15 @@ export function SettingsModal({ tab: initialTab, onClose }: SettingsModalProps) 
                     </button>
                   ))}
                 </div>
+              </SetRow>
+              <SetRow
+                label="Reduce transparency"
+                hint="Solid surfaces instead of glass — also follows the system setting"
+              >
+                <SetToggle
+                  on={settings.reduceTransparency}
+                  onChange={(v) => setSetting("reduceTransparency", v)}
+                />
               </SetRow>
               <SetRow label="Reduce motion" hint="Minimize animations and transitions">
                 <SetToggle

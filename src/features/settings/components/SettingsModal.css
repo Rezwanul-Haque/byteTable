@@ -171,12 +171,14 @@
   box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 35%, transparent);
 }
 /* A material theme's swatch draws its own backdrop and frosts its bar, so the
-   preview shows the MATERIAL. The inline `background` from the swatchBg is
-   overridden here on purpose — a single flat colour cannot preview glass.
-   Both swatches mix from var(--accent) — the LIVE one, which is what picking
-   the theme would actually give you, rather than a frozen indigo that lies as
-   soon as an accent is overridden. */
-.set-theme-prev.glass {
+   preview shows the MATERIAL rather than a flat colour.
+   Scoped to `.glass-frosted`, NOT `.glass`: both materials carry `.glass` for
+   the shared bar treatment below, and this `!important` (there to beat the
+   swatchBg inline style) would otherwise paint the frosted gradient over
+   Liquid Glass's wallpaper — which is exactly what made the two previews
+   identical. The mixes read the LIVE var(--accent), so the preview is what
+   picking the theme would actually give you. */
+.set-theme-prev.glass-frosted {
   background:
     radial-gradient(
       70% 70% at 20% 15%,
@@ -200,41 +202,72 @@
   -webkit-backdrop-filter: blur(6px);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
-/* The lensed material previews brighter, and its bar carries the rim — bright
-   top edge, cyan/magenta dispersion down the sides — so the two materials are
-   told apart in the picker by the thing that actually differs between them. */
-.set-theme-prev.glass-liquid {
-  background:
-    radial-gradient(
-      72% 72% at 86% 10%,
-      color-mix(in oklab, color-mix(in oklab, var(--accent) 24%, #ec70c4) 66%, transparent),
-      transparent 68%
-    ),
-    radial-gradient(
-      72% 72% at 10% 30%,
-      color-mix(in oklab, color-mix(in oklab, var(--accent) 34%, #8e6cff) 72%, transparent),
-      transparent 66%
-    ),
-    radial-gradient(
-      55% 55% at 92% 96%,
-      color-mix(in oklab, color-mix(in oklab, var(--accent) 16%, #56d6e8) 44%, transparent),
-      transparent 68%
-    ),
-    radial-gradient(
-      50% 50% at 12% 102%,
-      color-mix(in oklab, color-mix(in oklab, var(--accent) 12%, #ff9e6c) 36%, transparent),
-      transparent 68%
-    ),
-    color-mix(in oklab, var(--accent) 8%, #0c0a1f) !important;
-}
+/* Liquid Glass previews the actual wallpaper with a frosted bar over it — its
+   colours come from the image, so a palette swatch would say nothing. The
+   image itself is an inline style: the bundled asset's URL is a bundler
+   artefact that only the component can name. */
 .set-theme-prev.glass-liquid .set-theme-bar {
-  backdrop-filter: blur(7px) saturate(170%) brightness(1.08);
-  -webkit-backdrop-filter: blur(7px) saturate(170%) brightness(1.08);
+  border-radius: 6px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.6),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.12),
-    inset 2px 0 6px -4px rgba(120, 210, 255, 0.7),
-    inset -2px 0 6px -4px rgba(255, 150, 220, 0.6);
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    0 0 0 0.5px rgba(255, 255, 255, 0.25);
+}
+
+/* ---- wallpaper picker (M38 Task 2) ---- */
+.set-walls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.set-wall {
+  position: relative;
+  width: 74px;
+  height: 46px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--bg2) center / cover;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  overflow: hidden;
+}
+.set-wall.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.set-wall-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 2px 5px;
+  font-size: 9.5px;
+  color: #fff;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.6));
+  text-align: left;
+  white-space: nowrap;
+}
+.set-wall-pick {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 4px 10px;
+  font-family: var(--ui);
+  font-size: 11px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.set-wall-pick:hover {
+  color: var(--text);
+  border-color: var(--accent);
 }
 
 .set-theme-bar {

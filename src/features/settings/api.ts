@@ -49,6 +49,8 @@ export type TitlebarPosition =
  * the traffic lights and the in-window menu bar).
  */
 export type MacChrome = "native" | "frameless";
+/** Liquid Glass's backdrop image: bundled, the user's own, or none. */
+export type WallpaperChoice = "default" | "custom" | "none";
 /** `"auto"` (theme's own accent) or a `#rrggbb` hex string. */
 export type Accent = "auto" | string;
 /** Curated mono key or a probed `"sys:<Family>"` id. */
@@ -94,6 +96,21 @@ export interface Settings {
   titlebarPosition: TitlebarPosition;
   /** macOS-only: which custom-titlebar chrome to use. */
   macChrome: MacChrome;
+  /**
+   * Liquid Glass's backdrop (M38): the bundled image, one of the user's own, or
+   * none (a flat dark base — the glass still works). Only that theme reads it,
+   * but it is a plain setting so switching themes doesn't lose the choice.
+   * A custom image is COPIED into the app data directory and referenced by
+   * path; the path lives outside the settings blob (see wallpaper.ts) because a
+   * phone photo has no business inside the preferences file.
+   */
+  wallpaper: WallpaperChoice;
+  /**
+   * Force opaque surfaces for the material themes, for users whose OS setting
+   * is off. `prefers-reduced-transparency: reduce` does the same thing without
+   * it; this is the in-app override (M38 Task 9).
+   */
+  reduceTransparency: boolean;
   /** Interface language (M31). Only the chrome is translated — never data. */
   locale: LocaleId;
   /** Date/number formats; `"auto"` follows the language's own region. */
@@ -125,6 +142,8 @@ export const DEFAULTS: Settings = {
   sidebarSide: "left",
   titlebarPosition: "topLeftIcon",
   macChrome: "native",
+  wallpaper: "default",
+  reduceTransparency: false,
   // English is the contract default; a FIRST RUN (nothing stored at all) starts
   // from the OS languages instead — see `mergeSettings` / `initialSettings`.
   locale: "en",

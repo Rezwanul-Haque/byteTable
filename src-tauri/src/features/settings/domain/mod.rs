@@ -63,6 +63,17 @@ pub enum Density {
     Comfortable,
 }
 
+/// Liquid Glass's backdrop image: the bundled default, one the user chose, or
+/// none (a flat dark base — the glass still works without an image).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WallpaperChoice {
+    #[default]
+    Default,
+    Custom,
+    None,
+}
+
 /// Which side of the workspace the object-list sidebar sits on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -228,6 +239,16 @@ pub struct Settings {
     /// macOS-only custom-titlebar chrome (hiddenInset vs frameless).
     #[serde(default = "default_mac_chrome")]
     pub mac_chrome: MacChrome,
+    /// Which backdrop the Liquid Glass theme paints behind the window. A custom
+    /// image is copied into the app data directory; only the CHOICE lives here,
+    /// the path lives in its own file (see the wallpaper command) so an image
+    /// can never bloat or corrupt the preferences blob.
+    #[serde(default)]
+    pub wallpaper: WallpaperChoice,
+    /// Force opaque surfaces under the material themes, for users whose OS
+    /// "reduce transparency" setting is off.
+    #[serde(default)]
+    pub reduce_transparency: bool,
     /// Interface language (M31) — only the chrome is translated, never schema,
     /// data or SQL. Validated against the renderer's locale catalog on load.
     #[serde(default = "default_locale")]
@@ -265,6 +286,8 @@ impl Default for Settings {
             sidebar_side: default_sidebar_side(),
             titlebar_position: default_titlebar_position(),
             mac_chrome: default_mac_chrome(),
+            wallpaper: WallpaperChoice::default(),
+            reduce_transparency: false,
             locale: default_locale(),
             region: default_region(),
             hour12: false,
@@ -372,6 +395,8 @@ mod tests {
             sidebar_side: SidebarSide::Right,
             titlebar_position: TitlebarPosition::BottomRightIcon,
             mac_chrome: MacChrome::Frameless,
+            wallpaper: WallpaperChoice::Custom,
+            reduce_transparency: true,
             locale: "zh-Hant".to_string(),
             region: "ISO".to_string(),
             hour12: true,

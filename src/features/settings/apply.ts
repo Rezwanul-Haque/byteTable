@@ -15,6 +15,8 @@ import { setLocale } from "../../shared/i18n";
 import { DEFAULTS, type Settings } from "./api";
 import { monoMetaFor, THEMES, UI_FONTS } from "./catalogs";
 import { ensureFont } from "./fonts";
+import { ensureLensDefs, supportsBackdropLens } from "./lens";
+import { cachedWallpaperUrl, DEFAULT_WALLPAPER, resolveWallpaper } from "./wallpaper";
 
 /** localStorage key holding the resolved accent hex for the pre-JS splash
  *  (read by the inline bootstrap script in index.html). */
@@ -47,6 +49,34 @@ function mixHex(a: string, b: string, t: number): string {
   return "#" + [0, 1, 2].map((i) => ch(i).toString(16).padStart(2, "0")).join("");
 }
 
+/** The bundled image as a CSS url(), for the first paint before anything is
+ *  cached. */
+function wallpaperFallback(): string {
+  return `url("${DEFAULT_WALLPAPER}")`;
+}
+
+// --- reduced transparency: one class, two triggers ------------------------
+// The CSS keys on `body.bt-reduce-transparency` rather than on the media query
+// directly, so the rule list is written once and both the OS setting and the
+// in-app toggle switch it. The OS side needs watching, not just reading: a
+// user can flip it while the app is open.
+const reduceTransparencyQuery =
+  typeof window !== "undefined" && window.matchMedia
+    ? window.matchMedia("(prefers-reduced-transparency: reduce)")
+    : null;
+let reduceTransparencySetting = DEFAULTS.reduceTransparency;
+
+function applyReduceTransparency(body: HTMLElement): void {
+  body.classList.toggle(
+    "bt-reduce-transparency",
+    reduceTransparencySetting || (reduceTransparencyQuery?.matches ?? false),
+  );
+}
+
+reduceTransparencyQuery?.addEventListener("change", () => {
+  if (document.body) applyReduceTransparency(document.body);
+});
+
 export function applySettings(input: Partial<Settings> | null | undefined): void {
   const s: Settings = { ...DEFAULTS, ...(input ?? {}) };
   const theme = THEMES[s.theme] ?? THEMES.charcoal;
@@ -65,6 +95,31 @@ export function applySettings(input: Partial<Settings> | null | undefined): void
   // the attribute, which removes every one of those rules with it.
   if (theme.material) document.documentElement.setAttribute("data-material", theme.material);
   else document.documentElement.removeAttribute("data-material");
+
+  // --- Liquid Glass: wallpaper, lens, reduced transparency (M38) ----------
+  // The wallpaper is a CSS variable, not a React-rendered <img>: the image must
+  // not re-decode on every render, and body paints it before the app mounts.
+  // Painted from the cache synchronously so the first frame has it, then
+  // reconciled against what is actually on disk.
+  const html = document.documentElement;
+  if (theme.material === "liquid") {
+    const cached = s.wallpaper === "none" ? "none" : (cachedWallpaperUrl() ?? wallpaperFallback());
+    html.style.setProperty("--lg-wall", cached);
+    void resolveWallpaper(s.wallpaper).then((url) => {
+      // Only if the theme is still liquid — the user may have switched while
+      // the backend round-trip was in flight.
+      if (document.documentElement.getAttribute("data-material") === "liquid")
+        document.documentElement.style.setProperty("--lg-wall", url);
+    });
+    ensureLensDefs();
+  } else {
+    html.style.removeProperty("--lg-wall");
+  }
+  html.classList.toggle("bt-lg-nowall", theme.material === "liquid" && s.wallpaper === "none");
+  // Edge refraction renders in Chromium only (WebView2); WKWebView and
+  // WebKitGTK drop the whole `backdrop-filter` when it carries a url(), taking
+  // the blur with it — so the class, not the CSS, decides.
+  html.classList.toggle("bt-lg-refract", theme.material === "liquid" && supportsBackdropLens());
 
   // Palette.
   root.setProperty("--bg0", theme.bg0);
@@ -103,12 +158,17 @@ export function applySettings(input: Partial<Settings> | null | undefined): void
       JSON.stringify(
         theme.material === "liquid"
           ? {
-              bg: mixHex(accent, "#0c0a1f", 0.08),
-              gradA: mixHex(accent, "#221038", 0.2),
-              gradB: mixHex(accent, "#0c0a1f", 0.08),
+              // Liquid Glass's splash is the connect screen's calm teal→blue,
+              // NOT its wallpaper: the wallpaper only appears once a workspace
+              // is open, and boot → connect must not jump colour. Fixed, not
+              // accent-tinted, for the same reason — it has to match the
+              // gradient `liquid.css` paints behind the connect screen.
+              bg: "#0b3444",
+              gradA: "#0c3f52",
+              gradB: "#10284a",
               text: theme.text,
               dim: theme.dim,
-              bar: mixHex(accent, "#221038", 0.16),
+              bar: "#17455c",
               light: false,
             }
           : theme.material
@@ -164,6 +224,11 @@ export function applySettings(input: Partial<Settings> | null | undefined): void
   if (body) {
     body.classList.toggle("bt-liga", s.ligatures);
     body.classList.toggle("bt-reduce-motion", s.reduceMotion);
+    // Reduced transparency has TWO triggers — the OS setting and the in-app
+    // toggle (M38 Task 9) — and one class, so the (long) list of rules it
+    // drives exists once instead of twice. The OS side is watched below.
+    reduceTransparencySetting = s.reduceTransparency;
+    applyReduceTransparency(body);
     body.classList.toggle("bt-no-rowhover", !s.highlightRow);
     body.classList.toggle("bt-light", !!theme.light);
     body.classList.toggle("bt-sidebar-right", s.sidebarSide === "right");

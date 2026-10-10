@@ -668,47 +668,151 @@
 }
 
 /* ================= Reduced transparency =================
-   Not optional: this is the OS setting users with low vision rely on. Every
-   blur off, chrome nearly opaque, still on-theme. */
-@media (prefers-reduced-transparency: reduce) {
-  /* The pseudo-elements are listed explicitly: `*` matches elements only, and
-     the chrome's frost lives on a ::before. */
-  [data-material] *,
-  [data-material] *::before,
-  [data-material] *::after {
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-  }
-  [data-material] .bt-titlebar,
-  [data-material] .rail,
-  [data-material] .sidebar,
-  [data-material] .redis-sidebar,
-  [data-material] .ddb-sidebar,
-  [data-material] .cass-sidebar,
-  [data-material] .tabbar,
-  [data-material] .ddb-tabbar,
-  [data-material] .statusbar,
-  [data-material] .redis-statusbar,
-  [data-material] .ddb-statusbar,
-  [data-material] .term-panel-head,
-  /* The chrome tint lives on the overlay, so that is what has to go opaque. */
-  [data-material] .bt-titlebar::before,
-  [data-material] .rail::before,
-  [data-material] .sidebar::before,
-  [data-material] .redis-sidebar::before,
-  [data-material] .ddb-sidebar::before,
-  [data-material] .cass-sidebar::before,
-  [data-material] .tabbar::before,
-  [data-material] .ddb-tabbar::before,
-  [data-material] .statusbar::before,
-  [data-material] .redis-statusbar::before,
-  [data-material] .ddb-statusbar::before,
-  [data-material] .term-panel-head::before {
-    background: rgba(18, 26, 48, 0.94);
-  }
-  /* Inside the (now opaque) settings modal, the nav keeps reading as a panel
-     rather than becoming a second slab of the same colour. */
-  [data-material] .set-nav {
-    background: rgba(255, 255, 255, 0.09);
-  }
+   Not optional: this is the OS setting users with low vision rely on, and the
+   in-app toggle (Settings ▸ Appearance) for those whose OS setting is off.
+   ONE trigger for both: `applySettings` sets `bt-reduce-transparency` when
+   either the setting or the media query says so, which keeps this list from
+   having to exist twice. Every blur off, chrome nearly opaque, still
+   on-theme. */
+/* The pseudo-elements are listed explicitly: `*` matches elements only, and
+   the chrome's frost lives on a ::before. */
+[data-material] body.bt-reduce-transparency *,
+[data-material] body.bt-reduce-transparency *::before,
+[data-material] body.bt-reduce-transparency *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+[data-material] body.bt-reduce-transparency .bt-titlebar,
+[data-material] body.bt-reduce-transparency .rail,
+[data-material] body.bt-reduce-transparency .sidebar,
+[data-material] body.bt-reduce-transparency .redis-sidebar,
+[data-material] body.bt-reduce-transparency .ddb-sidebar,
+[data-material] body.bt-reduce-transparency .cass-sidebar,
+[data-material] body.bt-reduce-transparency .tabbar,
+[data-material] body.bt-reduce-transparency .ddb-tabbar,
+[data-material] body.bt-reduce-transparency .statusbar,
+[data-material] body.bt-reduce-transparency .redis-statusbar,
+[data-material] body.bt-reduce-transparency .ddb-statusbar,
+[data-material] body.bt-reduce-transparency .term-panel-head,
+/* The chrome tint lives on the overlay, so that is what has to go opaque. */
+[data-material] body.bt-reduce-transparency .bt-titlebar::before,
+[data-material] body.bt-reduce-transparency .rail::before,
+[data-material] body.bt-reduce-transparency .sidebar::before,
+[data-material] body.bt-reduce-transparency .redis-sidebar::before,
+[data-material] body.bt-reduce-transparency .ddb-sidebar::before,
+[data-material] body.bt-reduce-transparency .cass-sidebar::before,
+[data-material] body.bt-reduce-transparency .tabbar::before,
+[data-material] body.bt-reduce-transparency .ddb-tabbar::before,
+[data-material] body.bt-reduce-transparency .statusbar::before,
+[data-material] body.bt-reduce-transparency .redis-statusbar::before,
+[data-material] body.bt-reduce-transparency .ddb-statusbar::before,
+[data-material] body.bt-reduce-transparency .term-panel-head::before {
+  background: rgba(18, 26, 48, 0.94);
+}
+/* Inside the (now opaque) settings modal, the nav keeps reading as a panel
+   rather than becoming a second slab of the same colour. */
+[data-material] body.bt-reduce-transparency .set-nav {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+/* ================= Stacking order and overlay lift =================
+   Shared by both materials (M38 Task 6), because both give their chrome panes
+   a ::before glass layer, and `isolation: isolate` on those panes is what
+   keeps that layer from escaping. An isolated pane is a stacking context, so
+   its ORDER decides who paints on top — and a popover's own z-index only ranks
+   it among its siblings INSIDE its pane.
+
+   Fixed ladder: title bar above everything (its menus hang below the bar and
+   must clear the app), then the rail, the sidebar, the content column, and the
+   status bar at the bottom so content popovers near it are not covered. */
+[data-material] .bt-titlebar,
+[data-material] .rail,
+[data-material] .sidebar,
+[data-material] .redis-sidebar,
+[data-material] .ddb-sidebar,
+[data-material] .cass-sidebar,
+[data-material] .main-col,
+[data-material] .statusbar,
+[data-material] .redis-statusbar,
+[data-material] .ddb-statusbar {
+  position: relative;
+  isolation: isolate;
+}
+[data-material] .bt-titlebar {
+  z-index: 5;
+}
+[data-material] .rail {
+  z-index: 3;
+}
+[data-material] .sidebar,
+[data-material] .redis-sidebar,
+[data-material] .ddb-sidebar,
+[data-material] .cass-sidebar {
+  z-index: 2;
+}
+[data-material] .main-col {
+  z-index: 1;
+}
+[data-material] .statusbar,
+[data-material] .redis-statusbar,
+[data-material] .ddb-statusbar {
+  z-index: 0;
+}
+
+/* Overlay lift. Whichever pane currently HOLDS an open overlay is raised above
+   the others for as long as it is open — otherwise a sidebar popover that
+   spills onto the content is covered by the content pane, which outranks
+   nothing but happens to paint later.
+
+   KEEP THIS LIST COMPLETE: every new overlay class has to be added, or that
+   overlay ends up behind a sibling pane. Modals, sheets and the command
+   palette are not in it — they portal to <body> and so are outside every pane
+   already (see Modal.tsx), which is the better fix where it is available. */
+[data-material] .bt-titlebar:has(.tb-menu-pop, .tb-menu-sub, .lang-pop, .tabmenu),
+[data-material] .rail:has(.ws-edit-pop, .ws-tile-opts),
+[data-material] .sidebar:has(.schema-pop, .ctx-menu, .sec-actions-menu),
+[data-material] .redis-sidebar:has(.schema-pop, .ctx-menu),
+[data-material] .ddb-sidebar:has(.schema-pop, .ctx-menu),
+[data-material] .cass-sidebar:has(.schema-pop, .ctx-menu),
+[data-material]
+  .main-col:has(
+    .dg-popover,
+    .col-pop,
+    .ac-popup,
+    .history-pop,
+    .save-pop,
+    .info-hint-bubble,
+    .ctx-menu,
+    .sql-ctx-menu,
+    .proj-dd,
+    .proj-pop,
+    .ri-dt-panel,
+    .ri-dt-tzmenu,
+    .ri-dt-yrmenu,
+    .ri-copyrow-menu,
+    .obj-drop-confirm,
+    .oe-actionbar,
+    .map-export-menu,
+    .rc-kf,
+    .ts-sort-pop,
+    .sel-pop
+  ),
+[data-material] .statusbar:has(.sel-pop, .ctx-menu),
+[data-material] .redis-statusbar:has(.sel-pop, .ctx-menu),
+[data-material] .ddb-statusbar:has(.sel-pop, .ctx-menu) {
+  z-index: 40;
+}
+
+/* ================= Modal scrim =================
+   A floating panel can only blur what the SCRIM lets through. An element with
+   a backdrop-filter is a backdrop ROOT for its descendants, so with the scrim
+   carrying `blur(2px)` over `rgba(0,0,0,.5)`, a modal's own filter was
+   sampling that veil rather than the app: the panel came out flat dark, with
+   none of the wallpaper's colour or the saturation lift — the glass was there
+   and had nothing to work on. Under a material the scrim only DIMS, and the
+   panel does the blurring, which is also how a sheet behaves on macOS. */
+[data-material] .modal-scrim {
+  background: rgba(0, 0, 0, 0.32);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }

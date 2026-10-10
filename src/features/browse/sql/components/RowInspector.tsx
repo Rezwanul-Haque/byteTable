@@ -15,7 +15,7 @@
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { CellValue } from "../../../../shared/api/engine";
+import type { CellValue, FkRef } from "../../../../shared/api/engine";
 import { Icon } from "../../../../shared/ui/Icon";
 import { useToast } from "../../../../shared/ui/toastContext";
 import { CellContent } from "../../shared/components/GridCell";
@@ -47,12 +47,14 @@ const ROW_COPY_ITEMS: { format: RowCopyFormat; label: string; icon: string }[] =
   { format: "values", label: "Copy values only", icon: "notes" },
 ];
 
-/** One column as the inspector needs it: name, declared type, pk/fk flags. */
+/** One column as the inspector needs it: name, declared type, pk flag and the
+ *  fk target (null when the column references nothing, or the engine could not
+ *  resolve what it references). */
 export interface InspectorColumn {
   name: string;
   type: string;
   pk: boolean;
-  fk: boolean;
+  fk: FkRef | null;
 }
 
 // --- one field card ---------------------------------------------------------
@@ -68,6 +70,8 @@ function RowInspectorField({
   onRevert,
   schemaName,
   tableName,
+  stagedNew,
+  handleId,
 }: {
   col: InspectorColumn;
   /** Column index — the drawer finds this field by it to focus the clicked cell. */
@@ -81,6 +85,12 @@ function RowInspectorField({
   onRevert: () => void;
   schemaName: string;
   tableName: string;
+  /** True for a STAGED new row: its key is editable (nothing is committed yet,
+   *  and a join table's whole pk is the user's to supply), so the pk lock below
+   *  is for existing rows only. */
+  stagedNew: boolean;
+  /** Connection, for the fk existence check in the key editors. */
+  handleId?: string;
 }) {
   const json = isJsonType(col.type);
   const bin = isBinaryType(col.type);
@@ -158,6 +168,8 @@ function RowInspectorField({
             column={col.name}
             type={col.type}
             value={cur}
+            fk={col.fk}
+            handleId={handleId}
             onClose={() => setBinOpen(false)}
             onSave={(next) => {
               onDraft(next);
@@ -192,6 +204,8 @@ function RowInspectorField({
             column={col.name}
             type={col.type}
             value={cur}
+            fk={col.fk}
+            handleId={handleId}
             onClose={() => setUuidOpen(false)}
             onSave={(next) => {
               onDraft(next);
@@ -270,7 +284,14 @@ function RowInspectorField({
             style={{ color: "var(--accent)", transform: "rotate(45deg)" }}
           />
         ) : null}
-        {col.fk ? <Icon name="link" size={11} style={{ color: "var(--text-faint)" }} /> : null}
+        {col.fk ? (
+          <span
+            style={{ display: "inline-flex" }}
+            title={"References " + col.fk.table + (col.fk.column ? "." + col.fk.column : "")}
+          >
+            <Icon name="link" size={11} style={{ color: "var(--text-faint)" }} />
+          </span>
+        ) : null}
         <span className="ri-field-name">{col.name}</span>
         <span className="ri-field-type">{(col.type || "").toLowerCase()}</span>
         {dirty ? <span className="ri-dot" title="Changed — not staged yet" /> : null}
@@ -293,7 +314,11 @@ function RowInspectorField({
           </button>
         ) : null}
       </div>
-      {col.pk ? (
+      {/* An EXISTING row's key is locked (the grid's UPDATE identifies the row
+          by it). A staged new row's is not: its key is part of what is being
+          inserted, and on a join table — whose pk is nothing but foreign keys —
+          it is the only thing the user has to fill in. */}
+      {col.pk && !stagedNew ? (
         bin ? (
           // Binary primary key: read-only. Borderless BIN chip inside the dashed
           // pk box (matches the scalar pk look); clicking opens the binary editor
@@ -408,6 +433,10 @@ interface RowInspectorProps {
   canNext: boolean;
   schemaName: string;
   tableName: string;
+  /** The connection the row came from — lets the binary / UUID editors check an
+   *  fk value against its parent table. OMIT where there is no connection (the
+   *  data-file editor), which also has no foreign keys to check. */
+  handleId?: string;
   onPrev: () => void;
   onNext: () => void;
   onClose: () => void;
@@ -442,6 +471,7 @@ export function RowInspector({
   canNext,
   schemaName,
   tableName,
+  handleId,
   onPrev,
   onNext,
   onClose,
@@ -691,6 +721,8 @@ export function RowInspector({
                 onRevert={() => revert(ci)}
                 schemaName={schemaName}
                 tableName={tableName}
+                stagedNew={isStagedNew}
+                handleId={handleId}
               />
             ))}
           </div>

@@ -317,10 +317,15 @@ function binaryLiteral(value: CellValue, engine: Engine | undefined): string {
  * Returns null — leave the cell NULL — when the column has ANY default
  * expression: `gen_random_uuid()` / `newid()` / `uuid()` belong to the
  * database, and a NULL cell is left out of the INSERT so the default applies.
+ * Also null when the key is itself a FOREIGN key (a join table's
+ * `(role_id, permission_id)`): there is nothing to generate there — the value
+ * has to be one that already exists in the parent table, so the cell is left
+ * blank for the user to pick. A generated one would only look right until the
+ * INSERT tripped the fk constraint, and an FK hop on it lands nowhere.
  * Integer keys are not this function's business (see `addRow`).
  */
 function generatedPkValue(meta: ColCellMeta | undefined): CellValue | null {
-  if (!meta?.pk || meta.autoIncrement || meta.default !== null) return null;
+  if (!meta?.pk || meta.autoIncrement || meta.default !== null || meta.fk) return null;
   if (isUuidType(meta.dataType)) return generateUuidV7();
   if (isBinaryType(meta.dataType) && (binaryBytes(meta.dataType) ?? 16) === 16)
     return "0x" + uuidToHex(generateUuidV7());
@@ -572,6 +577,9 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     column: string;
     type: string;
     value: CellValue;
+    /** The column's fk target (binary editor only) — a key cell that references
+     *  another table is picked, never generated. */
+    fk: FkRef | null;
   } | null>(null);
 
   // --- M10 popovers (FK peek + column insights) ------------------------
@@ -1090,9 +1098,18 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       let value: CellValue = null;
       if (target.kind === "real") value = realCellValue(target.rowIndex, ci);
       else value = newRows.find((r) => r.key === target.stagedKey)?.values[ci] ?? null;
-      setCellModal({ kind, target, col: ci, column: col.name, type: col.typeHint, value });
+      const m = colMeta.get(col.name);
+      setCellModal({
+        kind,
+        target,
+        col: ci,
+        column: col.name,
+        type: col.typeHint,
+        value,
+        fk: m?.fk && m.fk.column ? m.fk : null,
+      });
     },
-    [realCellValue, newRows],
+    [realCellValue, newRows, colMeta],
   );
 
   // Apply a final value chosen in a cell modal — stages it like an inline edit.
@@ -1116,7 +1133,9 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           name: c.name,
           type: c.typeHint || m?.dataType || "",
           pk: m?.pk ?? false,
-          fk: !!(m?.fk && m.fk.column),
+          // Only a RESOLVED reference (SQLite can report one without a target
+          // column), since that is what the drawer's editors look up.
+          fk: m?.fk && m.fk.column ? m.fk : null,
         };
       }),
     [columns, colMeta],
@@ -1559,7 +1578,10 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     const values: CellValue[] = columns.map((c) => {
       const m = colMeta.get(c.name);
       const affinity = affinityOf(m?.dataType ?? "");
-      if (m?.pk && affinity === "integer") {
+      // An fk pk (join-table key) is excluded from both prefill rules below:
+      // neither "one past the highest" nor a generated id can name a row that
+      // exists in the parent table. See `generatedPkValue`.
+      if (m?.pk && !m.fk && affinity === "integer") {
         // Next integer key: max over the cached page + the staged rows, + 1.
         // On an engine-generated pk this is only a hint (the INSERT omits the
         // column); on a plain integer pk it is the value that gets inserted,
@@ -1598,6 +1620,11 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
    * natural or composite key) is left at its column default, i.e. usually blank
    * for the user to fill. Blank is deliberate there: a guessed key would either
    * collide loudly or, worse, quietly insert a row that looks right and is not.
+   *
+   * A pk that is also a FOREIGN key is the exception: it carries over verbatim,
+   * because the only values it may hold are the parent keys that already exist.
+   * Duplicating a join-table row then means editing one of the two references —
+   * which is the point — and until then the copy collides on save, loudly.
    */
   const duplicateRows = useCallback(
     (sourceRows: CellValue[][]) => {
@@ -1610,7 +1637,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       const intPkNext = new Map<number, number>();
       columns.forEach((c, ci) => {
         const m = colMeta.get(c.name);
-        if (!m?.pk || affinityOf(m.dataType) !== "integer") return;
+        if (!m?.pk || m.fk || affinityOf(m.dataType) !== "integer") return;
         let max = 0;
         for (const row of rowCacheRef.current.values()) {
           const v = Number(row[ci]);
@@ -1626,7 +1653,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       const staged: NewRow[] = sourceRows.map((source) => {
         const values: CellValue[] = columns.map((c, ci) => {
           const m = colMeta.get(c.name);
-          if (m?.pk) {
+          if (m?.pk && !m.fk) {
             const next = intPkNext.get(ci);
             if (next !== undefined) {
               intPkNext.set(ci, next + 1);
@@ -2087,6 +2114,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         canNext={inspectPos >= 0 && inspectPos < inspectOrder.length - 1}
         schemaName={schema}
         tableName={table}
+        handleId={handleId}
         onPrev={() => gotoInspect(inspectPos - 1)}
         onNext={() => gotoInspect(inspectPos + 1)}
         onClose={() => setInspect(null)}
@@ -2172,6 +2200,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           column={cellModal.column}
           type={cellModal.type}
           value={cellModal.value}
+          fk={cellModal.fk}
+          handleId={handleId}
           onClose={() => setCellModal(null)}
           onSave={(next) => {
             commitCellValue(cellModal.target, cellModal.col, next);

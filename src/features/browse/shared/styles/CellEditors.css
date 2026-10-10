@@ -358,6 +358,35 @@
   white-space: nowrap;
 }
 
+/* ---- FK target note (binary / UUID editors on a foreign-key column) ---- */
+.fk-target-note {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.fk-target-ref code {
+  font-family: var(--mono);
+  color: var(--text);
+}
+.fk-target-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+.fk-target-state.ok {
+  color: var(--accent);
+}
+.fk-target-state.err {
+  color: #e06c75;
+}
+
 /* ---- inspector field primitives ----
    The input, textarea, mini-button, nav-button and NULL chip shared by the SQL
    row inspector, the DynamoDB item drawer and the datetime field between them.

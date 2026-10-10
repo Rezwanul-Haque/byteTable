@@ -3,10 +3,14 @@
 // 8-4-4-4-12 form, and generates a fresh id in a chosen version (v7 default —
 // time-ordered, best for keys — plus v4 random and v1). Empty saves NULL. A
 // UUID stored as `binary(16)` uses BinaryEditorModal instead.
+//
+// On a FOREIGN-key column (`fk`) there is nothing to generate: the value must
+// be a key that exists in the parent table. The generator is replaced by the
+// reference + existence check of {@link FkTargetNote}.
 
 import { useEffect, useRef, useState } from "react";
 
-import type { CellValue } from "../../../../shared/api/engine";
+import type { CellValue, FkRef } from "../../../../shared/api/engine";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
@@ -18,6 +22,7 @@ import {
   UUID_VERSIONS,
   type UuidVersion,
 } from "../../shared/binaryCell";
+import { FkTargetNote } from "./FkTargetNote";
 import "../../shared/styles/CellEditors.css";
 
 interface UuidEditorModalProps {
@@ -30,6 +35,11 @@ interface UuidEditorModalProps {
   onClose: () => void;
   /** View-only (e.g. a UUID primary key): no editing, generate, or save. */
   readOnly?: boolean;
+  /** The column's foreign-key target, when it has one: swaps the generator for
+   *  the reference + an existence check of what is in the input. */
+  fk?: FkRef | null;
+  /** Connection for that check. Without it only the reference is shown. */
+  handleId?: string;
 }
 
 /** SQL Server calls it GUID; everything else UUID. */
@@ -46,6 +56,8 @@ export function UuidEditorModal({
   onSave,
   onClose,
   readOnly = false,
+  fk = null,
+  handleId,
 }: UuidEditorModalProps) {
   const label = uuidLabel(type);
   const init = value == null ? "" : String(value);
@@ -120,6 +132,15 @@ export function UuidEditorModal({
         />
       </label>
 
+      {fk ? (
+        <FkTargetNote
+          handleId={handleId}
+          refSchema={schemaName}
+          fk={fk}
+          value={valid && !empty ? trimmed.toLowerCase() : null}
+        />
+      ) : null}
+
       <div className={"json-status" + (valid ? " ok" : " err")}>
         <Icon name={valid ? "check_circle" : "error"} size={14} />
         <span>
@@ -141,22 +162,31 @@ export function UuidEditorModal({
           </>
         ) : (
           <>
-            <button
-              type="button"
-              className="json-tool"
-              onClick={() => generate(version)}
-              title={`Generate a ${version.toUpperCase()} ${label}`}
-            >
-              <Icon name="autorenew" size={14} /> Generate
-            </button>
-            <Select
-              className="uuid-ver-select"
-              value={version}
-              options={UUID_VERSIONS.map((v) => ({ value: v.id, label: v.label }))}
-              onChange={(v) => generate(v as UuidVersion)}
-              title="UUID version"
-              aria-label="UUID version"
-            />
+            {/* A foreign key has nothing to generate — it has to be a key the
+                parent table already holds, so the generator is left out rather
+                than offering a value that cannot be right. */}
+            {fk ? (
+              <span className="json-hint">Must match an existing {fk.table} row</span>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="json-tool"
+                  onClick={() => generate(version)}
+                  title={`Generate a ${version.toUpperCase()} ${label}`}
+                >
+                  <Icon name="autorenew" size={14} /> Generate
+                </button>
+                <Select
+                  className="uuid-ver-select"
+                  value={version}
+                  options={UUID_VERSIONS.map((v) => ({ value: v.id, label: v.label }))}
+                  onChange={(v) => generate(v as UuidVersion)}
+                  title="UUID version"
+                  aria-label="UUID version"
+                />
+              </>
+            )}
             <div style={{ flex: 1 }} />
             <Btn variant="text" onClick={onClose}>
               Cancel

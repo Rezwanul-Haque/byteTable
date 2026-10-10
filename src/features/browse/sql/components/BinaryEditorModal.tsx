@@ -4,10 +4,14 @@
 // UUID + stored-bytes representations; "Generate" makes a random UUID. Empty
 // saves NULL. The saved value is the UUID (16-byte) or `0x`-HEX string — the
 // backend binds it as raw bytes for the binary column.
+//
+// On a FOREIGN-key column (`fk`) there is nothing to generate: the value must
+// be a key that exists in the parent table. "Generate" is replaced by the
+// reference + existence check of {@link FkTargetNote}.
 
 import { useEffect, useRef, useState } from "react";
 
-import type { CellValue } from "../../../../shared/api/engine";
+import type { CellValue, FkRef } from "../../../../shared/api/engine";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
@@ -21,6 +25,7 @@ import {
   validateBinary,
   type UuidVersion,
 } from "../../shared/binaryCell";
+import { FkTargetNote } from "./FkTargetNote";
 import "../../shared/styles/CellEditors.css";
 
 interface BinaryEditorModalProps {
@@ -33,6 +38,11 @@ interface BinaryEditorModalProps {
   onClose: () => void;
   /** View-only (e.g. a binary primary key): no editing, generate, or save. */
   readOnly?: boolean;
+  /** The column's foreign-key target, when it has one: swaps "Generate" for the
+   *  reference + an existence check of what is in the input. */
+  fk?: FkRef | null;
+  /** Connection for that check. Without it only the reference is shown. */
+  handleId?: string;
 }
 
 export function BinaryEditorModal({
@@ -44,6 +54,8 @@ export function BinaryEditorModal({
   onSave,
   onClose,
   readOnly = false,
+  fk = null,
+  handleId,
 }: BinaryEditorModalProps) {
   const expect = binaryBytes(type) ?? 16;
   const init = looksUuid(value) ? String(value).toLowerCase() : value == null ? "" : String(value);
@@ -68,15 +80,13 @@ export function BinaryEditorModal({
 
   const res = validateBinary(text, type);
   const dirty = text.trim() !== init;
+  // The value a save would write, or null when the input is empty/invalid —
+  // also what the FK note looks up.
+  const candidate = res.ok && !res.empty ? (res.uuid ?? "0x" + res.hex.toUpperCase()) : null;
 
   const save = () => {
     if (!res.ok) return;
-    if (res.empty) {
-      onSave(null);
-      return;
-    }
-    // Prefer the canonical UUID for 16-byte columns, else 0x-HEX.
-    onSave(res.uuid ?? "0x" + res.hex.toUpperCase());
+    onSave(candidate);
   };
 
   const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -136,6 +146,10 @@ export function BinaryEditorModal({
         </div>
       </div>
 
+      {fk ? (
+        <FkTargetNote handleId={handleId} refSchema={schemaName} fk={fk} value={candidate} binary />
+      ) : null}
+
       <div className={"json-status" + (res.ok ? " ok" : " err")}>
         <Icon name={res.ok ? "check_circle" : "error"} size={14} />
         <span>
@@ -157,22 +171,31 @@ export function BinaryEditorModal({
           </>
         ) : (
           <>
-            <button
-              type="button"
-              className="json-tool"
-              onClick={() => generate(version)}
-              title={`Generate a ${version.toUpperCase()} UUID`}
-            >
-              <Icon name="autorenew" size={14} /> Generate
-            </button>
-            <Select
-              className="uuid-ver-select"
-              value={version}
-              options={UUID_VERSIONS.map((v) => ({ value: v.id, label: v.label }))}
-              onChange={(v) => generate(v as UuidVersion)}
-              title="UUID version"
-              aria-label="UUID version"
-            />
+            {/* A foreign key has nothing to generate — it has to be a key the
+                parent table already holds, so the control is left out rather
+                than offering a value that cannot be right. */}
+            {fk ? (
+              <span className="json-hint">Must match an existing {fk.table} row</span>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="json-tool"
+                  onClick={() => generate(version)}
+                  title={`Generate a ${version.toUpperCase()} UUID`}
+                >
+                  <Icon name="autorenew" size={14} /> Generate
+                </button>
+                <Select
+                  className="uuid-ver-select"
+                  value={version}
+                  options={UUID_VERSIONS.map((v) => ({ value: v.id, label: v.label }))}
+                  onChange={(v) => generate(v as UuidVersion)}
+                  title="UUID version"
+                  aria-label="UUID version"
+                />
+              </>
+            )}
             <div style={{ flex: 1 }} />
             <Btn variant="text" onClick={onClose}>
               Cancel

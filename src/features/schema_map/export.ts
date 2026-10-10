@@ -26,6 +26,7 @@
 
 import { HEAD_H, ROW_H, contentBounds, crowFoot, type CardModel, type EdgeModel } from "./diagram";
 import { GROUP_HEAD_H, GROUP_PAD_TOP, type GroupBox } from "./groups";
+import { type GroupLinkModel } from "./groupLinks";
 import { ICON_KEY, ICON_LINK, ICON_OPEN, ICON_TABLE, type IconPath } from "./icons";
 import { embeddedFontFaceCss } from "./fonts";
 
@@ -202,16 +203,42 @@ function groupSvg(box: GroupBox): string {
   );
 }
 
+/** Advance width of one 11px JetBrains Mono character — the label pill is
+ *  measured from its text, since SVG can't size a rect to a text node. */
+const LABEL_CHAR_W = 6.7;
+
+/** One group-to-group arrow → SVG markup: curve, filled head, and its caption
+ *  pill. The arrow's colour comes from its source group (baked, like the frame's
+ *  own colour), so no theme token applies. */
+function groupLinkSvg(link: GroupLinkModel, c: ExportColors): string {
+  const parts = [
+    `<path d="${link.path}" fill="none" stroke="${link.color}" stroke-width="2" ` +
+      `stroke-opacity="0.9" stroke-linecap="round"/>`,
+    `<path d="${link.head}" fill="${link.color}" fill-opacity="0.95"/>`,
+  ];
+  if (link.label) {
+    const text = truncate(link.label, 28);
+    const w = text.length * LABEL_CHAR_W + 14;
+    parts.push(
+      `<rect x="${link.mx - w / 2}" y="${link.my - 9}" width="${w}" height="18" rx="6" ` +
+        `fill="${c.bg0}" stroke="${link.color}" stroke-opacity="0.6" stroke-width="1"/>`,
+      `<text x="${link.mx}" y="${link.my}" text-anchor="middle" dominant-baseline="central" ` +
+        `font-family="${MONO}" font-size="11" fill="${link.color}">${esc(text)}</text>`,
+    );
+  }
+  return parts.join("");
+}
+
 /**
  * Build the standalone export SVG string for the diagram. `fontCss` is the
  * embedded @font-face block (data: URIs); pass "" to fall back to system fonts
  * (last-resort — text drifts but still renders). Edges carry crow's-foot
  * cardinality markers at each end, matching the live canvas.
  *
- * `groups` paints the named frames behind the cards. Exporting a single group
- * is just passing that group's cards/edges/frame — the framing bounding box
- * follows the cards handed in, so no separate crop step is needed (see
- * `scopeToGroup`).
+ * `groups` paints the named frames behind the cards and `links` the arrows
+ * between those frames. Exporting a single group is just passing that group's
+ * cards/edges/frame — the framing bounding box follows the cards handed in, so
+ * no separate crop step is needed (see `scopeToGroup`).
  */
 export function buildExportSvg(
   cards: CardModel[],
@@ -219,6 +246,7 @@ export function buildExportSvg(
   colors: ExportColors,
   fontCss: string,
   groups: GroupBox[] = [],
+  links: GroupLinkModel[] = [],
 ): string {
   // Frame from the cards, then widen to hold every group frame — a frame the
   // user has stretched beyond its cards must not be cropped out of the export.
@@ -233,9 +261,20 @@ export function buildExportSvg(
     },
     { ...cb },
   );
+  // A bent arrow can swing outside every frame; its handle is the furthest the
+  // curve reaches, so widening to that keeps it in the picture.
+  for (const l of links) {
+    const x = Math.min(b.x, l.mx - 24);
+    const y = Math.min(b.y, l.my - 24);
+    b.width = Math.max(b.x + b.width, l.mx + 24) - x;
+    b.height = Math.max(b.y + b.height, l.my + 24) - y;
+    b.x = x;
+    b.y = y;
+  }
   const GRID = 22;
   const body =
     groups.map((g) => groupSvg(g)).join("") +
+    links.map((l) => groupLinkSvg(l, colors)).join("") +
     edges.map((e) => edgeSvg(e, colors)).join("") +
     cards.map((c) => cardSvg(c, colors)).join("");
   return (

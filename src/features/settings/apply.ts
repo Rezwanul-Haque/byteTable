@@ -24,6 +24,29 @@ const SPLASH_ACCENT_KEY = "bytetable.splash-accent.v1";
  *  pre-JS splash, so its background/text follow a light theme too. */
 const SPLASH_THEME_KEY = "bytetable.splash-theme.v1";
 
+/**
+ * Blend two `#rrggbb` colours in sRGB. The material backdrops derive their
+ * blooms from the accent with `color-mix()`, but the splash is painted by an
+ * inline script before a stylesheet exists — so the same tint has to be
+ * computed here and stored as a literal. sRGB rather than oklab: it is two
+ * dark colours and a boot screen, and this stays four lines. Returns `b`
+ * unchanged if either side isn't a plain hex (a malformed accent must not
+ * take the splash down).
+ */
+function mixHex(a: string, b: string, t: number): string {
+  const parse = (hex: string): [number, number, number] | null => {
+    const m = /^#([0-9a-f]{6})$/i.exec(hex.trim());
+    if (!m) return null;
+    const n = parseInt(m[1]!, 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  };
+  const ca = parse(a);
+  const cb = parse(b);
+  if (!ca || !cb) return b;
+  const ch = (i: number) => Math.round(cb[i]! + (ca[i]! - cb[i]!) * t);
+  return "#" + [0, 1, 2].map((i) => ch(i).toString(16).padStart(2, "0")).join("");
+}
+
 export function applySettings(input: Partial<Settings> | null | undefined): void {
   const s: Settings = { ...DEFAULTS, ...(input ?? {}) };
   const theme = THEMES[s.theme] ?? THEMES.charcoal;
@@ -35,6 +58,13 @@ export function applySettings(input: Partial<Settings> | null | undefined): void
   // because blur / specular edge / depth cannot be expressed as palette values.
   // Switching away removes the rules with the attribute — no residue.
   document.documentElement.setAttribute("data-theme", THEMES[s.theme] ? s.theme : "charcoal");
+
+  // A MATERIAL theme also gets `data-material`. The surface tiers are shared by
+  // every material (they key on the attribute's presence); each material's own
+  // rendering — frosted vs. lensed — keys on its value. A flat palette removes
+  // the attribute, which removes every one of those rules with it.
+  if (theme.material) document.documentElement.setAttribute("data-material", theme.material);
+  else document.documentElement.removeAttribute("data-material");
 
   // Palette.
   root.setProperty("--bg0", theme.bg0);
@@ -64,30 +94,42 @@ export function applySettings(input: Partial<Settings> | null | undefined): void
     // Also persist the resolved surface colors so the splash background / text /
     // bar follow a light theme instead of the hardcoded dark defaults.
     // A material theme's surfaces are translucent, which would leave the splash
-    // (painted before any backdrop exists) grey and flat, so it gets the
-    // backdrop's own opaque blues instead — boot into glass, not charcoal.
+    // (painted before any backdrop exists) grey and flat, so it gets its own
+    // backdrop's opaque colours instead — boot into the material, not charcoal,
+    // and into the RIGHT one: the two materials run different backdrops (cold
+    // navy vs. warm plum), and the splash is the first thing either shows.
     localStorage.setItem(
       SPLASH_THEME_KEY,
       JSON.stringify(
-        theme.glass
+        theme.material === "liquid"
           ? {
-              bg: "#0b1120",
-              gradA: "#1c2a52",
-              gradB: "#0b1120",
+              bg: mixHex(accent, "#0c0a1f", 0.08),
+              gradA: mixHex(accent, "#221038", 0.2),
+              gradB: mixHex(accent, "#0c0a1f", 0.08),
               text: theme.text,
               dim: theme.dim,
-              bar: "#273357",
+              bar: mixHex(accent, "#221038", 0.16),
               light: false,
             }
-          : {
-              bg: theme.bg0,
-              gradA: theme.bg2,
-              gradB: theme.bg0,
-              text: theme.text,
-              dim: theme.dim,
-              bar: theme.bg3,
-              light: !!theme.light,
-            },
+          : theme.material
+            ? {
+                bg: mixHex(accent, "#0b1120", 0.06),
+                gradA: mixHex(accent, "#18224a", 0.18),
+                gradB: mixHex(accent, "#0b1120", 0.06),
+                text: theme.text,
+                dim: theme.dim,
+                bar: mixHex(accent, "#18224a", 0.14),
+                light: false,
+              }
+            : {
+                bg: theme.bg0,
+                gradA: theme.bg2,
+                gradB: theme.bg0,
+                text: theme.text,
+                dim: theme.dim,
+                bar: theme.bg3,
+                light: !!theme.light,
+              },
       ),
     );
   } catch {

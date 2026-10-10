@@ -91,7 +91,7 @@ function ThemeSwatch({
           two-bloom gradient (the translucent bg0 would just look grey) and a
           frosted bar, both from `.set-theme-prev.glass`. */}
       <div
-        className={"set-theme-prev" + (theme.glass ? " glass" : "")}
+        className={"set-theme-prev" + (theme.material ? " glass glass-" + theme.material : "")}
         style={{ background: theme.swatchBg ?? theme.bg0, borderColor: theme.border }}
       >
         <div className="set-theme-bar" style={{ background: theme.swatchBar ?? theme.bg1 }}>

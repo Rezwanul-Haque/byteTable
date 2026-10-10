@@ -57,13 +57,20 @@ export function readExportColors(): ExportColors {
     return raw || fallback;
   };
   const accent = v("--accent", "#2dd4a7");
-  const border = v("--border", "#2c3039");
-  const bg0 = v("--bg0", "#131418");
+  // A MATERIAL theme's surface tokens are translucent by design: correct over
+  // the app's backdrop, wrong in an exported file, where a see-through card
+  // lands on whatever the viewer puts behind it (and resvg composites it onto
+  // nothing). Substitute the opaque equivalents of what the canvas actually
+  // renders — the flattened values of glass.css's `.map-card-box` and friends.
+  // Text and accent are already opaque in every theme, so they read live.
+  const material = document.documentElement.hasAttribute("data-material");
+  const border = material ? "#3e4252" : v("--border", "#2c3039");
+  const bg0 = material ? "#0b1120" : v("--bg0", "#131418");
   return {
     bg0,
-    bg1: v("--bg1", "#191b20"),
-    bg2: v("--bg2", "#20232a"),
-    bg3: v("--bg3", "#282c35"),
+    bg1: material ? "#0e1427" : v("--bg1", "#191b20"),
+    bg2: material ? "#23293b" : v("--bg2", "#20232a"),
+    bg3: material ? "#2c3550" : v("--bg3", "#282c35"),
     border,
     text: v("--text", "#e3e6eb"),
     textDim: v("--text-dim", "#9aa1ad"),

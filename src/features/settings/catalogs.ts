@@ -21,11 +21,14 @@ export interface Theme {
   light?: boolean;
   /**
    * A MATERIAL theme: its surface tokens are translucent and the look is
-   * finished by the `[data-theme="<id>"]` surface rules in `glass.css` (blur,
-   * specular edge, depth), which a palette alone cannot express. Flags the
-   * picker swatch to draw the material rather than the flat colours.
+   * finished by the surface rules in `glass.css` (blur, specular edge, depth),
+   * which a palette alone cannot express. `applySettings` mirrors this onto
+   * `<html data-material>`: the shared tier rules key on the ATTRIBUTE's
+   * presence, so both materials get them, and `liquid.css` adds the lensing
+   * on top of `[data-material="liquid"]`. Also flags the picker swatch to draw
+   * the material rather than the flat colours.
    */
-  glass?: boolean;
+  material?: "frosted" | "liquid";
   /** Swatch-only backdrop: a translucent `bg0` would preview as flat grey. */
   swatchBg?: string;
   /** Swatch-only bar colour, for the same reason. */
@@ -47,7 +50,8 @@ export type ThemeId =
   | "daybreak"
   | "parchment"
   | "sky"
-  | "glass";
+  | "glass"
+  | "liquidGlass";
 
 // One full palette per theme. Order is the display order in the Appearance tab.
 export const THEMES: Record<ThemeId, Theme> = {
@@ -283,9 +287,32 @@ export const THEMES: Record<ThemeId, Theme> = {
     accent: "#7c9cff",
     danger: "#ff6f7d",
     onAccent: "#0a1030",
-    glass: true,
+    material: "frosted",
     swatchBg: "#1a2342",
     swatchBar: "rgba(255,255,255,.14)",
+  },
+  // The same three tiers as Frosted Glass, rendered as a THICKER material: a
+  // brighter backdrop for the panes to bend, a lensed rim (bright top edge,
+  // cyan/magenta dispersion down the sides) and a specular highlight that
+  // tracks the pointer across the surface you are on. See liquid.css for what
+  // this can and cannot be in a webview — there is no live refraction.
+  liquidGlass: {
+    label: "Liquid Glass",
+    group: "Material",
+    bg0: "rgba(8,12,30,.30)",
+    bg1: "rgba(255,255,255,.09)",
+    bg2: "rgba(255,255,255,.13)",
+    bg3: "rgba(255,255,255,.19)",
+    border: "rgba(255,255,255,.22)",
+    text: "#f6f8ff",
+    dim: "#cbd4ea",
+    faint: "#93a0bd",
+    accent: "#6ea8ff",
+    danger: "#ff7a86",
+    onAccent: "#061024",
+    material: "liquid",
+    swatchBg: "#17214a",
+    swatchBar: "rgba(255,255,255,.18)",
   },
 };
 

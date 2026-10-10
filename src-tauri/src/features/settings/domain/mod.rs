@@ -39,6 +39,7 @@ pub enum Theme {
     Parchment,
     Sky,
     Glass,
+    LiquidGlass,
 }
 
 /// UI (chrome) font family. The mono font is a free-form id (curated key or
@@ -335,6 +336,17 @@ mod tests {
         assert!(json.contains(r#""theme":"glass""#), "{json}");
         let back: Settings = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back.theme, Theme::Glass);
+
+        // The second material: a multi-word id has to camelCase on the wire to
+        // match the renderer's ThemeId, as `tokyoNight` does.
+        let json = serde_json::to_string(&Settings {
+            theme: Theme::LiquidGlass,
+            ..Settings::default()
+        })
+        .expect("serialize");
+        assert!(json.contains(r#""theme":"liquidGlass""#), "{json}");
+        let back: Settings = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.theme, Theme::LiquidGlass);
     }
 
     #[test]

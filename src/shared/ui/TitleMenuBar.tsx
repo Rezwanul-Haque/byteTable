@@ -109,7 +109,23 @@ export function TitleMenuBar({ menus }: { menus: Menu[] }) {
   );
 }
 
-/** One runnable menu row (top level or inside a submenu). */
+/**
+ * One runnable menu row (top level or inside a submenu).
+ *
+ * Disabled rows are marked with `aria-disabled` + a class rather than the native
+ * `disabled` attribute, because a disabled control receives NO mouse events —
+ * and this row has two jobs that depend on them:
+ *
+ *   - `onHover` closes a sibling's open submenu. With a native `disabled`, the
+ *     pointer could land on a greyed row while File ▸ Open's submenu stayed open
+ *     and its parent row stayed lit, leaving two highlighted rows touching.
+ *   - `title` explains *why* an item is unavailable, and a browser shows no
+ *     tooltip for a disabled control.
+ *
+ * The click is guarded here instead; `aria-disabled` is what assistive tech
+ * reads, and it keeps the row reachable, which is the behaviour ARIA's menu
+ * pattern asks for anyway.
+ */
 function MenuLeaf({
   item,
   onHover,
@@ -119,15 +135,17 @@ function MenuLeaf({
   onHover?: () => void;
   onRun: () => void;
 }) {
+  const disabled = !item.enabled;
   return (
     <button
       type="button"
-      className="tb-menu-item"
-      disabled={!item.enabled}
+      className={"tb-menu-item" + (disabled ? " disabled" : "")}
+      aria-disabled={disabled || undefined}
       // A disabled item with a hint explains *why* on hover.
-      title={!item.enabled && item.hint ? item.hint : undefined}
+      title={disabled && item.hint ? item.hint : undefined}
       onMouseEnter={onHover}
       onClick={() => {
+        if (disabled) return;
         item.run?.();
         onRun();
       }}

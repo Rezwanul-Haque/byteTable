@@ -207,6 +207,15 @@ interface WorkspacesFeatureState {
    */
   openMapTab: (schema: string) => void;
   /**
+   * Open the brainstorm board for `schema` (M37) and focus it; if already open,
+   * focus the existing one. One board per schema — a board list and multiple
+   * boards per connection are deferred.
+   */
+  openBoardTab: (schema: string) => void;
+  /** Record a board's own name on its tab, so the strip can label it
+   *  `<board name> · board`. Reported by the mounted board. */
+  setBoardTabName: (tabId: string, name: string) => void;
+  /**
    * Open (or focus) the singleton Processes tab (M26) — the live server session
    * list with kill actions. `schema` seeds the DB column for a fresh listing.
    */
@@ -844,6 +853,33 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
         return { tabs: [...tabs, tab], activeTabId: tab.id };
       }),
     })),
+
+  openBoardTab: (schema) =>
+    set((state) => ({
+      workspaces: patchActiveUi(state, (ui) => {
+        const tabs = ui.tabs ?? [];
+        const existing = tabs.find((t) => t.kind === "board" && t.schema === schema);
+        if (existing) return { activeTabId: existing.id };
+        const tab: Tab = { id: newTabId("board"), kind: "board", schema };
+        return { tabs: [...tabs, tab], activeTabId: tab.id };
+      }),
+    })),
+
+  setBoardTabName: (tabId, name) =>
+    set((state) => {
+      // Returns the SAME state when the name is unchanged. `patchActiveUi` mints
+      // a new workspace object even for an empty patch, and the mounted board
+      // reports its name from an effect — so without this early-out, reporting an
+      // unchanged name would re-render the workspace, re-run the effect, and loop.
+      const workspace = state.workspaces.find((ws) => ws.id === state.activeWorkspaceId);
+      const tab = workspace?.ui.tabs?.find((t) => t.id === tabId);
+      if (!tab || tab.kind !== "board" || tab.name === name) return state;
+      return {
+        workspaces: patchActiveUi(state, (ui) => ({
+          tabs: (ui.tabs ?? []).map((t) => (t.id === tabId ? { ...t, name } : t)),
+        })),
+      };
+    }),
 
   openProcessesTab: (schema) =>
     set((state) => ({

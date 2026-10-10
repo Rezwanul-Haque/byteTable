@@ -13,6 +13,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { BrainstormBoard } from "../../brainstorm_board/components/BrainstormBoard";
 import { PROC_SOURCES } from "../../processes/api";
 import { ProcessesTab } from "../../processes/components/ProcessesTab";
 import { SchemaDiff } from "../../schema_diff/components/SchemaDiff";
@@ -76,6 +77,20 @@ function TabBody({
       );
     case "map":
       return <SchemaMap workspace={workspace} schema={tab.schema} />;
+    case "board":
+      return (
+        <BrainstormBoard
+          tabId={tab.id}
+          schemaName={tab.schema}
+          connectionId={workspace.saved.id}
+          connectionName={workspace.saved.name}
+          handleId={workspace.handleId}
+          // Only the active tab is mounted, so being here IS being active.
+          isActive
+          onNameChange={(name) => useWorkspacesStore.getState().setBoardTabName(tab.id, name)}
+          onOpenInSql={(sql) => useWorkspacesStore.getState().openSqlTabWith(sql)}
+        />
+      );
     case "processes":
       return (
         <ProcessesTab
@@ -164,7 +179,9 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
   // Schema the Processes tab opens against — the active tab's schema when it
   // has one, else the one the workspace is on. Mirrors StatusBar's "processes" btn.
   const procSchema =
-    activeTab?.kind === "table" || activeTab?.kind === "map" ? activeTab.schema : currentSchema;
+    activeTab?.kind === "table" || activeTab?.kind === "map" || activeTab?.kind === "board"
+      ? activeTab.schema
+      : currentSchema;
 
   // Tabs holding work that is not in the database yet — staged grid rows/cells
   // and pending structure ops, both on `ui` keyed by tab id. Drives the strip's

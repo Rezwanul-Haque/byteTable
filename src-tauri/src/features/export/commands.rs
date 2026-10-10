@@ -80,6 +80,15 @@ pub async fn export_save(path: String, contents: String) -> Result<(), AppError>
     application::export_save(&path, &contents)
 }
 
+/// Write base64-encoded binary export bytes to a user-chosen path (from the
+/// native save dialog). Used by the M37 board's PNG export, which arrives from
+/// the renderer already rasterized. Decode failures and IO failures both surface
+/// as §5 errors.
+#[tauri::command]
+pub async fn export_save_bytes(path: String, base64: String) -> Result<(), AppError> {
+    application::export_save_bytes(&path, &base64)
+}
+
 /// Overwrite a file the user is editing (the M35 data-file editor's save),
 /// durably: temp file + fsync + atomic rename, optionally keeping a `.bak` of
 /// the previous contents. Use this — not `export_save` — whenever the target

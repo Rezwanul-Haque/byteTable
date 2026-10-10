@@ -48,6 +48,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
   const openSqlTabWith = useWorkspacesStore((state) => state.openSqlTabWith);
   const openProcessesTab = useWorkspacesStore((state) => state.openProcessesTab);
   const openDiffTab = useWorkspacesStore((state) => state.openDiffTab);
+  const openBoardTab = useWorkspacesStore((state) => state.openBoardTab);
   const patchWorkspaceUi = useWorkspacesStore((state) => state.patchWorkspaceUi);
   const openPanel = usePanelStore((state) => state.openPanel);
   const tablesMap = useIntrospectionStore((state) => state.tables);
@@ -115,6 +116,13 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
       hint: "Ctrl+`",
       run: () => openPanel(workspace.id, shell),
     };
+    const board: Command = {
+      id: "board",
+      icon: "draw",
+      label: "Brainstorm board",
+      hint: "sketch domain, flow & draft schema",
+      run: () => openBoardTab(schemaName),
+    };
     const processes: Command = {
       id: "processes",
       icon: "monitor_heart",
@@ -151,6 +159,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
       ...schemaCmds,
       newSql,
       openTerminal,
+      board,
       processes,
       ...diffCmds,
       ...savedCmds,
@@ -166,6 +175,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
     openTableTab,
     openSqlTab,
     openSqlTabWith,
+    openBoardTab,
     openProcessesTab,
     openDiffTab,
     patchWorkspaceUi,

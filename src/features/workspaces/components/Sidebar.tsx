@@ -127,6 +127,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   const openTableOverview = useWorkspacesStore((state) => state.openTableOverview);
   const openSqlTab = useWorkspacesStore((state) => state.openSqlTab);
   const openMapTab = useWorkspacesStore((state) => state.openMapTab);
+  const openBoardTab = useWorkspacesStore((state) => state.openBoardTab);
   const openDiffTab = useWorkspacesStore((state) => state.openDiffTab);
   const closeTab = useWorkspacesStore((state) => state.closeTab);
 
@@ -446,6 +447,8 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   // (§3.6). On an already-open tab this switches it to structure mode.
   const openStructure = (table: string) => openTableTab(schemaName, table, "structure");
   const openMap = () => openMapTab(schemaName);
+  // M37: the free-form board for the thinking before the schema.
+  const openBoard = () => openBoardTab(schemaName);
 
   // M15: open the export progress modal — it owns the whole flow (SQL opens on
   // the scope-choice step, CSV straight to the building bar, then save dialog →
@@ -634,6 +637,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
           </div>
         )}
         <IconBtn icon="schema" title={t("ws.sb.schemaMap")} onClick={openMap} />
+        <IconBtn icon="draw" title={t("ws.sb.brainstormBoard")} onClick={openBoard} />
         {/* M28: only the engines with a structural snapshot can be diffed. */}
         {isDiffable(workspace.saved) ? (
           <IconBtn icon="difference" title={t("ws.sb.schemaDiff")} onClick={openDiffTab} />

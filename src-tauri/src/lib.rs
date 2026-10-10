@@ -520,6 +520,7 @@ pub fn run() {
             features::export::commands::export_table,
             features::export::commands::export_schema,
             features::export::commands::export_save,
+            features::export::commands::export_save_bytes,
             features::export::commands::import_sql,
             features::export::commands::read_text_file,
             features::export::commands::save_text_file_atomic,

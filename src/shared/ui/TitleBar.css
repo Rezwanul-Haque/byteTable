@@ -177,12 +177,12 @@ body[data-platform="macos"].window-fullscreen .bt-titlebar-left {
   cursor: default;
 }
 
-.tb-menu-item:hover:not(:disabled) {
+.tb-menu-item:hover:not(.disabled) {
   background: var(--accent);
   color: var(--on-accent);
 }
 
-.tb-menu-item:disabled {
+.tb-menu-item.disabled {
   color: var(--text-faint);
   cursor: default;
 }
@@ -198,7 +198,7 @@ body[data-platform="macos"].window-fullscreen .bt-titlebar-left {
   color: var(--text-dim);
 }
 
-.tb-menu-item:hover:not(:disabled) .tb-menu-hint-key {
+.tb-menu-item:hover:not(.disabled) .tb-menu-hint-key {
   color: var(--on-accent);
 }
 
@@ -244,10 +244,10 @@ body[data-platform="macos"].window-fullscreen .bt-titlebar-left {
   background: none;
   color: var(--text);
 }
-.tb-menu-sub .tb-menu-item:disabled {
+.tb-menu-sub .tb-menu-item.disabled {
   color: var(--text-faint);
 }
-.tb-menu-sub .tb-menu-item:hover:not(:disabled) {
+.tb-menu-sub .tb-menu-item:hover:not(.disabled) {
   background: var(--accent);
   color: var(--on-accent);
 }

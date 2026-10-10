@@ -21,6 +21,7 @@ export type BtCmdId =
   | "palette"
   | "toggle-terminal"
   | "schema-map"
+  | "brainstorm-board"
   | "processes"
   | "run"
   | "format"

@@ -1,0 +1,1706 @@
+/* Brainstorm board (M37) — ported from ByteTable.html's `.bb-*` block.
+   Everything is theme-token driven, so the board follows the active palette
+   (including the Material/Liquid Glass surfaces) with no per-theme rules.
+
+   Two things here are load-bearing, not cosmetic:
+
+   - `.bb-world .dim { pointer-events: none }` (SVG paths included). Isolating a
+     layer fades the others rather than hiding them; without this a faded object
+     still swallows clicks meant for the focused layer.
+   - `.bb-frame { pointer-events: none }` with the label re-enabling them. A
+     frame is a ZONE: the objects inside it must stay individually clickable, so
+     only its label is a grab handle. The same trick gives `.bb-group` a
+     click-through outline with a draggable label pill. */
+
+.bb-root {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  position: relative;
+  /* The handwritten face for stickies and sketches — sketch work should not
+     look like finished documentation. Bundled, not fetched. */
+  --hand: "Kalam", var(--ui), cursive;
+}
+
+/* ------------------------------------------------------------ tool rail --- */
+/* Budget: this column must stay fully visible at a 540px-tall window. The
+   scrollbar is left VISIBLE (thin) rather than hidden, so if it ever does
+   overflow the last tool is discoverable instead of silently unreachable. */
+.bb-tools {
+  width: 44px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 0;
+  background: var(--bg1);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  overflow-x: visible;
+  scrollbar-width: thin;
+}
+
+.bb-tool {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  flex: none;
+}
+
+.bb-tool:hover {
+  background: var(--bg2);
+  color: var(--text);
+}
+
+.bb-tool.on {
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+  color: var(--accent) !important;
+}
+
+/* Takes the colour of the layer the group below it creates on. */
+.bb-tool-sep {
+  width: 18px;
+  height: 2px;
+  border-radius: 2px;
+  margin: 5px 0;
+  background: var(--border);
+  opacity: 0.8;
+  flex: none;
+}
+
+.bb-inkpick {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.bb-inkpick button {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+
+.bb-inkpick button.on {
+  border-color: var(--text);
+}
+
+.bb-flywrap {
+  position: relative;
+  flex: none;
+}
+
+.bb-fly-caret {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-bottom: 4px solid currentColor;
+  opacity: 0.7;
+}
+
+/* Fixed, not absolute: the rail scrolls, and a menu clipped by its overflow
+   would be unusable. */
+.bb-fly {
+  position: fixed;
+  z-index: 40;
+  margin-left: 38px;
+  margin-top: -32px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px;
+  min-width: 132px;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+}
+
+.bb-fly-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-family: var(--ui);
+  font-size: 11.5px;
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.bb-fly-item:hover,
+.bb-fly-item.on {
+  background: var(--bg2);
+  color: var(--text);
+}
+
+/* Short window: compact the rail rather than let it scroll. */
+@media (max-height: 640px) {
+  .bb-tools {
+    gap: 1px;
+    padding: 5px 0;
+  }
+
+  .bb-tool {
+    width: 28px;
+    height: 27px;
+  }
+
+  .bb-tool .msym {
+    font-size: 16px;
+  }
+
+  .bb-tool-sep {
+    margin: 3px 0;
+  }
+}
+
+/* ---------------------------------------------------------------- stage --- */
+/* `container-type: inline-size` so the floating bars respond to the STAGE's
+   width, not the window's: opening the inspector narrows the canvas by 272px
+   and the overlays have to compact for that, not for a resize. */
+.bb-stage {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
+  container-type: inline-size;
+}
+
+@container (max-width: 640px) {
+  .bb-layer em,
+  .bb-diff-l,
+  .bb-zpct {
+    display: none;
+  }
+
+  .bb-layer {
+    padding: 4px 9px;
+  }
+
+  .bb-diffbar {
+    gap: 7px;
+  }
+}
+
+@container (max-width: 470px) {
+  .bb-layer {
+    font-size: 0;
+    gap: 0;
+    padding: 6px 8px;
+  }
+
+  .bb-layer .msym {
+    font-size: 14px;
+  }
+
+  .bb-diffbar > span:not(.msym) {
+    display: none;
+  }
+}
+
+.bb-viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  /* Paint containment, on top of the clip `overflow: hidden` already gives.
+     It bounds the damage region a moving object can dirty to this box, which is
+     the other half of the stale-pixel fix described on `.bb-world`. Nothing
+     inside is `position: fixed`, so making this a containing block for one
+     changes nothing. */
+  contain: paint;
+  background-color: var(--bg0);
+  /* The grid is the viewport's background, moved + scaled with the view (see
+     BoardCanvas), so it reads as the same surface the objects sit on. */
+  background-image: radial-gradient(
+    circle,
+    color-mix(in oklab, var(--text) 9%, transparent) 1px,
+    transparent 1.3px
+  );
+}
+
+/* The world carries a FRACTIONAL `scale()`, and its children move by changing
+   `left`/`top`. That combination is what leaves thin stale lines behind a
+   dragged object: the browser invalidates the child's old and new rectangles in
+   world coordinates, maps them through the scale, and can round the result
+   inward — leaving a 1px sliver of the old position unrepainted until something
+   forces a full repaint.
+
+   Promoting the world to its own compositing layer makes those rectangles the
+   layer's own problem rather than a sub-pixel mapping through an ancestor
+   transform. `will-change` is permanent here on purpose: this element is
+   transformed on every pan and zoom frame, which is precisely the case it is
+   for. */
+.bb-world {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+/* Sized 1×1 and allowed to overflow: an SVG canvas big enough for an infinite
+   board cannot be declared, and overflow-visible draws outside its box anyway. */
+.bb-svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.bb-world .dim,
+.bb-world g.dim {
+  opacity: 0.18;
+  filter: saturate(0.3);
+  pointer-events: none !important;
+}
+
+.bb-world g.dim path {
+  pointer-events: none !important;
+}
+
+.bb-world > div {
+  position: absolute;
+}
+
+.bb-world .sel:not(g) {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.bb-ph {
+  color: inherit;
+  opacity: 0.5;
+  font-style: italic;
+}
+
+/* --------------------------------------------------------- inline editor --- */
+/* The in-place editor has to be INVISIBLE. It stands in for a sticky's
+   handwriting, a sketch's field list or a flow node's name, in place — any
+   chrome of its own and the object turns into a form mid-edit.
+   `.bb-world` is in front of `.bb-edit` on purpose: the Liquid theme styles
+   every `textarea` as a recessed dark well (`[data-material="liquid"] textarea`,
+   specificity 0-1-1), which outranks a lone class and painted a black box
+   inside the note. Two classes win the cascade back without `!important`. */
+.bb-world .bb-edit {
+  display: block;
+  width: 100%;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  outline: none;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  padding: 0;
+}
+
+.bb-edit.hand {
+  font-family: var(--hand);
+}
+
+.bb-edit.mono {
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+
+.bb-edit.h1 {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+/* -------------------------------------------------------------- objects --- */
+.bb-sticky {
+  width: 150px;
+  min-height: 86px;
+  padding: 9px 10px 12px;
+  /* One square corner and one rounded: a peeled paper note, not a card. */
+  border-radius: 3px 3px 12px 3px;
+  font-family: var(--hand);
+  font-size: 14px;
+  line-height: 1.3;
+  color: #1d1a10;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.35);
+  cursor: grab;
+}
+
+.bb-sticky small {
+  display: block;
+  font-family: var(--ui);
+  font-size: 9px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  opacity: 0.6;
+  margin-bottom: 3px;
+}
+
+.bb-sticky-t {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* WIDTH, NOT JUST MAX-WIDTH. `.bb-world` is an out-of-flow box whose children
+   are all out of flow too, so it computes to zero width — which means an
+   absolutely positioned child with no width of its own shrink-to-fits against
+   ZERO available space and collapses to its min-content: one word per line.
+   Every other object on the board states a width (sticky 150, flow 156, table
+   232, sketch and frame inline); these last two have to as well.
+   `max-content` keeps a heading on one line and lets a long paragraph wrap at
+   the cap, which is what `max-width` alone was supposed to do. */
+.bb-text {
+  color: var(--text);
+  cursor: grab;
+  white-space: pre-wrap;
+  width: max-content;
+  max-width: 520px;
+}
+
+.bb-text.h1 {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  min-width: 80px;
+}
+
+.bb-text.body {
+  font-size: 12px;
+  color: var(--text-dim);
+  min-width: 60px;
+}
+
+.bb-frame {
+  border: 1.5px dashed color-mix(in oklab, var(--text) 18%, transparent);
+  border-radius: 14px;
+  background: color-mix(in oklab, var(--text) 1.5%, transparent);
+  pointer-events: none;
+}
+
+.bb-frame-l {
+  position: absolute;
+  top: -11px;
+  left: 14px;
+  padding: 0 7px;
+  font-size: 10.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  background: var(--bg0);
+  pointer-events: auto;
+  cursor: grab;
+  min-width: 40px;
+}
+
+/* The accent border IS the selection cue; an outline would double it. */
+.bb-frame.sel {
+  outline: none !important;
+  border-color: var(--accent);
+}
+
+.bb-handle {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--accent);
+  pointer-events: auto;
+  cursor: nwse-resize;
+}
+
+.bb-sketch {
+  position: absolute;
+  border: 1.5px dashed color-mix(in oklab, var(--text) 30%, transparent);
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--bg1) 75%, transparent);
+  padding-bottom: 8px;
+  cursor: grab;
+  color: var(--text-dim);
+}
+
+.bb-sketch-h {
+  font-family: var(--hand);
+  font-size: 16px;
+  color: var(--text);
+  padding: 7px 11px 4px;
+  border-bottom: 1px dashed color-mix(in oklab, var(--text) 18%, transparent);
+}
+
+.bb-sketch ul {
+  list-style: none;
+  padding: 5px 11px 2px;
+  font-family: var(--hand);
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+
+.bb-sketch .bb-edit {
+  padding: 8px 11px;
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+
+.bb-promote,
+.bb-linked {
+  position: absolute;
+  right: 10px;
+  top: -12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--ui);
+  font-size: 10.5px;
+  border-radius: 99px;
+  padding: 3px 10px 3px 7px;
+  cursor: pointer;
+  border: none;
+  white-space: nowrap;
+}
+
+/* Hover-only, and `.bb-noexport` in the markup, so it never lands in an image. */
+.bb-promote {
+  color: var(--on-accent, #06281f);
+  background: var(--accent);
+  box-shadow: 0 6px 16px color-mix(in oklab, var(--accent) 35%, transparent);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.bb-sketch:hover .bb-promote,
+.bb-sketch.sel .bb-promote {
+  opacity: 1;
+}
+
+.bb-linked {
+  color: var(--accent);
+  background: var(--bg1);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 45%, transparent);
+  font-family: var(--mono);
+}
+
+/* A stated width, like the other structured cards — see the note on `.bb-text`
+   for why `max-width` alone collapses the card. Fixed rather than `max-content`
+   because this card swaps a `<pre>` for a textarea when edited, and a textarea
+   contributes its own intrinsic width to an intrinsic size: the card would
+   visibly resize on every double-click. 300px holds ~44 monospace characters,
+   which covers a pretty-printed payload; anything longer wraps. */
+.bb-snip {
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 7px 10px 9px;
+  cursor: grab;
+  width: 300px;
+}
+
+.bb-snip-h {
+  font-size: 9px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 4px;
+}
+
+/* ONE rule for all three renderings of a snippet body — the read-only block,
+   the editor, and the colour mirror behind it. Every property here moves a
+   glyph, so the moment the three disagree the caret sits off the text it is
+   editing. `pre-wrap` rather than `pre` because a textarea wraps and cannot be
+   talked out of it; making the block wrap too is what keeps the two identical
+   (and stops a long payload line spilling past the card's 360px). */
+.bb-world .bb-snip pre,
+.bb-world .bb-snip .bb-edit,
+.bb-world .bb-snip .bb-edit-hl {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  /* The card is already a surface; a second one inside it draws a box around
+     the payload. Declared explicitly AND scoped under `.bb-world`, because the
+     Liquid theme gives every `pre` a recessed tint
+     (`[data-material="liquid"] pre`, specificity 0-1-1) — a bare `.bb-snip pre`
+     ties with that and would be settled by stylesheet order. */
+  background: transparent;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.55;
+  letter-spacing: normal;
+  tab-size: 2;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  color: var(--text-dim);
+}
+
+/* The mirror sits under the textarea, exactly covering it. */
+.bb-edit-wrap {
+  position: relative;
+}
+
+.bb-edit-hl {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  user-select: none;
+  overflow: hidden;
+}
+
+/* Glyphs transparent, caret and selection left alone — the colours showing
+   through are the mirror's. Qualified with `.bb-world` to outrank
+   `.bb-world .bb-edit { color: inherit }` above; a bare class would lose and the
+   real text would paint on top of its own mirror, doubled and misaligned. */
+.bb-world .bb-edit-over {
+  position: relative;
+  color: transparent;
+  caret-color: var(--text);
+  background: transparent;
+}
+
+.bb-world .bb-edit-over::selection {
+  /* A selection over invisible text would be a blank band, so tint rather than
+     fill and let the colours below read through it. */
+  background: color-mix(in oklab, var(--accent) 35%, transparent);
+}
+
+/* JSON tokens. These four hues are already the board's: the live-table blue,
+   the sticky green, the warn amber and the DDL keyword violet. */
+.bb-json-key {
+  color: #61afef;
+}
+
+.bb-json-string {
+  color: #9fe0c2;
+}
+
+.bb-json-number {
+  color: #e2b340;
+}
+
+.bb-json-keyword {
+  color: #c792ea;
+}
+
+.bb-json-punct {
+  color: var(--text-faint);
+}
+
+.bb-flow {
+  width: 156px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 11px 9px;
+  border-radius: 11px;
+  background: var(--bg1);
+  /* `--fk` is the flow kind's colour, set per node in the markup. */
+  border: 1px solid color-mix(in oklab, var(--fk) 50%, var(--border));
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.3);
+  cursor: grab;
+}
+
+.bb-flow-k {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--fk);
+}
+
+.bb-flow-n {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.bb-flow-d {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bb-table {
+  width: 232px;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  cursor: grab;
+  font-size: 11px;
+}
+
+.bb-table.draft {
+  border-color: color-mix(in oklab, var(--accent) 50%, var(--border));
+}
+
+.bb-table.live {
+  border-color: color-mix(in oklab, #61afef 45%, var(--border));
+}
+
+.bb-table.live.changed {
+  border-color: color-mix(in oklab, var(--warn) 55%, var(--border));
+}
+
+.bb-table-h {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.bb-table-h .msym {
+  color: var(--text-faint);
+}
+
+.bb-table-n {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bb-table-h em {
+  margin-left: auto;
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 9px;
+  padding: 1px 7px;
+  border-radius: 99px;
+  white-space: nowrap;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+}
+
+.bb-table.live .bb-table-h em {
+  color: #61afef;
+  background: color-mix(in oklab, #61afef 14%, transparent);
+}
+
+.bb-table.changed .bb-table-h em {
+  color: var(--warn);
+  background: color-mix(in oklab, var(--warn) 14%, transparent);
+}
+
+.bb-table ul {
+  list-style: none;
+  padding: 5px 0 6px;
+}
+
+.bb-table li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1.5px 10px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+
+.bb-table li.pk .bb-cn {
+  color: var(--text);
+}
+
+.bb-table li.add {
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+}
+
+.bb-table li.add .bb-cn {
+  color: var(--accent);
+}
+
+.bb-table li.mod .bb-ct {
+  color: var(--warn);
+}
+
+.bb-ci {
+  display: flex;
+  align-items: center;
+  width: 13px;
+  color: var(--warn);
+  flex: none;
+}
+
+.bb-table li:not(.pk) .bb-ci {
+  color: var(--accent);
+}
+
+.bb-cn {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bb-ct {
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+/* ------------------------------------------------------- edges and ink --- */
+.bb-edge {
+  fill: none;
+  stroke: #a9b1bf;
+  stroke-width: 1.4;
+  opacity: 0.85;
+}
+
+.bb-edge.flow {
+  opacity: 0.9;
+}
+
+.bb-edge.temp {
+  stroke: var(--accent);
+  stroke-dasharray: 5 4;
+}
+
+/* A 14px invisible stroke, so a 1.4px line is actually clickable. */
+.bb-ehit,
+.bb-inkhit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+g.sel .bb-edge {
+  stroke: var(--accent);
+}
+
+/* Derived from `column.fk` every render — never a stored edge. */
+.bb-rel {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.3;
+  stroke-dasharray: 4 4;
+  opacity: 0.65;
+}
+
+.bb-ink {
+  fill: none;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+g.sel .bb-ink {
+  filter: drop-shadow(0 0 3px var(--accent));
+}
+
+.bb-elabel {
+  transform: translate(-50%, -50%);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-dim);
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 1px 7px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.bb-elabel.sel {
+  border-color: var(--accent);
+  color: var(--text);
+  outline: none !important;
+}
+
+/* --------------------------------------------------------------- groups --- */
+/* Click-through outline, draggable label: the frame must not stop a member
+   being selected and edited on its own. */
+.bb-group {
+  border-radius: 16px;
+  border: 1.5px solid color-mix(in oklab, var(--gc) 42%, transparent);
+  background: color-mix(in oklab, var(--gc) 5%, transparent);
+  pointer-events: none;
+}
+
+.bb-group.gsel {
+  border-color: var(--gc);
+  background: color-mix(in oklab, var(--gc) 9%, transparent);
+}
+
+.bb-group-l {
+  position: absolute;
+  left: 12px;
+  top: -12px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 9px 0 7px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #15130c;
+  background: var(--gc);
+  pointer-events: auto;
+  cursor: grab;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.bb-group-l em {
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  opacity: 0.65;
+}
+
+.bb-root.hand .bb-world [data-oid],
+.bb-root.hand .bb-group-l {
+  cursor: grab !important;
+}
+
+.bb-root.hand .bb-world [data-oid]:active,
+.bb-root.hand .bb-group-l:active {
+  cursor: grabbing !important;
+}
+
+/* ---- Eraser -------------------------------------------------------------- */
+/* The eraser removes on press, with no confirm, so what is about to go has to
+   be unmistakable BEFORE the click: whatever is under the pointer outlines in
+   the danger colour. The `<g>` wrappers are what make this work for edges and
+   ink — the invisible hit path and the visible one are siblings inside it, so
+   hovering the hit path can restyle the stroke. */
+.bb-root.erase .bb-world [data-oid],
+.bb-root.erase .bb-group-l {
+  cursor: crosshair !important;
+}
+
+/* Direct children only: an `outline` means nothing on the SVG hit paths that
+   carry `data-oid` for ink — those are handled by the stroke rule below. */
+.bb-root.erase .bb-world > [data-oid]:hover {
+  outline: 2px solid var(--danger);
+  outline-offset: 3px;
+}
+
+/* A group label erases the whole group, so the frame lights up with it. */
+.bb-root.erase .bb-group:has(.bb-group-l:hover) {
+  border-color: var(--danger);
+  background: color-mix(in oklab, var(--danger) 10%, transparent);
+}
+
+.bb-root.erase .bb-group-l:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
+.bb-root.erase .bb-world g:hover .bb-edge,
+.bb-root.erase .bb-world g:hover .bb-ink {
+  stroke: var(--danger);
+}
+
+/* ------------------------------------------------------- floating bars --- */
+.bb-layers {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 99px;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  z-index: 5;
+}
+
+.bb-layer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 99px;
+  font-family: var(--ui);
+  font-size: 11px;
+  color: var(--text-faint);
+  background: none;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.bb-layer:hover {
+  color: var(--text);
+}
+
+.bb-layer.on {
+  background: var(--bg3);
+  color: var(--text);
+}
+
+.bb-layer i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.bb-layer em {
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+
+.bb-zoom {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  z-index: 5;
+}
+
+.bb-zoom button {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 7px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.bb-zoom button:hover:not(:disabled) {
+  background: var(--bg2);
+  color: var(--text);
+}
+
+.bb-zoom button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.bb-zoom button.on {
+  color: var(--accent);
+}
+
+.bb-zpct {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  width: 40px;
+  text-align: center;
+}
+
+.bb-zsep {
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+  margin: 0 3px;
+}
+
+.bb-diffbar {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 6px 5px 10px;
+  border-radius: 10px;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  z-index: 5;
+  white-space: nowrap;
+}
+
+.bb-diffbar b {
+  font-family: var(--mono);
+  font-weight: 500;
+  color: var(--text);
+}
+
+.bb-diff-l {
+  max-width: 230px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bb-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 5px;
+  flex: none;
+}
+
+/* --------------------------------------------------------- empty board --- */
+/* Click-through, except for the button: a blank board is where the user starts
+   placing things, and the instructions must not sit in the way of the first
+   click. */
+.bb-blank {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 4;
+  padding: 24px;
+}
+
+.bb-blank-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: 380px;
+  text-align: center;
+}
+
+.bb-blank-card .msym {
+  color: var(--text-faint);
+  font-size: 24px;
+}
+
+.bb-blank-card h2 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.bb-blank-card p {
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-faint);
+}
+
+.bb-blank-card p b {
+  font-weight: 500;
+  color: var(--text-dim);
+}
+
+.bb-blank-card .bb-btn {
+  pointer-events: auto;
+  margin-top: 2px;
+}
+
+.bb-blank-card > span {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  opacity: 0.8;
+}
+
+/* --------------------------------------------------------- export menu --- */
+.bb-export {
+  position: absolute;
+  left: 12px;
+  bottom: 50px;
+  width: 278px;
+  z-index: 8;
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5);
+}
+
+.bb-export-h {
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  padding: 4px 6px 3px;
+}
+
+.bb-export-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 4px 3px 6px;
+  border-radius: 7px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.bb-export-row:hover {
+  background: var(--bg2);
+  color: var(--text);
+}
+
+.bb-export-row .msym {
+  color: var(--text-faint);
+}
+
+.bb-export-n {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bb-export-row em {
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+
+.bb-export-row button {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--bg2);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.bb-export-row button:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.bb-export-foot {
+  font-size: 10px;
+  color: var(--text-faint);
+  padding: 6px 6px 2px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  line-height: 1.45;
+}
+
+/* ----------------------------------------------------------- inspector --- */
+.bb-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--ui);
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--bg2);
+  color: var(--text-dim);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.bb-btn:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--text-faint);
+}
+
+.bb-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.bb-btn.pri {
+  background: var(--accent);
+  color: var(--on-accent, #06281f);
+  border-color: transparent;
+}
+
+.bb-btn.danger:hover {
+  color: var(--danger);
+  border-color: color-mix(in oklab, var(--danger) 50%, transparent);
+}
+
+.bb-insp {
+  width: 272px;
+  flex: none;
+  border-left: 1px solid var(--border);
+  background: var(--bg1);
+  overflow-y: auto;
+  padding: 14px 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.bb-insp-h {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.bb-insp-h .msym {
+  color: var(--accent);
+}
+
+.bb-insp-sub {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  margin-top: -5px;
+  line-height: 1.45;
+}
+
+.bb-sec {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-top: 6px;
+}
+
+.bb-sec em {
+  margin-left: auto;
+  font-style: normal;
+  font-family: var(--mono);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.bb-sec code {
+  font-family: var(--mono);
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--accent);
+  font-size: 10.5px;
+}
+
+.bb-hint {
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+
+/* Segmented control, scoped to the board so it carries no dependency on
+   another feature's stylesheet. */
+.bb-seg {
+  align-self: flex-start;
+  display: flex;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+  flex: none;
+}
+
+.bb-seg-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  font-family: var(--ui);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.1s,
+    color 0.1s;
+}
+
+.bb-seg-btn:hover {
+  color: var(--text);
+}
+
+.bb-seg-btn.active {
+  background: color-mix(in oklab, var(--accent) 16%, var(--bg3));
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.bb-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.bb-field input {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 5px 8px;
+  font-family: var(--ui);
+  font-size: 12px;
+  color: var(--text);
+  outline: none;
+}
+
+.bb-field input.mono {
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.bb-field input:focus {
+  border-color: var(--accent);
+}
+
+.bb-swatches {
+  display: flex;
+  gap: 6px;
+}
+
+.bb-sw {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+
+.bb-sw.on {
+  border-color: var(--text);
+}
+
+.bb-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.bb-chip {
+  font-family: var(--ui);
+  font-size: 10.5px;
+  padding: 2px 9px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.bb-chip.on {
+  border-color: var(--accent);
+  color: var(--text);
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+}
+
+.bb-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+.bb-preview div {
+  display: flex;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+
+.bb-preview em {
+  margin-left: auto;
+  font-style: normal;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.bb-linkrow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--accent);
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 9px;
+  cursor: pointer;
+}
+
+.bb-cols {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.bb-col {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px 22px 22px 22px;
+  gap: 3px;
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg0);
+}
+
+.bb-col.add {
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+}
+
+.bb-col.mod {
+  border-color: color-mix(in oklab, var(--warn) 45%, var(--border));
+}
+
+.bb-col input,
+.bb-col select {
+  min-width: 0;
+  background: var(--bg2);
+  border: 1px solid transparent;
+  border-radius: 5px;
+  padding: 3px 5px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text);
+  outline: none;
+}
+
+.bb-col input:focus,
+.bb-col select:focus {
+  border-color: var(--accent);
+}
+
+.bb-col .bb-fk {
+  grid-column: 1 / -1;
+  color: var(--text-dim);
+}
+
+.bb-tg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  border: none;
+  background: var(--bg2);
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.bb-tg.on {
+  background: color-mix(in oklab, var(--accent) 18%, transparent);
+  color: var(--accent);
+}
+
+.bb-insp-acts {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.bb-live {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bb-live-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 6px;
+  border-radius: 7px;
+  font-size: 11px;
+}
+
+.bb-live-row:hover {
+  background: var(--bg2);
+}
+
+.bb-live-row .msym {
+  color: #61afef;
+}
+
+.bb-live-n {
+  font-family: var(--mono);
+  color: var(--text);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bb-live-row em {
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+
+.bb-live-on {
+  font-size: 9.5px;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.bb-grp-row {
+  cursor: pointer;
+}
+
+.bb-mini {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--bg2);
+  color: var(--text-dim);
+  cursor: pointer;
+  flex: none;
+}
+
+.bb-mini .msym {
+  color: inherit;
+}
+
+.bb-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 10px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.bb-keys span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.bb-keys kbd {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-dim);
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+.bb-kbd {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: color-mix(in oklab, currentColor 14%, transparent);
+}
+
+/* ----------------------------------------------------------- DDL sheet --- */
+.modal.bb-ddl {
+  width: min(720px, 92vw);
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bb-ddl-sum {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.bb-ddl-sum span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+
+.bb-ddl-sum .add .msym {
+  color: var(--accent);
+}
+
+.bb-ddl-sum .mod .msym {
+  color: var(--warn);
+}
+
+.bb-ddl-sql {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.65;
+  color: var(--text-dim);
+  white-space: pre;
+}
+
+.bb-ddl-sql .k {
+  color: #c792ea;
+}
+
+.bb-ddl-sql .c {
+  color: var(--text-faint);
+}
+
+.bb-ddl-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bb-ddl-foot .bb-hint {
+  flex: 1;
+}

@@ -229,6 +229,12 @@ export type Tab =
   | { id: string; kind: "table"; schema: string; table: string; mode: TableTabMode }
   | ({ id: string; kind: "sql"; title: string } & SqlTabState)
   | { id: string; kind: "map"; schema: string }
+  // The brainstorm board (M37): one free-form canvas per schema for the
+  // thinking BEFORE the schema — domain notes, data-movement diagrams and draft
+  // tables on three focusable layers. The document itself is persisted by the
+  // slice (keyed by connection + schema), so the tab carries only its identity
+  // and the board's name, reported back by the component for the strip label.
+  | { id: string; kind: "board"; schema: string; name?: string }
   // The live server process/session list with kill actions (M26). Singleton;
   // `schema` is the active schema shown in the DB column for a fresh listing.
   | { id: string; kind: "processes"; schema: string }

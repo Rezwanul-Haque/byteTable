@@ -27,6 +27,7 @@ export function WorkspaceShell({ workspace }: { workspace: Workspace }) {
   const openSqlTab = useWorkspacesStore((state) => state.openSqlTab);
   const closeTab = useWorkspacesStore((state) => state.closeTab);
   const openMapTab = useWorkspacesStore((state) => state.openMapTab);
+  const openBoardTab = useWorkspacesStore((state) => state.openBoardTab);
   const openProcessesTab = useWorkspacesStore((state) => state.openProcessesTab);
   const togglePanel = usePanelStore((state) => state.togglePanel);
   const requestTabClose = useTabMetaStore((state) => state.requestTabClose);
@@ -45,6 +46,7 @@ export function WorkspaceShell({ workspace }: { workspace: Workspace }) {
   const home = homeSchema(workspace) ?? "main";
 
   useBtCmd("schema-map", () => openMapTab(home));
+  useBtCmd("brainstorm-board", () => openBoardTab(home));
   useBtCmd("processes", () => {
     openProcessesTab(home);
   });

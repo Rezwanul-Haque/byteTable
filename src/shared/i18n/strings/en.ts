@@ -37,6 +37,7 @@ export const en = {
   // language. Keyboard hints (⌘T) are key names, not copy, and stay as they are.
   "menu.file.newConnection": "New Connection",
   "menu.file.newQuery": "New Query Tab",
+  "menu.file.brainstormBoard": "Brainstorm Board",
   "menu.file.open": "Open",
   "menu.file.openSqlFile": "Open .sql File",
   "menu.file.openSqlFile.hint": "SQL workspace only",
@@ -281,6 +282,7 @@ export const en = {
 
   // Tab strip labels (tabLabels.ts) — module-level, read via t() at call time.
   "ws.tabTitle.map": "{schema} · map",
+  "ws.tabTitle.board": "{name} · board",
   "ws.tabTitle.overview": "{schema} · overview",
   "ws.tabTitle.processes": "Processes",
   "ws.tabTitle.diff": "Schema diff",
@@ -403,6 +405,7 @@ export const en = {
   "ws.sb.systemHint": "List the server's own schemas (mysql, pg_catalog, sys, …) here too",
   "ws.sb.showSystem": "Show system schemas",
   "ws.sb.schemaMap": "Schema map (ER diagram)",
+  "ws.sb.brainstormBoard": "Brainstorm board — sketch domain, flow & draft schema",
   "ws.sb.schemaDiff": "Schema diff (compare environments)",
   "ws.sb.exportSchema": "Export schema “{schema}” as .sql",
   "ws.sb.refresh": "Refresh schema",

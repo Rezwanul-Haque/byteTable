@@ -30,6 +30,7 @@ const TAB_ICONS: Record<Tab["kind"], string> = {
   table: "table",
   sql: "terminal",
   map: "schema",
+  board: "draw",
   processes: "monitor_heart",
   diff: "difference",
   object: "visibility",

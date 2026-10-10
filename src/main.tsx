@@ -8,6 +8,10 @@ import "@fontsource/ibm-plex-sans/600.css";
 import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/500.css";
 import "@fontsource/jetbrains-mono/600.css";
+// Handwritten face for the M37 brainstorm board's stickies and entity sketches
+// (`--hand`). Bundled like the rest — the prototype's Google Fonts <link> would
+// need network access the desktop app does not assume.
+import "@fontsource/kalam/400.css";
 import "material-symbols/rounded.css";
 
 import "./shared/styles/tokens.css";

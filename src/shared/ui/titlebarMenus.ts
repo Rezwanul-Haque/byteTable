@@ -118,6 +118,14 @@ export function buildMenus(m: MenuCtx): Menu[] {
           enabled: isSql,
           run: () => emitCmd("new-query"),
         },
+        {
+          id: "brainstorm-board",
+          label: t("menu.file.brainstormBoard"),
+          // Same gating as New Query: the board is a SQL-workspace surface, so
+          // it needs one open to land in.
+          enabled: isSql,
+          run: () => emitCmd("brainstorm-board"),
+        },
         // One "Open" parent with a submenu (M35 Task 7). Flat siblings were
         // tried and rejected: the two file entries sat oddly beside the .sql
         // one, and their extension hints wrapped in the shortcut column.

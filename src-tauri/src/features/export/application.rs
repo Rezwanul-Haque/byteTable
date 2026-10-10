@@ -219,6 +219,30 @@ pub fn export_save(path: &str, contents: &str) -> Result<(), AppError> {
         .map_err(|err| AppError::Io(format!("Could not write {path}: {err}")))
 }
 
+/// Write BINARY export bytes, handed over IPC as base64, to a user-chosen path.
+///
+/// The text sibling above covers everything the app generates itself (CSV, SQL,
+/// SVG). This one exists for an export that is already rasterized in the
+/// renderer — the M37 brainstorm board serializes its HTML canvas to a PNG data
+/// URL, so there is nothing left for the backend to render, only bytes to place.
+/// (Contrast `schema_map::diagram_export`, which receives SVG text and
+/// rasterizes it here with resvg.)
+///
+/// Base64 rather than a JSON array of numbers: ~1.33× the raw size instead of
+/// ~10×. A malformed payload is a §5 error rather than a silently truncated
+/// file — half a PNG looks like a corrupt disk, not like a bad request.
+pub fn export_save_bytes(path: &str, base64: &str) -> Result<(), AppError> {
+    use base64::Engine as _;
+
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(base64.as_bytes())
+        .map_err(|err| {
+            AppError::Serialization(format!("Export image data could not be decoded: {err}"))
+        })?;
+    std::fs::write(path, &bytes)
+        .map_err(|err| AppError::Io(format!("Could not write {path}: {err}")))
+}
+
 /// Overwrite an EXISTING file the user is editing (the M35 data-file editor's
 /// save), durably: write a sibling temp file, flush it to disk, then rename it
 /// over the target.
@@ -1227,6 +1251,32 @@ mod tests {
         let contents = "id,name\n1,Ada\n";
         export_save(&path.to_string_lossy(), contents).unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), contents);
+    }
+
+    #[test]
+    fn export_save_bytes_writes_the_decoded_payload() {
+        use base64::Engine as _;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let out = dir.path().join("board.png");
+        // A PNG magic number is enough to prove the bytes land verbatim.
+        let bytes: &[u8] = &[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        export_save_bytes(&out.to_string_lossy(), &encoded).expect("save bytes");
+        assert_eq!(std::fs::read(&out).expect("read back"), bytes);
+    }
+
+    #[test]
+    fn export_save_bytes_rejects_a_malformed_payload_rather_than_truncating() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let out = dir.path().join("board.png");
+        let err = export_save_bytes(&out.to_string_lossy(), "not base64!!")
+            .expect_err("malformed base64 must fail");
+        assert!(matches!(err, AppError::Serialization(_)), "got {err:?}");
+        assert!(
+            !out.exists(),
+            "nothing should be written on a decode failure"
+        );
     }
 
     #[test]

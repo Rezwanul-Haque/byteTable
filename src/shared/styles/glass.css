@@ -522,7 +522,10 @@
   background: rgba(255, 255, 255, 0.12);
   box-shadow: var(--glass-hi);
 }
-[data-material] .tb-menu-item:hover,
+/* `:not(.disabled)` matters here: without it a greyed row lights up under the
+   pointer, which reads as available. (The base rule in TitleBar.css already
+   excludes it — this override has to as well.) */
+[data-material] .tb-menu-item:hover:not(.disabled),
 [data-material] .tb-menu-parent.hot {
   background: rgba(255, 255, 255, 0.1);
 }

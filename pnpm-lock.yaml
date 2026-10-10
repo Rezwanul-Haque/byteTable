@@ -32,6 +32,9 @@ importers:
       '@fontsource/jetbrains-mono':
         specifier: ^5.2.8
         version: 5.2.8
+      '@fontsource/kalam':
+        specifier: ^5.3.0
+        version: 5.3.0
       '@lezer/highlight':
         specifier: 1.2.3
         version: 1.2.3
@@ -56,6 +59,9 @@ importers:
       '@tauri-apps/plugin-updater':
         specifier: ^2
         version: 2.10.1
+      html-to-image:
+        specifier: ^1.11.13
+        version: 1.11.13
       material-symbols:
         specifier: ^0.45.1
         version: 0.45.1
@@ -430,6 +436,9 @@ packages:
 
   '@fontsource/jetbrains-mono@5.2.8':
     resolution: {integrity: sha512-6w8/SG4kqvIMu7xd7wt6x3idn1Qux3p9N62s6G3rfldOUYHpWcc2FKrqf+Vo44jRvqWj2oAtTHrZXEP23oSKwQ==}
+
+  '@fontsource/kalam@5.3.0':
+    resolution: {integrity: sha512-FDkVoDfPDCSN/eO81FOYtUI67eMgpVBJmjBtAqSL0PmEhJyeFY2biC+CR+yEttksgXR9+swpFdYmQTyjwBq80Q==}
 
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
@@ -1341,6 +1350,9 @@ packages:
 
   has-property-descriptors@1.0.2:
     resolution: {integrity: sha512-55JNKuIW+vq4Ke1BjOTjM2YctQIvCT7GFzHwmfZPGo5wnrgkid0YQtnAleFSqumZm4az3n2BS+erby5ipJdgrg==}
+
+  html-to-image@1.11.13:
+    resolution: {integrity: sha512-cuOPoI7WApyhBElTTb9oqsawRvZ0rHhaHwghRLlTuffoD1B2aDemlCruLeZrUIIdvG7gs9xeELEPm6PhuASqrg==}
 
   http-cache-semantics@4.2.0:
     resolution: {integrity: sha512-dTxcvPXqPvXBQpq5dUr6mEMJX4oIEFv6bwom3FDwKRDsuIjjJGANqhBuoAn9c1RQJIdAKav33ED65E2ys+87QQ==}
@@ -2475,6 +2487,8 @@ snapshots:
 
   '@fontsource/jetbrains-mono@5.2.8': {}
 
+  '@fontsource/kalam@5.3.0': {}
+
   '@humanfs/core@0.19.2':
     dependencies:
       '@humanfs/types': 0.15.0
@@ -3425,6 +3439,8 @@ snapshots:
     dependencies:
       es-define-property: 1.0.1
     optional: true
+
+  html-to-image@1.11.13: {}
 
   http-cache-semantics@4.2.0: {}
 

@@ -29,6 +29,9 @@ function tabTitle(tab: Tab, currentSchema: string): string {
       return tab.title;
     case "map":
       return t("ws.tabTitle.map", { schema: tab.schema });
+    case "board":
+      // The board's own name once it has reported one; its schema until then.
+      return t("ws.tabTitle.board", { name: tab.name ?? tab.schema });
     case "processes":
       return t("ws.tabTitle.processes");
     case "diff":

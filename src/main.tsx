@@ -12,6 +12,9 @@ import "material-symbols/rounded.css";
 
 import "./shared/styles/tokens.css";
 import "./shared/styles/global.css";
+// Material-theme surface rules (M37). Inert unless <html data-theme="glass">;
+// every rule is attribute-scoped, so the other palettes never pay for it.
+import "./shared/styles/glass.css";
 
 // Apply saved settings (theme/accent/fonts/sizes) synchronously off the
 // localStorage fast-path BEFORE React mounts, so the first painted frame is

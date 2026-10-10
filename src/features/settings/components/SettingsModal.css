@@ -170,6 +170,21 @@
   border-color: var(--accent);
   box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 35%, transparent);
 }
+/* A material theme's swatch draws its own backdrop and frosts its bar, so the
+   preview shows the MATERIAL. The inline `background` from the swatchBg is
+   overridden here on purpose — a single flat colour cannot preview glass. */
+.set-theme-prev.glass {
+  background:
+    radial-gradient(70% 70% at 20% 15%, rgba(124, 156, 255, 0.85), transparent 70%),
+    radial-gradient(70% 70% at 85% 90%, rgba(176, 140, 255, 0.75), transparent 70%),
+    radial-gradient(50% 50% at 60% 40%, rgba(124, 213, 255, 0.4), transparent 70%), #0e1526 !important;
+}
+.set-theme-prev.glass .set-theme-bar {
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
 .set-theme-bar {
   height: 15px;
   display: flex;

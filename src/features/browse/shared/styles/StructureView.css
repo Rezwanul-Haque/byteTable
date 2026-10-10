@@ -181,11 +181,16 @@ body.col-resizing .structure-rail-resizer::after {
   margin-left: auto;
 }
 
+/* No horizontal padding here, so the table runs edge to edge and its row
+   borders (drawn per-cell under `border-collapse: collapse`) reach both sides
+   of the pane instead of stopping 18px short at each end. The 18px is given
+   back to the first and last CELLS below, which keeps every bit of text where
+   it was — only the rules move. */
 .columns-scroll {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
-  padding: 0 18px 16px;
+  padding: 0 0 16px;
 }
 
 .columns-scroll .structure-table {
@@ -218,6 +223,18 @@ body.col-resizing .structure-rail-resizer::after {
 .structure-table td {
   padding: 6px 14px;
   border-bottom: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+}
+
+/* The pane inset the scroll container no longer applies, re-applied to the
+   edge cells: 18px (the old container padding) + 14px (the cell's own) puts
+   the text at exactly the x it had before. Logical, so it mirrors under RTL. */
+.structure-table th:first-child,
+.structure-table td:first-child {
+  padding-inline-start: 32px;
+}
+.structure-table th:last-child,
+.structure-table td:last-child {
+  padding-inline-end: 32px;
 }
 
 .structure-table tbody tr:hover td {
@@ -405,7 +422,8 @@ body.col-resizing .structure-rail-resizer::after {
 }
 
 .st-edit-hint {
-  padding: 9px 2px 0;
+  /* 20px = the 18px the scroll container used to add + its own 2px. */
+  padding: 9px 20px 0;
   font-size: 10.5px;
   color: var(--text-faint);
   user-select: none;

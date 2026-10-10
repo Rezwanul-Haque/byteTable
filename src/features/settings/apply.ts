@@ -29,6 +29,13 @@ export function applySettings(input: Partial<Settings> | null | undefined): void
   const theme = THEMES[s.theme] ?? THEMES.charcoal;
   const root = document.documentElement.style;
 
+  // The resolved theme id on <html>, written BEFORE the variables so the first
+  // paint has both. Generic (every theme gets it), but only a MATERIAL theme
+  // uses it today: its surface rules live in glass.css keyed on this attribute,
+  // because blur / specular edge / depth cannot be expressed as palette values.
+  // Switching away removes the rules with the attribute — no residue.
+  document.documentElement.setAttribute("data-theme", THEMES[s.theme] ? s.theme : "charcoal");
+
   // Palette.
   root.setProperty("--bg0", theme.bg0);
   root.setProperty("--bg1", theme.bg1);
@@ -56,17 +63,32 @@ export function applySettings(input: Partial<Settings> | null | undefined): void
     localStorage.setItem(SPLASH_ACCENT_KEY, accent);
     // Also persist the resolved surface colors so the splash background / text /
     // bar follow a light theme instead of the hardcoded dark defaults.
+    // A material theme's surfaces are translucent, which would leave the splash
+    // (painted before any backdrop exists) grey and flat, so it gets the
+    // backdrop's own opaque blues instead — boot into glass, not charcoal.
     localStorage.setItem(
       SPLASH_THEME_KEY,
-      JSON.stringify({
-        bg: theme.bg0,
-        gradA: theme.bg2,
-        gradB: theme.bg0,
-        text: theme.text,
-        dim: theme.dim,
-        bar: theme.bg3,
-        light: !!theme.light,
-      }),
+      JSON.stringify(
+        theme.glass
+          ? {
+              bg: "#0b1120",
+              gradA: "#1c2a52",
+              gradB: "#0b1120",
+              text: theme.text,
+              dim: theme.dim,
+              bar: "#273357",
+              light: false,
+            }
+          : {
+              bg: theme.bg0,
+              gradA: theme.bg2,
+              gradB: theme.bg0,
+              text: theme.text,
+              dim: theme.dim,
+              bar: theme.bg3,
+              light: !!theme.light,
+            },
+      ),
     );
   } catch {
     // Storage disabled/full — the splash just falls back to its dark defaults.

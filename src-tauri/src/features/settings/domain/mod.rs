@@ -16,9 +16,10 @@
 
 use serde::{Deserialize, Serialize};
 
-/// One of the twelve curated theme palettes. The renderer owns the actual
-/// color values (`catalogs.ts`); the domain only needs the identity so it can
-/// round-trip the user's choice.
+/// One of the curated theme palettes. The renderer owns the actual color
+/// values (`catalogs.ts`) — and, for a material theme like `Glass`, the
+/// surface rules that go with them; the domain only needs the identity so it
+/// can round-trip the user's choice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Theme {
@@ -37,6 +38,7 @@ pub enum Theme {
     Daybreak,
     Parchment,
     Sky,
+    Glass,
 }
 
 /// UI (chrome) font family. The mono font is a free-form id (curated key or
@@ -318,6 +320,21 @@ mod tests {
         assert!(json.contains(r#""defaultLimit":300"#), "{json}");
         assert!(json.contains(r#""locale":"en""#), "{json}");
         assert!(json.contains(r#""firstDay":"auto""#), "{json}");
+    }
+
+    /// The material theme is a renderer concern — a palette plus the surface
+    /// rules keyed on its id — but the id still has to survive the round trip
+    /// to disk, or picking it would silently revert on the next launch.
+    #[test]
+    fn material_theme_id_round_trips() {
+        let json = serde_json::to_string(&Settings {
+            theme: Theme::Glass,
+            ..Settings::default()
+        })
+        .expect("serialize");
+        assert!(json.contains(r#""theme":"glass""#), "{json}");
+        let back: Settings = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.theme, Theme::Glass);
     }
 
     #[test]

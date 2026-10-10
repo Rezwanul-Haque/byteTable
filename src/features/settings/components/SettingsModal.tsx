@@ -87,8 +87,14 @@ function ThemeSwatch({
       title={theme.label}
       aria-pressed={active}
     >
-      <div className="set-theme-prev" style={{ background: theme.bg0, borderColor: theme.border }}>
-        <div className="set-theme-bar" style={{ background: theme.bg1 }}>
+      {/* A material theme previews the MATERIAL, not only its colours: its own
+          two-bloom gradient (the translucent bg0 would just look grey) and a
+          frosted bar, both from `.set-theme-prev.glass`. */}
+      <div
+        className={"set-theme-prev" + (theme.glass ? " glass" : "")}
+        style={{ background: theme.swatchBg ?? theme.bg0, borderColor: theme.border }}
+      >
+        <div className="set-theme-bar" style={{ background: theme.swatchBar ?? theme.bg1 }}>
           <span style={{ background: theme.accent }} />
           <span style={{ background: theme.dim }} />
         </div>

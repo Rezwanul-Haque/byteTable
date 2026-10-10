@@ -8,6 +8,7 @@
 // show. The prototype's mock data always has analytics; here the panel renders
 // an explicit "not configured" state rather than an empty chart.
 
+import { useT } from "../../../../shared/i18n/useT";
 import { Icon } from "../../../../shared/ui/Icon";
 import { EngineBadge } from "../../../../shared/ui/EngineBadge";
 import { InfoHint } from "../../../../shared/ui/InfoHint";
@@ -47,7 +48,8 @@ export function TypesenseDashboard({
   onOpenSearch,
   onOpenSchema,
 }: TypesenseDashboardProps) {
-  if (loading && !stats) return <TsLoading what="the cluster" />;
+  const t = useT();
+  if (loading && !stats) return <TsLoading what="tsx.whatCluster" />;
 
   const healthy = stats?.healthy ?? nodes.every((n) => n.healthy);
   const topCount = analytics?.popularQueries[0]?.count ?? 0;
@@ -56,40 +58,43 @@ export function TypesenseDashboard({
     <div className="rdash" data-screen-label="Typesense dashboard">
       <div className="rdash-head">
         <EngineBadge engine="typesense" size={22} />
-        <h2>search cluster</h2>
+        <h2>{t("tsx.dash.head")}</h2>
         <span className="structure-sub">
-          {version ? "Typesense " + version + " · " : ""}
-          {nodes.length} {nodes.length === 1 ? "node" : "nodes"} ·{" "}
-          {healthy ? "healthy" : "degraded"}
+          {version ? t("tsx.dash.version", { version }) : ""}
+          {t("tsx.dash.nodeCount", { count: nodes.length })} ·{" "}
+          {healthy ? t("tsx.dash.healthy") : t("tsx.dash.degraded")}
         </span>
       </div>
 
       <div className="rdash-grid">
-        <Stat label="Collections" value={stats ? tsCount(stats.collections) : "—"} />
-        <Stat label="Documents" value={stats ? tsCount(stats.documents) : "—"} />
-        <Stat label="Fields" value={stats ? tsCount(stats.fields) : "—"} />
-        <Stat label="Nodes" value={String(nodes.length)} />
-        <Stat label="Memory (leader)" value={tsBytes(stats?.memoryBytes)} />
+        <Stat
+          label={t("tsx.dash.statCollections")}
+          value={stats ? tsCount(stats.collections) : "—"}
+        />
+        <Stat label={t("tsx.dash.statDocuments")} value={stats ? tsCount(stats.documents) : "—"} />
+        <Stat label={t("tsx.dash.statFields")} value={stats ? tsCount(stats.fields) : "—"} />
+        <Stat label={t("tsx.dash.statNodes")} value={String(nodes.length)} />
+        <Stat label={t("tsx.dash.statMemory")} value={tsBytes(stats?.memoryBytes)} />
       </div>
 
       <div className="rdash-panel" style={{ marginBottom: 16 }}>
         <h3>
-          <Icon name="database" size={15} /> Collections
+          <Icon name="database" size={15} /> {t("tsx.dash.statCollections")}
         </h3>
         {!adminKey ? (
-          <TsAdminRequired what="the full collection list" />
+          <TsAdminRequired what="tsx.whatCollections" />
         ) : collections.length === 0 ? (
-          <div className="ts-facet-none">this cluster has no collections yet</div>
+          <div className="ts-facet-none">{t("tsx.dash.noCollections")}</div>
         ) : (
           <div className="ts-tablewrap">
             <table className="structure-table" style={{ width: "100%" }}>
               <thead>
                 <tr>
-                  <th>Name</th>
-                  <th>Documents</th>
-                  <th>Fields</th>
-                  <th>Facets</th>
-                  <th>default_sorting_field</th>
+                  <th>{t("tsx.dash.thName")}</th>
+                  <th>{t("tsx.dash.thDocuments")}</th>
+                  <th>{t("tsx.dash.thFields")}</th>
+                  <th>{t("tsx.dash.thFacets")}</th>
+                  <th>{t("tsx.dash.thDefaultSort")}</th>
                   <th />
                 </tr>
               </thead>
@@ -110,7 +115,7 @@ export function TypesenseDashboard({
                       <button
                         type="button"
                         className="ts-row-act"
-                        title="Search playground"
+                        title={t("tsx.dash.searchTitle")}
                         onClick={() => onOpenSearch(c.name)}
                       >
                         <Icon name="search" size={13} />
@@ -118,7 +123,7 @@ export function TypesenseDashboard({
                       <button
                         type="button"
                         className="ts-row-act"
-                        title="Schema"
+                        title={t("tsx.dash.schemaTitle")}
                         onClick={() => onOpenSchema(c.name)}
                       >
                         <Icon name="schema" size={13} />
@@ -134,31 +139,25 @@ export function TypesenseDashboard({
 
       <div className="rdash-panel" style={{ marginBottom: 16 }}>
         <h3>
-          <Icon name="lan" size={15} /> Nodes
-          <InfoHint text="Seeing only one node? Add the others to this connection\u2019s \u201cOther nodes\u201d field. Typesense has no cluster-membership endpoint \u2014 not even on the leader \u2014 so a client can only display the peers it is configured with, exactly as its own clients require." />
+          <Icon name="lan" size={15} /> {t("tsx.dash.statNodes")}
+          <InfoHint text={t("tsx.dash.nodesHint")} />
         </h3>
         <div className="ts-tablewrap">
           <table className="structure-table" style={{ width: "100%" }}>
             <thead>
               <tr>
-                <th>Health</th>
-                <th>Host</th>
-                <th>Raft state</th>
-                <th>Log index</th>
+                <th>{t("tsx.dash.thHealth")}</th>
+                <th>{t("tsx.dash.thHost")}</th>
+                <th>{t("tsx.dash.thRaftState")}</th>
+                <th>{t("tsx.dash.thLogIndex")}</th>
                 {/* "Host CPU", not "CPU": Typesense reports no per-process CPU,
                     so this is the whole machine's — nodes sharing a host all
                     show the same number and a busy neighbour dominates it. */}
                 {/* Per-NODE workload, from /stats.json — this is what
                     Typesense itself is doing, as opposed to Host CPU below. */}
-                <th title="Requests per second served by this node, with its mean search latency. Scoped to this Typesense process, unlike Host CPU.">
-                  Req/s
-                </th>
-                <th title="CPU of the whole machine this node runs on. Typesense exposes no per-process CPU (no typesense_cpu_* metric exists in v29 or v30), so nodes sharing a host all report the same value and other workloads on that host count towards it.">
-                  Host CPU
-                </th>
-                <th title="Typesense's own resident memory, against the total memory visible to the node.">
-                  Memory
-                </th>
+                <th title={t("tsx.dash.thReqPerSecTitle")}>{t("tsx.dash.thReqPerSec")}</th>
+                <th title={t("tsx.dash.thHostCpuTitle")}>{t("tsx.dash.thHostCpu")}</th>
+                <th title={t("tsx.dash.thMemoryTitle")}>{t("tsx.dash.thMemory")}</th>
               </tr>
             </thead>
             <tbody>
@@ -171,8 +170,8 @@ export function TypesenseDashboard({
                     <span
                       className={"ts-health" + (n.healthy ? "" : " bad")}
                       role="img"
-                      aria-label={n.healthy ? "healthy" : "unhealthy"}
-                      title={n.healthy ? "healthy" : "unhealthy"}
+                      aria-label={n.healthy ? t("tsx.dash.healthy") : t("tsx.dash.unhealthy")}
+                      title={n.healthy ? t("tsx.dash.healthy") : t("tsx.dash.unhealthy")}
                     />
                   </td>
                   <td className="mg-mono">{n.host}</td>
@@ -185,8 +184,8 @@ export function TypesenseDashboard({
                     className="cass-dash-num"
                     title={
                       n.queuedWrites
-                        ? n.queuedWrites + " write(s) queued — this node is behind on its log"
-                        : "Raft committed_index; every healthy node reports the same value"
+                        ? t("tsx.dash.queuedWrites", { count: n.queuedWrites })
+                        : t("tsx.dash.committedIndexTitle")
                     }
                   >
                     {n.committedIndex === undefined ? "—" : tsCount(n.committedIndex)}
@@ -197,15 +196,12 @@ export function TypesenseDashboard({
                     title={
                       n.searchLatencyMs === undefined
                         ? undefined
-                        : "mean search latency " + n.searchLatencyMs.toFixed(1) + " ms"
+                        : t("tsx.dash.meanLatency", { ms: n.searchLatencyMs.toFixed(1) })
                     }
                   >
                     {n.requestsPerSecond === undefined ? "—" : n.requestsPerSecond.toFixed(1)}
                   </td>
-                  <td
-                    className="cass-dash-num"
-                    title="Whole-machine CPU, not this process's — see the column header."
-                  >
+                  <td className="cass-dash-num" title={t("tsx.dash.hostCpuTitle")}>
                     {n.cpuPercent === undefined ? "—" : n.cpuPercent.toFixed(0) + "%"}
                   </td>
                   <td
@@ -213,8 +209,9 @@ export function TypesenseDashboard({
                     title={
                       n.memoryBytes === undefined
                         ? undefined
-                        : "Typesense resident memory" +
-                          (n.memoryTotalBytes ? ", against the machine's total" : "")
+                        : n.memoryTotalBytes
+                          ? t("tsx.dash.residentMemoryTotal")
+                          : t("tsx.dash.residentMemory")
                     }
                   >
                     {tsBytes(n.memoryBytes)}
@@ -229,16 +226,13 @@ export function TypesenseDashboard({
 
       <div className="rdash-panel">
         <h3>
-          <Icon name="trending_up" size={15} /> Analytics · popular &amp; no-hit queries
+          <Icon name="trending_up" size={15} /> {t("tsx.dash.analyticsHead")}
         </h3>
         {!analytics?.configured ? (
           <div className="ts-empty">
             <Icon name="trending_up" size={24} style={{ color: "var(--text-faint)" }} />
-            <p>Analytics is not configured on this cluster.</p>
-            <span className="ts-empty-hint">
-              Typesense records popular and no-hit queries only once you create an analytics rule
-              pointing at a destination collection. Until then there is nothing to chart.
-            </span>
+            <p>{t("tsx.dash.analyticsOff")}</p>
+            <span className="ts-empty-hint">{t("tsx.dash.analyticsOffHint")}</span>
           </div>
         ) : (
           <>
@@ -249,7 +243,7 @@ export function TypesenseDashboard({
                   type="button"
                   className={"ts-an-row" + (p.noHits ? " zero" : "")}
                   onClick={() => onOpenSearch(collections[0]?.name ?? "", p.query)}
-                  title={"Run “" + p.query + "” in the playground"}
+                  title={t("tsx.dash.runInPlayground", { query: p.query })}
                 >
                   <span className="ts-an-bar">
                     <span
@@ -259,14 +253,12 @@ export function TypesenseDashboard({
                     />
                   </span>
                   <span className="ts-an-q">{p.query}</span>
-                  <span className="ts-an-hits">{p.noHits ? "no hits" : ""}</span>
+                  <span className="ts-an-hits">{p.noHits ? t("tsx.dash.noHits") : ""}</span>
                   <span className="ts-an-cnt">{tsCount(p.count)}</span>
                 </button>
               ))}
               {analytics.popularQueries.length === 0 ? (
-                <div className="ts-facet-none">
-                  rules are configured, but no queries have been recorded yet
-                </div>
+                <div className="ts-facet-none">{t("tsx.dash.noQueriesYet")}</div>
               ) : null}
             </div>
             <div className="ts-an-rules">

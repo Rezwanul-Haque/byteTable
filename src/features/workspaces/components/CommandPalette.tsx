@@ -16,6 +16,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { t } from "../../../shared/i18n";
+import { useLocale } from "../../../shared/i18n/useT";
 import { Icon } from "../../../shared/ui/Icon";
 import { Kbd } from "../../../shared/ui/Kbd";
 import { shellLabel, usePanelStore } from "../../console/state";
@@ -51,6 +53,9 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
   const tablesMap = useIntrospectionStore((state) => state.tables);
   const savedQueries = useSavedQueriesStore((state) => state.savedQueries);
   const loadSaved = useSavedQueriesStore((state) => state.load);
+  // Subscribe to the locale so the memoised command labels rebuild when the
+  // language changes (t() is read at build time inside the memo).
+  const locale = useLocale();
 
   // Warm the global saved-query store so palette items appear even if the user
   // has not opened a SQL tab yet (guarded inside the store; cheap to re-call).
@@ -72,12 +77,13 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
 
   const commands = useMemo<Command[]>(() => {
     const tables = tablesMap[tablesKey(handleId, schemaName)]?.tables ?? [];
-    const tableCmds: Command[] = tables.map((t) => ({
-      id: "open-" + t.name,
+    const tableCmds: Command[] = tables.map((tb) => ({
+      id: "open-" + tb.name,
       icon: "table",
-      label: t.name,
-      hint: t.approxRowCount === null ? undefined : t.approxRowCount.toLocaleString() + " rows",
-      run: () => openTableTab(schemaName, t.name),
+      label: tb.name,
+      hint:
+        tb.approxRowCount === null ? undefined : t("ws.rows.count", { count: tb.approxRowCount }),
+      run: () => openTableTab(schemaName, tb.name),
     }));
     const schemaCmds: Command[] =
       workspace.schemas.length > 1
@@ -86,15 +92,18 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
             .map((s) => ({
               id: "schema-" + s.name,
               icon: "schema",
-              label: "Switch schema: " + s.name,
-              hint: s.tableCount === null ? undefined : s.tableCount + " tables",
+              label: t("ws.palette.switchSchema", { name: s.name }),
+              hint:
+                s.tableCount === null
+                  ? undefined
+                  : t("ws.palette.tablesHint", { count: s.tableCount }),
               run: () => patchWorkspaceUi(workspace.id, { schemaName: s.name }),
             }))
         : [];
     const newSql: Command = {
       id: "new-sql",
       icon: "terminal",
-      label: "New SQL query",
+      label: t("ws.palette.newSql"),
       hint: "⌘T",
       run: openSqlTab,
     };
@@ -102,15 +111,15 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
     const openTerminal: Command = {
       id: "open-terminal",
       icon: "terminal",
-      label: "Open " + shell + " terminal",
+      label: t("ws.palette.openTerminal", { shell }),
       hint: "Ctrl+`",
       run: () => openPanel(workspace.id, shell),
     };
     const processes: Command = {
       id: "processes",
       icon: "monitor_heart",
-      label: "Running processes",
-      hint: "view & kill sessions",
+      label: t("menu.view.processes"),
+      hint: t("ws.palette.procHint"),
       run: () => openProcessesTab(schemaName),
     };
     // Schema diff (M28) — only for the engines with a structural snapshot.
@@ -119,8 +128,8 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
           {
             id: "diff",
             icon: "difference",
-            label: "Schema diff",
-            hint: "compare environments",
+            label: t("ws.tabTitle.diff"),
+            hint: t("ws.palette.diffHint"),
             run: openDiffTab,
           },
         ]
@@ -133,7 +142,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
         id: "saved-" + q.id,
         icon: "bookmark",
         label: q.name,
-        hint: "saved query",
+        hint: t("ws.palette.savedHint"),
         run: () => openSqlTabWith(q.sql, q.id),
       }),
     );
@@ -161,6 +170,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
     openDiffTab,
     patchWorkspaceUi,
     openPanel,
+    locale,
   ]);
 
   const trimmed = query.trim().toLowerCase();
@@ -217,12 +227,12 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="palette" role="dialog" aria-label="Command palette" aria-modal="true">
+      <div className="palette" role="dialog" aria-label={t("menu.view.palette")} aria-modal="true">
         <div className="palette-input-row">
           <Icon name="search" size={18} style={{ color: "var(--text-faint)" }} />
           <input
             ref={inputRef}
-            placeholder="Jump to a table or command…"
+            placeholder={t("ws.palette.placeholder")}
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
@@ -234,13 +244,13 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
             aria-expanded="true"
             aria-controls="palette-list"
             aria-activedescendant={filtered[sel] ? "palette-item-" + sel : undefined}
-            aria-label="Search commands"
+            aria-label={t("ws.palette.searchAria")}
           />
           <Kbd>esc</Kbd>
         </div>
         <div className="palette-list" id="palette-list" role="listbox" ref={listRef}>
           {filtered.length === 0 ? (
-            <div className="palette-empty">No matches</div>
+            <div className="palette-empty">{t("ws.palette.noMatches")}</div>
           ) : (
             filtered.map((c, i) => (
               <div

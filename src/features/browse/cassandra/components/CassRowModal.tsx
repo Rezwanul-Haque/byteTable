@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 
 import { isAppErrorPayload } from "../../../../shared/api/error";
+import { useT } from "../../../../shared/i18n/useT";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
@@ -51,6 +52,7 @@ export function CassRowModal({
   onClose,
   onSaved,
 }: CassRowModalProps) {
+  const t = useT();
   const toast = useToast();
   const keyCols = new Set(keyColumns(table));
   const [draft, setDraft] = useState<Row>(() => {
@@ -104,7 +106,7 @@ export function CassRowModal({
         <input
           className="cass-field mg-mono"
           value={(Array.isArray(draft[cName]) ? (draft[cName] as unknown[]) : []).join(", ")}
-          placeholder="a, b, c"
+          placeholder={t("cass.row.colsPh")}
           onChange={(e) =>
             setField(
               cName,
@@ -123,7 +125,7 @@ export function CassRowModal({
           value={Object.entries((draft[cName] as Record<string, unknown>) ?? {})
             .map(([k, v]) => k + ":" + v)
             .join(", ")}
-          placeholder="k1:v1, k2:v2"
+          placeholder={t("cass.row.valsPh")}
           onChange={(e) =>
             setField(
               cName,
@@ -166,18 +168,18 @@ export function CassRowModal({
           out[c.name] = draft[c.name];
         });
         await cassInsertRow(handleId, ks, table.name, out);
-        toast("INSERT applied · " + ks + "." + table.name, "ok");
+        toast(t("cass.row.insertApplied", { target: ks + "." + table.name }), "ok");
       } else {
         const set: Row = {};
         table.columns.forEach((c) => {
           if (!keyCols.has(c.name)) set[c.name] = draft[c.name];
         });
         await cassUpdateRow(handleId, ks, table.name, keyMap(table, row), set);
-        toast("UPDATE applied · " + ks + "." + table.name, "ok");
+        toast(t("cass.row.updateApplied", { target: ks + "." + table.name }), "ok");
       }
       onSaved();
     } catch (e) {
-      toast(isAppErrorPayload(e) ? e.message : "Write failed", "err");
+      toast(isAppErrorPayload(e) ? e.message : t("cass.row.writeFailed"), "err");
     } finally {
       setBusy(false);
       setConfirming(null);
@@ -192,11 +194,11 @@ export function CassRowModal({
     setBusy(true);
     try {
       await cassDeleteRow(handleId, ks, table.name, keyMap(table, row));
-      toast("DELETE applied · " + ks + "." + table.name, "ok");
+      toast(t("cass.row.deleteApplied", { target: ks + "." + table.name }), "ok");
       onSaved();
       onClose();
     } catch (e) {
-      toast(isAppErrorPayload(e) ? e.message : "Delete failed", "err");
+      toast(isAppErrorPayload(e) ? e.message : t("cass.row.deleteFailed"), "err");
     } finally {
       setBusy(false);
       setConfirming(null);
@@ -209,13 +211,13 @@ export function CassRowModal({
         <div className="modal-title">
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
             <Icon name={isNew ? "add" : "edit"} size={16} style={{ color: "var(--accent)" }} />
-            {isNew ? "Insert row" : "Edit row"} ·{" "}
+            {isNew ? t("cass.row.insert") : t("cass.row.edit")} ·{" "}
             <span className="mg-mono" style={{ color: "var(--text-dim)" }}>
               {ks}.{table.name}
             </span>
-            {dirty ? <span className="ddb-edit-dot" title="Unsaved changes" /> : null}
+            {dirty ? <span className="ddb-edit-dot" title={t("cass.row.unsaved")} /> : null}
           </span>
-          <IconBtn icon="close" onClick={onClose} title="Close" />
+          <IconBtn icon="close" onClick={onClose} title={t("cass.row.close")} />
         </div>
         <div className="cass-row-form">
           {table.columns.map((c) => (
@@ -237,19 +239,18 @@ export function CassRowModal({
         </div>
         {isProduction && confirming ? (
           <div className="cass-warn" style={{ borderRadius: 8 }}>
-            <Icon name="gpp_maybe" size={14} /> Production — click{" "}
-            {confirming === "delete" ? "Delete" : "Save"} again to confirm this write.
+            <Icon name="gpp_maybe" size={14} /> {t("cass.row.confirmWrite")}
           </div>
         ) : null}
         <div className="modal-actions ddb-item-actions">
           {!isNew ? (
             <button className="btn btn-danger-text" onClick={() => void doDelete()} disabled={busy}>
-              <Icon name="delete" size={15} /> Delete
+              <Icon name="delete" size={15} /> {t("cass.row.delete")}
             </button>
           ) : null}
           <div style={{ flex: 1 }} />
           <Btn variant="text" onClick={onClose}>
-            Cancel
+            {t("cass.row.cancel")}
           </Btn>
           <Btn
             variant="filled"
@@ -257,7 +258,7 @@ export function CassRowModal({
             disabled={!dirty || busy}
             onClick={() => void doSave()}
           >
-            {isNew ? "Insert" : "Save"}
+            {isNew ? t("cass.row.insertBtn") : t("cass.row.save")}
           </Btn>
         </div>
       </div>

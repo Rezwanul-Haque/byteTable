@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { isAppErrorPayload } from "../../../../shared/api/error";
+import { useT } from "../../../../shared/i18n/useT";
 import { ENV_COLOR } from "../../../../shared/ui/envColors";
 import { BuiltByCredit } from "../../../../shared/ui/BuiltByCredit";
 import { ResourceMeter } from "../../../app_metrics/components/ResourceMeter";
@@ -89,6 +90,7 @@ export interface CassTab {
 const nextId = (p: string) => "cs-" + p + "-" + crypto.randomUUID();
 
 export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
+  const t = useT();
   const closeWorkspace = useWorkspacesStore((state) => state.closeWorkspace);
   const toast = useToast();
   const openPanel = usePanelStore((s) => s.openPanel);
@@ -107,7 +109,7 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
   const patchTabs = useCassTabsStore((s) => s.patch);
   const tabState = useCassTabsStore((s) => s.byWorkspace[workspace.id]);
   const tabs: CassTab[] = tabState?.tabs ?? [
-    { id: "cs-dash", kind: "dashboard", title: "Dashboard" },
+    { id: "cs-dash", kind: "dashboard", title: t("cass.ws.dashboardTab") },
   ];
   const activeId = tabState?.activeId ?? "cs-dash";
   const ks = tabState?.ks ?? "";
@@ -168,7 +170,7 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
         if (silent) setError(null);
       } catch (e) {
         if (silent) return;
-        setError(isAppErrorPayload(e) ? e.message : "Could not list tables (desktop app required)");
+        setError(isAppErrorPayload(e) ? e.message : t("cass.ws.listTablesFailed"));
         setTables([]);
       } finally {
         if (!silent) setLoading(false);
@@ -212,9 +214,7 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
         else setLoading(false);
       } catch (e) {
         if (!live) return;
-        setError(
-          isAppErrorPayload(e) ? e.message : "Could not list keyspaces (desktop app required)",
-        );
+        setError(isAppErrorPayload(e) ? e.message : t("cass.ws.listKeyspacesFailed"));
         setLoading(false);
       }
     })();
@@ -265,7 +265,7 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
   };
   const openQuery = () => {
     const n = tabs.filter((t) => t.kind === "cql").length + 1;
-    const tab: CassTab = { id: nextId("cql"), kind: "cql", title: "Query " + n };
+    const tab: CassTab = { id: nextId("cql"), kind: "cql", title: t("cass.ws.queryTab", { n }) };
     setTabs((ts) => [...ts, tab]);
     setActiveId(tab.id);
   };
@@ -282,7 +282,7 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
 
   const switchKs = (d: string) => {
     setKs(d);
-    setTabs([{ id: "cs-dash", kind: "dashboard", title: "Dashboard" }]);
+    setTabs([{ id: "cs-dash", kind: "dashboard", title: t("cass.ws.dashboardTab") }]);
     setActiveId("cs-dash");
     void loadTables(d);
   };
@@ -293,7 +293,7 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
         .catch(() => {}),
       ks ? loadTables(ks) : Promise.resolve(),
     ]);
-    toast("Schema refreshed", "ok");
+    toast(t("cass.ws.schemaRefreshed"), "ok");
   };
 
   // Settings-driven auto-refresh of the sidebar table list (silent — no toast,
@@ -366,8 +366,8 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
         onOpenScopeWorkspace={openScope}
         onOpenTable={openTable}
         onOpenShell={openShell}
-        onOpenDashboard={() => openKind("dashboard", "Dashboard")}
-        onOpenMap={() => openKind("map", "Schema map")}
+        onOpenDashboard={() => openKind("dashboard", t("cass.ws.dashboardTab"))}
+        onOpenMap={() => openKind("map", t("cass.ws.mapTab"))}
         onExportTable={(t) => setExportJob({ scope: "table", table: t })}
         onImportTable={(t) => setImportTarget({ table: t })}
         onExportAll={() => setExportJob({ scope: "all" })}
@@ -421,11 +421,11 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
               </div>
             ))}
           </div>
-          <button className="tab-new" onClick={openQuery} title="New CQL query (⌘T)">
+          <button className="tab-new" onClick={openQuery} title={t("cass.ws.newQuery")}>
             <Icon name="add" size={16} />
           </button>
           <div className="tabbar-tools">
-            <button className="tabbar-tool" onClick={toggleShell} title="cqlsh (⌘` / Ctrl+`)">
+            <button className="tabbar-tool" onClick={toggleShell} title={t("cass.ws.cqlsh")}>
               <Icon name="terminal" size={15} />
               <span>cqlsh</span>
             </button>
@@ -434,9 +434,9 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
         </div>
 
         <div className="tab-content">
-          {tabs.map((t) => (
-            <div key={t.id} style={{ display: t.id === activeId ? "contents" : "none" }}>
-              {t.kind === "dashboard" ? (
+          {tabs.map((tab) => (
+            <div key={tab.id} style={{ display: tab.id === activeId ? "contents" : "none" }}>
+              {tab.kind === "dashboard" ? (
                 <CassandraDashboard
                   ks={ks}
                   keyspace={keyspaceInfo}
@@ -445,22 +445,22 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
                   loading={loading}
                   error={error}
                 />
-              ) : t.kind === "table" ? (
+              ) : tab.kind === "table" ? (
                 (() => {
-                  const descriptor = tables.find((d) => d.name === t.table);
+                  const descriptor = tables.find((d) => d.name === tab.table);
                   return descriptor ? (
                     <CassandraTableTab
                       // The nonce remounts the tab after a truncate so its
                       // one-shot initial query runs again against the now-empty
                       // table; without it the grid keeps the rows it first read.
-                      key={t.id + ":" + (reloaded[descriptor.name] ?? 0)}
+                      key={tab.id + ":" + (reloaded[descriptor.name] ?? 0)}
                       handleId={handleId}
                       ks={ks}
                       descriptor={descriptor}
-                      mode={t.mode ?? "query"}
+                      mode={tab.mode ?? "query"}
                       isProduction={env === "production"}
-                      active={t.id === activeId}
-                      onModeChange={(m) => updateTab(t.id, { mode: m })}
+                      active={tab.id === activeId}
+                      onModeChange={(m) => updateTab(tab.id, { mode: m })}
                       onExport={(tb) => setExportJob({ scope: "table", table: tb })}
                       onImport={(tb) => setImportTarget({ table: tb })}
                       onSchemaChanged={() => ks && void loadTables(ks)}
@@ -468,12 +468,12 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
                   ) : (
                     <div className="empty-state">
                       <Icon name="table_chart" size={28} />
-                      <p>{t.title}</p>
-                      <span>Loading table…</span>
+                      <p>{tab.title}</p>
+                      <span>{t("cass.ws.loadingTable")}</span>
                     </div>
                   );
                 })()
-              ) : t.kind === "cql" ? (
+              ) : tab.kind === "cql" ? (
                 <CassandraQueryTab handleId={handleId} ks={ks} tables={tables} />
               ) : (
                 <CassandraSchemaMap ks={ks} tables={tables} onOpenTable={openTable} />

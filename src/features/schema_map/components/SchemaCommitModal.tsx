@@ -9,6 +9,7 @@
 import { useState } from "react";
 
 import { highlightSql } from "../../browse/shared/highlightSql";
+import { useT } from "../../../shared/i18n/useT";
 import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
@@ -34,6 +35,7 @@ export function SchemaCommitModal({
   onClose: () => void;
 }) {
   const [typed, setTyped] = useState("");
+  const t = useT();
   const isProd = env === "production";
   const destructive = statements.filter(isDestructive);
   const phrase = "apply to " + schemaName;
@@ -41,22 +43,16 @@ export function SchemaCommitModal({
     (!isProd || typed.trim().toLowerCase() === phrase) && statements.length > 0 && !busy;
 
   return (
-    <Modal onClose={onClose} className="commit-modal" label="Commit schema changes" width={580}>
+    <Modal onClose={onClose} className="commit-modal" label={t("smap.commit.title")} width={580}>
       <ModalTitle>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
           <Icon name="published_with_changes" size={18} style={{ color: "var(--accent)" }} />
-          Commit schema changes
+          {t("smap.commit.title")}
         </span>
-        <IconBtn icon="close" onClick={onClose} title="Close" />
+        <IconBtn icon="close" onClick={onClose} title={t("common.close")} />
       </ModalTitle>
       <div className="commit-body">
-        <p>
-          ByteTable will run{" "}
-          <b>
-            {statements.length} statement{statements.length === 1 ? "" : "s"}
-          </b>{" "}
-          on <code>{schemaName}</code> in a single transaction. Review the migration below.
-        </p>
+        <p>{t("smap.commit.body", { count: statements.length, schema: schemaName })}</p>
         <div className="commit-sql-list">
           {statements.map((sql, i) => (
             <div key={i} className={"commit-sql-row" + (isDestructive(sql) ? " destructive" : "")}>
@@ -72,12 +68,7 @@ export function SchemaCommitModal({
         {destructive.length > 0 ? (
           <div className="commit-warn">
             <Icon name="gpp_maybe" size={15} />
-            <span>
-              <b>
-                {destructive.length} destructive change{destructive.length === 1 ? "" : "s"}
-              </b>{" "}
-              — dropping or retyping columns/tables can lose data and is not reversible.
-            </span>
+            <span>{t("smap.commit.destructive", { count: destructive.length })}</span>
           </div>
         ) : null}
         {isProd ? (
@@ -90,10 +81,10 @@ export function SchemaCommitModal({
                 background: envColor + "14",
               }}
             >
-              <Icon name="public" size={13} /> production
+              <Icon name="public" size={13} /> {t("uix.bulkDelete.prodTag")}
             </div>
             <label>
-              Type <b>{phrase}</b> to confirm
+              {t("uix.bulkDelete.typePre")} <b>{phrase}</b> {t("uix.bulkDelete.typePost")}
               <input
                 value={typed}
                 onChange={(e) => setTyped(e.target.value)}
@@ -108,7 +99,7 @@ export function SchemaCommitModal({
       <ModalActions>
         <div style={{ flex: 1 }} />
         <Btn variant="text" onClick={onClose}>
-          Cancel
+          {t("common.cancel")}
         </Btn>
         <Btn
           variant="filled"
@@ -116,7 +107,7 @@ export function SchemaCommitModal({
           disabled={!armed}
           onClick={() => armed && onConfirm()}
         >
-          Commit {statements.length}
+          {t("smap.commit.confirm", { count: statements.length })}
         </Btn>
       </ModalActions>
     </Modal>

@@ -9,6 +9,7 @@
 
 import { create } from "zustand";
 
+import { t } from "../../../shared/i18n";
 import type { MongoTab } from "./components/MongoCollectionTab";
 import type { MongoPipelineTabState } from "./components/MongoPipelineTab";
 
@@ -43,6 +44,27 @@ interface Store {
   patch: (workspaceId: string, patch: Partial<MongoTabsState>) => void;
   /** Drop a workspace's tab state (called when the workspace is closed). */
   prune: (workspaceId: string) => void;
+}
+
+/**
+ * The user-visible title of a tab, resolved at render time. Titles are stored
+ * in the store in canonical form (the tab bar re-renders through `useT()`, so
+ * a locale switch repaints every open tab's title).
+ * Module-level (not a hook): `t` is read at call time.
+ */
+export function mongoTabTitle(tab: MongoWorkspaceTab): string {
+  switch (tab.kind) {
+    case "dashboard":
+      return t("mongo.tab.dashboard");
+    case "map":
+      return t("mongo.tab.map");
+    case "processes":
+      return t("mongo.tab.processes");
+    case "pipeline":
+      return t("mongo.title.agg", { coll: tab.coll ?? "" });
+    default:
+      return tab.title; // collection tabs are titled by the collection name
+  }
 }
 
 export const useMongoTabsStore = create<Store>((set) => ({

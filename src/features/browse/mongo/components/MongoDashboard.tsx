@@ -5,6 +5,7 @@
 
 import { EngineBadge } from "../../../../shared/ui/EngineBadge";
 import { Icon } from "../../../../shared/ui/Icon";
+import { useT } from "../../../../shared/i18n/useT";
 import type { CollectionDescriptor } from "../api";
 
 export function MongoDashboard({
@@ -23,50 +24,51 @@ export function MongoDashboard({
   const totalDocs = collections.reduce((a, c) => a + c.count, 0);
   const totalSize = collections.reduce((a, c) => a + c.storageBytes, 0);
   const totalIdx = collections.reduce((a, c) => a + c.indexes.length, 0);
+  const t = useT();
 
   return (
     <div className="rdash">
       <div className="rdash-head">
         <EngineBadge engine="mongodb" size={22} />
-        <h2>{db} · database</h2>
+        <h2>{t("mongo.dashTitle", { db })}</h2>
         <span className="structure-sub">{serverVersion}</span>
       </div>
       <div className="rdash-grid">
         <div className="rdash-stat">
-          <div className="rdash-stat-label">Collections</div>
+          <div className="rdash-stat-label">{t("mongo.statCollections")}</div>
           <div className="rdash-stat-value">{collections.length}</div>
         </div>
         <div className="rdash-stat">
-          <div className="rdash-stat-label">Documents</div>
+          <div className="rdash-stat-label">{t("mongo.statDocuments")}</div>
           <div className="rdash-stat-value">{totalDocs.toLocaleString()}</div>
         </div>
         <div className="rdash-stat">
-          <div className="rdash-stat-label">Data size</div>
+          <div className="rdash-stat-label">{t("mongo.statDataSize")}</div>
           <div className="rdash-stat-value">{(totalSize / 1024).toFixed(1)} KB</div>
         </div>
         <div className="rdash-stat">
-          <div className="rdash-stat-label">Indexes</div>
+          <div className="rdash-stat-label">{t("mongo.statIndexes")}</div>
           <div className="rdash-stat-value">{totalIdx}</div>
         </div>
       </div>
       <div className="rdash-panel">
         <h3>
-          <Icon name="folder_special" size={15} /> Collections
+          <Icon name="folder_special" size={15} /> {t("mongo.statCollections")}
         </h3>
         {error ? (
           <div className="sql-error-msg">{error}</div>
         ) : loading ? (
-          <div className="grid-empty">Loading…</div>
+          <div className="grid-empty">{t("ws.sb.loading")}</div>
         ) : (
           <table className="structure-table" style={{ width: "100%" }}>
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Documents</th>
-                <th>Avg doc</th>
-                <th>Indexes</th>
-                <th>Validation</th>
-                <th>Size</th>
+                <th>{t("mongo.colName")}</th>
+                <th>{t("mongo.colDocuments")}</th>
+                <th>{t("mongo.colAvgDoc")}</th>
+                <th>{t("mongo.colIndexes")}</th>
+                <th>{t("mongo.colValidation")}</th>
+                <th>{t("mongo.colSize")}</th>
               </tr>
             </thead>
             <tbody>

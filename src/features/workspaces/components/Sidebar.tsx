@@ -19,6 +19,7 @@ import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 
 import { appErrorMessage } from "../../../shared/api/error";
+import { useT } from "../../../shared/i18n/useT";
 import { Btn } from "../../../shared/ui/Btn";
 import { EngineBadge } from "../../../shared/ui/EngineBadge";
 import { dropWordSelection } from "../../../shared/ui/dropWordSelection";
@@ -117,6 +118,7 @@ function onMenuKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
 }
 
 export function Sidebar({ workspace }: { workspace: Workspace }) {
+  const t = useT();
   const toast = useToast();
   const closeWorkspace = useWorkspacesStore((state) => state.closeWorkspace);
   const patchWorkspaceUi = useWorkspacesStore((state) => state.patchWorkspaceUi);
@@ -403,17 +405,15 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
         ]);
         setWorkspaceSchemas(workspace.id, schemas);
         if (fresh) refreshed = fresh.length;
-        else
-          failure =
-            useIntrospectionStore.getState().errors[tKey] ?? "Could not refresh the schema.";
+        else failure = useIntrospectionStore.getState().errors[tKey] ?? t("ws.sb.refreshFail");
       } catch (err) {
-        failure = appErrorMessage(err, "Could not refresh the schema.");
+        failure = appErrorMessage(err, t("ws.sb.refreshFail"));
       }
       const remaining = 750 - (Date.now() - started);
       if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining));
       setRefreshing(false);
       if (failure === null) {
-        toast("Schema “" + schemaName + "” refreshed — " + refreshed + " tables", "ok");
+        toast(t("ws.sb.refreshed", { schema: schemaName, count: refreshed ?? 0 }), "ok");
       } else {
         toast(failure, "err");
       }
@@ -533,7 +533,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
         <LanguageChip />
         <IconBtn
           icon="power_settings_new"
-          title="Close workspace"
+          title={t("menu.file.closeWorkspace")}
           size={16}
           danger
           onClick={() => closeWorkspace(workspace.id)}
@@ -554,13 +554,13 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
             type="button"
             className="schema-btn"
             style={{ flex: 1, minWidth: 0 }}
-            title={"Schema: " + schemaName + " — click to switch"}
-            aria-label={"Switch schema (current: " + schemaName + ")"}
+            title={t("ws.sb.schemaSwitchIcon", { schema: schemaName })}
+            aria-label={t("ws.sb.schemaSwitchIconAria", { schema: schemaName })}
             aria-haspopup="dialog"
             onClick={() => setSchemaModalOpen(true)}
           >
             <Icon name="database" size={15} style={{ color: "var(--accent)" }} />
-            <span className="schema-btn-name">Switcher</span>
+            <span className="schema-btn-name">{t("ws.sb.switcher")}</span>
           </button>
         ) : (
           <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
@@ -569,7 +569,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
               type="button"
               className="schema-btn"
               onClick={() => setSchemaOpen(!schemaOpen)}
-              title="Switch schema"
+              title={t("ws.sb.switchSchema")}
               aria-haspopup="menu"
               aria-expanded={schemaOpen}
             >
@@ -582,7 +582,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                 ref={schemaPopRef}
                 className="schema-pop"
                 role="menu"
-                aria-label="Switch schema"
+                aria-label={t("ws.sb.switchSchema")}
                 onKeyDown={onMenuKeyDown}
               >
                 <button
@@ -595,7 +595,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                   }}
                 >
                   <Icon name="create_new_folder" size={14} />
-                  <span>Create schema</span>
+                  <span>{t("ws.sb.createSchema")}</span>
                 </button>
                 <div className="schema-pop-sep" />
                 {userSchemas.map(renderSchemaItem)}
@@ -605,7 +605,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                 {canShowSystemSchemas && showSystemSchemas && systemSchemas.length > 0 ? (
                   <>
                     <div className="schema-pop-sep" />
-                    <div className="schema-pop-group">System</div>
+                    <div className="schema-pop-group">{t("ws.scope.system")}</div>
                     {systemSchemas.map(renderSchemaItem)}
                   </>
                 ) : null}
@@ -617,14 +617,14 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                       className="schema-pop-sys"
                       role="menuitemcheckbox"
                       aria-checked={showSystemSchemas}
-                      title="List the server's own schemas (mysql, pg_catalog, sys, …) here too"
+                      title={t("ws.sb.systemHint")}
                       onClick={() => setSetting("showSystemSchemas", !showSystemSchemas)}
                     >
                       <Icon
                         name={showSystemSchemas ? "check_box" : "check_box_outline_blank"}
                         size={14}
                       />
-                      <span>Show system schemas</span>
+                      <span>{t("ws.sb.showSystem")}</span>
                     </button>
                   </>
                 ) : null}
@@ -633,23 +633,19 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
             ) : null}
           </div>
         )}
-        <IconBtn icon="schema" title="Schema map (ER diagram)" onClick={openMap} />
+        <IconBtn icon="schema" title={t("ws.sb.schemaMap")} onClick={openMap} />
         {/* M28: only the engines with a structural snapshot can be diffed. */}
         {isDiffable(workspace.saved) ? (
-          <IconBtn
-            icon="difference"
-            title="Schema diff (compare environments)"
-            onClick={openDiffTab}
-          />
+          <IconBtn icon="difference" title={t("ws.sb.schemaDiff")} onClick={openDiffTab} />
         ) : null}
         <IconBtn
           icon="download"
-          title={"Export schema “" + schemaName + "” as .sql"}
+          title={t("ws.sb.exportSchema", { schema: schemaName })}
           onClick={() => doExport("schemaSql")}
         />
         <IconBtn
           icon="sync"
-          title="Refresh schema"
+          title={t("ws.sb.refresh")}
           onClick={refresh}
           className={refreshing || autoSpinning ? "sidebar-sync-spinning" : undefined}
         />
@@ -658,26 +654,31 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
       <div className="sidebar-search">
         <Icon name="search" size={15} style={{ color: "var(--text-faint)" }} />
         <input
-          placeholder="Filter objects…"
+          placeholder={t("ws.sb.filterObjects")}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           spellCheck="false"
-          aria-label="Filter database objects"
+          aria-label={t("ws.sb.filterObjectsAria")}
         />
         {query ? (
-          <IconBtn icon="close" size={13} title="Clear" onClick={() => setQuery("")} />
+          <IconBtn
+            icon="close"
+            size={13}
+            title={t("ws.scope.clear")}
+            onClick={() => setQuery("")}
+          />
         ) : null}
       </div>
 
       <div className="sidebar-section-label">
-        <span>Tables</span>
+        <span>{t("ws.sb.tables")}</span>
         <div className="sec-actions" ref={secActionsRef}>
           <span className="sidebar-count">{tables === null ? "" : tables.length}</span>
           <button
             ref={secActionsBtnRef}
             type="button"
             className="sec-actions-btn"
-            title="Schema actions"
+            title={t("ws.sb.schemaActions")}
             aria-haspopup="menu"
             aria-expanded={schemaMenu}
             onClick={() => {
@@ -692,10 +693,10 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
             <div
               className="ctx-menu sec-actions-menu"
               role="menu"
-              aria-label={"Schema actions for " + schemaName}
+              aria-label={t("ws.sb.schemaActionsFor", { schema: schemaName })}
               onKeyDown={onMenuKeyDown}
             >
-              <div className="ctx-menu-label">Schema · {schemaName}</div>
+              <div className="ctx-menu-label">{t("ws.sb.schemaLabel", { schema: schemaName })}</div>
               {!schemaIsSystem ? (
                 <>
                   <button
@@ -707,7 +708,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                       setCreateTableOpen(true);
                     }}
                   >
-                    <Icon name="add" size={15} /> Create table
+                    <Icon name="add" size={15} /> {t("ws.sb.createTable")}
                   </button>
                   <button
                     type="button"
@@ -718,7 +719,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                       setSchemaImportOpen(true);
                     }}
                   >
-                    <Icon name="upload" size={15} /> Import SQL dump
+                    <Icon name="upload" size={15} /> {t("ws.sb.importDump")}
                   </button>
                 </>
               ) : null}
@@ -731,7 +732,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                   doExport("schemaSql");
                 }}
               >
-                <Icon name="download" size={15} /> Export schema (.sql)
+                <Icon name="download" size={15} /> {t("ws.sb.exportSchemaSql")}
               </button>
               {/* A system schema is read-only from the sidebar: the engines
                   refuse to drop or rewrite their own catalog anyway, so the
@@ -747,7 +748,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                       openGenerate(handleId, schemaName, workspace.saved.env);
                     }}
                   >
-                    <Icon name="auto_awesome" size={15} /> Generate data
+                    <Icon name="auto_awesome" size={15} /> {t("ws.sb.generateData")}
                   </button>
                 </>
               ) : null}
@@ -762,7 +763,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                   openTableOverview(schemaName);
                 }}
               >
-                <Icon name="monitoring" size={15} /> Table overview
+                <Icon name="monitoring" size={15} /> {t("ws.sb.tableOverview")}
               </button>
               {!schemaIsSystem ? (
                 <>
@@ -776,7 +777,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                       setEmptySchemaOpen(true);
                     }}
                   >
-                    <Icon name="delete_sweep" size={15} /> Empty schema
+                    <Icon name="delete_sweep" size={15} /> {t("ws.sb.emptySchema")}
                   </button>
                   <button
                     type="button"
@@ -787,7 +788,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                       setDeleteSchemaOpen(true);
                     }}
                   >
-                    <Icon name="delete_forever" size={15} /> Delete schema
+                    <Icon name="delete_forever" size={15} /> {t("ws.sb.deleteSchema")}
                   </button>
                 </>
               ) : null}
@@ -803,20 +804,20 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
           <div className="sidebar-error">{tablesError}</div>
         ) : tables === null ? (
           <div className="sidebar-loading">
-            <span className="spinner" /> Loading tables…
+            <span className="spinner" /> {t("ws.sb.loadingTables")}
           </div>
         ) : tables.length === 0 ? (
-          <div className="sidebar-nomatch">No tables in this schema yet.</div>
+          <div className="sidebar-nomatch">{t("ws.sb.noTables")}</div>
         ) : (
           <>
-            {filtered.map((t) => {
-              const isExpanded = expandedTables.includes(t.name);
-              const isActive = t.name === activeTable;
-              const cKey = columnsKey(handleId, schemaName, t.name);
+            {filtered.map((tb) => {
+              const isExpanded = expandedTables.includes(tb.name);
+              const isActive = tb.name === activeTable;
+              const cKey = columnsKey(handleId, schemaName, tb.name);
               const columnsEntry = columnsMap[cKey];
               const columnsError = errorsMap[cKey];
               return (
-                <div key={t.name}>
+                <div key={tb.name}>
                   <div
                     className={"table-item" + (isActive ? " active" : "")}
                     role="button"
@@ -825,31 +826,33 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                     // ⌘/Ctrl-click opens a second tab for the table (browser
                     // convention); a plain click focuses the existing one.
                     onClick={(event) =>
-                      event.metaKey || event.ctrlKey ? openTableInNewTab(t.name) : openTable(t.name)
+                      event.metaKey || event.ctrlKey
+                        ? openTableInNewTab(tb.name)
+                        : openTable(tb.name)
                     }
                     // Middle-click — the other half of that convention. Nothing
                     // else in the sidebar claims the middle button.
                     onAuxClick={(event) => {
                       if (event.button !== 1) return;
                       event.preventDefault();
-                      openTableInNewTab(t.name);
+                      openTableInNewTab(tb.name);
                     }}
-                    onKeyDown={(event) => onRowKeyDown(event, t.name)}
+                    onKeyDown={(event) => onRowKeyDown(event, tb.name)}
                     onContextMenu={(event) => {
                       event.preventDefault();
                       dropWordSelection(event.currentTarget);
-                      openCtxMenu(event.clientX, event.clientY, t.name, event.currentTarget);
+                      openCtxMenu(event.clientX, event.clientY, tb.name, event.currentTarget);
                     }}
-                    title={t.name}
+                    title={tb.name}
                   >
                     <button
                       type="button"
                       className={"table-expand" + (isExpanded ? " open" : "")}
                       onClick={(event) => {
                         event.stopPropagation();
-                        toggleExpanded(t.name);
+                        toggleExpanded(tb.name);
                       }}
-                      title={isExpanded ? "Hide columns" : "Show columns"}
+                      title={isExpanded ? t("ws.sb.hideCols") : t("ws.sb.showCols")}
                       aria-expanded={isExpanded}
                     >
                       <Icon name="chevron_right" size={14} />
@@ -859,7 +862,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                       size={16}
                       style={{ color: isActive ? "var(--accent)" : "var(--text-faint)" }}
                     />
-                    <span className="table-item-name">{t.name}</span>
+                    <span className="table-item-name">{tb.name}</span>
                   </div>
                   {isExpanded ? (
                     columnsEntry ? (
@@ -888,7 +891,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                       </div>
                     ) : (
                       <div className="table-cols">
-                        <div className="table-col-note">{columnsError ?? "Loading…"}</div>
+                        <div className="table-col-note">{columnsError ?? t("ws.sb.loading")}</div>
                       </div>
                     )
                   ) : null}
@@ -896,7 +899,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
               );
             })}
             {filtered.length === 0 ? (
-              <div className="sidebar-nomatch">No tables match “{query}”</div>
+              <div className="sidebar-nomatch">{t("ws.sb.noMatch", { query })}</div>
             ) : null}
           </>
         )}
@@ -920,7 +923,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
           onClick={openSqlTab}
           style={{ width: "100%", justifyContent: "center" }}
         >
-          New SQL query
+          {t("ws.palette.newSql")}
         </Btn>
       </div>
 
@@ -930,7 +933,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
           className="ctx-menu"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
           role="menu"
-          aria-label={"Table " + ctxMenu.table}
+          aria-label={t("ws.sb.tableAria", { name: ctxMenu.table })}
           onKeyDown={onMenuKeyDown}
         >
           <button
@@ -942,7 +945,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
               closeCtxMenu(true);
             }}
           >
-            <Icon name="table" size={15} /> Open data
+            <Icon name="table" size={15} /> {t("ws.sb.openData")}
           </button>
           <button
             type="button"
@@ -953,7 +956,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
               closeCtxMenu(true);
             }}
           >
-            <Icon name="open_in_new" size={15} /> Open in new tab
+            <Icon name="open_in_new" size={15} /> {t("ws.sb.openInNewTab")}
           </button>
           <button
             type="button"
@@ -964,7 +967,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
               closeCtxMenu(true);
             }}
           >
-            <Icon name="account_tree" size={15} /> View structure
+            <Icon name="account_tree" size={15} /> {t("ws.sb.viewStructure")}
           </button>
           <button
             type="button"
@@ -975,7 +978,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
               closeCtxMenu(true);
             }}
           >
-            <Icon name="terminal" size={15} /> Query in SQL editor
+            <Icon name="terminal" size={15} /> {t("ws.sb.queryInEditor")}
           </button>
           <button
             type="button"
@@ -986,7 +989,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
               closeCtxMenu(true);
             }}
           >
-            <Icon name="schema" size={15} /> Show in schema map
+            <Icon name="schema" size={15} /> {t("ws.sb.showInMap")}
           </button>
           <div className="ctx-sep" />
           <button
@@ -998,7 +1001,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
               closeCtxMenu(true);
             }}
           >
-            <Icon name="table_view" size={15} /> Export as CSV
+            <Icon name="table_view" size={15} /> {t("ws.sb.exportCsv")}
           </button>
           <button
             type="button"
@@ -1009,7 +1012,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
               closeCtxMenu(true);
             }}
           >
-            <Icon name="code" size={15} /> Export as SQL
+            <Icon name="code" size={15} /> {t("ws.sb.exportSql")}
           </button>
           {/* Same read-only rule as the schema menu: a catalog table is
               browsable and exportable, never writable from here. */}
@@ -1025,7 +1028,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                   setImportTarget(t);
                 }}
               >
-                <Icon name="upload" size={15} /> Import data
+                <Icon name="upload" size={15} /> {t("ws.sb.importData")}
               </button>
               <div className="ctx-sep" />
               <button
@@ -1038,7 +1041,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                   setTruncateTarget(t);
                 }}
               >
-                <Icon name="delete_sweep" size={15} /> Truncate table
+                <Icon name="delete_sweep" size={15} /> {t("ws.sb.truncate")}
               </button>
               <button
                 type="button"
@@ -1050,7 +1053,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
                   setDropTarget(t);
                 }}
               >
-                <Icon name="delete_forever" size={15} /> Drop table
+                <Icon name="delete_forever" size={15} /> {t("ws.sb.dropTable")}
               </button>
             </>
           ) : null}
@@ -1194,7 +1197,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
               ? {
                   show: showSystemSchemas,
                   onToggle: (next) => setSetting("showSystemSchemas", next),
-                  hint: "List the server's own schemas (mysql, pg_catalog, sys, …) here too",
+                  hint: t("ws.sb.systemHint"),
                 }
               : undefined
           }

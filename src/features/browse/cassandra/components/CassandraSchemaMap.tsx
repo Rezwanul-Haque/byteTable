@@ -9,6 +9,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { appErrorMessage } from "../../../../shared/api/error";
+import { useT } from "../../../../shared/i18n/useT";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { useToast } from "../../../../shared/ui/toastContext";
@@ -83,6 +84,8 @@ export function CassandraSchemaMap({ ks, tables, onOpenTable }: CassandraSchemaM
   };
   const [positions, setPositions] = useState(initPos);
   const [zoom, setZoom] = useState(1);
+  // `tr`, not `t`: `tables.map((t) => …)` uses `t` as the row variable.
+  const tr = useT();
   const toast = useToast();
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -203,7 +206,7 @@ export function CassandraSchemaMap({ ks, tables, onOpenTable }: CassandraSchemaM
           typeColor: cqlColor(c.type),
         }));
         if (extra > 0) {
-          rows.push({ name: `+ ${extra} more column${extra > 1 ? "s" : ""}…`, muted: true });
+          rows.push({ name: tr("cass.map.moreColumns", { count: extra }), muted: true });
         }
         return { x: p.x, y: p.y, w: CARD_W, name: t.name, rows };
       });
@@ -223,12 +226,11 @@ export function CassandraSchemaMap({ ks, tables, onOpenTable }: CassandraSchemaM
         fileBase: `${ks}-schema-map`,
         format,
       });
-      if (res.status === "ok") toast(`Exported schema map to ${res.file}`, "ok");
-      else if (res.status === "empty") toast("Nothing to export yet.", "info");
-      else if (res.status === "no-dialog")
-        toast("Exporting requires the ByteTable desktop app.", "info");
+      if (res.status === "ok") toast(tr("cass.map.exported", { file: res.file }), "ok");
+      else if (res.status === "empty") toast(tr("cass.map.nothingToExport"), "info");
+      else if (res.status === "no-dialog") toast(tr("cass.map.exportNeedsApp"), "info");
     } catch (e) {
-      toast(appErrorMessage(e, "Could not export the schema map."), "err");
+      toast(appErrorMessage(e, tr("cass.map.exportFailed")), "err");
     } finally {
       setExporting(false);
     }
@@ -238,28 +240,26 @@ export function CassandraSchemaMap({ ks, tables, onOpenTable }: CassandraSchemaM
     <div className="schema-map cass-map" data-screen-label="Cassandra schema map">
       <div className="map-toolbar">
         <Icon name="schema" size={16} style={{ color: "var(--accent)" }} />
-        <span className="map-title">{ks} · query-table map</span>
+        <span className="map-title">{tr("cass.map.head", { ks })}</span>
         <span className="map-sub">
-          {tables.length} tables · {edges.length} denormalization links
+          {tr("cass.map.tablesLinks", { tables: tables.length, links: edges.length })}
         </span>
         <div style={{ flex: 1 }} />
-        <span className="map-hint">
-          edges link tables sharing a key column (query-first denormalization)
-        </span>
+        <span className="map-hint">{tr("cass.map.edgesHint")}</span>
         <IconBtn
           icon="zoom_out"
-          title="Zoom out"
+          title={tr("cass.map.zoomOut")}
           onClick={() => setZoom((z) => Math.max(0.5, Math.round((z - 0.1) * 10) / 10))}
         />
         <span className="map-zoom">{Math.round(zoom * 100)}%</span>
         <IconBtn
           icon="zoom_in"
-          title="Zoom in"
+          title={tr("cass.map.zoomIn")}
           onClick={() => setZoom((z) => Math.min(1.5, Math.round((z + 0.1) * 10) / 10))}
         />
         <IconBtn
           icon="fit_screen"
-          title="Reset layout"
+          title={tr("cass.map.resetLayout")}
           onClick={() => {
             setPositions(initPos());
             setZoom(1);
@@ -268,7 +268,7 @@ export function CassandraSchemaMap({ ks, tables, onOpenTable }: CassandraSchemaM
         <div style={{ position: "relative" }}>
           <IconBtn
             icon="download"
-            title="Export schema map"
+            title={tr("cass.map.export")}
             active={exportMenuOpen}
             disabled={exporting}
             onClick={(e) => {
@@ -283,10 +283,10 @@ export function CassandraSchemaMap({ ks, tables, onOpenTable }: CassandraSchemaM
               onClick={(e) => e.stopPropagation()}
             >
               <div className="ctx-item" onClick={() => void runExport("png")}>
-                <Icon name="image" size={15} /> PNG image
+                <Icon name="image" size={15} /> {tr("cass.map.png")}
               </div>
               <div className="ctx-item" onClick={() => void runExport("svg")}>
-                <Icon name="shape_line" size={15} /> SVG vector
+                <Icon name="shape_line" size={15} /> {tr("cass.map.svg")}
               </div>
             </div>
           ) : null}
@@ -350,7 +350,7 @@ export function CassandraSchemaMap({ ks, tables, onOpenTable }: CassandraSchemaM
                     <span className="map-card-name">{t.name}</span>
                     <button
                       className="map-card-open"
-                      title={"Open " + t.name}
+                      title={tr("cass.map.openTable", { name: t.name })}
                       onMouseDown={(ev) => ev.stopPropagation()}
                       onClick={() => onOpenTable(t.name)}
                     >
@@ -386,7 +386,7 @@ export function CassandraSchemaMap({ ks, tables, onOpenTable }: CassandraSchemaM
                       <div className="map-card-col map-col-more" style={{ height: ROW_H }}>
                         <span className="map-col-icon" />
                         <span className="map-col-name">
-                          + {extra} more column{extra > 1 ? "s" : ""}…
+                          {tr("cass.map.moreColumns", { count: extra })}
                         </span>
                       </div>
                     ) : null}

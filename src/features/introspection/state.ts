@@ -28,6 +28,7 @@ import {
   type TableMeta,
 } from "../../shared/api/engine";
 import { appErrorMessage } from "../../shared/api/error";
+import { t } from "../../shared/i18n";
 import { connectionTables } from "../connections/api";
 
 /**
@@ -242,7 +243,7 @@ export const useIntrospectionStore = create<IntrospectionFeatureState>((set, get
       } catch (err) {
         set((state) => ({
           loading: omit(state.loading, key),
-          errors: { ...state.errors, [key]: appErrorMessage(err, "Could not load tables.") },
+          errors: { ...state.errors, [key]: appErrorMessage(err, t("intro.err.tables")) },
         }));
         return null;
       }
@@ -273,7 +274,7 @@ export const useIntrospectionStore = create<IntrospectionFeatureState>((set, get
       } catch (err) {
         set((state) => ({
           loading: omit(state.loading, key),
-          errors: { ...state.errors, [key]: appErrorMessage(err, "Could not load columns.") },
+          errors: { ...state.errors, [key]: appErrorMessage(err, t("intro.err.columns")) },
         }));
         return null;
       }
@@ -311,7 +312,7 @@ export const useIntrospectionStore = create<IntrospectionFeatureState>((set, get
           loading: omit(state.loading, key),
           errors: {
             ...state.errors,
-            [key]: appErrorMessage(err, "Could not load table structure."),
+            [key]: appErrorMessage(err, t("intro.err.tableStructure")),
           },
         }));
         return null;
@@ -345,7 +346,7 @@ export const useIntrospectionStore = create<IntrospectionFeatureState>((set, get
       } catch (err) {
         set((state) => ({
           loading: omit(state.loading, key),
-          errors: { ...state.errors, [key]: appErrorMessage(err, "Could not load objects.") },
+          errors: { ...state.errors, [key]: appErrorMessage(err, t("intro.err.objects")) },
         }));
         return null;
       }
@@ -378,7 +379,7 @@ export const useIntrospectionStore = create<IntrospectionFeatureState>((set, get
           loading: omit(state.loading, key),
           errors: {
             ...state.errors,
-            [key]: appErrorMessage(err, "Could not load the object definition."),
+            [key]: appErrorMessage(err, t("intro.err.objectDefinition")),
           },
         }));
         return null;

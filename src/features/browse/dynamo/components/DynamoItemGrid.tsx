@@ -14,6 +14,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { observeElementRect, useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
 
+import { useT } from "../../../../shared/i18n/useT";
 import { Icon } from "../../../../shared/ui/Icon";
 import { useToast } from "../../../../shared/ui/toastContext";
 import type { DynamoItem, KeySchema } from "../api";
@@ -109,12 +110,13 @@ function DynamoItemGridInner({
   inspectingRow,
 }: DynamoItemGridProps) {
   const toast = useToast();
+  const t = useT();
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const copy = (v: unknown) =>
     void navigator.clipboard.writeText(copyText(v)).then(
-      () => toast("Copied to clipboard", "ok"),
-      () => toast("Couldn't copy to clipboard", "err"),
+      () => toast(t("dyn.grid.copied"), "ok"),
+      () => toast(t("uix.copy.fail"), "err"),
     );
 
   // Keys first, then the remaining attributes in first-seen order. Keys are only
@@ -256,7 +258,7 @@ function DynamoItemGridInner({
     observeElementRect: observeRectIgnoringHidden,
   });
 
-  if (!items.length) return <div className="ddb-grid-empty">No items</div>;
+  if (!items.length) return <div className="ddb-grid-empty">{t("dyn.grid.noItems")}</div>;
 
   const sel = selected ?? new Set<number>();
   const allSelected = selectable && items.length > 0 && sel.size === items.length;
@@ -278,7 +280,7 @@ function DynamoItemGridInner({
                   if (el) el.indeterminate = someSelected;
                 }}
                 onChange={onToggleAll}
-                aria-label="Select all rows"
+                aria-label={t("dyn.grid.selectAllAria")}
               />
             </div>
           ) : null}
@@ -298,7 +300,7 @@ function DynamoItemGridInner({
                     to set a manual width, double-click to auto-fit. */}
                 <span
                   className={"dg-col-resize" + (draggingCol === c ? " active" : "")}
-                  title="Drag to resize · double-click to auto-fit"
+                  title={t("dyn.grid.resizeTitle")}
                   onMouseDown={(e) => startColResize(e, c, colWidths[ci]!)}
                   onDoubleClick={(e) => {
                     e.stopPropagation();
@@ -344,7 +346,7 @@ function DynamoItemGridInner({
                       className="ddb-dg-check"
                       checked={sel.has(ri)}
                       onChange={() => onToggleRow?.(ri)}
-                      aria-label={`Select row ${ri + 1}`}
+                      aria-label={t("dyn.grid.selectRowAria", { n: ri + 1 })}
                     />
                   </div>
                 ) : null}
@@ -353,7 +355,7 @@ function DynamoItemGridInner({
                     pill itself. A staged row shows ✱ in place of its number. */}
                 <div
                   className={"ddb-vg-rownum" + (inspectingRow === ri ? " inspecting" : "")}
-                  title={onOpenItem ? "Inspect item (⌘E / Ctrl+E)" : undefined}
+                  title={onOpenItem ? t("dyn.grid.inspectTitle") : undefined}
                 >
                   {onOpenItem ? (
                     <>
@@ -406,8 +408,8 @@ function DynamoItemGridInner({
                       <button
                         type="button"
                         className="ddb-cell-copy"
-                        title="Copy value"
-                        aria-label={"Copy " + c + " value"}
+                        title={t("dyn.copyValue")}
+                        aria-label={t("dyn.copyValueAria", { name: c })}
                         onClick={(e) => {
                           e.stopPropagation();
                           copy(v);

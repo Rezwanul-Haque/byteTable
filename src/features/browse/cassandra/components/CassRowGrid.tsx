@@ -6,6 +6,7 @@
 
 import { useCallback, useMemo, useRef, useState } from "react";
 
+import { useT } from "../../../../shared/i18n/useT";
 import { Icon } from "../../../../shared/ui/Icon";
 import type { CassColumn } from "../api";
 import { cassIsComplex } from "../cqlTypes";
@@ -72,6 +73,7 @@ export function CassRowGrid({
   onToggleRow,
   onToggleAll,
 }: CassRowGridProps) {
+  const t = useT();
   const [editing, setEditing] = useState<EditingState | null>(null);
   // Manual column-width overrides (px) by column name (session-only). A value
   // wins over the auto estimate; cleared per column by double-clicking its
@@ -143,7 +145,7 @@ export function CassRowGrid({
     });
   }, []);
 
-  if (!rows.length) return <div className="grid-empty">No rows</div>;
+  if (!rows.length) return <div className="grid-empty">{t("cass.grid.noRows")}</div>;
   const keys = keyCols ?? new Set<string>();
   const selectable = !!onToggleRow;
   const sel = selected ?? new Set<number>();
@@ -196,7 +198,7 @@ export function CassRowGrid({
                     if (el) el.indeterminate = sel.size > 0 && !allChecked;
                   }}
                   onChange={() => onToggleAll?.()}
-                  aria-label="Select all rows"
+                  aria-label={t("cass.grid.selectAll")}
                 />
               </th>
             ) : null}
@@ -209,7 +211,7 @@ export function CassRowGrid({
                 {/* Right-edge resize handle (shared .dg-col-resize styling). */}
                 <span
                   className={"dg-col-resize" + (draggingCol === c.name ? " active" : "")}
-                  title="Drag to resize · double-click to auto-fit"
+                  title={t("cass.grid.resizeTitle")}
                   onMouseDown={(e) => startColResize(e, c.name, colWidths[c.name]!)}
                   onDoubleClick={(e) => {
                     e.stopPropagation();
@@ -231,14 +233,14 @@ export function CassRowGrid({
                     className="dg-check"
                     checked={sel.has(i)}
                     onChange={() => onToggleRow?.(i)}
-                    aria-label={"Select row " + (i + 1)}
+                    aria-label={t("cass.grid.selectRow", { n: i + 1 })}
                   />
                 </td>
               ) : null}
               <td
                 className="cass-grid-idx cass-grid-open"
                 onClick={() => onOpenRow?.(r)}
-                title="Open full row editor"
+                title={t("cass.grid.openRowEditor")}
               >
                 {i + 1}
               </td>
@@ -270,10 +272,10 @@ export function CassRowGrid({
                     title={
                       editable
                         ? isKey
-                          ? "Primary-key column — locked (delete + re-insert to change)"
+                          ? t("cass.grid.pkLocked")
                           : complex
-                            ? "Double-click to edit in row editor"
-                            : "Double-click to edit"
+                            ? t("cass.grid.dblClickRowEditor")
+                            : t("cass.grid.dblClickEdit")
                         : ""
                     }
                   >
@@ -300,7 +302,7 @@ export function CassRowGrid({
                         {editable && !isKey && complex ? (
                           <button
                             className="cass-cell-expand"
-                            title="Edit in row editor"
+                            title={t("cass.grid.editInRowEditor")}
                             onClick={(e) => {
                               e.stopPropagation();
                               onComplexEdit?.(r);

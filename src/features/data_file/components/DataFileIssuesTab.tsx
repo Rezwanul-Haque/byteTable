@@ -8,13 +8,15 @@
 
 import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
+import { useT } from "../../../shared/i18n/useT";
+import type { StringKey } from "../../../shared/i18n";
 import type { Issue, IssueSeverity } from "../core";
 import type { DataFileDoc } from "../doc";
 
-const SEV_META: Record<IssueSeverity, { label: string; color: string }> = {
-  error: { label: "Error", color: "var(--danger)" },
-  warn: { label: "Warning", color: "var(--warn)" },
-  note: { label: "Note", color: "var(--text-faint)" },
+const SEV_META: Record<IssueSeverity, { label: StringKey; color: string }> = {
+  error: { label: "dfile.sevErrorN", color: "var(--danger)" },
+  warn: { label: "dfile.sevWarnN", color: "var(--warn)" },
+  note: { label: "dfile.sevNoteN", color: "var(--text-faint)" },
 };
 
 const SEVERITIES: IssueSeverity[] = ["error", "warn", "note"];
@@ -26,6 +28,7 @@ interface DataFileIssuesTabProps {
 }
 
 export function DataFileIssuesTab({ doc, onShowRows, onFocusColumn }: DataFileIssuesTabProps) {
+  const t = useT();
   const issues = doc.analysis.issues;
   const count = (sev: IssueSeverity) => issues.filter((i) => i.sev === sev).length;
 
@@ -33,10 +36,12 @@ export function DataFileIssuesTab({ doc, onShowRows, onFocusColumn }: DataFileIs
     <div className="csvv-pane csvv-scroll" data-screen-label={"Data quality: " + doc.name}>
       <div className="csvv-pane-head">
         <Icon name="rule" size={15} style={{ color: "var(--accent)" }} />
-        <h3>Data quality</h3>
+        <h3>{t("dfile.tabQuality")}</h3>
         <span className="csvv-pane-note">
-          checked on open · {doc.parsed.rows.length.toLocaleString()} rows ×{" "}
-          {doc.analysis.cols.length} columns
+          {t("dfile.checkedNote", {
+            rows: doc.parsed.rows.length.toLocaleString(),
+            cols: doc.analysis.cols.length,
+          })}
         </span>
       </div>
 
@@ -50,10 +55,7 @@ export function DataFileIssuesTab({ doc, onShowRows, onFocusColumn }: DataFileIs
               style={{ borderColor: n ? SEV_META[sev].color + "66" : "var(--border)" }}
             >
               <b style={{ color: n ? SEV_META[sev].color : "var(--text-faint)" }}>{n}</b>
-              <span>
-                {SEV_META[sev].label}
-                {n === 1 ? "" : "s"}
-              </span>
+              <span>{t(SEV_META[sev].label, { count: n })}</span>
             </div>
           );
         })}
@@ -63,10 +65,8 @@ export function DataFileIssuesTab({ doc, onShowRows, onFocusColumn }: DataFileIs
         <div className="csvv-clean">
           <Icon name="verified" size={22} style={{ color: "var(--accent)" }} />
           <div>
-            <b>Nothing to flag</b>
-            <span>
-              Every row has the expected field count and every column holds one consistent type.
-            </span>
+            <b>{t("dfile.nothingToFlag")}</b>
+            <span>{t("dfile.cleanBody")}</span>
           </div>
         </div>
       ) : (
@@ -85,12 +85,12 @@ export function DataFileIssuesTab({ doc, onShowRows, onFocusColumn }: DataFileIs
               <div className="csvv-issue-actions">
                 {iss.rows && iss.rows.length ? (
                   <Btn icon="table_rows" variant="text" small onClick={() => onShowRows(iss)}>
-                    Show rows
+                    {t("dfile.showRows")}
                   </Btn>
                 ) : null}
                 {iss.col ? (
                   <Btn icon="insights" variant="text" small onClick={() => onFocusColumn(iss.col!)}>
-                    Column
+                    {t("dfile.columnAction")}
                   </Btn>
                 ) : null}
               </div>

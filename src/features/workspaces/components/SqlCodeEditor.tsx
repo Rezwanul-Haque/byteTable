@@ -49,7 +49,7 @@ import {
   lineNumbers,
   rectangularSelection,
 } from "@codemirror/view";
-import { tags as t } from "@lezer/highlight";
+import { tags } from "@lezer/highlight";
 import {
   forwardRef,
   useEffect,
@@ -60,6 +60,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
+import { useT } from "../../../shared/i18n/useT";
 import type { Engine } from "../../../shared/types";
 import { clearActiveCodeEditor, setActiveCodeEditor } from "../../../shared/ui/activeCodeEditor";
 
@@ -110,13 +111,13 @@ export interface SqlCodeEditorHandle {
 /** §3.7 highlight palette, mapped onto lezer tags. Colors are literal where
  *  the spec gives a hex; the keyword color reads the live --accent token. */
 const sqlHighlight = HighlightStyle.define([
-  { tag: t.keyword, color: "var(--accent)", fontWeight: "500" },
-  { tag: [t.operatorKeyword, t.modifier], color: "var(--accent)", fontWeight: "500" },
-  { tag: [t.string, t.special(t.string)], color: "#e5c07b" },
-  { tag: [t.number, t.bool, t.null], color: "#7fb8e8" },
-  { tag: [t.function(t.variableName), t.standard(t.name)], color: "#c678dd" },
+  { tag: tags.keyword, color: "var(--accent)", fontWeight: "500" },
+  { tag: [tags.operatorKeyword, tags.modifier], color: "var(--accent)", fontWeight: "500" },
+  { tag: [tags.string, tags.special(tags.string)], color: "#e5c07b" },
+  { tag: [tags.number, tags.bool, tags.null], color: "#7fb8e8" },
+  { tag: [tags.function(tags.variableName), tags.standard(tags.name)], color: "#c678dd" },
   {
-    tag: [t.comment, t.lineComment, t.blockComment],
+    tag: [tags.comment, tags.lineComment, tags.blockComment],
     color: "var(--text-faint)",
     fontStyle: "italic",
   },
@@ -236,6 +237,7 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
     { value, onChange, onRun, onRunBatch, onFormat, onCaret, onAllSelected, schema, engine },
     ref,
   ) {
+    const t = useT();
     const hostRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<EditorView | null>(null);
     // Live editor font size (px) + the compartment that applies it, so Mod-+/-
@@ -600,19 +602,19 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
                   onMouseDown={(e) => e.stopPropagation()}
                 >
                   <button className="sql-ctx-item" role="menuitem" onClick={runSelected}>
-                    <span>Run Selected</span>
+                    <span>{t("ws.ctx.runSelected")}</span>
                     <span className="sql-ctx-key">{RUN_HINT}</span>
                   </button>
                   <button className="sql-ctx-item" role="menuitem" onClick={runAll}>
-                    <span>Run All</span>
+                    <span>{t("ws.ctx.runAll")}</span>
                   </button>
                   {onRunBatchRef.current ? (
                     <button className="sql-ctx-item" role="menuitem" onClick={runSelectedAsBatch}>
-                      <span>Run as Batch</span>
+                      <span>{t("ws.ctx.runBatch")}</span>
                     </button>
                   ) : null}
                   <button className="sql-ctx-item" role="menuitem" onClick={format}>
-                    <span>Format</span>
+                    <span>{t("ws.ctx.format")}</span>
                     <span className="sql-ctx-key">{FORMAT_HINT}</span>
                   </button>
                   <div className="sql-ctx-sep" />
@@ -622,7 +624,7 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
                     onClick={copySelection}
                     disabled={!menu.hasSelection}
                   >
-                    <span>Copy</span>
+                    <span>{t("menu.edit.copy")}</span>
                   </button>
                   <button
                     className="sql-ctx-item"
@@ -630,10 +632,10 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
                     onClick={cutSelection}
                     disabled={!menu.hasSelection}
                   >
-                    <span>Cut</span>
+                    <span>{t("menu.edit.cut")}</span>
                   </button>
                   <button className="sql-ctx-item" role="menuitem" onClick={pasteAtCursor}>
-                    <span>Paste</span>
+                    <span>{t("menu.edit.paste")}</span>
                   </button>
                 </div>
               </div>,

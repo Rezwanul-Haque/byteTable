@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { appErrorMessage, isAppErrorPayload } from "../../../../shared/api/error";
+import { useT } from "../../../../shared/i18n/useT";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { useToast } from "../../../../shared/ui/toastContext";
@@ -42,6 +43,7 @@ export function DynamoSchemaMap({ handleId, tables, onOpenTable }: DynamoSchemaM
   const [error, setError] = useState<string | null>(null);
   const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({});
   const [zoom, setZoom] = useState(1);
+  const t = useT();
   const toast = useToast();
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -107,13 +109,13 @@ export function DynamoSchemaMap({ handleId, tables, onOpenTable }: DynamoSchemaM
           return next;
         });
       } catch (e) {
-        if (alive) setError(isAppErrorPayload(e) ? e.message : "Could not build the schema map");
+        if (alive) setError(isAppErrorPayload(e) ? e.message : t("dyn.sm.fail"));
       }
     })();
     return () => {
       alive = false;
     };
-  }, [handleId, tablesSig]);
+  }, [handleId, tablesSig, t]);
 
   const byId = useMemo(() => {
     const m: Record<string, DynamoEntity> = {};
@@ -157,7 +159,7 @@ export function DynamoSchemaMap({ handleId, tables, onOpenTable }: DynamoSchemaM
     );
   }
   if (!model) {
-    return <div className="ddb-dash-empty">Building schema map…</div>;
+    return <div className="ddb-dash-empty">{t("dyn.sm.building")}</div>;
   }
 
   const { entities, rels, refs } = model;
@@ -216,11 +218,17 @@ export function DynamoSchemaMap({ handleId, tables, onOpenTable }: DynamoSchemaM
         rows.push(
           e.skN
             ? { name: e.skN, type: e.skPattern ?? undefined }
-            : { name: "partition-only", muted: true },
+            : { name: t("dyn.partitionOnly"), muted: true },
         );
         e.attrs.slice(0, MAX_ATTRS).forEach((a) => rows.push({ name: a, type: e.attrTypes[a] }));
         if (extra > 0) {
-          rows.push({ name: `+ ${extra} more attribute${extra > 1 ? "s" : ""}…`, muted: true });
+          rows.push({
+            name:
+              extra === 1
+                ? t("dyn.sm.moreAttrs1", { count: extra })
+                : t("dyn.sm.moreAttrsN", { count: extra }),
+            muted: true,
+          });
         }
         e.gsis.forEach((g) =>
           rows.push({ name: g.name, type: g.pkPattern + (g.skPattern ? " / " + g.skPattern : "") }),
@@ -237,12 +245,11 @@ export function DynamoSchemaMap({ handleId, tables, onOpenTable }: DynamoSchemaM
       ].filter((e): e is { d: string; dashed: boolean } => e !== null);
 
       const res = await exportCardMap({ cards, edges, fileBase: "dynamodb-schema-map", format });
-      if (res.status === "ok") toast(`Exported schema map to ${res.file}`, "ok");
-      else if (res.status === "empty") toast("Nothing to export yet.", "info");
-      else if (res.status === "no-dialog")
-        toast("Exporting requires the ByteTable desktop app.", "info");
+      if (res.status === "ok") toast(t("dyn.sm.exported", { file: res.file }), "ok");
+      else if (res.status === "empty") toast(t("dyn.sm.nothingToExport"), "info");
+      else if (res.status === "no-dialog") toast(t("dyn.exportNeedApp"), "info");
     } catch (e) {
-      toast(appErrorMessage(e, "Could not export the schema map."), "err");
+      toast(appErrorMessage(e, t("dyn.sm.exportFail")), "err");
     } finally {
       setExporting(false);
     }
@@ -252,9 +259,13 @@ export function DynamoSchemaMap({ handleId, tables, onOpenTable }: DynamoSchemaM
     <div className="ddb-schema-map">
       <div className="ddb-map-toolbar">
         <Icon name="schema" size={16} style={{ color: "var(--accent)" }} />
-        <span className="ddb-map-title">single-table design map</span>
+        <span className="ddb-map-title">{t("dyn.sm.sub")}</span>
         <span className="ddb-map-sub">
-          {entities.length} entities · {rels.length} item collections · {refs.length} references
+          {t("dyn.sm.stats", {
+            entities: entities.length,
+            collections: rels.length,
+            refs: refs.length,
+          })}
         </span>
         <span
           className="ddb-map-hint"
@@ -265,25 +276,25 @@ export function DynamoSchemaMap({ handleId, tables, onOpenTable }: DynamoSchemaM
             minWidth: 0,
           }}
         >
-          drag entities to rearrange
+          {t("dyn.sm.dragHint")}
         </span>
         <div style={{ flex: 1, minWidth: 8 }} />
         <IconBtn
           icon="zoom_out"
-          title="Zoom out"
+          title={t("dyn.sm.zoomOut")}
           onClick={() => setZoom((z) => Math.max(0.5, Math.round((z - 0.1) * 10) / 10))}
         />
         <span className="ddb-map-zoom">{Math.round(zoom * 100)}%</span>
         <IconBtn
           icon="zoom_in"
-          title="Zoom in"
+          title={t("dyn.sm.zoomIn")}
           onClick={() => setZoom((z) => Math.min(1.5, Math.round((z + 0.1) * 10) / 10))}
         />
-        <IconBtn icon="fit_screen" title="Reset layout" onClick={resetLayout} />
+        <IconBtn icon="fit_screen" title={t("dyn.sm.reset")} onClick={resetLayout} />
         <div style={{ position: "relative" }}>
           <IconBtn
             icon="download"
-            title="Export schema map"
+            title={t("dyn.sm.export")}
             active={exportMenuOpen}
             disabled={exporting}
             onClick={(e) => {
@@ -298,10 +309,10 @@ export function DynamoSchemaMap({ handleId, tables, onOpenTable }: DynamoSchemaM
               onClick={(e) => e.stopPropagation()}
             >
               <div className="ctx-item" onClick={() => void runExport("png")}>
-                <Icon name="image" size={15} /> PNG image
+                <Icon name="image" size={15} /> {t("dyn.sm.pngImage")}
               </div>
               <div className="ctx-item" onClick={() => void runExport("svg")}>
-                <Icon name="shape_line" size={15} /> SVG vector
+                <Icon name="shape_line" size={15} /> {t("dyn.sm.svgVector")}
               </div>
             </div>
           ) : null}
@@ -368,7 +379,7 @@ export function DynamoSchemaMap({ handleId, tables, onOpenTable }: DynamoSchemaM
                     <button
                       type="button"
                       className="ddb-map-card-open"
-                      title={"Open " + e.table}
+                      title={t("dyn.sm.openTable", { table: e.table })}
                       onMouseDown={(ev) => ev.stopPropagation()}
                       onClick={() => onOpenTable(e.table)}
                     >
@@ -404,7 +415,7 @@ export function DynamoSchemaMap({ handleId, tables, onOpenTable }: DynamoSchemaM
                     ) : (
                       <div className="ddb-map-card-col" style={{ height: ROW_H }}>
                         <span className="ddb-map-col-icon" />
-                        <span className="ddb-map-col-name dim">partition-only</span>
+                        <span className="ddb-map-col-name dim">{t("dyn.partitionOnly")}</span>
                       </div>
                     )}
                     {e.attrs.slice(0, MAX_ATTRS).map((a) => (
@@ -418,7 +429,9 @@ export function DynamoSchemaMap({ handleId, tables, onOpenTable }: DynamoSchemaM
                       <div className="ddb-map-card-col ddb-map-col-more" style={{ height: ROW_H }}>
                         <span className="ddb-map-col-icon" />
                         <span className="ddb-map-col-name">
-                          + {extra} more attribute{extra > 1 ? "s" : ""}…
+                          {extra === 1
+                            ? t("dyn.sm.moreAttrs1", { count: extra })
+                            : t("dyn.sm.moreAttrsN", { count: extra })}
                         </span>
                       </div>
                     ) : null}

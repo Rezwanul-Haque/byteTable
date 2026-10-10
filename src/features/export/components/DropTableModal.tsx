@@ -28,6 +28,7 @@ import { Icon } from "../../../shared/ui/Icon";
 import { Modal, ModalActions, ModalTitle } from "../../../shared/ui/Modal";
 import { ENV_COLOR } from "../../../shared/ui/envColors";
 import { useToast } from "../../../shared/ui/toastContext";
+import { useT } from "../../../shared/i18n/useT";
 import { normalizeEnv, type Engine } from "../../../shared/types";
 import { useIntrospectionStore } from "../../introspection/state";
 import { dropFkOverride, dropSql } from "../fkOverride";
@@ -59,6 +60,7 @@ export function DropTableModal({
   onDropped?: () => void;
 }) {
   const toast = useToast();
+  const t = useT();
   const loadTables = useIntrospectionStore((s) => s.loadTables);
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
@@ -82,33 +84,33 @@ export function DropTableModal({
         // Force-refresh so the sidebar loses the row (and its column caches).
         void loadTables(handleId, schemaName, { force: true });
         onDropped?.();
-        toast("Dropped " + table, "ok");
+        toast(t("io.dropped", { name: table }), "ok");
         onClose();
       } catch (err) {
-        setError(appErrorMessage(err, "Could not drop the table."));
+        setError(appErrorMessage(err, t("io.dropFail")));
         setBusy(false);
       }
     })();
   };
 
   return (
-    <Modal onClose={onClose} label="Drop table" width={460} className="truncate-modal">
+    <Modal onClose={onClose} label={t("io.dropTable")} width={460} className="truncate-modal">
       <ModalTitle>
-        <Icon name="warning" size={18} style={{ color: DANGER }} /> Drop table
+        <Icon name="warning" size={18} style={{ color: DANGER }} /> {t("io.dropTable")}
       </ModalTitle>
       <div className="truncate-body">
         <p>
-          This removes the table{" "}
+          {t("io.dropBodyPre")}{" "}
           <code>
             {schemaName}.{table}
           </code>{" "}
-          itself — its structure, its indexes and{" "}
+          {t("io.dropBodyMid")}{" "}
           {rowCount === null || rowCount === undefined ? (
-            <b>all its rows</b>
+            <b>{t("io.dropBodyAllRows")}</b>
           ) : (
-            <b>all {rowCount.toLocaleString()} rows</b>
+            <b>{t("io.allRowsN", { count: rowCount })}</b>
           )}
-          . Nothing is left to re-import into. This cannot be undone.
+          {t("io.dropBodyPost")}
         </p>
         <pre className="truncate-sql">{dropSql(engine, table, force && !!fk)}</pre>
         {fk ? (
@@ -119,8 +121,8 @@ export function DropTableModal({
               disabled={busy}
             />
             <span className="truncate-fk-text">
-              <span className="truncate-fk-label">{fk.label}</span>
-              <span className="truncate-fk-hint">{fk.hint}</span>
+              <span className="truncate-fk-label">{t(fk.label)}</span>
+              <span className="truncate-fk-hint">{t(fk.hint)}</span>
             </span>
           </label>
         ) : null}
@@ -134,18 +136,18 @@ export function DropTableModal({
                 background: envColor + "14",
               }}
             >
-              <Icon name="public" size={13} /> production
+              <Icon name="public" size={13} /> {t("uix.bulkDelete.prodTag")}
             </div>
           ) : null}
           <label>
-            Type <b>{table}</b> to confirm
+            {t("uix.bulkDelete.typePre")} <b>{table}</b> {t("uix.bulkDelete.typePost")}
             <input
               value={typed}
               onChange={(e) => setTyped(e.target.value)}
               placeholder={table}
               spellCheck="false"
               autoFocus
-              aria-label={"Type " + table + " to confirm"}
+              aria-label={t("uix.bulkDelete.typeAria", { target: table })}
             />
           </label>
         </div>
@@ -153,7 +155,7 @@ export function DropTableModal({
       </div>
       <ModalActions>
         <Btn variant="text" onClick={onClose} disabled={busy}>
-          Cancel
+          {t("common.cancel")}
         </Btn>
         <button
           type="button"
@@ -162,7 +164,7 @@ export function DropTableModal({
           onClick={confirm}
         >
           <Icon name="delete_forever" size={16} />
-          <span>{busy ? "Dropping…" : "Drop table"}</span>
+          <span>{busy ? t("io.dropping") : t("io.dropBtn")}</span>
         </button>
       </ModalActions>
     </Modal>

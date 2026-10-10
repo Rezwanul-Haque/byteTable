@@ -44,7 +44,7 @@ export function TitleBar({ ctx }: { ctx: TitleBarCtx }) {
   const { settings, setSetting } = useSettingsStore();
   // buildMenus reads its labels through t() at call time, so subscribe to the
   // locale: a language switch has to relabel the menu bar in place.
-  useT();
+  const t = useT();
   const home = useHomeDir();
   const mode = resolveMode();
   const isMac = mode === "mac-native" || mode === "mac-frameless";
@@ -124,7 +124,7 @@ export function TitleBar({ ctx }: { ctx: TitleBarCtx }) {
         <button
           type="button"
           className="tb-brand"
-          title="ByteTable — open a connection"
+          title={t("uix.titlebar.openTooltip")}
           onClick={() => startAdding()}
         >
           <span className="tb-word">
@@ -157,7 +157,7 @@ export function TitleBar({ ctx }: { ctx: TitleBarCtx }) {
             </span>
           </>
         ) : (
-          <span className="tb-context-empty">ByteTable — Database Client</span>
+          <span className="tb-context-empty">{t("uix.titlebar.appTitle")}</span>
         )}
       </div>
 
@@ -167,14 +167,14 @@ export function TitleBar({ ctx }: { ctx: TitleBarCtx }) {
             <button
               className="bt-titlebar-btn"
               onClick={cyclePosition}
-              title="Cycle Titlebar Position"
+              title={t("uix.titlebar.cyclePosition")}
             >
               <span className="msym">swap_vert</span>
             </button>
             <button
               className="bt-titlebar-btn"
               onClick={() => void invoke("hide_to_tray")}
-              title="Hide to Tray"
+              title={t("uix.titlebar.hideToTray")}
             >
               <span className="msym">visibility_off</span>
             </button>
@@ -211,6 +211,7 @@ function WinGlyph({
   kind: "min" | "max" | "restore" | "close";
   onClick: () => void;
 }) {
+  const t = useT();
   const glyph =
     kind === "min"
       ? "remove"
@@ -221,12 +222,12 @@ function WinGlyph({
           : "close";
   const title =
     kind === "min"
-      ? "Minimize"
+      ? t("uix.win.minimize")
       : kind === "max"
-        ? "Maximize"
+        ? t("uix.win.maximize")
         : kind === "restore"
-          ? "Restore"
-          : "Close";
+          ? t("uix.win.restore")
+          : t("uix.win.close");
   return (
     <button
       className={"bt-titlebar-btn tb-wc-win" + (kind === "close" ? " close" : "")}
@@ -248,15 +249,31 @@ function MacLights({
   onMin: () => void;
   onZoom: () => void;
 }) {
+  const t = useT();
   return (
     <div className="tb-winctl-left">
-      <button className="tb-wc tb-wc-close" onClick={onClose} title="Close" aria-label="Close">
+      <button
+        className="tb-wc tb-wc-close"
+        onClick={onClose}
+        title={t("uix.win.close")}
+        aria-label={t("uix.win.close")}
+      >
         <span className="tb-wc-glyph">✕</span>
       </button>
-      <button className="tb-wc tb-wc-min" onClick={onMin} title="Minimize" aria-label="Minimize">
+      <button
+        className="tb-wc tb-wc-min"
+        onClick={onMin}
+        title={t("uix.win.minimize")}
+        aria-label={t("uix.win.minimize")}
+      >
         <span className="tb-wc-glyph">–</span>
       </button>
-      <button className="tb-wc tb-wc-zoom" onClick={onZoom} title="Zoom" aria-label="Zoom">
+      <button
+        className="tb-wc tb-wc-zoom"
+        onClick={onZoom}
+        title={t("uix.win.zoom")}
+        aria-label={t("uix.win.zoom")}
+      >
         <span className="tb-wc-glyph">+</span>
       </button>
     </div>

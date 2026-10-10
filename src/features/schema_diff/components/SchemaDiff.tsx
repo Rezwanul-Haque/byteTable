@@ -23,6 +23,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { appErrorMessage } from "../../../shared/api/error";
 import { exportSave } from "../../../shared/api/engine";
+import { useT } from "../../../shared/i18n/useT";
 import { Icon } from "../../../shared/ui/Icon";
 import { ENV_COLOR } from "../../../shared/ui/envColors";
 import { useToast } from "../../../shared/ui/toastContext";
@@ -116,8 +117,10 @@ function SdConnCard({
   schema,
   schemas,
   onSchemaChange,
-  pendingLabel = "opening…",
+  pendingLabel,
 }: SdConnCardProps) {
+  const t = useT();
+  const pending = pendingLabel ?? t("sdiff.opening");
   const optionLabel = (o: SavedConnection) =>
     o.name + " · " + engineName(o.engine) + " · " + normalizeEnv(o.env);
 
@@ -139,18 +142,18 @@ function SdConnCard({
             <div className="sd-conn-name">
               <span className="sd-conn-picker">
                 <span className="sd-conn-label" style={{ color: "var(--text-faint)" }}>
-                  Choose a schema…
+                  {t("sdiff.chooseSchema")}
                 </span>
                 <Icon name="arrow_drop_down" size={16} style={{ color: "var(--text-faint)" }} />
                 <select
                   className="sd-conn-overlay"
                   value=""
                   onChange={(e) => e.target.value && onChange(e.target.value)}
-                  title="Pick a connection"
+                  title={t("sdiff.pickConn")}
                   aria-label={role}
                 >
                   <option value="" disabled>
-                    Choose a schema…
+                    {t("sdiff.chooseSchema")}
                   </option>
                   {options.map((o) => (
                     <option key={o.id} value={o.id}>
@@ -160,7 +163,7 @@ function SdConnCard({
                 </select>
               </span>
             </div>
-            <div className="sd-conn-detail">Not selected</div>
+            <div className="sd-conn-detail">{t("sdiff.notSelected")}</div>
           </div>
         </div>
       </div>
@@ -223,8 +226,8 @@ function SdConnCard({
                   className="sd-conn-overlay"
                   value={schema ?? ""}
                   onChange={(e) => onSchemaChange(e.target.value)}
-                  title="Pick a schema"
-                  aria-label={role + " schema"}
+                  title={t("sdiff.pickSchema")}
+                  aria-label={t("sdiff.roleSchema", { role })}
                 >
                   {schemas.map((s) => (
                     <option key={s} value={s}>
@@ -234,7 +237,7 @@ function SdConnCard({
                 </select>
               </span>
             ) : (
-              <span className="sd-schema-label">{schema ?? pendingLabel}</span>
+              <span className="sd-schema-label">{schema ?? pending}</span>
             )}
           </div>
         </div>
@@ -380,6 +383,7 @@ export interface SchemaDiffProps {
 }
 
 export function SchemaDiff({ currentConn, compareOnly }: SchemaDiffProps) {
+  const t = useT();
   const toast = useToast();
   const savedConnections = useConnectionsStore((s) => s.savedConnections);
   const loadConnections = useConnectionsStore((s) => s.load);
@@ -1035,7 +1039,7 @@ export function SchemaDiff({ currentConn, compareOnly }: SchemaDiffProps) {
                 type="button"
                 className="sd-review-x"
                 onClick={() => setDdlOpen(false)}
-                aria-label="Close"
+                aria-label={t("common.close")}
               >
                 <Icon name="close" size={16} />
               </button>
@@ -1082,7 +1086,7 @@ export function SchemaDiff({ currentConn, compareOnly }: SchemaDiffProps) {
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
-            aria-label="Confirm migration"
+            aria-label={t("sdiff.confirm.title")}
           >
             <div className="sd-review-head">
               <div className="sd-review-title">
@@ -1093,7 +1097,7 @@ export function SchemaDiff({ currentConn, compareOnly }: SchemaDiffProps) {
                 type="button"
                 className="sd-review-x"
                 onClick={() => setReviewOpen(false)}
-                aria-label="Close"
+                aria-label={t("common.close")}
               >
                 <Icon name="close" size={16} />
               </button>
@@ -1182,7 +1186,7 @@ export function SchemaDiff({ currentConn, compareOnly }: SchemaDiffProps) {
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
-            aria-label="Migration applied"
+            aria-label={t("sdiff.done.title")}
           >
             <div className="sd-ring">
               <Icon name="check" size={30} />

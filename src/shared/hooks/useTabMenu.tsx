@@ -11,6 +11,7 @@
 import { useEffect, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
+import { useT } from "../i18n/useT";
 import { dropWordSelection } from "../ui/dropWordSelection";
 import { Icon } from "../ui/Icon";
 import "../ui/TabMenu.css";
@@ -50,6 +51,7 @@ interface MenuState {
 }
 
 export function useTabMenu({ ids, close, canClose, closeAll = false, actions }: TabMenuOptions) {
+  const t = useT();
   const [menu, setMenu] = useState<MenuState | null>(null);
 
   const onContextMenu = (e: ReactMouseEvent, id: string) => {
@@ -99,15 +101,15 @@ export function useTabMenu({ ids, close, canClose, closeAll = false, actions }: 
           closeMenu();
         },
       })),
-      closeItem("Close", "close", ok(id) ? [id] : []),
+      closeItem(t("common.close"), "close", ok(id) ? [id] : []),
       closeItem(
-        "Close others",
+        t("tabs.closeOthers"),
         "clear_all",
         ids.filter((other) => other !== id && ok(other)),
       ),
-      ...(closeAll ? [closeItem("Close all", "delete_sweep", ids.filter(ok))] : []),
-      closeItem("Close to the right", "last_page", ids.slice(idx + 1).filter(ok)),
-      closeItem("Close to the left", "first_page", ids.slice(0, idx).filter(ok)),
+      ...(closeAll ? [closeItem(t("tabs.closeAll"), "delete_sweep", ids.filter(ok))] : []),
+      closeItem(t("tabs.closeRight"), "last_page", ids.slice(idx + 1).filter(ok)),
+      closeItem(t("tabs.closeLeft"), "first_page", ids.slice(0, idx).filter(ok)),
     ];
     // Clamp so the menu stays on-screen — from the item count, since the menu
     // grows a row per action and with "Close all".

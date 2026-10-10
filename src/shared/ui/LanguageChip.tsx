@@ -11,7 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { LOCALES, type LocaleId } from "../i18n";
-import { useLocale } from "../i18n/useT";
+import { useLocale, useT } from "../i18n/useT";
 import { useSettingsStore } from "../../features/settings/state";
 import { LanguageMenu } from "./LanguageMenu";
 import "./LanguageChip.css";
@@ -23,6 +23,7 @@ const EDGE_GAP = 8;
 export function LanguageChip() {
   // Subscribes to the locale, so the code updates the moment it changes.
   const locale = useLocale();
+  const t = useT();
   const setSetting = useSettingsStore((s) => s.setSetting);
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const [at, setAt] = useState<{ top: number; left: number } | null>(null);
@@ -66,8 +67,8 @@ export function LanguageChip() {
         type="button"
         className={"lang-chip" + (at ? " open" : "")}
         // The endonym carries the meaning the short code can't.
-        title={`${meta.endonym} · ${meta.name} — change the interface language`}
-        aria-label={`Interface language: ${meta.name}`}
+        title={t("uix.lang.chipTitle", { endonym: meta.endonym, name: meta.name })}
+        aria-label={t("uix.lang.chipAria", { name: meta.name })}
         aria-haspopup="listbox"
         aria-expanded={at !== null}
         onClick={() => (at ? close() : open())}

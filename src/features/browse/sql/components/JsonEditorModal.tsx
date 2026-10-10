@@ -11,12 +11,14 @@ import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { Modal, ModalActions } from "../../../../shared/ui/Modal";
+import { useT } from "../../../../shared/i18n/useT";
 import { highlightJSON, validateJSON } from "../../shared/jsonCell";
 import "../../shared/styles/CellEditors.css";
 
 /** Read-only collapsible tree view of a parsed JSON value. */
 function JsonTree({ value, depth = 0 }: { value: unknown; depth?: number }) {
   const [open, setOpen] = useState(depth < 2);
+  const t = useT();
   if (value === null) return <span className="jx-null">null</span>;
   if (typeof value !== "object") {
     const cls =
@@ -44,7 +46,7 @@ function JsonTree({ value, depth = 0 }: { value: unknown; depth?: number }) {
         <span className="jx-punct">{brace[0]}</span>
         {!open ? (
           <span className="jtree-collapsed">
-            {entries.length} {isArr ? "items" : "keys"}
+            {t(isArr ? "grid.itemsCount" : "grid.keysCount", { count: entries.length })}
             {brace[1]}
           </span>
         ) : null}
@@ -96,6 +98,7 @@ export function JsonEditorModal({
   })();
   const [text, setText] = useState(initial);
   const [view, setView] = useState<"code" | "tree">("code");
+  const t = useT();
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   const hlRef = useRef<HTMLPreElement | null>(null);
 
@@ -167,18 +170,18 @@ export function JsonEditorModal({
 
   const statusText = res.ok
     ? res.empty
-      ? "Empty → will save as NULL"
-      : "Valid JSON" +
+      ? t("grid.emptySavesNull")
+      : t("grid.validJson") +
         (res.value && typeof res.value === "object"
           ? " · " +
             (Array.isArray(res.value)
-              ? res.value.length + " items"
-              : Object.keys(res.value).length + " keys")
+              ? t("grid.itemsCount", { count: res.value.length })
+              : t("grid.keysCount", { count: Object.keys(res.value).length }))
           : "")
-    : (res.line ? "Line " + res.line + (res.col ? ":" + res.col : "") + " — " : "") + res.message;
+    : (res.line ? t("grid.lineCol", { line: res.line, col: res.col ?? 0 }) : "") + res.message;
 
   return (
-    <Modal className="json-modal" width={600} label="Edit JSON" onClose={onClose}>
+    <Modal className="json-modal" width={600} label={t("grid.editJson")} onClose={onClose}>
       <div className="modal-title">
         <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
           <Icon name="data_object" size={17} style={{ color: "var(--accent)" }} />
@@ -187,7 +190,7 @@ export function JsonEditorModal({
           </span>
           <span className="json-type-tag">{type}</span>
         </span>
-        <IconBtn icon="close" onClick={onClose} title="Close (Esc)" />
+        <IconBtn icon="close" onClick={onClose} title={t("grid.closeEsc")} />
       </div>
 
       <div className="json-toolbar">
@@ -197,7 +200,7 @@ export function JsonEditorModal({
             className={"json-seg-btn" + (view === "code" ? " active" : "")}
             onClick={() => setView("code")}
           >
-            <Icon name="code" size={14} /> Code
+            <Icon name="code" size={14} /> {t("grid.codeView")}
           </button>
           <button
             type="button"
@@ -205,7 +208,7 @@ export function JsonEditorModal({
             onClick={() => setView("tree")}
             disabled={!res.ok || res.empty}
           >
-            <Icon name="account_tree" size={14} /> Tree
+            <Icon name="account_tree" size={14} /> {t("grid.treeView")}
           </button>
         </div>
         <div style={{ flex: 1 }} />
@@ -214,18 +217,18 @@ export function JsonEditorModal({
           className="json-tool"
           onClick={format}
           disabled={!res.ok || res.empty}
-          title="Format (Alt+Shift+F)"
+          title={t("grid.formatTitle")}
         >
-          <Icon name="format_align_left" size={14} /> Format
+          <Icon name="format_align_left" size={14} /> {t("grid.formatBtn")}
         </button>
         <button
           type="button"
           className="json-tool"
           onClick={minify}
           disabled={!res.ok || res.empty}
-          title="Minify"
+          title={t("grid.minify")}
         >
-          <Icon name="compress" size={14} /> Minify
+          <Icon name="compress" size={14} /> {t("grid.minify")}
         </button>
       </div>
 
@@ -252,11 +255,11 @@ export function JsonEditorModal({
               spellCheck={false}
               autoCapitalize="off"
               autoComplete="off"
-              aria-label={"Edit JSON for " + column}
+              aria-label={t("grid.editJsonFor", { name: column })}
               onChange={(e) => setText(e.target.value)}
               onScroll={syncScroll}
               onKeyDown={onKeyDown}
-              placeholder="null  ·  empty saves NULL"
+              placeholder={t("grid.jsonPlaceholder")}
             />
           </div>
         </div>
@@ -265,7 +268,7 @@ export function JsonEditorModal({
           {res.ok && !res.empty ? (
             <JsonTree value={res.value} />
           ) : (
-            <div className="dg-pop-empty">Nothing to show</div>
+            <div className="dg-pop-empty">{t("grid.nothingToShow")}</div>
           )}
         </div>
       )}
@@ -276,12 +279,12 @@ export function JsonEditorModal({
       </div>
 
       <ModalActions>
-        <div className="json-hint">⌘↩ save · Alt+Shift+F format · brackets auto-close</div>
+        <div className="json-hint">{t("grid.jsonHint")}</div>
         <Btn variant="text" onClick={onClose}>
-          Cancel
+          {t("common.cancel")}
         </Btn>
         <Btn variant="filled" icon="check" onClick={save} disabled={!res.ok || !dirty}>
-          Save
+          {t("common.save")}
         </Btn>
       </ModalActions>
     </Modal>

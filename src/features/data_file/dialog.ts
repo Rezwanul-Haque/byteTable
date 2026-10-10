@@ -12,6 +12,7 @@
 // Both paths produce the same {@link PickedFile}, so the sheet never branches.
 
 import { readTextFile } from "../../shared/api/engine";
+import { t } from "../../shared/i18n";
 
 /** The extensions the picker filters to — delimited text, nothing binary. */
 const EXTENSIONS = ["csv", "tsv", "txt", "tab", "psv"];
@@ -45,8 +46,8 @@ export async function pickDataFile(): Promise<PickedFile | null> {
     multiple: false,
     directory: false,
     filters: [
-      { name: "Delimited text", extensions: EXTENSIONS },
-      { name: "All files", extensions: ["*"] },
+      { name: t("io.filterDelimited"), extensions: EXTENSIONS },
+      { name: t("io.filterAllFiles"), extensions: ["*"] },
     ],
   });
   if (typeof chosen !== "string") return null;
@@ -67,7 +68,7 @@ export function readBrowserFile(file: File): Promise<PickedFile> {
     const reader = new FileReader();
     reader.onload = () =>
       resolve({ name: file.name, path: null, size: file.size, text: String(reader.result) });
-    reader.onerror = () => reject(new Error("Could not read “" + file.name + "”."));
+    reader.onerror = () => reject(new Error(t("io.readFailName", { name: file.name })));
     reader.readAsText(file);
   });
 }

@@ -24,6 +24,7 @@ import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Modal, ModalActions, ModalTitle } from "../../../shared/ui/Modal";
 import { useToast } from "../../../shared/ui/toastContext";
+import { useT } from "../../../shared/i18n/useT";
 import { useIntrospectionStore } from "../../introspection/state";
 import { useWorkspacesStore } from "../../workspaces/state";
 import { useTabMetaStore } from "../../workspaces/tabMeta";
@@ -31,11 +32,14 @@ import { isSchemaPreviewError, previewSchema, type SchemaPreviewResult } from ".
 import { SqlPasteBox } from "./SqlPasteBox";
 import "./ImportModal.css";
 
+// Module-level i18n for the native dialog filter name (resolved at call time).
+import { t } from "../../../shared/i18n";
+
 async function openSqlDialog(): Promise<string | null> {
   const { open } = await import("@tauri-apps/plugin-dialog");
   const chosen = await open({
     multiple: false,
-    filters: [{ name: "SQL", extensions: ["sql", "txt"] }],
+    filters: [{ name: t("io.filterSql"), extensions: ["sql", "txt"] }],
   });
   return typeof chosen === "string" ? chosen : null;
 }
@@ -52,6 +56,7 @@ export function SchemaImportModal({
   onDone?: () => void;
 }) {
   const toast = useToast();
+  const t = useT();
   // The SQL to import — pasted directly OR loaded from a chosen file into the
   // textarea. Run as text (not by path) so a paste works the same as a file.
   const [text, setText] = useState("");
@@ -74,7 +79,7 @@ export function SchemaImportModal({
       try {
         chosen = await openSqlDialog();
       } catch {
-        toast("Choosing a file requires the desktop app — you can paste SQL instead", "info");
+        toast(t("io.dumpNeedsApp"), "info");
         return;
       }
       if (!chosen) return; // cancelled
@@ -83,7 +88,7 @@ export function SchemaImportModal({
         setFileName(chosen.split(/[\\/]/).pop() ?? chosen);
         onText(contents);
       } catch (err) {
-        setError(appErrorMessage(err, "Could not read the file."));
+        setError(appErrorMessage(err, t("io.readFail")));
       }
     })();
   };
@@ -115,16 +120,14 @@ export function SchemaImportModal({
           }
         }
         toast(
-          "Imported " +
-            (fileName ? fileName + " — " : "") +
-            statements.toLocaleString() +
-            " statements",
+          (fileName ? fileName + " — " : "") +
+            t("io.importedStatements", { count: statements.toLocaleString() }),
           "ok",
         );
         onDone?.();
         onClose();
       } catch (err) {
-        setError(appErrorMessage(err, "Could not import the dump."));
+        setError(appErrorMessage(err, t("io.importDumpFail")));
         setBusy(false);
         setProgress(null);
       }
@@ -137,33 +140,33 @@ export function SchemaImportModal({
   return (
     <Modal
       onClose={onClose}
-      label={"Import SQL dump into " + schemaName}
+      label={t("io.dumpInto", { name: schemaName })}
       width={620}
       className="import-modal"
     >
       <ModalTitle>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-          <Icon name="upload" size={17} style={{ color: "var(--accent)" }} /> Import SQL dump →{" "}
-          {schemaName}
+          <Icon name="upload" size={17} style={{ color: "var(--accent)" }} />{" "}
+          {t("io.dumpHeading", { name: schemaName })}
         </span>
-        <IconBtn icon="close" onClick={onClose} title="Close" />
+        <IconBtn icon="close" onClick={onClose} title={t("common.close")} />
       </ModalTitle>
 
       <div className="import-format">
         <span className="import-note" style={{ flex: 1 }}>
-          Paste a multi-table <code>.sql</code> dump, or load one from a file. The whole script (DDL
-          + INSERTs) runs into <code>{schemaName}</code>. {fileName ? <b>{fileName}</b> : null}
+          {t("io.dumpNotePre")} <code>.sql</code> {t("io.dumpNoteMid")} <code>{schemaName}</code>.{" "}
+          {fileName ? <b>{fileName}</b> : null}
         </span>
         <Btn icon="folder_open" variant="tonal" small onClick={onChooseFile}>
-          Choose .sql file…
+          {t("io.chooseSqlFile")}
         </Btn>
       </div>
 
       <SqlPasteBox
         value={text}
         onChange={onText}
-        ariaLabel="SQL to import"
-        placeholder={"Paste SQL here:\nCREATE TABLE …;\nINSERT INTO … VALUES (…);"}
+        ariaLabel={t("io.sqlToImportAria")}
+        placeholder={t("io.sqlPlaceholder")}
       />
 
       {prev !== null ? (
@@ -176,8 +179,10 @@ export function SchemaImportModal({
             <div className="import-preview-bar">
               <span className="import-ready">
                 <Icon name="check_circle" size={14} style={{ color: "var(--accent)" }} />{" "}
-                {prev.totalStatements.toLocaleString()} rows · {prev.groups.length} table
-                {prev.groups.length === 1 ? "" : "s"}
+                {t("io.dumpSummary", {
+                  rows: prev.totalStatements.toLocaleString(),
+                  count: prev.groups.length,
+                })}
               </span>
             </div>
             <div className="schema-import-list">
@@ -185,7 +190,7 @@ export function SchemaImportModal({
                 <div key={g.table} className="schema-import-row">
                   <Icon name="table" size={14} style={{ color: "var(--accent)" }} />
                   <span className="schema-import-name">{g.table}</span>
-                  <span className="schema-import-rows">{g.rowCount.toLocaleString()} rows</span>
+                  <span className="schema-import-rows">{t("io.rowsN", { count: g.rowCount })}</span>
                 </div>
               ))}
             </div>
@@ -205,21 +210,19 @@ export function SchemaImportModal({
             <span style={{ width: pct + "%" }} />
           </div>
           <span className="import-progress-txt">
-            Importing… {progress.done.toLocaleString()} / {progress.total.toLocaleString()} ({pct}%)
+            {t("io.importing")} {progress.done.toLocaleString()} / {progress.total.toLocaleString()}{" "}
+            ({pct}%)
           </span>
         </div>
       ) : null}
 
       <ModalActions>
-        <div className="import-note">
-          The dump runs as written. On SQLite/Postgres the whole import rolls back on any error; on
-          MySQL it does not (DDL auto-commits).
-        </div>
+        <div className="import-note">{t("io.dumpNoteFooter")}</div>
         <Btn variant="text" onClick={onClose} disabled={busy}>
-          Cancel
+          {t("common.cancel")}
         </Btn>
         <Btn variant="filled" icon="upload" onClick={doImport} disabled={!canImport}>
-          {busy ? "Importing…" : "Import all"}
+          {busy ? t("io.importing") : t("io.importAll")}
         </Btn>
       </ModalActions>
     </Modal>

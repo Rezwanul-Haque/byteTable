@@ -13,6 +13,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import type { EngineInfo, SchemaInfo, TableInfo } from "../../shared/api/engine";
+import { t } from "../../shared/i18n";
 import type { Engine, Env } from "../../shared/types";
 
 export {
@@ -515,7 +516,7 @@ export function tunnelTitle(params: ConnectionParams): string {
     return "";
   if (params.ssh === undefined) return "";
   const { user, host, port } = params.ssh;
-  return "Tunnelled through " + user + "@" + host + ":" + port;
+  return t("conn.tunnel.title", { user, host, port });
 }
 
 /**

@@ -22,6 +22,8 @@ import { Icon } from "../../../shared/ui/Icon";
 import { SidebarResizer } from "../../../shared/ui/SidebarResizer";
 import { useTabMenu } from "../../../shared/hooks/useTabMenu";
 import { useToast } from "../../../shared/ui/toastContext";
+import { useT } from "../../../shared/i18n/useT";
+import type { StringKey } from "../../../shared/i18n";
 import { ResourceMeter } from "../../app_metrics/components/ResourceMeter";
 import { useWorkspacesStore } from "../../workspaces/state";
 import type { DataFileRef, Workspace } from "../../workspaces/types";
@@ -63,6 +65,7 @@ export function DataFileWorkspace({
   const replaceFile = useReplaceDataFile();
   const saveFile = useSaveDataFile();
   const toast = useToast();
+  const t = useT();
 
   const view = useDataFileStore((s) => s.byWorkspace[workspace.id]);
   const patch = useDataFileStore((s) => s.patch);
@@ -108,24 +111,24 @@ export function DataFileWorkspace({
   const reopen = (next: DataFileRef) => {
     setSheetOpen(false);
     void replaceFile(workspace.id, workspace.handleId, next).then((name) => {
-      if (name) toast("Opened “" + name + "”", "ok");
+      if (name) toast(t("ws.sql.opened", { name }), "ok");
     });
   };
 
   // --- saving staged edits ------------------------------------------------
   const [saving, setSaving] = useState(false);
-  const runSave = (target: SaveTarget, note: string) => {
+  const runSave = (target: SaveTarget, noteKey: StringKey) => {
     setSaving(true);
     void saveFile(workspace.id, workspace.handleId, file, edits, target)
       .then((name) => {
-        if (name) toast(note.replace("{name}", name), "ok");
+        if (name) toast(t(noteKey, { name }), "ok");
       })
       .finally(() => setSaving(false));
   };
   // Overwriting is only possible for a file that came from disk; a generated
   // sample has nowhere to go, so it offers Save a copy alone.
   const saveInPlace = file.path
-    ? () => runSave({ path: file.path!, backup: true, name: file.name }, "Saved “{name}”")
+    ? () => runSave({ path: file.path!, backup: true, name: file.name }, "dfile.saved")
     : null;
   const saveCopy = () => {
     void pickCopyPath(file.name)
@@ -135,19 +138,19 @@ export function DataFileWorkspace({
         // staged edits would vanish while the file still open on disk lacks
         // them, which is a trap.
         const name = path.split(/[\\/]/).pop() ?? file.name;
-        runSave({ path, backup: false, name }, "Saved a copy as “{name}” — now editing it");
+        runSave({ path, backup: false, name }, "dfile.savedCopy");
       })
-      .catch(() => toast("Saving a copy requires the desktop app", "info"));
+      .catch(() => toast(t("dfile.saveCopyNeedsApp"), "info"));
   };
 
   const dirty = !isEmptyBatch(edits);
   // Anything that would throw the staged batch away asks first — closing the
   // workspace, or re-opening it on another file. The engines warn the same way
   // before discarding staged grid edits; unsaved work must not vanish silently.
-  const [confirm, setConfirm] = useState<null | { verb: string; run: () => void }>(null);
-  const guard = (verb: string, run: () => void) => (dirty ? setConfirm({ verb, run }) : run());
+  const [confirm, setConfirm] = useState<null | { verb: StringKey; run: () => void }>(null);
+  const guard = (verb: StringKey, run: () => void) => (dirty ? setConfirm({ verb, run }) : run());
 
-  const activeTab = tabs.find((t) => t.id === activeId) ?? tabs[0]!;
+  const activeTab = tabs.find((tb) => tb.id === activeId) ?? tabs[0]!;
 
   return (
     <div className="workspace" data-screen-label={"Data file workspace: " + doc.name}>
@@ -160,41 +163,41 @@ export function DataFileWorkspace({
         onOpen={(kind) => openTab(workspace.id, kind)}
         onToggleColumn={(name) => toggleColumn(workspace.id, name)}
         onFocusColumn={(name) => focusColumnAction(workspace.id, name)}
-        onReopen={() => guard("Open another file", () => setSheetOpen(true))}
-        onCloseWorkspace={() => guard("Close the workspace", () => closeWorkspace(workspace.id))}
+        onReopen={() => guard("dfile.verbReopen", () => setSheetOpen(true))}
+        onCloseWorkspace={() => guard("dfile.verbCloseWs", () => closeWorkspace(workspace.id))}
       />
       <SidebarResizer />
 
       <div className="main-col">
         <div className="tabbar" data-screen-label="Data file tab bar">
           <div className="tabbar-tabs">
-            {tabs.map((t) => (
+            {tabs.map((tb) => (
               <div
-                key={t.id}
-                className={"tab" + (t.id === activeId ? " active" : "")}
-                onClick={() => patch(workspace.id, { activeId: t.kind })}
+                key={tb.id}
+                className={"tab" + (tb.id === activeId ? " active" : "")}
+                onClick={() => patch(workspace.id, { activeId: tb.kind })}
                 onMouseDown={(e) => {
                   if (e.button === 1 && tabs.length > 1) {
                     e.preventDefault();
-                    closeTab(t.kind);
+                    closeTab(tb.kind);
                   }
                 }}
-                onContextMenu={(e) => tabMenu.onContextMenu(e, t.id)}
-                title={t.title}
+                onContextMenu={(e) => tabMenu.onContextMenu(e, tb.id)}
+                title={t(tb.title)}
               >
                 <Icon
-                  name={DATA_FILE_TABS[t.kind].icon}
+                  name={DATA_FILE_TABS[tb.kind].icon}
                   size={14}
-                  style={{ color: t.id === activeId ? "var(--accent)" : "var(--text-faint)" }}
+                  style={{ color: tb.id === activeId ? "var(--accent)" : "var(--text-faint)" }}
                 />
-                <span className="tab-title">{t.title}</span>
+                <span className="tab-title">{t(tb.title)}</span>
                 {tabs.length > 1 ? (
                   <button
                     type="button"
                     className="tab-close"
                     onClick={(e) => {
                       e.stopPropagation();
-                      closeTab(t.kind);
+                      closeTab(tb.kind);
                     }}
                   >
                     <Icon name="close" size={12} />
@@ -208,7 +211,7 @@ export function DataFileWorkspace({
               type="button"
               className="tabbar-tool"
               onClick={() => openTab(workspace.id, "sql")}
-              title="Query this file with SQL (⌘↩ runs)"
+              title={t("dfile.queryToolTitle")}
             >
               <Icon name="code" size={15} />
               <span>SQL</span>
@@ -221,13 +224,13 @@ export function DataFileWorkspace({
           {/* Every open tab stays mounted so its own state (search text, page,
               query buffer) survives a switch — `display: contents` keeps the
               inactive ones out of the layout entirely. */}
-          {tabs.map((t) => (
-            <div key={t.id} style={{ display: t.id === activeId ? "contents" : "none" }}>
-              {t.kind === "data" ? (
+          {tabs.map((tb) => (
+            <div key={tb.id} style={{ display: tb.id === activeId ? "contents" : "none" }}>
+              {tb.kind === "data" ? (
                 <DataFileDataTab
                   doc={doc}
                   handleId={workspace.handleId}
-                  active={t.id === activeId}
+                  active={tb.id === activeId}
                   hidden={hiddenSet}
                   rowFilter={rowFilter}
                   onRowFilter={(f) => patch(workspace.id, { rowFilter: f })}
@@ -249,9 +252,9 @@ export function DataFileWorkspace({
                   onSaveCopy={saveCopy}
                   saving={saving}
                 />
-              ) : t.kind === "profile" ? (
+              ) : tb.kind === "profile" ? (
                 <DataFileProfileTab doc={doc} focus={focusCol} />
-              ) : t.kind === "issues" ? (
+              ) : tb.kind === "issues" ? (
                 <DataFileIssuesTab
                   doc={doc}
                   onShowRows={(iss) =>
@@ -270,7 +273,7 @@ export function DataFileWorkspace({
                   key={workspace.handleId}
                   doc={doc}
                   handleId={workspace.handleId}
-                  active={t.id === activeId}
+                  active={tb.id === activeId}
                   seedSql={seedSql}
                   onSeedConsumed={() => consumeSeedSql(workspace.id)}
                 />
@@ -293,10 +296,11 @@ export function DataFileWorkspace({
               : { color: "var(--text-faint)", borderColor: "var(--border)" }
           }
         >
-          {dirty ? "unsaved" : "file"}
+          {dirty ? t("dfile.statusUnsaved") : t("dfile.statusFile")}
         </span>
         <span className="status-dim">
-          {delimLabel(doc.parsed.opts.delimiter)}-delimited · {doc.sniffed.encoding}
+          {t("dfile.delimited", { delim: delimLabel(doc.parsed.opts.delimiter) })} ·{" "}
+          {doc.sniffed.encoding}
         </span>
         <span className="status-dim">
           <Icon name="table_rows" size={11} /> {doc.parsed.rows.length.toLocaleString()} ×{" "}
@@ -305,13 +309,13 @@ export function DataFileWorkspace({
         <div style={{ flex: 1 }} />
         {doc.errors ? (
           <span className="status-dim" style={{ color: "var(--warn)" }}>
-            <Icon name="report" size={11} /> {doc.errors} issue{doc.errors === 1 ? "" : "s"}
+            <Icon name="report" size={11} /> {t("dfile.issuesN", { count: doc.errors })}
           </span>
         ) : null}
         <span className="status-dim">
-          {fmtBytes(doc.size)} · parsed in {doc.parsed.ms} ms
+          {t("dfile.parsedIn", { size: fmtBytes(doc.size), ms: doc.parsed.ms })}
         </span>
-        <span className="status-dim">local file</span>
+        <span className="status-dim">{t("dfile.localFile")}</span>
         <ResourceMeter />
         <BuiltByCredit className="status-dim" />
       </div>
@@ -319,16 +323,15 @@ export function DataFileWorkspace({
       {sheetOpen ? <OpenDataFileSheet onClose={() => setSheetOpen(false)} onOpen={reopen} /> : null}
 
       {confirm ? (
-        <Modal width={420} label="Discard unsaved changes" onClose={() => setConfirm(null)}>
-          <ModalTitle>Discard unsaved changes?</ModalTitle>
+        <Modal width={420} label={t("dfile.discardTitle")} onClose={() => setConfirm(null)}>
+          <ModalTitle>{t("dfile.discardHeading")}</ModalTitle>
           <div style={{ fontSize: 13, color: "var(--text-dim)", lineHeight: 1.6 }}>
-            {doc.name} has changes that have not been written to disk. {confirm.verb} and they are
-            lost.
+            {t("dfile.discardBody", { name: doc.name, verb: t(confirm.verb) })}
           </div>
           <ModalActions>
             <div style={{ flex: 1 }} />
             <Btn variant="text" small onClick={() => setConfirm(null)}>
-              Keep editing
+              {t("ws.unsaved.keepEditing")}
             </Btn>
             <button
               type="button"
@@ -341,7 +344,7 @@ export function DataFileWorkspace({
               }}
             >
               <Icon name="delete" size={15} />
-              <span>Discard</span>
+              <span>{t("grid.discard")}</span>
             </button>
           </ModalActions>
         </Modal>

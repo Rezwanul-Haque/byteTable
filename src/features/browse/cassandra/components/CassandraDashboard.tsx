@@ -4,6 +4,7 @@
 // left-aligned and the two panels are spaced apart. No row counts (no cheap
 // COUNT(*)). Reuses the shared .rdash-* dashboard chrome + .structure-table.
 
+import { useT } from "../../../../shared/i18n/useT";
 import { EngineBadge } from "../../../../shared/ui/EngineBadge";
 import { Icon } from "../../../../shared/ui/Icon";
 import {
@@ -39,6 +40,7 @@ export function CassandraDashboard({
   loading,
   error,
 }: CassandraDashboardProps) {
+  const t = useT();
   const totalIdx = tables.reduce((a, t) => a + t.indexes.length, 0);
   const totalMv = tables.reduce((a, t) => a + t.mvs.length, 0);
   const rep = keyspace ? replicationLabel(keyspace.replication) : "—";
@@ -58,7 +60,9 @@ export function CassandraDashboard({
     <div className="rdash">
       <div className="rdash-head">
         <EngineBadge engine="cassandra" size={22} />
-        <h2>{ks} · keyspace</h2>
+        <h2>
+          {ks} · {t("cass.dash.keyspaceSuffix")}
+        </h2>
         {keyspace ? (
           <span className="structure-sub">
             {rep} · durable_writes {String(keyspace.durableWrites)}
@@ -66,26 +70,26 @@ export function CassandraDashboard({
         ) : null}
       </div>
       <div className="rdash-grid">
-        <Stat label="Tables" val={tables.length} />
-        <Stat label="Indexes" val={totalIdx} />
-        <Stat label="Mat. views" val={totalMv} />
-        <Stat label="Replication" val={keyspace?.replication.class ?? "—"} />
+        <Stat label={t("cass.dash.statTables")} val={tables.length} />
+        <Stat label={t("cass.dash.statIndexes")} val={totalIdx} />
+        <Stat label={t("cass.dash.statMvs")} val={totalMv} />
+        <Stat label={t("cass.dash.statReplication")} val={keyspace?.replication.class ?? "—"} />
       </div>
 
       <div className="cass-dash-panels">
         <div className="rdash-panel">
           <h3>
-            <Icon name="table_chart" size={15} /> Tables
+            <Icon name="table_chart" size={15} /> {t("cass.dash.panelTables")}
           </h3>
           <table className="structure-table" style={{ width: "100%" }}>
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Partition key</th>
-                <th>Clustering</th>
-                <th>Columns</th>
-                <th>Indexes</th>
-                <th>Views</th>
+                <th>{t("cass.dash.colName")}</th>
+                <th>{t("cass.dash.colPartitionKey")}</th>
+                <th>{t("cass.dash.colClustering")}</th>
+                <th>{t("cass.dash.colColumns")}</th>
+                <th>{t("cass.dash.colIndexes")}</th>
+                <th>{t("cass.dash.colViews")}</th>
               </tr>
             </thead>
             <tbody>
@@ -108,7 +112,7 @@ export function CassandraDashboard({
               {!tables.length && !loading ? (
                 <tr>
                   <td colSpan={6} style={{ color: "var(--text-faint)", padding: "12px" }}>
-                    No tables in this keyspace.
+                    {t("cass.dash.noTables")}
                   </td>
                 </tr>
               ) : null}
@@ -118,28 +122,30 @@ export function CassandraDashboard({
 
         <div className="rdash-panel">
           <h3>
-            <Icon name="lan" size={15} /> Cluster{cluster ? " · " + cluster.cluster : ""}
+            <Icon name="lan" size={15} /> {t("cass.dash.panelCluster")}
+            {cluster ? " · " + cluster.cluster : ""}
           </h3>
           {cluster ? (
             <>
               <div className="cass-cluster-meta">
                 <span>
-                  Partitioner: <b>{cluster.partitioner.replace("org.apache.cassandra.dht.", "")}</b>
+                  {t("cass.dash.partitioner")}{" "}
+                  <b>{cluster.partitioner.replace("org.apache.cassandra.dht.", "")}</b>
                 </span>
                 <span>
-                  Snitch: <b>{cluster.snitch ?? "—"}</b>
+                  {t("cass.dash.snitch")} <b>{cluster.snitch ?? "—"}</b>
                 </span>
               </div>
               <table className="structure-table cass-nodetool" style={{ width: "100%" }}>
                 <thead>
                   <tr>
-                    <th>Status</th>
-                    <th>Address</th>
-                    <th>Load</th>
-                    <th>Owns</th>
-                    <th>DC</th>
-                    <th>Rack</th>
-                    <th>Tokens</th>
+                    <th>{t("cass.dash.colStatus")}</th>
+                    <th>{t("cass.dash.colAddress")}</th>
+                    <th>{t("cass.dash.colLoad")}</th>
+                    <th>{t("cass.dash.colOwns")}</th>
+                    <th>{t("cass.dash.colDc")}</th>
+                    <th>{t("cass.dash.colRack")}</th>
+                    <th>{t("cass.dash.colTokens")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -161,7 +167,7 @@ export function CassandraDashboard({
             </>
           ) : (
             <div style={{ color: "var(--text-faint)", padding: "8px 2px", fontSize: 12 }}>
-              {loading ? "Loading cluster…" : "Cluster status unavailable."}
+              {loading ? t("cass.dash.loading") : t("cass.dash.unavailable")}
             </div>
           )}
         </div>

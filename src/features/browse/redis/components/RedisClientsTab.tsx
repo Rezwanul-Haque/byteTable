@@ -22,6 +22,8 @@ import {
 } from "react";
 
 import { appErrorMessage } from "../../../../shared/api/error";
+import { t as i18nT, type StringKey } from "../../../../shared/i18n";
+import { useT } from "../../../../shared/i18n/useT";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { ENV_COLOR } from "../../../../shared/ui/envColors";
@@ -54,12 +56,15 @@ import "./RedisClientsTab.css";
 /** Auto-refresh cadence — the prototype's 2.5s. */
 const REFRESH_MS = 2500;
 
-/** The type segmented control's options. */
-const TYPES: [string, string][] = [
-  ["all", "All"],
-  ["normal", "Normal"],
-  ["pubsub", "Pub/Sub"],
-  ["replica", "Replica"],
+/** The type segmented control's options — labels resolved from i18n at render. */
+const TYPES: [
+  string,
+  "redis.ct.all" | "redis.ct.normal" | "redis.ct.pubsub" | "redis.ct.replica",
+][] = [
+  ["all", "redis.ct.all"],
+  ["normal", "redis.ct.normal"],
+  ["pubsub", "redis.ct.pubsub"],
+  ["replica", "redis.ct.replica"],
 ];
 
 /** The sortable columns, by the `KvClient` key they read. */
@@ -71,15 +76,15 @@ type SortCol = "id" | "name" | "addr" | "clientType" | "age" | "idle" | "totMem"
  * `colW`. Fixed px tracks + horizontal scroll is the SQL data grid's model,
  * which is what keeps this table looking like the rest of the app.
  */
-const COL_DEFS: { key: SortCol; label: string; def: number; num?: boolean }[] = [
-  { key: "id", label: "ID", def: 110 },
-  { key: "name", label: "Name", def: 150 },
-  { key: "addr", label: "Address", def: 190 },
-  { key: "clientType", label: "Type", def: 110 },
-  { key: "age", label: "Age", def: 90, num: true },
-  { key: "idle", label: "Idle", def: 90, num: true },
-  { key: "totMem", label: "Memory", def: 110, num: true },
-  { key: "cmd", label: "Last command", def: 260 },
+const COL_DEFS: { key: SortCol; labelKey: string; def: number; num?: boolean }[] = [
+  { key: "id", labelKey: "redis.ct.col.id", def: 110 },
+  { key: "name", labelKey: "redis.ct.col.name", def: 150 },
+  { key: "addr", labelKey: "redis.ct.col.addr", def: 190 },
+  { key: "clientType", labelKey: "redis.ct.col.clientType", def: 110 },
+  { key: "age", labelKey: "redis.ct.col.age", def: 90, num: true },
+  { key: "idle", labelKey: "redis.ct.col.idle", def: 90, num: true },
+  { key: "totMem", labelKey: "redis.ct.col.totMem", def: 110, num: true },
+  { key: "cmd", labelKey: "redis.ct.col.cmd", def: 260 },
 ];
 
 /** Minimum a column can be dragged to (matches the data grid's floor). */
@@ -106,6 +111,7 @@ export function RedisClientsTab({
   /** False while the tab is not the visible one — pauses auto-refresh. */
   isActive?: boolean;
 }) {
+  const t = useT();
   const toast = useToast();
   const envColor = ENV_COLOR[normalizeEnv(env)] ?? ENV_COLOR.dev;
 
@@ -150,7 +156,7 @@ export function RedisClientsTab({
         setSel((s) => new Set([...s].filter((id) => present.has(id))));
         setError(null);
       } catch (err) {
-        setError(appErrorMessage(err, "Could not read the client list."));
+        setError(appErrorMessage(err, t("redis.ct.readFail")));
       } finally {
         setUpdated(new Date());
         setLoaded(true);
@@ -235,19 +241,19 @@ export function RedisClientsTab({
       setClients((cs) => cs.filter((c) => !ids.has(c.id)));
       setSel((s) => new Set([...s].filter((id) => !ids.has(id))));
       setInspectId((id) => (id !== null && ids.has(id) ? null : id));
-      toast(cmd.split("\n")[0] + " → " + closed + " closed", "ok");
+      toast(t("redis.ct.killResult", { cmd: cmd.split("\n")[0] ?? "", count: closed }), "ok");
       // Re-read straight away: the server is the source of truth for what a
       // filter actually matched.
       refresh.current();
     },
-    [toast],
+    [toast, t],
   );
 
   /** Per-row / inspector kill: one id, no arming needed. */
   const killOne = (c: KvClient): KillTarget => ({
     clients: [c],
     cmd: "CLIENT KILL ID " + c.id,
-    title: "Kill client #" + c.id,
+    title: t("redis.ct.killOne", { id: c.id }),
     run: () => kvClientKillIds(handleId, [c.id]),
   });
 
@@ -255,7 +261,7 @@ export function RedisClientsTab({
   const killSelected = (): KillTarget => ({
     clients: selected,
     cmd: selected.map((c) => "CLIENT KILL ID " + c.id).join("\n"),
-    title: "Kill " + selected.length + " selected clients",
+    title: t("redis.ct.killSelected", { count: selected.length }),
     run: () =>
       kvClientKillIds(
         handleId,
@@ -274,21 +280,21 @@ export function RedisClientsTab({
   const copyInfoLine = (line: string) => {
     void navigator.clipboard
       ?.writeText(line)
-      .then(() => toast("CLIENT INFO line copied", "ok"))
-      .catch(() => toast("Could not copy the CLIENT INFO line", "err"));
+      .then(() => toast(t("redis.ct.infoCopied"), "ok"))
+      .catch(() => toast(t("redis.ct.infoCopyFail"), "err"));
   };
 
   const noEvict = () => {
     void kvClientNoEvict(handleId, true).then(
-      () => toast("CLIENT NO-EVICT on — this connection is exempt from client eviction", "ok"),
-      (err: unknown) => toast(appErrorMessage(err, "CLIENT NO-EVICT failed"), "err"),
+      () => toast(t("redis.ct.noEvictOn"), "ok"),
+      (err: unknown) => toast(appErrorMessage(err, t("redis.ct.noEvictFail")), "err"),
     );
   };
 
   const unpause = () => {
     void kvClientUnpause(handleId).then(
-      () => toast("CLIENT UNPAUSE — all clients resumed", "ok"),
-      (err: unknown) => toast(appErrorMessage(err, "CLIENT UNPAUSE failed"), "err"),
+      () => toast(t("redis.ct.unpauseOk"), "ok"),
+      (err: unknown) => toast(appErrorMessage(err, t("redis.ct.unpauseFail")), "err"),
     );
   };
 
@@ -335,12 +341,12 @@ export function RedisClientsTab({
     <div className="proc-tab rc-tab" data-screen-label="Redis clients">
       <div className="proc-toolbar">
         <Icon name="monitor_heart" size={16} style={{ color: "var(--accent)" }} />
-        <span className="proc-title">Connected clients</span>
-        <span className="proc-src" title="System source">
+        <span className="proc-title">{t("redis.connectedClients")}</span>
+        <span className="proc-src" title={t("redis.ct.srcTitle")}>
           CLIENT LIST
         </span>
-        <div className="rc-typeseg" role="group" aria-label="Filter by client type">
-          {TYPES.map(([value, label]) => {
+        <div className="rc-typeseg" role="group" aria-label={t("redis.ct.filterAria")}>
+          {TYPES.map(([value, labelKey]) => {
             const n = value === "all" ? 0 : (counts[value as keyof typeof counts] as number);
             return (
               <button
@@ -349,7 +355,7 @@ export function RedisClientsTab({
                 className={"seg-btn" + (type === value ? " active" : "")}
                 onClick={() => setType(value)}
               >
-                {label}
+                {t(labelKey)}
                 {value !== "all" && n ? <em className="rc-seg-n">{n}</em> : null}
               </button>
             );
@@ -359,7 +365,7 @@ export function RedisClientsTab({
           <Icon name="search" size={14} />
           <input
             value={query}
-            placeholder="Filter by id, name, address, user, command…"
+            placeholder={t("redis.ct.searchPh")}
             spellCheck="false"
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -383,13 +389,9 @@ export function RedisClientsTab({
           type="button"
           className={"proc-auto" + (auto ? " on" : "")}
           onClick={() => setAuto(!auto)}
-          title={
-            auto
-              ? "Re-running CLIENT LIST every 2.5s — click to pause"
-              : "Auto-refresh is paused — click to resume, or refresh once with the button beside it"
-          }
+          title={auto ? t("redis.ct.autoOn") : t("redis.ct.autoOff")}
         >
-          <Icon name="autorenew" size={13} /> auto
+          <Icon name="autorenew" size={13} /> {t("redis.ct.auto")}
         </button>
         {/* In the toolbar, never in the wrapping stats strip — see the CSS note. */}
         <div className="rc-kf-wrap" onClick={(e) => e.stopPropagation()}>
@@ -400,7 +402,7 @@ export function RedisClientsTab({
             aria-expanded={filterOpen}
           >
             <Icon name="filter_alt" size={14} />
-            Kill by filter
+            {t("redis.ct.killByFilter")}
           </button>
           {filterOpen ? (
             <RedisKillFilter
@@ -418,23 +420,23 @@ export function RedisClientsTab({
       <div className="rc-stats">
         <div className="rc-stat">
           <b>{counts.total}</b>
-          <span>connected</span>
+          <span>{t("redis.ct.stConnected")}</span>
         </div>
         <div className="rc-stat">
           <b style={{ color: CLIENT_TYPE_COLOR.normal }}>{counts.normal}</b>
-          <span>normal</span>
+          <span>{t("redis.ct.stNormal")}</span>
         </div>
         <div className="rc-stat">
           <b style={{ color: CLIENT_TYPE_COLOR.pubsub }}>{counts.pubsub}</b>
-          <span>pub/sub</span>
+          <span>{t("redis.ct.stPubsub")}</span>
         </div>
         <div className="rc-stat">
           <b style={{ color: CLIENT_TYPE_COLOR.replica }}>{counts.replica}</b>
-          <span>replica</span>
+          <span>{t("redis.ct.stReplica")}</span>
         </div>
         <div className="rc-stat">
           <b>{counts.blocked}</b>
-          <span>blocked</span>
+          <span>{t("redis.ct.stBlocked")}</span>
         </div>
         <button
           type="button"
@@ -442,22 +444,24 @@ export function RedisClientsTab({
             "rc-stat rc-stat-btn" + (onlyIdle ? " on" : "") + (counts.stale ? " warn" : "")
           }
           onClick={() => setOnlyIdle((v) => !v)}
-          title="Normal clients idle over 5 minutes — usually leaked pool connections"
+          title={t("redis.ct.staleTitle")}
         >
           <b>{counts.stale}</b>
-          <span>idle &gt; 5m</span>
+          <span>{t("redis.ct.stIdle")}</span>
         </button>
         <div className="rc-stat">
           <b>{humanClientMem(counts.mem)}</b>
-          <span>client memory</span>
+          <span>{t("redis.ct.stMem")}</span>
         </div>
       </div>
 
       {selected.length ? (
         <div className="dg-selbar">
-          <span className="dg-selbar-count">{selected.length} selected</span>
+          <span className="dg-selbar-count">
+            {t("ws.grid.selected", { count: selected.length })}
+          </span>
           <button type="button" className="proc-clear" onClick={() => setSel(new Set())}>
-            Clear
+            {t("redis.ct.clear")}
           </button>
           <div style={{ flex: 1 }} />
           <button
@@ -466,7 +470,7 @@ export function RedisClientsTab({
             onClick={() => setKill(killSelected())}
           >
             <Icon name="dangerous" size={15} />
-            <span>Kill selected</span>
+            <span>{t("redis.ct.killSelectedBtn")}</span>
           </button>
         </div>
       ) : null}
@@ -484,7 +488,7 @@ export function RedisClientsTab({
                     if (el) el.indeterminate = someChecked;
                   }}
                   disabled={selectable.length === 0}
-                  aria-label="Select all clients"
+                  aria-label={t("redis.ct.selectAllAria")}
                   onChange={toggleAll}
                 />
               </div>
@@ -497,7 +501,7 @@ export function RedisClientsTab({
                     sort.col === c.key ? (sort.dir === "asc" ? "ascending" : "descending") : "none"
                   }
                 >
-                  <span className="dg-colname">{c.label}</span>
+                  <span className="dg-colname">{i18nT(c.labelKey as StringKey)}</span>
                   {sort.col === c.key ? (
                     <Icon
                       name={sort.dir === "desc" ? "arrow_drop_down" : "arrow_drop_up"}
@@ -507,7 +511,7 @@ export function RedisClientsTab({
                   ) : null}
                   <span
                     className={"dg-col-resize" + (resizing === c.key ? " active" : "")}
-                    title="Drag to resize · double-click to reset"
+                    title={t("redis.ct.resizeTitle")}
                     onMouseDown={(e) => startResize(e, c.key)}
                     onDoubleClick={() => resetCol(c.key)}
                   />
@@ -535,8 +539,8 @@ export function RedisClientsTab({
                       className="dg-check"
                       checked={sel.has(c.id) && !c.isSelf}
                       disabled={c.isSelf}
-                      title={c.isSelf ? "This is your own connection" : undefined}
-                      aria-label={"Select client " + c.id}
+                      title={c.isSelf ? t("redis.ct.selfTitle") : undefined}
+                      aria-label={t("redis.ct.selectAria", { id: c.id })}
                       onChange={() => toggle(c.id)}
                       onClick={(e) => e.stopPropagation()}
                     />
@@ -544,7 +548,7 @@ export function RedisClientsTab({
                   <div className="dg-td">
                     {c.id}
                     {c.isSelf ? (
-                      <span className="proc-self" title="This connection">
+                      <span className="proc-self" title={t("redis.ct.thisConn")}>
                         me
                       </span>
                     ) : null}
@@ -564,7 +568,11 @@ export function RedisClientsTab({
                   </div>
                   <div className="dg-td rc-num">{humanAge(c.age)}</div>
                   <div className={"dg-td rc-num" + (risk?.sev === "warn" ? " rc-hot" : "")}>
-                    {isBlocked(c) ? <span className="cell-dim">blocked</span> : humanAge(c.idle)}
+                    {isBlocked(c) ? (
+                      <span className="cell-dim">{t("redis.ct.blockedCell")}</span>
+                    ) : (
+                      humanAge(c.idle)
+                    )}
                   </div>
                   {wideEnoughForMemory ? (
                     <div className="dg-td rc-num cell-dim">{humanClientMem(c.totMem)}</div>
@@ -577,7 +585,7 @@ export function RedisClientsTab({
                       type="button"
                       className="proc-kill"
                       disabled={c.isSelf}
-                      title={c.isSelf ? "This is your own connection" : "CLIENT KILL ID " + c.id}
+                      title={c.isSelf ? t("redis.ct.selfTitle") : "CLIENT KILL ID " + c.id}
                       onClick={(e) => {
                         e.stopPropagation();
                         setKill(killOne(c));
@@ -597,11 +605,11 @@ export function RedisClientsTab({
                   </span>
                 ) : !loaded ? (
                   <>
-                    <Icon name="autorenew" size={22} /> Loading…
+                    <Icon name="autorenew" size={22} /> {t("redis.ct.loading")}
                   </>
                 ) : (
                   <>
-                    <Icon name="search_off" size={22} /> No client matches this filter
+                    <Icon name="search_off" size={22} /> {t("redis.ct.noMatch")}
                   </>
                 )}
               </div>
@@ -621,9 +629,11 @@ export function RedisClientsTab({
       </div>
 
       <div className="proc-foot">
-        <span>CLIENT LIST at {updated ? updated.toLocaleTimeString() : "—"}</span>
+        <span>
+          {t("redis.ct.updatedAt", { time: updated ? updated.toLocaleTimeString() : "—" })}
+        </span>
         <div style={{ flex: 1 }} />
-        <span className="dim">Click a row to inspect · kill closes the connection immediately</span>
+        <span className="dim">{t("redis.ct.footHint")}</span>
       </div>
 
       {kill ? (

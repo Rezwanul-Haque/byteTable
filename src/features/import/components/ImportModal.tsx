@@ -24,6 +24,9 @@ import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Modal, ModalActions, ModalTitle } from "../../../shared/ui/Modal";
 import { useToast } from "../../../shared/ui/toastContext";
+import { useT } from "../../../shared/i18n/useT";
+// Module-level i18n for the native dialog filter names (resolved at call time).
+import { t } from "../../../shared/i18n";
 import { columnsKey, useIntrospectionStore } from "../../introspection/state";
 import { useWorkspacesStore } from "../../workspaces/state";
 import { useTabMetaStore } from "../../workspaces/tabMeta";
@@ -43,9 +46,9 @@ async function openFileDialog(): Promise<string | null> {
   const chosen = await open({
     multiple: false,
     filters: [
-      { name: "CSV or SQL", extensions: ["csv", "sql", "txt"] },
-      { name: "CSV file", extensions: ["csv"] },
-      { name: "SQL file", extensions: ["sql"] },
+      { name: t("io.filterCsvOrSql"), extensions: ["csv", "sql", "txt"] },
+      { name: t("io.filterCsvFile"), extensions: ["csv"] },
+      { name: t("io.filterSqlFile"), extensions: ["sql"] },
     ],
   });
   return typeof chosen === "string" ? chosen : null;
@@ -66,6 +69,7 @@ export function ImportModal({
   onDone?: () => void;
 }) {
   const toast = useToast();
+  const t = useT();
   const loadColumns = useIntrospectionStore((s) => s.loadColumns);
   const columnsEntry = useIntrospectionStore(
     (s) => s.columns[columnsKey(handleId, schemaName, table)],
@@ -106,7 +110,7 @@ export function ImportModal({
       try {
         path = await openFileDialog();
       } catch {
-        toast("Import requires the desktop app", "info");
+        toast(t("io.importNeedsApp"), "info");
         return;
       }
       if (!path) return; // cancelled
@@ -118,7 +122,7 @@ export function ImportModal({
         runPreview(fmt, contents);
         setError(null);
       } catch (err) {
-        setError(appErrorMessage(err, "Could not read the file."));
+        setError(appErrorMessage(err, t("io.readFail")));
       }
     })();
   };
@@ -129,7 +133,7 @@ export function ImportModal({
     if (prev === null || isPreviewError(prev) || prev.count === 0 || busy) return;
     const { matched, objects } = prev;
     if (!matched.length) {
-      setError("No columns match this table — nothing to import.");
+      setError(t("io.noColumnsMatch"));
       return;
     }
     // Build the INSERT script in the target table's column order (matched only).
@@ -158,14 +162,11 @@ export function ImportModal({
             }
           }
         }
-        toast(
-          "Imported " + n.toLocaleString() + " row" + (n === 1 ? "" : "s") + " into " + table,
-          "ok",
-        );
+        toast(t("io.importedRows", { count: n, table }), "ok");
         onDone?.();
         onClose();
       } catch (err) {
-        setError(appErrorMessage(err, "Could not import the data."));
+        setError(appErrorMessage(err, t("io.importFail")));
         setBusy(false);
         setProgress(null);
       }
@@ -177,8 +178,9 @@ export function ImportModal({
 
   const placeholder =
     format === "csv"
-      ? "Paste CSV — first row is the header:\n" + columns.map((c) => c.name).join(",") + "\n…"
-      : "Paste INSERT statements:\nINSERT INTO " +
+      ? t("io.pasteCsv") + "\n" + columns.map((c) => c.name).join(",") + "\n…"
+      : t("io.pasteInserts") +
+        "\nINSERT INTO " +
         table +
         " (" +
         columns.map((c) => c.name).join(", ") +
@@ -194,20 +196,20 @@ export function ImportModal({
   return (
     <Modal
       onClose={onClose}
-      label={"Import into " + schemaName + "." + table}
+      label={t("io.importInto", { name: schemaName + "." + table })}
       width={620}
       className="import-modal"
     >
       <ModalTitle>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-          <Icon name="upload" size={17} style={{ color: "var(--accent)" }} /> Import into{" "}
-          {schemaName}.{table}
+          <Icon name="upload" size={17} style={{ color: "var(--accent)" }} />{" "}
+          {t("io.importInto", { name: schemaName + "." + table })}
         </span>
-        <IconBtn icon="close" onClick={onClose} title="Close" />
+        <IconBtn icon="close" onClick={onClose} title={t("common.close")} />
       </ModalTitle>
 
       <div className="import-format">
-        <div className="seg" role="tablist" aria-label="Import format">
+        <div className="seg" role="tablist" aria-label={t("io.importFormatAria")}>
           <button
             type="button"
             role="tab"
@@ -230,12 +232,12 @@ export function ImportModal({
               runPreview("sql", text);
             }}
           >
-            <Icon name="code" size={14} /> SQL inserts
+            <Icon name="code" size={14} /> {t("io.sqlInserts")}
           </button>
         </div>
         <div style={{ flex: 1 }} />
         <Btn icon="folder_open" variant="tonal" small onClick={onChooseFile}>
-          Choose file…
+          {t("io.chooseFile")}
         </Btn>
       </div>
 
@@ -249,14 +251,14 @@ export function ImportModal({
             runPreview(format, sql);
             setError(null);
           }}
-          ariaLabel="Import data"
+          ariaLabel={t("io.importDataAria")}
           placeholder={placeholder}
         />
       ) : (
         <textarea
           className="import-textarea"
           spellCheck="false"
-          aria-label="Import data"
+          aria-label={t("io.importDataAria")}
           placeholder={placeholder}
           value={text}
           onChange={(e) => {
@@ -277,13 +279,15 @@ export function ImportModal({
             <div className="import-preview-bar">
               <span className="import-ready">
                 <Icon name="check_circle" size={14} style={{ color: "var(--accent)" }} />{" "}
-                {prev.count.toLocaleString()} rows ready
+                {t("io.rowsReady", { count: prev.count })}
               </span>
               <span className="import-match">
-                {prev.matched.length} matched column{prev.matched.length === 1 ? "" : "s"}
+                {t("io.matchedCols", { count: prev.matched.length })}
               </span>
               {prev.unknown.length ? (
-                <span className="import-unknown">ignoring: {prev.unknown.join(", ")}</span>
+                <span className="import-unknown">
+                  {t("io.ignoring", { cols: prev.unknown.join(", ") })}
+                </span>
               ) : null}
             </div>
             {sampleColumns.length ? (
@@ -332,21 +336,19 @@ export function ImportModal({
             <span style={{ width: pct + "%" }} />
           </div>
           <span className="import-progress-txt">
-            Importing… {progress.done.toLocaleString()} / {progress.total.toLocaleString()} ({pct}%)
+            {t("io.importing")} {progress.done.toLocaleString()} / {progress.total.toLocaleString()}{" "}
+            ({pct}%)
           </span>
         </div>
       ) : null}
 
       <ModalActions>
-        <div className="import-note">
-          Rows are appended (one INSERT per row). Unknown columns are ignored; missing columns use
-          the table&apos;s defaults.
-        </div>
+        <div className="import-note">{t("io.importNote")}</div>
         <Btn variant="text" onClick={onClose} disabled={busy}>
-          Cancel
+          {t("common.cancel")}
         </Btn>
         <Btn variant="filled" icon="upload" onClick={doImport} disabled={!canImport}>
-          {busy ? "Importing…" : "Import"}
+          {busy ? t("io.importing") : t("io.importBtn")}
         </Btn>
       </ModalActions>
     </Modal>

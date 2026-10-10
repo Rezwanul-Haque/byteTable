@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { isAppErrorPayload } from "../../../../shared/api/error";
+import { useT } from "../../../../shared/i18n/useT";
 import { Icon } from "../../../../shared/ui/Icon";
 import { typesenseCurations, typesenseSynonyms, type CurationInfo, type SynonymInfo } from "../api";
 import { TsAdminRequired, TsError, TsLoading } from "./TsBits";
@@ -31,6 +32,7 @@ export function TsCurationTab({
   adminKey,
   onOpenSearch,
 }: TsCurationTabProps) {
+  const t = useT();
   const [synonyms, setSynonyms] = useState<SynonymInfo[]>([]);
   const [curations, setCurations] = useState<CurationInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,7 +53,7 @@ export function TsCurationTab({
       setSynonyms(syn);
       setCurations(cur);
     } catch (e) {
-      setError(isAppErrorPayload(e) ? e.message : "Could not load curation rules.");
+      setError(isAppErrorPayload(e) ? e.message : t("tsx.curation.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -61,44 +63,43 @@ export function TsCurationTab({
     void load();
   }, [load]);
 
-  if (!adminKey) return <TsAdminRequired what="synonyms and curation rules" />;
+  if (!adminKey) return <TsAdminRequired what="tsx.whatSynonyms" />;
   if (!collection) {
     return (
       <div className="ts-empty">
         <Icon name="tune" size={26} style={{ color: "var(--text-faint)" }} />
-        <p>No collection selected.</p>
+        <p>{t("tsx.curation.noCollection")}</p>
       </div>
     );
   }
-  if (loading) return <TsLoading what="curation rules" />;
+  if (loading) return <TsLoading what="tsx.whatCuration" />;
   if (error) return <TsError message={error} />;
 
   return (
     <div className="rdash" data-screen-label={"Typesense curation: " + collection}>
       <div className="rdash-head">
         <Icon name="tune" size={20} style={{ color: "var(--accent)" }} />
-        <h2>{collection} · curation</h2>
+        <h2>{t("tsx.curation.head", { name: collection })}</h2>
         <span className="structure-sub">
-          {synonyms.length} synonym {synonyms.length === 1 ? "set" : "sets"} · {curations.length}{" "}
-          {curations.length === 1 ? "rule" : "rules"}
+          {t("tsx.curation.sub", { synonyms: synonyms.length, rules: curations.length })}
         </span>
       </div>
 
       <div className="rdash-panel" style={{ marginBottom: 16 }}>
         <h3>
-          <Icon name="swap_calls" size={15} /> Synonyms
+          <Icon name="swap_calls" size={15} /> {t("tsx.curation.synonyms")}
         </h3>
         {synonyms.length === 0 ? (
-          <div className="ts-facet-none">no synonym sets apply to this collection</div>
+          <div className="ts-facet-none">{t("tsx.curation.noSynonyms")}</div>
         ) : (
           <div className="ts-tablewrap">
             <table className="structure-table" style={{ width: "100%" }}>
               <thead>
                 <tr>
-                  <th>id</th>
-                  <th>Type</th>
-                  <th>Root</th>
-                  <th>Synonyms</th>
+                  <th>{t("tsx.curation.thId")}</th>
+                  <th>{t("tsx.curation.thType")}</th>
+                  <th>{t("tsx.curation.thRoot")}</th>
+                  <th>{t("tsx.curation.thSynonyms")}</th>
                   <th />
                 </tr>
               </thead>
@@ -108,7 +109,7 @@ export function TsCurationTab({
                     <td className="st-name">{s.id}</td>
                     {/* A root makes it one-way (root → synonyms); without one every
                       term is interchangeable. */}
-                    <td>{s.root ? "one-way" : "multi-way"}</td>
+                    <td>{s.root ? t("tsx.curation.oneWay") : t("tsx.curation.multiWay")}</td>
                     <td className="mg-mono cass-dash-key">{s.root ?? "—"}</td>
                     <td>
                       {s.synonyms.map((w) => (
@@ -121,7 +122,7 @@ export function TsCurationTab({
                       <button
                         type="button"
                         className="ts-row-act"
-                        title="Try in playground"
+                        title={t("tsx.curation.tryInPlayground")}
                         onClick={() => onOpenSearch(collection, s.root ?? s.synonyms[0] ?? "")}
                       >
                         <Icon name="search" size={13} />
@@ -137,19 +138,19 @@ export function TsCurationTab({
 
       <div className="rdash-panel">
         <h3>
-          <Icon name="push_pin" size={15} /> Curation · pinned &amp; hidden results
+          <Icon name="push_pin" size={15} /> {t("tsx.curation.rulesHead")}
         </h3>
         {curations.length === 0 ? (
-          <div className="ts-facet-none">no curation rules apply to this collection</div>
+          <div className="ts-facet-none">{t("tsx.curation.noRules")}</div>
         ) : (
           <div className="ts-tablewrap">
             <table className="structure-table" style={{ width: "100%" }}>
               <thead>
                 <tr>
-                  <th>id</th>
-                  <th>Rule</th>
-                  <th>Pins</th>
-                  <th>Hides</th>
+                  <th>{t("tsx.curation.thId")}</th>
+                  <th>{t("tsx.curation.thRule")}</th>
+                  <th>{t("tsx.curation.thPins")}</th>
+                  <th>{t("tsx.curation.thHides")}</th>
                   <th />
                 </tr>
               </thead>
@@ -182,7 +183,7 @@ export function TsCurationTab({
                       <button
                         type="button"
                         className="ts-row-act"
-                        title="Try in playground"
+                        title={t("tsx.curation.tryInPlayground")}
                         onClick={() =>
                           onOpenSearch(collection, o.ruleQuery === "*" ? "" : o.ruleQuery)
                         }

@@ -8,6 +8,7 @@
 import { useEffect, useState } from "react";
 
 import { appErrorMessage } from "../../../../shared/api/error";
+import { useT } from "../../../../shared/i18n/useT";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { Icon } from "../../../../shared/ui/Icon";
@@ -36,6 +37,7 @@ export function MongoStructure({
   onChanged: () => void;
 }) {
   const toast = useToast();
+  const t = useT();
   const [tab, setTab] = useState<"schema" | "indexes" | "validation">("schema");
   const [schema, setSchema] = useState<SchemaField[]>([]);
   const [indexes, setIndexes] = useState<IndexInfo[]>([]);
@@ -64,17 +66,17 @@ export function MongoStructure({
     try {
       keys = JSON.parse(keysText);
     } catch (e) {
-      toast("Invalid key pattern JSON: " + (e instanceof Error ? e.message : ""), "err");
+      toast(t("mongo.keysJsonFail", { err: e instanceof Error ? e.message : String(e) }), "err");
       return;
     }
     try {
       await mongoCreateIndex(handleId, db, coll, { keys, unique: unique || undefined });
-      toast("Index created on " + coll, "ok");
+      toast(t("mongo.indexCreated", { coll }), "ok");
       setCreating(false);
       setReload((r) => r + 1);
       onChanged();
     } catch (e) {
-      toast(appErrorMessage(e, "Could not create index"), "err");
+      toast(appErrorMessage(e, t("mongo.indexFail")), "err");
     }
   };
 
@@ -83,16 +85,19 @@ export function MongoStructure({
     try {
       parsed = JSON.parse(validatorText);
     } catch (e) {
-      toast("Invalid validator JSON: " + (e instanceof Error ? e.message : ""), "err");
+      toast(
+        t("mongo.validatorJsonFail", { err: e instanceof Error ? e.message : String(e) }),
+        "err",
+      );
       return;
     }
     try {
       await mongoSetValidator(handleId, db, coll, parsed);
-      toast("Validator updated on " + coll, "ok");
+      toast(t("mongo.validatorSaved", { coll }), "ok");
       setEditingValidator(false);
       onChanged();
     } catch (e) {
-      toast(appErrorMessage(e, "Could not update validator"), "err");
+      toast(appErrorMessage(e, t("mongo.validatorFail")), "err");
     }
   };
 
@@ -103,21 +108,21 @@ export function MongoStructure({
           className={"mg-struct-tab" + (tab === "schema" ? " active" : "")}
           onClick={() => setTab("schema")}
         >
-          <Icon name="schema" size={14} /> Inferred schema{" "}
+          <Icon name="schema" size={14} /> {t("mongo.tabSchema")}{" "}
           <span className="rail-count">{schema.length}</span>
         </button>
         <button
           className={"mg-struct-tab" + (tab === "indexes" ? " active" : "")}
           onClick={() => setTab("indexes")}
         >
-          <Icon name="bolt" size={14} /> Indexes{" "}
+          <Icon name="bolt" size={14} /> {t("mongo.statIndexes")}{" "}
           <span className="rail-count">{indexes.length}</span>
         </button>
         <button
           className={"mg-struct-tab" + (tab === "validation" ? " active" : "")}
           onClick={() => setTab("validation")}
         >
-          <Icon name="verified" size={14} /> Validation{" "}
+          <Icon name="verified" size={14} /> {t("mongo.tabValidation")}{" "}
           {validator ? <span className="mg-dot-on" /> : null}
         </button>
       </div>
@@ -126,9 +131,9 @@ export function MongoStructure({
           <table className="structure-table mg-schema-table">
             <thead>
               <tr>
-                <th>Field</th>
-                <th>Type(s)</th>
-                <th>Presence</th>
+                <th>{t("mongo.hField")}</th>
+                <th>{t("mongo.hTypes")}</th>
+                <th>{t("mongo.hPresence")}</th>
               </tr>
             </thead>
             <tbody>
@@ -187,10 +192,11 @@ export function MongoStructure({
         {tab === "schema" && schema.length === 0 ? (
           <div className="mg-schema-empty">
             <Icon name="schema" size={22} style={{ color: "var(--text-faint)" }} />
-            <b>No fields to infer yet</b>
+            <b>{t("mongo.schemaEmptyTitle")}</b>
             <span>
-              MongoDB has no fixed schema — this is read from the documents in <code>{coll}</code>,
-              and it has none. Insert a document and the fields appear here.
+              {t("mongo.schemaEmptyPre")}
+              <code>{coll}</code>
+              {t("mongo.schemaEmptyPost")}
             </span>
           </div>
         ) : null}
@@ -205,8 +211,8 @@ export function MongoStructure({
                     style={{ color: idx.name === "_id_" ? "var(--accent)" : "#e2b340" }}
                   />
                   {idx.name}
-                  {idx.unique ? <span className="tag">unique</span> : null}
-                  {idx.sparse ? <span className="tag">sparse</span> : null}
+                  {idx.unique ? <span className="tag">{t("mongo.flagUnique")}</span> : null}
+                  {idx.sparse ? <span className="tag">{t("mongo.flagSparse")}</span> : null}
                 </div>
                 <div className="structure-card-detail mg-idx-keys-row">
                   {Object.entries(idx.keys).map(([k, dir]) => (
@@ -231,16 +237,16 @@ export function MongoStructure({
                   <Checkbox checked={unique} onChange={(e) => setUnique(e.target.checked)} /> unique
                 </label>
                 <Btn variant="filled" small icon="check" onClick={() => void createIndex()}>
-                  Create
+                  {t("mongo.create")}
                 </Btn>
                 <Btn variant="text" small onClick={() => setCreating(false)}>
-                  Cancel
+                  {t("common.cancel")}
                 </Btn>
               </div>
             ) : (
               <div className="mg-add-index">
                 <Btn icon="add" variant="tonal" small onClick={() => setCreating(true)}>
-                  Create index…
+                  {t("mongo.createIndex")}
                 </Btn>
               </div>
             )}
@@ -251,8 +257,8 @@ export function MongoStructure({
             {editingValidator ? (
               <>
                 <div className="mg-val-head">
-                  <Icon name="verified" size={15} style={{ color: "var(--accent)" }} /> Edit
-                  $jsonSchema validator
+                  <Icon name="verified" size={15} style={{ color: "var(--accent)" }} />{" "}
+                  {t("mongo.editValidator")}
                 </div>
                 <textarea
                   className="mg-doc-editor"
@@ -263,18 +269,18 @@ export function MongoStructure({
                 <div className="modal-actions">
                   <div style={{ flex: 1 }} />
                   <Btn variant="text" small onClick={() => setEditingValidator(false)}>
-                    Cancel
+                    {t("common.cancel")}
                   </Btn>
                   <Btn variant="filled" small icon="save" onClick={() => void saveValidator()}>
-                    Save validator
+                    {t("mongo.saveValidator")}
                   </Btn>
                 </div>
               </>
             ) : validator ? (
               <>
                 <div className="mg-val-head">
-                  <Icon name="verified" size={15} style={{ color: "var(--accent)" }} /> JSON Schema
-                  validator <span className="mg-val-level">strict · error</span>
+                  <Icon name="verified" size={15} style={{ color: "var(--accent)" }} />{" "}
+                  {t("mongo.validatorLabel")} <span className="mg-val-level">strict · error</span>
                   <div style={{ flex: 1 }} />
                   <Btn
                     icon="edit"
@@ -285,7 +291,7 @@ export function MongoStructure({
                       setEditingValidator(true);
                     }}
                   >
-                    Edit
+                    {t("mongo.edit")}
                   </Btn>
                 </div>
                 <pre className="ddl-block">{JSON.stringify(validator, null, 2)}</pre>
@@ -294,7 +300,8 @@ export function MongoStructure({
               <div className="mg-no-validation">
                 <Icon name="rule" size={26} style={{ color: "var(--text-faint)" }} />
                 <div>
-                  No schema validation on <b>{coll}</b>
+                  {t("mongo.noValidationPre")}
+                  <b>{coll}</b>
                 </div>
                 <Btn
                   icon="add"
@@ -307,7 +314,7 @@ export function MongoStructure({
                     setEditingValidator(true);
                   }}
                 >
-                  Add $jsonSchema validator…
+                  {t("mongo.addValidator")}
                 </Btn>
               </div>
             )}

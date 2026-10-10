@@ -16,6 +16,7 @@
 // `share`: the view has to say which tree is on screen, and whether its
 // per-node figure is a measured millisecond or the planner's cost estimate.
 
+import { t, type StringKey } from "../../shared/i18n";
 import type { Engine } from "../../shared/types";
 import { EXEC_STEPS, type StepKey } from "./explainClauses";
 import type { JoinShape, SelectShape } from "./explainParse";
@@ -83,11 +84,12 @@ export interface PlanNode {
   self?: number | null;
 }
 
-/** One entry of the "How it runs" clause list. */
+/** One entry of the "How it runs" clause list. The label and prose are i18n
+ *  keys, translated by the view at render time so a locale switch repaints. */
 export interface ExplainStep {
   kw: string;
-  label: string;
-  desc: string;
+  labelKey: StringKey;
+  descKey: StringKey;
   rows: number | null;
   extra: string | null;
 }
@@ -383,22 +385,14 @@ export function analyzeQuery(shape: SelectShape, stats: ExplainStats): Analysis 
   };
 
   if (!shape.isSelect) {
-    return {
-      ...empty,
-      error:
-        "The execution-plan view analyzes a SELECT query — write one above to see how it runs.",
-    };
+    return { ...empty, error: t("expl.err.selectOnly") };
   }
   if (shape.unsupported) return { ...empty, error: shape.unsupported };
   if (shape.subquery && !shape.derived) {
-    return {
-      ...empty,
-      error:
-        "This SELECT reads from a derived table whose own SELECT could not be read. Analyze the inner query on its own to see its plan.",
-    };
+    return { ...empty, error: t("expl.err.derivedUnreadable") };
   }
   if (!shape.table && !shape.derived) {
-    return { ...empty, error: "No FROM clause — there is no relation to build a plan over." };
+    return { ...empty, error: t("expl.err.noFrom") };
   }
 
   // A derived table is addressed by its alias; the relation it stands for is
@@ -435,7 +429,7 @@ export function analyzeQuery(shape: SelectShape, stats: ExplainStats): Analysis 
   const steps: ExplainStep[] = [];
   const addStep = (key: StepKey, rows: number | null, extra: string | null) => {
     const def = stepDef(key);
-    steps.push({ kw: def.kw, label: def.label, desc: def.desc, rows, extra });
+    steps.push({ kw: def.kw, labelKey: def.labelKey, descKey: def.descKey, rows, extra });
   };
   const fromLabel = shape.derived ? table + " (derived table)" : table;
   addStep(
@@ -495,14 +489,11 @@ export function analyzeQuery(shape: SelectShape, stats: ExplainStats): Analysis 
   if (scanNode.removed != null && base != null && base > 0 && scanNode.removed / base > 0.6) {
     warnings.push({
       node: scanNode.node,
-      text:
-        "Filter discards " +
-        Math.round((scanNode.removed / base) * 100) +
-        "% of rows read (" +
-        scanNode.removed.toLocaleString() +
-        " of " +
-        base.toLocaleString() +
-        "). An index on the filtered column would let the engine skip them.",
+      text: t("expl.warn.filterDiscard", {
+        pct: Math.round((scanNode.removed / base) * 100),
+        removed: scanNode.removed.toLocaleString(),
+        total: base.toLocaleString(),
+      }),
     });
   }
   // Not for a Subquery Scan: the rows it reads were produced by the plan
@@ -510,10 +501,7 @@ export function analyzeQuery(shape: SelectShape, stats: ExplainStats): Analysis 
   if (!shape.derived && !shape.whereText && shape.limit == null && base != null && base > 200) {
     warnings.push({
       node: scanNode.node,
-      text:
-        "Unbounded scan of " +
-        base.toLocaleString() +
-        " rows — add WHERE or LIMIT before this runs against production volumes.",
+      text: t("expl.warn.unboundedScan", { rows: base.toLocaleString() }),
     });
   }
   warnings.push(...spillWarning(plan));
@@ -545,10 +533,9 @@ function spillWarning(plan: PlanNode[]): PlanWarning[] {
     {
       node: sort.node,
       text:
-        (sort.rows != null
-          ? "Sorting " + sort.rows.toLocaleString() + " rows spills"
-          : "This sort spills") +
-        " past a comfortable in-memory sort. An index matching the ORDER BY can remove this node entirely.",
+        sort.rows != null
+          ? t("expl.warn.spill", { rows: sort.rows.toLocaleString() })
+          : t("expl.warn.spillShort"),
     },
   ];
 }
@@ -608,24 +595,20 @@ export function withServerPlan(a: Analysis, server: ServerPlan): Analysis {
     if (p.removed != null && scanned != null && scanned > 0 && p.removed / scanned > 0.6) {
       warnings.push({
         node: p.node,
-        text:
-          (guess ? "Filter is expected to discard " : "Filter discards ") +
-          Math.round((p.removed / scanned) * 100) +
-          "% of rows read (" +
-          p.removed.toLocaleString() +
-          " of " +
-          scanned.toLocaleString() +
-          "). An index on the filtered column would let the engine skip them.",
+        text: t(guess ? "expl.warn.filterDiscardEst" : "expl.warn.filterDiscard", {
+          pct: Math.round((p.removed / scanned) * 100),
+          removed: p.removed.toLocaleString(),
+          total: scanned.toLocaleString(),
+        }),
       });
     }
     // Only worth saying when the engine did not reach for an index itself.
     if (!p.index && !p.detail.startsWith("Filter:") && scanned != null && scanned > 200) {
       warnings.push({
         node: p.node,
-        text:
-          (guess ? "Full scan of an estimated " : "Full scan of ") +
-          scanned.toLocaleString() +
-          " rows with no index and no filter — add a WHERE or an index before this meets production volumes.",
+        text: t(guess ? "expl.warn.fullScanEst" : "expl.warn.fullScan", {
+          rows: scanned.toLocaleString(),
+        }),
       });
     }
   }

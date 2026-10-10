@@ -12,12 +12,13 @@
 // ClickHouse has no foreign keys at all, so it gets no checkbox: `null`.
 
 import type { Engine } from "../../shared/types";
+import type { StringKey } from "../../shared/i18n";
 
 export interface FkOverride {
-  /** Checkbox label — names what the engine actually does. */
-  label: string;
-  /** One line under the label: what it leaves behind. */
-  hint: string;
+  /** Checkbox label key — names what the engine actually does (rendered via t()). */
+  label: StringKey;
+  /** One line under the label: what it leaves behind (rendered via t()). */
+  hint: StringKey;
 }
 
 /** The FK-override option for emptying `table`, or null when the engine has none. */
@@ -25,23 +26,23 @@ export function truncateFkOverride(engine: Engine | undefined): FkOverride | nul
   switch (engine) {
     case "postgres":
       return {
-        label: "Also empty tables that reference this one (CASCADE)",
-        hint: "Postgres has no way to skip the check — CASCADE truncates the referencing tables too.",
+        label: "io.fkTruncPg",
+        hint: "io.fkTruncPgHint",
       };
     case "mysql":
       return {
-        label: "Disable foreign key checks (FOREIGN_KEY_CHECKS = 0)",
-        hint: "Rows in referencing tables stay, and now point at rows that no longer exist.",
+        label: "io.fkDisableChecks",
+        hint: "io.fkDisableHintTrunc",
       };
     case "sqlite":
       return {
-        label: "Ignore foreign key checks (PRAGMA foreign_keys = OFF)",
-        hint: "Rows in referencing tables stay, and now point at rows that no longer exist.",
+        label: "io.fkIgnoreChecks",
+        hint: "io.fkDisableHintTrunc",
       };
     case "mssql":
       return {
-        label: "Disable the foreign keys that reference this table",
-        hint: "They are re-enabled afterwards without re-checking, so they come back untrusted.",
+        label: "io.fkTruncMssql",
+        hint: "io.fkTruncMssqlHint",
       };
     default:
       return null;
@@ -53,23 +54,23 @@ export function dropFkOverride(engine: Engine | undefined): FkOverride | null {
   switch (engine) {
     case "postgres":
       return {
-        label: "Also drop objects that depend on it (CASCADE)",
-        hint: "Referencing foreign keys and views go with the table.",
+        label: "io.fkDropPg",
+        hint: "io.fkDropPgHint",
       };
     case "mysql":
       return {
-        label: "Disable foreign key checks (FOREIGN_KEY_CHECKS = 0)",
-        hint: "The referencing constraints are left behind, pointing at a table that is gone.",
+        label: "io.fkDisableChecks",
+        hint: "io.fkDisableHintDrop",
       };
     case "sqlite":
       return {
-        label: "Ignore foreign key checks (PRAGMA foreign_keys = OFF)",
-        hint: "The referencing constraints are left behind, pointing at a table that is gone.",
+        label: "io.fkIgnoreChecks",
+        hint: "io.fkDisableHintDrop",
       };
     case "mssql":
       return {
-        label: "Drop the foreign keys that reference this table first",
-        hint: "A constraint cannot outlive the table it points at, so it is dropped, not disabled.",
+        label: "io.fkDropMssql",
+        hint: "io.fkDropMssqlHint",
       };
     default:
       return null;

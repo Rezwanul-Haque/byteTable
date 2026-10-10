@@ -10,6 +10,7 @@
 import type { CSSProperties } from "react";
 
 import { LOCALES, type LocaleId } from "../i18n";
+import { useT } from "../i18n/useT";
 import "./LanguageMenu.css";
 
 interface LanguageMenuProps {
@@ -23,13 +24,14 @@ interface LanguageMenuProps {
 }
 
 export function LanguageMenu({ value, onPick, className, style, ref }: LanguageMenuProps) {
+  const t = useT();
   return (
     <div
       ref={ref}
       className={"lang-pop" + (className ? " " + className : "")}
       style={style}
       role="listbox"
-      aria-label="Interface language"
+      aria-label={t("uix.lang.menuAria")}
     >
       {(Object.entries(LOCALES) as [LocaleId, (typeof LOCALES)[LocaleId]][]).map(([code, meta]) => {
         // const pct = coverage(code);

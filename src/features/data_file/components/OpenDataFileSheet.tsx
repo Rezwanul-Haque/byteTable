@@ -21,6 +21,8 @@ import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Modal } from "../../../shared/ui/Modal";
 import { useToast } from "../../../shared/ui/toastContext";
+import { useT } from "../../../shared/i18n/useT";
+import type { StringKey } from "../../../shared/i18n";
 import type { DataFileRef } from "../../workspaces/types";
 import { analyze, delimLabel, fmtBytes, parse, sniff, TYPES } from "../core";
 import { DEMOS } from "../demos";
@@ -34,13 +36,14 @@ import {
 import "./OpenDataFileSheet.css";
 
 /** Delimiter choices: `auto` (whatever was sniffed) plus manual overrides. */
-const DELIM_OPTS = [
-  { v: "auto", label: "Auto" },
+type DelimOpt = { v: string; label: string; i18nKey?: StringKey };
+const DELIM_OPTS: DelimOpt[] = [
+  { v: "auto", label: "", i18nKey: "dfile.auto" },
   { v: ",", label: "," },
   { v: ";", label: ";" },
-  { v: "\t", label: "Tab" },
+  { v: "\t", label: "", i18nKey: "dfile.tabDelim" },
   { v: "|", label: "|" },
-] as const;
+];
 
 /** Preview size — enough to recognise the file, small enough to stay readable. */
 const PREVIEW_ROWS = 6;
@@ -54,6 +57,7 @@ interface OpenDataFileSheetProps {
 
 export function OpenDataFileSheet({ onClose, onOpen }: OpenDataFileSheetProps) {
   const toast = useToast();
+  const t = useT();
   const [file, setFile] = useState<PickedFile | null>(null);
   const [delim, setDelim] = useState<string>("auto");
   const [header, setHeader] = useState(true);
@@ -89,7 +93,7 @@ export function OpenDataFileSheet({ onClose, onOpen }: OpenDataFileSheetProps) {
         setDelim("auto");
       })
       .catch((error: unknown) => {
-        toast(error instanceof Error ? error.message : "Could not read that file", "err");
+        toast(error instanceof Error ? error.message : t("dfile.readFail"), "err");
       })
       .finally(() => setBusy(false));
   };
@@ -157,14 +161,12 @@ export function OpenDataFileSheet({ onClose, onOpen }: OpenDataFileSheetProps) {
   };
 
   return (
-    <Modal className="csvo-sheet" label="Open a data file" onClose={onClose}>
+    <Modal className="csvo-sheet" label={t("dfile.openDataFile")} onClose={onClose}>
       <div className="csvo-head">
         <Icon name="table_view" size={17} style={{ color: "var(--accent)" }} />
-        <div className="csvo-title">Open a data file</div>
-        <span className="csvo-sub">
-          CSV · TSV · delimited text — edited in place, nothing is uploaded
-        </span>
-        <IconBtn icon="close" title="Close" onClick={onClose} />
+        <div className="csvo-title">{t("dfile.openDataFile")}</div>
+        <span className="csvo-sub">{t("dfile.sheetSub")}</span>
+        <IconBtn icon="close" title={t("common.close")} onClick={onClose} />
       </div>
 
       <div className="csvo-body">
@@ -190,11 +192,9 @@ export function OpenDataFileSheet({ onClose, onOpen }: OpenDataFileSheetProps) {
             >
               <Icon name={busy ? "hourglass_top" : "upload_file"} size={26} />
               <span className="csvo-drop-main">
-                {busy ? "Reading…" : "Drop a file here, or click to browse"}
+                {busy ? t("dfile.reading") : t("dfile.dropHere")}
               </span>
-              <span className="csvo-drop-sub">
-                Delimiter, header row and encoding are detected for you
-              </span>
+              <span className="csvo-drop-sub">{t("dfile.dropSub")}</span>
             </button>
             <input
               ref={inputRef}
@@ -207,7 +207,7 @@ export function OpenDataFileSheet({ onClose, onOpen }: OpenDataFileSheetProps) {
               }}
             />
 
-            <div className="csvo-samples-h">Or start from a sample</div>
+            <div className="csvo-samples-h">{t("dfile.samplesHeading")}</div>
             <div className="csvo-samples">
               {DEMOS.map((d) => (
                 <button
@@ -238,19 +238,19 @@ export function OpenDataFileSheet({ onClose, onOpen }: OpenDataFileSheetProps) {
                   {file.name}
                 </div>
                 <div className="csvo-file-meta">
-                  {fmtBytes(file.size)} · {sniffed.encoding} · {sniffed.crlf ? "CRLF" : "LF"} line
-                  endings
+                  {fmtBytes(file.size)} · {sniffed.encoding} ·{" "}
+                  {t("dfile.lineEndings", { kind: sniffed.crlf ? "CRLF" : "LF" })}
                 </div>
               </div>
               <Btn icon="swap_horiz" variant="text" onClick={() => setFile(null)}>
-                Choose another
+                {t("dfile.chooseAnother")}
               </Btn>
             </div>
 
             <div className="csvo-opts">
               <div className="csvo-opt">
                 <span className="csvo-opt-label" id="csvo-delim-label">
-                  Delimiter
+                  {t("dfile.delimiterLabel")}
                 </span>
                 <div className="seg csvo-seg" role="group" aria-labelledby="csvo-delim-label">
                   {DELIM_OPTS.map((d) => (
@@ -260,7 +260,7 @@ export function OpenDataFileSheet({ onClose, onOpen }: OpenDataFileSheetProps) {
                       className={"seg-btn" + (delim === d.v ? " active" : "")}
                       onClick={() => setDelim(d.v)}
                     >
-                      {d.label}
+                      {d.i18nKey ? t(d.i18nKey) : d.label}
                       {d.v === "auto" ? (
                         <em className="csvo-auto">{delimLabel(sniffed.delimiter)}</em>
                       ) : null}
@@ -270,11 +270,11 @@ export function OpenDataFileSheet({ onClose, onOpen }: OpenDataFileSheetProps) {
               </div>
               <label className="csvo-check">
                 <Checkbox checked={header} onChange={(e) => setHeader(e.target.checked)} />
-                First row is a header
+                {t("dfile.headerRow")}
               </label>
               <label className="csvo-check">
                 <Checkbox checked={trim} onChange={(e) => setTrim(e.target.checked)} />
-                Trim whitespace
+                {t("dfile.trimWhitespace")}
               </label>
             </div>
 
@@ -328,24 +328,25 @@ export function OpenDataFileSheet({ onClose, onOpen }: OpenDataFileSheetProps) {
                 className="csvo-dot"
                 style={{ background: errors ? "var(--warn)" : "var(--accent)" }}
               />
-              <b>{delimLabel(parsed.opts.delimiter)}-delimited</b>
+              <b>{t("dfile.delimited", { delim: delimLabel(parsed.opts.delimiter) })}</b>
               <span>
-                {parsed.rows.length.toLocaleString()} rows × {cols.length} columns
+                {t("dfile.rowsCols", {
+                  rows: parsed.rows.length.toLocaleString(),
+                  cols: cols.length,
+                })}
               </span>
-              <span>parsed in {parsed.ms} ms</span>
+              <span>{t("dfile.parsedInMs", { ms: parsed.ms })}</span>
               {errors ? (
                 <span className="csvo-warn">
                   <Icon name="report" size={12} />
                   {/* One span, not two siblings: as bare text runs in a flex row
                       the plural suffix detaches onto its own line. */}
-                  <span>
-                    {errors} issue{errors === 1 ? "" : "s"} found — review them in the viewer
-                  </span>
+                  <span>{t("dfile.issuesFound", { count: errors })}</span>
                 </span>
               ) : (
                 <span className="csvo-ok">
                   <Icon name="check" size={12} />
-                  <span>no structural problems</span>
+                  <span>{t("dfile.noProblems")}</span>
                 </span>
               )}
             </div>
@@ -354,14 +355,12 @@ export function OpenDataFileSheet({ onClose, onOpen }: OpenDataFileSheetProps) {
       </div>
 
       <div className="csvo-foot">
-        <span className="csvo-foot-note">
-          Opens as an editable workspace — changes are staged until you save. Query it with SQL.
-        </span>
+        <span className="csvo-foot-note">{t("dfile.footNote")}</span>
         <Btn variant="text" onClick={onClose}>
-          Cancel
+          {t("common.cancel")}
         </Btn>
         <Btn icon="arrow_forward" variant="filled" disabled={!parsed} onClick={commit}>
-          Open viewer
+          {t("dfile.openViewer")}
         </Btn>
       </div>
     </Modal>

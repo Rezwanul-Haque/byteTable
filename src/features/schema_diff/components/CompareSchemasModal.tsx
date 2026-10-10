@@ -8,12 +8,14 @@
 
 import { useEffect } from "react";
 
+import { useT } from "../../../shared/i18n/useT";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { SchemaDiff } from "./SchemaDiff";
 import "./SchemaDiff.css";
 
 export function CompareSchemasModal({ onClose }: { onClose: () => void }) {
+  const t = useT();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -34,13 +36,13 @@ export function CompareSchemasModal({ onClose }: { onClose: () => void }) {
         className="sd-compare-panel"
         role="dialog"
         aria-modal="true"
-        aria-label="Compare schemas"
+        aria-label={t("sdiff.compare.title")}
       >
         <div className="sd-compare-head">
           <Icon name="difference" size={17} style={{ color: "var(--accent)" }} />
-          <span className="sd-compare-title">Compare schemas</span>
-          <span className="sd-compare-sub">structure only · pick any two SQL connections</span>
-          <IconBtn icon="close" title="Close (Esc)" onClick={onClose} />
+          <span className="sd-compare-title">{t("sdiff.compare.title")}</span>
+          <span className="sd-compare-sub">{t("sdiff.compare.sub")}</span>
+          <IconBtn icon="close" title={t("sdiff.closeEsc")} onClick={onClose} />
         </div>
         <SchemaDiff compareOnly />
       </div>

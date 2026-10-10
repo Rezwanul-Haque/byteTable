@@ -73,6 +73,7 @@ import { Icon } from "../../../../shared/ui/Icon";
 import { CopyButton } from "../../../../shared/ui/CopyButton";
 import { Modal, ModalActions, ModalTitle } from "../../../../shared/ui/Modal";
 import { useToast } from "../../../../shared/ui/toastContext";
+import { useT } from "../../../../shared/i18n/useT";
 import { useContextMenu } from "../../../../shared/hooks/useContextMenu";
 import { useIntrospectionStore } from "../../../introspection/state";
 import { storedTabGridEdits, useWorkspacesStore } from "../../../workspaces/state";
@@ -524,6 +525,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
 
   // --- inline edit -----------------------------------------------------
   const toast = useToast();
+  const t = useT();
   const [editing, setEditing] = useState<EditState | null>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
   // Enter then blur must not double-commit one edit session.
@@ -672,7 +674,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       })
       .catch((err: unknown) => {
         if (generation !== generationRef.current) return;
-        const message = appErrorMessage(err, "Could not load rows.");
+        const message = appErrorMessage(err, t("grid.loadRowsFail"));
         if (filterRef.current !== null && filterCbRef.current.onFilterError) {
           filterCbRef.current.onFilterError(message);
           setLoadingInitial(false);
@@ -681,7 +683,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           setLoadingInitial(false);
         }
       });
-  }, [handleId, schema, table, sort, tabId, offset, pageSize]);
+  }, [handleId, schema, table, sort, tabId, offset, pageSize, t]);
 
   // Initial load + reload on identity / sort / filter / page / refresh changes.
   //
@@ -965,14 +967,14 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   // are always editable (no commit until save).
   const readOnlyReason = useCallback(
     (rowIndex: number, ci: number): string | null => {
-      if (!hasPk) return "Read-only: table has no primary key";
+      if (!hasPk) return t("grid.roNoPk");
       const colName = columns[ci]?.name;
-      if (colName && colMeta.get(colName)?.pk) return "Read-only: primary key column";
+      if (colName && colMeta.get(colName)?.pk) return t("grid.roPkCol");
       const row = rowCacheRef.current.get(rowIndex);
-      if (!row || buildPk(row) === null) return "Read-only: row key unavailable";
+      if (!row || buildPk(row) === null) return t("grid.roNoKey");
       return null;
     },
-    [hasPk, columns, colMeta, buildPk],
+    [hasPk, columns, colMeta, buildPk, t],
   );
 
   // The displayed value for a real cell = pending override (if any) else cache.
@@ -1169,7 +1171,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   // The `pk = value` subline (composite keys joined with ", ").
   const pkLabelOf = useCallback(
     (values: CellValue[]): string => {
-      if (pkColumns.length === 0) return "no primary key";
+      if (pkColumns.length === 0) return t("grid.noPk");
       return pkColumns
         .map((name) => {
           const ci = columns.findIndex((c) => c.name === name);
@@ -1178,7 +1180,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         })
         .join(", ");
     },
-    [pkColumns, columns],
+    [pkColumns, columns, t],
   );
 
   // Open / retarget the drawer for a row (blocked while it has un-staged edits).
@@ -1233,16 +1235,16 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           // The row no longer exists at this position — nothing to inspect.
           setInspect(null);
           setInspectDirty(false);
-          toast("That row is no longer in this page — refresh the grid.", "err");
+          toast(t("grid.rowGone"), "err");
         }
       })
       .catch((err: unknown) => {
-        toast(appErrorMessage(err, "Could not reload this row."), "err");
+        toast(appErrorMessage(err, t("grid.reloadFail")), "err");
       })
       .finally(() => {
         setInspectRefreshing(false);
       });
-  }, [inspect, handleId, schema, table, sort, toast]);
+  }, [inspect, handleId, schema, table, sort, toast, t]);
 
   // A JSON column arrives as the raw TEXT of the document. Re-parsing it lets
   // the JSON copy nest the real object instead of stringifying the string
@@ -1364,10 +1366,10 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     (text: string, okMessage: string) => {
       void navigator.clipboard.writeText(text).then(
         () => toast(okMessage, "ok"),
-        () => toast("Couldn't copy to clipboard", "err"),
+        () => toast(t("uix.copy.fail"), "err"),
       );
     },
-    [toast],
+    [toast, t],
   );
 
   // Drawer copy-row: the inspected row in whichever format the drawer asked for.
@@ -1375,10 +1377,12 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     (format: RowCopyFormat, values: CellValue[]) => {
       copyToClipboard(
         serializeRows([values], format, columns),
-        format === "values" ? "Row values copied" : "Row copied as " + format.toUpperCase(),
+        format === "values"
+          ? t("grid.rowValuesCopied")
+          : t("grid.rowCopiedAs", { fmt: format.toUpperCase() }),
       );
     },
-    [columns, serializeRows, copyToClipboard],
+    [columns, serializeRows, copyToClipboard, t],
   );
 
   // ⌘/Ctrl+E: close the drawer when it's open, otherwise inspect the selected
@@ -1479,18 +1483,18 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           setPendingEdits(new Map());
           setNewRows([]);
           const parts: string[] = [];
-          if (nNew) parts.push(nNew + " inserted");
-          if (nUpdated) parts.push(nUpdated + " updated");
-          toast("Committed to " + table + " — " + parts.join(", "), "ok");
+          if (nNew) parts.push(t("grid.insertedCount", { count: nNew }));
+          if (nUpdated) parts.push(t("grid.updatedCount", { count: nUpdated }));
+          toast(t("grid.committed", { table, parts: parts.join(", ") }), "ok");
           // Re-fetch so the committed rows replace the staged ones.
           useTabMetaStore.getState().requestRefetch(tabId);
         })
         .catch((err: unknown) => {
-          toast(appErrorMessage(err, "Could not save changes."), "err");
+          toast(appErrorMessage(err, t("grid.saveFail")), "err");
         })
         .finally(() => setSaving(false));
     },
-    [handleId, schema, table, tabId, toast],
+    [handleId, schema, table, tabId, toast, t],
   );
 
   // Save (⌘S / Save button). Folds in an open (un-blurred) inline edit, then
@@ -1671,11 +1675,11 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       setNewRows((prev) => [...staged, ...prev]);
       toast(
         staged.length === 1
-          ? "Row duplicated — staged, not saved yet"
-          : staged.length + " rows duplicated — staged, not saved yet",
+          ? t("grid.duplicatedOne")
+          : t("grid.duplicatedN", { count: staged.length }),
       );
     },
-    [columns, colMeta, newRows, onAddRowReset, toast],
+    [columns, colMeta, newRows, onAddRowReset, toast, t],
   );
 
   // Escape's counterpart to ⌘I: drop the most recently staged new row (the top
@@ -1691,8 +1695,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     setSelected((sel) => (sel?.rowKey === key ? null : sel));
     setInspect((t) => (t && targetKey(t) === key ? null : t));
     setEditing((e) => (e && targetKey(e.target) === key ? null : e));
-    toast("Staged row discarded");
-  }, [newRows, toast]);
+    toast(t("grid.stagedDiscarded"));
+  }, [newRows, toast, t]);
 
   useImperativeHandle(ref, () => ({ addRow, save, discard }), [addRow, save, discard]);
 
@@ -1904,9 +1908,9 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     }
     if (!rows.length) return;
     const res = await rowsDelete(handleId, { schema, table, rows });
-    toast(`Deleted ${res.deleted} row${res.deleted === 1 ? "" : "s"} from ${table}`, "ok");
+    toast(t("grid.deletedRows", { count: res.deleted, table }), "ok");
     useTabMetaStore.getState().requestRefetch(tabId);
-  }, [selectedRows, buildPk, handleId, schema, table, tabId, toast]);
+  }, [selectedRows, buildPk, handleId, schema, table, tabId, toast, t]);
 
   /** The values behind a row key ("r"+absIndex, or "s"+stagedKey), if loaded. */
   const valuesForKey = useCallback(
@@ -1938,15 +1942,14 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         .map(valuesForKey)
         .filter((v): v is CellValue[] => v !== null);
       if (!rows.length) return;
-      const what = rows.length === 1 ? "Row" : rows.length + " rows";
       copyToClipboard(
         serializeRows(rows, format, columns),
         format === "values"
-          ? what + " copied as values"
-          : what + " copied as " + format.toUpperCase(),
+          ? t("grid.copiedAsValues", { count: rows.length })
+          : t("grid.copiedAsFmt", { count: rows.length, fmt: format.toUpperCase() }),
       );
     },
-    [orderedKeys, valuesForKey, serializeRows, columns, copyToClipboard],
+    [orderedKeys, valuesForKey, serializeRows, columns, copyToClipboard, t],
   );
 
   /** Export whole rows to a file. Visible columns only, matching the selection
@@ -1966,15 +1969,12 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         });
         if (!path) return;
         await exportSave(path, text);
-        toast(
-          `Exported ${rows.length} row${rows.length === 1 ? "" : "s"} to ${format.toUpperCase()}`,
-          "ok",
-        );
+        toast(t("grid.exportedTo", { count: rows.length, fmt: format.toUpperCase() }), "ok");
       } catch (e) {
-        toast(appErrorMessage(e, "Could not export " + format.toUpperCase()), "err");
+        toast(appErrorMessage(e, t("grid.exportFmtFail", { fmt: format.toUpperCase() })), "err");
       }
     },
-    [orderedKeys, valuesForKey, serializeRows, columns, isHidden, table, toast],
+    [orderedKeys, valuesForKey, serializeRows, columns, isHidden, table, toast, t],
   );
 
   const exportSelectedCsv = useCallback(
@@ -1997,7 +1997,6 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     const inSelection = selectedRows.has(subject.rowKey);
     const keys = inSelection ? [...selectedRows] : [subject.rowKey];
     const n = keys.length;
-    const rowsWord = n === 1 ? "row" : n + " rows";
 
     const cellName = subject.ci !== null ? (columns[subject.ci]?.name ?? null) : null;
     const cellValue =
@@ -2005,7 +2004,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
 
     return [
       {
-        label: n === 1 ? "Duplicate row" : "Duplicate " + rowsWord,
+        label: n === 1 ? t("grid.duplicateOne") : t("grid.duplicateN", { count: n }),
         icon: "content_copy",
         // A staged row can be duplicated too; it just has nothing saved behind
         // it yet. Only an unloaded row (still shimmering) has nothing to copy.
@@ -2018,24 +2017,24 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         },
       },
       {
-        label: "Copy value",
+        label: t("grid.copyValue"),
         icon: "content_paste",
         separate: true,
         disabled: cellName === null,
         onSelect: () => {
           if (cellName === null) return;
-          copyToClipboard(cellText(cellValue, cellName), cellName + " copied");
+          copyToClipboard(cellText(cellValue, cellName), t("grid.colCopied", { name: cellName }));
         },
       },
       {
-        label: n === 1 ? "Copy row" : "Copy " + rowsWord,
+        label: n === 1 ? t("grid.copyOne") : t("grid.copyN", { count: n }),
         icon: "content_copy",
         children: [
-          { label: "as CSV", icon: "table_view", onSelect: () => copyRows(keys, "csv") },
-          { label: "as JSON", icon: "data_object", onSelect: () => copyRows(keys, "json") },
-          { label: "as INSERT", icon: "code", onSelect: () => copyRows(keys, "sql") },
+          { label: t("grid.asCsv"), icon: "table_view", onSelect: () => copyRows(keys, "csv") },
+          { label: t("grid.asJson"), icon: "data_object", onSelect: () => copyRows(keys, "json") },
+          { label: t("grid.asInsert"), icon: "code", onSelect: () => copyRows(keys, "sql") },
           {
-            label: "values only",
+            label: t("grid.valuesOnly"),
             icon: "notes",
             // Unescaped values have no record separator — see `serializeRows`.
             disabled: n > 1,
@@ -2044,12 +2043,20 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         ],
       },
       {
-        label: n === 1 ? "Export row to file" : "Export " + rowsWord + " to file",
+        label: n === 1 ? t("grid.exportOne") : t("grid.exportN", { count: n }),
         icon: "download",
         separate: true,
         children: [
-          { label: "as CSV", icon: "table_view", onSelect: () => void exportRows(keys, "csv") },
-          { label: "as JSON", icon: "data_object", onSelect: () => void exportRows(keys, "json") },
+          {
+            label: t("grid.asCsv"),
+            icon: "table_view",
+            onSelect: () => void exportRows(keys, "csv"),
+          },
+          {
+            label: t("grid.asJson"),
+            icon: "data_object",
+            onSelect: () => void exportRows(keys, "json"),
+          },
         ],
       },
     ];
@@ -2073,18 +2080,18 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       <div className="save-bar">
         <Icon name="edit_note" size={16} style={{ color: "var(--accent)" }} />
         <span className="save-bar-count">
-          {newRowCount ? newRowCount + " new" : ""}
+          {newRowCount ? t("grid.newCount", { count: newRowCount }) : ""}
           {newRowCount && editedRowCount ? " · " : ""}
-          {editedRowCount ? editedRowCount + " edited" : ""} {dirtyCount === 1 ? "row" : "rows"}{" "}
-          unsaved
+          {editedRowCount ? t("grid.editedCount", { count: editedRowCount }) : ""}{" "}
+          {t(`uix.noun.row.${dirtyCount === 1 ? "one" : "other"}`)} {t("grid.unsaved")}
         </span>
-        <span className="save-bar-hint">nothing is written to the database until you save</span>
+        <span className="save-bar-hint">{t("grid.saveBarHint")}</span>
         <div style={{ flex: 1 }} />
         <Btn variant="text" small onClick={discard} disabled={saving}>
-          Discard
+          {t("grid.discard")}
         </Btn>
         <Btn variant="filled" small icon="save" onClick={save} disabled={saving}>
-          {saving ? "Saving…" : "Save · ⌘S"}
+          {saving ? t("grid.saving") : t("grid.saveBtn")}
         </Btn>
       </div>
     ) : null;
@@ -2146,16 +2153,20 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       ) : null}
       {/* Save confirm (production): the exact batch SQL the save will run. */}
       {saveConfirmSql ? (
-        <Modal onClose={() => setSaveConfirmSql(null)} label="Confirm save" width={520}>
+        <Modal
+          onClose={() => setSaveConfirmSql(null)}
+          label={t("grid.confirmSaveAria")}
+          width={520}
+        >
           <ModalTitle>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-              <Icon name="warning" size={18} style={{ color: "#e06c75" }} /> Save changes to a
-              production connection?
+              <Icon name="warning" size={18} style={{ color: "#e06c75" }} />{" "}
+              {t("grid.confirmHeading")}
             </span>
           </ModalTitle>
           <p className="dg-confirm-body">
-            This connection points at <b>production</b>. The following batch will run in one
-            transaction:
+            {t("grid.confirmBodyPre")} <b>{t("uix.bulkDelete.prodTag")}</b>
+            {t("grid.confirmBodyPost")}
           </p>
           <code
             className="dg-confirm-sql"
@@ -2163,7 +2174,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           />
           <ModalActions>
             <Btn variant="text" onClick={() => setSaveConfirmSql(null)}>
-              Cancel
+              {t("common.cancel")}
             </Btn>
             <Btn
               variant="filled"
@@ -2174,7 +2185,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
                 runSave(sql, nNew, nUpdated);
               }}
             >
-              Confirm save
+              {t("grid.confirmSave")}
             </Btn>
           </ModalActions>
         </Modal>
@@ -2217,7 +2228,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       <div className="dg-state">
         <Icon name="error" size={28} style={{ color: "#e06c75" }} />
         <div className="dg-error">
-          Could not load rows.
+          {t("grid.loadRowsFail")}
           <code>{initialError}</code>
         </div>
         <button
@@ -2225,7 +2236,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           className="dg-retry"
           onClick={() => useTabMetaStore.getState().requestRefetch(tabId)}
         >
-          Retry
+          {t("grid.retry")}
         </button>
       </div>
     );
@@ -2235,7 +2246,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     return (
       <div className="dg-state">
         <Icon name="table" size={28} style={{ opacity: 0.5 }} />
-        <span>Loading {schema + "." + table}…</span>
+        <span>{t("grid.loadingTable", { name: schema + "." + table })}</span>
       </div>
     );
   }
@@ -2257,7 +2268,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
               if (el) el.indeterminate = someRowsSelected;
             }}
             onChange={toggleSelectAllRows}
-            aria-label="Select all loaded rows"
+            aria-label={t("grid.selectAllLoaded")}
           />
         </div>
       ) : null}
@@ -2294,7 +2305,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
               <button
                 type="button"
                 className="insight-btn"
-                title={"Insights: " + c.name}
+                title={t("grid.insightsTitle", { name: c.name })}
                 onClick={(e) => onInsightClick(c.name, e)}
               >
                 <Icon name="monitoring" size={13} />
@@ -2304,7 +2315,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
                 to auto-fit. Stops propagation so it never triggers the sort. */}
             <span
               className={"dg-col-resize" + (draggingCol === c.name ? " active" : "")}
-              title="Drag to resize · double-click to auto-fit"
+              title={t("ws.grid.colResizeHint")}
               onMouseDown={(e) => startColResize(e, c.name, width)}
               onDoubleClick={(e) => {
                 e.stopPropagation();
@@ -2322,8 +2333,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   // Empty state — only when there are NO rows AND no staged new rows to show.
   if ((totalRows === 0 || rowCount === 0) && stagedShown === 0) {
     const message = filter
-      ? "No rows match the filter in " + schema + "." + table
-      : "Empty table — no rows in " + schema + "." + table;
+      ? t("grid.noRowsFiltered", { name: schema + "." + table })
+      : t("grid.emptyTable", { name: schema + "." + table });
     if (columns.length === 0) {
       return (
         <>
@@ -2360,10 +2371,12 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     <>
       {selectedRows.size > 0 ? (
         <div className="dg-selbar">
-          <span className="dg-selbar-count">{selectedRows.size} selected</span>
+          <span className="dg-selbar-count">
+            {t("ws.grid.selected", { count: selectedRows.size })}
+          </span>
           <div style={{ flex: 1 }} />
           <Btn icon="download" variant="tonal" small onClick={() => void exportSelectedCsv()}>
-            Export CSV
+            {t("ws.grid.exportCsv")}
           </Btn>
           <Btn
             icon="delete"
@@ -2372,7 +2385,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
             className="dg-selbar-del"
             onClick={() => setBulkDeleteOpen(true)}
           >
-            Delete selected
+            {t("grid.deleteSelected")}
           </Btn>
         </div>
       ) : null}
@@ -2417,7 +2430,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
                           className="dg-check"
                           checked={selectedRows.has(rowKey)}
                           onChange={() => toggleRowSel(rowKey)}
-                          aria-label={"Select row " + (rowIndex + 1)}
+                          aria-label={t("ws.grid.selectRowN", { n: rowIndex + 1 })}
                         />
                       )}
                     </div>
@@ -2427,7 +2440,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
                       "dg-rownum" +
                       (inspect && targetKey(inspect) === targetKey(target) ? " inspecting" : "")
                     }
-                    title="Inspect row (⌘E / Ctrl+E)"
+                    title={t("ws.grid.inspectRow")}
                     onClick={() => openInspect(target, rowKey)}
                   >
                     <span className="dg-rownum-n">{isStaged ? "✱" : rowIndex + 1}</span>
@@ -2492,7 +2505,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
                           <input
                             ref={editInputRef}
                             className="cell-input"
-                            aria-label={"Edit " + c.name}
+                            aria-label={t("ws.grid.editCol", { name: c.name })}
                             value={editing.draft}
                             onChange={(e) =>
                               setEditing((prev) =>
@@ -2535,7 +2548,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
                         {!isEditing && cellVal !== null ? (
                           <CopyButton
                             className="dg-copy"
-                            label={"Copy " + c.name + " value"}
+                            label={t("ws.grid.copyCol", { name: c.name })}
                             text={String(cellVal)}
                           />
                         ) : null}

@@ -14,6 +14,7 @@ import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { Select } from "../../../../shared/ui/Select";
 import { useToast } from "../../../../shared/ui/toastContext";
+import { useT } from "../../../../shared/i18n/useT";
 import type { ColumnInfo, FilterOp, SortSpec } from "../../../../shared/api/engine";
 import type { FilterDraft, TabFilterState, UiCondition } from "../../../workspaces/types";
 import { highlightSql } from "../../shared/highlightSql";
@@ -23,6 +24,7 @@ import {
   draftToDisplaySql,
   emptyDraft,
   newCondition,
+  opLabel,
   opNeedsValue,
 } from "../filter";
 import "./FilterPanel.css";
@@ -91,6 +93,7 @@ export function FilterPanel({
   const { draft } = state;
   const firstColumn = columns[0]?.name ?? "";
   const toast = useToast();
+  const t = useT();
 
   // "Show query" preview toggle. The staged ORDER BY (`pendingSort`) is owned by
   // the tab and persisted, so it survives a tab switch; changing it does NOT
@@ -183,11 +186,11 @@ export function FilterPanel({
     // confirm with a toast either way, like the app's other copy actions.
     if (navigator.clipboard?.writeText) {
       navigator.clipboard.writeText(previewSql).then(
-        () => toast("Query copied", "ok"),
-        () => toast("Couldn't copy to clipboard", "err"),
+        () => toast(t("flt.queryCopied"), "ok"),
+        () => toast(t("uix.copy.fail"), "err"),
       );
     } else {
-      toast("Couldn't copy to clipboard", "err");
+      toast(t("uix.copy.fail"), "err");
     }
   };
 
@@ -231,7 +234,7 @@ export function FilterPanel({
               if (e.key === "Enter") apply(draft);
             }}
             spellCheck={false}
-            aria-label="Raw WHERE clause"
+            aria-label={t("flt.rawAria")}
           />
         </div>
       ) : (
@@ -248,11 +251,7 @@ export function FilterPanel({
                 </span>
                 <label
                   className="filter-check"
-                  title={
-                    c.enabled
-                      ? "Condition is active — uncheck to skip it"
-                      : "Condition is skipped — check to apply it"
-                  }
+                  title={c.enabled ? t("flt.condActive") : t("flt.condSkipped")}
                 >
                   <input
                     type="checkbox"
@@ -265,30 +264,32 @@ export function FilterPanel({
                 </label>
                 <Select
                   className="filter-select"
-                  aria-label="Column"
+                  aria-label={t("flt.colAria")}
                   value={c.column}
                   options={columns.map((col) => ({ value: col.name, label: col.name }))}
                   onChange={(v) => updateCond(c.id, { column: v }, false)}
                 />
                 <Select
                   className="filter-select filter-op"
-                  aria-label="Operator"
+                  aria-label={t("flt.opAria")}
                   value={c.op}
-                  options={FILTER_OPS.map((o) => ({ value: o.op, label: o.label }))}
+                  options={FILTER_OPS.map((o) => ({ value: o.op, label: opLabel(o.op) }))}
                   onChange={(v) => updateCond(c.id, { op: v as FilterOp }, false)}
                 />
                 {opNeedsValue(c.op) ? (
                   <input
                     className="filter-value"
                     type={numeric && c.op !== "inList" ? "number" : "text"}
-                    placeholder={c.op === "inList" ? "value, value, value" : "value…"}
+                    placeholder={
+                      c.op === "inList" ? t("flt.listPlaceholder") : t("flt.valuePlaceholder")
+                    }
                     value={c.value}
                     onChange={(e) => updateCond(c.id, { value: e.target.value }, false)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") apply(draft);
                     }}
                     spellCheck={false}
-                    aria-label="Value"
+                    aria-label={t("flt.valueAria")}
                   />
                 ) : (
                   <span className="filter-novalue" />
@@ -296,9 +297,9 @@ export function FilterPanel({
                 <button
                   type="button"
                   className="saved-del"
-                  title="Remove condition"
+                  title={t("flt.removeCond")}
                   onClick={() => removeCond(c.id)}
-                  aria-label="Remove condition"
+                  aria-label={t("flt.removeCond")}
                 >
                   <Icon name="close" size={13} />
                 </button>
@@ -311,30 +312,30 @@ export function FilterPanel({
       <div className="filter-foot">
         {draft.rawMode ? null : (
           <button type="button" className="filter-add" onClick={addCond}>
-            <Icon name="add" size={14} /> Add condition
+            <Icon name="add" size={14} /> {t("flt.addCondition")}
           </button>
         )}
         <button type="button" className="filter-rawtoggle" onClick={switchMode}>
           <Icon name={draft.rawMode ? "tune" : "code"} size={13} />
-          {draft.rawMode ? "Use builder" : "Edit as SQL"}
+          {draft.rawMode ? t("flt.useBuilder") : t("flt.editAsSql")}
         </button>
         <button
           type="button"
           className={"filter-rawtoggle" + (showSql ? " on" : "")}
           onClick={() => setShowSql((s) => !s)}
-          title="Preview the generated query"
+          title={t("flt.previewTitle")}
         >
           <Icon name="preview" size={13} />
-          {showSql ? "Hide query" : "Show query"}
+          {showSql ? t("flt.hideQuery") : t("flt.showQuery")}
         </button>
         <div className="filter-orderlimit">
           <Icon name="swap_vert" size={13} style={{ color: "var(--text-faint)" }} />
           <Select
             className="filter-select filter-ol-col"
-            aria-label="Order by column"
+            aria-label={t("flt.orderColAria")}
             value={pendingSort?.column ?? ""}
             options={[
-              { value: "", label: "no order" },
+              { value: "", label: t("flt.noOrder") },
               ...columns.map((col) => ({ value: col.name, label: col.name })),
             ]}
             onChange={(v) =>
@@ -345,7 +346,7 @@ export function FilterPanel({
             type="button"
             className="filter-ol-dir"
             disabled={!pendingSort}
-            title="Toggle direction"
+            title={t("flt.toggleDir")}
             onClick={() =>
               onSetPendingSort(
                 pendingSort
@@ -367,26 +368,26 @@ export function FilterPanel({
           </span>
         ) : draft.rawMode ? null : (
           <span className="filter-count-note">
-            {activeCount} of {total} condition{total === 1 ? "" : "s"} active
+            {t("flt.activeNote", { active: activeCount, total })}
           </span>
         )}
         <Btn variant="text" small onClick={clearAll}>
-          Clear
+          {t("ws.scope.clear")}
         </Btn>
         <Btn variant={dirty ? "filled" : "tonal"} icon="check" small onClick={() => apply(draft)}>
-          Apply
+          {t("common.apply")}
         </Btn>
       </div>
 
       {/* Generated-query preview strip — highlighted SQL + Copy + Open-in-SQL. */}
       {showSql ? (
         <div className="filter-sqlpeek">
-          <span className="filter-sqlpeek-label">GENERATED QUERY</span>
+          <span className="filter-sqlpeek-label">{t("flt.generatedQuery")}</span>
           <pre className="filter-sqlpeek-code" dangerouslySetInnerHTML={{ __html: previewHtml }} />
           <button
             type="button"
             className="filter-sqlpeek-copy"
-            title="Copy query"
+            title={t("flt.copyQueryTitle")}
             onClick={copyPreview}
           >
             <Icon name="content_copy" size={13} />
@@ -394,7 +395,7 @@ export function FilterPanel({
           <button
             type="button"
             className="filter-sqlpeek-copy"
-            title="Open in a new SQL tab"
+            title={t("flt.openSqlTitle")}
             onClick={() => onOpenSql(previewSql)}
           >
             <Icon name="open_in_new" size={13} />

@@ -12,6 +12,7 @@ import { Btn } from "../../../shared/ui/Btn";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
+import { useT } from "../../../shared/i18n/useT";
 import { checkForUpdate, UPDATE_REPO, type Update } from "../api";
 import "./AboutModal.css";
 
@@ -38,6 +39,7 @@ export function AboutModal({
 }) {
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  const t = useT();
 
   const check = () => {
     setChecking(true);
@@ -49,10 +51,10 @@ export function AboutModal({
           onClose();
           onShowUpdate(found);
         } else {
-          setResult(`You're on the latest version (v${version}).`);
+          setResult(t("about.latest", { version }));
         }
       } catch {
-        setResult("Could not check for updates — try again later.");
+        setResult(t("about.err.check"));
       } finally {
         setChecking(false);
       }
@@ -60,7 +62,7 @@ export function AboutModal({
   };
 
   return (
-    <Modal className="about-modal" width={390} label="About ByteTable" onClose={onClose}>
+    <Modal className="about-modal" width={390} label={t("about.title")} onClose={onClose}>
       <div className="about-head">
         <div className="about-mark">
           <BrandMark size={30} blink />
@@ -69,8 +71,8 @@ export function AboutModal({
           Byte<span className="about-name-accent">Table</span>
         </div>
         <div className="about-ver">v{version}</div>
-        <div className="about-tag">Local-first database client · free &amp; open source</div>
-        <IconBtn icon="close" onClick={onClose} title="Close" className="about-close" />
+        <div className="about-tag">{t("about.tag")}</div>
+        <IconBtn icon="close" onClick={onClose} title={t("common.close")} className="about-close" />
       </div>
 
       <div className="about-rows">
@@ -78,22 +80,22 @@ export function AboutModal({
           type="button"
           className="about-row"
           onClick={() => openExternal(REPO_URL)}
-          title="Open the repository"
+          title={t("about.repositoryTitle")}
         >
-          <Icon name="code" size={15} /> <span>Repository</span>
+          <Icon name="code" size={15} /> <span>{t("about.repository")}</span>
           <span className="about-row-val">{UPDATE_REPO}</span>
         </button>
         <button
           type="button"
           className="about-row"
           onClick={() => openExternal(`${REPO_URL}/releases`)}
-          title="Open the release notes"
+          title={t("about.releasesTitle")}
         >
-          <Icon name="history" size={15} /> <span>Release notes</span>
+          <Icon name="history" size={15} /> <span>{t("about.releases")}</span>
           <Icon name="open_in_new" size={13} style={{ color: "var(--text-faint)" }} />
         </button>
         <div className="about-row">
-          <Icon name="balance" size={15} /> <span>License</span>
+          <Icon name="balance" size={15} /> <span>{t("about.license")}</span>
           <span className="about-row-val">Apache-2.0</span>
         </div>
       </div>
@@ -107,7 +109,7 @@ export function AboutModal({
 
       <ModalActions>
         <span className="about-credit">
-          Built by <span className="about-credit-name">Rezwanul-Haque</span>
+          {t("about.builtBy")} <span className="about-credit-name">Rezwanul-Haque</span>
         </span>
         <div style={{ flex: 1 }} />
         <Btn
@@ -117,10 +119,10 @@ export function AboutModal({
           onClick={check}
           disabled={checking}
         >
-          {checking ? "Checking…" : "Check for updates"}
+          {checking ? t("about.checking") : t("about.check")}
         </Btn>
         <Btn variant="text" small onClick={onClose}>
-          Close
+          {t("common.close")}
         </Btn>
       </ModalActions>
     </Modal>

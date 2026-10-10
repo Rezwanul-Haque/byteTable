@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from "react";
 
+import { useT } from "../../../../shared/i18n/useT";
 import { EngineBadge } from "../../../../shared/ui/EngineBadge";
 import { dropWordSelection } from "../../../../shared/ui/dropWordSelection";
 import { Icon } from "../../../../shared/ui/Icon";
@@ -95,6 +96,8 @@ export function CassandraSidebar({
   refreshing,
   onCloseWorkspace,
 }: CassandraSidebarProps) {
+  // `tr`, not `t`: the table list below maps with `t` as the row variable.
+  const tr = useT();
   const [q, setQ] = useState("");
   const [ksOpen, setKsOpen] = useState(false);
   // M36: dropdown (default) or an icon that opens the keyspace list as a
@@ -137,7 +140,7 @@ export function CassandraSidebar({
         <LanguageChip />
         <IconBtn
           icon="power_settings_new"
-          title="Close workspace"
+          title={tr("cass.sidebar.close")}
           onClick={onCloseWorkspace}
           size={16}
           danger
@@ -155,20 +158,20 @@ export function CassandraSidebar({
             type="button"
             className="schema-btn"
             style={{ flex: 1, minWidth: 0 }}
-            title={"Keyspace: " + ks + " — click to switch"}
-            aria-label={"Switch keyspace (current: " + ks + ")"}
+            title={tr("cass.sidebar.keyspaceOf", { name: ks })}
+            aria-label={tr("cass.sidebar.switchKeyspaceCurrent", { name: ks })}
             aria-haspopup="dialog"
             onClick={() => setKsModalOpen(true)}
           >
             <Icon name="hub" size={15} style={{ color: "var(--accent)" }} />
-            <span className="schema-btn-name">Switcher</span>
+            <span className="schema-btn-name">{tr("cass.sidebar.switcher")}</span>
           </button>
         ) : (
           <div style={{ position: "relative", flex: 1 }}>
             <button
               className="schema-btn"
               style={{ width: "100%" }}
-              title="Switch keyspace"
+              title={tr("cass.sidebar.switchKeyspace")}
               onClick={(e) => {
                 e.stopPropagation();
                 setKsOpen((o) => !o);
@@ -195,7 +198,7 @@ export function CassandraSidebar({
                   }}
                 >
                   <Icon name="add" size={14} />
-                  <span>Create keyspace</span>
+                  <span>{tr("cass.sidebar.createKeyspace")}</span>
                 </div>
                 <div className="schema-pop-sep" />
                 {keyspaces.map((d) => (
@@ -224,11 +227,11 @@ export function CassandraSidebar({
             ) : null}
           </div>
         )}
-        <IconBtn icon="schema" title="Schema map" onClick={onOpenMap} />
-        <IconBtn icon="monitoring" title="Keyspace dashboard" onClick={onOpenDashboard} />
+        <IconBtn icon="schema" title={tr("cass.sidebar.schemaMap")} onClick={onOpenMap} />
+        <IconBtn icon="monitoring" title={tr("cass.sidebar.dashboard")} onClick={onOpenDashboard} />
         <IconBtn
           icon="sync"
-          title="Refresh tables"
+          title={tr("cass.sidebar.refreshTables")}
           onClick={onRefresh}
           className={refreshing ? "sidebar-sync-spinning" : undefined}
         />
@@ -237,7 +240,7 @@ export function CassandraSidebar({
       <div className="sidebar-search">
         <Icon name="search" size={15} style={{ color: "var(--text-faint)" }} />
         <input
-          placeholder="Filter tables…"
+          placeholder={tr("cass.sidebar.filterTables")}
           value={q}
           onChange={(e) => setQ(e.target.value)}
           spellCheck={false}
@@ -245,7 +248,7 @@ export function CassandraSidebar({
       </div>
 
       <div className="sidebar-section-label">
-        <span>Tables</span>
+        <span>{tr("cass.sidebar.tables")}</span>
         <div
           className="sec-actions"
           style={{ display: "flex", alignItems: "center", gap: 6, position: "relative" }}
@@ -253,7 +256,7 @@ export function CassandraSidebar({
           <span className="sidebar-count">{tables.length}</span>
           <button
             className="sec-actions-btn"
-            title="Keyspace actions"
+            title={tr("cass.sidebar.keyspaceActions")}
             onClick={(e) => {
               e.stopPropagation();
               if (ctxMenu?.ks) {
@@ -301,7 +304,7 @@ export function CassandraSidebar({
                 <span className="table-item-name">{t.name}</span>
                 {t.mvs.length ? (
                   <span
-                    title={t.mvs.length + " materialized view(s)"}
+                    title={tr("cass.sidebar.mvCount", { count: t.mvs.length })}
                     style={{ display: "inline-flex" }}
                   >
                     <Icon name="dvr" size={12} style={{ color: "var(--text-faint)" }} />
@@ -318,14 +321,16 @@ export function CassandraSidebar({
                     <div key={idx.name} className="mg-idx-line">
                       <Icon name="bolt" size={11} style={{ color: "#e2b340" }} />
                       <span className="mg-idx-name">{idx.name}</span>
-                      <span className="mg-idx-flag">2i · {idx.target}</span>
+                      <span className="mg-idx-flag">
+                        {tr("cass.sidebar.index2i", { target: idx.target })}
+                      </span>
                     </div>
                   ))}
                   {t.mvs.map((mv) => (
                     <div key={mv.name} className="mg-idx-line">
                       <Icon name="dvr" size={11} style={{ color: "#61afef" }} />
                       <span className="mg-idx-name">{mv.name}</span>
-                      <span className="mg-idx-flag">MV</span>
+                      <span className="mg-idx-flag">{tr("cass.sidebar.mvTag")}</span>
                     </div>
                   ))}
                 </div>
@@ -337,9 +342,9 @@ export function CassandraSidebar({
             with no filter typed it rendered as the literal `No tables match “”`
             (reachable since "Empty keyspace", and on any new keyspace). */}
         {tables.length === 0 ? (
-          <div className="sidebar-nomatch">No tables in this keyspace yet.</div>
+          <div className="sidebar-nomatch">{tr("cass.sidebar.noTables")}</div>
         ) : filtered.length === 0 ? (
-          <div className="sidebar-nomatch">No tables match “{q}”</div>
+          <div className="sidebar-nomatch">{tr("cass.sidebar.noTablesMatch", { q })}</div>
         ) : null}
       </div>
 
@@ -369,7 +374,7 @@ export function CassandraSidebar({
                   onCreateTable();
                 }}
               >
-                <Icon name="add" size={15} /> Create table
+                <Icon name="add" size={15} /> {tr("cass.sidebar.ctxCreateTable")}
               </div>
               <div
                 className="ctx-item"
@@ -378,7 +383,7 @@ export function CassandraSidebar({
                   onImportTable(null);
                 }}
               >
-                <Icon name="upload" size={15} /> Import into table
+                <Icon name="upload" size={15} /> {tr("cass.sidebar.ctxImportInto")}
               </div>
               <div
                 className="ctx-item"
@@ -387,7 +392,7 @@ export function CassandraSidebar({
                   onExportAll();
                 }}
               >
-                <Icon name="download" size={15} /> Export keyspace (CQL dump)
+                <Icon name="download" size={15} /> {tr("cass.sidebar.ctxExportKeyspace")}
               </div>
               <div className="ctx-sep" />
               <div
@@ -397,7 +402,7 @@ export function CassandraSidebar({
                   onEmptyKeyspace();
                 }}
               >
-                <Icon name="delete_sweep" size={15} /> Empty keyspace
+                <Icon name="delete_sweep" size={15} /> {tr("cass.sidebar.ctxEmptyKeyspace")}
               </div>
               <div
                 className="ctx-item danger"
@@ -406,7 +411,7 @@ export function CassandraSidebar({
                   onDropKeyspace();
                 }}
               >
-                <Icon name="delete_forever" size={15} /> Drop keyspace
+                <Icon name="delete_forever" size={15} /> {tr("cass.sidebar.ctxDropKeyspace")}
               </div>
             </>
           ) : (
@@ -418,7 +423,7 @@ export function CassandraSidebar({
                   setCtxMenu(null);
                 }}
               >
-                <Icon name="table_chart" size={15} /> Open table
+                <Icon name="table_chart" size={15} /> {tr("cass.sidebar.ctxOpenTable")}
               </div>
               <div
                 className="ctx-item"
@@ -427,7 +432,7 @@ export function CassandraSidebar({
                   setCtxMenu(null);
                 }}
               >
-                <Icon name="bolt" size={15} /> Add index / materialized view
+                <Icon name="bolt" size={15} /> {tr("cass.sidebar.ctxAddIndexOrMv")}
               </div>
               <div
                 className="ctx-item"
@@ -436,7 +441,7 @@ export function CassandraSidebar({
                   setCtxMenu(null);
                 }}
               >
-                <Icon name="schema" size={15} /> Show in schema map
+                <Icon name="schema" size={15} /> {tr("cass.sidebar.ctxShowInMap")}
               </div>
               <div className="ctx-sep" />
               <div
@@ -447,7 +452,7 @@ export function CassandraSidebar({
                   if (t) onExportTable(t);
                 }}
               >
-                <Icon name="download" size={15} /> Export table
+                <Icon name="download" size={15} /> {tr("cass.sidebar.ctxExportTable")}
               </div>
               <div
                 className="ctx-item"
@@ -457,7 +462,7 @@ export function CassandraSidebar({
                   if (t) onImportTable(t);
                 }}
               >
-                <Icon name="upload" size={15} /> Import rows
+                <Icon name="upload" size={15} /> {tr("cass.sidebar.ctxImportRows")}
               </div>
               <div className="ctx-sep" />
               <div
@@ -468,7 +473,7 @@ export function CassandraSidebar({
                   if (t) onTruncateTable(t);
                 }}
               >
-                <Icon name="delete_sweep" size={15} /> Truncate table
+                <Icon name="delete_sweep" size={15} /> {tr("cass.sidebar.ctxTruncate")}
               </div>
               <div
                 className="ctx-item danger"
@@ -478,7 +483,7 @@ export function CassandraSidebar({
                   if (t) onDropTable(t);
                 }}
               >
-                <Icon name="delete_forever" size={15} /> Drop table
+                <Icon name="delete_forever" size={15} /> {tr("cass.sidebar.ctxDropTable")}
               </div>
             </>
           )}

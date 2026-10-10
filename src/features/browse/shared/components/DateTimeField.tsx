@@ -21,6 +21,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { CellValue } from "../../../../shared/api/engine";
 import { Icon } from "../../../../shared/ui/Icon";
+import { useT } from "../../../../shared/i18n/useT";
 import {
   RI_TZS,
   fmtTs,
@@ -101,6 +102,7 @@ export function RiDateTime({
   const rootRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const yrListRef = useRef<HTMLDivElement>(null);
+  const t = useT();
 
   // Close the panel on a click outside this picker (so opening a second date
   // field's panel closes this one). Uses `click`, not `mousedown`: the clicked
@@ -180,16 +182,16 @@ export function RiDateTime({
             setOpen(true);
           }}
           disabled={notParsable}
-          title={notParsable ? "Not a parsable timestamp" : "Back to the clock editor"}
+          title={notParsable ? t("dt.notParsable") : t("dt.backToClock")}
         >
-          <Icon name="schedule" size={12} /> clock
+          <Icon name="schedule" size={12} /> {t("dt.clock")}
         </button>
         {cur != null ? (
           <button
             type="button"
             className="ri-mini-btn"
             onClick={() => onDraft(null)}
-            title="Clear this field — stages NULL"
+            title={t("dt.clearField")}
           >
             <Icon name="block" size={12} /> null
           </button>
@@ -255,18 +257,20 @@ export function RiDateTime({
               </button>
               {tzOpen ? (
                 <div className="ri-dt-tzmenu">
-                  {RI_TZS.map((t) => (
+                  {RI_TZS.map((tzItem) => (
                     <div
-                      key={t.label}
-                      className={"ri-dt-tzitem" + (tz === t.id ? " on" : "")}
+                      key={tzItem.label}
+                      className={"ri-dt-tzitem" + (tz === tzItem.id ? " on" : "")}
                       onClick={() => {
-                        setTz(t.id);
+                        setTz(tzItem.id);
                         setTzOpen(false);
                       }}
                     >
-                      {t.label}
-                      {t.label === "UTC" ? <span className="ri-dt-tzdef">default</span> : null}
-                      {tz === t.id ? (
+                      {tzItem.label}
+                      {tzItem.label === "UTC" ? (
+                        <span className="ri-dt-tzdef">{t("dt.tzDefault")}</span>
+                      ) : null}
+                      {tz === tzItem.id ? (
                         <Icon name="check" size={12} style={{ marginLeft: "auto" }} />
                       ) : null}
                     </div>
@@ -279,22 +283,22 @@ export function RiDateTime({
               type="button"
               className="ri-mini-btn"
               onClick={() => setTextMode(true)}
-              title="Type the value as text instead"
+              title={t("dt.typeAsText")}
             >
-              <Icon name="edit" size={12} /> text
+              <Icon name="edit" size={12} /> {t("dt.text")}
             </button>
             {date ? (
               <button
                 type="button"
                 className="ri-mini-btn"
                 onClick={() => onDraft(null)}
-                title="Clear this field — stages NULL"
+                title={t("dt.clearField")}
               >
                 <Icon name="block" size={12} /> null
               </button>
             ) : (
               <button type="button" className="ri-mini-btn" onClick={() => emit(new Date())}>
-                now
+                {t("dt.now")}
               </button>
             )}
           </div>
@@ -319,7 +323,7 @@ export function RiDateTime({
                       <div className="ri-dt-yrmenu" ref={yrListRef}>
                         <input
                           className="ri-dt-yrinput"
-                          placeholder="Any year…"
+                          placeholder={t("dt.anyYear")}
                           inputMode="numeric"
                           autoFocus
                           onKeyDown={(e) => {
@@ -354,11 +358,13 @@ export function RiDateTime({
                   </button>
                 </div>
                 <div className="ri-dt-grid">
-                  {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
-                    <span key={"h" + i} className="ri-dt-dow">
-                      {d}
-                    </span>
-                  ))}
+                  {t("dt.dowLetters")
+                    .split(",")
+                    .map((d, i) => (
+                      <span key={"h" + i} className="ri-dt-dow">
+                        {d}
+                      </span>
+                    ))}
                   {Array.from({ length: firstDow }, (_, i) => (
                     <span key={"b" + i} />
                   ))}
@@ -383,7 +389,8 @@ export function RiDateTime({
                   <span className="ri-dt-colon">:</span>
                   <RiStepper value={w.s} max={59} onChange={(s) => commit({ s })} />
                   <span className="ri-dt-stored">
-                    stored as UTC{tz !== "UTC" ? " · " + fmtTs(date, dateOnly) : ""}
+                    {t("dt.storedUtc")}
+                    {tz !== "UTC" ? " · " + fmtTs(date, dateOnly) : ""}
                   </span>
                 </div>
               ) : null}

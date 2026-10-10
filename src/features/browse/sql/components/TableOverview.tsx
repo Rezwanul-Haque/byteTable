@@ -25,6 +25,7 @@ import type React from "react";
 import { useMemo, useState } from "react";
 
 import { Icon } from "../../../../shared/ui/Icon";
+import { useT } from "../../../../shared/i18n/useT";
 import type { TableInfo } from "../../../../shared/api/engine";
 import { tablesKey, useIntrospectionStore } from "../../../introspection/state";
 import { useWorkspacesStore } from "../../../workspaces/state";
@@ -44,9 +45,9 @@ interface Card {
 }
 
 /**
- * This table's share of the schema's estimated ROW COUNT — not of its bytes.
- * A table of few but very wide rows is understated by this, and the label says
- * "rows" for exactly that reason.
+ * The percent share as a display string (see `grid.tovOfEstRows`), "<1" for the
+ * sub-half-percent bucket (rendered via `grid.tovLt1Pct`), "" when there is no
+ * share worth stating.
  *
  * The denominator is the total across tables that HAVE an estimate, so the
  * label says "estimated rows", not "all rows": on Postgres, where a table stays
@@ -55,15 +56,12 @@ interface Card {
  *
  * With fewer than two estimates there is no share worth stating — one table
  * being 100% of itself is noise — so it returns nothing.
- *
- * Anything under half a percent reads "<1%" rather than rounding to a bare
- * "0%", which looks like a bug on a table that plainly has rows.
  */
 function sharePct(rows: number, total: number, known: number): string {
   if (total <= 0 || known < 2) return "";
   const pct = (rows / total) * 100;
-  if (pct > 0 && pct < 0.5) return "<1% of estimated rows";
-  return Math.round(pct) + "% of estimated rows";
+  if (pct > 0 && pct < 0.5) return "<1";
+  return String(Math.round(pct));
 }
 
 /** Bytes as KB/MB/GB, the way a catalog listing reads them. */
@@ -101,6 +99,7 @@ export function TableOverview({
   const entry = useIntrospectionStore((s) => s.tables[tablesKey(handleId, schema)]);
   const loadTables = useIntrospectionStore((s) => s.loadTables);
   const openTableTab = useWorkspacesStore((s) => s.openTableTab);
+  const t = useT();
   const tables = entry?.tables ?? null;
   // Table-layout sort. Defaults to biggest-first, matching the card order and
   // the question the tab exists to answer.
@@ -205,19 +204,19 @@ export function TableOverview({
       <div className="tov-head">
         <Icon name="monitoring" size={17} style={{ color: "var(--accent)" }} />
         <div className="tov-head-title">
-          <span className="tov-head-main">Table overview</span>
+          <span className="tov-head-main">{t("ws.sb.tableOverview")}</span>
           <span className="tov-head-sub">{schema}</span>
         </div>
         <div style={{ flex: 1 }} />
         <div className="tov-summary">
           <span>
-            <b>{tables?.length ?? 0}</b> tables
+            <b>{tables?.length ?? 0}</b> {t("grid.tovNounTables")}
           </span>
           <span>
-            ≈<b>{total.toLocaleString()}</b> rows
+            ≈<b>{total.toLocaleString()}</b> {t("common.rows")}
           </span>
           {unknown > 0 ? (
-            <span className="tov-summary-dim">{unknown} without an estimate</span>
+            <span className="tov-summary-dim">{t("grid.tovNoEstimateN", { count: unknown })}</span>
           ) : null}
         </div>
         <div className="seg tov-seg">
@@ -226,20 +225,20 @@ export function TableOverview({
             className={"seg-btn" + (view === "table" ? " active" : "")}
             onClick={() => onViewChange("table")}
           >
-            <Icon name="table_rows" size={14} /> Table
+            <Icon name="table_rows" size={14} /> {t("grid.tovViewTable")}
           </button>
           <button
             type="button"
             className={"seg-btn" + (view === "cards" ? " active" : "")}
             onClick={() => onViewChange("cards")}
           >
-            <Icon name="grid_view" size={14} /> Cards
+            <Icon name="grid_view" size={14} /> {t("grid.tovViewCards")}
           </button>
         </div>
         <button
           type="button"
           className="tov-refresh"
-          title="Re-read the catalog statistics"
+          title={t("grid.tovRefreshTitle")}
           onClick={() => void loadTables(handleId, schema, { force: true })}
         >
           <Icon name="refresh" size={15} />
@@ -249,24 +248,22 @@ export function TableOverview({
       <div className="tov-note">
         <Icon name="info" size={13} />
         <span>
-          Estimates from the engine's own planner statistics — opening this tab queried none of
-          these tables. They drift between <code>ANALYZE</code> runs; open a table for exact
-          numbers.
+          {t("grid.tovNotePre")} <code>ANALYZE</code> {t("grid.tovNotePost")}
           {unknown > 0 ? (
             <>
               {" "}
-              Postgres reports nothing for a table until <code>ANALYZE</code> or autovacuum has
-              reached it, which is why {unknown === 1 ? "one is" : unknown + " are"} unestimated
-              here — sizes below are exact regardless.
+              {t("grid.tovNotePgPre")} <code>ANALYZE</code> {t("grid.tovNotePgMid")}{" "}
+              {unknown === 1 ? t("grid.tovOneIs") : t("grid.tovNAre", { count: unknown })}{" "}
+              {t("grid.tovNotePgPost")}
             </>
           ) : null}
         </span>
       </div>
 
       {tables === null ? (
-        <div className="tov-empty">Loading tables…</div>
+        <div className="tov-empty">{t("ws.sb.loadingTables")}</div>
       ) : tables.length === 0 ? (
-        <div className="tov-empty">This schema has no tables.</div>
+        <div className="tov-empty">{t("grid.tovNoTables")}</div>
       ) : view === "table" ? (
         <div
           className="tov-table"
@@ -274,14 +271,18 @@ export function TableOverview({
           style={{ "--tov-cols": cols } as React.CSSProperties}
         >
           <div className="tov-tr tov-thead" role="row">
-            {th("name", "Name", "tov-c-name")}
-            {th("rows", "Est. rows", "tov-c-num")}
-            {has.sizes ? th("total", "Total", "tov-c-num") : null}
-            {has.sizes ? th("data", "Data", "tov-c-num") : null}
-            {has.sizes ? th("index", "Index", "tov-c-num") : null}
-            {has.engine ? <span className="tov-th tov-c-tag">Engine</span> : null}
-            {has.collation ? <span className="tov-th tov-c-tag">Collation</span> : null}
-            {has.comment ? <span className="tov-th tov-c-comment">Comment</span> : null}
+            {th("name", t("grid.tovName"), "tov-c-name")}
+            {th("rows", t("grid.tovEstRows"), "tov-c-num")}
+            {has.sizes ? th("total", t("grid.tovTotal"), "tov-c-num") : null}
+            {has.sizes ? th("data", t("grid.tovData"), "tov-c-num") : null}
+            {has.sizes ? th("index", t("grid.tovIndex"), "tov-c-num") : null}
+            {has.engine ? <span className="tov-th tov-c-tag">{t("grid.tovEngine")}</span> : null}
+            {has.collation ? (
+              <span className="tov-th tov-c-tag">{t("grid.tovCollation")}</span>
+            ) : null}
+            {has.comment ? (
+              <span className="tov-th tov-c-comment">{t("grid.tovComment")}</span>
+            ) : null}
           </div>
           {sorted.map((c) => (
             <div
@@ -289,7 +290,7 @@ export function TableOverview({
               className="tov-tr"
               role="row"
               tabIndex={0}
-              title={"Open " + schema + "." + c.name}
+              title={t("grid.tovOpen", { name: schema + "." + c.name })}
               onClick={() => openTableTab(schema, c.name)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
@@ -336,87 +337,99 @@ export function TableOverview({
         </div>
       ) : (
         <div className="tov-grid">
-          {cards.map((c) => (
-            <div key={c.name} className={"tov-card" + (c.rows == null ? " unknown" : "")}>
-              <div
-                className="tov-card-main"
-                role="button"
-                tabIndex={0}
-                title={"Open " + schema + "." + c.name}
-                onClick={() => openTableTab(schema, c.name)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    openTableTab(schema, c.name);
-                  }
-                }}
-              >
-                <div className="tov-card-head">
-                  <Icon name="table" size={14} style={{ color: "var(--text-faint)" }} />
-                  <span className="tov-card-name">{c.name}</span>
-                  {c.rank != null && c.rank <= 3 && known > 3 ? (
-                    <span className="tov-card-rank">#{c.rank}</span>
-                  ) : null}
-                </div>
+          {cards.map((c) => {
+            const foot =
+              c.rows == null
+                ? t("grid.tovNeverAnalyzed")
+                : sharePct(c.rows, total, known) === "<1"
+                  ? t("grid.tovLt1Pct")
+                  : sharePct(c.rows, total, known) === ""
+                    ? ""
+                    : t("grid.tovOfEstRows", { pct: sharePct(c.rows, total, known) });
+            return (
+              <div key={c.name} className={"tov-card" + (c.rows == null ? " unknown" : "")}>
+                <div
+                  className="tov-card-main"
+                  role="button"
+                  tabIndex={0}
+                  title={t("grid.tovOpen", { name: schema + "." + c.name })}
+                  onClick={() => openTableTab(schema, c.name)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      openTableTab(schema, c.name);
+                    }
+                  }}
+                >
+                  <div className="tov-card-head">
+                    <Icon name="table" size={14} style={{ color: "var(--text-faint)" }} />
+                    <span className="tov-card-name">{c.name}</span>
+                    {c.rank != null && c.rank <= 3 && known > 3 ? (
+                      <span className="tov-card-rank">#{c.rank}</span>
+                    ) : null}
+                  </div>
 
-                <div className="tov-card-rows">
-                  {c.rows == null ? (
-                    <span className="tov-card-none">no estimate</span>
-                  ) : (
-                    <>
-                      <span className="tov-card-approx">≈</span>
-                      <span className="tov-card-n">{compact(c.rows)}</span>
-                      <span className="tov-card-unit">rows</span>
-                    </>
-                  )}
-                </div>
+                  <div className="tov-card-rows">
+                    {c.rows == null ? (
+                      <span className="tov-card-none">{t("grid.tovNoEstimate")}</span>
+                    ) : (
+                      <>
+                        <span className="tov-card-approx">≈</span>
+                        <span className="tov-card-n">{compact(c.rows)}</span>
+                        <span className="tov-card-unit">{t("common.rows")}</span>
+                      </>
+                    )}
+                  </div>
 
-                <div className="tov-card-meter" aria-hidden>
-                  <span className="tov-card-meter-fill" style={{ width: c.share * 100 + "%" }} />
-                </div>
-                <div className="tov-card-foot">
-                  {c.rows == null ? "never analyzed" : sharePct(c.rows, total, known)}
-                </div>
+                  <div className="tov-card-meter" aria-hidden>
+                    <span className="tov-card-meter-fill" style={{ width: c.share * 100 + "%" }} />
+                  </div>
+                  <div className="tov-card-foot">{foot}</div>
 
-                {/* Catalog facts, shown only where the engine reports them —
+                  {/* Catalog facts, shown only where the engine reports them —
                     MySQL fills all of these, Postgres the sizes and the comment,
                     SQLite none. An absent field is omitted rather than rendered
                     blank, so a card never implies a zero it does not know. */}
-                {c.info.totalBytes != null ? (
-                  <div className="tov-card-sizes">
-                    <span title="Total size, including indexes">
-                      <b>{bytes(c.info.totalBytes)}</b> total
-                    </span>
-                    {c.info.dataBytes != null ? (
-                      <span title="Row data">{bytes(c.info.dataBytes)} data</span>
-                    ) : null}
-                    {c.info.indexBytes != null ? (
-                      <span title="Indexes">{bytes(c.info.indexBytes)} index</span>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                {c.info.engine || c.info.collation ? (
-                  <div className="tov-card-tags">
-                    {c.info.engine ? <span className="tov-tag">{c.info.engine}</span> : null}
-                    {c.info.collation ? (
-                      // The charset is the collation's prefix — MySQL reports
-                      // only the collation, and both are worth seeing at a glance.
-                      <span className="tov-tag" title={c.info.collation}>
-                        {c.info.collation.split("_")[0]}
+                  {c.info.totalBytes != null ? (
+                    <div className="tov-card-sizes">
+                      <span title={t("grid.tovTotalTitle")}>
+                        <b>{bytes(c.info.totalBytes)}</b> {t("grid.tovTotalUnit")}
                       </span>
-                    ) : null}
-                  </div>
-                ) : null}
+                      {c.info.dataBytes != null ? (
+                        <span title={t("grid.tovDataTitle")}>
+                          {bytes(c.info.dataBytes)} {t("grid.tovDataUnit")}
+                        </span>
+                      ) : null}
+                      {c.info.indexBytes != null ? (
+                        <span title={t("grid.tovIndexTitle")}>
+                          {bytes(c.info.indexBytes)} {t("grid.tovIndexUnit")}
+                        </span>
+                      ) : null}
+                    </div>
+                  ) : null}
 
-                {c.info.comment ? (
-                  <div className="tov-card-comment" title={c.info.comment}>
-                    {c.info.comment}
-                  </div>
-                ) : null}
+                  {c.info.engine || c.info.collation ? (
+                    <div className="tov-card-tags">
+                      {c.info.engine ? <span className="tov-tag">{c.info.engine}</span> : null}
+                      {c.info.collation ? (
+                        // The charset is the collation's prefix — MySQL reports
+                        // only the collation, and both are worth seeing at a glance.
+                        <span className="tov-tag" title={c.info.collation}>
+                          {c.info.collation.split("_")[0]}
+                        </span>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {c.info.comment ? (
+                    <div className="tov-card-comment" title={c.info.comment}>
+                      {c.info.comment}
+                    </div>
+                  ) : null}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

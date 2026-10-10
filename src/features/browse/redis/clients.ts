@@ -15,6 +15,7 @@
 //
 // Pure: no React, no invoke. The tab owns the fetching.
 
+import { t, type StringKey, type Vars } from "../../../shared/i18n";
 import type { KvClient, KvKillFilter } from "./api";
 
 /** The `CLIENT INFO` / `CLIENT LIST` field order, exactly as Redis emits it. */
@@ -73,56 +74,69 @@ export function clientField(client: KvClient, field: string): string | undefined
 
 /**
  * What each `CLIENT LIST` field means, in one sentence. Shown as the hover
- * title of every row in the inspector.
+ * title of every row in the inspector — the sentence lives in the i18n tables
+ * under `redis.doc.<field>`, and `fieldDoc()` resolves it at call time so a
+ * locale switch repaints the inspector.
  */
-export const FIELD_DOC: Record<string, string> = {
-  id: "Unique connection id. Never reused while the server runs — this is what CLIENT KILL ID targets.",
-  addr: "Client address and source port, as the server sees it.",
-  laddr: "Local address the client connected to. Useful when Redis listens on several interfaces.",
-  fd: "File descriptor the connection occupies. A leak shows up here before it shows up in memory.",
-  name: "Name the client set with CLIENT SETNAME. Empty means the library never set one.",
-  age: "Seconds since the connection opened.",
-  idle: "Seconds since the last command. High idle on a normal client usually means a leaked pool connection.",
-  flags: "N normal · S replica · M master · b blocked · x in MULTI · O monitor · P pubsub.",
-  db: "Currently selected database index.",
-  sub: "Channel subscriptions held by this client.",
-  psub: "Pattern subscriptions held by this client.",
-  ssub: "Shard channel subscriptions held by this client (cluster pub/sub).",
-  multi: "Commands queued inside MULTI. -1 means no transaction is open.",
-  watch: "Keys being WATCHed for optimistic locking.",
-  qbuf: "Query buffer in use, in bytes. A large value means a slow or huge inbound command.",
-  "qbuf-free": "Free space left in the query buffer.",
-  "argv-mem": "Memory used by the arguments of the command in flight.",
-  "multi-mem": "Memory held by the commands queued in an open MULTI.",
-  "tot-mem":
-    "Total memory this connection costs the server, buffers included. This is the number that matters when clients are the memory problem.",
-  "tot-net-in": "Total bytes read from this client.",
-  "tot-net-out": "Total bytes written to this client.",
-  rbs: "Read buffer size currently allocated for this client.",
-  rbp: "Peak position reached in the read buffer.",
-  obl: "Bytes queued in the fixed-size output buffer.",
-  oll: "Output list length — replies queued but not yet flushed. Growing here means a slow consumer.",
-  omem: "Memory of the output buffer. Hits client-output-buffer-limit before anything else.",
-  events: "Event loop interest: r readable, w writable.",
-  cmd: "Last command executed, including the subcommand.",
-  user: "ACL user this connection authenticated as.",
-  redir:
-    "Client id that receives this connection's tracking invalidations. -1 when tracking is off.",
-  resp: "RESP protocol version in use — 2 or 3.",
-  "lib-name": "Client library, as reported by CLIENT SETINFO.",
-  "lib-ver": "Client library version, as reported by CLIENT SETINFO.",
-};
+const FIELD_DOC_FIELDS = new Set<string>([
+  "id",
+  "addr",
+  "laddr",
+  "fd",
+  "name",
+  "age",
+  "idle",
+  "flags",
+  "db",
+  "sub",
+  "psub",
+  "ssub",
+  "multi",
+  "watch",
+  "qbuf",
+  "qbuf-free",
+  "argv-mem",
+  "multi-mem",
+  "tot-mem",
+  "tot-net-in",
+  "tot-net-out",
+  "rbs",
+  "rbp",
+  "obl",
+  "oll",
+  "omem",
+  "events",
+  "cmd",
+  "user",
+  "redir",
+  "resp",
+  "lib-name",
+  "lib-ver",
+]);
+
+/** The plain sentence for a `CLIENT LIST` field, or undefined when unknown. */
+export function fieldDoc(field: string): string | undefined {
+  if (!FIELD_DOC_FIELDS.has(field)) return undefined;
+  return t(("redis.doc." + field) as StringKey);
+}
 
 /** One `CLIENT KILL` filter: how it renders, and how it matches locally. */
 export interface KillFilterSpec {
   id: KvKillFilter;
-  label: string;
   /** The exact command that will run, for the preview. */
   cmd: (value: string) => string;
-  /** Placeholder describing what the value is. */
-  hint: string;
   /** The same predicate the server applies — powers the live match count. */
   match: (client: KvClient, value: string) => boolean;
+}
+
+/** The filter's display label, resolved at call time from the i18n tables. */
+export function killFilterLabel(spec: KillFilterSpec): string {
+  return t(("redis.kf." + spec.id) as StringKey);
+}
+
+/** The value placeholder describing what the filter's value is. */
+export function killFilterHint(spec: KillFilterSpec): string {
+  return t(("redis.kf." + spec.id + "Hint") as StringKey);
 }
 
 /**
@@ -132,44 +146,32 @@ export interface KillFilterSpec {
 export const KILL_FILTERS: KillFilterSpec[] = [
   {
     id: "id",
-    label: "By ID",
     cmd: (v) => "CLIENT KILL ID " + v,
-    hint: "a single connection",
     match: (c, v) => String(c.id) === v.trim(),
   },
   {
     id: "addr",
-    label: "By address",
     cmd: (v) => "CLIENT KILL ADDR " + v,
-    hint: "one ip:port",
     match: (c, v) => c.addr === v.trim(),
   },
   {
     id: "laddr",
-    label: "By local address",
     cmd: (v) => "CLIENT KILL LADDR " + v,
-    hint: "everything on one listener",
     match: (c, v) => c.laddr === v.trim(),
   },
   {
     id: "type",
-    label: "By type",
     cmd: (v) => "CLIENT KILL TYPE " + v,
-    hint: "normal · pubsub · replica",
     match: (c, v) => c.clientType === v.trim(),
   },
   {
     id: "user",
-    label: "By ACL user",
     cmd: (v) => "CLIENT KILL USER " + v,
-    hint: "all connections of one user",
     match: (c, v) => c.user === v.trim(),
   },
   {
     id: "maxage",
-    label: "Older than",
     cmd: (v) => "CLIENT KILL MAXAGE " + v,
-    hint: "age in seconds (Redis 7.4+)",
     match: (c, v) => {
       // A blank box must match NOTHING, not everything: `Number("")` is 0, and
       // `age >= 0` would have the popover promise to kill every connection
@@ -227,10 +229,14 @@ export function isBlocked(client: KvClient): boolean {
   return client.flags.includes("b");
 }
 
-/** A row that has earned attention, and why. */
+/** A row that has earned attention, and why. `text` is the English sentence
+ *  (kept for the unit test); `key` + `vars` are the i18n form components
+ *  resolve at render time, so a locale switch repaints the note. */
 export interface ClientRisk {
   sev: "warn" | "note";
   text: string;
+  key: StringKey;
+  vars?: Vars;
 }
 
 /**
@@ -242,23 +248,34 @@ export function clientRisk(client: KvClient): ClientRisk | null {
   if (isStale(client)) {
     return {
       sev: "warn",
+      key: "redis.risk.stale",
+      vars: { idle: humanAge(client.idle) },
       text: "Idle " + humanAge(client.idle) + " — likely a leaked pool connection",
     };
   }
   if (client.oll > 6) {
     return {
       sev: "warn",
+      key: "redis.risk.oll",
+      vars: { count: client.oll },
       text: client.oll + " replies queued — slow consumer, output buffer is filling",
     };
   }
   if (client.multi >= 0 && client.idle > 30) {
     return {
       sev: "warn",
+      key: "redis.risk.multi",
+      vars: { idle: humanAge(client.idle) },
       text: "Transaction open and idle " + humanAge(client.idle) + " — holds WATCHed keys",
     };
   }
   if (client.totMem > 48000) {
-    return { sev: "note", text: "Costs " + humanClientMem(client.totMem) + " of server memory" };
+    return {
+      sev: "note",
+      key: "redis.risk.mem",
+      vars: { mem: humanClientMem(client.totMem) },
+      text: "Costs " + humanClientMem(client.totMem) + " of server memory",
+    };
   }
   return null;
 }

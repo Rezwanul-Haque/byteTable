@@ -27,6 +27,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { QueryResult } from "../../../shared/api/engine";
 import { queryRun, queryRunBatch, readTextFile } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
+import type { StringKey } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n/useT";
 import type { Engine } from "../../../shared/types";
 import { Btn } from "../../../shared/ui/Btn";
 import { Checkbox } from "../../../shared/ui/Checkbox";
@@ -66,7 +68,9 @@ const EDITOR_H_MIN = 110;
  * The placeholder `table_name` is meant to be replaced with a real table.
  * `schema_name` resolves the introspection chips to the tab's active schema.
  */
-type Snippet = { label: string; sql: string };
+// Module-level (engine dialects select outside React): the label is a KEY, and
+// the chip renders it through t() so a language switch relabels in place.
+type Snippet = { labelKey: StringKey; sql: string };
 
 /** A statement that creates/drops/alters/refreshes a schema OBJECT (not a
  *  table) — used to invalidate the object caches after an editor run so the
@@ -100,42 +104,54 @@ function snippetsFor(engine: Engine, schemaName: string): Snippet[] {
     case "mysql":
       return [
         {
-          label: "list tables",
+          labelKey: "ws.sql.snipListTables",
           sql: `SELECT table_name, table_type\nFROM information_schema.tables\nWHERE table_schema = '${schemaName}'\nORDER BY table_name;`,
         },
         {
-          label: "table columns",
+          labelKey: "ws.sql.snipTableColumns",
           sql: `SELECT column_name, data_type, is_nullable, column_default\nFROM information_schema.columns\nWHERE table_schema = '${schemaName}' AND table_name = 'table_name'\nORDER BY ordinal_position;`,
         },
-        { label: "row counts", sql: "SELECT COUNT(*) AS row_count\nFROM table_name;" },
-        { label: "recent rows", sql: "SELECT *\nFROM table_name\nLIMIT 50;" },
+        {
+          labelKey: "ws.sql.snipRowCounts",
+          sql: "SELECT COUNT(*) AS row_count\nFROM table_name;",
+        },
+        { labelKey: "ws.sql.snipRecentRows", sql: "SELECT *\nFROM table_name\nLIMIT 50;" },
       ];
     case "postgres":
       return [
         {
-          label: "list tables",
+          labelKey: "ws.sql.snipListTables",
           sql: `SELECT table_name, table_type\nFROM information_schema.tables\nWHERE table_schema = '${schemaName}'\nORDER BY table_name;`,
         },
         {
-          label: "table columns",
+          labelKey: "ws.sql.snipTableColumns",
           sql: `SELECT column_name, data_type, is_nullable, column_default\nFROM information_schema.columns\nWHERE table_schema = '${schemaName}' AND table_name = 'table_name'\nORDER BY ordinal_position;`,
         },
-        { label: "row counts", sql: "SELECT COUNT(*) AS row_count\nFROM table_name;" },
-        { label: "recent rows", sql: "SELECT *\nFROM table_name\nLIMIT 50;" },
+        {
+          labelKey: "ws.sql.snipRowCounts",
+          sql: "SELECT COUNT(*) AS row_count\nFROM table_name;",
+        },
+        { labelKey: "ws.sql.snipRecentRows", sql: "SELECT *\nFROM table_name\nLIMIT 50;" },
       ];
     case "sqlite":
     default:
       return [
         {
-          label: "list tables",
+          labelKey: "ws.sql.snipListTables",
           sql: "SELECT name, type\nFROM sqlite_master\nWHERE type = 'table'\nORDER BY name;",
         },
         {
-          label: "table columns",
+          labelKey: "ws.sql.snipTableColumns",
           sql: "SELECT name, type, \"notnull\", dflt_value\nFROM pragma_table_info('table_name');",
         },
-        { label: "row counts", sql: "SELECT COUNT(*) AS row_count\nFROM table_name;" },
-        { label: "recent rows", sql: "SELECT *\nFROM table_name\nORDER BY rowid DESC\nLIMIT 50;" },
+        {
+          labelKey: "ws.sql.snipRowCounts",
+          sql: "SELECT COUNT(*) AS row_count\nFROM table_name;",
+        },
+        {
+          labelKey: "ws.sql.snipRecentRows",
+          sql: "SELECT *\nFROM table_name\nORDER BY rowid DESC\nLIMIT 50;",
+        },
       ];
   }
 }
@@ -172,6 +188,7 @@ export function SqlEditorTab({
   onOpenSavedQueries?: () => void;
 }) {
   const toast = useToast();
+  const t = useT();
   const setSqlText = useWorkspacesStore((s) => s.setSqlText);
   const setSqlRuns = useWorkspacesStore((s) => s.setSqlRuns);
   const setActiveRun = useWorkspacesStore((s) => s.setActiveRun);
@@ -455,7 +472,7 @@ export function SqlEditorTab({
             const result = await queryRun(workspace.handleId, stmt, { schema: schemaName });
             record(0, stmt, result, null);
           } catch (err: unknown) {
-            record(0, stmt, null, appErrorMessage(err, "Query failed."));
+            record(0, stmt, null, appErrorMessage(err, t("ws.sql.queryFailed")));
           }
         } else {
           // Multiple statements: one session-pinned batch. Per-statement errors
@@ -468,7 +485,7 @@ export function SqlEditorTab({
             });
             outcomes.forEach((o, i) => record(i, o.sql, o.result, o.error));
           } catch (err: unknown) {
-            record(0, source, null, appErrorMessage(err, "Query failed."));
+            record(0, source, null, appErrorMessage(err, t("ws.sql.queryFailed")));
           }
         }
       } catch (err: unknown) {
@@ -479,7 +496,7 @@ export function SqlEditorTab({
           id: `r${runs.length}`,
           sql: source,
           result: null,
-          error: appErrorMessage(err, "Query failed."),
+          error: appErrorMessage(err, t("ws.sql.queryFailed")),
         });
       } finally {
         setSqlRuns(tab.id, runs); // focuses the first tab
@@ -548,7 +565,7 @@ export function SqlEditorTab({
       try {
         chosen = await openSqlFileDialog();
       } catch {
-        toast("Opening a file requires the desktop app", "info");
+        toast(t("ws.sql.openNeedsApp"), "info");
         return;
       }
       if (!chosen) return; // cancelled
@@ -557,9 +574,9 @@ export function SqlEditorTab({
         editorRef.current?.dismissCompletion();
         load(contents);
         const fileName = chosen.split(/[\\/]/).pop() ?? chosen;
-        toast(`Opened “${fileName}”`, "ok");
+        toast(t("ws.sql.opened", { name: fileName }), "ok");
       } catch (err) {
-        toast(appErrorMessage(err, "Could not read the file."), "err");
+        toast(appErrorMessage(err, t("ws.sql.readFail")), "err");
       }
     })();
   };
@@ -577,7 +594,7 @@ export function SqlEditorTab({
    */
   const doSave = (asNew = false) => {
     const updating = !asNew && linked !== null;
-    const name = saveName.trim() || linked?.name || "Untitled query";
+    const name = saveName.trim() || linked?.name || t("ws.sql.untitled");
     const connectionId = attach ? workspace.saved.id : null;
     void saveQuery({
       id: updating ? linked.id : undefined,
@@ -590,10 +607,10 @@ export function SqlEditorTab({
         setSqlSavedLink(tab.id, stored.id);
         toast(
           updating
-            ? `Updated “${name}”`
+            ? t("ws.sql.updated", { name })
             : attach
-              ? `Saved “${name}” — attached to this workspace`
-              : `Saved “${name}” — shared across all workspaces`,
+              ? t("ws.sql.savedAttached", { name })
+              : t("ws.sql.savedGlobal", { name }),
           "ok",
         );
         setSaveName("");
@@ -601,7 +618,7 @@ export function SqlEditorTab({
         setPop(null);
       })
       .catch((err: unknown) => {
-        toast(appErrorMessage(err, "Could not save query."), "err");
+        toast(appErrorMessage(err, t("ws.sql.saveFail")), "err");
       });
   };
 
@@ -642,7 +659,7 @@ export function SqlEditorTab({
     ids: runs.map((r) => r.id),
     close: (ids) => closeRuns(tab.id, ids),
     closeAll: true,
-    actions: [{ label: "Go to statement", icon: "my_location", onSelect: goToStatement }],
+    actions: [{ label: t("ws.sql.goToStmt"), icon: "my_location", onSelect: goToStatement }],
   });
   const result = activeRun?.result ?? null;
   const error = activeRun?.error ?? null;
@@ -657,8 +674,8 @@ export function SqlEditorTab({
     <button
       type="button"
       className="results-min"
-      title={resultsMin ? "Expand" : "Minimize"}
-      aria-label={resultsMin ? "Expand results" : "Minimize results"}
+      title={resultsMin ? t("ws.sql.expand") : t("ws.sql.minimize")}
+      aria-label={resultsMin ? t("ws.sql.expandResults") : t("ws.sql.minimizeResults")}
       onClick={() => setResultsMin((m) => !m)}
     >
       <Icon name={resultsMin ? "expand_less" : "expand_more"} size={16} />
@@ -675,7 +692,7 @@ export function SqlEditorTab({
           disabled={runDisabled}
           small
         >
-          {running ? "Running…" : allSelected ? "Run All" : "Run"}
+          {running ? t("ws.sql.running") : allSelected ? t("ws.sql.runAll") : t("menu.query.run")}
         </Btn>
         <Btn
           icon="account_tree"
@@ -694,33 +711,33 @@ export function SqlEditorTab({
               setView("explain");
             }
           }}
-          title="Explain & analyze the execution plan"
+          title={t("ws.sql.explainTitle")}
         >
-          {allSelected ? "Explain All" : "Explain"}
+          {allSelected ? t("ws.sql.explainAll") : t("ws.sql.explain")}
         </Btn>
         <span className="sql-hint">⌘↩ / Ctrl+Enter</span>
         <div className="sql-snippets">
           {snippets.map((s) => (
             <button
-              key={s.label}
+              key={s.labelKey}
               type="button"
               className="snippet-chip"
               onClick={() => load(s.sql)}
             >
-              {s.label}
+              {t(s.labelKey)}
             </button>
           ))}
         </div>
         <div style={{ flex: 1 }} />
 
         {/* open a .sql/.txt file into the editor */}
-        <IconBtn icon="folder_open" title="Open .sql file" onClick={openFile} />
+        <IconBtn icon="folder_open" title={t("menu.file.openSqlFile")} onClick={openFile} />
 
         {/* save-query popover */}
         <div className="editor-pop-anchor" style={{ position: "relative" }}>
           <IconBtn
             icon="bookmark_add"
-            title="Save this query"
+            title={t("ws.sql.saveTitle")}
             active={pop === "save"}
             onClick={() => setPop(pop === "save" ? null : "save")}
           />
@@ -728,12 +745,14 @@ export function SqlEditorTab({
             <div
               className="editor-pop save-pop"
               role="dialog"
-              aria-label={linked ? "Update saved query" : "Save query"}
+              aria-label={linked ? t("ws.sql.updateSavedQuery") : t("ws.sql.saveQuery")}
             >
-              <div className="history-pop-title">{linked ? "Update query" : "Save query"}</div>
+              <div className="history-pop-title">
+                {linked ? t("ws.sql.updateQuery") : t("ws.sql.saveQuery")}
+              </div>
               <input
                 className="save-pop-input"
-                placeholder="Query name…"
+                placeholder={t("ws.sql.queryName")}
                 value={saveName}
                 autoFocus
                 onChange={(e) => setSaveName(e.target.value)}
@@ -744,10 +763,12 @@ export function SqlEditorTab({
               />
               <label className="save-pop-attach">
                 <Checkbox checked={attach} onChange={(e) => setAttach(e.target.checked)} />
-                <span>Attach to this workspace</span>
+                <span>{t("ws.sql.attach")}</span>
               </label>
               <div className="save-pop-note">
-                {attach ? `Only visible in ${workspace.name}` : "Shared across all workspaces"}
+                {attach
+                  ? t("ws.sql.noteAttached", { name: workspace.name })
+                  : t("ws.sql.noteGlobal")}
               </div>
               {/* Loaded from the saved list: the primary action overwrites that
                   entry (renaming it if the field was edited), with the old
@@ -755,11 +776,11 @@ export function SqlEditorTab({
               <div className="save-pop-actions">
                 {linked ? (
                   <Btn variant="text" small onClick={() => doSave(true)}>
-                    Save as new
+                    {t("ws.sql.saveAsNew")}
                   </Btn>
                 ) : null}
                 <Btn variant="filled" small onClick={() => doSave()}>
-                  {linked ? "Update" : "Save"}
+                  {linked ? t("ws.sql.update") : t("common.save")}
                 </Btn>
               </div>
             </div>
@@ -771,7 +792,7 @@ export function SqlEditorTab({
             reachable without a query tab; the history drawer links across. */}
         <IconBtn
           icon="history"
-          title="Query history"
+          title={t("menu.query.history")}
           active={historyOpen}
           onClick={() => setHistoryOpen(true)}
         />
@@ -788,8 +809,8 @@ export function SqlEditorTab({
           <button
             type="button"
             className="sql-format-fab"
-            title="Beautify / format SQL (⇧⌥F)"
-            aria-label="Format SQL"
+            title={t("ws.sql.formatTitle")}
+            aria-label={t("ws.sql.formatAria")}
             onClick={format}
           >
             <Icon name="auto_fix_high" size={15} />
@@ -818,8 +839,8 @@ export function SqlEditorTab({
           className={"sql-vsplit" + (dragging ? " dragging" : "")}
           role="separator"
           aria-orientation="horizontal"
-          aria-label="Resize results"
-          title="Drag to resize"
+          aria-label={t("ws.sql.resizeResults")}
+          title={t("ws.sql.dragResize")}
           onPointerDown={startResize}
         />
       ) : null}
@@ -850,8 +871,9 @@ export function SqlEditorTab({
                       style={{ color: failed ? "var(--error)" : "var(--accent)" }}
                     />
                     <span className="sqlres-tab-title">
-                      Result {i + 1}
-                      {failed ? " · failed" : null}
+                      {failed
+                        ? t("ws.sql.resultFailedN", { n: i + 1 })
+                        : t("ws.sql.resultN", { n: i + 1 })}
                     </span>
                     <button
                       type="button"
@@ -860,8 +882,8 @@ export function SqlEditorTab({
                         e.stopPropagation();
                         closeRun(tab.id, r.id);
                       }}
-                      title="Close result"
-                      aria-label={`Close result ${i + 1}`}
+                      title={t("ws.sql.closeResult")}
+                      aria-label={t("ws.sql.closeResultN", { n: i + 1 })}
                     >
                       <Icon name="close" size={11} />
                     </button>
@@ -876,10 +898,10 @@ export function SqlEditorTab({
               <div className="sql-result-bar explain-bar">
                 {minBtn}
                 <button type="button" className="result-tab" onClick={() => setView("result")}>
-                  <Icon name="arrow_back" size={13} /> Results
+                  <Icon name="arrow_back" size={13} /> {t("ws.sql.results")}
                 </button>
                 <span className="result-tab active">
-                  <Icon name="account_tree" size={13} /> Explain &amp; analyze
+                  <Icon name="account_tree" size={13} /> {t("ws.sql.explainTab")}
                 </span>
                 <div style={{ flex: 1 }} />
                 <span className="dim">{schemaName}</span>
@@ -903,7 +925,7 @@ export function SqlEditorTab({
                           color: i === explainActiveIdx ? "var(--accent)" : "var(--text-faint)",
                         }}
                       />
-                      <span className="sqlres-tab-title">Query {i + 1}</span>
+                      <span className="sqlres-tab-title">{t("ws.sql.queryN", { n: i + 1 })}</span>
                     </div>
                   ))}
                 </div>
@@ -925,7 +947,7 @@ export function SqlEditorTab({
               <div className="sql-result-bar error-bar" role="alert">
                 {minBtn}
                 <Icon name="cancel" size={14} style={{ color: "var(--error)" }} />
-                <span style={{ color: "var(--error)" }}>Query failed</span>
+                <span style={{ color: "var(--error)" }}>{t("ws.sql.queryFailedTitle")}</span>
                 <div style={{ flex: 1 }} />
                 {/* Jump the caret to the SQL that failed, so it can be fixed
                     and re-run from the editor (⌘↩ on the caret's statement). */}
@@ -934,14 +956,14 @@ export function SqlEditorTab({
                   variant="text"
                   small
                   onClick={() => goToStatement(activeRun.id)}
-                  title="Select this statement in the editor"
+                  title={t("ws.sql.selectStmtHint")}
                 >
-                  Go to statement
+                  {t("ws.sql.goToStmt")}
                 </Btn>
                 <IconBtn
                   icon="close"
                   size={14}
-                  title="Dismiss results"
+                  title={t("ws.sql.dismissResults")}
                   onClick={() => clearSqlRuns(tab.id)}
                 />
               </div>
@@ -949,10 +971,8 @@ export function SqlEditorTab({
                 <div className="sql-error">
                   <Icon name="cancel" size={18} />
                   <div>
-                    <div className="sql-error-title">Query failed</div>
-                    <div className="sql-error-msg">
-                      {error ?? "The statement returned no result."}
-                    </div>
+                    <div className="sql-error-title">{t("ws.sql.queryFailedTitle")}</div>
+                    <div className="sql-error-msg">{error ?? t("ws.sql.noResult")}</div>
                     {/* Which statement failed — in a multi-statement run the
                         tab number alone doesn't say, and the tooltip is easy
                         to miss. Clicking it is the same jump as the bar's "Go
@@ -960,7 +980,7 @@ export function SqlEditorTab({
                     <button
                       type="button"
                       className="sql-error-stmt"
-                      title="Go to this statement in the editor"
+                      title={t("ws.sql.goToStmtHint")}
                       onClick={() => goToStatement(activeRun.id)}
                       dangerouslySetInnerHTML={{ __html: previewHtml(activeRun.sql) }}
                     />
@@ -975,7 +995,7 @@ export function SqlEditorTab({
                 {result.columns.length === 0 ? (
                   <>
                     <Icon name="check_circle" size={14} style={{ color: "var(--accent)" }} />
-                    <span>Query OK</span>
+                    <span>{t("ws.sql.queryOk")}</span>
                     <span className="dim">·</span>
                     <span className="dim">{result.elapsedMs} ms</span>
                     <span className="dim">·</span>
@@ -984,10 +1004,8 @@ export function SqlEditorTab({
                 ) : (
                   <>
                     <Icon name="check_circle" size={14} style={{ color: "var(--accent)" }} />
-                    <span>
-                      {result.rowCount} row{result.rowCount === 1 ? "" : "s"}
-                    </span>
-                    {result.truncated ? <span className="dim">(truncated)</span> : null}
+                    <span>{t("ws.rows.count", { count: result.rowCount })}</span>
+                    {result.truncated ? <span className="dim">{t("ws.sql.truncated")}</span> : null}
                     <span className="dim">·</span>
                     <span className="dim">{result.elapsedMs} ms</span>
                     <span className="dim">·</span>
@@ -998,7 +1016,7 @@ export function SqlEditorTab({
                 <IconBtn
                   icon="close"
                   size={14}
-                  title="Close results"
+                  title={t("ws.sql.closeResults")}
                   onClick={() => clearSqlRuns(tab.id)}
                 />
               </div>

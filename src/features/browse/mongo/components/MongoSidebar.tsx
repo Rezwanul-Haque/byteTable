@@ -11,6 +11,7 @@ import { dropWordSelection } from "../../../../shared/ui/dropWordSelection";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { Btn } from "../../../../shared/ui/Btn";
+import { useT } from "../../../../shared/i18n/useT";
 import type { Env } from "../../../../shared/types";
 import { ENV_COLOR } from "../../../../shared/ui/envColors";
 import { LanguageChip } from "../../../../shared/ui/LanguageChip";
@@ -94,6 +95,7 @@ export function MongoSidebar({
   refreshing?: boolean;
   onCloseWorkspace: () => void;
 }) {
+  const t = useT();
   const [q, setQ] = useState("");
   const [dbOpen, setDbOpen] = useState(false);
   // M36: dropdown (default) or an icon that opens the database list as a
@@ -137,7 +139,7 @@ export function MongoSidebar({
         <LanguageChip />
         <IconBtn
           icon="power_settings_new"
-          title="Close workspace"
+          title={t("dfile.closeWorkspace")}
           onClick={onCloseWorkspace}
           size={16}
           danger
@@ -155,20 +157,20 @@ export function MongoSidebar({
             type="button"
             className="schema-btn"
             style={{ flex: 1, minWidth: 0 }}
-            title={"Database: " + db + " — click to switch"}
-            aria-label={"Switch database (current: " + db + ")"}
+            title={t("mongo.switcherTitle", { db })}
+            aria-label={t("mongo.switcherAria", { db })}
             aria-haspopup="dialog"
             onClick={() => setDbModalOpen(true)}
           >
             <Icon name="database" size={15} style={{ color: "var(--accent)" }} />
-            <span className="schema-btn-name">Switcher</span>
+            <span className="schema-btn-name">{t("mongo.switcher")}</span>
           </button>
         ) : (
           <div style={{ position: "relative", flex: 1 }}>
             <button
               className="schema-btn"
               style={{ width: "100%" }}
-              title="Switch database"
+              title={t("mongo.switchDb")}
               onClick={(e) => {
                 e.stopPropagation();
                 setDbOpen((o) => !o);
@@ -195,7 +197,7 @@ export function MongoSidebar({
                   }}
                 >
                   <Icon name="add" size={14} />
-                  <span>Create database</span>
+                  <span>{t("mongo.createDb")}</span>
                 </div>
                 <div className="schema-pop-sep" />
                 {dbNames.map((d) => (
@@ -224,11 +226,11 @@ export function MongoSidebar({
             ) : null}
           </div>
         )}
-        <IconBtn icon="schema" title="Schema map" onClick={onOpenMap} />
-        <IconBtn icon="monitoring" title="Database dashboard" onClick={onOpenDashboard} />
+        <IconBtn icon="schema" title={t("mongo.tab.map")} onClick={onOpenMap} />
+        <IconBtn icon="monitoring" title={t("mongo.dbDashboard")} onClick={onOpenDashboard} />
         <IconBtn
           icon="sync"
-          title="Refresh collections"
+          title={t("mongo.refreshColls")}
           onClick={onRefresh}
           className={refreshing ? "sidebar-sync-spinning" : undefined}
         />
@@ -237,7 +239,7 @@ export function MongoSidebar({
       <div className="sidebar-search">
         <Icon name="search" size={15} style={{ color: "var(--text-faint)" }} />
         <input
-          placeholder="Filter collections…"
+          placeholder={t("mongo.filterColls")}
           value={q}
           onChange={(e) => setQ(e.target.value)}
           spellCheck={false}
@@ -245,7 +247,7 @@ export function MongoSidebar({
       </div>
 
       <div className="sidebar-section-label">
-        <span>Collections</span>
+        <span>{t("mongo.collections")}</span>
         <div
           className="sec-actions"
           style={{ display: "flex", alignItems: "center", gap: 6, position: "relative" }}
@@ -253,7 +255,7 @@ export function MongoSidebar({
           <span className="sidebar-count">{collections.length}</span>
           <button
             className="sec-actions-btn"
-            title="Database actions"
+            title={t("mongo.dbActions")}
             onClick={(e) => {
               e.stopPropagation();
               // Toggle: a second press on the open db-actions menu closes it.
@@ -271,7 +273,7 @@ export function MongoSidebar({
       </div>
 
       <div className="sidebar-tables">
-        {loading ? <div className="sidebar-empty">Loading…</div> : null}
+        {loading ? <div className="sidebar-empty">{t("ws.sb.loading")}</div> : null}
         {filtered.map((c) => {
           const open = expanded[c.name];
           return (
@@ -315,8 +317,12 @@ export function MongoSidebar({
                         style={{ color: idx.name === "_id_" ? "var(--accent)" : "#e2b340" }}
                       />
                       <span className="mg-idx-name">{idx.name}</span>
-                      {idx.unique ? <span className="mg-idx-flag">unique</span> : null}
-                      {idx.sparse ? <span className="mg-idx-flag">sparse</span> : null}
+                      {idx.unique ? (
+                        <span className="mg-idx-flag">{t("mongo.flagUnique")}</span>
+                      ) : null}
+                      {idx.sparse ? (
+                        <span className="mg-idx-flag">{t("mongo.flagSparse")}</span>
+                      ) : null}
                     </div>
                   ))}
                 </div>
@@ -336,7 +342,7 @@ export function MongoSidebar({
           onClick={onNewPipeline}
           style={{ width: "100%", justifyContent: "center" }}
         >
-          New aggregation
+          {t("mongo.newAggregation")}
         </Btn>
       </div>
 
@@ -358,7 +364,7 @@ export function MongoSidebar({
                   onCreateColl();
                 }}
               >
-                <Icon name="create_new_folder" size={15} /> Create collection
+                <Icon name="create_new_folder" size={15} /> {t("mongo.menu.createColl")}
               </div>
               <div
                 className="ctx-item"
@@ -367,7 +373,7 @@ export function MongoSidebar({
                   onImportColl(null);
                 }}
               >
-                <Icon name="upload" size={15} /> Import into collection
+                <Icon name="upload" size={15} /> {t("mongo.menu.importInto")}
               </div>
               <div
                 className="ctx-item"
@@ -376,7 +382,7 @@ export function MongoSidebar({
                   onExportAll();
                 }}
               >
-                <Icon name="download" size={15} /> Export database (mongodump)
+                <Icon name="download" size={15} /> {t("mongo.menu.exportDb")}
               </div>
               <div className="ctx-sep" />
               <div
@@ -386,7 +392,7 @@ export function MongoSidebar({
                   onNewPipeline();
                 }}
               >
-                <Icon name="account_tree" size={15} /> New aggregation pipeline
+                <Icon name="account_tree" size={15} /> {t("mongo.menu.newPipeline")}
               </div>
               {/* No Refresh item: the row's own sync icon already does it, and
                   no other engine's scope menu carries one. */}
@@ -400,7 +406,7 @@ export function MongoSidebar({
                   onEmptyDb();
                 }}
               >
-                <Icon name="delete_sweep" size={15} /> Drop all collections
+                <Icon name="delete_sweep" size={15} /> {t("mongo.menu.dropAllColls")}
               </div>
               <div
                 className="ctx-item danger"
@@ -409,7 +415,7 @@ export function MongoSidebar({
                   onDropDb();
                 }}
               >
-                <Icon name="delete_forever" size={15} /> Drop database
+                <Icon name="delete_forever" size={15} /> {t("mongo.menu.dropDb")}
               </div>
             </>
           ) : (
@@ -421,7 +427,7 @@ export function MongoSidebar({
                   setCtxMenu(null);
                 }}
               >
-                <Icon name="folder_special" size={15} /> Open collection
+                <Icon name="folder_special" size={15} /> {t("mongo.menu.openColl")}
               </div>
               <div
                 className="ctx-item"
@@ -430,7 +436,7 @@ export function MongoSidebar({
                   setCtxMenu(null);
                 }}
               >
-                <Icon name="schema" size={15} /> Show in schema map
+                <Icon name="schema" size={15} /> {t("mongo.menu.showInMap")}
               </div>
               <div className="ctx-sep" />
               <div
@@ -441,7 +447,7 @@ export function MongoSidebar({
                   if (c) onExportColl(c);
                 }}
               >
-                <Icon name="download" size={15} /> Export collection
+                <Icon name="download" size={15} /> {t("mongo.menu.exportColl")}
               </div>
               <div
                 className="ctx-item"
@@ -451,7 +457,7 @@ export function MongoSidebar({
                   if (c) onImportColl(c);
                 }}
               >
-                <Icon name="upload" size={15} /> Import documents
+                <Icon name="upload" size={15} /> {t("mongo.menu.importDocs")}
               </div>
               <div className="ctx-sep" />
               <div
@@ -462,7 +468,7 @@ export function MongoSidebar({
                   if (c) onTruncateColl(c);
                 }}
               >
-                <Icon name="delete_sweep" size={15} /> Empty collection
+                <Icon name="delete_sweep" size={15} /> {t("mongo.menu.emptyColl")}
               </div>
               <div
                 className="ctx-item danger"
@@ -472,7 +478,7 @@ export function MongoSidebar({
                   if (c) onDropColl(c);
                 }}
               >
-                <Icon name="delete_forever" size={15} /> Drop collection
+                <Icon name="delete_forever" size={15} /> {t("mongo.menu.dropColl")}
               </div>
             </>
           )}

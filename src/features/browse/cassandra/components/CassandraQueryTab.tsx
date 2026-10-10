@@ -7,6 +7,7 @@
 import { useMemo, useRef, useState } from "react";
 
 import { isAppErrorPayload } from "../../../../shared/api/error";
+import { useT } from "../../../../shared/i18n/useT";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { formatSql } from "../../../workspaces/formatSql";
@@ -37,6 +38,7 @@ interface CassandraQueryTabProps {
 }
 
 export function CassandraQueryTab({ handleId, ks, tables }: CassandraQueryTabProps) {
+  const t = useT();
   // Open with an empty editor — no pre-seeded query.
   const [cqlText, setCqlText] = useState("");
   const [runs, setRuns] = useState<CassRun[]>([]);
@@ -85,7 +87,7 @@ export function CassandraQueryTab({ handleId, ks, tables }: CassandraQueryTabPro
             id: `r${i}`,
             cql: stmt,
             result: null,
-            error: isAppErrorPayload(e) ? e.message : "Query failed (desktop app required)",
+            error: isAppErrorPayload(e) ? e.message : t("cass.query.failedDesktop"),
           });
         }
       }
@@ -150,7 +152,7 @@ export function CassandraQueryTab({ handleId, ks, tables }: CassandraQueryTabPro
   return (
     <div className="table-tab" ref={tabRef}>
       <div className="table-toolbar ddb-toolbar">
-        <label className="cass-consistency" title="Consistency level">
+        <label className="cass-consistency" title={t("cass.query.consistency")}>
           <Icon name="hub" size={13} />
           <select
             className="filter-select"
@@ -172,7 +174,11 @@ export function CassandraQueryTab({ handleId, ks, tables }: CassandraQueryTabPro
           disabled={running}
           onClick={() => run(editorRef.current?.pickStatement())}
         >
-          {running ? "Running…" : allSelected ? "Run All" : "Run CQL"}
+          {running
+            ? t("cass.query.running")
+            : allSelected
+              ? t("cass.query.runAll")
+              : t("cass.query.runCql")}
         </Btn>
       </div>
 
@@ -185,8 +191,8 @@ export function CassandraQueryTab({ handleId, ks, tables }: CassandraQueryTabPro
           <button
             type="button"
             className="sql-format-fab"
-            title="Beautify / format CQL (⇧⌥F)"
-            aria-label="Format CQL"
+            title={t("cass.query.beautifyTitle")}
+            aria-label={t("cass.query.formatCql")}
             onClick={format}
           >
             <Icon name="auto_fix_high" size={15} />
@@ -209,8 +215,8 @@ export function CassandraQueryTab({ handleId, ks, tables }: CassandraQueryTabPro
           className={"sql-vsplit" + (dragging ? " dragging" : "")}
           role="separator"
           aria-orientation="horizontal"
-          aria-label="Resize editor"
-          title="Drag to resize"
+          aria-label={t("cass.query.resizeEditor")}
+          title={t("cass.query.dragToResize")}
           onPointerDown={startResize}
         />
       ) : null}
@@ -240,8 +246,9 @@ export function CassandraQueryTab({ handleId, ks, tables }: CassandraQueryTabPro
                       style={{ color: failed ? "var(--error)" : "var(--accent)" }}
                     />
                     <span className="sqlres-tab-title">
-                      Result {i + 1}
-                      {failed ? " · failed" : null}
+                      {failed
+                        ? t("cass.query.resultFailedN", { n: i + 1 })
+                        : t("cass.query.resultN", { n: i + 1 })}
                     </span>
                     <button
                       type="button"
@@ -250,8 +257,8 @@ export function CassandraQueryTab({ handleId, ks, tables }: CassandraQueryTabPro
                         e.stopPropagation();
                         closeRun(r.id);
                       }}
-                      title="Close result"
-                      aria-label={`Close result ${i + 1}`}
+                      title={t("cass.query.closeResultN", { n: i + 1 })}
+                      aria-label={t("cass.query.closeResultN", { n: i + 1 })}
                     >
                       <Icon name="close" size={11} />
                     </button>
@@ -286,6 +293,7 @@ function CassRunResult({
   consistency: string;
   onGoTo: () => void;
 }) {
+  const t = useT();
   const r = run.result;
   // A failed statement (or one that came back with nothing): the §5 message and
   // the CQL that broke — click either it or the button to land on that
@@ -295,18 +303,18 @@ function CassRunResult({
       <div className="sql-error">
         <Icon name="cancel" size={18} />
         <div>
-          <div className="sql-error-title">Query error</div>
-          <div className="sql-error-msg">{run.error ?? "The statement returned no result."}</div>
+          <div className="sql-error-title">{t("cass.query.error")}</div>
+          <div className="sql-error-msg">{run.error ?? t("cass.query.noResult")}</div>
           <button
             type="button"
             className="sql-error-stmt"
-            title="Go to this statement in the editor"
+            title={t("cass.query.goToStmtHint")}
             onClick={onGoTo}
           >
             {run.cql}
           </button>
           <Btn icon="my_location" variant="text" small onClick={onGoTo}>
-            Go to statement
+            {t("cass.query.goToStmt")}
           </Btn>
         </div>
       </div>
@@ -332,7 +340,7 @@ function CassRunResult({
   if (r.kind === "use")
     return (
       <div className="cass-list-result">
-        <div className="cass-list-item">Now using keyspace {r.keyspace}</div>
+        <div className="cass-list-item">{t("cass.query.usingKeyspace", { ks: r.keyspace })}</div>
       </div>
     );
   // rows
@@ -369,6 +377,7 @@ function CassRowsResult({
   ks: string;
   consistency: string;
 }) {
+  const t = useT();
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const toggleRow = (i: number) =>
     setSelected((s) => {
@@ -394,10 +403,12 @@ function CassRowsResult({
       ) : null}
       {selected.size > 0 ? (
         <div className="cass-selbar">
-          <span className="cass-selbar-count">{selected.size} selected</span>
+          <span className="cass-selbar-count">
+            {t("cass.query.selectedCount", { count: selected.size })}
+          </span>
           <div style={{ flex: 1 }} />
           <Btn icon="download" variant="tonal" small onClick={exportSelectedCsv}>
-            Export CSV
+            {t("cass.query.exportCsv")}
           </Btn>
         </div>
       ) : null}
@@ -409,8 +420,11 @@ function CassRowsResult({
         onToggleAll={toggleAll}
       />
       <div className="table-hint">
-        {ks} · consistency {consistency} · {returned} rows · {ms.toFixed(1)} ms · ⌘/Ctrl + Enter to
-        run
+        {t("cass.query.statusLine", {
+          consistency: consistency + " · " + ks,
+          rows: returned,
+          ms: ms.toFixed(1),
+        })}
       </div>
     </>
   );

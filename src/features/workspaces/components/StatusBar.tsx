@@ -18,6 +18,7 @@ import { ResourceMeter } from "../../app_metrics/components/ResourceMeter";
 import { EnvTag } from "../../../shared/ui/EnvTag";
 import { BuiltByCredit } from "../../../shared/ui/BuiltByCredit";
 import { Icon } from "../../../shared/ui/Icon";
+import { useT } from "../../../shared/i18n/useT";
 import { rowCountLabel, useTabMetaStore } from "../tabMeta";
 import { useWorkspacesStore } from "../state";
 import type { Workspace } from "../types";
@@ -26,6 +27,7 @@ import "../../processes/components/ProcessList.css";
 import "./StatusBar.css";
 
 export function StatusBar({ workspace }: { workspace: Workspace }) {
+  const t = useT();
   const openProcessesTab = useWorkspacesStore((state) => state.openProcessesTab);
   const tabs = workspace.ui.tabs ?? [];
   const activeTabId = workspace.ui.activeTabId ?? null;
@@ -70,10 +72,10 @@ export function StatusBar({ workspace }: { workspace: Workspace }) {
           <Icon name="vpn_lock" size={13} style={{ color: "var(--accent)" }} />
         </span>
       ) : null}
-      <span className="status-dim">schema: {schemaName}</span>
+      <span className="status-dim">{t("ws.status.schema", { schema: schemaName })}</span>
       {user ? (
-        <span className="status-dim" title={"Connected as " + user}>
-          user: {user}
+        <span className="status-dim" title={t("ws.status.connectedAs", { user })}>
+          {t("ws.status.user", { user })}
         </span>
       ) : null}
       <div style={{ flex: 1 }} />
@@ -81,10 +83,10 @@ export function StatusBar({ workspace }: { workspace: Workspace }) {
       <button
         type="button"
         className="status-btn"
-        title="Running processes"
+        title={t("menu.view.processes")}
         onClick={() => openProcessesTab(schemaName)}
       >
-        <Icon name="monitor_heart" size={13} /> processes
+        <Icon name="monitor_heart" size={13} /> {t("ws.status.processes")}
       </button>
       <ResourceMeter />
       <BuiltByCredit className="status-dim" />

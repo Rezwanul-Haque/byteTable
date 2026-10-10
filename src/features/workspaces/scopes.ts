@@ -15,6 +15,8 @@
 
 import { useMemo } from "react";
 
+import type { StringKey } from "../../shared/i18n";
+import { useT } from "../../shared/i18n/useT";
 import type { Engine } from "../../shared/types";
 import { useToast } from "../../shared/ui/toastContext";
 import { useWorkspacesStore } from "./state";
@@ -48,6 +50,26 @@ export function scopeNounTitle(engine: Engine): string | null {
   return noun ? noun[0]?.toUpperCase() + noun.slice(1) : null;
 }
 
+// i18n seam: the noun is user-visible (tile titles, close buttons, toasts), so
+// callers translate it through these keys; the raw English noun returned by
+// scopeNoun/scopeNounTitle stays the runtime fallback.
+export const SCOPE_NOUN_KEYS: Record<
+  string,
+  { noun: StringKey; title: StringKey; plural: StringKey }
+> = {
+  schema: { noun: "ws.noun.schema", title: "ws.noun.schemaTitle", plural: "ws.scope.title.schema" },
+  keyspace: {
+    noun: "ws.noun.keyspace",
+    title: "ws.noun.keyspaceTitle",
+    plural: "ws.scope.title.keyspace",
+  },
+  database: {
+    noun: "ws.noun.database",
+    title: "ws.noun.databaseTitle",
+    plural: "ws.scope.title.database",
+  },
+};
+
 /**
  * The split-action plumbing every engine's scope switcher needs: which scopes
  * already have a workspace, and the create-or-focus action.
@@ -62,6 +84,7 @@ export function useScopeWorkspaces(workspace: Workspace): {
 } {
   const openSchemaWorkspace = useWorkspacesStore((state) => state.openSchemaWorkspace);
   const toast = useToast();
+  const t = useT();
   const railParentId = workspace.parentId ?? workspace.id;
 
   // Selects the STABLE `workspaces` array and derives outside the selector.
@@ -78,16 +101,15 @@ export function useScopeWorkspaces(workspace: Workspace): {
     [allWorkspaces, railParentId],
   );
 
-  const noun = scopeNounTitle(workspace.saved.engine) ?? "Schema";
+  const rawTitle = scopeNounTitle(workspace.saved.engine);
+  const titleKey = rawTitle ? SCOPE_NOUN_KEYS[rawTitle] : undefined;
+  const noun = titleKey ? t(titleKey.title) : (rawTitle ?? "Schema");
   const openScope = (scope: string) => {
     openSchemaWorkspace(railParentId, scope);
     // Only announce the temporary state for a NEW workspace: re-opening an
     // existing one just focuses it, and saying "temporary" then would be wrong.
     if (!openedScopes.includes(scope)) {
-      toast(
-        noun + " “" + scope + "” opened as a temporary workspace — ⌘-click its tile to keep it",
-        "ok",
-      );
+      toast(t("ws.scope.openedTemp", { noun, scope }), "ok");
     }
   };
 

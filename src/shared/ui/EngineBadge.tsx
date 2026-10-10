@@ -3,9 +3,10 @@
 // font-size = 0.42 × badge size. Hexes mirror --engine-* in tokens.css;
 // literals are kept so the prototype's alpha-suffix pattern stays exact.
 
+import { useLocale } from "../i18n/useT";
 import type { BadgeEngine, Engine } from "../types";
 
-import { ENGINE_META } from "./engineMeta";
+import { ENGINE_META, engineLabel } from "./engineMeta";
 
 import "./EngineBadge.css";
 
@@ -19,11 +20,13 @@ interface EngineBadgeProps {
 }
 
 export function EngineBadge({ engine, size = 22 }: EngineBadgeProps) {
+  // Subscribe to locale changes so the title repaints with the rest of the UI.
+  useLocale();
   const m = ENGINE_META[engine];
   return (
     <span
       className="engine-badge"
-      title={m.label}
+      title={engineLabel(engine)}
       style={{
         width: size,
         height: size,

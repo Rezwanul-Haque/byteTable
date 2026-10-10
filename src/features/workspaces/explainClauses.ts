@@ -7,61 +7,62 @@
 // regexes can never match inside quoted text or comments — robust on the same
 // multi-line SQL the editor runs.
 
-/** The 9 logical clauses, in *execution* order (how the engine runs them). */
+/**
+ * The 9 logical clauses, in *execution* order (how the engine runs them).
+ *
+ * The display copy is not baked in here: `labelKey` / `descKey` name i18n keys
+ * so a locale switch repaints (callers pass them to `t` at render time). `kw`
+ * stays the literal SQL keyword — it is the engine's own vocabulary.
+ */
 export const EXEC_STEPS = [
-  {
-    key: "from",
-    kw: "FROM",
-    label: "Read source",
-    desc: "Scan the table named in FROM to build the working set of rows. Everything else operates on this.",
-  },
+  { key: "from", kw: "FROM", labelKey: "expl.step.from.label", descKey: "expl.step.from.desc" },
   {
     key: "join",
     kw: "JOIN … ON",
-    label: "Join",
-    desc: "Match rows against the joined table using ON, then — for an OUTER join — add back the rows that matched nothing, with NULLs. ON runs HERE; a WHERE on the joined table runs later and drops those NULL rows, quietly turning an outer join into an inner one.",
+    labelKey: "expl.step.join.label",
+    descKey: "expl.step.join.desc",
   },
   {
     key: "where",
     kw: "WHERE",
-    label: "Filter rows",
-    desc: "Discard rows that fail the WHERE predicate. Runs before SELECT, so SELECT-list aliases are NOT visible here.",
+    labelKey: "expl.step.where.label",
+    descKey: "expl.step.where.desc",
   },
   {
     key: "groupBy",
     kw: "GROUP BY",
-    label: "Group",
-    desc: "Collapse the surviving rows into one row per distinct group key.",
+    labelKey: "expl.step.groupBy.label",
+    descKey: "expl.step.groupBy.desc",
   },
   {
     key: "having",
     kw: "HAVING",
-    label: "Filter groups",
-    desc: "Filter the grouped rows — unlike WHERE, HAVING can test aggregates like COUNT(*).",
+    labelKey: "expl.step.having.label",
+    descKey: "expl.step.having.desc",
   },
   {
     key: "select",
     kw: "SELECT",
-    label: "Project & aggregate",
-    desc: "Evaluate the select list and aggregate functions, then attach column aliases.",
+    labelKey: "expl.step.select.label",
+    descKey: "expl.step.select.desc",
   },
   {
     key: "distinct",
     kw: "DISTINCT",
-    label: "De-duplicate",
-    desc: "Remove duplicate rows from the projected result.",
+    labelKey: "expl.step.distinct.label",
+    descKey: "expl.step.distinct.desc",
   },
   {
     key: "orderBy",
     kw: "ORDER BY",
-    label: "Sort",
-    desc: "Order the result. Runs after SELECT, so it CAN reference SELECT-list aliases.",
+    labelKey: "expl.step.orderBy.label",
+    descKey: "expl.step.orderBy.desc",
   },
   {
     key: "limit",
     kw: "LIMIT",
-    label: "Limit / offset",
-    desc: "Skip OFFSET rows, then keep at most LIMIT rows — the last thing the engine does.",
+    labelKey: "expl.step.limit.label",
+    descKey: "expl.step.limit.desc",
   },
 ] as const;
 

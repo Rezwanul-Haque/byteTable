@@ -3,6 +3,7 @@
 // cells), body row, and a final row ending in a blinking-cursor block. Reads
 // as both a table and a terminal.
 
+import { useT } from "../i18n/useT";
 import "./BTLogo.css";
 
 interface BTLogoProps {
@@ -19,6 +20,7 @@ export function BTLogo({
   fg = "currentColor",
   blink = false,
 }: BTLogoProps) {
+  const t = useT();
   return (
     <svg
       width={size}
@@ -26,7 +28,7 @@ export function BTLogo({
       viewBox="0 0 24 24"
       fill="none"
       role="img"
-      aria-label="ByteTable"
+      aria-label={t("uix.logo.aria")}
       style={{ display: "block" }}
     >
       <rect x="3" y="4" width="8.5" height="4" rx="1.6" fill={accent} />

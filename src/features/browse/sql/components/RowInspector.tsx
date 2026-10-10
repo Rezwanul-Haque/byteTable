@@ -16,6 +16,8 @@ import { createPortal } from "react-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { CellValue, FkRef } from "../../../../shared/api/engine";
+import type { StringKey } from "../../../../shared/i18n";
+import { useT } from "../../../../shared/i18n/useT";
 import { Icon } from "../../../../shared/ui/Icon";
 import { useToast } from "../../../../shared/ui/toastContext";
 import { CellContent } from "../../shared/components/GridCell";
@@ -40,11 +42,12 @@ import "./RowInspector.css";
 /** Clipboard shapes offered by the drawer's copy-row menu. */
 export type RowCopyFormat = "csv" | "json" | "sql" | "values";
 
-const ROW_COPY_ITEMS: { format: RowCopyFormat; label: string; icon: string }[] = [
-  { format: "csv", label: "Copy as CSV", icon: "table_view" },
-  { format: "json", label: "Copy as JSON", icon: "data_object" },
-  { format: "sql", label: "Copy as SQL INSERT", icon: "database" },
-  { format: "values", label: "Copy values only", icon: "notes" },
+// Labels are i18n keys, resolved at render time by the drawer (`t(it.label)`).
+const ROW_COPY_ITEMS: { format: RowCopyFormat; label: StringKey; icon: string }[] = [
+  { format: "csv", label: "ins.copyCsv", icon: "table_view" },
+  { format: "json", label: "ins.copyJson", icon: "data_object" },
+  { format: "sql", label: "ins.copyInsert", icon: "database" },
+  { format: "values", label: "ins.copyValues", icon: "notes" },
 ];
 
 /** One column as the inspector needs it: name, declared type, pk flag and the
@@ -98,6 +101,7 @@ function RowInspectorField({
   const [binOpen, setBinOpen] = useState(false);
   const [uuidOpen, setUuidOpen] = useState(false);
   const toast = useToast();
+  const t = useT();
   const cur = hasDraft ? draft : value;
   const dirty = hasDraft && draft !== value;
   const isNull = cur === null || cur === undefined;
@@ -123,8 +127,8 @@ function RowInspectorField({
     else if (typeof cur === "object") s = JSON.stringify(cur);
     else s = String(cur);
     void navigator.clipboard.writeText(s).then(
-      () => toast("Copied", "ok"),
-      () => toast("Couldn't copy to clipboard", "err"),
+      () => toast(t("uix.copy.done"), "ok"),
+      () => toast(t("uix.copy.fail"), "err"),
     );
   };
 
@@ -151,7 +155,7 @@ function RowInspectorField({
           type="button"
           className="ri-bin-val"
           onClick={() => setBinOpen(true)}
-          title="Edit binary value"
+          title={t("ins.editBinTitle")}
         >
           <span className="bin-badge">BIN</span>
           {fb ? (
@@ -187,7 +191,7 @@ function RowInspectorField({
           type="button"
           className="ri-bin-val"
           onClick={() => setUuidOpen(true)}
-          title="Edit UUID value"
+          title={t("ins.editUuidTitle")}
         >
           <span className="bin-badge">{guid ? "GUID" : "UUID"}</span>
           {isNull ? (
@@ -294,11 +298,11 @@ function RowInspectorField({
         ) : null}
         <span className="ri-field-name">{col.name}</span>
         <span className="ri-field-type">{(col.type || "").toLowerCase()}</span>
-        {dirty ? <span className="ri-dot" title="Changed — not staged yet" /> : null}
+        {dirty ? <span className="ri-dot" title={t("ins.changedDot")} /> : null}
         <button
           type="button"
           className="ri-mini-btn ri-copy"
-          title="Copy value"
+          title={t("uix.copy.value")}
           onClick={copyValue}
         >
           <Icon name="content_copy" size={12} />
@@ -307,7 +311,7 @@ function RowInspectorField({
           <button
             type="button"
             className="ri-mini-btn"
-            title="Revert this field"
+            title={t("ins.revertField")}
             onClick={onRevert}
           >
             <Icon name="undo" size={12} />
@@ -328,7 +332,7 @@ function RowInspectorField({
               type="button"
               className="bin-cell ri-pk-binbtn"
               onClick={() => setBinOpen(true)}
-              title="View binary value"
+              title={t("ins.viewBinTitle")}
             >
               {(() => {
                 const fb = formatBinary(value, col.type);
@@ -343,7 +347,7 @@ function RowInspectorField({
               })()}
             </button>
             <span className="ri-pk-note">
-              <Icon name="lock" size={11} /> primary key
+              <Icon name="lock" size={11} /> {t("ins.pkNote")}
             </span>
             {binOpen ? (
               <BinaryEditorModal
@@ -365,7 +369,7 @@ function RowInspectorField({
               type="button"
               className="bin-cell ri-pk-binbtn"
               onClick={() => setUuidOpen(true)}
-              title="View UUID value"
+              title={t("ins.viewUuidTitle")}
             >
               <span className="bin-badge">
                 {/uniqueidentifier|guid/i.test(col.type || "") ? "GUID" : "UUID"}
@@ -377,7 +381,7 @@ function RowInspectorField({
               )}
             </button>
             <span className="ri-pk-note">
-              <Icon name="lock" size={11} /> primary key
+              <Icon name="lock" size={11} /> {t("ins.pkNote")}
             </span>
             {uuidOpen ? (
               <UuidEditorModal
@@ -396,7 +400,7 @@ function RowInspectorField({
           <div className="ri-pk-lock">
             <CellContent value={value} column={col.name} type={col.type} />
             <span className="ri-pk-note">
-              <Icon name="lock" size={11} /> primary key
+              <Icon name="lock" size={11} /> {t("ins.pkNote")}
             </span>
           </div>
         )
@@ -484,6 +488,7 @@ export function RowInspector({
   // Drafts keyed by column index; a present key (incl. a null value) is an
   // active draft, an absent key means "unchanged".
   const [drafts, setDrafts] = useState<Map<number, CellValue>>(new Map());
+  const t = useT();
 
   // Reset drafts whenever the targeted row changes (nav / retarget / close).
   // Done during render (React's "adjust state on prop change" pattern, as in
@@ -622,7 +627,7 @@ export function RowInspector({
               <span className="ri-title-main">{tableName}</span>
               <span className="ri-title-sub">
                 {schemaName} · {pkLabel}
-                {isStagedNew ? " · staged row" : ""}
+                {isStagedNew ? " · " + t("ins.stagedRow") : ""}
               </span>
             </div>
             <div className="ri-nav">
@@ -630,7 +635,7 @@ export function RowInspector({
                 type="button"
                 className="ri-nav-btn"
                 disabled={!canPrev || dirty}
-                title={dirty ? "Stage or discard changes first" : "Previous row"}
+                title={dirty ? t("ins.navDirty") : t("ins.prevRow")}
                 onClick={onPrev}
               >
                 <Icon name="keyboard_arrow_up" size={16} />
@@ -642,7 +647,7 @@ export function RowInspector({
                 type="button"
                 className="ri-nav-btn"
                 disabled={!canNext || dirty}
-                title={dirty ? "Stage or discard changes first" : "Next row"}
+                title={dirty ? t("ins.navDirty") : t("ins.nextRow")}
                 onClick={onNext}
               >
                 <Icon name="keyboard_arrow_down" size={16} />
@@ -655,7 +660,7 @@ export function RowInspector({
               <button
                 type="button"
                 className={"ri-close" + (copyOpen ? " on" : "")}
-                title="Copy this row to the clipboard"
+                title={t("ins.copyRowTitle")}
                 onClick={() => setCopyOpen(!copyOpen)}
               >
                 <Icon name="content_copy" size={16} />
@@ -672,7 +677,7 @@ export function RowInspector({
                       }}
                     >
                       <Icon name={it.icon} size={13} />
-                      {it.label}
+                      {t(it.label)}
                     </div>
                   ))}
                 </div>
@@ -688,10 +693,10 @@ export function RowInspector({
                 disabled={dirty || isStagedNew || refreshing}
                 title={
                   isStagedNew
-                    ? "Staged row — not in the database yet"
+                    ? t("ins.refreshStagedTitle")
                     : dirty
-                      ? "Stage or discard changes first"
-                      : "Reload this row"
+                      ? t("ins.navDirty")
+                      : t("ins.refreshTitle")
                 }
                 onClick={onRefresh}
               >
@@ -701,7 +706,7 @@ export function RowInspector({
             <button
               type="button"
               className="ri-close"
-              title="Close (Esc / ⌘E / Ctrl+E)"
+              title={t("ins.closeTitle")}
               onClick={onClose}
             >
               <Icon name="close" size={16} />
@@ -730,31 +735,24 @@ export function RowInspector({
             {dirty ? (
               <>
                 <Icon name="edit_note" size={15} style={{ color: "var(--accent)" }} />
-                <span className="ri-foot-n">
-                  {nChanges} field{nChanges > 1 ? "s" : ""} changed
-                </span>
+                <span className="ri-foot-n">{t("ins.fieldsChanged", { count: nChanges })}</span>
                 <div style={{ flex: 1 }} />
                 <button type="button" className="ri-btn ghost" onClick={() => setDrafts(new Map())}>
-                  Discard
+                  {t("grid.discard")}
                 </button>
                 <button
                   type="button"
                   className="ri-btn primary"
                   disabled={jsonBroken}
-                  title={
-                    jsonBroken
-                      ? "Fix invalid JSON first"
-                      : "Stage into the save bar — commit with ⌘S"
-                  }
+                  title={jsonBroken ? t("ins.fixJson") : t("ins.stageTitle")}
                   onClick={stage}
                 >
-                  <Icon name="playlist_add_check" size={14} /> Stage changes
+                  <Icon name="playlist_add_check" size={14} /> {t("ins.stageChanges")}
                 </button>
               </>
             ) : (
               <span className="ri-foot-hint">
-                <Icon name="info" size={13} /> Edits are staged first — nothing is written until you
-                commit in the save bar (⌘S)
+                <Icon name="info" size={13} /> {t("ins.footHint")}
               </span>
             )}
           </div>

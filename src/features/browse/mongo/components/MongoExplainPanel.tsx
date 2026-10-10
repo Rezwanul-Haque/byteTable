@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 
 import { appErrorMessage } from "../../../../shared/api/error";
+import { useT } from "../../../../shared/i18n/useT";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { mongoExplain, mongoExplainAggregate, type ExplainResult } from "../api";
@@ -31,6 +32,7 @@ export function MongoExplainPanel({
 }) {
   const [ex, setEx] = useState<ExplainResult | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const t = useT();
   // Re-explain when the query itself changes — callers pass a fresh object
   // literal every render, so the serialized form is the real dependency.
   const queryKey = JSON.stringify(query);
@@ -48,7 +50,7 @@ export function MongoExplainPanel({
           setErr(null);
         }
       })
-      .catch((e) => live && setErr(appErrorMessage(e, "Could not explain query")));
+      .catch((e) => live && setErr(appErrorMessage(e, t("mongo.explainFail"))));
     return () => {
       live = false;
     };
@@ -67,8 +69,8 @@ export function MongoExplainPanel({
       <div className="mg-explain">
         <div className="mg-explain-head">
           <Icon name="insights" size={15} style={{ color: "var(--accent)" }} />
-          <b>Explain plan</b>
-          <span className="mg-ns">running…</span>
+          <b>{t("mongo.explainPlan")}</b>
+          <span className="mg-ns">{t("mongo.explainRunning")}</span>
         </div>
       </div>
     );
@@ -78,15 +80,15 @@ export function MongoExplainPanel({
     <div className="mg-explain">
       <div className="mg-explain-head">
         <Icon name="insights" size={15} style={{ color: "var(--accent)" }} />
-        <b>Explain plan</b>
+        <b>{t("mongo.explainPlan")}</b>
         <span className="mg-ns">
           {ex.namespace}
           {/* An aggregation's stats describe the cursor stage — how the pipeline
               reaches the documents it then transforms. */}
-          {query.kind === "aggregate" ? " · aggregate cursor" : ""}
+          {query.kind === "aggregate" ? t("mongo.explainAggCursor") : ""}
         </span>
         <div style={{ flex: 1 }} />
-        <IconBtn icon="close" size={15} onClick={onClose} title="Hide explain" />
+        <IconBtn icon="close" size={15} onClick={onClose} title={t("mongo.hideExplain")} />
       </div>
       <div className="mg-explain-grid">
         <div className={"mg-plan-stage " + (winning ? "ix" : "coll")}>
@@ -94,29 +96,29 @@ export function MongoExplainPanel({
           <div>
             <div className="mg-plan-stage-name">{ex.stage}</div>
             <div className="mg-plan-stage-sub">
-              {winning ? "index: " + ex.indexName : "no index used — full collection scan"}
+              {winning ? t("mongo.indexUsed", { name: ex.indexName ?? "" }) : t("mongo.noIndex")}
             </div>
           </div>
         </div>
         <div className="mg-explain-stats">
           <div className="mg-estat">
-            <span>Returned</span>
+            <span>{t("mongo.statReturned")}</span>
             <b>{ex.nReturned}</b>
           </div>
           <div className="mg-estat">
-            <span>Docs examined</span>
+            <span>{t("mongo.statDocsExamined")}</span>
             <b>{ex.docsExamined}</b>
           </div>
           <div className="mg-estat">
-            <span>Keys examined</span>
+            <span>{t("mongo.statKeysExamined")}</span>
             <b>{ex.keysExamined}</b>
           </div>
           <div className="mg-estat">
-            <span>Selectivity</span>
+            <span>{t("mongo.statSelectivity")}</span>
             <b>{Math.round(ex.ratio * 100)}%</b>
           </div>
           <div className="mg-estat">
-            <span>Time</span>
+            <span>{t("mongo.statTime")}</span>
             <b>{ex.ms} ms</b>
           </div>
         </div>
@@ -124,9 +126,7 @@ export function MongoExplainPanel({
       {!winning ? (
         <div className="mg-explain-tip">
           <Icon name="lightbulb" size={13} />{" "}
-          {query.kind === "aggregate"
-            ? "Put a $match first and index its field to turn this COLLSCAN into an IXSCAN."
-            : "Add an index on the filtered field to turn this COLLSCAN into an IXSCAN."}
+          {query.kind === "aggregate" ? t("mongo.tipAgg") : t("mongo.tipFind")}
         </div>
       ) : null}
     </div>

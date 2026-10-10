@@ -14,6 +14,7 @@ import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Modal, ModalActions, ModalTitle } from "../../../shared/ui/Modal";
 import { useToast } from "../../../shared/ui/toastContext";
+import { useT } from "../../../shared/i18n/useT";
 import "./CreateSchemaModal.css";
 
 export function CreateSchemaModal({
@@ -30,6 +31,7 @@ export function CreateSchemaModal({
   onClose: () => void;
 }) {
   const toast = useToast();
+  const t = useT();
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,11 +48,11 @@ export function CreateSchemaModal({
       try {
         await createSchema(handleId, clean);
       } catch (err) {
-        setError(appErrorMessage(err, "Could not create the schema."));
+        setError(appErrorMessage(err, t("io.createSchemaFail")));
         setBusy(false);
         return;
       }
-      toast("Schema “" + clean + "” created", "ok");
+      toast(t("io.schemaCreated", { name: clean }), "ok");
       onCreated(clean);
       onClose();
     })();
@@ -59,17 +61,22 @@ export function CreateSchemaModal({
   const bad = dupe || error !== null;
 
   return (
-    <Modal onClose={onClose} label="Create schema" width={420} className="create-schema-modal">
+    <Modal
+      onClose={onClose}
+      label={t("io.createSchema")}
+      width={420}
+      className="create-schema-modal"
+    >
       <ModalTitle>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-          <Icon name="create_new_folder" size={17} style={{ color: "var(--accent)" }} /> Create
-          schema
+          <Icon name="create_new_folder" size={17} style={{ color: "var(--accent)" }} />{" "}
+          {t("io.createSchema")}
         </span>
-        <IconBtn icon="close" onClick={onClose} title="Close" />
+        <IconBtn icon="close" onClick={onClose} title={t("common.close")} />
       </ModalTitle>
 
       <label className="cs-field">
-        <span className="cs-label">Schema name</span>
+        <span className="cs-label">{t("io.schemaName")}</span>
         <input
           className={"cs-input" + (bad ? " err" : "")}
           value={name}
@@ -93,20 +100,20 @@ export function CreateSchemaModal({
           {error
             ? error
             : dupe
-              ? "Schema “" + clean + "” already exists"
+              ? t("io.schemaExists", { name: clean })
               : clean
                 ? "CREATE SCHEMA " + clean + ";"
-                : "Enter a name for the new empty schema"}
+                : t("io.enterName")}
         </span>
       </div>
 
       <ModalActions>
         <div style={{ flex: 1 }} />
         <Btn variant="text" onClick={onClose} disabled={busy}>
-          Cancel
+          {t("common.cancel")}
         </Btn>
         <Btn variant="filled" icon="add" disabled={!ok} onClick={create}>
-          {busy ? "Creating…" : "Create"}
+          {busy ? t("io.creating") : t("io.create")}
         </Btn>
       </ModalActions>
     </Modal>

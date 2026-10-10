@@ -9,6 +9,7 @@
 // hover-only (see `.schema-pop-split.opened`), so an already-open scope is
 // visible at a glance without opening anything.
 
+import { useT } from "../../../shared/i18n/useT";
 import { Icon } from "../../../shared/ui/Icon";
 
 interface ScopeSplitActionProps {
@@ -23,6 +24,7 @@ interface ScopeSplitActionProps {
 }
 
 export function ScopeSplitAction({ scope, opened, label, onOpen }: ScopeSplitActionProps) {
+  const t = useT();
   const shown = label ?? scope;
   const open = (event: { stopPropagation: () => void }) => {
     // Never let this also switch scope in place — the row underneath is a
@@ -37,7 +39,7 @@ export function ScopeSplitAction({ scope, opened, label, onOpen }: ScopeSplitAct
       tabIndex={0}
       className={"schema-pop-split" + (opened ? " opened" : "")}
       title={
-        opened ? "Focus the “" + shown + "” workspace" : "Open “" + shown + "” as its own workspace"
+        opened ? t("ws.scope.focusWs", { name: shown }) : t("ws.scope.openWs", { name: shown })
       }
       onClick={open}
       onKeyDown={(event) => {
@@ -54,10 +56,11 @@ export function ScopeSplitAction({ scope, opened, label, onOpen }: ScopeSplitAct
 /** The popover footer explaining the icon. Two words on purpose: the popover is
  *  ~218px wide and prose wraps to several lines here. */
 export function ScopeSplitHint() {
+  const t = useT();
   return (
     <div className="schema-pop-hint">
       <Icon name="open_in_new" size={12} />
-      <span>own workspace</span>
+      <span>{t("ws.scope.ownWsHint")}</span>
     </div>
   );
 }

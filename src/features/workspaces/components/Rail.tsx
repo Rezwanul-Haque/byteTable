@@ -8,11 +8,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
 
 import type { BadgeEngine } from "../../../shared/types";
+import { useT } from "../../../shared/i18n/useT";
 import { BTLogo } from "../../../shared/ui/BTLogo";
 import { dropWordSelection } from "../../../shared/ui/dropWordSelection";
 import { Icon } from "../../../shared/ui/Icon";
 import { useToast } from "../../../shared/ui/toastContext";
-import { scopeNoun, scopeNounTitle } from "../scopes";
+import { SCOPE_NOUN_KEYS, scopeNoun, scopeNounTitle } from "../scopes";
 import { selectShowConnect, useWorkspacesStore, WORKSPACE_COLORS } from "../state";
 import { workspaceBadge, type Workspace } from "../types";
 import "./Rail.css";
@@ -48,6 +49,23 @@ function wsInitials(name: string): string {
 interface EditPop {
   id: string;
   y: number;
+}
+
+// i18n helpers for the scope nouns: the raw English noun from scopes.ts is the
+// fallback; known nouns translate through their keys.
+type RailWsEngine = Parameters<typeof scopeNoun>[0];
+type T = ReturnType<typeof useT>;
+
+function scopeNounLabel(engine: RailWsEngine, t: T): string {
+  const raw = scopeNoun(engine);
+  if (!raw) return t("ws.noun.schema");
+  return SCOPE_NOUN_KEYS[raw] ? t(SCOPE_NOUN_KEYS[raw]!.noun) : raw;
+}
+
+function scopeNounLabelTitle(engine: RailWsEngine, t: T): string {
+  const raw = scopeNounTitle(engine);
+  if (!raw) return t("ws.noun.schemaTitle");
+  return SCOPE_NOUN_KEYS[raw] ? t(SCOPE_NOUN_KEYS[raw]!.title) : raw;
 }
 
 interface RailProps {
@@ -89,6 +107,7 @@ export function Rail({
   const closeWorkspace = useWorkspacesStore((state) => state.closeWorkspace);
   const keepWorkspace = useWorkspacesStore((state) => state.keepWorkspace);
   const toast = useToast();
+  const t = useT();
 
   // Prototype `showConnect`: the "+" tile lights up and no workspace tile
   // renders active while the connect screen is showing.
@@ -176,7 +195,8 @@ export function Rail({
       <button
         type="button"
         className="rail-logo"
-        title="ByteTable — open a connection"
+        // Same affordance as the title-bar wordmark, so it shares its label.
+        title={t("uix.titlebar.openTooltip")}
         onClick={startAdding}
       >
         <BTLogo size={22} accent="var(--accent)" fg="var(--text)" />
@@ -220,7 +240,7 @@ export function Rail({
                   // accident.
                   if ((event.metaKey || event.ctrlKey) && ws.temp) {
                     keepWorkspace(ws.id);
-                    toast("Workspace kept — it will survive closing its parent", "ok");
+                    toast(t("ws.rail.keptToast"), "ok");
                     return;
                   }
                   setActive(ws.id);
@@ -235,11 +255,17 @@ export function Rail({
                 aria-current={isActive ? "true" : undefined}
                 title={
                   isChild
-                    ? (scopeNoun(ws.saved.engine) ?? "schema") +
+                    ? scopeNounLabel(ws.saved.engine, t) +
                       " " +
                       ws.name +
-                      (ws.temp ? " · temporary — ⌘-click to keep" : " · kept")
-                    : ws.name + " · " + ENGINE_META[workspaceBadge(ws)].label
+                      " " +
+                      (ws.temp ? t("ws.rail.tileTempSuffix") : t("ws.rail.tileKeptSuffix"))
+                    : ws.name +
+                      " · " +
+                      // Engine names stay as-is; the csv badge is not an engine.
+                      (workspaceBadge(ws) === "csv"
+                        ? t("ws.rail.dataFile")
+                        : ENGINE_META[workspaceBadge(ws)].label)
                 }
               >
                 {isChild ? (
@@ -272,10 +298,10 @@ export function Rail({
                 }}
                 title={
                   isChild
-                    ? (scopeNounTitle(ws.saved.engine) ?? "Schema") + " workspace options"
-                    : "Edit workspace"
+                    ? t("ws.rail.scopeOptions", { noun: scopeNounLabelTitle(ws.saved.engine, t) })
+                    : t("ws.rail.edit")
                 }
-                aria-label={"Edit workspace " + ws.name}
+                aria-label={t("ws.rail.editAria", { name: ws.name })}
               >
                 <Icon name="more_horiz" size={14} />
               </button>
@@ -286,7 +312,7 @@ export function Rail({
           type="button"
           className={"ws-add" + (showConnect ? " active" : "")}
           onClick={startAdding}
-          title="New workspace"
+          title={t("ws.rail.new")}
         >
           <Icon name="add" size={20} />
         </button>
@@ -299,8 +325,8 @@ export function Rail({
           type="button"
           className="rail-settings"
           onClick={onSettings}
-          title="Settings (⌘,)"
-          aria-label="Settings"
+          title={t("ws.rail.settings")}
+          aria-label={t("menu.file.settings")}
         >
           <Icon name="settings" size={20} />
         </button>
@@ -311,8 +337,8 @@ export function Rail({
           type="button"
           className="rail-bug"
           onClick={onReportIssue}
-          title="Report an issue"
-          aria-label="Report an issue"
+          title={t("ws.rail.report")}
+          aria-label={t("ws.rail.report")}
         >
           <Icon name="bug_report" size={20} />
         </button>
@@ -323,23 +349,14 @@ export function Rail({
           type="button"
           className={"rail-update" + (updateSkipped ? " skipped" : "")}
           onClick={onUpdate}
-          title={
-            updateSkipped
-              ? "Update available (skipped) — click to view"
-              : "Update available — click to install"
-          }
+          title={updateSkipped ? t("ws.rail.updateSkipped") : t("ws.rail.updateAvailable")}
         >
           <Icon name="arrow_circle_up" size={20} fill={1} />
           {updateSkipped ? null : <span className="rail-update-dot" />}
         </button>
       ) : null}
 
-      <button
-        type="button"
-        className="rail-donate"
-        onClick={onDonate}
-        title="Support ByteTable — buy us a coffee"
-      >
+      <button type="button" className="rail-donate" onClick={onDonate} title={t("ws.rail.support")}>
         <svg
           className="coffee-icon"
           width="22"
@@ -375,7 +392,12 @@ export function Rail({
         </svg>
       </button>
 
-      <button type="button" className="rail-version" onClick={onAbout} title="About ByteTable">
+      <button
+        type="button"
+        className="rail-version"
+        onClick={onAbout}
+        title={t("ws.rail.about", { app: "ByteTable" })}
+      >
         v{version ?? "0.0.39"}
       </button>
 
@@ -384,7 +406,7 @@ export function Rail({
           className="ws-edit-pop"
           style={{ top: editPop.y }}
           role="dialog"
-          aria-label={"Edit workspace " + editingWs.name}
+          aria-label={t("ws.rail.editAria", { name: editingWs.name })}
         >
           <div className="ws-edit-head">
             <span
@@ -404,8 +426,10 @@ export function Rail({
                   scope noun, which can only happen if a child somehow exists
                   for one. */}
               {editingWs.parentId
-                ? (scopeNounTitle(editingWs.saved.engine) ?? "Schema") + " workspace"
-                : "Edit workspace"}
+                ? t("ws.rail.scopeWsTitle", {
+                    noun: scopeNounLabelTitle(editingWs.saved.engine, t),
+                  })
+                : t("ws.rail.edit")}
             </div>
           </div>
           {/* A schema workspace scopes an existing connection, so say which
@@ -416,7 +440,7 @@ export function Rail({
               {editingWs.saved.name} · {editingWs.schema}
             </div>
           ) : null}
-          <div className="ws-edit-label">Name</div>
+          <div className="ws-edit-label">{t("ws.rail.nameLabel")}</div>
           <input
             className="ws-edit-input"
             value={draftName}
@@ -432,7 +456,7 @@ export function Rail({
               if (event.key === "Enter" || event.key === "Escape") closeEdit();
             }}
           />
-          <div className="ws-edit-label">Color</div>
+          <div className="ws-edit-label">{t("ws.rail.colorLabel")}</div>
           <div className="ws-colors">
             {WORKSPACE_COLORS.map((color) => (
               <button
@@ -441,7 +465,7 @@ export function Rail({
                 className={"ws-color-swatch" + (editingWs.color === color ? " active" : "")}
                 style={{ background: color }}
                 onClick={() => recolorWorkspace(editPop.id, color)}
-                aria-label={"Set color " + color}
+                aria-label={t("ws.rail.setColorAria", { color })}
                 aria-pressed={editingWs.color === color}
                 title={color}
               />
@@ -455,11 +479,11 @@ export function Rail({
               className="ws-edit-keep"
               onClick={() => {
                 keepWorkspace(editPop.id);
-                toast("Workspace kept — it will survive closing its parent", "ok");
+                toast(t("ws.rail.keptToast"), "ok");
                 closeEdit();
               }}
             >
-              <Icon name="push_pin" size={14} /> Keep this workspace
+              <Icon name="push_pin" size={14} /> {t("ws.rail.keep")}
             </button>
           ) : null}
           <button
@@ -472,8 +496,8 @@ export function Rail({
           >
             <Icon name="delete" size={14} />{" "}
             {editingWs.parentId
-              ? "Close " + (scopeNoun(editingWs.saved.engine) ?? "schema") + " workspace"
-              : "Remove workspace"}
+              ? t("ws.rail.closeScope", { noun: scopeNounLabel(editingWs.saved.engine, t) })
+              : t("ws.rail.remove")}
           </button>
         </div>
       ) : null}

@@ -17,6 +17,7 @@
 // playground's request panel — which carries a `${TYPESENSE_API_KEY}`
 // placeholder — run here unchanged.
 
+import { t } from "../../../shared/i18n";
 import type { HttpConsoleRequest } from "./api";
 
 const METHODS = ["GET", "POST", "PATCH", "PUT", "DELETE"];
@@ -48,7 +49,7 @@ export type ParseResult =
  */
 export function parseConsoleCommand(raw: string, collection: string): ParseResult {
   let s = raw.trim();
-  if (!s) return { ok: false, message: "Nothing to run." };
+  if (!s) return { ok: false, message: t("tsx.console.nothingToRun") };
 
   // `curl` prefix, if pasted.
   s = s.replace(/^curl\s+/i, "");
@@ -109,15 +110,7 @@ export function parseConsoleCommand(raw: string, collection: string): ParseResul
   if (!target || target === "/") {
     return {
       ok: false,
-      message:
-        "Could not read a path from: " +
-        raw.trim() +
-        "\n\nUsage: [METHOD] /path [json]  —  the method is optional (GET is assumed), and a " +
-        "pasted curl command works too.\n\nTry:\n  /health\n  GET /collections\n  /collections/" +
-        (collection || "products") +
-        "\n  /collections/" +
-        (collection || "products") +
-        "/documents/search?q=keyboard&query_by=name",
+      message: t("tsx.console.badPath", { raw: raw.trim(), example: collection || "products" }),
     };
   }
 
@@ -130,10 +123,7 @@ export function parseConsoleCommand(raw: string, collection: string): ParseResul
 /** The `HELP` text — the routes plus the one rule people trip on. */
 export function helpText(collection: string): string {
   const name = collection || "products";
-  return (
-    "The method is optional (GET is assumed) and a pasted curl command works too — " +
-    "any -H you paste is dropped, since this connection's API key is attached for you.\n\n" +
-    KNOWN_ROUTES.map((r) => "  " + r.replace("{name}", name)).join("\n") +
-    "\n\n  CLEAR — empty this session · ↑/↓ — walk history"
-  );
+  return t("tsx.console.help", {
+    routes: KNOWN_ROUTES.map((r) => "  " + r.replace("{name}", name)).join("\n"),
+  });
 }

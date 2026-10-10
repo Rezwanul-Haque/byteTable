@@ -16,6 +16,7 @@ import { newCondition } from "../browse/sql/filter";
 import { readKeptSchemas, readSchemaColor, readSchemaSession, readSession } from "./session";
 import type { CellValue } from "../../shared/api/engine";
 import type { AlterOp, DbObjectInfo, DbObjectKind, SortSpec } from "../../shared/api/engine";
+import { t } from "../../shared/i18n";
 import type {
   DataFileRef,
   SqlHistoryEntry,
@@ -349,7 +350,10 @@ function seedSqlCounter(workspaceId: string, tabs: Tab[]): void {
   let highest = 0;
   for (const tab of tabs) {
     if (tab.kind !== "sql") continue;
-    const n = Number(/^Query (\d+)$/.exec(tab.title)?.[1]);
+    // Titles are localized ("Query 3" / "查询 3"), so read the trailing number
+    // rather than matching the English word — a restored session may carry
+    // titles in the locale it was saved under.
+    const n = Number(/(\d+)\s*$/.exec(tab.title)?.[1]);
     if (Number.isFinite(n) && n > highest) highest = n;
   }
   if (highest > 0) sqlCounters.set(workspaceId, highest);
@@ -358,7 +362,7 @@ function seedSqlCounter(workspaceId: string, tabs: Tab[]): void {
 function nextSqlTitle(workspaceId: string): string {
   const n = (sqlCounters.get(workspaceId) ?? 0) + 1;
   sqlCounters.set(workspaceId, n);
-  return "Query " + n;
+  return t("ws.sql.queryN", { n });
 }
 
 /**

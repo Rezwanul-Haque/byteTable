@@ -39,6 +39,7 @@ import { Modal, ModalActions, ModalTitle } from "../../../../shared/ui/Modal";
 import { ENV_COLOR } from "../../../../shared/ui/envColors";
 import { useToast } from "../../../../shared/ui/toastContext";
 import { normalizeEnv } from "../../../../shared/types";
+import { useT } from "../../../../shared/i18n/useT";
 import { useSettingsStore } from "../../../settings/state";
 import {
   cassDropKeyspace,
@@ -66,6 +67,7 @@ function ConfirmName({
   /** Handed to `Modal`'s `initialFocusRef` so the caret starts here. */
   inputRef?: RefObject<HTMLInputElement | null>;
 }) {
+  const t = useT();
   const normEnv = normalizeEnv(env);
   const envColor = ENV_COLOR[normEnv];
   return (
@@ -75,11 +77,11 @@ function ConfirmName({
           className="truncate-prod-tag"
           style={{ color: envColor, borderColor: envColor + "66", background: envColor + "14" }}
         >
-          <Icon name="public" size={13} /> production
+          <Icon name="public" size={13} /> {t("cass.drop.production")}
         </div>
       ) : null}
       <label>
-        Type <b>{name}</b> to confirm
+        {t("cass.drop.typeToConfirm", { name })}
         {/* No `autoFocus`: Modal focuses the first tabbable element in its own
             effect, which runs AFTER a child's and would overwrite it — hence
             `initialFocusRef` (documented on Modal). */}
@@ -89,7 +91,7 @@ function ConfirmName({
           onChange={(e) => onTyped(e.target.value)}
           placeholder={name}
           spellCheck="false"
-          aria-label={"Type " + name + " to confirm"}
+          aria-label={t("cass.drop.typeToConfirm", { name })}
         />
       </label>
     </div>
@@ -113,6 +115,7 @@ export function CassTruncateTableModal({
   /** Called after a successful truncate so the caller can reload the grid. */
   onTruncated: (table: string) => void;
 }) {
+  const t = useT();
   const toast = useToast();
   const confirmProd = useSettingsStore((s) => s.settings.confirmProd);
   const [typed, setTyped] = useState("");
@@ -136,11 +139,11 @@ export function CassTruncateTableModal({
     void (async () => {
       try {
         await cassTruncateTable(handleId, ks, table.name);
-        toast("TRUNCATE " + table.name + " — applied", "ok");
+        toast(t("cass.drop.truncated", { name: table.name }), "ok");
         onTruncated(table.name);
         onClose();
       } catch (err) {
-        setError(appErrorMessage(err, "Could not truncate the table."));
+        setError(appErrorMessage(err, t("cass.drop.truncateFailed")));
         setBusy(false);
       }
     })();
@@ -149,37 +152,25 @@ export function CassTruncateTableModal({
   return (
     <Modal
       onClose={onClose}
-      label="Truncate table"
+      label={t("cass.drop.truncateTitle")}
       width={480}
       className="truncate-modal"
       initialFocusRef={isProd ? nameRef : cancelRef}
     >
       <ModalTitle>
-        <Icon name="delete_sweep" size={18} style={{ color: DANGER }} /> Truncate table
+        <Icon name="delete_sweep" size={18} style={{ color: DANGER }} />{" "}
+        {t("cass.drop.truncateTitle")}
       </ModalTitle>
       <div className="truncate-body">
-        <p>
-          This removes <b>every row</b> from <code>{table.name}</code>. The table, its columns and
-          its indexes stay
-          {table.mvs.length ? (
-            <>
-              , and the{" "}
-              <b>
-                {table.mvs.length} materialized view{table.mvs.length === 1 ? "" : "s"}
-              </b>{" "}
-              built on it are emptied with it
-            </>
-          ) : null}
-          .
-        </p>
+        <p>{t("cass.drop.truncateBody", { table: table.name })}</p>
         <pre className="truncate-sql">
           TRUNCATE TABLE {ks}.{table.name};
         </pre>
         {/* The caveats are real but long, and a 480px dialog is the wrong place
             to spend six lines on them — they live in the hint bubble. */}
         <p className="cass-create-note">
-          Runs at consistency <code>ALL</code> and leaves a snapshot behind{" "}
-          <InfoHint text="Cassandra truncates at consistency ALL: every replica must be reachable, or the statement fails — a single node down is enough. With the default auto_snapshot the rows are kept in a truncated-* snapshot, so the disk is not freed until an operator clears it (nodetool clearsnapshot)." />
+          <code>ALL</code> {t("cass.drop.truncateAll")}{" "}
+          <InfoHint text={t("cass.drop.truncateAll")} />
         </p>
         {isProd ? (
           <ConfirmName
@@ -194,7 +185,7 @@ export function CassTruncateTableModal({
       </div>
       <ModalActions>
         <Btn variant="text" onClick={onClose} disabled={busy} ref={cancelRef}>
-          Cancel
+          {t("cass.drop.cancel")}
         </Btn>
         <button
           type="button"
@@ -203,7 +194,7 @@ export function CassTruncateTableModal({
           onClick={confirm}
         >
           <Icon name="delete_sweep" size={16} />
-          <span>{busy ? "Truncating…" : "Truncate table"}</span>
+          <span>{busy ? t("cass.drop.truncating") : t("cass.drop.truncateTitle")}</span>
         </button>
       </ModalActions>
     </Modal>
@@ -227,6 +218,7 @@ export function CassDropTableModal({
   /** Called after a successful drop so the caller can refresh + close tabs. */
   onDropped: (dropped: string) => void;
 }) {
+  const t = useT();
   const toast = useToast();
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
@@ -242,11 +234,11 @@ export function CassDropTableModal({
     void (async () => {
       try {
         await cassDropTable(handleId, ks, table.name, dropViews);
-        toast("DROP TABLE " + table.name + " — applied", "ok");
+        toast(t("cass.drop.droppedTable", { name: table.name }), "ok");
         onDropped(table.name);
         onClose();
       } catch (err) {
-        setError(appErrorMessage(err, "Could not drop the table."));
+        setError(appErrorMessage(err, t("cass.drop.dropTableFailed")));
         setBusy(false);
       }
     })();
@@ -271,27 +263,16 @@ export function CassDropTableModal({
   return (
     <Modal
       onClose={onClose}
-      label="Drop table"
+      label={t("cass.drop.dropTableTitle")}
       width={480}
       className="truncate-modal"
       initialFocusRef={nameRef}
     >
       <ModalTitle>
-        <Icon name="warning" size={18} style={{ color: DANGER }} /> Drop table
+        <Icon name="warning" size={18} style={{ color: DANGER }} /> {t("cass.drop.dropTableTitle")}
       </ModalTitle>
       <div className="truncate-body">
-        <p>
-          This removes the table <code>{table.name}</code> and every row in it
-          {indexes.length ? (
-            <>
-              , along with its{" "}
-              <b>
-                {indexes.length} secondary index{indexes.length === 1 ? "" : "es"}
-              </b>
-            </>
-          ) : null}
-          . This cannot be undone.
-        </p>
+        <p>{t("cass.drop.dropTableBody", { table: table.name, count: indexes.length })}</p>
         <pre className="truncate-sql">{cql}</pre>
         {views.length ? (
           <div className="schema-import-list">
@@ -299,7 +280,7 @@ export function CassDropTableModal({
               <div key={m.name} className="schema-import-row">
                 <Icon name="dvr" size={14} style={{ color: "var(--text-faint)" }} />
                 <span className="schema-import-name">{m.name}</span>
-                <span className="schema-import-rows">materialized view</span>
+                <span className="schema-import-rows">{t("cass.drop.mvWord")}</span>
               </div>
             ))}
           </div>
@@ -313,13 +294,9 @@ export function CassDropTableModal({
             />
             <span className="truncate-fk-text">
               <span className="truncate-fk-label">
-                Also drop the {views.length} materialized view
-                {views.length === 1 ? "" : "s"} built on this table
+                {t("cass.drop.alsoDropMvs", { count: views.length })}
               </span>
-              <span className="truncate-fk-hint">
-                Cassandra refuses to drop a table while a view depends on it, and has no CASCADE.
-                Without this the drop fails and the table stays.
-              </span>
+              <span className="truncate-fk-hint">{t("cass.drop.mvReason")}</span>
             </span>
           </label>
         ) : null}
@@ -334,7 +311,7 @@ export function CassDropTableModal({
       </div>
       <ModalActions>
         <Btn variant="text" onClick={onClose} disabled={busy}>
-          Cancel
+          {t("cass.drop.cancel")}
         </Btn>
         <button
           type="button"
@@ -343,7 +320,7 @@ export function CassDropTableModal({
           onClick={confirm}
         >
           <Icon name="delete_forever" size={16} />
-          <span>{busy ? "Dropping…" : "Drop table"}</span>
+          <span>{busy ? t("cass.drop.dropping") : t("cass.drop.dropTableBtn")}</span>
         </button>
       </ModalActions>
     </Modal>
@@ -367,6 +344,7 @@ export function CassEmptyKeyspaceModal({
   /** Called after a successful empty so the caller can refresh + close tabs. */
   onEmptied: () => void;
 }) {
+  const t = useT();
   const toast = useToast();
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
@@ -381,14 +359,11 @@ export function CassEmptyKeyspaceModal({
     void (async () => {
       try {
         const dropped = await cassEmptyKeyspace(handleId, ks);
-        toast(
-          "Emptied " + ks + " — " + dropped + " table" + (dropped === 1 ? "" : "s") + " dropped",
-          "ok",
-        );
+        toast(t("cass.drop.emptied", { ks, count: dropped }), "ok");
         onEmptied();
         onClose();
       } catch (err) {
-        setError(appErrorMessage(err, "Could not empty the keyspace."));
+        setError(appErrorMessage(err, t("cass.drop.emptyFailed")));
         setBusy(false);
       }
     })();
@@ -399,37 +374,20 @@ export function CassEmptyKeyspaceModal({
   return (
     <Modal
       onClose={onClose}
-      label="Empty keyspace"
+      label={t("cass.drop.emptyTitle")}
       width={480}
       className="truncate-modal"
       initialFocusRef={nameRef}
     >
       <ModalTitle>
-        <Icon name="warning" size={18} style={{ color: DANGER }} /> Empty keyspace
+        <Icon name="warning" size={18} style={{ color: DANGER }} /> {t("cass.drop.emptyTitle")}
       </ModalTitle>
       <div className="truncate-body">
-        <p>
-          This drops{" "}
-          <b>
-            all {tables.length} table{tables.length === 1 ? "" : "s"}
-          </b>{" "}
-          in <code>{ks}</code> and their data
-          {mvCount ? (
-            <>
-              , plus the{" "}
-              <b>
-                {mvCount} materialized view{mvCount === 1 ? "" : "s"}
-              </b>{" "}
-              built on them
-            </>
-          ) : null}
-          . The keyspace itself stays, with its replication settings, so you can rebuild into it.
-          This cannot be undone.
-        </p>
+        <p>{t("cass.drop.emptyBody", { ks, tables: tables.length, mvs: mvCount })}</p>
         <pre className="truncate-sql">
           {tables.length
             ? tables.map((t) => "DROP TABLE " + ks + "." + t.name + ";").join("\n")
-            : "-- no tables to drop"}
+            : t("cass.drop.noTablesToDrop")}
         </pre>
         {tables.length ? (
           <div className="schema-import-list">
@@ -447,7 +405,7 @@ export function CassEmptyKeyspaceModal({
       </div>
       <ModalActions>
         <Btn variant="text" onClick={onClose} disabled={busy}>
-          Cancel
+          {t("cass.drop.cancel")}
         </Btn>
         <button
           type="button"
@@ -456,7 +414,7 @@ export function CassEmptyKeyspaceModal({
           onClick={confirm}
         >
           <Icon name="delete_sweep" size={16} />
-          <span>{busy ? "Dropping…" : "Empty keyspace"}</span>
+          <span>{busy ? t("cass.drop.dropping") : t("cass.drop.emptyBtn")}</span>
         </button>
       </ModalActions>
     </Modal>
@@ -480,6 +438,7 @@ export function CassDropKeyspaceModal({
   /** Called after a successful drop so the caller can switch keyspace. */
   onDropped: (dropped: string) => void;
 }) {
+  const t = useT();
   const toast = useToast();
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
@@ -494,11 +453,11 @@ export function CassDropKeyspaceModal({
     void (async () => {
       try {
         await cassDropKeyspace(handleId, ks);
-        toast("DROP KEYSPACE " + ks + " — applied", "ok");
+        toast(t("cass.drop.droppedKs", { name: ks }), "ok");
         onDropped(ks);
         onClose();
       } catch (err) {
-        setError(appErrorMessage(err, "Could not drop the keyspace."));
+        setError(appErrorMessage(err, t("cass.drop.dropKsFailed")));
         setBusy(false);
       }
     })();
@@ -507,28 +466,16 @@ export function CassDropKeyspaceModal({
   return (
     <Modal
       onClose={onClose}
-      label="Drop keyspace"
+      label={t("cass.drop.dropKsTitle")}
       width={480}
       className="truncate-modal"
       initialFocusRef={nameRef}
     >
       <ModalTitle>
-        <Icon name="warning" size={18} style={{ color: DANGER }} /> Drop keyspace
+        <Icon name="warning" size={18} style={{ color: DANGER }} /> {t("cass.drop.dropKsTitle")}
       </ModalTitle>
       <div className="truncate-body">
-        <p>
-          This removes the keyspace <code>{ks}</code> itself
-          {tables.length ? (
-            <>
-              , along with{" "}
-              <b>
-                all {tables.length} table{tables.length === 1 ? "" : "s"}
-              </b>{" "}
-              in it and their data
-            </>
-          ) : null}
-          , plus its replication settings. Nothing is left to re-import into. This cannot be undone.
-        </p>
+        <p>{t("cass.drop.dropKsBody", { ks, count: tables.length })}</p>
         <pre className="truncate-sql">DROP KEYSPACE {ks};</pre>
         {tables.length ? (
           <div className="schema-import-list">
@@ -546,7 +493,7 @@ export function CassDropKeyspaceModal({
       </div>
       <ModalActions>
         <Btn variant="text" onClick={onClose} disabled={busy}>
-          Cancel
+          {t("cass.drop.cancel")}
         </Btn>
         <button
           type="button"
@@ -555,7 +502,7 @@ export function CassDropKeyspaceModal({
           onClick={confirm}
         >
           <Icon name="delete_forever" size={16} />
-          <span>{busy ? "Dropping…" : "Drop keyspace"}</span>
+          <span>{busy ? t("cass.drop.dropping") : t("cass.drop.dropKsBtn")}</span>
         </button>
       </ModalActions>
     </Modal>

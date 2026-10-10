@@ -15,6 +15,7 @@
 
 import type { CellValue, FkRef } from "../../../../shared/api/engine";
 import { Icon } from "../../../../shared/ui/Icon";
+import { useT } from "../../../../shared/i18n/useT";
 import { formatBinary, isBinaryType, isUuidType, looksUuid } from "../binaryCell";
 import { isJsonType, jsonPreview } from "../jsonCell";
 import "../styles/CellEditors.css";
@@ -65,6 +66,7 @@ export function CellContent({
   onJsonClick,
   onBinClick,
 }: CellContentProps) {
+  const t = useT();
   if (value === null) {
     // NULL → italic faint small-caps "null" (a NULL FK is not a link).
     return <span className="cell-null">null</span>;
@@ -94,9 +96,7 @@ export function CellContent({
               if (hop) onFkClick!(value, e);
               else onBinClick!(e);
             }}
-            title={
-              hop ? "→ " + fk.table + " · double-click to edit" : "BINARY · double-click to edit"
-            }
+            title={hop ? t("grid.hopEdit", { table: fk.table }) : t("grid.binEdit")}
           >
             {inner}
           </button>
@@ -121,7 +121,7 @@ export function CellContent({
           e.stopPropagation();
           onJsonClick(e);
         }}
-        title="Double-click to edit JSON"
+        title={t("grid.dblClickJson")}
       >
         {inner}
       </button>

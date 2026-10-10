@@ -7,6 +7,7 @@
 
 import { platform } from "@tauri-apps/plugin-os";
 
+import { t } from "../../shared/i18n";
 import type { Engine } from "../../shared/types";
 import { UPDATE_REPO } from "../updater/api";
 
@@ -25,34 +26,38 @@ export interface BugType {
   blurb: string;
 }
 
-// Prototype bugreport.jsx BUG_TYPES — accent colors, GitHub labels, and blurbs
-// are the source of truth; do not invent copy or colors.
-export const BUG_TYPES: BugType[] = [
-  {
-    id: "bug",
-    label: "Bug",
-    icon: "bug_report",
-    accent: "#e06c75",
-    labels: ["bug"],
-    blurb: "Something is broken or behaves unexpectedly.",
-  },
-  {
-    id: "feature",
-    label: "Feature",
-    icon: "lightbulb",
-    accent: "#e5c07b",
-    labels: ["enhancement"],
-    blurb: "Suggest a new capability or improvement.",
-  },
-  {
-    id: "question",
-    label: "Question",
-    icon: "help",
-    accent: "#61afef",
-    labels: ["question"],
-    blurb: "Ask about usage, behavior, or the roadmap.",
-  },
-];
+// Prototype bugreport.jsx BUG_TYPES — accent colors and GitHub labels are the
+// source of truth; do not invent copy or colors. A function rather than a const
+// so the label/blurb are read in the active locale at render time (the GitHub
+// `labels` stay English — they are the repo's own label names).
+export function bugTypes(): BugType[] {
+  return [
+    {
+      id: "bug",
+      label: t("bug.type.bug"),
+      icon: "bug_report",
+      accent: "#e06c75",
+      labels: ["bug"],
+      blurb: t("bug.blurb.bug"),
+    },
+    {
+      id: "feature",
+      label: t("bug.type.feature"),
+      icon: "lightbulb",
+      accent: "#e5c07b",
+      labels: ["enhancement"],
+      blurb: t("bug.blurb.feature"),
+    },
+    {
+      id: "question",
+      label: t("bug.type.question"),
+      icon: "help",
+      accent: "#61afef",
+      labels: ["question"],
+      blurb: t("bug.blurb.question"),
+    },
+  ];
+}
 
 export interface BugSeverity {
   id: string;
@@ -61,12 +66,16 @@ export interface BugSeverity {
 }
 
 // Prototype BUG_SEVERITY (Bug only). The chip tooltips are the `hint` values.
-export const BUG_SEVERITY: BugSeverity[] = [
-  { id: "low", label: "Low", hint: "minor / cosmetic" },
-  { id: "medium", label: "Medium", hint: "workaround exists" },
-  { id: "high", label: "High", hint: "blocks a workflow" },
-  { id: "critical", label: "Critical", hint: "data loss / crash" },
-];
+// A function so the label/hint are read in the active locale when the form (or
+// the issue body) is built.
+export function bugSeverities(): BugSeverity[] {
+  return [
+    { id: "low", label: t("bug.sev.low"), hint: t("bug.sev.low.hint") },
+    { id: "medium", label: t("bug.sev.medium"), hint: t("bug.sev.medium.hint") },
+    { id: "high", label: t("bug.sev.high"), hint: t("bug.sev.high.hint") },
+    { id: "critical", label: t("bug.sev.critical"), hint: t("bug.sev.critical.hint") },
+  ];
+}
 
 /** The templated form's mutable fields (prototype `fields` state). `handle` is
  *  an optional GitHub username the reporter can add so maintainers can follow
@@ -167,6 +176,7 @@ export function buildIssueBody(
   includeDiag: boolean,
 ): string {
   const L: string[] = [];
+  const severity = bugSeverities();
   if (type === "bug") {
     L.push("### Description", (fields.desc || "_No description provided._").trim(), "");
     L.push("### Steps to reproduce", (fields.steps || "1. \n2. \n3. ").trim(), "");
@@ -174,7 +184,7 @@ export function buildIssueBody(
     L.push("### Actual behavior", (fields.actual || "_…_").trim(), "");
     L.push(
       "### Severity",
-      (BUG_SEVERITY.find((s) => s.id === fields.severity) ?? BUG_SEVERITY[1]!).label,
+      (severity.find((s) => s.id === fields.severity) ?? severity[1]!).label,
       "",
     );
   } else if (type === "feature") {
@@ -247,10 +257,8 @@ export function issueUrl(
     put("steps", fields.steps);
     put("expected", fields.expected);
     put("actual", fields.actual);
-    p.set(
-      "severity",
-      (BUG_SEVERITY.find((s) => s.id === fields.severity) ?? BUG_SEVERITY[1]!).label,
-    );
+    const severity = bugSeverities();
+    p.set("severity", (severity.find((s) => s.id === fields.severity) ?? severity[1]!).label);
   } else if (type === "feature") {
     put("problem", fields.desc);
     put("solution", fields.solution);

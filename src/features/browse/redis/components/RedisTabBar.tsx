@@ -14,6 +14,8 @@ import {
 
 import { Icon } from "../../../../shared/ui/Icon";
 import { useTabMenu } from "../../../../shared/hooks/useTabMenu";
+import { t } from "../../../../shared/i18n";
+import { useT } from "../../../../shared/i18n/useT";
 import type { RedisTab } from "../state";
 import { RedisTypeBadge } from "./RedisTypeBadge";
 // `.tabbar-tools` / `.tabbar-tool` / `.tabbar-tool-icon` for the right-hand
@@ -28,11 +30,11 @@ function tabTitle(tab: RedisTab, cluster: boolean): string {
     case "dashboard":
       // A cluster workspace's first tab is the Cluster dashboard, not a
       // keyspace one — the tab name says which view it actually is.
-      return cluster ? "Cluster" : "Dashboard";
+      return cluster ? t("redis.tab.cluster") : t("redis.tab.dashboard");
     case "key":
       return tab.key;
     case "processes":
-      return "Clients";
+      return t("redis.tab.clients");
   }
 }
 
@@ -62,6 +64,7 @@ export function RedisTabBar({
   onToggleConsole,
   onOpenClients,
 }: RedisTabBarProps) {
+  const t = useT();
   const menu = useTabMenu({
     ids: tabs.map((t) => t.id),
     close: (ids) => ids.forEach(onClose),
@@ -74,7 +77,7 @@ export function RedisTabBar({
     activeTabRef.current?.scrollIntoView({ inline: "nearest", block: "nearest" });
   }, [activeTabId]);
   return (
-    <div className="tabbar" role="tablist" aria-label="Redis tabs">
+    <div className="tabbar" role="tablist" aria-label={t("redis.tabsAria")}>
       <div className="tabbar-tabs">
         {tabs.map((tab) => {
           const active = tab.id === activeTabId;
@@ -128,8 +131,8 @@ export function RedisTabBar({
                     event.stopPropagation();
                     onClose(tab.id);
                   }}
-                  title="Close tab"
-                  aria-label={"Close " + title}
+                  title={t("redis.closeTab")}
+                  aria-label={t("redis.closeTabAria", { title })}
                 >
                   <Icon name="close" size={12} />
                 </button>
@@ -142,13 +145,13 @@ export function RedisTabBar({
         <button
           type="button"
           className={"tabbar-tool" + (consoleOpen ? " active" : "")}
-          title="Toggle terminal (Ctrl+`)"
-          aria-label="Toggle terminal (Ctrl+`)"
+          title={t("redis.toggleTerminal")}
+          aria-label={t("redis.toggleTerminal")}
           aria-pressed={consoleOpen}
           onClick={onToggleConsole}
         >
           <Icon name="terminal" size={15} />
-          <span>Terminal</span>
+          <span>{t("redis.terminal")}</span>
         </button>
         {/* Icon-only, immediately after Terminal — the same slot the SQL,
             Mongo and Cassandra tab bars put their processes toggle in, so the
@@ -156,8 +159,8 @@ export function RedisTabBar({
         <button
           type="button"
           className="tabbar-tool tabbar-tool-icon"
-          title="Connected clients (Ctrl+Shift+P)"
-          aria-label="Connected clients (Ctrl+Shift+P)"
+          title={t("redis.clientsShortcut")}
+          aria-label={t("redis.clientsShortcut")}
           onClick={onOpenClients}
         >
           <Icon name="monitor_heart" size={15} />

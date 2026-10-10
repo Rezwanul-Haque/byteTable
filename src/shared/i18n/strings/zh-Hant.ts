@@ -111,5 +111,5 @@ export const zhHant: StringTable = {
   "set.lang.dataNote": "僅介面會被翻譯。您的結構、資料與 SQL 永不會被改寫。",
   "set.lang.contribute": "缺少您的語言？每種語言只需一個檔案 — 查看指南",
 
-  "set.rowsFound": "{count} 列",
+  "set.rowsFound": "{count, plural, other {# 列}}",
 };

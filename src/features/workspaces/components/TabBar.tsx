@@ -16,6 +16,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 
+import { useLocale, useT } from "../../../shared/i18n/useT";
 import { Icon } from "../../../shared/ui/Icon";
 import { useTabMenu } from "../../../shared/hooks/useTabMenu";
 import { OBJ_SECTIONS } from "../../db_objects/kinds";
@@ -102,9 +103,13 @@ export function TabBar({
   useEffect(() => {
     activeTabRef.current?.scrollIntoView({ inline: "nearest", block: "nearest" });
   }, [activeTabId]);
-  const labels = useMemo(() => tabLabels(tabs, currentSchema), [tabs, currentSchema]);
+  // Labels read t() at build time; `locale` in the deps rebuilds them on a
+  // language switch.
+  const t = useT();
+  const locale = useLocale();
+  const labels = useMemo(() => tabLabels(tabs, currentSchema), [tabs, currentSchema, locale]);
   return (
-    <div className="tabbar" role="tablist" aria-label="Open tabs">
+    <div className="tabbar" role="tablist" aria-label={t("ws.tabs.openAria")}>
       <div className="tabbar-tabs">
         {tabs.map((tab, index) => {
           const active = tab.id === activeTabId;
@@ -140,7 +145,7 @@ export function TabBar({
               onKeyDown={onKeyDown}
               onMouseDown={onMouseDown}
               onContextMenu={(e) => menu.onContextMenu(e, tab.id)}
-              title={unsaved ? tooltip + " — unsaved changes" : tooltip}
+              title={unsaved ? tooltip + " " + t("ws.tabs.unsavedSuffix") : tooltip}
             >
               <Icon
                 name={tabIcon(tab)}
@@ -159,8 +164,8 @@ export function TabBar({
                   event.stopPropagation();
                   onClose([tab.id]);
                 }}
-                title="Close tab"
-                aria-label={"Close " + tooltip}
+                title={t("ws.tabs.close")}
+                aria-label={t("ws.tabs.closeAria", { name: tooltip })}
               >
                 <Icon name="close" size={12} />
               </button>
@@ -168,7 +173,7 @@ export function TabBar({
           );
         })}
       </div>
-      <button type="button" className="tab-new" onClick={onNewSql} title="New SQL query (⌘T)">
+      <button type="button" className="tab-new" onClick={onNewSql} title={t("ws.tabs.newSql")}>
         <Icon name="add" size={16} />
       </button>
       <div className="tabbar-tools">
@@ -178,8 +183,8 @@ export function TabBar({
           <button
             type="button"
             className="tabbar-tool tabbar-tool-icon tabbar-tool-warn"
-            title={"Discard staged changes in " + unsavedTabIds.size + " tabs and reload"}
-            aria-label={"Discard staged changes in " + unsavedTabIds.size + " tabs and reload"}
+            title={t("ws.tabs.discardAll", { count: unsavedTabIds.size })}
+            aria-label={t("ws.tabs.discardAll", { count: unsavedTabIds.size })}
             onClick={onDiscardAll}
           >
             <Icon name="refresh" size={15} />
@@ -188,13 +193,13 @@ export function TabBar({
         <button
           type="button"
           className={"tabbar-tool" + (consoleOpen ? " active" : "")}
-          title="Toggle terminal (Ctrl+`)"
-          aria-label="Toggle terminal (Ctrl+`)"
+          title={t("ws.tabs.toggleTerminal")}
+          aria-label={t("ws.tabs.toggleTerminal")}
           aria-pressed={consoleOpen}
           onClick={onToggleConsole}
         >
           <Icon name="terminal" size={15} />
-          <span>Terminal</span>
+          <span>{t("ws.tabs.terminal")}</span>
         </button>
         {/* Beside Terminal: the saved queries are workspace-wide, not a
             property of whichever tab happens to be open, so browsing them
@@ -203,8 +208,8 @@ export function TabBar({
           <button
             type="button"
             className={"tabbar-tool tabbar-tool-icon" + (savedQueriesOpen ? " active" : "")}
-            title="Saved queries"
-            aria-label="Saved queries"
+            title={t("ws.sql.savedQueries")}
+            aria-label={t("ws.sql.savedQueries")}
             aria-pressed={savedQueriesOpen}
             onClick={onOpenSavedQueries}
           >
@@ -215,8 +220,8 @@ export function TabBar({
           <button
             type="button"
             className="tabbar-tool tabbar-tool-icon"
-            title="Running processes (Ctrl+Shift+P)"
-            aria-label="Running processes (Ctrl+Shift+P)"
+            title={t("ws.tabs.processes")}
+            aria-label={t("ws.tabs.processes")}
             onClick={onOpenProcesses}
           >
             <Icon name="monitor_heart" size={15} />

@@ -21,6 +21,8 @@
 import { useRef, useState, type RefObject } from "react";
 
 import { appErrorMessage } from "../../../../shared/api/error";
+import { t } from "../../../../shared/i18n";
+import { useT } from "../../../../shared/i18n/useT";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { Modal, ModalActions, ModalTitle } from "../../../../shared/ui/Modal";
@@ -47,13 +49,13 @@ const DANGER = "#e06c75";
 function collectionNameError(name: string, existing: string[]): string | null {
   const n = name.trim();
   if (n === "") return null; // nothing typed yet — not an error, just not ready
-  if (n.startsWith("system.")) return "Names starting with “system.” are reserved by MongoDB.";
-  if (n.includes("$")) return "A collection name cannot contain “$”.";
-  if (n.includes("\0")) return "A collection name cannot contain a null character.";
+  if (n.startsWith("system.")) return t("mongo.err.nameReserved");
+  if (n.includes("$")) return t("mongo.err.nameDollar");
+  if (n.includes("\0")) return t("mongo.err.nameNull");
   // The server's limit is on the full namespace; 200 leaves room for the
   // database name and the dot without guessing at the exact budget.
-  if (new Blob([n]).size > 200) return "That name is too long.";
-  if (existing.includes(n)) return "A collection called “" + n + "” already exists.";
+  if (new Blob([n]).size > 200) return t("mongo.err.nameTooLong");
+  if (existing.includes(n)) return t("mongo.err.nameExists", { name: n });
   return null;
 }
 
@@ -65,14 +67,13 @@ function collectionNameError(name: string, existing: string[]): string | null {
 function databaseNameError(name: string, existing: string[]): string | null {
   const n = name.trim();
   if (n === "") return null;
-  if (/[/\\. "$*<>:|?]/.test(n))
-    return 'A database name cannot contain / \\ . " $ * < > : | ? or a space.';
-  if (n.includes("\0")) return "A database name cannot contain a null character.";
-  if (new Blob([n]).size > 63) return "A database name is limited to 63 bytes.";
+  if (/[/\\. "$*<>:|?]/.test(n)) return t("mongo.err.dbChars");
+  if (n.includes("\0")) return t("mongo.err.dbNull");
+  if (new Blob([n]).size > 63) return t("mongo.err.dbTooLong");
   // MongoDB compares database names case-insensitively on most deployments, so
   // a name differing only in case would be refused by the server.
   const clash = existing.find((e) => e.toLowerCase() === n.toLowerCase());
-  if (clash) return "A database called “" + clash + "” already exists.";
+  if (clash) return t("mongo.err.dbExists", { name: clash });
   return null;
 }
 
@@ -93,6 +94,7 @@ function ConfirmName({
 }) {
   const normEnv = normalizeEnv(env);
   const envColor = ENV_COLOR[normEnv];
+  const t = useT();
   return (
     <div className="truncate-prod">
       {normEnv === "production" ? (
@@ -104,7 +106,7 @@ function ConfirmName({
         </div>
       ) : null}
       <label>
-        Type <b>{name}</b> to confirm
+        {t("uix.bulkDelete.typePre")} <b>{name}</b> {t("uix.bulkDelete.typePost")}
         {/* No `autoFocus`: Modal focuses the first tabbable element in its own
             effect, which runs AFTER a child's and would overwrite it — hence
             `initialFocusRef` (documented on Modal). */}
@@ -114,7 +116,7 @@ function ConfirmName({
           onChange={(e) => onTyped(e.target.value)}
           placeholder={name}
           spellCheck="false"
-          aria-label={"Type " + name + " to confirm"}
+          aria-label={t("mongo.typeConfirmAria", { name })}
         />
       </label>
     </div>
@@ -141,6 +143,7 @@ export function MongoCreateCollectionModal({
   onCreated: (coll: string) => void;
 }) {
   const toast = useToast();
+  const t = useT();
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -157,11 +160,11 @@ export function MongoCreateCollectionModal({
     void (async () => {
       try {
         await mongoCreateCollection(handleId, db, coll);
-        toast("Created collection “" + coll + "”", "ok");
+        toast(t("mongo.createdColl", { coll }), "ok");
         onCreated(coll);
         onClose();
       } catch (err) {
-        setError(appErrorMessage(err, "Could not create the collection."));
+        setError(appErrorMessage(err, t("mongo.createCollFail")));
         setBusy(false);
       }
     })();
@@ -170,24 +173,24 @@ export function MongoCreateCollectionModal({
   return (
     <Modal
       onClose={onClose}
-      label="Create collection"
+      label={t("mongo.createCollTitle")}
       width={460}
       className="truncate-modal"
       initialFocusRef={nameRef}
     >
       <ModalTitle>
-        <Icon name="create_new_folder" size={18} style={{ color: "var(--accent)" }} /> Create
-        collection
+        <Icon name="create_new_folder" size={18} style={{ color: "var(--accent)" }} />{" "}
+        {t("mongo.createCollTitle")}
       </ModalTitle>
       <div className="truncate-body">
         <p>
-          A new, empty collection in <code>{db}</code>. MongoDB would also create one on the first
-          insert — do it here when you want to import into it, or index it, before any documents
-          exist.
+          {t("mongo.createCollBodyPre")}
+          <code>{db}</code>
+          {t("mongo.createCollBodyPost")}
         </p>
         <div className="truncate-prod">
           <label>
-            Collection name
+            {t("mongo.collName")}
             <input
               ref={nameRef}
               value={name}
@@ -197,7 +200,7 @@ export function MongoCreateCollectionModal({
               }}
               placeholder="events"
               spellCheck="false"
-              aria-label="Collection name"
+              aria-label={t("mongo.collName")}
             />
           </label>
         </div>
@@ -214,10 +217,10 @@ export function MongoCreateCollectionModal({
       </div>
       <ModalActions>
         <Btn variant="text" onClick={onClose}>
-          Cancel
+          {t("common.cancel")}
         </Btn>
         <Btn icon="add" variant="filled" disabled={!armed} onClick={confirm}>
-          {busy ? "Creating…" : "Create collection"}
+          {busy ? t("mongo.creating") : t("mongo.createCollTitle")}
         </Btn>
       </ModalActions>
     </Modal>
@@ -249,6 +252,7 @@ export function MongoCreateDatabaseModal({
   onCreated: (db: string, coll: string) => void;
 }) {
   const toast = useToast();
+  const t = useT();
   const [db, setDb] = useState("");
   const [coll, setColl] = useState("");
   const [busy, setBusy] = useState(false);
@@ -269,11 +273,11 @@ export function MongoCreateDatabaseModal({
     void (async () => {
       try {
         await mongoCreateCollection(handleId, dbName, collName);
-        toast("Created database “" + dbName + "” with “" + collName + "”", "ok");
+        toast(t("mongo.createdDb", { db: dbName, coll: collName }), "ok");
         onCreated(dbName, collName);
         onClose();
       } catch (err) {
-        setError(appErrorMessage(err, "Could not create the database."));
+        setError(appErrorMessage(err, t("mongo.createDbFail")));
         setBusy(false);
       }
     })();
@@ -282,23 +286,20 @@ export function MongoCreateDatabaseModal({
   return (
     <Modal
       onClose={onClose}
-      label="Create database"
+      label={t("mongo.createDbTitle")}
       width={460}
       className="truncate-modal"
       initialFocusRef={dbRef}
     >
       <ModalTitle>
-        <Icon name="create_new_folder" size={18} style={{ color: "var(--accent)" }} /> Create
-        database
+        <Icon name="create_new_folder" size={18} style={{ color: "var(--accent)" }} />{" "}
+        {t("mongo.createDbTitle")}
       </ModalTitle>
       <div className="truncate-body">
-        <p>
-          MongoDB creates a database the moment something is written to it — there is no empty
-          database to make. Name a first collection and both are created together.
-        </p>
+        <p>{t("mongo.createDbBody")}</p>
         <div className="truncate-prod">
           <label>
-            Database name
+            {t("mongo.dbName")}
             <input
               ref={dbRef}
               value={db}
@@ -308,11 +309,11 @@ export function MongoCreateDatabaseModal({
               }}
               placeholder="analytics"
               spellCheck="false"
-              aria-label="Database name"
+              aria-label={t("mongo.dbName")}
             />
           </label>
           <label>
-            First collection
+            {t("mongo.firstColl")}
             <input
               value={coll}
               onChange={(e) => setColl(e.target.value)}
@@ -321,7 +322,7 @@ export function MongoCreateDatabaseModal({
               }}
               placeholder="events"
               spellCheck="false"
-              aria-label="First collection name"
+              aria-label={t("mongo.firstCollAria")}
             />
           </label>
         </div>
@@ -338,10 +339,10 @@ export function MongoCreateDatabaseModal({
       </div>
       <ModalActions>
         <Btn variant="text" onClick={onClose}>
-          Cancel
+          {t("common.cancel")}
         </Btn>
         <Btn icon="add" variant="filled" disabled={!armed} onClick={confirm}>
-          {busy ? "Creating…" : "Create database"}
+          {busy ? t("mongo.creating") : t("mongo.createDbTitle")}
         </Btn>
       </ModalActions>
     </Modal>
@@ -371,6 +372,7 @@ export function MongoTruncateCollectionModal({
   onTruncated: (coll: string) => void;
 }) {
   const toast = useToast();
+  const t = useT();
   const confirmProd = useSettingsStore((s) => s.settings.confirmProd);
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
@@ -390,20 +392,11 @@ export function MongoTruncateCollectionModal({
     void (async () => {
       try {
         const removed = await mongoTruncateCollection(handleId, db, coll);
-        toast(
-          "Emptied “" +
-            coll +
-            "” — " +
-            removed.toLocaleString() +
-            " document" +
-            (removed === 1 ? "" : "s") +
-            " removed",
-          "ok",
-        );
+        toast(t("mongo.emptiedColl", { coll, count: removed }), "ok");
         onTruncated(coll);
         onClose();
       } catch (err) {
-        setError(appErrorMessage(err, "Could not empty the collection."));
+        setError(appErrorMessage(err, t("mongo.emptyCollFail")));
         setBusy(false);
       }
     })();
@@ -412,24 +405,27 @@ export function MongoTruncateCollectionModal({
   return (
     <Modal
       onClose={onClose}
-      label="Empty collection"
+      label={t("mongo.emptyCollTitle")}
       width={480}
       className="truncate-modal"
       initialFocusRef={isProd ? nameRef : cancelRef}
     >
       <ModalTitle>
-        <Icon name="delete_sweep" size={18} style={{ color: DANGER }} /> Empty collection
+        <Icon name="delete_sweep" size={18} style={{ color: DANGER }} /> {t("mongo.emptyCollTitle")}
       </ModalTitle>
       <div className="truncate-body">
         <p>
-          This removes <b>every document</b>
+          {t("mongo.emptyCollBodyPre")}
+          <b>{t("mongo.emptyCollEveryDoc")}</b>
           {count !== null && count !== undefined ? (
             <>
-              {" "}
-              — <b>{count.toLocaleString()}</b> of them
+              {t("mongo.emptyCollCountPre")}
+              <b>{count.toLocaleString()}</b>
+              {t("mongo.emptyCollBodyMid")}
             </>
-          ) : null}{" "}
-          from <code>{coll}</code>. The collection, its indexes and its validator stay.
+          ) : null}
+          <code>{coll}</code>
+          {t("mongo.emptyCollBodyPost")}
         </p>
         <pre className="truncate-sql">
           db.{coll}.deleteMany({"{}"})
@@ -445,11 +441,11 @@ export function MongoTruncateCollectionModal({
       </div>
       <ModalActions>
         <Btn ref={cancelRef} variant="text" onClick={onClose}>
-          Cancel
+          {t("common.cancel")}
         </Btn>
         <button type="button" className="btn btn-danger" disabled={!armed} onClick={confirm}>
           <Icon name="delete_sweep" size={16} />
-          <span>{busy ? "Emptying…" : "Empty collection"}</span>
+          <span>{busy ? t("mongo.emptying") : t("mongo.emptyCollTitle")}</span>
         </button>
       </ModalActions>
     </Modal>
@@ -476,6 +472,7 @@ export function MongoDropCollectionModal({
   onDropped: (coll: string) => void;
 }) {
   const toast = useToast();
+  const t = useT();
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -492,11 +489,11 @@ export function MongoDropCollectionModal({
     void (async () => {
       try {
         await mongoDropCollection(handleId, db, coll);
-        toast("Dropped collection “" + coll + "”", "ok");
+        toast(t("mongo.droppedColl", { coll }), "ok");
         onDropped(coll);
         onClose();
       } catch (err) {
-        setError(appErrorMessage(err, "Could not drop the collection."));
+        setError(appErrorMessage(err, t("mongo.dropCollFail")));
         setBusy(false);
       }
     })();
@@ -505,18 +502,22 @@ export function MongoDropCollectionModal({
   return (
     <Modal
       onClose={onClose}
-      label="Drop collection"
+      label={t("mongo.dropCollTitle")}
       width={480}
       className="truncate-modal"
       initialFocusRef={nameRef}
     >
       <ModalTitle>
-        <Icon name="delete_forever" size={18} style={{ color: DANGER }} /> Drop collection
+        <Icon name="delete_forever" size={18} style={{ color: DANGER }} />{" "}
+        {t("mongo.dropCollTitle")}
       </ModalTitle>
       <div className="truncate-body">
         <p>
-          This deletes <code>{coll}</code> from <code>{db}</code> — its documents, its indexes and
-          its validator. There is nothing to roll back.
+          {t("mongo.dropCollBodyPre")}
+          <code>{coll}</code>
+          {t("mongo.dropCollBodyMid")}
+          <code>{db}</code>
+          {t("mongo.dropCollBodyPost")}
         </p>
         <pre className="truncate-sql">db.{coll}.drop()</pre>
         <ConfirmName name={coll} env={env} typed={typed} onTyped={setTyped} inputRef={nameRef} />
@@ -528,11 +529,11 @@ export function MongoDropCollectionModal({
       </div>
       <ModalActions>
         <Btn variant="text" onClick={onClose}>
-          Cancel
+          {t("common.cancel")}
         </Btn>
         <button type="button" className="btn btn-danger" disabled={!armed} onClick={confirm}>
           <Icon name="delete_forever" size={16} />
-          <span>{busy ? "Dropping…" : "Drop collection"}</span>
+          <span>{busy ? t("mongo.dropping") : t("mongo.dropCollTitle")}</span>
         </button>
       </ModalActions>
     </Modal>
@@ -567,6 +568,7 @@ export function MongoDropDatabaseModal({
   onDropped: (db: string) => void;
 }) {
   const toast = useToast();
+  const t = useT();
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -581,11 +583,11 @@ export function MongoDropDatabaseModal({
     void (async () => {
       try {
         await mongoDropDatabase(handleId, db);
-        toast("Dropped database “" + db + "”", "ok");
+        toast(t("mongo.droppedDb", { db }), "ok");
         onDropped(db);
         onClose();
       } catch (err) {
-        setError(appErrorMessage(err, "Could not drop the database."));
+        setError(appErrorMessage(err, t("mongo.dropDbFail")));
         setBusy(false);
       }
     })();
@@ -594,22 +596,21 @@ export function MongoDropDatabaseModal({
   return (
     <Modal
       onClose={onClose}
-      label="Drop database"
+      label={t("mongo.dropDbTitle")}
       width={480}
       className="truncate-modal"
       initialFocusRef={nameRef}
     >
       <ModalTitle>
-        <Icon name="delete_forever" size={18} style={{ color: DANGER }} /> Drop database
+        <Icon name="delete_forever" size={18} style={{ color: DANGER }} /> {t("mongo.dropDbTitle")}
       </ModalTitle>
       <div className="truncate-body">
         <p>
-          This deletes <code>{db}</code> and everything in it —{" "}
-          <b>
-            {collections.length} collection{collections.length === 1 ? "" : "s"}
-          </b>
-          , their documents, indexes and validators. The database is gone, not emptied, and there is
-          nothing to roll back.
+          {t("mongo.dropDbBodyPre")}
+          <code>{db}</code>
+          {t("mongo.dropDbBodyMid")}
+          <b>{t("mongo.dropDbBodyCount", { count: collections.length })}</b>
+          {t("mongo.dropDbBodyPost")}
         </p>
         <pre className="truncate-sql">db.dropDatabase()</pre>
         <ConfirmName name={db} env={env} typed={typed} onTyped={setTyped} inputRef={nameRef} />
@@ -621,11 +622,11 @@ export function MongoDropDatabaseModal({
       </div>
       <ModalActions>
         <Btn variant="text" onClick={onClose}>
-          Cancel
+          {t("common.cancel")}
         </Btn>
         <button type="button" className="btn btn-danger" disabled={!armed} onClick={confirm}>
           <Icon name="delete_forever" size={16} />
-          <span>{busy ? "Dropping…" : "Drop database"}</span>
+          <span>{busy ? t("mongo.dropping") : t("mongo.dropDbTitle")}</span>
         </button>
       </ModalActions>
     </Modal>
@@ -653,6 +654,7 @@ export function MongoEmptyDatabaseModal({
   onEmptied: () => void;
 }) {
   const toast = useToast();
+  const t = useT();
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -667,21 +669,13 @@ export function MongoEmptyDatabaseModal({
     void (async () => {
       try {
         const dropped = await mongoEmptyDatabase(handleId, db);
-        toast(
-          "Emptied “" +
-            db +
-            "” — dropped " +
-            dropped.length +
-            " collection" +
-            (dropped.length === 1 ? "" : "s"),
-          "ok",
-        );
+        toast(t("mongo.emptiedDb", { db, count: dropped.length }), "ok");
         onEmptied();
         onClose();
       } catch (err) {
         // The backend stops at the first refusal, so some collections may
         // already be gone; the caller refreshes either way.
-        setError(appErrorMessage(err, "Could not empty the database."));
+        setError(appErrorMessage(err, t("mongo.emptyDbFail")));
         onEmptied();
         setBusy(false);
       }
@@ -691,19 +685,23 @@ export function MongoEmptyDatabaseModal({
   return (
     <Modal
       onClose={onClose}
-      label="Empty database"
+      label={t("mongo.emptyDbTitle")}
       width={480}
       className="truncate-modal"
       initialFocusRef={nameRef}
     >
       <ModalTitle>
-        <Icon name="delete_forever" size={18} style={{ color: DANGER }} /> Empty database
+        <Icon name="delete_forever" size={18} style={{ color: DANGER }} /> {t("mongo.emptyDbTitle")}
       </ModalTitle>
       <div className="truncate-body">
         <p>
-          This drops <b>every collection</b> in <code>{db}</code> — all <b>{collections.length}</b>{" "}
-          of them, with their documents, indexes and validators. The database itself stays, so you
-          can rebuild into it.
+          {t("mongo.emptyDbBodyPre")}
+          <b>{t("mongo.emptyDbEveryColl")}</b>
+          {t("mongo.emptyDbBodyIn")}
+          <code>{db}</code>
+          {t("mongo.emptyDbCountPre")}
+          <b>{collections.length}</b>
+          {t("mongo.emptyDbBodyPost")}
         </p>
         {collections.length > 0 ? (
           <pre className="truncate-sql">
@@ -711,7 +709,8 @@ export function MongoEmptyDatabaseModal({
           </pre>
         ) : (
           <p>
-            <b>{db}</b> has no collections — there is nothing to drop.
+            <b>{db}</b>
+            {t("mongo.emptyDbNone")}
           </p>
         )}
         <ConfirmName name={db} env={env} typed={typed} onTyped={setTyped} inputRef={nameRef} />
@@ -723,11 +722,11 @@ export function MongoEmptyDatabaseModal({
       </div>
       <ModalActions>
         <Btn variant="text" onClick={onClose}>
-          Cancel
+          {t("common.cancel")}
         </Btn>
         <button type="button" className="btn btn-danger" disabled={!armed} onClick={confirm}>
           <Icon name="delete_forever" size={16} />
-          <span>{busy ? "Emptying…" : "Drop all collections"}</span>
+          <span>{busy ? t("mongo.emptying") : t("mongo.emptyAllBtn")}</span>
         </button>
       </ModalActions>
     </Modal>

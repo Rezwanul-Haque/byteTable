@@ -14,6 +14,9 @@ import {
   type TableDescriptor,
 } from "./api";
 import { baseType } from "./cqlTypes";
+// Non-render module: pull in the module-level translator. Aliased as `tr`
+// because several functions here name a `TableDescriptor` parameter `t`.
+import { t as tr } from "../../../shared/i18n";
 
 export type ExportFormat = "cql" | "json" | "csv";
 export type ExportMode = "both" | "schema" | "data";
@@ -325,7 +328,7 @@ export function previewImport(
     }
   } catch (e) {
     return {
-      error: "Parse error: " + (e as Error).message,
+      error: tr("cass.io.parseError", { message: (e as Error).message }),
       count: 0,
       columns: [],
       rows: [],
@@ -333,7 +336,7 @@ export function previewImport(
     };
   }
   if (!Array.isArray(raw) || !raw.length)
-    return { error: "No rows found to import.", count: 0, columns: [], rows: [], missingKey: 0 };
+    return { error: tr("cass.io.noRowsFound"), count: 0, columns: [], rows: [], missingKey: 0 };
   const rows = raw.map((r) => {
     const o: Row = {};
     t.columns.forEach((c) => (o[c.name] = coerce(c.type, r[c.name])));

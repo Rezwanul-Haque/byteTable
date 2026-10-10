@@ -23,6 +23,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { executeScriptText } from "../../../shared/api/engine";
 import type { TableMeta } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
+import { t } from "../../../shared/i18n";
 import type { ToastKind } from "../../../shared/ui/toastContext";
 import { useIntrospectionStore } from "../../introspection/state";
 import type { Workspace } from "../../workspaces/types";
@@ -206,7 +207,7 @@ export function useSchemaEditor({
       const meta = schema.meta[table];
       if (!meta) return;
       if (meta.columns.find((c) => c.name === newName)) {
-        toast(`Column “${newName}” already exists`, "err");
+        toast(t("smap.err.colExists", { name: newName }), "err");
         return;
       }
       ensureSnapshot();
@@ -308,12 +309,12 @@ export function useSchemaEditor({
       if (!meta || !target) return;
       const pk = target.columns.find((c) => c.pk);
       if (!pk) {
-        toast(`“${toT}” has no primary key to reference`, "err");
+        toast(t("smap.err.noPkRef", { name: toT }), "err");
         return;
       }
       const toCol = pk.name;
       if (meta.foreignKeys.find((fk) => fk.columns[0] === fromCol && fk.refTable === toT)) {
-        toast("That foreign key already exists", "err");
+        toast(t("smap.err.fkExists"), "err");
         return;
       }
       const name = `fk_${fromT}_${fromCol}`;
@@ -335,7 +336,7 @@ export function useSchemaEditor({
         },
         `fk:${fromT}:${name}`,
       );
-      toast("Foreign key added", "ok");
+      toast(t("smap.fkAdded"), "ok");
     },
     [schema, ensureSnapshot, stageOp, toast, ddl],
   );
@@ -387,7 +388,7 @@ export function useSchemaEditor({
       if (!newName || newName === oldName) return;
       if (!schema.meta[oldName]) return;
       if (schema.meta[newName]) {
-        toast(`Table “${newName}” already exists`, "err");
+        toast(t("io.tableExists", { name: newName }), "err");
         return;
       }
       ensureSnapshot();
@@ -504,7 +505,7 @@ export function useSchemaEditor({
     try {
       await executeScriptText(handleId, schemaName, pending.map((o) => o.sql).join("\n"));
     } catch (err) {
-      toast(appErrorMessage(err, "Could not apply the schema changes."), "err");
+      toast(appErrorMessage(err, t("stv.applyFail")), "err");
       setBusy(false);
       return;
     }
@@ -513,7 +514,7 @@ export function useSchemaEditor({
     setPending([]);
     setBusy(false);
     invalidate(handleId, schemaName);
-    toast(`${n} schema change${n === 1 ? "" : "s"} committed`, "ok");
+    toast(t("smap.committed", { count: n }), "ok");
     onCommitted();
   }, [pending, handleId, schemaName, invalidate, onCommitted, toast]);
 
@@ -525,7 +526,7 @@ export function useSchemaEditor({
     }
     setPending([]);
     disarm();
-    toast("Pending changes discarded");
+    toast(t("stv.discarded"));
   }, [disarm, toast]);
 
   return {

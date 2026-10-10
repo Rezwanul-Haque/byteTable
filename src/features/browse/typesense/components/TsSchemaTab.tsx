@@ -8,6 +8,7 @@
 // listing every query_by / facet_by / sort_by / curation rule that references
 // the field.
 
+import { useT } from "../../../../shared/i18n/useT";
 import { Icon } from "../../../../shared/ui/Icon";
 import { EngineBadge } from "../../../../shared/ui/EngineBadge";
 import type { CollectionDescriptor } from "../api";
@@ -21,14 +22,15 @@ export function TsSchemaTab({
   collection: CollectionDescriptor | null;
   loading: boolean;
 }) {
+  const t = useT();
   if (!collection) {
     return loading ? (
-      <TsLoading what="the schema" />
+      <TsLoading what="tsx.whatSchema" />
     ) : (
       <div className="ts-empty">
         <Icon name="schema" size={26} style={{ color: "var(--text-faint)" }} />
-        <p>No collection selected.</p>
-        <span className="ts-empty-hint">Pick a collection in the sidebar to see its schema.</span>
+        <p>{t("tsx.schema.noCollection")}</p>
+        <span className="ts-empty-hint">{t("tsx.schema.noCollectionHint")}</span>
       </div>
     );
   }
@@ -37,12 +39,15 @@ export function TsSchemaTab({
     <div className="rdash" data-screen-label={"Typesense schema: " + collection.name}>
       <div className="rdash-head">
         <EngineBadge engine="typesense" size={22} />
-        <h2>{collection.name} · schema</h2>
+        <h2>{t("tsx.schema.head", { name: collection.name })}</h2>
         <span className="structure-sub">
-          {tsCount(collection.numDocuments)} documents · {collection.fields.length} fields
+          {t("tsx.schema.sub", {
+            docs: tsCount(collection.numDocuments),
+            fields: collection.fields.length,
+          })}
           {collection.defaultSortingField ? (
             <>
-              {" · default_sorting_field "}
+              {t("tsx.schema.defaultSort")}
               <b>{collection.defaultSortingField}</b>
             </>
           ) : null}
@@ -51,18 +56,18 @@ export function TsSchemaTab({
       </div>
       <div className="rdash-panel">
         <h3>
-          <Icon name="schema" size={15} /> Fields
+          <Icon name="schema" size={15} /> {t("tsx.schema.fields")}
         </h3>
         <div className="ts-tablewrap">
           <table className="structure-table" style={{ width: "100%" }}>
             <thead>
               <tr>
-                <th>Field</th>
-                <th>Type</th>
-                <th>Facet</th>
-                <th>Sort</th>
-                <th>Index</th>
-                <th>Optional</th>
+                <th>{t("tsx.schema.thField")}</th>
+                <th>{t("tsx.schema.thType")}</th>
+                <th>{t("tsx.schema.thFacet")}</th>
+                <th>{t("tsx.schema.thSort")}</th>
+                <th>{t("tsx.schema.thIndex")}</th>
+                <th>{t("tsx.schema.thOptional")}</th>
               </tr>
             </thead>
             <tbody>

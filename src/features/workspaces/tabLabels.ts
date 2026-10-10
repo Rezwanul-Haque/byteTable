@@ -4,7 +4,12 @@
 // (it has to name the exact tab it is about to discard, ordinal included) and a
 // component module may only export components (react-refresh rule).
 
+import { t } from "../../shared/i18n";
 import type { Tab } from "./types";
+
+// Labels are built by module-level functions (the close confirm needs them
+// outside React), so they read `t` directly at call time; components calling
+// these re-render on locale change through `useT()`.
 
 /** One tab's strip label + hover text. */
 export interface TabLabel {
@@ -23,17 +28,17 @@ function tabTitle(tab: Tab, currentSchema: string): string {
     case "sql":
       return tab.title;
     case "map":
-      return tab.schema + " · map";
+      return t("ws.tabTitle.map", { schema: tab.schema });
     case "processes":
-      return "Processes";
+      return t("ws.tabTitle.processes");
     case "diff":
-      return "Schema diff";
+      return t("ws.tabTitle.diff");
     case "object":
       return tab.schema === currentSchema ? tab.name : tab.schema + "." + tab.name;
     case "objexplorer":
-      return "Objects";
+      return t("ws.tabTitle.objects");
     case "tableoverview":
-      return tab.schema + " · overview";
+      return t("ws.tabTitle.overview", { schema: tab.schema });
   }
 }
 

@@ -10,6 +10,7 @@ import { useMemo, useRef, useState } from "react";
 
 import { exportSave } from "../../../../shared/api/engine";
 import { isAppErrorPayload } from "../../../../shared/api/error";
+import { useT } from "../../../../shared/i18n/useT";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
@@ -58,24 +59,24 @@ interface ExportModalProps {
   onClose: () => void;
 }
 
-const EXPORT_CONTENTS: { id: ExportMode; label: string; icon: string; desc: string }[] = [
+const EXPORT_CONTENTS: { id: ExportMode; labelKey: string; icon: string; descKey: string }[] = [
   {
     id: "both",
-    label: "Structure + items",
+    labelKey: "dyn.io.contentBoth",
     icon: "database",
-    desc: "Table definition and every item",
+    descKey: "dyn.io.descBoth",
   },
   {
     id: "schema",
-    label: "Structure only",
+    labelKey: "dyn.io.contentSchema",
     icon: "account_tree",
-    desc: "CreateTable definition — no items",
+    descKey: "dyn.io.descSchema",
   },
   {
     id: "data",
-    label: "Items only",
+    labelKey: "dyn.io.contentData",
     icon: "table_rows",
-    desc: "Items array — no table definition",
+    descKey: "dyn.io.descData",
   },
 ];
 const EXPORT_FORMATS: { id: ExportFormat; label: string; icon: string }[] = [
@@ -103,6 +104,7 @@ export function DynamoExportModal({
   );
   const cancelled = useRef(false);
   const toast = useToast();
+  const t = useT();
 
   const isAll = scope === "all";
   const isCsv = format === "csv";
@@ -188,7 +190,7 @@ export function DynamoExportModal({
           ],
         });
       } catch {
-        toast("Exporting requires the ByteTable desktop app.", "info");
+        toast(t("dyn.exportNeedApp"), "info");
         onClose();
         return;
       }
@@ -201,19 +203,19 @@ export function DynamoExportModal({
       }
       await exportSave(path, content);
       setStage("done");
-      toast("Exported " + (path.split(/[\\/]/).pop() ?? fname), "ok");
+      toast(t("dyn.io.exportedFile", { file: path.split(/[\\/]/).pop() ?? fname }), "ok");
       setTimeout(() => {
         if (!cancelled.current) onClose();
       }, 700);
     } catch (e) {
-      toast(isAppErrorPayload(e) ? e.message : "Export requires the desktop app", "err");
+      toast(isAppErrorPayload(e) ? e.message : t("dyn.io.exportFailApp"), "err");
       onClose();
     }
   };
 
   return (
     <Modal
-      label={isAll ? "Export all tables" : "Export " + table}
+      label={isAll ? t("dyn.io.exportAllLabel") : t("dyn.io.exportTable", { table: table ?? "" })}
       onClose={() => {
         if (stage !== "building") onClose();
       }}
@@ -227,19 +229,21 @@ export function DynamoExportModal({
             style={{ color: "var(--accent)" }}
           />
           {stage === "done"
-            ? "Export complete"
+            ? t("dyn.io.exportDone")
             : stage === "choose"
               ? isAll
-                ? "Export all tables"
-                : "Export " + table
-              : "Exporting…"}
+                ? t("dyn.io.exportAllLabel")
+                : t("dyn.io.exportTable", { table: table ?? "" })
+              : t("dyn.io.exporting")}
         </span>
-        {stage !== "building" ? <IconBtn icon="close" onClick={onClose} title="Close" /> : null}
+        {stage !== "building" ? (
+          <IconBtn icon="close" onClick={onClose} title={t("common.close")} />
+        ) : null}
       </ModalTitle>
 
       {stage === "choose" ? (
         <>
-          <div className="ddb-io-label">Format</div>
+          <div className="ddb-io-label">{t("dyn.io.formatLabel")}</div>
           <div className="seg ddb-io-seg">
             {EXPORT_FORMATS.map((f) => {
               const disabled = isAll && f.id === "csv";
@@ -249,7 +253,7 @@ export function DynamoExportModal({
                   type="button"
                   className={"seg-btn" + (format === f.id ? " active" : "")}
                   disabled={disabled}
-                  title={disabled ? "CSV is per-table only" : ""}
+                  title={disabled ? t("dyn.io.csvPerTable") : ""}
                   onClick={() => setFormat(f.id)}
                 >
                   <Icon name={f.icon} size={14} /> {f.label}
@@ -263,18 +267,15 @@ export function DynamoExportModal({
               with different attributes. */}
           {isAll ? (
             <div className="ddb-io-note">
-              <Icon name="info" size={13} /> CSV exports one table at a time — use a table's own
-              Export for it.
+              <Icon name="info" size={13} /> {t("dyn.io.csvNote")}
             </div>
           ) : null}
 
-          <div className="ddb-io-label">Contents</div>
+          <div className="ddb-io-label">{t("dyn.io.contentsLabel")}</div>
           {isCsv ? (
             <div className="ddb-export-file" style={{ marginTop: 0 }}>
               <Icon name="table_rows" size={15} style={{ color: "var(--text-dim)" }} />
-              <span className="ddb-export-file-name">
-                CSV carries items only — nested maps/lists become JSON strings.
-              </span>
+              <span className="ddb-export-file-name">{t("dyn.io.csvCarries")}</span>
             </div>
           ) : (
             <div className="ddb-export-choose">
@@ -297,8 +298,8 @@ export function DynamoExportModal({
                     style={{ color: mode === c.id ? "var(--accent)" : "var(--text-dim)" }}
                   />
                   <span className="ddb-export-opt-text">
-                    <b>{c.label}</b>
-                    <span>{c.desc}</span>
+                    <b>{t(c.labelKey as "dyn.io.contentBoth")}</b>
+                    <span>{t(c.descKey as "dyn.io.descBoth")}</span>
                   </span>
                 </button>
               ))}
@@ -312,15 +313,19 @@ export function DynamoExportModal({
               style={{ color: "var(--text-dim)" }}
             />
             <span className="ddb-export-file-name">{fname}</span>
-            {isAll ? <span className="ddb-export-cur">{tables.length} tables</span> : null}
+            {isAll ? (
+              <span className="ddb-export-cur">
+                {t("dyn.io.nTables", { count: tables.length })}
+              </span>
+            ) : null}
           </div>
           <ModalActions>
             <div style={{ flex: 1 }} />
             <Btn variant="text" onClick={onClose}>
-              Cancel
+              {t("common.cancel")}
             </Btn>
             <Btn variant="filled" icon="download" onClick={() => void build()}>
-              Export
+              {t("dyn.io.exportBtn")}
             </Btn>
           </ModalActions>
         </>
@@ -341,12 +346,12 @@ export function DynamoExportModal({
             <div className="ddb-export-bar-fill" style={{ width: pct + "%" }} />
           </div>
           <div className="ddb-export-meta">
-            <span>{stage === "done" ? "Done" : pct + "%"}</span>
+            <span>{stage === "done" ? t("dyn.io.done") : pct + "%"}</span>
             <span>
               {effMode === "schema"
-                ? "structure only"
+                ? t("dyn.io.structureOnly")
                 : done
-                  ? done.toLocaleString() + " items"
+                  ? t("dyn.statusItems", { count: done.toLocaleString() })
                   : ""}
             </span>
           </div>
@@ -360,7 +365,7 @@ export function DynamoExportModal({
                   onClose();
                 }}
               >
-                Cancel
+                {t("common.cancel")}
               </Btn>
             </ModalActions>
           ) : null}
@@ -393,13 +398,14 @@ export function DynamoImportModal({
   onClose,
   onDone,
 }: ImportModalProps) {
-  const t = tableDescriptor;
+  const td = tableDescriptor;
   const [format, setFormat] = useState<"json" | "csv">("json");
   const [text, setText] = useState("");
   const [prev, setPrev] = useState<Preview | null>(null);
   const [busy, setBusy] = useState<{ pct: number; rows: number; total: number } | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const toast = useToast();
+  const t = useT();
 
   const runPreview = (fmt: "json" | "csv", txt: string) => {
     if (!txt.trim()) {
@@ -415,16 +421,16 @@ export function DynamoImportModal({
     }
     if (!items.length) {
       setPrev({
-        error:
-          "No items found. Paste " +
-          (fmt === "csv" ? "CSV with a header row" : "a JSON array of items") +
-          ".",
+        error: t(
+          "dyn.io.noItemsFound",
+          fmt === "csv" ? { what: t("dyn.io.whatCsv") } : { what: t("dyn.io.whatJson") },
+        ),
       });
       return;
     }
     const columns = attributeUnion(items);
-    const pk = t.keySchema.pk;
-    const sk = t.keySchema.sk;
+    const pk = td.keySchema.pk;
+    const sk = td.keySchema.sk;
     const missingKey = items.filter((it) => !(pk in it) || (sk && !(sk in it))).length;
     setPrev({ items, count: items.length, columns, missingKey });
   };
@@ -457,17 +463,14 @@ export function DynamoImportModal({
         setBusy({ pct: Math.round((rows / items.length) * 100), rows, total: items.length });
       }
     } catch (e) {
-      toast(isAppErrorPayload(e) ? e.message : "Import requires the desktop app", "err");
+      toast(isAppErrorPayload(e) ? e.message : t("dyn.io.importFailApp"), "err");
       setBusy(null);
       return;
     }
     toast(
-      "BatchWriteItem · imported " +
-        written.toLocaleString() +
-        " item" +
-        (written === 1 ? "" : "s") +
-        " into " +
-        table,
+      written === 1
+        ? t("dyn.io.imported1", { count: written, table })
+        : t("dyn.io.importedN", { count: written, table }),
       "ok",
     );
     onDone();
@@ -475,23 +478,22 @@ export function DynamoImportModal({
 
   const placeholder =
     format === "csv"
-      ? "Paste CSV — first row is the header:\n" +
-        [t.keySchema.pk, t.keySchema.sk].filter(Boolean).join(",") +
-        ",…"
-      : 'Paste a JSON array of items (plain or DynamoDB-typed):\n[\n  { "' +
-        t.keySchema.pk +
+      ? t("dyn.io.phCsvPre") + [td.keySchema.pk, td.keySchema.sk].filter(Boolean).join(",") + ",…"
+      : t("dyn.io.phJsonPre") +
+        '[\n  { "' +
+        td.keySchema.pk +
         '": "…"' +
-        (t.keySchema.sk ? ', "' + t.keySchema.sk + '": "…"' : "") +
+        (td.keySchema.sk ? ', "' + td.keySchema.sk + '": "…"' : "") +
         " }\n]";
 
   return (
-    <Modal label={"Import items into " + table} onClose={onClose} className="ddb-import-modal">
+    <Modal label={t("dyn.io.importInto", { table })} onClose={onClose} className="ddb-import-modal">
       <ModalTitle>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-          <Icon name="upload" size={17} style={{ color: "var(--accent)" }} /> Import items into{" "}
-          {table}
+          <Icon name="upload" size={17} style={{ color: "var(--accent)" }} />{" "}
+          {t("dyn.io.importInto", { table })}
         </span>
-        <IconBtn icon="close" onClick={onClose} title="Close" />
+        <IconBtn icon="close" onClick={onClose} title={t("common.close")} />
       </ModalTitle>
 
       <div className="ddb-import-format">
@@ -518,13 +520,11 @@ export function DynamoImportModal({
           </button>
         </div>
         <span className="ddb-io-hint">
-          {format === "json"
-            ? "plain or DynamoDB-typed — auto-detected"
-            : "numbers / booleans / JSON auto-typed"}
+          {format === "json" ? t("dyn.io.hintJson") : t("dyn.io.hintCsv")}
         </span>
         <div style={{ flex: 1 }} />
         <Btn icon="folder_open" variant="tonal" small onClick={() => fileRef.current?.click()}>
-          Choose file…
+          {t("dyn.io.chooseFile")}
         </Btn>
         <input
           ref={fileRef}
@@ -556,20 +556,27 @@ export function DynamoImportModal({
             <div className="ddb-import-preview-bar">
               <span className="ddb-import-ready">
                 <Icon name="check_circle" size={14} style={{ color: "var(--accent)" }} />{" "}
-                {(prev.count ?? 0).toLocaleString()} item{prev.count === 1 ? "" : "s"} ready
+                {prev.count === 1
+                  ? t("dyn.io.ready1", { count: (prev.count ?? 0).toLocaleString() })
+                  : t("dyn.io.readyN", { count: (prev.count ?? 0).toLocaleString() })}
               </span>
               <span className="ddb-import-match">
-                {prev.columns?.length ?? 0} attribute{prev.columns?.length === 1 ? "" : "s"}
+                {(prev.columns?.length ?? 0) === 1
+                  ? t("dyn.io.attrs1", { count: prev.columns?.length ?? 0 })
+                  : t("dyn.io.attrsN", { count: prev.columns?.length ?? 0 })}
               </span>
               {prev.missingKey ? (
                 <span className="ddb-import-unknown">
-                  <Icon name="warning" size={12} /> {prev.missingKey} missing{" "}
-                  {t.keySchema.sk ? "PK/SK" : "PK"}
+                  <Icon name="warning" size={12} />{" "}
+                  {t("dyn.io.missingKey", {
+                    count: prev.missingKey,
+                    which: td.keySchema.sk ? "PK/SK" : "PK",
+                  })}
                 </span>
               ) : null}
             </div>
             <div className="ddb-import-preview-grid">
-              <DynamoItemGrid items={(prev.items ?? []).slice(0, 5)} keySchema={t.keySchema} />
+              <DynamoItemGrid items={(prev.items ?? []).slice(0, 5)} keySchema={td.keySchema} />
             </div>
           </div>
         )
@@ -583,18 +590,16 @@ export function DynamoImportModal({
           <div className="ddb-export-meta">
             <span>BatchWriteItem… {busy.pct}%</span>
             <span>
-              {busy.rows.toLocaleString()} / {busy.total.toLocaleString()} items
+              {busy.rows.toLocaleString()} /{" "}
+              {t("dyn.statusItems", { count: busy.total.toLocaleString() })}
             </span>
           </div>
         </div>
       ) : (
         <ModalActions>
-          <div className="ddb-import-note">
-            Items are written with PutItem (BatchWriteItem). DynamoDB is schemaless — extra
-            attributes are kept; items missing a key are rejected by the API.
-          </div>
+          <div className="ddb-import-note">{t("dyn.io.note")}</div>
           <Btn variant="text" onClick={onClose}>
-            Cancel
+            {t("common.cancel")}
           </Btn>
           <Btn
             variant="filled"
@@ -602,7 +607,7 @@ export function DynamoImportModal({
             onClick={() => void doImport()}
             disabled={!prev || !!prev.error || !prev.count}
           >
-            Import
+            {t("dyn.io.importBtn")}
           </Btn>
         </ModalActions>
       )}

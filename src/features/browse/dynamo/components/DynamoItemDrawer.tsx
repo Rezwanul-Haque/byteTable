@@ -20,6 +20,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { useT } from "../../../../shared/i18n/useT";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
@@ -66,12 +67,22 @@ type ItemCopyFormat = "json" | "ddb" | "csv" | "cli" | "key";
  * row because every targeted DynamoDB operation — GetItem, DeleteItem, a Query —
  * takes the key and nothing else.
  */
-const ITEM_COPY_ITEMS: { format: ItemCopyFormat; label: string; icon: string }[] = [
-  { format: "json", label: "Copy as JSON", icon: "data_object" },
-  { format: "ddb", label: "Copy as DynamoDB JSON", icon: "code_blocks" },
-  { format: "csv", label: "Copy as CSV", icon: "table_view" },
-  { format: "cli", label: "Copy as AWS CLI put-item", icon: "terminal" },
-  { format: "key", label: "Copy the primary key", icon: "vpn_key" },
+const ITEM_COPY_ITEMS: {
+  format: ItemCopyFormat;
+  labelKey: string;
+  doneKey: string;
+  icon: string;
+}[] = [
+  {
+    format: "json",
+    labelKey: "dyn.id.copyJson",
+    doneKey: "dyn.id.copiedJson",
+    icon: "data_object",
+  },
+  { format: "ddb", labelKey: "dyn.id.copyDdb", doneKey: "dyn.id.copiedDdb", icon: "code_blocks" },
+  { format: "csv", labelKey: "dyn.id.copyCsv", doneKey: "dyn.id.copiedCsv", icon: "table_view" },
+  { format: "cli", labelKey: "dyn.id.copyCli", doneKey: "dyn.id.copiedCli", icon: "terminal" },
+  { format: "key", labelKey: "dyn.id.copyKey", doneKey: "dyn.id.copiedKey", icon: "vpn_key" },
 ];
 
 /** One CSV field: objects serialise to JSON, and anything risky gets quoted. */
@@ -81,12 +92,12 @@ function csvField(v: unknown): string {
   return /[",\n\r]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
 }
 
-const JSON_FORMATS: { id: JsonFormat; label: string; hint: string }[] = [
-  { id: "plain", label: "JSON", hint: "The item as plain JSON" },
+const JSON_FORMATS: { id: JsonFormat; label: string; hintKey: string }[] = [
+  { id: "plain", label: "JSON", hintKey: "dyn.id.hintPlain" },
   {
     id: "ddb",
     label: "DynamoDB JSON",
-    hint: "Type-tagged AttributeValues — the wire form the AWS CLI and BatchWriteItem take",
+    hintKey: "dyn.id.hintDdb",
   },
 ];
 
@@ -149,6 +160,7 @@ function AttrValueField({
    */
   asTimestamp?: boolean;
 }) {
+  const t = useT();
   if (type === "NULL") return <input className="ri-input" value="null" readOnly disabled />;
   // An `S` holding an ISO-8601 timestamp gets the calendar + clock editor the
   // SQL inspector gives a temporal column. DynamoDB declares no such type, so
@@ -178,7 +190,7 @@ function AttrValueField({
     return (
       <Select
         className="ddb-val-select"
-        aria-label="Boolean value"
+        aria-label={t("dyn.id.boolAria")}
         mono={false}
         value={raw === "true" ? "true" : "false"}
         options={[
@@ -202,7 +214,7 @@ function AttrValueField({
       placeholder={placeholder}
       spellCheck={false}
       inputMode={type === "N" ? "decimal" : "text"}
-      aria-label="Attribute value"
+      aria-label={t("dyn.id.attrValueAria")}
     />
   );
 }
@@ -298,6 +310,7 @@ export function DynamoItemDrawer({
   // than re-bound on every keystroke in a field.
   const stageRef = useRef<() => void>(() => {});
   const toast = useToast();
+  const t = useT();
 
   // Which shape the preview renders. Plain JSON is what the item IS; DynamoDB
   // JSON is what the wire carries — the form you paste into the AWS CLI, a
@@ -414,7 +427,7 @@ export function DynamoItemDrawer({
     if (!draftAttr) return null;
     const nm = draftAttr.name.trim();
     if (nm === "") return null; // nothing typed yet — not an error, just not ready
-    if (rows.some((r) => r.name === nm)) return "This item already has a “" + nm + "” attribute.";
+    if (rows.some((r) => r.name === nm)) return t("dyn.id.dupAttr", { name: nm });
     if (draftAttr.type === "M" || draftAttr.type === "L" || isSetType(draftAttr.type)) {
       try {
         // `ddbCoerce` carries the set rules too (non-empty, homogeneous, no
@@ -424,9 +437,9 @@ export function DynamoItemDrawer({
         ddbCoerce(draftAttr.type, draftAttr.raw);
       } catch (err) {
         if (isSetType(draftAttr.type)) {
-          return err instanceof Error ? err.message : "That is not a valid set.";
+          return err instanceof Error ? err.message : t("dyn.id.badSet");
         }
-        return "The value is not valid JSON for a " + (draftAttr.type === "M" ? "map" : "list");
+        return draftAttr.type === "M" ? t("dyn.id.badJsonMap") : t("dyn.id.badJsonList");
       }
     }
     return null;
@@ -484,14 +497,11 @@ export function DynamoItemDrawer({
   // beside the others, and abandoned without ever reaching the table.
   const stage = () => {
     if (invalid) {
-      toast("Invalid JSON in attribute “" + invalid + "”", "err");
+      toast(t("dyn.id.badJsonIn", { name: invalid }), "err");
       return;
     }
     if (create && !keysFilled) {
-      toast(
-        table.keySchema.sk ? "Fill in the partition key and sort key" : "Fill in the partition key",
-        "err",
-      );
+      toast(table.keySchema.sk ? t("dyn.id.fillPkSk") : t("dyn.id.fillPk"), "err");
       return;
     }
     setDirty(false);
@@ -570,28 +580,28 @@ export function DynamoItemDrawer({
   /** One field's value, as it reads in the editor. */
   const copyValue = (raw: string) => {
     void navigator.clipboard.writeText(raw).then(
-      () => toast("Copied", "ok"),
-      () => toast("Couldn't copy to clipboard", "err"),
+      () => toast(t("dyn.id.copied"), "ok"),
+      () => toast(t("uix.copy.fail"), "err"),
     );
   };
 
-  const copyItem = (format: ItemCopyFormat, label: string) => {
+  const copyItem = (format: ItemCopyFormat, doneKey: string) => {
     void navigator.clipboard.writeText(copyAs(format)).then(
-      () => toast(label.replace(/^Copy /, "Copied "), "ok"),
-      () => toast("Couldn't copy to clipboard", "err"),
+      () => toast(t(doneKey as "dyn.id.copiedJson"), "ok"),
+      () => toast(t("uix.copy.fail"), "err"),
     );
   };
 
   const copyJson = async () => {
     try {
       await navigator.clipboard.writeText(shownJson);
-      toast("Copied " + (jsonFormat === "plain" ? "JSON" : "DynamoDB JSON"), "ok");
+      toast(jsonFormat === "plain" ? t("dyn.id.copiedPlain") : t("dyn.id.copiedDdbJson"), "ok");
     } catch {
-      toast("Couldn't copy to clipboard", "err");
+      toast(t("uix.copy.fail"), "err");
     }
   };
 
-  const verb = create ? "New item" : "Edit item";
+  const verb = create ? t("dyn.id.newItem") : t("dyn.id.editItem");
   // The key values, as the header subline — the drawer's answer to the row
   // inspector's `pkLabel`. Empty on a new item until the user types them.
   const keyLabel = keyAttrs
@@ -609,14 +619,14 @@ export function DynamoItemDrawer({
             {keyLabel ? " · " + keyLabel : ""}
           </span>
         </div>
-        {dirty ? <span className="ri-dot" title="Unsaved changes" /> : null}
+        {dirty ? <span className="ri-dot" title={t("dyn.id.unsavedTitle")} /> : null}
         {/* Copy this item to the clipboard in one of the DynamoDB-shaped forms. */}
         <div className="ri-copyrow" ref={copyRef}>
           <button
             type="button"
             className={"ri-close" + (copyOpen ? " on" : "")}
-            title="Copy this item to the clipboard"
-            aria-label="Copy item"
+            title={t("dyn.id.copyTitle")}
+            aria-label={t("dyn.id.copyAria")}
             onClick={() => setCopyOpen(!copyOpen)}
           >
             <Icon name="content_copy" size={16} />
@@ -629,11 +639,11 @@ export function DynamoItemDrawer({
                   className="ri-copyrow-item"
                   onClick={() => {
                     setCopyOpen(false);
-                    copyItem(it.format, it.label);
+                    copyItem(it.format, it.doneKey);
                   }}
                 >
                   <Icon name={it.icon} size={13} />
-                  {it.label}
+                  {t(it.labelKey as "dyn.id.copyJson")}
                 </div>
               ))}
             </div>
@@ -643,14 +653,14 @@ export function DynamoItemDrawer({
           <button
             type="button"
             className="ri-close ddb-ri-delete"
-            title={"Delete this item from " + table.name}
-            aria-label="Delete item"
+            title={t("dyn.id.deleteTitle", { table: table.name })}
+            aria-label={t("dyn.id.deleteAria")}
             onClick={onDelete}
           >
             <Icon name="delete" size={16} />
           </button>
         ) : null}
-        <button type="button" className="ri-close" title="Close (Esc)" onClick={onClose}>
+        <button type="button" className="ri-close" title={t("dyn.id.closeTitle")} onClick={onClose}>
           <Icon name="close" size={16} />
         </button>
       </div>
@@ -685,8 +695,8 @@ export function DynamoItemDrawer({
                 ) : (
                   <Select
                     className="ddb-type-sel"
-                    title="Attribute type"
-                    aria-label="Attribute type"
+                    title={t("dyn.id.typeTitle")}
+                    aria-label={t("dyn.id.typeTitle")}
                     value={r.type}
                     options={DDB_TYPES.map((ty) => ({ value: ty, label: ty }))}
                     onChange={(v) => changeType(i, v)}
@@ -700,8 +710,8 @@ export function DynamoItemDrawer({
                 <button
                   type="button"
                   className="ri-mini-btn ri-copy"
-                  title="Copy value"
-                  aria-label={"Copy " + r.name + " value"}
+                  title={t("dyn.copyValue")}
+                  aria-label={t("dyn.copyValueAria", { name: r.name })}
                   onClick={() => copyValue(r.raw)}
                 >
                   <Icon name="content_copy" size={12} />
@@ -711,7 +721,7 @@ export function DynamoItemDrawer({
                     type="button"
                     className="ri-mini-btn"
                     onClick={() => removeRow(i)}
-                    title="Remove attribute"
+                    title={t("dyn.id.removeAttr")}
                   >
                     <Icon name="close" size={12} />
                   </button>
@@ -726,7 +736,8 @@ export function DynamoItemDrawer({
                       key, so naming each one "primary key" (the SQL wording
                       this shell came with) would be wrong twice over. */}
                   <span className="ri-pk-note">
-                    <Icon name="lock" size={11} /> {badge === "sk" ? "sort key" : "partition key"}
+                    <Icon name="lock" size={11} />{" "}
+                    {badge === "sk" ? t("dyn.id.skNote") : t("dyn.id.pkNote")}
                   </span>
                 </div>
               ) : (
@@ -736,7 +747,13 @@ export function DynamoItemDrawer({
                   onChange={(raw) => setRow(i, { raw })}
                   asTimestamp={tsAttrs.has(r.name)}
                   placeholder={
-                    keyRow ? (badge ? badge.toUpperCase() + " value" : "key value") : undefined
+                    keyRow
+                      ? badge === "pk"
+                        ? t("dyn.id.pkPh")
+                        : badge === "sk"
+                          ? t("dyn.id.skPh")
+                          : t("dyn.id.keyPh")
+                      : undefined
                   }
                 />
               )}
@@ -748,21 +765,21 @@ export function DynamoItemDrawer({
           <div className="ddb-attr-new">
             <div className="ddb-attr-new-head">
               <Icon name="add" size={14} style={{ color: "var(--accent)" }} />
-              <span>New attribute</span>
+              <span>{t("dyn.id.newAttr")}</span>
               <div style={{ flex: 1 }} />
               <IconBtn
                 icon="close"
                 size={16}
-                title="Discard this attribute"
+                title={t("dyn.id.discardAttr")}
                 onClick={() => setDraftAttr(null)}
               />
             </div>
             <div className="ddb-attr-new-grid">
               <label>
-                Type
+                {t("dyn.typeLabel")}
                 <Select
                   className="sel-block"
-                  aria-label="Attribute type"
+                  aria-label={t("dyn.id.typeTitle")}
                   value={draftAttr.type}
                   options={DDB_TYPES.map((ty) => ({ value: ty, label: ty }))}
                   // Retype before the attribute exists, so switching to BOOL or
@@ -771,7 +788,7 @@ export function DynamoItemDrawer({
                 />
               </label>
               <label>
-                Name
+                {t("dyn.id.nameLabel")}
                 <input
                   ref={newNameRef}
                   className="ri-input"
@@ -782,16 +799,16 @@ export function DynamoItemDrawer({
                     if (e.key === "Enter") addAttr();
                   }}
                   spellCheck={false}
-                  aria-label="Attribute name"
+                  aria-label={t("dyn.id.nameAria")}
                 />
               </label>
               <label className="ddb-attr-new-val">
-                Value
+                {t("dyn.id.valueLabel")}
                 <AttrValueField
                   type={draftAttr.type}
                   raw={draftAttr.raw}
                   onChange={(raw) => patchDraft({ raw })}
-                  placeholder={draftAttr.type === "N" ? "0" : "value"}
+                  placeholder={draftAttr.type === "N" ? "0" : t("dyn.id.valuePh")}
                 />
               </label>
             </div>
@@ -802,10 +819,10 @@ export function DynamoItemDrawer({
             ) : null}
             <div className="ddb-attr-new-foot">
               <Btn variant="text" small onClick={() => setDraftAttr(null)}>
-                Cancel
+                {t("common.cancel")}
               </Btn>
               <Btn icon="add" variant="filled" small disabled={!draftReady} onClick={addAttr}>
-                Add attribute
+                {t("dyn.id.addAttr")}
               </Btn>
             </div>
           </div>
@@ -815,19 +832,19 @@ export function DynamoItemDrawer({
             className="ddb-add-attr-btn"
             onClick={() => setDraftAttr({ name: "", type: "S", raw: "" })}
           >
-            <Icon name="add" size={15} /> Add attribute
+            <Icon name="add" size={15} /> {t("dyn.id.addAttr")}
           </button>
         )}
 
         <div className="ddb-json-head">
-          <div className="ddb-json-tabs" role="tablist" aria-label="Preview format">
+          <div className="ddb-json-tabs" role="tablist" aria-label={t("dyn.id.previewAria")}>
             {JSON_FORMATS.map((f) => (
               <button
                 key={f.id}
                 type="button"
                 role="tab"
                 aria-selected={jsonFormat === f.id}
-                title={f.hint}
+                title={t(f.hintKey as "dyn.id.hintPlain")}
                 className={"ddb-json-tab" + (jsonFormat === f.id ? " on" : "")}
                 onClick={() => setJsonFormat(f.id)}
               >
@@ -836,15 +853,15 @@ export function DynamoItemDrawer({
             ))}
           </div>
           {invalid ? (
-            <span className="ddb-json-err">invalid JSON in “{invalid}”</span>
+            <span className="ddb-json-err">{t("dyn.id.invalidJsonIn", { name: invalid })}</span>
           ) : (
             <button
               type="button"
               className="ri-mini-btn"
-              title={"Copy the " + (jsonFormat === "plain" ? "JSON" : "DynamoDB JSON")}
+              title={jsonFormat === "plain" ? t("dyn.id.copyTheJson") : t("dyn.id.copyTheDdbJson")}
               onClick={() => void copyJson()}
             >
-              <Icon name="content_copy" size={12} /> copy
+              <Icon name="content_copy" size={12} /> {t("dyn.id.copySmall")}
             </button>
           )}
         </div>
@@ -866,30 +883,31 @@ export function DynamoItemDrawer({
             <Icon name="edit_note" size={15} style={{ color: "var(--accent)" }} />
             <span className="ri-foot-n">
               {create
-                ? "New item"
-                : changedCount + " field" + (changedCount === 1 ? "" : "s") + " changed"}
+                ? t("dyn.id.newItem")
+                : changedCount === 1
+                  ? t("dyn.id.fieldsChanged1", { count: changedCount })
+                  : t("dyn.id.fieldsChangedN", { count: changedCount })}
             </span>
             <div style={{ flex: 1 }} />
             {/* Discard resets the fields and leaves the drawer open — the same
                 thing it does in the SQL inspector. Escape is what closes. */}
             <button type="button" className="ri-btn ghost" onClick={discard}>
-              Discard
+              {t("dyn.discard")}
             </button>
             <button
               type="button"
               className="ri-btn primary"
               disabled={(!create && !dirty) || !!invalid || !keysFilled}
-              title="Stage into the save bar — commit with ⌘S"
+              title={t("dyn.id.stageTitle")}
               onClick={stage}
             >
               <Icon name="playlist_add_check" size={14} />
-              {create ? "Stage new item" : "Stage changes"}
+              {create ? t("dyn.id.stageNew") : t("dyn.id.stageChanges")}
             </button>
           </>
         ) : (
           <span className="ri-foot-hint">
-            <Icon name="info" size={13} /> Edits are staged first — nothing is written until you
-            save (⌘S)
+            <Icon name="info" size={13} /> {t("dyn.id.footHint")}
           </span>
         )}
       </div>

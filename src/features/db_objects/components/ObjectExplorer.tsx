@@ -16,6 +16,8 @@ import { ENV_COLOR } from "../../../shared/ui/envColors";
 import { useToast } from "../../../shared/ui/toastContext";
 import { appErrorMessage } from "../../../shared/api/error";
 import { exportSave } from "../../../shared/api/engine";
+import { useT } from "../../../shared/i18n/useT";
+import type { StringKey } from "../../../shared/i18n";
 import { objectsKey, useIntrospectionStore } from "../../introspection/state";
 import { useWorkspacesStore } from "../../workspaces/state";
 import type { Workspace } from "../../workspaces/types";
@@ -48,8 +50,20 @@ const ROW_HEIGHT = 36; // fixed row height (matches .oe-row) for virtualization
 const ROW_OVERSCAN = 12;
 const NUMERIC: ReadonlySet<ColKey> = new Set<ColKey>(["argCount", "approxRows"]);
 
+/** The translate function, threaded into the module-level formatters below. */
+type Translate = ReturnType<typeof useT>;
+
+/** Object kind → its section-group key (used for the facet label/filter text). */
+const GROUP_KEY: Record<DbObjectKind, StringKey> = {
+  view: "obj.group.views",
+  materialized_view: "obj.group.materializedViews",
+  function: "obj.group.functions",
+  procedure: "obj.group.procedures",
+  trigger: "obj.group.triggers",
+};
+
 /** One-line summary for the Detail/Comment column + filter text. */
-function rowDetail(info: DbObjectInfo): string {
+function rowDetail(info: DbObjectInfo, t: Translate): string {
   switch (info.kind) {
     case "function":
       return info.returns ? `→ ${info.returns}` : (info.detail ?? "");
@@ -62,67 +76,71 @@ function rowDetail(info: DbObjectInfo): string {
       );
     case "materialized_view":
       return [
-        info.approxRows != null ? `${info.approxRows.toLocaleString()} rows` : "",
+        info.approxRows != null
+          ? t("obj.detail.rows", { count: info.approxRows.toLocaleString() })
+          : "",
         info.size ?? "",
-        info.dependsOn.length ? `reads ${info.dependsOn.join(", ")}` : "",
+        info.dependsOn.length ? t("obj.detail.reads", { list: info.dependsOn.join(", ") }) : "",
       ]
         .filter(Boolean)
         .join(" · ");
     case "view":
-      return info.dependsOn.length ? `reads ${info.dependsOn.join(", ")}` : (info.detail ?? "");
+      return info.dependsOn.length
+        ? t("obj.detail.reads", { list: info.dependsOn.join(", ") })
+        : (info.detail ?? "");
   }
 }
 
 /** Facet-dependent column set (fixed widths; Name flexes with NAME_MIN). */
-function columnsFor(facet: Facet): Col[] {
+function columnsFor(facet: Facet, t: Translate): Col[] {
   switch (facet) {
     case "all":
       return [
-        ["type", "Type", 130],
-        ["detail", "Detail", 300],
-        ["owner", "Owner", 120],
-        ["modified", "Modified", 150],
+        ["type", t("obj.col.type"), 130],
+        ["detail", t("obj.col.detail"), 300],
+        ["owner", t("obj.col.owner"), 120],
+        ["modified", t("obj.col.modified"), 150],
       ];
     case "function":
       return [
-        ["returns", "Returns", 140],
-        ["language", "Lang", 80],
-        ["argCount", "Args", 64],
-        ["volatility", "Volatility", 116],
-        ["owner", "Owner", 120],
-        ["modified", "Modified", 150],
+        ["returns", t("obj.col.returns"), 140],
+        ["language", t("obj.col.lang"), 80],
+        ["argCount", t("obj.col.args"), 64],
+        ["volatility", t("obj.col.volatility"), 116],
+        ["owner", t("obj.col.owner"), 120],
+        ["modified", t("obj.col.modified"), 150],
       ];
     case "procedure":
       return [
-        ["language", "Lang", 88],
-        ["argCount", "Args", 68],
-        ["detail", "Comment", 320],
-        ["owner", "Owner", 130],
-        ["modified", "Modified", 150],
+        ["language", t("obj.col.lang"), 88],
+        ["argCount", t("obj.col.args"), 68],
+        ["detail", t("obj.col.comment"), 320],
+        ["owner", t("obj.col.owner"), 130],
+        ["modified", t("obj.col.modified"), 150],
       ];
     case "trigger":
       return [
-        ["table", "Table", 160],
-        ["timing", "Timing", 96],
-        ["events", "Events", 150],
-        ["enabled", "Enabled", 100],
-        ["modified", "Modified", 150],
+        ["table", t("obj.col.table"), 160],
+        ["timing", t("obj.col.timing"), 96],
+        ["events", t("obj.col.events"), 150],
+        ["enabled", t("obj.col.enabled"), 100],
+        ["modified", t("obj.col.modified"), 150],
       ];
     case "materialized_view":
       return [
-        ["approxRows", "Rows", 110],
-        ["size", "Size", 96],
-        ["dependsOn", "Reads", 220],
-        ["owner", "Owner", 120],
-        ["modified", "Refreshed", 150],
+        ["approxRows", t("obj.col.rows"), 110],
+        ["size", t("obj.col.size"), 96],
+        ["dependsOn", t("obj.col.reads"), 220],
+        ["owner", t("obj.col.owner"), 120],
+        ["modified", t("obj.col.refreshed"), 150],
       ];
     default:
       // view
       return [
-        ["dependsOn", "Reads", 220],
-        ["detail", "Comment", 300],
-        ["owner", "Owner", 130],
-        ["modified", "Modified", 150],
+        ["dependsOn", t("obj.col.reads"), 220],
+        ["detail", t("obj.col.comment"), 300],
+        ["owner", t("obj.col.owner"), 130],
+        ["modified", t("obj.col.modified"), 150],
       ];
   }
 }
@@ -134,7 +152,7 @@ interface Row {
 }
 
 /** Display text for a cell (arrays joined; empties become ""). */
-function cellText(row: Row, key: ColKey): string {
+function cellText(row: Row, key: ColKey, t: Translate): string {
   const i = row.info;
   switch (key) {
     case "detail":
@@ -150,7 +168,7 @@ function cellText(row: Row, key: ColKey): string {
     case "approxRows":
       return i.approxRows == null ? "" : i.approxRows.toLocaleString();
     case "enabled":
-      return i.enabled == null ? "" : i.enabled ? "enabled" : "disabled";
+      return i.enabled == null ? "" : i.enabled ? t("obj.enabled") : t("obj.disabled");
     default:
       return (i[key as keyof DbObjectInfo] as string | null) ?? "";
   }
@@ -170,6 +188,7 @@ export function ObjectExplorer({
   const envColor = workspace.saved.color ?? ENV_COLOR[env];
   const handleId = workspace.handleId;
   const toast = useToast();
+  const t = useT();
 
   const loadObjects = useIntrospectionStore((s) => s.loadObjects);
   const loadObjectDefinition = useIntrospectionStore((s) => s.loadObjectDefinition);
@@ -232,7 +251,7 @@ export function ObjectExplorer({
     const out: Row[] = [];
     for (const c of facetClasses) {
       for (const info of listFor(c) ?? []) {
-        out.push({ key: `${c}:${info.name}`, info, detail: rowDetail(info) });
+        out.push({ key: `${c}:${info.name}`, info, detail: rowDetail(info, t) });
       }
     }
     const filtered = out.filter(
@@ -250,8 +269,8 @@ export function ObjectExplorer({
         if (av !== bv) return (av - bv) * dir;
         return a.info.name < b.info.name ? -1 : 1;
       }
-      const av = (key === "name" ? a.info.name : cellText(a, key)).toLowerCase();
-      const bv = (key === "name" ? b.info.name : cellText(b, key)).toLowerCase();
+      const av = (key === "name" ? a.info.name : cellText(a, key, t)).toLowerCase();
+      const bv = (key === "name" ? b.info.name : cellText(b, key, t)).toLowerCase();
       if (av < bv) return -dir;
       if (av > bv) return dir;
       return a.info.name < b.info.name ? -1 : 1;
@@ -260,7 +279,7 @@ export function ObjectExplorer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [facet, classes, objectsMap, handleId, schema, q, sort]);
 
-  const cols = columnsFor(facet);
+  const cols = columnsFor(facet, t);
   const minWidth = 34 + NAME_MIN + cols.reduce((n, c) => n + c[2], 0);
 
   const allSelected = rows.length > 0 && rows.every((r) => sel.has(r.key));
@@ -280,7 +299,7 @@ export function ObjectExplorer({
   const copyName = (name: string) => {
     const done = () => {
       setCopied(name);
-      toast(`Copied “${name}”`, "ok");
+      toast(t("obj.copied", { name }), "ok");
       setTimeout(() => setCopied((c) => (c === name ? "" : c)), 1200);
     };
     const fallback = () => {
@@ -323,7 +342,7 @@ export function ObjectExplorer({
       if (def) parts.push(`-- ${typeBadge(r.info.kind)} ${r.info.name}\n${def.ddl}`);
     }
     if (parts.length === 0) {
-      toast("Nothing to export.", "err");
+      toast(t("obj.noExport"), "err");
       return;
     }
     try {
@@ -335,9 +354,12 @@ export function ObjectExplorer({
       });
       if (!path) return; // user cancelled
       await exportSave(path, parts.join("\n\n") + "\n");
-      toast(`Exported ${parts.length} object DDL → ${path.split(/[/\\]/).pop()}`, "ok");
+      toast(
+        t("obj.exported", { count: parts.length, file: path.split(/[/\\]/).pop() ?? "" }),
+        "ok",
+      );
     } catch (e) {
-      toast(appErrorMessage(e, "Could not export DDL"), "err");
+      toast(appErrorMessage(e, t("obj.err.export")), "err");
     }
   };
 
@@ -352,10 +374,10 @@ export function ObjectExplorer({
       invalidateObjects(handleId, schema);
       setSel(new Set());
       setDropOpen(false);
-      toast(`Dropped ${n} object${n === 1 ? "" : "s"}`, "ok");
+      toast(t("obj.dropped", { count: n }), "ok");
     } catch (e) {
       invalidateObjects(handleId, schema);
-      toast(appErrorMessage(e, "Could not drop the selected objects."), "err");
+      toast(appErrorMessage(e, t("obj.err.dropSelected")), "err");
     } finally {
       setDropping(false);
     }
@@ -382,30 +404,34 @@ export function ObjectExplorer({
   const searchRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => searchRef.current?.focus(), []);
 
-  const facetLabel = facet === "all" ? "objects" : OBJ_SECTIONS[facet].group.toLowerCase();
+  const facetLabel = facet === "all" ? t("obj.facet.objects") : t(GROUP_KEY[facet]).toLowerCase();
 
   return (
     <div className="oe-wrap">
       <div className="oe-toolbar">
         <Icon name="category" size={18} style={{ color: "var(--accent)", flex: "none" }} />
         <div className="oe-title">
-          Object Explorer<span className="oe-title-schema">{schema}</span>
+          {t("obj.title")}
+          <span className="oe-title-schema">{schema}</span>
         </div>
         <div className="oe-search">
           <Icon name="search" size={15} style={{ color: "var(--text-faint)" }} />
           <input
             ref={searchRef}
-            placeholder={`Filter ${facetLabel}…`}
+            placeholder={t("obj.filter", { facet: facetLabel })}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             spellCheck={false}
           />
           {query ? (
-            <IconBtn icon="close" size={13} title="Clear" onClick={() => setQuery("")} />
+            <IconBtn icon="close" size={13} title={t("obj.clear")} onClick={() => setQuery("")} />
           ) : null}
         </div>
         <span className="oe-total">
-          {rows.length} of {facet === "all" ? counts.total : (counts.per[facet] ?? 0)}
+          {t("obj.total", {
+            shown: rows.length,
+            total: facet === "all" ? counts.total : (counts.per[facet] ?? 0),
+          })}
         </span>
       </div>
 
@@ -424,7 +450,7 @@ export function ObjectExplorer({
               size={16}
               style={{ color: facet === "all" ? "var(--accent)" : "var(--text-faint)" }}
             />
-            <span className="oe-facet-label">All objects</span>
+            <span className="oe-facet-label">{t("obj.facet.all")}</span>
             <span className="oe-facet-count">{counts.total}</span>
           </button>
           <div className="oe-rail-sep" />
@@ -464,7 +490,7 @@ export function ObjectExplorer({
                     if (el) el.indeterminate = sel.size > 0 && !allSelected;
                   }}
                   onChange={toggleAll}
-                  aria-label="Select all"
+                  aria-label={t("obj.selectAll")}
                 />
               </label>
               <button
@@ -472,7 +498,7 @@ export function ObjectExplorer({
                 className={"oe-th oe-th-name" + (sort.key === "name" ? " sorted" : "")}
                 onClick={() => setSortKey("name")}
               >
-                <span>Name</span>
+                <span>{t("obj.col.name")}</span>
                 {sort.key === "name" ? (
                   <Icon name={sort.dir === 1 ? "arrow_upward" : "arrow_downward"} size={12} />
                 ) : null}
@@ -502,7 +528,11 @@ export function ObjectExplorer({
               <div className="oe-grid-body">
                 <div className="oe-empty">
                   <Icon name="search_off" size={30} style={{ color: "var(--text-faint)" }} />
-                  <p>{q ? `No objects match “${query}”` : `No ${facetLabel}`}</p>
+                  <p>
+                    {q
+                      ? t("obj.empty.match", { query })
+                      : t("obj.empty.none", { facet: facetLabel })}
+                  </p>
                 </div>
               </div>
             ) : (
@@ -531,14 +561,14 @@ export function ObjectExplorer({
                       }}
                       onClick={() => toggle(r.key)}
                       onDoubleClick={() => openObjectTab(schema, r.info)}
-                      title="Double-click to open"
+                      title={t("obj.row.title")}
                     >
                       <label className="oe-check" onClick={(e) => e.stopPropagation()}>
                         <input
                           type="checkbox"
                           checked={checked}
                           onChange={() => toggle(r.key)}
-                          aria-label={`Select ${r.info.name}`}
+                          aria-label={t("obj.selectOne", { name: r.info.name })}
                         />
                       </label>
                       <div className="oe-td oe-td-name">
@@ -551,7 +581,7 @@ export function ObjectExplorer({
                         <button
                           type="button"
                           className={"oe-copy" + (copied === r.info.name ? " done" : "")}
-                          title="Copy name"
+                          title={t("obj.copyName")}
                           onClick={(e) => {
                             e.stopPropagation();
                             copyName(r.info.name);
@@ -565,7 +595,7 @@ export function ObjectExplorer({
                         <button
                           type="button"
                           className="oe-open"
-                          title={browse ? "Browse data" : "Open definition"}
+                          title={browse ? t("obj.browse") : t("obj.openDef")}
                           onClick={(e) => {
                             e.stopPropagation();
                             openBrowse(r.info);
@@ -574,7 +604,7 @@ export function ObjectExplorer({
                           <Icon name={browse ? "table_rows" : "code"} size={13} />
                         </button>
                       </div>
-                      {cols.map(([key, , w]) => renderCell(key, r, sec.accent, w))}
+                      {cols.map(([key, , w]) => renderCell(key, r, sec.accent, w, t))}
                     </div>
                   );
                 })}
@@ -586,13 +616,13 @@ export function ObjectExplorer({
 
       {sel.size > 0 ? (
         <div className="oe-actionbar">
-          <span className="oe-sel-n">{sel.size} selected</span>
+          <span className="oe-sel-n">{t("obj.selected", { count: sel.size })}</span>
           <button type="button" className="oe-clear" onClick={() => setSel(new Set())}>
-            Clear
+            {t("obj.clear")}
           </button>
           <div style={{ flex: 1 }} />
           <Btn icon="download" variant="text" onClick={() => void exportDdl()}>
-            Export DDL
+            {t("obj.exportDdl")}
           </Btn>
           <Btn
             icon="delete"
@@ -600,7 +630,7 @@ export function ObjectExplorer({
             className="obj-drop-btn"
             onClick={() => setDropOpen(true)}
           >
-            Drop…
+            {t("obj.dropEllipsis")}
           </Btn>
         </div>
       ) : null}
@@ -626,7 +656,7 @@ export function ObjectExplorer({
 }
 
 /** Render one facet column cell. */
-function renderCell(key: ColKey, row: Row, accent: string, w: number) {
+function renderCell(key: ColKey, row: Row, accent: string, w: number, t: Translate) {
   const style = { width: w, flex: "none" as const };
   if (key === "type") {
     return (
@@ -649,9 +679,9 @@ function renderCell(key: ColKey, row: Row, accent: string, w: number) {
         {row.info.enabled == null ? (
           <span className="oe-dim">—</span>
         ) : row.info.enabled ? (
-          <span className="oe-badge oe-on">enabled</span>
+          <span className="oe-badge oe-on">{t("obj.enabled")}</span>
         ) : (
-          <span className="oe-badge oe-off">disabled</span>
+          <span className="oe-badge oe-off">{t("obj.disabled")}</span>
         )}
       </div>
     );
@@ -664,7 +694,7 @@ function renderCell(key: ColKey, row: Row, accent: string, w: number) {
       </div>
     );
   }
-  const val = cellText(row, key);
+  const val = cellText(row, key, t);
   const mono = key === "returns" || key === "table" || key === "dependsOn" || key === "size";
   return (
     <div

@@ -10,6 +10,7 @@
 import { Fragment, useEffect, useRef } from "react";
 
 import { Icon } from "../../../shared/ui/Icon";
+import { useT } from "../../../shared/i18n/useT";
 import { TYPES, type ColumnProfile } from "../core";
 import type { DataFileDoc } from "../doc";
 
@@ -36,7 +37,8 @@ function Stat({ k, v }: { k: string; v: string }) {
 }
 
 export function DataFileProfileCard({ col, focused }: { col: ColumnProfile; focused: boolean }) {
-  const t = TYPES[col.type];
+  const t = useT();
+  const meta = TYPES[col.type];
   const maxTop = col.top[0]?.n ?? 1;
   const maxBin = col.hist ? Math.max(...col.hist.map((b) => b.n)) : 1;
   const ref = useRef<HTMLDivElement>(null);
@@ -50,18 +52,22 @@ export function DataFileProfileCard({ col, focused }: { col: ColumnProfile; focu
   return (
     <div className={"csvv-card" + (focused ? " focused" : "")} ref={ref}>
       <div className="csvv-card-head">
-        <Icon name={t.icon} size={15} style={{ color: t.color }} />
+        <Icon name={meta.icon} size={15} style={{ color: meta.color }} />
         <span className="csvv-card-name" title={col.name}>
           {col.name}
         </span>
-        <span className="csvv-type" style={{ color: t.color }}>
+        <span className="csvv-type" style={{ color: meta.color }}>
           {col.type}
         </span>
-        {col.unique && col.present ? <span className="csvv-badge">unique</span> : null}
-        {col.bad.length ? <span className="csvv-badge bad">{col.bad.length} off-type</span> : null}
+        {col.unique && col.present ? (
+          <span className="csvv-badge">{t("dfile.uniqueBadge")}</span>
+        ) : null}
+        {col.bad.length ? (
+          <span className="csvv-badge bad">{t("dfile.badN", { count: col.bad.length })}</span>
+        ) : null}
       </div>
 
-      <div className="csvv-stack" title={pct(col.fill) + "% filled"}>
+      <div className="csvv-stack" title={t("dfile.fillPct", { pct: pct(col.fill) })}>
         <span
           className="ok"
           style={{ width: Math.max(0, pct((col.present - col.bad.length) / col.count)) + "%" }}
@@ -72,60 +78,60 @@ export function DataFileProfileCard({ col, focused }: { col: ColumnProfile; focu
       <div className="csvv-stack-legend">
         <span>
           <i className="ok" />
-          {(col.present - col.bad.length).toLocaleString()} valid
+          {(col.present - col.bad.length).toLocaleString()} {t("dfile.valid")}
         </span>
         {col.bad.length ? (
           <span>
             <i className="bad" />
-            {col.bad.length.toLocaleString()} off-type
+            {col.bad.length.toLocaleString()} {t("dfile.offType")}
           </span>
         ) : null}
         <span>
           <i className="nul" />
-          {col.nulls.toLocaleString()} empty
+          {col.nulls.toLocaleString()} {t("dfile.emptyStat")}
         </span>
       </div>
 
       <div className="csvv-pstats">
-        <Stat k="Distinct" v={col.distinct.toLocaleString()} />
-        <Stat k="Filled" v={pct(col.fill) + "%"} />
+        <Stat k={t("dfile.statDistinct")} v={col.distinct.toLocaleString()} />
+        <Stat k={t("dfile.statFilled")} v={pct(col.fill) + "%"} />
         {col.stats ? (
           <Fragment>
-            <Stat k="Min" v={fmtNum(col.stats.min)} />
-            <Stat k="Max" v={fmtNum(col.stats.max)} />
-            <Stat k="Mean" v={fmtNum(col.stats.mean)} />
-            <Stat k="Median" v={fmtNum(col.stats.median)} />
-            <Stat k="Sum" v={fmtNum(col.stats.sum)} />
-            <Stat k="p95" v={fmtNum(col.stats.p95)} />
+            <Stat k={t("dfile.statMin")} v={fmtNum(col.stats.min)} />
+            <Stat k={t("dfile.statMax")} v={fmtNum(col.stats.max)} />
+            <Stat k={t("dfile.statMean")} v={fmtNum(col.stats.mean)} />
+            <Stat k={t("dfile.statMedian")} v={fmtNum(col.stats.median)} />
+            <Stat k={t("dfile.statSum")} v={fmtNum(col.stats.sum)} />
+            <Stat k={t("dfile.statP95")} v={fmtNum(col.stats.p95)} />
           </Fragment>
         ) : null}
         {col.range ? (
           <Fragment>
-            <Stat k="Earliest" v={col.range.min.slice(0, 19).replace("T", " ")} />
-            <Stat k="Latest" v={col.range.max.slice(0, 19).replace("T", " ")} />
+            <Stat k={t("dfile.statEarliest")} v={col.range.min.slice(0, 19).replace("T", " ")} />
+            <Stat k={t("dfile.statLatest")} v={col.range.max.slice(0, 19).replace("T", " ")} />
           </Fragment>
         ) : null}
         {col.bools ? (
           <Fragment>
-            <Stat k="True" v={col.bools.t.toLocaleString()} />
-            <Stat k="False" v={col.bools.f.toLocaleString()} />
+            <Stat k={t("dfile.statTrue")} v={col.bools.t.toLocaleString()} />
+            <Stat k={t("dfile.statFalse")} v={col.bools.f.toLocaleString()} />
           </Fragment>
         ) : null}
         {col.len && !col.stats ? (
           <Fragment>
-            <Stat k="Length" v={col.len.min + "–" + col.len.max} />
-            <Stat k="Avg length" v={col.len.avg.toFixed(1)} />
+            <Stat k={t("dfile.statLength")} v={col.len.min + "–" + col.len.max} />
+            <Stat k={t("dfile.statAvgLength")} v={col.len.avg.toFixed(1)} />
           </Fragment>
         ) : null}
       </div>
 
       {col.hist ? (
-        <div className="csvv-hist" title="Value distribution">
+        <div className="csvv-hist" title={t("dfile.histTitle")}>
           {col.hist.map((b, i) => (
             <span
               key={i}
-              style={{ height: Math.max(2, (b.n / maxBin) * 100) + "%", background: t.color }}
-              title={fmtNum(b.x0) + " – " + fmtNum(b.x1) + " · " + b.n + " rows"}
+              style={{ height: Math.max(2, (b.n / maxBin) * 100) + "%", background: meta.color }}
+              title={t("dfile.binRows", { x0: fmtNum(b.x0), x1: fmtNum(b.x1), count: b.n })}
             />
           ))}
         </div>
@@ -140,7 +146,10 @@ export function DataFileProfileCard({ col, focused }: { col: ColumnProfile; focu
               </span>
               <span className="csvv-top-bar">
                 <i
-                  style={{ width: Math.max(3, (tv.n / maxTop) * 100) + "%", background: t.color }}
+                  style={{
+                    width: Math.max(3, (tv.n / maxTop) * 100) + "%",
+                    background: meta.color,
+                  }}
                 />
               </span>
               <span className="csvv-top-n">{tv.n}</span>
@@ -148,7 +157,7 @@ export function DataFileProfileCard({ col, focused }: { col: ColumnProfile; focu
           ))}
           {col.distinct > col.top.length ? (
             <div className="csvv-top-more">
-              +{(col.distinct - col.top.length).toLocaleString()} more distinct values
+              {t("dfile.moreDistinct", { count: (col.distinct - col.top.length).toLocaleString() })}
             </div>
           ) : null}
         </div>
@@ -158,14 +167,17 @@ export function DataFileProfileCard({ col, focused }: { col: ColumnProfile; focu
 }
 
 export function DataFileProfileTab({ doc, focus }: { doc: DataFileDoc; focus: string | null }) {
+  const t = useT();
   return (
     <div className="csvv-pane csvv-scroll" data-screen-label={"Column profile: " + doc.name}>
       <div className="csvv-pane-head">
         <Icon name="insights" size={15} style={{ color: "var(--accent)" }} />
-        <h3>Column profile</h3>
+        <h3>{t("dfile.tabProfile")}</h3>
         <span className="csvv-pane-note">
-          {doc.analysis.cols.length} columns · {doc.parsed.rows.length.toLocaleString()} rows ·
-          types inferred from the data, not a schema
+          {t("dfile.profileNote", {
+            cols: doc.analysis.cols.length,
+            rows: doc.parsed.rows.length.toLocaleString(),
+          })}
         </span>
       </div>
       <div className="csvv-cards">

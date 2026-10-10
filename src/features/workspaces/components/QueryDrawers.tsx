@@ -14,6 +14,7 @@
 import { useEffect, useState } from "react";
 
 import { appErrorMessage } from "../../../shared/api/error";
+import { useT } from "../../../shared/i18n/useT";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { useToast } from "../../../shared/ui/toastContext";
@@ -59,6 +60,7 @@ export function SavedQueriesDrawer({
   onLoad: (q: SavedQuery) => void;
 }) {
   const toast = useToast();
+  const t = useT();
   const savedQueries = useSavedQueriesStore((s) => s.savedQueries);
   const loadSaved = useSavedQueriesStore((s) => s.load);
   const removeQuery = useSavedQueriesStore((s) => s.remove);
@@ -83,27 +85,30 @@ export function SavedQueriesDrawer({
       <aside className={"sq-drawer" + (open ? " open" : "")} aria-hidden={!open}>
         <div className="sq-drawer-head">
           <span className="sq-drawer-title">
-            <Icon name="bookmarks" size={16} style={{ color: "var(--accent)" }} /> Saved queries
+            <Icon name="bookmarks" size={16} style={{ color: "var(--accent)" }} />{" "}
+            {t("ws.sql.savedQueries")}
           </span>
-          <IconBtn icon="close" onClick={onClose} title="Close" />
+          <IconBtn icon="close" onClick={onClose} title={t("common.close")} />
         </div>
-        <div className="sq-drawer-sub">Shared across all workspaces</div>
+        <div className="sq-drawer-sub">{t("ws.sql.noteGlobal")}</div>
         <div className="sq-search">
           <Icon name="search" size={15} style={{ color: "var(--text-faint)" }} />
           <input
-            placeholder="Search name or SQL…"
+            placeholder={t("ws.sql.searchSaved")}
             value={q}
             onChange={(e) => setQ(e.target.value)}
             spellCheck={false}
           />
-          {q ? <IconBtn icon="close" size={13} title="Clear" onClick={() => setQ("")} /> : null}
+          {q ? (
+            <IconBtn icon="close" size={13} title={t("ws.sql.clear")} onClick={() => setQ("")} />
+          ) : null}
         </div>
         <div className="sq-list">
           {list.length === 0 ? (
             <div className="sq-empty">
               {queries.length === 0
-                ? "Nothing saved yet — write a query and use the bookmark button."
-                : `No saved queries match “${q}”.`}
+                ? t("ws.sql.emptySaved")
+                : t("ws.sql.noSavedMatch", { query: q })}
             </div>
           ) : (
             list.map((item) => {
@@ -113,18 +118,21 @@ export function SavedQueriesDrawer({
                   <div className="sq-item-head">
                     <Icon name="bookmark" size={14} style={{ color: "var(--accent)" }} />
                     <span className="sq-item-name">{item.name}</span>
-                    <span className="saved-scope" title={scoped ? "This workspace" : "Global"}>
-                      {scoped ? "this workspace" : "global"}
+                    <span
+                      className="saved-scope"
+                      title={scoped ? t("ws.sql.scopeThis") : t("ws.sql.scopeGlobal")}
+                    >
+                      {scoped ? t("ws.sql.chipThis") : t("ws.sql.chipGlobal")}
                     </span>
                     <button
                       type="button"
                       className="sq-item-del"
-                      title="Delete"
-                      aria-label={"Delete " + item.name}
+                      title={t("common.delete")}
+                      aria-label={t("ws.sql.deleteAria", { name: item.name })}
                       onClick={(e) => {
                         e.stopPropagation();
                         void removeQuery(item.id).catch((err: unknown) =>
-                          toast(appErrorMessage(err, "Could not delete query."), "err"),
+                          toast(appErrorMessage(err, t("ws.sql.deleteFail")), "err"),
                         );
                       }}
                     >
@@ -164,6 +172,7 @@ export function HistoryDrawer({
   onLoad: (h: SqlHistoryEntry) => void;
   onOpenSaved?: () => void;
 }) {
+  const t = useT();
   useEscClose(open, onClose);
 
   return (
@@ -172,21 +181,22 @@ export function HistoryDrawer({
       <aside className={"sq-drawer" + (open ? " open" : "")} aria-hidden={!open}>
         <div className="sq-drawer-head">
           <span className="sq-drawer-title">
-            <Icon name="history" size={16} style={{ color: "var(--accent)" }} /> Query history
+            <Icon name="history" size={16} style={{ color: "var(--accent)" }} />{" "}
+            {t("ws.sql.historyTitle")}
           </span>
-          <IconBtn icon="close" onClick={onClose} title="Close" />
+          <IconBtn icon="close" onClick={onClose} title={t("common.close")} />
         </div>
-        <div className="sq-drawer-sub">Recent queries · this tab</div>
+        <div className="sq-drawer-sub">{t("ws.sql.historySub")}</div>
         {onOpenSaved ? (
           <button type="button" className="sq-drawer-link" onClick={onOpenSaved}>
             <Icon name="bookmarks" size={15} style={{ color: "var(--accent)" }} />
-            <span>Saved queries</span>
+            <span>{t("ws.sql.savedQueries")}</span>
             <Icon name="chevron_right" size={15} style={{ color: "var(--text-faint)" }} />
           </button>
         ) : null}
         <div className="sq-list">
           {history.length === 0 ? (
-            <div className="sq-empty">Nothing yet — run a query and it shows up here.</div>
+            <div className="sq-empty">{t("ws.sql.emptyHistory")}</div>
           ) : (
             history.map((h, i) => (
               <div key={i} className="sq-item" onClick={() => onLoad(h)}>
@@ -199,9 +209,9 @@ export function HistoryDrawer({
                   <span className="sq-item-name">
                     {h.ok
                       ? h.rowCount !== undefined
-                        ? `${h.rowCount} row${h.rowCount === 1 ? "" : "s"}`
-                        : "Query OK"
-                      : "failed"}
+                        ? t("ws.rows.count", { count: h.rowCount })
+                        : t("ws.sql.queryOk")
+                      : t("ws.sql.failed")}
                   </span>
                 </div>
                 <pre

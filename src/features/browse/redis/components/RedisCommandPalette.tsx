@@ -10,6 +10,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Icon } from "../../../../shared/ui/Icon";
 import { Kbd } from "../../../../shared/ui/Kbd";
+import { useT } from "../../../../shared/i18n/useT";
 import type { KvDbInfo } from "../../../connections/api";
 import { shellLabel, usePanelStore } from "../../../console/state";
 import { kvScan, type KeyEntry, type KeyType } from "../api";
@@ -60,6 +61,7 @@ export function RedisCommandPalette(props: RedisCommandPaletteProps) {
     onCloseWorkspace,
     onClose,
   } = props;
+  const t = useT();
   const openDashboardTab = useRedisBrowseStore((state) => state.openDashboardTab);
   const openProcessesTab = useRedisBrowseStore((state) => state.openProcessesTab);
   const setDbIndex = useRedisBrowseStore((state) => state.setDbIndex);
@@ -103,20 +105,20 @@ export function RedisCommandPalette(props: RedisCommandPaletteProps) {
     const cli: PaletteCommand = {
       id: "new-cli",
       icon: "terminal",
-      label: "New CLI console",
+      label: t("redis.newCli"),
       hint: "⌘T",
       run: () => openPanel(workspaceId, shellLabel("redis")),
     };
     const dash: PaletteCommand = {
       id: "dashboard",
       icon: cluster ? "lan" : "monitoring",
-      label: cluster ? "Cluster dashboard" : "Keyspace dashboard",
+      label: cluster ? t("redis.tab.clusterTitle") : t("redis.tab.dashTitle"),
       run: () => openDashboardTab(workspaceId, initialDb),
     };
     const clients: PaletteCommand = {
       id: "processes",
       icon: "monitor_heart",
-      label: "Connected clients",
+      label: t("redis.connectedClients"),
       hint: "CLIENT LIST · kill",
       run: () => openProcessesTab(workspaceId, initialDb),
     };
@@ -125,8 +127,8 @@ export function RedisCommandPalette(props: RedisCommandPaletteProps) {
     const kickIdle: PaletteCommand = {
       id: "kick-idle",
       icon: "cleaning_services",
-      label: "Kick idle clients",
-      hint: "CLIENT KILL · leaked pool connections",
+      label: t("redis.kickIdle"),
+      hint: t("redis.kickHint"),
       run: () => openProcessesTab(workspaceId, initialDb),
     };
     const dbCmds: PaletteCommand[] = cluster
@@ -136,14 +138,14 @@ export function RedisCommandPalette(props: RedisCommandPaletteProps) {
           .map((d) => ({
             id: "db-" + d.index,
             icon: "storage",
-            label: "Switch to db" + d.index,
-            hint: d.keyCount + " keys",
+            label: t("redis.switchDbN", { n: d.index }),
+            hint: t("redis.nKeys", { count: d.keyCount }),
             run: () => setDbIndex(workspaceId, initialDb, d.index),
           }));
     const close: PaletteCommand = {
       id: "close-ws",
       icon: "power_settings_new",
-      label: "Close workspace",
+      label: t("dfile.closeWorkspace"),
       hint: workspaceName,
       run: onCloseWorkspace,
     };
@@ -162,6 +164,7 @@ export function RedisCommandPalette(props: RedisCommandPaletteProps) {
     openProcessesTab,
     setDbIndex,
     onCloseWorkspace,
+    t,
   ]);
 
   const trimmed = query.trim().toLowerCase();
@@ -215,12 +218,12 @@ export function RedisCommandPalette(props: RedisCommandPaletteProps) {
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="palette" role="dialog" aria-label="Command palette" aria-modal="true">
+      <div className="palette" role="dialog" aria-label={t("redis.paletteAria")} aria-modal="true">
         <div className="palette-input-row">
           <Icon name="search" size={18} style={{ color: "var(--text-faint)" }} />
           <input
             ref={inputRef}
-            placeholder="Run a command…"
+            placeholder={t("redis.runCmd")}
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
@@ -232,13 +235,13 @@ export function RedisCommandPalette(props: RedisCommandPaletteProps) {
             aria-expanded="true"
             aria-controls="redis-palette-list"
             aria-activedescendant={filtered[sel] ? "redis-palette-item-" + sel : undefined}
-            aria-label="Search commands"
+            aria-label={t("redis.searchCmds")}
           />
           <Kbd>esc</Kbd>
         </div>
         <div className="palette-list" id="redis-palette-list" role="listbox" ref={listRef}>
           {filtered.length === 0 ? (
-            <div className="palette-empty">No matches</div>
+            <div className="palette-empty">{t("redis.noMatches")}</div>
           ) : (
             filtered.map((c, i) => (
               <div

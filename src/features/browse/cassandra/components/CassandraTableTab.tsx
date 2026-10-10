@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { highlightSql } from "../../shared/highlightSql";
 import { isAppErrorPayload } from "../../../../shared/api/error";
+import { useT } from "../../../../shared/i18n/useT";
 import { Btn } from "../../../../shared/ui/Btn";
 import { BulkDeleteModal } from "../../../../shared/ui/BulkDeleteModal";
 import { Icon } from "../../../../shared/ui/Icon";
@@ -92,6 +93,8 @@ export function CassandraTableTab({
   onImport,
   onSchemaChanged,
 }: CassandraTableTabProps) {
+  // `tr`, not `t`: `t` is this tab's table descriptor throughout.
+  const tr = useT();
   const toast = useToast();
   const tableName = t.name;
   const [pkVals, setPkVals] = useState<Record<string, string>>({});
@@ -175,7 +178,7 @@ export function CassandraTableTab({
           return nextArr;
         });
       } catch (e) {
-        setError(isAppErrorPayload(e) ? e.message : "Query failed (desktop app required)");
+        setError(isAppErrorPayload(e) ? e.message : tr("cass.tab.queryFailedDesktop"));
         setResult(null);
       }
     },
@@ -234,7 +237,7 @@ export function CassandraTableTab({
     const rows = selectedRows();
     if (!rows.length) return;
     download(ks + "." + tableName + "-selection.csv", csvOf(t.columns, rows), "text/csv");
-    toast("Exported " + rows.length + " row" + (rows.length === 1 ? "" : "s") + " to CSV", "ok");
+    toast(tr("cass.tab.exportedRows", { count: rows.length }), "ok");
   };
 
   const stageEdit = (row: Record<string, unknown>, col: string, value: unknown) => {
@@ -262,13 +265,10 @@ export function CassandraTableTab({
     if (
       isProduction &&
       !window.confirm(
-        "Write " +
-          entries.length +
-          " row(s) to the production keyspace " +
-          ks +
-          "." +
-          tableName +
-          "?",
+        tr("cass.tab.confirmWrite", {
+          count: entries.length,
+          target: ks + "." + tableName,
+        }),
       )
     ) {
       return;
@@ -283,9 +283,9 @@ export function CassandraTableTab({
       }
       setEdits({});
       runBuilder();
-      toast("Saved " + n + " cell" + (n === 1 ? "" : "s") + " to " + ks + "." + tableName, "ok");
+      toast(tr("cass.tab.savedCells", { count: n, target: ks + "." + tableName }), "ok");
     } catch (e) {
-      toast(isAppErrorPayload(e) ? e.message : "Save failed", "err");
+      toast(isAppErrorPayload(e) ? e.message : tr("cass.tab.saveFailed"), "err");
     }
   };
 
@@ -357,13 +357,13 @@ export function CassandraTableTab({
             className={"seg-btn" + (mode === "query" ? " active" : "")}
             onClick={() => onModeChange("query")}
           >
-            <Icon name="filter_alt" size={14} /> Query
+            <Icon name="filter_alt" size={14} /> {tr("cass.tab.query")}
           </button>
           <button
             className={"seg-btn" + (mode === "structure" ? " active" : "")}
             onClick={() => onModeChange("structure")}
           >
-            <Icon name="schema" size={14} /> Structure
+            <Icon name="schema" size={14} /> {tr("cass.tab.structure")}
           </button>
         </div>
         {mode !== "structure" ? (
@@ -375,9 +375,9 @@ export function CassandraTableTab({
                 (appliedSummary ? " has-applied" : "")
               }
               onClick={() => setFiltersOpen((o) => !o)}
-              title="Build the CQL query — partition key, clustering and non-key filters"
+              title={tr("cass.tab.buildHint")}
             >
-              <Icon name="filter_list" size={15} /> Filters
+              <Icon name="filter_list" size={15} /> {tr("cass.tab.filters")}
               {appliedSummary ? <span className="filter-dot" /> : null}
               <Icon
                 name={filtersOpen ? "expand_less" : "expand_more"}
@@ -385,7 +385,7 @@ export function CassandraTableTab({
                 style={{ color: "var(--text-faint)" }}
               />
             </button>
-            <label className="cass-consistency" title="Consistency level">
+            <label className="cass-consistency" title={tr("cass.tab.consistencyLevel")}>
               <Icon name="hub" size={13} />
               <select
                 className="filter-select"
@@ -401,20 +401,22 @@ export function CassandraTableTab({
             </label>
             <span
               className={"applied-where" + (appliedSummary ? "" : " empty")}
-              title={appliedSummary ? "WHERE " + appliedSummary : ""}
+              title={appliedSummary ? tr("cass.tab.where") + " " + appliedSummary : ""}
             >
-              {appliedSummary ? "WHERE " + appliedSummary : "no filters applied"}
+              {appliedSummary
+                ? tr("cass.tab.where") + " " + appliedSummary
+                : tr("cass.tab.noFilters")}
             </span>
           </>
         ) : null}
         <div style={{ flex: 1 }} />
         {mode === "query" ? (
-          <IconBtn icon="add_box" title="Add row (⌘I / Ctrl+I)" onClick={() => setNewRow(true)} />
+          <IconBtn icon="add_box" title={tr("cass.tab.addRow")} onClick={() => setNewRow(true)} />
         ) : null}
         <div className="table-actions" style={{ position: "relative" }}>
           <IconBtn
             icon="more_vert"
-            title="Table actions"
+            title={tr("cass.tab.tableActions")}
             active={actionsOpen}
             onClick={() => setActionsOpen((o) => !o)}
           />
@@ -427,7 +429,7 @@ export function CassandraTableTab({
                   onExport(tableName);
                 }}
               >
-                <Icon name="download" size={15} /> Export table
+                <Icon name="download" size={15} /> {tr("cass.tab.exportTable")}
               </div>
               <div
                 className="ctx-item"
@@ -436,7 +438,7 @@ export function CassandraTableTab({
                   onImport(tableName);
                 }}
               >
-                <Icon name="upload" size={15} /> Import rows
+                <Icon name="upload" size={15} /> {tr("cass.tab.importRows")}
               </div>
             </div>
           ) : null}
@@ -448,9 +450,11 @@ export function CassandraTableTab({
           <div className="filter-rows cass-qb-rows">
             {t.partitionKey.map((p, pi) => (
               <div className="filter-row cass-key-row" key={p}>
-                <span className="filter-and">{pi === 0 ? "WHERE" : "AND"}</span>
-                <span className="cass-key-badge pk" title="Partition key">
-                  PK
+                <span className="filter-and">
+                  {pi === 0 ? tr("cass.tab.where") : tr("cass.tab.and")}
+                </span>
+                <span className="cass-key-badge pk" title={tr("cass.badge.partitionKey")}>
+                  {tr("cass.tab.pk")}
                 </span>
                 <span className="cass-key-col mg-mono">
                   {p}
@@ -464,7 +468,7 @@ export function CassandraTableTab({
                   onKeyDown={(e) => {
                     if (e.key === "Enter") runBuilder();
                   }}
-                  placeholder="value…"
+                  placeholder={tr("cass.tab.valuePh")}
                   spellCheck={false}
                 />
                 {pi === 0 ? (
@@ -472,13 +476,13 @@ export function CassandraTableTab({
                     <button
                       className={"cass-qb-allow" + (allowFiltering ? " on" : "")}
                       onClick={() => setAllowFiltering((a) => !a)}
-                      title="Allow non-key filtering (full scan)"
+                      title={tr("cass.tab.allowNonKeyFiltering")}
                     >
                       <Icon
                         name={allowFiltering ? "check_box" : "check_box_outline_blank"}
                         size={15}
                       />{" "}
-                      Allow filtering
+                      {tr("cass.tab.allowFiltering")}
                     </button>
                   </div>
                 ) : null}
@@ -497,9 +501,9 @@ export function CassandraTableTab({
                 ]);
               return (
                 <div className="filter-row cass-key-row" key={c.name}>
-                  <span className="filter-and">AND</span>
-                  <span className="cass-key-badge ck" title="Clustering key">
-                    CK
+                  <span className="filter-and">{tr("cass.tab.and")}</span>
+                  <span className="cass-key-badge ck" title={tr("cass.badge.clusteringColumn")}>
+                    {tr("cass.tab.ck")}
                   </span>
                   <span className="cass-key-col mg-mono">
                     {c.name}
@@ -523,7 +527,7 @@ export function CassandraTableTab({
                     onKeyDown={(e) => {
                       if (e.key === "Enter") runBuilder();
                     }}
-                    placeholder="value…"
+                    placeholder={tr("cass.tab.valuePh")}
                     spellCheck={false}
                   />
                 </div>
@@ -534,12 +538,10 @@ export function CassandraTableTab({
                 setFilterConds(filterConds.map((x, j) => (j === i ? { ...x, ...p } : x)));
               return (
                 <div className={"filter-row" + (fc.enabled === false ? " disabled" : "")} key={i}>
-                  <span className="filter-and">AND</span>
+                  <span className="filter-and">{tr("cass.tab.and")}</span>
                   <label
                     className="filter-check"
-                    title={
-                      fc.enabled === false ? "Skipped — check to apply" : "Active — uncheck to skip"
-                    }
+                    title={fc.enabled === false ? tr("cass.tab.skipped") : tr("cass.tab.active")}
                   >
                     <input
                       type="checkbox"
@@ -574,7 +576,7 @@ export function CassandraTableTab({
                   </select>
                   <input
                     className="filter-value mg-mono"
-                    placeholder="value…"
+                    placeholder={tr("cass.tab.valuePh")}
                     value={fc.val}
                     onChange={(e) => patch({ val: e.target.value })}
                     onKeyDown={(e) => {
@@ -584,7 +586,7 @@ export function CassandraTableTab({
                   />
                   <button
                     className="saved-del"
-                    title="Remove condition"
+                    title={tr("cass.tab.removeCondition")}
                     onClick={() => setFilterConds(filterConds.filter((_, j) => j !== i))}
                   >
                     <Icon name="close" size={13} />
@@ -605,21 +607,21 @@ export function CassandraTableTab({
                   ])
                 }
               >
-                <Icon name="add" size={14} /> Add condition
+                <Icon name="add" size={14} /> {tr("cass.tab.addCondition")}
               </button>
             ) : null}
             <button className="filter-rawtoggle" onClick={() => setShowCql((s) => !s)}>
               <Icon name={showCql ? "tune" : "code"} size={13} />{" "}
-              {showCql ? "Hide CQL" : "View CQL"}
+              {showCql ? tr("cass.tab.hideCql") : tr("cass.tab.viewCql")}
             </button>
             <div style={{ flex: 1 }} />
             {filterConds.some((f) => f.enabled !== false && f.val) && !allowFiltering ? (
               <span className="cass-qb-warn-inline">
-                <Icon name="warning" size={12} /> needs ALLOW FILTERING
+                <Icon name="warning" size={12} /> {tr("cass.tab.needsAllowFiltering")}
               </span>
             ) : (
               <span className="filter-count-note">
-                {appliedParts.length} condition{appliedParts.length === 1 ? "" : "s"} active
+                {tr("cass.tab.conditionsActive", { count: appliedParts.length })}
               </span>
             )}
             <Btn
@@ -633,10 +635,10 @@ export function CassandraTableTab({
                 runFresh({}, [], [], limit, false);
               }}
             >
-              Clear
+              {tr("cass.tab.clear")}
             </Btn>
             <Btn variant="filled" icon="check" small onClick={runBuilder}>
-              Apply
+              {tr("cass.tab.apply")}
             </Btn>
           </div>
           {showCql ? (
@@ -653,7 +655,7 @@ export function CassandraTableTab({
           <div className="sql-error">
             <Icon name="error" size={18} />
             <div>
-              <div className="sql-error-title">Query error</div>
+              <div className="sql-error-title">{tr("cass.tab.queryError")}</div>
               <div className="sql-error-msg">{error}</div>
               {/allow filtering/i.test(error) ? (
                 <button
@@ -663,7 +665,7 @@ export function CassandraTableTab({
                     runFresh(pkVals, clusterConds, filterConds, limit, true);
                   }}
                 >
-                  <Icon name="bolt" size={14} /> Add ALLOW FILTERING and re-run
+                  <Icon name="bolt" size={14} /> {tr("cass.tab.addAllowFiltering")}
                 </button>
               ) : null}
             </div>
@@ -686,10 +688,12 @@ export function CassandraTableTab({
           ) : null}
           {selected.size > 0 ? (
             <div className="cass-selbar">
-              <span className="cass-selbar-count">{selected.size} selected</span>
+              <span className="cass-selbar-count">
+                {tr("cass.tab.selectedCount", { count: selected.size })}
+              </span>
               <div style={{ flex: 1 }} />
               <Btn icon="download" variant="tonal" small onClick={exportSelectedCsv}>
-                Export CSV
+                {tr("cass.tab.exportCsv")}
               </Btn>
               <Btn
                 icon="delete"
@@ -698,7 +702,7 @@ export function CassandraTableTab({
                 className="cass-selbar-del"
                 onClick={() => setBulkDeleteOpen(true)}
               >
-                Delete selected
+                {tr("cass.tab.deleteSelected")}
               </Btn>
             </div>
           ) : null}
@@ -719,30 +723,27 @@ export function CassandraTableTab({
             <div className="save-bar">
               <Icon name="edit_note" size={16} style={{ color: "var(--accent)" }} />
               <span className="save-bar-count">
-                {editCount} cell{editCount === 1 ? "" : "s"} edited · unsaved
+                {tr("cass.tab.editedUnsaved", { count: editCount })}
               </span>
-              <span className="save-bar-hint">
-                nothing is written to the database until you save
-              </span>
+              <span className="save-bar-hint">{tr("cass.tab.nothingWritten")}</span>
               <div style={{ flex: 1 }} />
               <Btn variant="text" small onClick={discardEdits}>
-                Discard
+                {tr("cass.tab.discard")}
               </Btn>
               <Btn variant="filled" small icon="save" onClick={() => void saveEdits()}>
-                Save · ⌘S
+                {tr("cass.tab.save")}
               </Btn>
             </div>
           ) : null}
           <div className="table-footer">
             <span className="table-hint">
-              double-click a cell to edit · click # to open the row · ⌘I add · ⌘S save · {ks}.
-              {tableName}
+              {tr("cass.tab.gridHint")} {ks}.{tableName}
             </span>
             <div className="pager">
-              <span className="pager-label">Page size</span>
+              <span className="pager-label">{tr("cass.tab.pageSize")}</span>
               <Select
                 className="pager-size"
-                aria-label="Page size"
+                aria-label={tr("cass.tab.pageSize")}
                 placement="up"
                 value={String(limit)}
                 options={[
@@ -764,14 +765,14 @@ export function CassandraTableTab({
               </span>
               <IconBtn
                 icon="chevron_left"
-                title="Previous page"
+                title={tr("cass.tab.prevPage")}
                 onClick={prevPage}
                 disabled={pageIdx === 0}
               />
-              <span className="pager-page">Page {pageIdx + 1}</span>
+              <span className="pager-page">{tr("cass.tab.pageN", { page: pageIdx + 1 })}</span>
               <IconBtn
                 icon="chevron_right"
-                title="Next page"
+                title={tr("cass.tab.nextPage")}
                 onClick={nextPage}
                 disabled={!result?.nextPagingState}
               />

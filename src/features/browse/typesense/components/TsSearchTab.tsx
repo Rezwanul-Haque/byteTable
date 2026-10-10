@@ -17,6 +17,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { isAppErrorPayload } from "../../../../shared/api/error";
+import { type StringKey } from "../../../../shared/i18n/strings/en";
+import { useT } from "../../../../shared/i18n/useT";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { Select } from "../../../../shared/ui/Select";
@@ -71,19 +73,14 @@ const SNIPPET_FIELDS = ["description", "body", "content"];
 /** Latency sparkline — hidden until latency actually varies (Task 3): at least
  *  three samples AND two distinct values, so it is never a row of equal bars. */
 function TsSparkline({ values }: { values: number[] }) {
+  const t = useT();
   const distinct = new Set(values);
   if (values.length < 3 || distinct.size < 2) return null;
   const max = Math.max(...values, 1);
   return (
     <span
       className="ts-spark"
-      title={
-        "search_time_ms across the last " +
-        Math.min(14, values.length) +
-        " queries · peak " +
-        max +
-        " ms"
-      }
+      title={t("tsx.search.sparkTitle", { n: Math.min(14, values.length), peak: max })}
     >
       {values.slice(-14).map((v, i) => (
         <span key={i} style={{ height: Math.max(2, Math.round((v / max) * 12)) + "px" }} />
@@ -108,35 +105,38 @@ function TsHighlight({ parts }: { parts: MarkPart[] }) {
   );
 }
 
-const KIND_LABEL: Record<string, string> = {
-  exact: "exact",
-  prefix: "prefix",
-  typo: "typo",
-  synonym: "synonym",
+const KIND_LABEL: Record<string, StringKey> = {
+  exact: "tsx.search.kindExact",
+  prefix: "tsx.search.kindPrefix",
+  typo: "tsx.search.kindTypo",
+  synonym: "tsx.search.kindSynonym",
 };
 
 /** The relevance x-ray (Task 2). The head carries the server's real numbers; the
  *  rows are derived and the bars are explicitly estimated. */
 function TsXray({ xray, queryBy }: { xray: Xray; queryBy: QueryByField[] }) {
+  const t = useT();
   const info = xray.info;
   return (
     <div className="ts-xray">
       <div className="ts-xray-head">
-        <span>relevance x-ray · contribution estimated</span>
+        <span>{t("tsx.search.xrayHead")}</span>
         <span className="ts-xray-tm">
           text_match <b>{xray.textMatch || "—"}</b>
           {info ? (
             <>
-              {" · "}
-              {info.tokensMatched} tok · {info.fieldsMatched} field
-              {info.fieldsMatched === 1 ? "" : "s"} · weight {info.bestFieldWeight}
+              {t("tsx.search.xrayTokField", {
+                tok: info.tokensMatched,
+                fields: info.fieldsMatched,
+                weight: info.bestFieldWeight,
+              })}
             </>
           ) : null}
         </span>
       </div>
       <div className="ts-xray-rows">
         {xray.rows.length === 0 ? (
-          <div className="ts-xray-none">no query tokens — browsing by sort order</div>
+          <div className="ts-xray-none">{t("tsx.search.noTokens")}</div>
         ) : (
           xray.rows.map((r, i) => (
             <div key={i} className="ts-xray-row">
@@ -144,7 +144,7 @@ function TsXray({ xray, queryBy }: { xray: Xray; queryBy: QueryByField[] }) {
               <Icon name="arrow_right_alt" size={13} style={{ color: "var(--text-faint)" }} />
               <span className="ts-xray-field">{r.field}</span>
               <span className={"ts-kind " + (r.kind === "synonym" ? "syn" : r.kind)}>
-                {KIND_LABEL[r.kind]}
+                {t(KIND_LABEL[r.kind]!)}
                 {r.kind === "typo" ? " ·" + r.distance : ""}
               </span>
               {r.matched !== r.token ? <span className="ts-xray-pos">→ {r.matched}</span> : null}
@@ -158,12 +158,14 @@ function TsXray({ xray, queryBy }: { xray: Xray; queryBy: QueryByField[] }) {
         )}
         {xray.unmatched.length > 0 ? (
           <div className="ts-xray-none">
-            not matched in any highlighted field: {xray.unmatched.join(", ")}
+            {t("tsx.search.unmatched", { list: xray.unmatched.join(", ") })}
           </div>
         ) : null}
       </div>
       <div className="ts-xray-foot">
-        searched fields: {queryBy.map((q) => q.field + "×" + q.weight).join(" · ")}
+        {t("tsx.search.searchedFields", {
+          list: queryBy.map((q) => q.field + "×" + q.weight).join(" · "),
+        })}
       </div>
     </div>
   );
@@ -190,6 +192,7 @@ function TsHitRow({
   open: boolean;
   onToggle: () => void;
 }) {
+  const t = useT();
   const xray = useMemo(() => deriveXray(hit, query, queryBy), [hit, query, queryBy]);
   const typos = typoCount(xray);
   const bodyField = collection.fields.find(
@@ -213,13 +216,11 @@ function TsHitRow({
             {titleParts.length ? <TsHighlight parts={titleParts} /> : <span>{id}</span>}
             {hit.curated ? (
               <span className="ts-pin">
-                <Icon name="push_pin" size={11} /> curated
+                <Icon name="push_pin" size={11} /> {t("tsx.search.curated")}
               </span>
             ) : null}
             {typos > 0 ? (
-              <span className="ts-typo-tag">
-                {typos} typo{typos > 1 ? "s" : ""}
-              </span>
+              <span className="ts-typo-tag">{t("tsx.search.typoTag", { count: typos })}</span>
             ) : null}
           </span>
           {snippetParts.length ? (
@@ -240,11 +241,7 @@ function TsHitRow({
           {percent === null ? (
             <span
               className="ts-relnum"
-              title={
-                hit.curated
-                  ? "Pinned by a curation rule — injected rather than ranked, so it has no text_match"
-                  : "No text ranking for a match-all query — these results are ordered by sort_by"
-              }
+              title={hit.curated ? t("tsx.search.pinnedTitle") : t("tsx.search.noRankTitle")}
             >
               —
             </span>
@@ -287,6 +284,7 @@ function TsSortPicker({
   options: { value: string; label: string }[];
   onChange: (v: string) => void;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -361,16 +359,22 @@ function TsSortPicker({
             setOpen(true);
           }
         }}
-        title="sort_by"
+        title={t("tsx.search.sortBy")}
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label={"Sort by " + (current?.label ?? "relevance")}
+        aria-label={t("tsx.search.sortLabel", {
+          label: current?.label ?? t("tsx.search.relevance"),
+        })}
       >
-        <Icon name="sort" size={13} /> {current?.label ?? "relevance"}{" "}
+        <Icon name="sort" size={13} /> {current?.label ?? t("tsx.search.relevance")}{" "}
         <Icon name="expand_more" size={13} style={{ color: "var(--text-faint)" }} />
       </button>
       {open ? (
-        <div className="schema-pop ts-sort-pop" role="listbox" aria-label="Sort by">
+        <div
+          className="schema-pop ts-sort-pop"
+          role="listbox"
+          aria-label={t("tsx.search.sortByLabel")}
+        >
           {options.map((o, i) => (
             <button
               key={o.value}
@@ -426,67 +430,58 @@ function TsWhyEmpty({
   onTypos: (n: number) => void;
   onPickTerm: (token: string, term: string) => void;
 }) {
+  const t = useT();
   if (!diagnosis.tokens.length) return null;
-  const blocked = diagnosis.tokens.some((t) => t.blockedByMinLen);
+  const blocked = diagnosis.tokens.some((tok) => tok.blockedByMinLen);
   // A closer term exists but sits outside the CURRENT budget — raising typos
   // would reach it.
   const needsMoreTypos = diagnosis.tokens.some(
-    (t) => t.nearest.length > 0 && t.nearest[0]!.distance > t.allowedTypos,
+    (tok) => tok.nearest.length > 0 && tok.nearest[0]!.distance > tok.allowedTypos,
   );
   return (
     <div className="ts-why">
-      <div className="ts-why-head">why</div>
-      {diagnosis.tokens.map((t) => (
-        <div key={t.token} className="ts-why-row">
-          <span className="ts-why-tok">{t.token}</span>
+      <div className="ts-why-head">{t("tsx.search.why")}</div>
+      {diagnosis.tokens.map((tok) => (
+        <div key={tok.token} className="ts-why-row">
+          <span className="ts-why-tok">{tok.token}</span>
           <span className="ts-why-budget">
-            {t.length} chars → <b>{t.allowedTypos}</b> typo{t.allowedTypos === 1 ? "" : "s"} allowed
+            {t("tsx.search.budgetRow", { chars: tok.length, typos: tok.allowedTypos })}
           </span>
-          {t.nearest.length ? (
+          {tok.nearest.length ? (
             <span className="ts-why-near">
-              nearest indexed term
-              {t.nearest.map((n) => (
+              {t("tsx.search.nearestTerm")}
+              {tok.nearest.map((n) => (
                 <button
                   key={n.term + n.field}
                   type="button"
                   className="ts-why-term"
-                  onClick={() => onPickTerm(t.token, n.term)}
-                  title={"Search for “" + n.term + "” instead"}
+                  onClick={() => onPickTerm(tok.token, n.term)}
+                  title={t("tsx.search.searchInstead", { term: n.term })}
                 >
                   {n.term}
-                  <i>
-                    {n.field} · {n.distance} edit{n.distance === 1 ? "" : "s"}
-                  </i>
+                  <i>{t("tsx.search.editDistance", { field: n.field, count: n.distance })}</i>
                 </button>
               ))}
             </span>
           ) : (
-            <span className="ts-why-near">nothing within 4 edits in the selected fields</span>
+            <span className="ts-why-near">{t("tsx.search.nothingNear")}</span>
           )}
         </div>
       ))}
       <div className="ts-why-foot">
-        {blocked ? (
-          <span>
-            Typesense only allows 1 typo from 4 characters and 2 from 7 (<code>min_len_1typo</code>{" "}
-            / <code>min_len_2typo</code>), so a short token cannot reach a 2-edit match.
-          </span>
-        ) : null}
+        {blocked ? <span>{t("tsx.search.minLenNote")}</span> : null}
         {blocked && !relaxMinLen ? (
           <button type="button" className="ts-why-fix" onClick={onRelax}>
-            relax min_len
+            {t("tsx.search.relaxMinLen")}
           </button>
         ) : null}
         {needsMoreTypos && numTypos < 2 ? (
           <button type="button" className="ts-why-fix" onClick={() => onTypos(2)}>
-            set typos to 2
+            {t("tsx.search.setTypos2")}
           </button>
         ) : null}
         {!diagnosis.complete ? (
-          <span>
-            Nearest terms come from a sample of {tsCount(diagnosis.sampledDocuments)} documents, not
-            the whole index.
-          </span>
+          <span>{t("tsx.search.sampleNote", { count: tsCount(diagnosis.sampledDocuments) })}</span>
         ) : null}
       </div>
     </div>
@@ -518,6 +513,7 @@ export function TsSearchTab({
   popularQueries = [],
   adminKey = false,
 }: TsSearchTabProps) {
+  const t = useT();
   const toast = useToast();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const name = collection?.name ?? "";
@@ -532,7 +528,7 @@ export function TsSearchTab({
   );
   const sortOptions = useMemo(
     () => [
-      { value: "_text_match:desc", label: "relevance" },
+      { value: "_text_match:desc", label: t("tsx.search.relevance") },
       ...(collection?.fields ?? [])
         .filter((f) => f.sort)
         .flatMap((f) => [
@@ -697,7 +693,7 @@ export function TsSearchTab({
         })
         .catch((e) => {
           if (!live) return;
-          setError(isAppErrorPayload(e) ? e.message : "The search failed.");
+          setError(isAppErrorPayload(e) ? e.message : t("tsx.search.failed"));
           setResult(null);
         })
         .finally(() => live && setLoading(false));
@@ -765,12 +761,12 @@ export function TsSearchTab({
     if (!result) return;
     const text = curlFor(result.requestUrl, result.requestParams);
     if (!navigator.clipboard?.writeText) {
-      toast("Couldn't copy to clipboard", "err");
+      toast(t("tsx.search.copyFailed"), "err");
       return;
     }
     void navigator.clipboard.writeText(text).then(
-      () => toast("curl request copied", "ok"),
-      () => toast("Couldn't copy to clipboard", "err"),
+      () => toast(t("tsx.search.curlCopied"), "ok"),
+      () => toast(t("tsx.search.copyFailed"), "err"),
     );
   };
 
@@ -778,8 +774,8 @@ export function TsSearchTab({
     return (
       <div className="ts-empty">
         <Icon name="search" size={26} style={{ color: "var(--text-faint)" }} />
-        <p>No collection selected.</p>
-        <span className="ts-empty-hint">Pick a collection in the sidebar to search it.</span>
+        <p>{t("tsx.search.noCollection")}</p>
+        <span className="ts-empty-hint">{t("tsx.search.noCollectionHint")}</span>
       </div>
     );
   }
@@ -802,14 +798,14 @@ export function TsSearchTab({
           autoFocus
           value={q}
           spellCheck={false}
-          placeholder={"Search " + name + " — instant, typo tolerant…"}
+          placeholder={t("tsx.search.placeholder", { name })}
           onChange={(e) => setQ(e.target.value)}
         />
         {q ? (
           <button
             type="button"
             className="ts-qclear"
-            title="Clear"
+            title={t("tsx.search.clear")}
             onClick={() => {
               setQ("");
               inputRef.current?.focus();
@@ -819,11 +815,11 @@ export function TsSearchTab({
           </button>
         ) : null}
         <span className="ts-lat">
-          <b title="found — documents matching this query">{tsCount(found)}</b>{" "}
-          <span title={"out_of — total documents in " + name}>
+          <b title={t("tsx.search.foundTitle")}>{tsCount(found)}</b>{" "}
+          <span title={t("tsx.search.outOfTitle", { name })}>
             / {tsCount(result?.outOf ?? collection.numDocuments)}
           </span>
-          <span className="ts-lat-ms" title="search_time_ms reported by the server">
+          <span className="ts-lat-ms" title={t("tsx.search.timeTitle")}>
             {result ? result.searchTimeMs + " ms" : "—"}
           </span>
           {result?.hiddenByCuration ? (
@@ -831,15 +827,10 @@ export function TsSearchTab({
               type="button"
               className="ts-hidden-chip"
               onClick={() => setCuration(false)}
-              title={
-                "A curation rule hides " +
-                result.hiddenByCuration +
-                " matching document" +
-                (result.hiddenByCuration === 1 ? "" : "s") +
-                " — click to switch curation off"
-              }
+              title={t("tsx.search.hiddenTitle", { count: result.hiddenByCuration })}
             >
-              <Icon name="visibility_off" size={12} /> {result.hiddenByCuration} hidden
+              <Icon name="visibility_off" size={12} />{" "}
+              {t("tsx.search.hidden", { count: result.hiddenByCuration })}
             </button>
           ) : null}
           <TsSparkline values={latency} />
@@ -848,7 +839,7 @@ export function TsSearchTab({
 
       {/* 2 — controls */}
       <div className="ts-ctlrow">
-        <span className="ts-ctl-label">query_by</span>
+        <span className="ts-ctl-label">{t("tsx.search.queryBy")}</span>
         {queryBy.map((f) => {
           const on = !disabledFields.has(f.field);
           return (
@@ -857,7 +848,7 @@ export function TsSearchTab({
                 type="button"
                 className="ts-fpill-name"
                 onClick={() => toggleField(f.field)}
-                title="Toggle field"
+                title={t("tsx.search.toggleField")}
               >
                 {f.field}
               </button>
@@ -866,7 +857,7 @@ export function TsSearchTab({
                 className="ts-fpill-w"
                 onClick={() => bumpWeight(f.field, -1)}
                 disabled={!on || f.weight <= 1}
-                title="Lower weight"
+                title={t("tsx.search.lowerWeight")}
               >
                 −
               </button>
@@ -876,7 +867,7 @@ export function TsSearchTab({
                 className="ts-fpill-w"
                 onClick={() => bumpWeight(f.field, 1)}
                 disabled={!on || f.weight >= 5}
-                title="Raise weight"
+                title={t("tsx.search.raiseWeight")}
               >
                 +
               </button>
@@ -884,7 +875,7 @@ export function TsSearchTab({
           );
         })}
         <span className="ts-ctl-sep" />
-        <span className="ts-ctl-label">typos</span>
+        <span className="ts-ctl-label">{t("tsx.search.typos")}</span>
         <div className="seg ts-seg">
           {[0, 1, 2].map((n) => (
             <button
@@ -892,57 +883,48 @@ export function TsSearchTab({
               type="button"
               className={"seg-btn" + (numTypos === n ? " active" : "")}
               onClick={() => setNumTypos(n)}
-              title={n === 2 ? "num_typos caps at 2 in Typesense" : undefined}
+              title={n === 2 ? t("tsx.search.typosCap") : undefined}
             >
               {n}
             </button>
           ))}
         </div>
         {effective !== null && effective < numTypos ? (
-          <span
-            className="ts-budget-warn"
-            title={
-              "min_len_1typo=4 / min_len_2typo=7 — your shortest token gets only " +
-              effective +
-              " typo" +
-              (effective === 1 ? "" : "s") +
-              ". Turn on “relax min_len” to override."
-            }
-          >
-            <Icon name="straighten" size={12} /> effective {effective}
+          <span className="ts-budget-warn" title={t("tsx.search.budgetWarn", { n: effective })}>
+            <Icon name="straighten" size={12} /> {t("tsx.search.effective", { n: effective })}
           </span>
         ) : null}
         <button
           type="button"
           className={"ts-ctl" + (prefix ? " on" : "")}
           onClick={() => setPrefix((p) => !p)}
-          title="prefix search on the last token"
+          title={t("tsx.search.prefixTitle")}
         >
-          <Icon name="text_fields" size={13} /> prefix
+          <Icon name="text_fields" size={13} /> {t("tsx.search.prefix")}
         </button>
         <button
           type="button"
           className={"ts-ctl" + (synonyms ? " on" : "")}
           onClick={() => setSynonyms((s) => !s)}
-          title="apply the collection's synonym sets"
+          title={t("tsx.search.synonymsTitle")}
         >
-          <Icon name="swap_calls" size={13} /> synonyms
+          <Icon name="swap_calls" size={13} /> {t("tsx.search.synonyms")}
         </button>
         <button
           type="button"
           className={"ts-ctl" + (curation ? " on" : "")}
           onClick={() => setCuration((s) => !s)}
-          title="apply curation rules (pins & hides)"
+          title={t("tsx.search.curationTitle")}
         >
-          <Icon name="push_pin" size={13} /> curation
+          <Icon name="push_pin" size={13} /> {t("tsx.search.curation")}
         </button>
         <button
           type="button"
           className={"ts-ctl" + (relaxMinLen ? " on" : "")}
           onClick={() => setRelaxMinLen((s) => !s)}
-          title="send min_len_1typo=1 & min_len_2typo=1 — give short tokens the full typo budget too"
+          title={t("tsx.search.relaxTitle")}
         >
-          <Icon name="straighten" size={13} /> relax min_len
+          <Icon name="straighten" size={13} /> {t("tsx.search.relax")}
         </button>
         <TsSortPicker value={sortBy} options={sortOptions} onChange={setSortBy} />
         <span className="ts-ctl-spacer" />
@@ -950,18 +932,18 @@ export function TsSearchTab({
           type="button"
           className={"ts-ctl" + (showRequest ? " on" : "")}
           onClick={() => setShowRequest((s) => !s)}
-          title="Show the search request this UI is sending"
+          title={t("tsx.search.requestTitle")}
         >
-          <Icon name="code" size={13} /> request
+          <Icon name="code" size={13} /> {t("tsx.search.request")}
         </button>
         <button
           type="button"
           className="ts-ctl"
           onClick={copyCurl}
           disabled={!result}
-          title="Copy this search as a curl command"
+          title={t("tsx.search.curlTitle")}
         >
-          <Icon name="content_copy" size={13} /> curl
+          <Icon name="content_copy" size={13} /> {t("tsx.search.curl")}
         </button>
       </div>
 
@@ -970,7 +952,7 @@ export function TsSearchTab({
         <div className="ts-req-panel">
           <div className="ts-req-cols">
             <div>
-              <div className="ts-req-h">search parameters</div>
+              <div className="ts-req-h">{t("tsx.search.searchParams")}</div>
               <pre className="ts-req-pre">{JSON.stringify(result.requestParams, null, 2)}</pre>
             </div>
             <div>
@@ -984,13 +966,13 @@ export function TsSearchTab({
       {/* 4 — filter chips */}
       {chips.length ? (
         <div className="ts-filterrow">
-          <span className="ts-ctl-label">filter_by</span>
+          <span className="ts-ctl-label">{t("tsx.search.filterBy")}</span>
           {chips.map((c, i) => (
             <span key={c.field + ":" + c.value} className="ts-chip-filter">
               {chipLabel(c)}
               <button
                 type="button"
-                title="Remove this filter"
+                title={t("tsx.search.removeFilter")}
                 onClick={() => setChips((prev) => prev.filter((_, j) => j !== i))}
               >
                 <Icon name="close" size={12} />
@@ -998,7 +980,7 @@ export function TsSearchTab({
             </span>
           ))}
           <button type="button" className="ts-clear-filters" onClick={() => setChips([])}>
-            clear all
+            {t("tsx.search.clearAll")}
           </button>
         </div>
       ) : null}
@@ -1011,17 +993,15 @@ export function TsSearchTab({
           ) : activeQueryBy.length === 0 ? (
             <div className="ts-empty">
               <Icon name="search_off" size={32} style={{ color: "var(--text-faint)" }} />
-              <p>Every query_by field is switched off.</p>
-              <span className="ts-empty-hint">
-                Turn at least one field back on — Typesense needs a field to search in.
-              </span>
+              <p>{t("tsx.search.allFieldsOff")}</p>
+              <span className="ts-empty-hint">{t("tsx.search.allFieldsOffHint")}</span>
             </div>
           ) : !result && loading ? (
-            <TsLoading what="results" />
+            <TsLoading what="tsx.whatResults" />
           ) : result && result.droppedTokens > 0 ? (
             <div className="ts-note">
-              <Icon name="info" size={14} /> dropped {result.droppedTokens} token
-              {result.droppedTokens > 1 ? "s" : ""} to find matches (drop_tokens_threshold)
+              <Icon name="info" size={14} />{" "}
+              {t("tsx.search.droppedTokens", { count: result.droppedTokens })}
             </div>
           ) : null}
 
@@ -1029,8 +1009,9 @@ export function TsSearchTab({
             <div className="ts-empty">
               <Icon name="search_off" size={38} style={{ color: "var(--text-faint)" }} />
               <div>
-                No documents matched <b>{q || "*"}</b>
-                {chips.length ? " with these filters" : ""}.
+                {chips.length
+                  ? t("tsx.search.noMatchFilters", { q: q || "*" })
+                  : t("tsx.search.noMatch", { q: q || "*" })}
               </div>
               {q.trim() && diagnosis ? (
                 <TsWhyEmpty
@@ -1051,9 +1032,7 @@ export function TsSearchTab({
                   }}
                 />
               ) : null}
-              <div className="ts-empty-hint">
-                Try raising <b>typos</b>, enabling more <b>query_by</b> fields, or clearing filters.
-              </div>
+              <div className="ts-empty-hint">{t("tsx.search.tryHint")}</div>
             </div>
           ) : (
             result?.hits.map((h, i) => {
@@ -1076,7 +1055,7 @@ export function TsSearchTab({
         </div>
 
         <div className="ts-facets">
-          <div className="ts-facets-head">facet_by</div>
+          <div className="ts-facets-head">{t("tsx.search.facetBy")}</div>
           {(result?.facetCounts ?? []).map((f) => {
             const max = f.counts[0]?.count ?? 0;
             return (
@@ -1108,13 +1087,13 @@ export function TsSearchTab({
             );
           })}
           {facetFields.length === 0 ? (
-            <div className="ts-facet-none">no facetable fields in this collection</div>
+            <div className="ts-facet-none">{t("tsx.search.noFacetFields")}</div>
           ) : null}
 
           {popularQueries.length > 0 ? (
             <>
               <div className="ts-facets-head" style={{ marginTop: 14 }}>
-                popular queries
+                {t("tsx.search.popularQueries")}
               </div>
               {popularQueries.slice(0, 5).map((p) => (
                 <button
@@ -1122,10 +1101,12 @@ export function TsSearchTab({
                   type="button"
                   className="ts-pop-row"
                   onClick={() => setQ(p.query)}
-                  title={"run “" + p.query + "”"}
+                  title={t("tsx.search.runQuery", { query: p.query })}
                 >
                   <span className="ts-pop-q">{p.query}</span>
-                  {p.noHits ? <span className="ts-pop-hits zero">no hits</span> : null}
+                  {p.noHits ? (
+                    <span className="ts-pop-hits zero">{t("tsx.dash.noHits")}</span>
+                  ) : null}
                   <span className="ts-pop-cnt">{tsCount(p.count)}</span>
                 </button>
               ))}
@@ -1137,12 +1118,11 @@ export function TsSearchTab({
       {/* 6 — the shared pager (same pattern as the SQL and Cassandra grids) */}
       <div className="table-footer">
         <span className="table-hint">
-          <Icon name="keyboard" size={11} /> <code>/</code> focuses search · click a facet to filter
-          · expand a hit for the relevance x-ray
+          <Icon name="keyboard" size={11} /> <code>/</code> {t("tsx.search.footerHint")}
         </span>
         <div className="pager">
           <span className="pager-label" id="ts-search-pager-label">
-            Hits per page
+            {t("tsx.search.hitsPerPage")}
           </span>
           <Select
             className="pager-size"
@@ -1156,18 +1136,25 @@ export function TsSearchTab({
             }}
           />
           <span className="pager-range">
-            {found === 0 ? "0" : tsCount(from) + "–" + tsCount(to)} of {tsCount(found)} · Page{" "}
-            {page} of {pageCount}
+            {found === 0
+              ? t("tsx.search.pageRangeZero", { page, pages: pageCount })
+              : t("tsx.search.pageRange", {
+                  from: tsCount(from),
+                  to: tsCount(to),
+                  total: tsCount(found),
+                  page,
+                  pages: pageCount,
+                })}
           </span>
           <IconBtn
             icon="chevron_left"
-            title="Previous page"
+            title={t("tsx.search.prevPage")}
             disabled={page <= 1}
             onClick={() => setPage((p) => Math.max(1, p - 1))}
           />
           <IconBtn
             icon="chevron_right"
-            title="Next page"
+            title={t("tsx.search.nextPage")}
             disabled={page >= pageCount}
             onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
           />

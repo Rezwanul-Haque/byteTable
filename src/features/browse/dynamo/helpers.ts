@@ -4,6 +4,8 @@
 // marshalling, CSV, the `CreateTable` structure definition, and the
 // single-table-design map model.
 
+import { t } from "../../../shared/i18n";
+
 import type { DynamoItem, SecondaryIndex, TableDescriptor } from "./api";
 
 /** Compact cell display for the grid: objects collapse to `[n]` / `{…}`. */
@@ -112,19 +114,17 @@ export function ddbRawOf(v: unknown): string {
  * out than a message beside the field.
  */
 export function setError(type: string, members: unknown[]): string | null {
-  if (members.length === 0) return "A DynamoDB set cannot be empty.";
+  if (members.length === 0) return t("dyn.h.setEmpty");
   const seen = new Set<string>();
   for (const m of members) {
     if (type === "NS") {
       if (typeof m !== "number" && !(typeof m === "string" && m.trim() !== "" && !isNaN(Number(m))))
-        return "Every member of a number set must be a number.";
+        return t("dyn.h.numSet");
     } else if (typeof m !== "string") {
-      return type === "BS"
-        ? "Every member of a binary set must be a base64 string."
-        : "Every member of a string set must be a string.";
+      return type === "BS" ? t("dyn.h.binSet") : t("dyn.h.strSet");
     }
     const key = String(m);
-    if (seen.has(key)) return "A set cannot contain the same value twice — “" + key + "” repeats.";
+    if (seen.has(key)) return t("dyn.h.setDup", { key });
     seen.add(key);
   }
   return null;
@@ -150,7 +150,7 @@ export function ddbCoerce(type: string, raw: string): unknown {
       // Edited as a bare array of members; re-wrapped in the tag the adapter
       // needs to rebuild an actual set rather than a list.
       const members: unknown = JSON.parse(raw);
-      if (!Array.isArray(members)) throw new SyntaxError("a set must be a JSON array");
+      if (!Array.isArray(members)) throw new SyntaxError(t("dyn.h.setArray"));
       const problem = setError(type, members);
       if (problem) throw new SyntaxError(problem);
       return { [SET_TAG[type] as string]: members };
@@ -532,7 +532,7 @@ export function parseItems(format: "json" | "csv", text: string): DynamoItem[] {
     );
   }
   if (!Array.isArray(data)) {
-    throw new Error('Expected a JSON array of items, or an object with an "Items" array.');
+    throw new Error(t("dyn.h.parseItems"));
   }
   return data.map((it: DynamoItem) => (isTypedItem(it) ? unmarshalItem(it) : it));
 }

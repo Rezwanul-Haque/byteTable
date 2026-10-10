@@ -6,11 +6,13 @@
 import { useState } from "react";
 
 import { Icon } from "../../../../shared/ui/Icon";
+import { useT } from "../../../../shared/i18n/useT";
 import type { MongoDoc, OidTag, DateTag } from "../api";
 import { fieldUnion, MONGO_TYPE_COLOR, mType, shortDate } from "../helpers";
 
 /** One typed value cell. */
 export function MongoValue({ v }: { v: unknown }) {
+  const tr = useT();
   const t = mType(v);
   if (t === "null") return <span className="cell-null">null</span>;
   if (t === "objectId")
@@ -32,7 +34,7 @@ export function MongoValue({ v }: { v: unknown }) {
     return (
       <span className="mg-obj">
         <Icon name="data_object" size={9} />
-        {Object.keys(v as object).length} fields
+        {tr("mongo.nFields", { count: Object.keys(v as object).length })}
       </span>
     );
   if (t === "bool") return <span className={v ? "cell-true" : "cell-false"}>{String(v)}</span>;
@@ -55,7 +57,8 @@ export function MongoDocGrid({
   onToggleRow?: (i: number) => void;
   onToggleAll?: () => void;
 }) {
-  if (!docs.length) return <div className="ddb-grid-empty">No documents</div>;
+  const tr = useT();
+  if (!docs.length) return <div className="ddb-grid-empty">{tr("mongo.noDocs")}</div>;
   const cols = fieldUnion(docs);
   const ordered = ["_id"].concat(cols.filter((c) => c !== "_id"));
   const selectable = !!onToggleRow;
@@ -77,7 +80,7 @@ export function MongoDocGrid({
                     if (el) el.indeterminate = someOn;
                   }}
                   onChange={() => onToggleAll?.()}
-                  aria-label="Select all rows"
+                  aria-label={tr("mongo.selectAllAria")}
                 />
               </th>
             ) : null}
@@ -105,13 +108,13 @@ export function MongoDocGrid({
                     className="ddb-dg-check"
                     checked={sel.has(ri)}
                     onChange={() => onToggleRow?.(ri)}
-                    aria-label={"Select row " + (ri + 1)}
+                    aria-label={tr("mongo.selectRowAria", { n: ri + 1 })}
                   />
                 </td>
               ) : null}
               <td className="ddb-dg-rownum">{ri + 1}</td>
               {ordered.map((c) => (
-                <td key={c} title={c in d ? "" : "missing"}>
+                <td key={c} title={c in d ? "" : tr("mongo.missing")}>
                   {c in d ? <MongoValue v={d[c]} /> : <span className="cell-absent">·</span>}
                 </td>
               ))}
@@ -194,7 +197,8 @@ export function MongoDocTree({
   onOpenDoc: (d: MongoDoc) => void;
   onDeleteDoc?: (d: MongoDoc) => void;
 }) {
-  if (!docs.length) return <div className="grid-empty">No documents</div>;
+  const tr = useT();
+  if (!docs.length) return <div className="grid-empty">{tr("mongo.noDocs")}</div>;
   return (
     <div className="mg-tree-wrap">
       {docs.map((d, i) => {
@@ -203,15 +207,21 @@ export function MongoDocTree({
             <div className="mg-tree-doc-head">
               <span className="mg-tree-idx">{i + 1}</span>
               <MongoValue v={d._id} />
-              <span className="mg-tree-doc-fields">{Object.keys(d).length} fields</span>
-              <button className="mg-tree-edit" onClick={() => onOpenDoc(d)} title="Edit document">
+              <span className="mg-tree-doc-fields">
+                {tr("mongo.nFields", { count: Object.keys(d).length })}
+              </span>
+              <button
+                className="mg-tree-edit"
+                onClick={() => onOpenDoc(d)}
+                title={tr("mongo.editDocTitle")}
+              >
                 <Icon name="edit" size={13} />
               </button>
               {onDeleteDoc ? (
                 <button
                   className="mg-tree-del"
                   onClick={() => onDeleteDoc(d)}
-                  title="Delete document"
+                  title={tr("mongo.delDocTitle")}
                 >
                   <Icon name="delete" size={13} />
                 </button>

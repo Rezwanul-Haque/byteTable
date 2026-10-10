@@ -3,6 +3,7 @@
 // scalars are tinted by their type family. `cassIsComplex` classifies the types
 // that must edit in the row modal rather than inline.
 
+import { useT } from "../../../../shared/i18n/useT";
 import type { ColumnKind } from "../api";
 import { baseType, cqlColor } from "../cqlTypes";
 
@@ -67,22 +68,23 @@ export function CassValue({ v, type }: { v: unknown; type: string }) {
 }
 
 export function KeyBadge({ kind }: { kind: ColumnKind }) {
+  const t = useT();
   if (kind === "partition_key")
     return (
-      <span className="cass-kbadge pk" title="Partition key">
-        PK
+      <span className="cass-kbadge pk" title={t("cass.badge.partitionKey")}>
+        {t("cass.badge.pk")}
       </span>
     );
   if (kind === "clustering")
     return (
-      <span className="cass-kbadge ck" title="Clustering column">
-        CK
+      <span className="cass-kbadge ck" title={t("cass.badge.clusteringColumn")}>
+        {t("cass.badge.ck")}
       </span>
     );
   if (kind === "static")
     return (
-      <span className="cass-kbadge st" title="Static column">
-        ST
+      <span className="cass-kbadge st" title={t("cass.badge.staticColumn")}>
+        {t("cass.badge.st")}
       </span>
     );
   return null;

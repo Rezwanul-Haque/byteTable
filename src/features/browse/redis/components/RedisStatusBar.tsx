@@ -8,10 +8,11 @@ import { EnvTag } from "../../../../shared/ui/EnvTag";
 import { BuiltByCredit } from "../../../../shared/ui/BuiltByCredit";
 import { ResourceMeter } from "../../../app_metrics/components/ResourceMeter";
 import { Icon } from "../../../../shared/ui/Icon";
+import { useT } from "../../../../shared/i18n/useT";
 import type { Env } from "../../../../shared/types";
 import type { ClusterTopology, KeyType } from "../api";
 import { allNodes, totalKeys } from "../cluster";
-import { humanBytes, humanNum, REDIS_TYPES } from "../helpers";
+import { humanBytes, REDIS_TYPES } from "../helpers";
 import "../../../processes/components/ProcessList.css";
 import "./ClusterDashboard.css";
 import "./RedisStatusBar.css";
@@ -54,6 +55,7 @@ export function RedisStatusBar(props: RedisStatusBarProps) {
     activeKeyMemory,
     onOpenProcesses,
   } = props;
+  const t = useT();
 
   const clusterKeys = cluster ? totalKeys(cluster.shards) : null;
   // The node this connection is attached to, per CLUSTER NODES' `myself` flag.
@@ -78,10 +80,9 @@ export function RedisStatusBar(props: RedisStatusBarProps) {
         <span className="status-dim cl-status" title="Redis Cluster">
           <Icon name="lan" size={11} />
           {"cluster · " +
-            cluster.shards.length +
-            (cluster.shards.length === 1 ? " shard · " : " shards · ") +
-            allNodes(cluster.shards).length +
-            (allNodes(cluster.shards).length === 1 ? " node" : " nodes")}
+            t("redis.cl.shardsN", { count: cluster.shards.length }) +
+            " · " +
+            t("redis.cl.nodesN", { count: allNodes(cluster.shards).length })}
         </span>
       ) : null}
       {/* Which node is being browsed. Not decoration: the keyspace, the client
@@ -89,15 +90,10 @@ export function RedisStatusBar(props: RedisStatusBarProps) {
       {currentNode ? (
         <span
           className="status-dim"
-          title={
-            "Attached to " +
-            currentNode.host +
-            ":" +
-            currentNode.port +
-            " (" +
-            currentNode.role +
-            ") — the keyspace, clients and stats shown are this node's"
-          }
+          title={t("redis.status.attachedTitle", {
+            node: currentNode.host + ":" + currentNode.port,
+            role: currentNode.role,
+          })}
         >
           {currentNode.host}:{currentNode.port}
         </span>
@@ -106,7 +102,7 @@ export function RedisStatusBar(props: RedisStatusBarProps) {
           cluster-wide key total instead of a switchable index. */}
       <span className="status-dim">
         {cluster
-          ? "db0" + (clusterKeys !== null ? " · " + humanNum(clusterKeys) + " keys" : "")
+          ? "db0" + (clusterKeys !== null ? " · " + t("redis.nKeys", { count: clusterKeys }) : "")
           : "db" + dbIndex}
       </span>
       <div style={{ flex: 1 }} />
@@ -121,10 +117,10 @@ export function RedisStatusBar(props: RedisStatusBarProps) {
       <button
         type="button"
         className="status-btn"
-        title="Connected clients"
+        title={t("redis.connectedClients")}
         onClick={onOpenProcesses}
       >
-        <Icon name="monitor_heart" size={13} /> clients
+        <Icon name="monitor_heart" size={13} /> {t("redis.clientsBtn")}
       </button>
       <ResourceMeter />
       <BuiltByCredit className="status-dim" />

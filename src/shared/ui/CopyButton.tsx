@@ -6,12 +6,13 @@
 // is parent-scoped, e.g. `.dg-td:hover .dg-copy` vs `.term-grid td:hover .term-copy`),
 // so the caller passes `className` and keeps its own CSS; the behaviour lives here.
 
+import { useT } from "../i18n/useT";
 import { Icon } from "./Icon";
 import { useToast } from "./toastContext";
 
 export function CopyButton({
   text,
-  label = "Copy value",
+  label,
   className,
   size = 12,
   icon = "content_copy",
@@ -20,7 +21,8 @@ export function CopyButton({
    *  etc.) so this component stays agnostic to the source data shape. */
   text: string;
   /** Accessible label — used for both `aria-label` and the tooltip, so a
-   *  button that copies something other than a single cell can say so. */
+   *  button that copies something other than a single cell can say so.
+   *  Defaults to the translated "Copy value". */
   label?: string;
   /** Positioning class for the button at the call site (e.g. `dg-copy`). */
   className?: string;
@@ -32,19 +34,21 @@ export function CopyButton({
   icon?: string;
 }) {
   const toast = useToast();
+  const t = useT();
+  const resolvedLabel = label ?? t("uix.copy.value");
   return (
     <button
       type="button"
       className={className}
-      title={label}
-      aria-label={label}
+      title={resolvedLabel}
+      aria-label={resolvedLabel}
       onClick={(e) => {
         // Never let the copy click select the row / focus the terminal input.
         e.stopPropagation();
         if (!text) return;
         void navigator.clipboard.writeText(text).then(
-          () => toast("Copied", "ok"),
-          () => toast("Couldn't copy to clipboard", "err"),
+          () => toast(t("uix.copy.done"), "ok"),
+          () => toast(t("uix.copy.fail"), "err"),
         );
       }}
     >

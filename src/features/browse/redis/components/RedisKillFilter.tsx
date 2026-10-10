@@ -13,7 +13,8 @@ import { useState } from "react";
 
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
-import { KILL_FILTERS } from "../clients";
+import { useT } from "../../../../shared/i18n/useT";
+import { KILL_FILTERS, killFilterHint, killFilterLabel } from "../clients";
 import type { KvClient, KvKillFilter } from "../api";
 import "./RedisClientsTab.css";
 
@@ -38,6 +39,7 @@ export function RedisKillFilter({
 }) {
   const [kind, setKind] = useState<KvKillFilter>("type");
   const [value, setValue] = useState("pubsub");
+  const t = useT();
   const spec = KILL_FILTERS.find((f) => f.id === kind) ?? KILL_FILTERS[0];
   if (!spec) return null;
 
@@ -56,11 +58,11 @@ export function RedisKillFilter({
   const chips = suggestions[kind];
 
   return (
-    <div className="rc-kf" role="dialog" aria-label="Kill clients by filter">
+    <div className="rc-kf" role="dialog" aria-label={t("redis.kf.aria")}>
       <div className="rc-kf-head">
         <Icon name="filter_alt" size={14} style={{ color: "var(--danger)" }} />
-        Kill by filter
-        <IconBtn icon="close" size={14} title="Close" onClick={onClose} />
+        {t("redis.ct.killByFilter")}
+        <IconBtn icon="close" size={14} title={t("common.close")} onClick={onClose} />
       </div>
       <div className="rc-kf-kinds">
         {KILL_FILTERS.map((f) => (
@@ -75,16 +77,16 @@ export function RedisKillFilter({
               setValue(f.id === "type" ? "pubsub" : f.id === "maxage" ? "3600" : "");
             }}
           >
-            {f.label}
+            {killFilterLabel(f)}
           </button>
         ))}
       </div>
       <div className="rc-kf-val">
         <input
           value={value}
-          placeholder={spec.hint}
+          placeholder={killFilterHint(spec)}
           spellCheck="false"
-          aria-label={spec.label + " value"}
+          aria-label={t("redis.kf.valueAria", { filter: killFilterLabel(spec) })}
           onChange={(e) => setValue(e.target.value)}
         />
         {chips && chips.length > 0 ? (
@@ -105,7 +107,7 @@ export function RedisKillFilter({
       <pre className="rc-kf-cmd">{spec.cmd(value || "…")}</pre>
       <div className="rc-kf-foot">
         <span className={matched.length ? "rc-kf-n" : "rc-kf-n zero"}>
-          {matched.length + (matched.length === 1 ? " client matches" : " clients match")}
+          {t("redis.kf.matches", { count: matched.length })}
         </span>
         <div style={{ flex: 1 }} />
         <button
@@ -119,15 +121,15 @@ export function RedisKillFilter({
               matched,
               cmd: spec.cmd(value.trim()),
               title:
-                "Kill " +
-                matched.length +
-                (matched.length === 1 ? " client · " : " clients · ") +
-                spec.label.toLowerCase(),
+                t("redis.kf.killPre") +
+                " " +
+                t("redis.kf.killCount", { count: matched.length }) +
+                killFilterLabel(spec).toLowerCase(),
             })
           }
         >
           <Icon name="dangerous" size={14} />
-          <span>Kill matching</span>
+          <span>{t("redis.kf.killMatching")}</span>
         </button>
       </div>
     </div>

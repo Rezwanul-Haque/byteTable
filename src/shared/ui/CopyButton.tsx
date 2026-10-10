@@ -14,6 +14,7 @@ export function CopyButton({
   label = "Copy value",
   className,
   size = 12,
+  icon = "content_copy",
 }: {
   /** The exact text to copy. The caller stringifies its value (objects → JSON,
    *  etc.) so this component stays agnostic to the source data shape. */
@@ -25,6 +26,10 @@ export function CopyButton({
   className?: string;
   /** Icon size in px. */
   size?: number;
+  /** Glyph, when one copy button sits beside another and the two need telling
+   *  apart — the FK peek offers a binary key as both a UUID (`content_copy`)
+   *  and its stored bytes (`tag`, the app's binary/hex glyph). */
+  icon?: string;
 }) {
   const toast = useToast();
   return (
@@ -43,7 +48,7 @@ export function CopyButton({
         );
       }}
     >
-      <Icon name="content_copy" size={size} />
+      <Icon name={icon} size={size} />
     </button>
   );
 }

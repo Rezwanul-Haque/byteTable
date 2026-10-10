@@ -268,6 +268,14 @@ export function buildMenus(m: MenuCtx): Menu[] {
           run: () => emitCmd("save-query"),
         },
         {
+          // Browsing the saved list needs no query tab (the workspace hosts
+          // the drawer), so this follows the workspace, not the active tab.
+          id: "saved-queries",
+          label: t("menu.query.saved"),
+          enabled: isSql,
+          run: () => emitCmd("saved-queries"),
+        },
+        {
           id: "query-history",
           label: t("menu.query.history"),
           enabled: isSql,

@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import { appErrorMessage } from "../../../../shared/api/error";
 import { useT } from "../../../../shared/i18n/useT";
 import { Btn } from "../../../../shared/ui/Btn";
+import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { Icon } from "../../../../shared/ui/Icon";
 import { useToast } from "../../../../shared/ui/toastContext";
 import {
@@ -233,12 +234,7 @@ export function MongoStructure({
                   spellCheck={false}
                 />
                 <label className="mg-idx-unique">
-                  <input
-                    type="checkbox"
-                    checked={unique}
-                    onChange={(e) => setUnique(e.target.checked)}
-                  />{" "}
-                  {t("mongo.flagUnique")}
+                  <Checkbox checked={unique} onChange={(e) => setUnique(e.target.checked)} /> unique
                 </label>
                 <Btn variant="filled" small icon="check" onClick={() => void createIndex()}>
                   {t("mongo.create")}

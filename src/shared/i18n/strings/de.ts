@@ -48,6 +48,7 @@ export const de: StringTable = {
   "menu.query.format": "Abfrage formatieren",
   "menu.query.explain": "Ausführungsplan",
   "menu.query.save": "Abfrage speichern",
+  "menu.query.saved": "Gespeicherte Abfragen",
   "menu.query.history": "Abfrageverlauf",
   "menu.help.shortcuts": "Tastenkürzel",
   "menu.help.checkUpdates": "Nach Updates suchen",

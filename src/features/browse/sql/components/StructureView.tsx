@@ -44,6 +44,7 @@ import {
 } from "../../../structure/ops";
 import { appErrorMessage } from "../../../../shared/api/error";
 import { Btn } from "../../../../shared/ui/Btn";
+import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { Modal, ModalTitle } from "../../../../shared/ui/Modal";
@@ -1408,8 +1409,7 @@ function AddIndexForm({ columns, onAdd, onCancel }: AddIndexFormProps) {
         ))}
       </div>
       <label className="st-addform-row">
-        <input type="checkbox" checked={unique} onChange={(e) => setUnique(e.target.checked)} />{" "}
-        {t("stv.uniqueIndex")}
+        <Checkbox checked={unique} onChange={(e) => setUnique(e.target.checked)} /> Unique index
       </label>
       <div className="st-addform-actions">
         <Btn variant="text" small onClick={onCancel}>

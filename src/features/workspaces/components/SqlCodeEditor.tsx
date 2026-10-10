@@ -40,7 +40,7 @@ import {
   indentUnit,
   syntaxHighlighting,
 } from "@codemirror/language";
-import { Compartment, EditorState } from "@codemirror/state";
+import { Compartment, EditorSelection, EditorState } from "@codemirror/state";
 import {
   EditorView,
   crosshairCursor,
@@ -99,6 +99,13 @@ export interface SqlCodeEditorHandle {
   pickStatement: () => string;
   /** Dismiss the open autocomplete popup, if any (used when loading a file). */
   dismissCompletion: () => void;
+  /**
+   * Put the caret on `[from, to)`, select it, scroll it into view and focus the
+   * editor — the results pane's "Go to statement", which walks the user from a
+   * failed result tab back to the SQL that produced it. Offsets outside the
+   * current document are ignored.
+   */
+  revealRange: (from: number, to: number) => void;
 }
 
 /** §3.7 highlight palette, mapped onto lezer tags. Colors are literal where
@@ -272,6 +279,18 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
       dismissCompletion: () => {
         const view = viewRef.current;
         if (view) closeCompletion(view);
+      },
+      revealRange: (from, to) => {
+        const view = viewRef.current;
+        if (!view || from < 0 || to > view.state.doc.length || from > to) return;
+        view.dispatch({
+          selection: { anchor: from, head: to },
+          // `center` rather than the default nearest: the statement is being
+          // jumped to from elsewhere in the UI, so it should land somewhere
+          // obvious instead of just barely on screen.
+          effects: EditorView.scrollIntoView(EditorSelection.range(from, to), { y: "center" }),
+        });
+        view.focus();
       },
     }));
 

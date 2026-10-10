@@ -49,6 +49,7 @@ export const zhHans: StringTable = {
   "menu.query.format": "格式化查询",
   "menu.query.explain": "执行计划",
   "menu.query.save": "保存查询",
+  "menu.query.saved": "已保存的查询",
   "menu.query.history": "查询历史",
   "menu.help.shortcuts": "键盘快捷键",
   "menu.help.checkUpdates": "检查更新",

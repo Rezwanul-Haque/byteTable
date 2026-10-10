@@ -15,7 +15,7 @@ import {
   SqlCodeEditor,
   type SqlCodeEditorHandle,
 } from "../../../workspaces/components/SqlCodeEditor";
-import { splitStatements } from "../../../workspaces/sqlStatement";
+import { splitStatements, statementRanges } from "../../../workspaces/sqlStatement";
 import { cassRunCql, type CassColumn, type CassCqlResult, type TableDescriptor } from "../api";
 import { csvOf, download } from "../cassIo";
 import { CassRowGrid } from "./CassRowGrid";
@@ -123,6 +123,21 @@ export function CassandraQueryTab({ handleId, ks, tables }: CassandraQueryTabPro
     handle.addEventListener("pointerup", onUp);
   };
 
+  // Select the statement behind a result tab in the editor and scroll it into
+  // view — the failed result's "Go to statement". Matched by text against a
+  // fresh split (the buffer may have been edited since the run), preferring the
+  // occurrence at or after the run's own position.
+  const goToStatement = (id: string) => {
+    const idx = runs.findIndex((r) => r.id === id);
+    const target = runs[idx];
+    if (!target) return;
+    const ranges = statementRanges(cqlText);
+    const isTarget = (r: { from: number; to: number }) =>
+      cqlText.slice(r.from, r.to) === target.cql;
+    const hit = ranges.slice(idx).find(isTarget) ?? ranges.find(isTarget);
+    if (hit) editorRef.current?.revealRange(hit.from, hit.to);
+  };
+
   const closeRun = (id: string) =>
     setRuns((rs) => {
       const idx = rs.findIndex((r) => r.id === id);
@@ -210,36 +225,55 @@ export function CassandraQueryTab({ handleId, ks, tables }: CassandraQueryTabPro
         <div className="sql-results">
           {runs.length > 1 ? (
             <div className="sqlres-tabs">
-              {runs.map((r, i) => (
-                <div
-                  key={r.id}
-                  className={"sqlres-tab" + (r.id === activeRun?.id ? " active" : "")}
-                  onClick={() => setActiveRunId(r.id)}
-                  title={r.cql}
-                >
-                  <Icon
-                    name={r.error ? "error" : "check_circle"}
-                    size={13}
-                    style={{ color: r.error ? "#e06c75" : "var(--accent)" }}
-                  />
-                  <span className="sqlres-tab-title">{t("cass.query.resultN", { n: i + 1 })}</span>
-                  <button
-                    type="button"
-                    className="sqlres-tab-close"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      closeRun(r.id);
-                    }}
-                    title={t("cass.query.closeResultN", { n: i + 1 })}
-                    aria-label={t("cass.query.closeResultN", { n: i + 1 })}
+              {runs.map((r, i) => {
+                // Failed = it carries an error, or nothing came back at all;
+                // either way it must never be badged as a success.
+                const failed = r.error != null || r.result == null;
+                return (
+                  <div
+                    key={r.id}
+                    className={
+                      "sqlres-tab" +
+                      (r.id === activeRun?.id ? " active" : "") +
+                      (failed ? " failed" : "")
+                    }
+                    onClick={() => setActiveRunId(r.id)}
+                    title={r.cql}
                   >
-                    <Icon name="close" size={11} />
-                  </button>
-                </div>
-              ))}
+                    <Icon
+                      name={failed ? "cancel" : "check_circle"}
+                      size={13}
+                      style={{ color: failed ? "var(--error)" : "var(--accent)" }}
+                    />
+                    <span className="sqlres-tab-title">
+                      Result {i + 1}
+                      {failed ? " · failed" : null}
+                    </span>
+                    <button
+                      type="button"
+                      className="sqlres-tab-close"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        closeRun(r.id);
+                      }}
+                      title="Close result"
+                      aria-label={`Close result ${i + 1}`}
+                    >
+                      <Icon name="close" size={11} />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           ) : null}
-          {activeRun ? <CassRunResult run={activeRun} ks={ks} consistency={consistency} /> : null}
+          {activeRun ? (
+            <CassRunResult
+              run={activeRun}
+              ks={ks}
+              consistency={consistency}
+              onGoTo={() => goToStatement(activeRun.id)}
+            />
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -251,25 +285,39 @@ function CassRunResult({
   run,
   ks,
   consistency,
+  onGoTo,
 }: {
   run: CassRun;
   ks: string;
   consistency: string;
+  onGoTo: () => void;
 }) {
-  const t = useT();
-  if (run.error) {
+  const r = run.result;
+  // A failed statement (or one that came back with nothing): the §5 message and
+  // the CQL that broke — click either it or the button to land on that
+  // statement in the editor.
+  if (run.error != null || r == null) {
     return (
       <div className="sql-error">
-        <Icon name="error" size={18} />
+        <Icon name="cancel" size={18} />
         <div>
-          <div className="sql-error-title">{t("cass.query.error")}</div>
-          <div className="sql-error-msg">{run.error}</div>
+          <div className="sql-error-title">Query error</div>
+          <div className="sql-error-msg">{run.error ?? "The statement returned no result."}</div>
+          <button
+            type="button"
+            className="sql-error-stmt"
+            title="Go to this statement in the editor"
+            onClick={onGoTo}
+          >
+            {run.cql}
+          </button>
+          <Btn icon="my_location" variant="text" small onClick={onGoTo}>
+            Go to statement
+          </Btn>
         </div>
       </div>
     );
   }
-  const r = run.result;
-  if (!r) return null;
   if (r.kind === "ddl") return <pre className="ddl-block cass-ddl-result">{r.text}</pre>;
   if (r.kind === "list")
     return (

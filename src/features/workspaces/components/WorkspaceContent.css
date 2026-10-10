@@ -9,6 +9,10 @@
   display: flex;
   flex-direction: column;
   background: var(--bg0);
+  /* Positioning context for the saved-queries drawer + scrim (QueryDrawers),
+     which this area hosts so the tab strip can open it with no query tab: the
+     drawer covers the tab body, not the strip above it. */
+  position: relative;
 }
 
 /* Prototype workspace.jsx empty-state (no open tabs). */

@@ -48,6 +48,7 @@ export const ar: StringTable = {
   "menu.query.format": "تنسيق الاستعلام",
   "menu.query.explain": "خطة التنفيذ",
   "menu.query.save": "حفظ الاستعلام",
+  "menu.query.saved": "الاستعلامات المحفوظة",
   "menu.query.history": "سجل الاستعلامات",
   "menu.help.shortcuts": "اختصارات لوحة المفاتيح",
   "menu.help.checkUpdates": "التحقق من التحديثات",

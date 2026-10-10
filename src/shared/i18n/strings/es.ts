@@ -47,6 +47,7 @@ export const es: StringTable = {
   "menu.query.format": "Formatear consulta",
   "menu.query.explain": "Plan de ejecución",
   "menu.query.save": "Guardar consulta",
+  "menu.query.saved": "Consultas guardadas",
   "menu.query.history": "Historial de consultas",
   "menu.help.shortcuts": "Atajos de teclado",
   "menu.help.checkUpdates": "Buscar actualizaciones",

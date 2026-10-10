@@ -75,7 +75,9 @@
   color: var(--text);
   font-family: var(--mono);
 }
-.truncate-prod input {
+/* Text fields only — the Dynamo create-table modal reuses `.truncate-prod` as
+   its form column and puts a <Checkbox> in it, which must keep its own box. */
+.truncate-prod input:not([type="checkbox"]) {
   background: var(--bg0);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -85,7 +87,7 @@
   outline: none;
   color: var(--text);
 }
-.truncate-prod input:focus {
+.truncate-prod input:not([type="checkbox"]):focus {
   border-color: #e06c75;
 }
 
@@ -107,10 +109,13 @@
   border-color: #e06c7540;
   background: #e06c750a;
 }
-.truncate-fk input {
+/* The shared <Checkbox> (the data grid's drawn box) retoned to the modal's
+   danger red — this used to be a native control tinted with `accent-color`,
+   which the Linux build rendered oversized and off-palette. */
+.truncate-fk .bt-check {
+  --check-fill: #e06c75;
+  --check-mark: #fff;
   margin: 2px 0 0;
-  accent-color: #e06c75;
-  cursor: pointer;
 }
 .truncate-fk-text {
   display: flex;

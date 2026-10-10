@@ -21,6 +21,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CellValue, QueryResult, SortSpec } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
 import { Btn } from "../../../shared/ui/Btn";
+import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Select } from "../../../shared/ui/Select";
@@ -526,12 +527,8 @@ export function DataFileDataTab({
           {t("dfile.addRow")}
         </Btn>
         <label className="csvv-toggle">
-          <input
-            type="checkbox"
-            checked={markEmpty}
-            onChange={(e) => setMarkEmpty(e.target.checked)}
-          />
-          {t("dfile.markEmpty")}
+          <Checkbox checked={markEmpty} onChange={(e) => setMarkEmpty(e.target.checked)} />
+          Mark empty cells
         </label>
         <span className="csvv-bar-dim">
           {hidden.size

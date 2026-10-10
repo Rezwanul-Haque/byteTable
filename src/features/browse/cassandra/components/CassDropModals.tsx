@@ -32,6 +32,7 @@ import { useRef, useState, type RefObject } from "react";
 
 import { appErrorMessage } from "../../../../shared/api/error";
 import { Btn } from "../../../../shared/ui/Btn";
+import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { Icon } from "../../../../shared/ui/Icon";
 import { InfoHint } from "../../../../shared/ui/InfoHint";
 import { Modal, ModalActions, ModalTitle } from "../../../../shared/ui/Modal";
@@ -286,8 +287,7 @@ export function CassDropTableModal({
         ) : null}
         {views.length ? (
           <label className={"truncate-fk" + (dropViews ? " on" : "")}>
-            <input
-              type="checkbox"
+            <Checkbox
               checked={dropViews}
               onChange={(e) => setDropViews(e.target.checked)}
               disabled={busy}

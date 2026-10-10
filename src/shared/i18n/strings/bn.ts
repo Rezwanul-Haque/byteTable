@@ -48,6 +48,7 @@ export const bn: StringTable = {
   "menu.query.format": "কোয়েরি ফরম্যাট করুন",
   "menu.query.explain": "এক্সিকিউশন প্ল্যান",
   "menu.query.save": "কোয়েরি সংরক্ষণ",
+  "menu.query.saved": "সংরক্ষিত কোয়েরি",
   "menu.query.history": "কোয়েরি ইতিহাস",
   "menu.help.shortcuts": "কীবোর্ড শর্টকাট",
   "menu.help.checkUpdates": "আপডেট চেক করুন",

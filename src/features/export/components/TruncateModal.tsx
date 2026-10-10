@@ -21,6 +21,7 @@ import { useState } from "react";
 import { truncateTable } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
 import { Btn } from "../../../shared/ui/Btn";
+import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Icon } from "../../../shared/ui/Icon";
 import { Modal, ModalActions, ModalTitle } from "../../../shared/ui/Modal";
 import { useToast } from "../../../shared/ui/toastContext";
@@ -109,8 +110,7 @@ export function TruncateModal({
         <pre className="truncate-sql">{truncateSql(engine, table, force && !!fk)}</pre>
         {fk ? (
           <label className={"truncate-fk" + (force ? " on" : "")}>
-            <input
-              type="checkbox"
+            <Checkbox
               checked={force}
               onChange={(e) => setForce(e.target.checked)}
               disabled={busy}

@@ -47,3 +47,5 @@ packaging/chocolatey/SHASUMS256.txt
 # Homebrew (rendered from template at build time)
 packaging/homebrew/bytetable.rb
 packaging/homebrew/SHASUMS256.txt
+
+bin/

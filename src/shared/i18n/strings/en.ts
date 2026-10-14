@@ -653,6 +653,7 @@ export const en = {
   "bin.uuidVersion.v4.hint": "Random",
   "bin.uuidVersion.v1.hint": "Timestamp + random node",
   "grid.editJson": "Edit JSON",
+  "grid.viewJson": "View JSON",
   "grid.editJsonFor": "Edit JSON for {name}",
   "grid.codeView": "Code",
   "grid.treeView": "Tree",

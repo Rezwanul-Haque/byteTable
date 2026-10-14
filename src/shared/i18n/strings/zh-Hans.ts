@@ -624,6 +624,7 @@ export const zhHans: StringTable = {
   "bin.uuidVersion.v4.hint": "随机",
   "bin.uuidVersion.v1.hint": "时间戳 + 随机节点",
   "grid.editJson": "编辑 JSON",
+  "grid.viewJson": "查看 JSON",
   "grid.editJsonFor": "编辑 {name} 的 JSON",
   "grid.codeView": "代码",
   "grid.treeView": "树",

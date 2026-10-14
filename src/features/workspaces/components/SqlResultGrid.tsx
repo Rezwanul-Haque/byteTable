@@ -25,6 +25,8 @@ import { CopyButton } from "../../../shared/ui/CopyButton";
 import { Icon } from "../../../shared/ui/Icon";
 import { useToast } from "../../../shared/ui/toastContext";
 import { CellContent } from "../../browse/shared/components/GridCell";
+import { BinaryEditorModal } from "../../browse/sql/components/BinaryEditorModal";
+import { JsonEditorModal } from "../../browse/sql/components/JsonEditorModal";
 
 import { cycleSort, sortedOrder } from "../resultSort";
 
@@ -190,6 +192,17 @@ export function SqlResultGrid({
   // an in-progress edit is not staged until it commits.
   const [editCell, setEditCell] = useState<{ row: number; col: number } | null>(null);
   const [editText, setEditText] = useState("");
+  // The cell open in the read-only viewer. A JSON document or a blob is the one
+  // kind of value a grid cell cannot show — it gets a one-line preview or a
+  // `0x…` chip — so clicking one opens the browse grid's own modals with
+  // `readOnly`, which is as far as a result set can go: there is no row behind
+  // it to write an edit back to (see `editing` in the props).
+  const [viewCell, setViewCell] = useState<{
+    kind: "json" | "binary";
+    column: string;
+    type: string;
+    value: CellValue;
+  } | null>(null);
   const beginEdit = (row: number, col: number, value: CellValue) => {
     if (!editing) return;
     setEditCell({ row, col });
@@ -595,7 +608,39 @@ export function SqlResultGrid({
                           />
                         ) : (
                           <>
-                            <CellContent value={cellVal} column={c.name} type={c.typeHint} />
+                            <CellContent
+                              value={cellVal}
+                              column={c.name}
+                              type={c.typeHint}
+                              // CellContent only calls these for a JSON or a
+                              // binary cell, so they can be handed over flat.
+                              // Not while the grid is editable (the data-file
+                              // editor): there a click belongs to the cell's own
+                              // select-then-edit path, which must not be
+                              // interrupted by a modal.
+                              onJsonClick={
+                                editing
+                                  ? undefined
+                                  : () =>
+                                      setViewCell({
+                                        kind: "json",
+                                        column: c.name,
+                                        type: c.typeHint ?? "",
+                                        value: cellVal,
+                                      })
+                              }
+                              onBinClick={
+                                editing
+                                  ? undefined
+                                  : () =>
+                                      setViewCell({
+                                        kind: "binary",
+                                        column: c.name,
+                                        type: c.typeHint ?? "",
+                                        value: cellVal,
+                                      })
+                              }
+                            />
                             {/* Hover copy button — copies the raw value. */}
                             {cellVal !== null ? (
                               <CopyButton
@@ -616,6 +661,29 @@ export function SqlResultGrid({
           </div>
         </div>
       </div>
+
+      {/* The viewers. `onSave` is required by both modals but unreachable here:
+          `readOnly` renders Close as the only action. */}
+      {viewCell?.kind === "json" ? (
+        <JsonEditorModal
+          column={viewCell.column}
+          type={viewCell.type}
+          value={viewCell.value}
+          readOnly
+          onSave={() => {}}
+          onClose={() => setViewCell(null)}
+        />
+      ) : null}
+      {viewCell?.kind === "binary" ? (
+        <BinaryEditorModal
+          column={viewCell.column}
+          type={viewCell.type}
+          value={viewCell.value}
+          readOnly
+          onSave={() => {}}
+          onClose={() => setViewCell(null)}
+        />
+      ) : null}
     </>
   );
 }

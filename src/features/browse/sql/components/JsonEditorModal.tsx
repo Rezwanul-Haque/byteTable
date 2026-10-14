@@ -70,13 +70,20 @@ function JsonTree({ value, depth = 0 }: { value: unknown; depth?: number }) {
 }
 
 interface JsonEditorModalProps {
-  schemaName: string;
-  table: string;
+  /** Qualifier for the title. Both are omitted by the SQL-results grid, whose
+   *  columns belong to no table — a result can be a join, an expression or an
+   *  aggregate. The title then shows the column alone. */
+  schemaName?: string;
+  table?: string;
   column: string;
   type: string;
   value: CellValue;
   onSave: (next: string | null) => void;
   onClose: () => void;
+  /** View-only: no typing, no Format/Minify, no Save. For a result set, where
+   *  there is no row to write back to — the document is still worth READING,
+   *  which a one-line cell preview cannot give you. */
+  readOnly?: boolean;
 }
 
 export function JsonEditorModal({
@@ -87,6 +94,7 @@ export function JsonEditorModal({
   value,
   onSave,
   onClose,
+  readOnly = false,
 }: JsonEditorModalProps) {
   const initial = (() => {
     if (value == null) return "";
@@ -181,12 +189,18 @@ export function JsonEditorModal({
     : (res.line ? t("grid.lineCol", { line: res.line, col: res.col ?? 0 }) : "") + res.message;
 
   return (
-    <Modal className="json-modal" width={600} label={t("grid.editJson")} onClose={onClose}>
+    <Modal
+      className="json-modal"
+      width={600}
+      label={readOnly ? t("grid.viewJson") : t("grid.editJson")}
+      onClose={onClose}
+    >
       <div className="modal-title">
         <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
           <Icon name="data_object" size={17} style={{ color: "var(--accent)" }} />
           <span className="json-title-col">
-            {schemaName}.{table}.<b>{column}</b>
+            {schemaName && table ? `${schemaName}.${table}.` : ""}
+            <b>{column}</b>
           </span>
           <span className="json-type-tag">{type}</span>
         </span>
@@ -212,24 +226,31 @@ export function JsonEditorModal({
           </button>
         </div>
         <div style={{ flex: 1 }} />
-        <button
-          type="button"
-          className="json-tool"
-          onClick={format}
-          disabled={!res.ok || res.empty}
-          title={t("grid.formatTitle")}
-        >
-          <Icon name="format_align_left" size={14} /> {t("grid.formatBtn")}
-        </button>
-        <button
-          type="button"
-          className="json-tool"
-          onClick={minify}
-          disabled={!res.ok || res.empty}
-          title={t("grid.minify")}
-        >
-          <Icon name="compress" size={14} /> {t("grid.minify")}
-        </button>
+        {/* Format and Minify rewrite the buffer, so a view-only document gets
+            neither — it is already pretty-printed on open. Code/Tree stay: both
+            are ways of READING it. */}
+        {readOnly ? null : (
+          <>
+            <button
+              type="button"
+              className="json-tool"
+              onClick={format}
+              disabled={!res.ok || res.empty}
+              title={t("grid.formatTitle")}
+            >
+              <Icon name="format_align_left" size={14} /> {t("grid.formatBtn")}
+            </button>
+            <button
+              type="button"
+              className="json-tool"
+              onClick={minify}
+              disabled={!res.ok || res.empty}
+              title={t("grid.minify")}
+            >
+              <Icon name="compress" size={14} /> {t("grid.minify")}
+            </button>
+          </>
+        )}
       </div>
 
       {view === "code" ? (
@@ -256,9 +277,13 @@ export function JsonEditorModal({
               autoCapitalize="off"
               autoComplete="off"
               aria-label={t("grid.editJsonFor", { name: column })}
+              readOnly={readOnly}
               onChange={(e) => setText(e.target.value)}
               onScroll={syncScroll}
-              onKeyDown={onKeyDown}
+              // Every shortcut in here edits — save, format, tab-indent,
+              // bracket auto-close — so a view-only document binds none of them
+              // and the textarea stays a scroller you can select from.
+              onKeyDown={readOnly ? undefined : onKeyDown}
               placeholder={t("grid.jsonPlaceholder")}
             />
           </div>
@@ -279,13 +304,24 @@ export function JsonEditorModal({
       </div>
 
       <ModalActions>
-        <div className="json-hint">{t("grid.jsonHint")}</div>
-        <Btn variant="text" onClick={onClose}>
-          {t("common.cancel")}
-        </Btn>
-        <Btn variant="filled" icon="check" onClick={save} disabled={!res.ok || !dirty}>
-          {t("common.save")}
-        </Btn>
+        {readOnly ? (
+          <>
+            <div style={{ flex: 1 }} />
+            <Btn variant="filled" onClick={onClose}>
+              {t("common.close")}
+            </Btn>
+          </>
+        ) : (
+          <>
+            <div className="json-hint">{t("grid.jsonHint")}</div>
+            <Btn variant="text" onClick={onClose}>
+              {t("common.cancel")}
+            </Btn>
+            <Btn variant="filled" icon="check" onClick={save} disabled={!res.ok || !dirty}>
+              {t("common.save")}
+            </Btn>
+          </>
+        )}
       </ModalActions>
     </Modal>
   );

@@ -31,8 +31,11 @@ import { FkTargetNote } from "./FkTargetNote";
 import "../../shared/styles/CellEditors.css";
 
 interface BinaryEditorModalProps {
-  schemaName: string;
-  table: string;
+  /** Qualifier for the title. Both are omitted by the SQL-results grid, whose
+   *  columns belong to no table — a result can be a join, an expression or an
+   *  aggregate. The title then shows the column alone. */
+  schemaName?: string;
+  table?: string;
   column: string;
   type: string;
   value: CellValue;
@@ -114,7 +117,8 @@ export function BinaryEditorModal({
         <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
           <Icon name="tag" size={17} style={{ color: "var(--accent)" }} />
           <span className="json-title-col">
-            {schemaName}.{table}.<b>{column}</b>
+            {schemaName && table ? `${schemaName}.${table}.` : ""}
+            <b>{column}</b>
           </span>
           <span className="json-type-tag">{type}</span>
         </span>
@@ -174,7 +178,10 @@ export function BinaryEditorModal({
         </div>
       </div>
 
-      {fk ? (
+      {/* The existence check needs a schema to look the parent up in. A column
+          only has an `fk` when it came from a real table, so the two always
+          arrive together — the guard is for the type, not for a real case. */}
+      {fk && schemaName ? (
         <FkTargetNote handleId={handleId} refSchema={schemaName} fk={fk} value={candidate} binary />
       ) : null}
 

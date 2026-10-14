@@ -545,18 +545,23 @@
 [data-material] .ts-seg,
 /* The item drawer's JSON / DynamoDB JSON switch: a segmented control under
    another name, and the last `--bg2` box in that drawer. */
-[data-material] .ddb-json-tabs {
+[data-material] .ddb-json-tabs,
+/* The JSON editor's Code / Tree switch — the same control again. Its `--bg0`
+   is translucent even under Liquid, but it is a DARK tint: on glass that reads
+   as a slab cut into the modal rather than as a control sitting on it. */
+[data-material] .json-seg {
   background: rgba(255, 255, 255, 0.06);
 }
 [data-material] .seg-btn.active {
   background: rgba(255, 255, 255, 0.16);
   box-shadow: var(--glass-hi);
 }
-/* Its selected tab keeps the accent (the neutral `.seg-btn.active` fill above
-   would drop a state colour this control uses deliberately) but mixes into
-   `transparent` rather than the opaque `--bg3` its flat-theme rule uses —
-   otherwise the selection stays a solid chip inside a translucent group. */
-[data-material] .ddb-json-tab.on {
+/* Their selected tab keeps the accent (the neutral `.seg-btn.active` fill above
+   would drop a state colour these controls use deliberately) but mixes into
+   `transparent` rather than into `--bg3` as the flat-theme rule does — so the
+   selection tints the group it sits in instead of sitting on top of it. */
+[data-material] .ddb-json-tab.on,
+[data-material] .json-seg-btn.active {
   background: color-mix(in oklab, var(--accent) 22%, transparent);
   box-shadow: var(--glass-hi);
 }

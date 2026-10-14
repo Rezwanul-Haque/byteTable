@@ -368,7 +368,8 @@
 [data-material="liquid"] .seg,
 [data-material="liquid"] .set-seg,
 [data-material="liquid"] .ts-seg,
-[data-material="liquid"] .ddb-json-tabs {
+[data-material="liquid"] .ddb-json-tabs,
+[data-material="liquid"] .json-seg {
   background: rgba(255, 255, 255, 0.07);
   border-color: transparent;
   border-radius: 99px;
@@ -376,9 +377,10 @@
 }
 [data-material="liquid"] .seg-btn,
 [data-material="liquid"] .set-seg-btn,
-/* Rounded with its group above: a 5px selection inside a capsule reads as a
+/* Rounded with their group above: a 5-6px selection inside a capsule reads as a
    square peg. */
-[data-material="liquid"] .ddb-json-tab {
+[data-material="liquid"] .ddb-json-tab,
+[data-material="liquid"] .json-seg-btn {
   border-radius: 99px;
 }
 [data-material="liquid"] .seg-btn.active,

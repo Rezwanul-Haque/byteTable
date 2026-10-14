@@ -228,7 +228,9 @@ async fn run_on_conn(
     };
 
     let columns = if let Some(first) = rows.first() {
-        column_meta(first)
+        // Ad-hoc SQL: no catalog types to consult (the result may be all
+        // expressions), so the binary families are judged by their bytes.
+        column_meta(first, None)
     } else if unprepared {
         // Do NOT describe a statement that could not be prepared: describing
         // prepares it again, so it would fail again — and if that failure is a
@@ -262,7 +264,7 @@ async fn run_on_conn(
             truncated = true;
             break;
         }
-        out_rows.push(decode_row(row));
+        out_rows.push(decode_row(row, None));
     }
 
     Ok(QueryResult {
@@ -329,9 +331,12 @@ pub(super) async fn fetch_rows(
     let rows = page_query.fetch_all(pool).await.map_err(map_query_error)?;
 
     // Column metadata: prefer the live result shape; fall back to the
-    // introspected columns when the page is empty.
+    // introspected columns when the page is empty. The catalog types ride
+    // along either way — the live shape cannot tell a binary column from a
+    // binary-collation text one (`decode_value`).
+    let declared = declared_types(&meta.columns);
     let columns = if let Some(first) = rows.first() {
-        column_meta(first)
+        column_meta(first, Some(&declared))
     } else {
         meta.columns
             .iter()
@@ -342,7 +347,10 @@ pub(super) async fn fetch_rows(
             .collect()
     };
 
-    let out_rows: Vec<Vec<serde_json::Value>> = rows.iter().map(decode_row).collect();
+    let out_rows: Vec<Vec<serde_json::Value>> = rows
+        .iter()
+        .map(|r| decode_row(r, Some(&declared)))
+        .collect();
 
     Ok(RowsPage {
         columns,
@@ -372,6 +380,7 @@ pub(super) async fn fetch_row_by_key(
             type_hint: c.data_type.clone(),
         })
         .collect();
+    let declared = declared_types(&meta.columns);
 
     // A null key never matches `=` in SQL — short-circuit to a clean miss.
     if req.value.is_null() {
@@ -395,7 +404,7 @@ pub(super) async fn fetch_row_by_key(
         .fetch_optional(pool)
         .await
         .map_err(map_query_error)?
-        .map(|r| decode_row(&r));
+        .map(|r| decode_row(&r, Some(&declared)));
 
     let match_count = if row.is_none() {
         0
@@ -462,22 +471,64 @@ pub(super) fn result_type_hint(name: &str) -> String {
     }
 }
 
+/// Declared (catalog) column types keyed by column name, for the decoders that
+/// know which table they are reading (`fetch_rows`, `fetch_row_by_key`).
+/// `information_schema`'s `COLUMN_TYPE` settles the binary-vs-text question the
+/// protocol flags get wrong — see [`blob_holds_text`].
+pub(super) type DeclaredTypes = std::collections::HashMap<String, String>;
+
+pub(super) fn declared_types(columns: &[ColumnInfo]) -> DeclaredTypes {
+    columns
+        .iter()
+        .map(|c| (c.name.clone(), c.data_type.clone()))
+        .collect()
+}
+
 /// Column metadata for a result row: name + the MySQL type name as the display
-/// type hint.
-pub(super) fn column_meta(row: &MySqlRow) -> Vec<ColumnMeta> {
+/// type hint, with the binary families corrected to their text equivalent for a
+/// column that only *looks* binary ([`blob_holds_text`]) — so the grid renders a
+/// `utf8mb4_bin` column (or a `value ->> '$'` expression) as the text it is
+/// instead of a BIN chip.
+pub(super) fn column_meta(row: &MySqlRow, declared: Option<&DeclaredTypes>) -> Vec<ColumnMeta> {
     row.columns()
         .iter()
-        .map(|col| ColumnMeta {
-            name: col.name().to_string(),
-            type_hint: result_type_hint(col.type_info().name()),
+        .map(|col| {
+            let name = col.name().to_string();
+            let protocol = col.type_info().name();
+            let declared = declared.and_then(|d| d.get(&name)).map(String::as_str);
+            // The bytes are only consulted for an ad-hoc result (no catalog
+            // type) — don't decode a cell we won't look at.
+            let bytes = match declared {
+                Some(_) => None,
+                None => row
+                    .try_get::<Option<Vec<u8>>, _>(col.ordinal())
+                    .ok()
+                    .flatten(),
+            };
+            let type_hint = match text_family(protocol) {
+                // Only protocol-binary, so really text: report the catalog's
+                // exact type (`varchar(32)`) when known, else the text family
+                // sqlx would have named had the collation not set the flag.
+                Some(family) if blob_holds_text(protocol, bytes.as_deref(), declared) => {
+                    declared.unwrap_or(family).to_string()
+                }
+                _ => result_type_hint(protocol),
+            };
+            ColumnMeta { name, type_hint }
         })
         .collect()
 }
 
 /// Decode every column of a row to JSON (module docs for the mapping).
-pub(super) fn decode_row(row: &MySqlRow) -> Vec<serde_json::Value> {
+pub(super) fn decode_row(
+    row: &MySqlRow,
+    declared: Option<&DeclaredTypes>,
+) -> Vec<serde_json::Value> {
     (0..row.columns().len())
-        .map(|i| decode_value(row, i))
+        .map(|i| {
+            let declared = declared.and_then(|d| d.get(row.columns()[i].name()));
+            decode_value(row, i, declared.map(String::as_str))
+        })
         .collect()
 }
 
@@ -486,7 +537,15 @@ pub(super) fn decode_row(row: &MySqlRow) -> Vec<serde_json::Value> {
 /// `VARCHAR`). See the module docs for the full mapping. Unknown types fall
 /// back to the column's text form; a decode error degrades to null rather than
 /// failing the whole row.
-pub(super) fn decode_value(row: &MySqlRow, index: usize) -> serde_json::Value {
+///
+/// `declared` is the column's catalog type when the caller knows it (`None` for
+/// an ad-hoc query result) — it only matters for the binary families, where the
+/// protocol type name cannot be trusted ([`blob_holds_text`]).
+pub(super) fn decode_value(
+    row: &MySqlRow,
+    index: usize,
+    declared: Option<&str>,
+) -> serde_json::Value {
     use serde_json::Value;
 
     let col = &row.columns()[index];
@@ -569,8 +628,18 @@ pub(super) fn decode_value(row: &MySqlRow, index: usize) -> serde_json::Value {
             .unwrap_or(Value::Null),
         // Binary families → hex when small (UUID/key), placeholder when large;
         // shared with SQLite/Postgres so binary renders identically everywhere.
+        // A column that is only protocol-binary (a binary *collation*, not the
+        // binary charset — [`blob_holds_text`]) is text and renders as text.
         "BLOB" | "TINYBLOB" | "MEDIUMBLOB" | "LONGBLOB" | "BINARY" | "VARBINARY" | "GEOMETRY" => {
             match row.try_get::<Option<Vec<u8>>, _>(index) {
+                Ok(Some(bytes)) if blob_holds_text(base.as_str(), Some(&bytes), declared) => {
+                    // The catalog can promise text over bytes that are not
+                    // valid UTF-8 (a latin1 column, say) — those stay binary.
+                    match String::from_utf8(bytes) {
+                        Ok(text) => Value::String(text),
+                        Err(err) => crate::shared::engine::binary_to_json(err.as_bytes()),
+                    }
+                }
                 Ok(Some(bytes)) => crate::shared::engine::binary_to_json(&bytes),
                 _ => Value::Null,
             }
@@ -588,6 +657,62 @@ pub(super) fn decode_value(row: &MySqlRow, index: usize) -> serde_json::Value {
             .map(Value::String)
             .unwrap_or(Value::Null),
     }
+}
+
+/// The TEXT-family type name sqlx *would* have reported for a protocol binary
+/// type had the column's collation not set the BINARY flag, or `None` for a
+/// non-binary type name (`GEOMETRY` included — WKB is never text).
+fn text_family(protocol: &str) -> Option<&'static str> {
+    match protocol {
+        "TINYBLOB" => Some("tinytext"),
+        "BLOB" => Some("text"),
+        "MEDIUMBLOB" => Some("mediumtext"),
+        "LONGBLOB" => Some("longtext"),
+        "VARBINARY" => Some("varchar"),
+        "BINARY" => Some("char"),
+        _ => None,
+    }
+}
+
+/// True when a column whose *protocol* type is one of MySQL's binary families
+/// actually holds text.
+///
+/// MySQL sets the protocol BINARY flag for every column with a binary
+/// *collation*, not just the binary *charset*. sqlx keeps that flag and drops
+/// the collation id, and its type name is flag-derived — so `varchar COLLATE
+/// utf8mb4_bin` is reported VARBINARY, `text COLLATE utf8mb4_bin` BLOB, an
+/// `enum … COLLATE utf8mb4_bin` BINARY, and every `utf8mb4_bin` expression
+/// (`value ->> '$'`, `JSON_PRETTY(…)`, `JSON_TYPE(…)`) LONGBLOB. Hex-encoding
+/// those is wrong: a plain `SELECT` of readable text came back as `0x…` or a
+/// `[N bytes]` placeholder.
+///
+/// `declared` — the catalog type, when the caller knows the table — settles it:
+/// only a really-binary declared type is binary. For an ad-hoc result there is
+/// no catalog type, so the bytes decide ([`looks_like_text`]); a NULL (no bytes
+/// to judge) keeps the binary reading, which is what the type name claims.
+fn blob_holds_text(protocol: &str, bytes: Option<&[u8]>, declared: Option<&str>) -> bool {
+    if text_family(protocol).is_none() {
+        return false;
+    }
+    match declared {
+        Some(declared) => !crate::shared::engine::is_binary_type(declared),
+        None => bytes.is_some_and(looks_like_text),
+    }
+}
+
+/// True when a byte run reads as text: non-empty, valid UTF-8, and free of
+/// control characters other than tab / newline / carriage return. Deliberately
+/// strict — this is the test an ad-hoc result's bytes must pass to be shown as
+/// text rather than hex, and real binary (a `UUID_TO_BIN` key, WKB, an image)
+/// is riddled with control bytes. An empty run stays binary (`0x`): there is
+/// nothing to read either way.
+fn looks_like_text(bytes: &[u8]) -> bool {
+    !bytes.is_empty()
+        && std::str::from_utf8(bytes).is_ok_and(|text| {
+            !text
+                .chars()
+                .any(|c| c.is_control() && !matches!(c, '\t' | '\n' | '\r'))
+        })
 }
 
 /// The native Rust integer width sqlx decodes a given MySQL integer type to.
@@ -885,6 +1010,66 @@ mod tests {
             numeric_text_to_json("0.12345678901234567890"),
             serde_json::json!("0.12345678901234567890")
         );
+    }
+
+    #[test]
+    fn looks_like_text_accepts_readable_utf8_only() {
+        assert!(looks_like_text(b"https://www.bkash.com/terms"));
+        assert!(looks_like_text(b"{\n  \"a\": 1\n}"));
+        assert!(looks_like_text("যেকোনো".as_bytes()));
+        // Real binary: a UUID_TO_BIN key, WKB, a NUL-padded run.
+        assert!(!looks_like_text(&[
+            0x01, 0x8f, 0x2a, 0x00, 0xff, 0x10, 0x9b, 0xcd
+        ]));
+        assert!(!looks_like_text(&[0xff, 0xfe, 0x00]));
+        // Valid UTF-8 but control-ridden, and the empty run.
+        assert!(!looks_like_text(b"ab\x07c"));
+        assert!(!looks_like_text(b""));
+    }
+
+    #[test]
+    fn blob_holds_text_trusts_the_catalog_then_the_bytes() {
+        // Catalog type known: only a really-binary type is binary, whatever the
+        // protocol flag says.
+        assert!(blob_holds_text(
+            "VARBINARY",
+            Some(b"plain"),
+            Some("varchar(32)")
+        ));
+        assert!(blob_holds_text("BLOB", Some(b"plain"), Some("text")));
+        assert!(blob_holds_text("BINARY", Some(b"a"), Some("enum('a','b')")));
+        assert!(!blob_holds_text("BLOB", Some(b"plain"), Some("blob")));
+        assert!(!blob_holds_text(
+            "BINARY",
+            Some(b"plain"),
+            Some("binary(16)")
+        ));
+        // Ad-hoc result (no catalog type): the bytes decide.
+        assert!(blob_holds_text("LONGBLOB", Some(b"STRING"), None));
+        assert!(!blob_holds_text(
+            "LONGBLOB",
+            Some(&[0x00, 0x01, 0xff]),
+            None
+        ));
+        // NULL has no bytes to judge — the type name stands.
+        assert!(!blob_holds_text("LONGBLOB", None, None));
+        // Geometry is WKB, never text; non-binary type names are not this
+        // function's business.
+        assert!(!blob_holds_text(
+            "GEOMETRY",
+            Some(b"POINT"),
+            Some("geometry")
+        ));
+        assert!(!blob_holds_text("VARCHAR", Some(b"plain"), None));
+    }
+
+    #[test]
+    fn text_family_mirrors_sqlx_binary_flag_naming() {
+        assert_eq!(text_family("LONGBLOB"), Some("longtext"));
+        assert_eq!(text_family("VARBINARY"), Some("varchar"));
+        assert_eq!(text_family("BINARY"), Some("char"));
+        assert_eq!(text_family("GEOMETRY"), None);
+        assert_eq!(text_family("JSON"), None);
     }
 
     #[test]

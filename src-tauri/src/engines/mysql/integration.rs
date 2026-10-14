@@ -1469,3 +1469,141 @@ async fn unpreparable_statement_reports_the_server_error_instead_of_hanging() {
         .await
         .ok();
 }
+
+/// A binary *collation* is not a binary column: `utf8mb4_bin` text and every
+/// `utf8mb4_bin` expression (`col ->> '$'`, `JSON_PRETTY`, `JSON_TYPE`) must
+/// decode as the text they hold.
+///
+/// MySQL sets the protocol BINARY flag for them, and sqlx's type name is
+/// flag-derived, so the adapter used to hex them: a plain
+/// `SELECT value ->> '$'` came back as `0x68747470…` (≤ 32 bytes) or
+/// `[42 bytes]`. Genuinely binary columns must keep that hex form.
+#[tokio::test]
+async fn binary_collation_text_decodes_as_text_not_hex() {
+    let Some((params, secret)) = gate("binary_collation_text_decodes_as_text_not_hex") else {
+        return;
+    };
+    let pool = raw_pool(&params, &secret).await;
+    let schema = "bt_it_bincoll";
+    for stmt in [
+        format!("DROP DATABASE IF EXISTS `{schema}`"),
+        format!("CREATE DATABASE `{schema}`"),
+        format!(
+            "CREATE TABLE `{schema}`.`settings` (\
+               id int PRIMARY KEY, \
+               skey varchar(64) COLLATE utf8mb4_bin, \
+               note text COLLATE utf8mb4_bin, \
+               kind enum('a','b') COLLATE utf8mb4_bin, \
+               doc json, \
+               key_bin binary(16), \
+               raw blob)"
+        ),
+        format!(
+            "INSERT INTO `{schema}`.`settings` VALUES (1, 'legal.terms_url', \
+               'https://www.bkash.com/terms-and-conditions', 'a', \
+               '{{\"url\": \"https://www.bkash.com/terms-and-conditions\", \"n\": 10}}', \
+               UNHEX('00112233445566778899aabbccddeeff'), UNHEX('0001027f'))"
+        ),
+    ] {
+        sqlx::query(&stmt)
+            .execute(&pool)
+            .await
+            .unwrap_or_else(|e| panic!("fixture stmt failed: {stmt}\n{e}"));
+    }
+    let conn = open_conn(&params, &secret).await;
+
+    // --- browse: the catalog type decides ---
+    let page = conn
+        .fetch_rows(FetchRowsRequest {
+            schema: schema.into(),
+            table: "settings".into(),
+            sort: None,
+            filter: None,
+            offset: 0,
+            limit: 10,
+        })
+        .await
+        .expect("fetch rows");
+    let col = |name: &str| {
+        page.columns
+            .iter()
+            .position(|c| c.name == name)
+            .unwrap_or_else(|| panic!("column {name}"))
+    };
+    let hint = |name: &str| page.columns[col(name)].type_hint.clone();
+    let value = |name: &str| page.rows[0][col(name)].clone();
+
+    // utf8mb4_bin varchar / text / enum: text, under their catalog types.
+    assert_eq!(value("skey"), serde_json::json!("legal.terms_url"));
+    assert_eq!(hint("skey"), "varchar(64)");
+    assert_eq!(
+        value("note"),
+        serde_json::json!("https://www.bkash.com/terms-and-conditions")
+    );
+    assert_eq!(hint("note"), "text");
+    assert_eq!(value("kind"), serde_json::json!("a"));
+    // Really binary: still hex (the binary editor / FK hop round-trip depends
+    // on it), still typed binary.
+    assert_eq!(
+        value("key_bin"),
+        serde_json::json!("0x00112233445566778899aabbccddeeff")
+    );
+    assert_eq!(hint("key_bin"), "BINARY");
+    assert_eq!(value("raw"), serde_json::json!("0x0001027f"));
+    assert_eq!(hint("raw"), "BLOB");
+
+    // --- ad-hoc query: no catalog type, so the bytes decide ---
+    let result = conn
+        .run_query(
+            &format!(
+                "SELECT doc ->> '$.url' AS url, doc ->> '$.n' AS n, \
+                        JSON_TYPE(doc) AS jtype, JSON_PRETTY(doc) AS pretty, \
+                        skey, key_bin, raw \
+                 FROM `{schema}`.`settings`"
+            ),
+            QueryOptions::default(),
+        )
+        .await
+        .expect("run query");
+    let qcol = |name: &str| {
+        result
+            .columns
+            .iter()
+            .position(|c| c.name == name)
+            .unwrap_or_else(|| panic!("column {name}"))
+    };
+
+    // `->>` on a 41-char URL: the text, NOT the "[41 bytes]" placeholder.
+    assert_eq!(
+        result.rows[0][qcol("url")],
+        serde_json::json!("https://www.bkash.com/terms-and-conditions")
+    );
+    assert_eq!(result.columns[qcol("url")].type_hint, "longtext");
+    // A short one, which used to inline as hex instead.
+    assert_eq!(result.rows[0][qcol("n")], serde_json::json!("10"));
+    assert_eq!(result.rows[0][qcol("jtype")], serde_json::json!("OBJECT"));
+    assert_eq!(result.columns[qcol("jtype")].type_hint, "varchar");
+    assert!(
+        result.rows[0][qcol("pretty")]
+            .as_str()
+            .is_some_and(|s| s.starts_with('{') && s.contains("\"url\"")),
+        "JSON_PRETTY must come back as the pretty-printed document, got {:?}",
+        result.rows[0][qcol("pretty")]
+    );
+    assert_eq!(
+        result.rows[0][qcol("skey")],
+        serde_json::json!("legal.terms_url")
+    );
+    // Real binary in an ad-hoc result: control bytes, so hex either way.
+    assert_eq!(
+        result.rows[0][qcol("key_bin")],
+        serde_json::json!("0x00112233445566778899aabbccddeeff")
+    );
+    assert_eq!(result.columns[qcol("key_bin")].type_hint, "BINARY");
+    assert_eq!(result.rows[0][qcol("raw")], serde_json::json!("0x0001027f"));
+
+    conn.close().await.expect("close");
+    let _ = sqlx::query(&format!("DROP DATABASE IF EXISTS `{schema}`"))
+        .execute(&pool)
+        .await;
+}

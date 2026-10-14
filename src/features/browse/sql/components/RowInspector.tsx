@@ -158,10 +158,12 @@ function RowInspectorField({
           title={t("ins.editBinTitle")}
         >
           <span className="bin-badge">BIN</span>
-          {fb ? (
-            <span className={"bin-val " + fb.kind}>{fb.text}</span>
-          ) : (
+          {isNull ? (
             <span className="ri-null">NULL</span>
+          ) : (
+            // No binary repr for a non-null value means the backend sent text
+            // (a binary-collation column — `formatBinary`): print it.
+            <span className={"bin-val " + (fb?.kind ?? "blob")}>{fb ? fb.text : String(cur)}</span>
           )}
           <Icon name="edit" size={12} style={{ marginLeft: "auto", color: "var(--text-faint)" }} />
         </button>
@@ -336,13 +338,17 @@ function RowInspectorField({
             >
               {(() => {
                 const fb = formatBinary(value, col.type);
-                return fb ? (
+                if (fb === null && (value === null || value === undefined))
+                  return <span className="ri-null">NULL</span>;
+                return (
                   <>
                     <span className="bin-badge">BIN</span>
-                    <span className={"bin-val " + fb.kind}>{fb.text}</span>
+                    {/* No binary repr for a non-null value: text from a
+                        binary-collation column (`formatBinary`). */}
+                    <span className={"bin-val " + (fb?.kind ?? "blob")}>
+                      {fb ? fb.text : String(value)}
+                    </span>
                   </>
-                ) : (
-                  <span className="ri-null">NULL</span>
                 );
               })()}
             </button>

@@ -53,8 +53,14 @@ export interface BinaryRepr {
   text: string;
 }
 
-/** Canonical display for a binary value: UUID (16-byte), 0x-hex, or a size/
- *  placeholder chip for arbitrary or oversized bytes. */
+/** Canonical display for a binary value: UUID (16-byte), 0x-hex, or the
+ *  `[N bytes]` placeholder chip for oversized bytes.
+ *
+ *  `null` when the value has no binary representation — NULL, or a value the
+ *  backend sent as plain text because the column only *looks* binary (MySQL
+ *  sets the protocol BINARY flag for any `_bin` collation, so a text column can
+ *  arrive type-hinted `varbinary`/`longblob`; see the MySQL adapter's
+ *  `blob_holds_text`). Callers render that as ordinary text. */
 export function formatBinary(value: CellValue, type: string | undefined): BinaryRepr | null {
   if (value == null) return null;
   const s = String(value);
@@ -74,7 +80,10 @@ export function formatBinary(value: CellValue, type: string | undefined): Binary
   if (HEX_RE.test(s) && hex.length > 0 && hex.length % 2 === 0) {
     return { kind: "hex", text: "0x" + hex.toUpperCase() };
   }
-  return { kind: "blob", text: expect + " B" };
+  // Neither hex nor a placeholder: not a binary value at all, whatever the
+  // column's type hint claims. A size chip ("16 B") would hide readable text,
+  // so let the caller print it.
+  return null;
 }
 
 /** Clipboard form for a binary value: ALWAYS `0x`-hex, never the UUID display

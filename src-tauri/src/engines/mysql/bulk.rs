@@ -79,6 +79,10 @@ pub(super) async fn fetch_pk_pool(
         .map_err(map_query_error)?;
     Ok(rows
         .iter()
-        .map(|r| (0..columns.len()).map(|i| decode_value(r, i)).collect())
+        .map(|r| {
+            (0..columns.len())
+                .map(|i| decode_value(r, i, None))
+                .collect()
+        })
         .collect())
 }

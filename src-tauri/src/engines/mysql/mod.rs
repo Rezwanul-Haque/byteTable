@@ -47,7 +47,17 @@
 //!   an integer), so honestly surfacing it as a number is correct and matches
 //!   the SQLite adapter's numeric bools. (Only Postgres emits native JSON bool.)
 //!   json → the serialized JSON *string*; enum/set → string; bit → number when
-//!   it fits, else string; blob/binary → `"[N bytes]"` placeholder; NULL → null.
+//!   it fits, else string; blob/binary → `0x`-hex when small else the
+//!   `"[N bytes]"` placeholder; NULL → null.
+//! - **Binary flag ≠ binary column** (see [`query::blob_holds_text`]): MySQL
+//!   sets the protocol BINARY flag for any binary *collation*, so sqlx — whose
+//!   type name is flag-derived, the collation id being discarded — calls a
+//!   `utf8mb4_bin` column (and every `utf8mb4_bin` expression, e.g.
+//!   `col ->> '$'`, `JSON_PRETTY(…)`) BLOB/VARBINARY. Such columns decode as
+//!   the text they hold, and their type hint is corrected to the text family,
+//!   rather than rendering as hex / `[N bytes]`. The catalog type decides when
+//!   the table is known (`fetch_rows`); an ad-hoc result's bytes decide
+//!   otherwise.
 //! - **DDL** (`table_meta.ddl`): MySQL exposes `SHOW CREATE TABLE` directly,
 //!   which returns the exact, faithful `CREATE TABLE` the server stores — far
 //!   cleaner than the Postgres adapter's catalog reconstruction. We use it

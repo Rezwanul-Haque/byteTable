@@ -15,7 +15,16 @@
 
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 
-import defaultWallpaper from "../../assets/wallpapers/liquid-default.png";
+// WebP, and 3200x2400 rather than the 617x1600 portrait PNG this replaced.
+// `cover` on a landscape window scaled that one up to 4.9x on a Retina display,
+// and it was a 256-COLOUR PALETTE image, so the quantisation steps stretched
+// into visible flat-edged patches — the "low quality" look. It also cropped 76%
+// of its own height away, spending three quarters of the file on pixels nobody
+// saw. This one is 24-bit, framed 4:3 (the band `cover` actually shows, on
+// every window shape), smoothed — the backdrop is viewed through blur(30px)
+// anyway, so fine structure was only ever artefacts — and dithered so the flat
+// areas cannot band. 59 KB, smaller than the 85 KB it replaces.
+import defaultWallpaper from "../../assets/wallpapers/liquid-default.webp";
 
 /** Cached `url(...)` for the pre-mount apply. Its own key, like the splash. */
 const WALL_CACHE_KEY = "bytetable.wallpaper-url.v1";

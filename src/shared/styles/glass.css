@@ -423,6 +423,16 @@
   box-shadow: var(--glass-hi);
 }
 
+/* Hovering a card swaps its fill to `--bg3`, which Frosted defines as 17% white
+   but Liquid as the OPAQUE `#353843` — so the row under the pointer turned into
+   a grey slab sitting on the glass. A lift of the tier's own tint instead: the
+   same move as resting-to-hover everywhere else here, and it cannot go opaque
+   whatever a palette says. The accent border the base rule adds is untouched. */
+[data-material] .connect-card:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.14);
+  box-shadow: var(--glass-hi);
+}
+
 /* Both properties restated rather than inherited from the base `.active` rule:
    that rule and the one above are both specificity 0-2-0, so which wins would
    come down to stylesheet order — and component CSS loads after this file. */

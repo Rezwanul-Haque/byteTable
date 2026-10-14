@@ -294,13 +294,25 @@ export const THEMES: Record<ThemeId, Theme> = {
   // M38: every colour on screen comes from the WALLPAPER behind the window, not
   // from a palette — these tokens only have to let opaque text sit on top of
   // whatever that image happens to be. The surface rules live in liquid.css.
+  //
+  // ALL FOUR surface tokens are rgba, like Frosted Glass's. bg2/bg3 used to be
+  // opaque hex, and that single difference was the source of every "this doesn't
+  // follow the theme" report: 129 hover rules and ~290 resting surfaces across
+  // the app paint `var(--bg2)` or `var(--bg3)`, so each one dropped a flat grey
+  // slab onto the glass — a hovered connection card, a sidebar row, a grid row
+  // (whose `color-mix(--bg2 70%, transparent)` went from a 7% lift to a 70%
+  // opaque band), a tab, the accordion heads. The surfaces that genuinely must
+  // occlude do NOT rely on these: frozen grid gutters use `--glass-gutter`,
+  // menus and popovers the float tier, the hover copy chips their own opaque
+  // rule — all restated in glass.css. Kept a touch below Frosted's .11/.17
+  // because Liquid tints with dark rather than veiling with white.
   liquidGlass: {
     label: "Liquid Glass",
     group: "Material",
     bg0: "rgba(14,16,22,.38)",
     bg1: "rgba(24,26,33,.46)",
-    bg2: "#2a2c34",
-    bg3: "#353843",
+    bg2: "rgba(255,255,255,.10)",
+    bg3: "rgba(255,255,255,.16)",
     border: "rgba(255,255,255,.12)",
     text: "#f5f6fa",
     dim: "#c4c8d4",

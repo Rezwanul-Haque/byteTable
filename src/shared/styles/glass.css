@@ -361,7 +361,14 @@
   background: rgba(255, 255, 255, 0.12);
 }
 
-/* ================= Tier 3: content cards ================= */
+/* ================= Tier 3: content cards =================
+   Everything here is a real card in its own stylesheet: it brings padding, a
+   radius and a border of its own, and this tier only restates the FILL. An
+   element without that geometry must not be listed — a fill on bare text paints
+   a hard-edged slab tight around the glyphs, which is how the Redis clients and
+   SQL processes stat strips (`.rc-stat`, `.proc-stat`: a flex column / a span,
+   no padding, no radius) ended up looking broken. Those read as text on the
+   strip they sit in, exactly as they do on a flat theme. */
 [data-material] .rdash-stat,
 [data-material] .ddb-dash-stat,
 [data-material] .ddb-structure-card,
@@ -373,11 +380,9 @@
 [data-material] .ex-tnode,
 [data-material] .ex-stat,
 [data-material] .cl-shard,
-[data-material] .rc-stat,
 [data-material] .mg-estat,
 [data-material] .sd-stat,
 [data-material] .sd-conn-card,
-[data-material] .proc-stat,
 [data-material] .ts-hit,
 [data-material] .lang-preview,
 [data-material] .set-theme-prev:not(.glass) {
@@ -463,8 +468,22 @@
    the last control on that screen still painting flat `--bg2` while the search
    field beside it and its own popover are both glass. */
 [data-material] .proj-filter-btn,
+/* DynamoDB's projection picker: also a select in all but name (it holds
+   attribute chips, so it is a button rather than our <Select>), and the only
+   flat `--bg2` control left in the Scan/Query/Indexes toolbar — the segmented
+   control beside it and its own `.ddb-proj-pop` are both glass already. */
+[data-material] .ddb-proj-trigger,
 [data-material] .binary-input,
 [data-material] .ri-input,
+/* The inspector's locked key box: not an input, but the same recessed value
+   well — it sits in the field list directly above editable `.ri-input`s and
+   was the one row in the drawer still painting flat `--bg2`. Only the fill and
+   border COLOR change here; the dashed border that marks it read-only stays. */
+[data-material] .ri-pk-lock,
+/* A `.sel-trigger` override that sets its own background outranks the entry
+   above (3 classes vs 2), so the drawer's type chip (`S`/`N`/`L`) needs naming
+   in full to get the well its full-size siblings already have. */
+[data-material] .ddb-item-drawer .ddb-type-sel .sel-trigger,
 [data-material] .cs-input,
 [data-material] .ct-in,
 [data-material] .bug-input,
@@ -513,11 +532,22 @@
   box-shadow: var(--glass-hi);
 }
 [data-material] .seg,
-[data-material] .ts-seg {
+[data-material] .ts-seg,
+/* The item drawer's JSON / DynamoDB JSON switch: a segmented control under
+   another name, and the last `--bg2` box in that drawer. */
+[data-material] .ddb-json-tabs {
   background: rgba(255, 255, 255, 0.06);
 }
 [data-material] .seg-btn.active {
   background: rgba(255, 255, 255, 0.16);
+  box-shadow: var(--glass-hi);
+}
+/* Its selected tab keeps the accent (the neutral `.seg-btn.active` fill above
+   would drop a state colour this control uses deliberately) but mixes into
+   `transparent` rather than the opaque `--bg3` its flat-theme rule uses —
+   otherwise the selection stays a solid chip inside a translucent group. */
+[data-material] .ddb-json-tab.on {
+  background: color-mix(in oklab, var(--accent) 22%, transparent);
   box-shadow: var(--glass-hi);
 }
 [data-material] .table-item.active,
@@ -667,6 +697,26 @@
 [data-material] .dg-copy:hover {
   background: rgba(32, 42, 74, 0.96);
   box-shadow: -6px 0 6px -2px rgba(32, 42, 74, 0.96);
+}
+
+/* The DynamoDB grid's M/L chip (`{…}` / `[2]`) is a chip on data too, but the
+   opposite case: it RENDERS a value instead of masking one, so it tints WITH
+   the row rather than sitting opaque over it. Its flat-theme `--bg2` fill is
+   solid, which over a translucent row reads as a hard dark pill — the same
+   mistake `.add-col-btn` makes above, and the only cell in the grid that
+   ignores the material. */
+[data-material] .ddb-json-chip {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* The processes / Redis-clients toolbar badge naming the command behind the
+   view (`CLIENT LIST`, `SHOW PROCESSLIST`). Another `--bg2` fill, which the
+   Frosted palette defines as 11% white but the Liquid one as the OPAQUE
+   `#2a2c34` — so under Liquid it lands as a grey slab beside the `--bg1`
+   segmented control it shares a toolbar with. Its border is already a
+   translucent white, so only the fill needs restating. */
+[data-material] .proc-src {
+  background: rgba(255, 255, 255, 0.07);
 }
 
 /* A fade mask has to match what it fades INTO, and the code surfaces above

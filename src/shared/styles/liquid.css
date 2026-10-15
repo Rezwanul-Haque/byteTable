@@ -458,6 +458,17 @@
   -webkit-backdrop-filter: none;
   box-shadow: none;
 }
+/* …but a terminal's input is not a form field. It is the live line of a
+   transcript, sitting INSIDE the code surface right after the prompt, so the
+   blanket `input` rule above dropped a dark rounded well around the caret
+   mid-line. (`.rcli-input` asks for `background: none` at 0-1-0; the rule above
+   is 0-1-1 and wins, which is why it only shows on Liquid — Frosted has no
+   blanket `input` rule.) One class covers every shell: Redis, SQL, Mongo,
+   Cassandra and the Typesense HTTP session all render `.rcli-input`. */
+[data-material="liquid"] .rcli-input {
+  background: none;
+  border-radius: 0;
+}
 [data-material="liquid"] .sidebar-search,
 [data-material="liquid"] .connect-search,
 [data-material="liquid"] .columns-search,

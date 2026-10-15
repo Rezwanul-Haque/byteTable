@@ -70,6 +70,14 @@ export interface Settings {
   relativeTime: boolean;
   confirmProd: boolean;
   defaultLimit: DefaultLimit;
+  /**
+   * How many statements a workspace's run history keeps (newest-first, deduped
+   * by SQL). The oldest drops off when the list is full. Clamped on read to
+   * [1, SQL_HISTORY_HARD_MAX = 100]: the list is persisted with the session and
+   * every entry carries its full SQL, so it is bounded on principle rather than
+   * left to grow with a long working day.
+   */
+  sqlHistoryMax: number;
   restoreTabs: boolean;
   /** Periodically refresh the sidebar object list (+ Redis keyspace). */
   autoRefresh: boolean;
@@ -133,6 +141,7 @@ export const DEFAULTS: Settings = {
   relativeTime: false,
   confirmProd: true,
   defaultLimit: 300,
+  sqlHistoryMax: 30,
   restoreTabs: true,
   autoRefresh: true,
   autoRefreshSec: 10,

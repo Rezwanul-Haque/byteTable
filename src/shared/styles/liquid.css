@@ -216,6 +216,8 @@
 }
 [data-material="liquid"] .connect-card,
 [data-material="liquid"] .proj-acc,
+[data-material="liquid"] .sq-item,
+[data-material="liquid"] .sq-drawer-link,
 [data-material="liquid"] .rdash-stat,
 [data-material="liquid"] .ddb-dash-stat,
 [data-material="liquid"] .ddb-structure-card,
@@ -507,6 +509,15 @@
 [data-material="liquid"] .set-font-prev,
 [data-material="liquid"] pre {
   background: rgba(0, 0, 0, 0.26);
+}
+/* …but a `<pre>` is not always a surface. The query drawers quote SQL back
+   INSIDE a card (`.sq-item`), so the blanket rule above dropped a hard-edged
+   dark rectangle into every rounded history row — the slab is the pre, not the
+   card. These previews are text on the card, exactly as they are on a flat
+   theme, so they opt out. (Frosted has no blanket `pre` rule, which is why this
+   only ever showed on Liquid.) */
+[data-material="liquid"] .sq-item-sql {
+  background: none;
 }
 [data-material="liquid"] ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.2);

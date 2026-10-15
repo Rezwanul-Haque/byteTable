@@ -33,8 +33,39 @@ import type {
 } from "./types";
 import { schemaWorkspaceId } from "./types";
 
-/** Per-tab SQL run-history cap (spec §3.7: "20 dedup"). */
-export const SQL_HISTORY_MAX = 20;
+/**
+ * SQL run-history cap, PER WORKSPACE. The history answers "what have I been
+ * running against this database", so it outlives any one tab — it used to be
+ * `SqlTab.history`, which died with the tab that recorded it.
+ *
+ * The default is the setting's default; `settings.sqlHistoryMax` overrides it
+ * and is clamped to [1, SQL_HISTORY_HARD_MAX]. The ceiling exists because the
+ * list is PERSISTED with the session: entries keep their full SQL (loading one
+ * back into the editor needs it), so a handful of pasted scripts, not the entry
+ * count, is what makes the file big.
+ */
+export const SQL_HISTORY_DEFAULT = 30;
+export const SQL_HISTORY_HARD_MAX = 100;
+
+/** The live cap: the setting, clamped. Read per push, so a change applies to
+ *  the next run without reloading anything. */
+function sqlHistoryCap(): number {
+  const raw = useSettingsStore.getState().settings.sqlHistoryMax ?? SQL_HISTORY_DEFAULT;
+  return Math.max(1, Math.min(SQL_HISTORY_HARD_MAX, Math.round(raw)));
+}
+
+/**
+ * Prepend `entry` to a workspace's history: newest first, deduplicated by SQL
+ * (re-running a statement MOVES it to the top rather than adding a second
+ * copy — at workspace scope the same `SELECT` gets run from several tabs), and
+ * trimmed to the cap, which drops the oldest.
+ */
+export function withHistoryEntry(
+  history: SqlHistoryEntry[] | undefined,
+  entry: SqlHistoryEntry,
+): SqlHistoryEntry[] {
+  return [entry, ...(history ?? []).filter((h) => h.sql !== entry.sql)].slice(0, sqlHistoryCap());
+}
 
 /**
  * The 8-color workspace palette — prototype data.js `workspaceColors`,
@@ -336,11 +367,12 @@ interface WorkspacesFeatureState {
    *  resets to the CSS default. */
   setSqlEditorHeight: (tabId: string, height: number | null) => void;
   /**
-   * Push a run onto the tab's history (newest-first, deduped by sql, capped
-   * at SQL_HISTORY_MAX). Re-running an identical statement moves it to the
-   * top rather than duplicating.
+   * Push a run onto the WORKSPACE's history (see {@link withHistoryEntry}).
+   * Takes the workspace id rather than reading the active one: a long query
+   * can finish after the user has switched away, and the run belongs to the
+   * workspace it was issued in.
    */
-  pushSqlHistory: (tabId: string, entry: SqlHistoryEntry) => void;
+  pushSqlHistory: (workspaceId: string, entry: SqlHistoryEntry) => void;
 }
 
 /**
@@ -351,6 +383,29 @@ interface WorkspacesFeatureState {
  * `ui`, which would otherwise reset numbering oddly on reload).
  */
 const sqlCounters = new Map<string, number>();
+/**
+ * Fold a restored session's LEGACY per-tab histories (see `SqlTab.history`)
+ * into the workspace list, so moving the history up a level does not throw
+ * away what a user already had. Merged newest-first, deduped by SQL like a
+ * live push, capped, and the tab copies dropped so this runs once.
+ */
+export function liftLegacyHistory(ui: WorkspaceUiState): WorkspaceUiState {
+  const legacy = (ui.tabs ?? []).flatMap((tab) => (tab.kind === "sql" ? (tab.history ?? []) : []));
+  if (legacy.length === 0) return ui;
+  const seen = new Set<string>();
+  const history = [...(ui.history ?? []), ...legacy]
+    .sort((a, b) => b.ranAt - a.ranAt)
+    .filter((h) => !seen.has(h.sql) && seen.add(h.sql))
+    .slice(0, sqlHistoryCap());
+  return {
+    ...ui,
+    history,
+    tabs: ui.tabs?.map((tab) =>
+      tab.kind === "sql" && tab.history ? { ...tab, history: undefined } : tab,
+    ),
+  };
+}
+
 /**
  * Start "Query N" numbering above the highest restored title, so a session that
  * came back with "Query 3" does not hand out "Query 1" again.
@@ -485,7 +540,7 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
           savedColor ??
           WORKSPACE_COLORS[state.colorCursor % WORKSPACE_COLORS.length] ??
           WORKSPACE_COLORS[0],
-        ui: restored ?? {},
+        ui: liftLegacyHistory(restored ?? {}),
       };
       // "Query N" numbering continues past the restored tabs instead of
       // colliding with them (the counter is keyed by the fresh workspace id).
@@ -508,7 +563,9 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
             parentId: workspace.id,
             schema,
             temp: false,
-            ui: readSchemaSession(connection.saved.id, schema) ?? { schemaName: schema },
+            ui: liftLegacyHistory(
+              readSchemaSession(connection.saved.id, schema) ?? { schemaName: schema },
+            ),
           };
           seedSqlCounter(child.id, child.ui.tabs ?? []);
           return child;
@@ -584,7 +641,7 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
         temp: true,
         // Its own tabs from the first frame: sharing the parent's `ui` object
         // would make every tab action write to both.
-        ui: readSchemaSession(parent.saved.id, schema) ?? { schemaName: schema },
+        ui: liftLegacyHistory(readSchemaSession(parent.saved.id, schema) ?? { schemaName: schema }),
       };
       seedSqlCounter(child.id, child.ui.tabs ?? []);
 
@@ -1168,14 +1225,13 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
       workspaces: patchSqlTab(state, tabId, () => ({ editorHeight: height })),
     })),
 
-  pushSqlHistory: (tabId, entry) =>
+  pushSqlHistory: (workspaceId, entry) =>
     set((state) => ({
-      workspaces: patchSqlTab(state, tabId, (tab) => ({
-        history: [entry, ...tab.history.filter((h) => h.sql !== entry.sql)].slice(
-          0,
-          SQL_HISTORY_MAX,
-        ),
-      })),
+      workspaces: state.workspaces.map((ws) =>
+        ws.id === workspaceId
+          ? { ...ws, ui: { ...ws.ui, history: withHistoryEntry(ws.ui.history, entry) } }
+          : ws,
+      ),
     })),
 }));
 

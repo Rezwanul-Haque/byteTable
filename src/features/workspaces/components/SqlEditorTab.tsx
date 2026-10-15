@@ -1,13 +1,15 @@
 // SQL editor tab (M6, spec §3.7) — ported from the prototype's editor.jsx
-// SqlEditorTab: a toolbar (Run + ⌘↩ hint + snippet chips + save popover +
-// history drawer), a syntax-highlighted editor (CodeMirror 6, see
+// SqlEditorTab: a toolbar (Run + ⌘↩ hint + snippet chips + save popover),
+// a syntax-highlighted editor (CodeMirror 6, see
 // SqlCodeEditor), and a results area (status row + virtualized grid, the §5
 // error card, and the empty state).
 //
-// STATE: the editor buffer, the run results (one tab per executed statement),
-// and per-tab history live on the tab object in the workspace's `ui` (store
-// actions setSqlText / setSqlRuns / setActiveRun / pushSqlHistory) so they
-// survive workspace switches per the WorkspaceUiState rule. A multi-statement
+// STATE: the editor buffer and the run results (one tab per executed
+// statement) live on the tab object in the workspace's `ui` (store actions
+// setSqlText / setSqlRuns / setActiveRun) so they survive workspace switches
+// per the WorkspaceUiState rule. The run HISTORY is not a tab's: every run is
+// pushed to the workspace's list (`pushSqlHistory`, keyed by workspace id) and
+// browsed from a drawer WorkspaceContent hosts. A multi-statement
 // run produces one result tab per statement; the first is focused. `running`
 // is transient local state
 // (an in-flight query cannot outlive a switch — the tab unmounts). Editor text
@@ -19,8 +21,8 @@
 // attachment toggle scopes a query to THIS workspace's saved connection
 // (connectionId = workspace.saved.id) when checked, global when unchecked. The
 // browse half (SavedQueriesDrawer) is hosted by WorkspaceContent, because its
-// opener sits on the tab strip and must work with no query tab open; this tab
-// reaches it through `onOpenSavedQueries`.
+// opener sits on the tab strip and must work with no query tab open — as does
+// the history drawer beside it.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -45,7 +47,6 @@ import { homeSchema } from "../types";
 import { ExecutionMinimap, ExplainPanel } from "./explain";
 import { detectedTable } from "../explainClauses";
 import { formatSql } from "../formatSql";
-import { HistoryDrawer } from "./QueryDrawers";
 import { previewHtml } from "../sqlPreview";
 import { splitStatements, statementRanges } from "../sqlStatement";
 import { type EditorSchema } from "../sqlCompletion";
@@ -175,18 +176,7 @@ async function openSqlFileDialog(): Promise<string | null> {
 /** Only the save popover remains a popover; browse/manage moved to drawers. */
 type Popover = "save" | null;
 
-export function SqlEditorTab({
-  workspace,
-  tab,
-  onOpenSavedQueries,
-}: {
-  workspace: Workspace;
-  tab: SqlTab;
-  /** Open the workspace's saved-queries drawer (hosted by WorkspaceContent, so
-   *  the tab strip can open it with no query tab). Offered from the history
-   *  drawer — the query tab's route to the saved list. */
-  onOpenSavedQueries?: () => void;
-}) {
+export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: SqlTab }) {
   const toast = useToast();
   const t = useT();
   const setSqlText = useWorkspacesStore((s) => s.setSqlText);
@@ -212,8 +202,9 @@ export function SqlEditorTab({
   const [pop, setPop] = useState<Popover>(null);
   const [saveName, setSaveName] = useState("");
   const [attach, setAttach] = useState(false);
-  // This tab's history drawer (Prompt 2) and results minimize toggle (Prompt 5).
-  const [historyOpen, setHistoryOpen] = useState(false);
+  // Results minimize toggle (Prompt 5). The history drawer is NOT here any
+  // more: the list is workspace-scoped, so WorkspaceContent hosts it and the
+  // tab strip carries its button beside Terminal and Saved queries.
   const [resultsMin, setResultsMin] = useState(false);
   // The editor handle resolves the statement at the caret for the Run/Explain
   // buttons; `explainSql` is the statement captured when Explain was opened.
@@ -446,14 +437,14 @@ export function SqlEditorTab({
         if (error === null) {
           if (OBJECT_DDL_RE.test(stmt)) touchedObjects = true;
           if (TABLE_DDL_RE.test(stmt)) touchedTables = true;
-          pushSqlHistory(tab.id, {
+          pushSqlHistory(workspace.id, {
             sql: stmt,
             ok: true,
             rowCount: result?.rowCount,
             ranAt: Date.now(),
           });
         } else {
-          pushSqlHistory(tab.id, { sql: stmt, ok: false, error, ranAt: Date.now() });
+          pushSqlHistory(workspace.id, { sql: stmt, ok: false, error, ranAt: Date.now() });
         }
       };
 
@@ -642,9 +633,8 @@ export function SqlEditorTab({
   useBtCmd("explain", runExplain);
   useBtCmd("save-query", () => setPop("save"));
   useBtCmd("open-sql-file", openFile);
-  useBtCmd("query-history", () => setHistoryOpen(true));
 
-  const { runs, activeRunId, history } = tab;
+  const { runs, activeRunId } = tab;
   const runDisabled = running || text.trim() === "";
 
   // The focused result tab; its result/error drive the body below (falls back
@@ -786,16 +776,6 @@ export function SqlEditorTab({
             </div>
           ) : null}
         </div>
-
-        {/* this-tab history drawer opener (Prompt 2). The saved-queries opener
-            that used to sit beside it now lives on the tab strip, where it is
-            reachable without a query tab; the history drawer links across. */}
-        <IconBtn
-          icon="history"
-          title={t("menu.query.history")}
-          active={historyOpen}
-          onClick={() => setHistoryOpen(true)}
-        />
       </div>
 
       <div
@@ -1031,25 +1011,6 @@ export function SqlEditorTab({
           ) : null}
         </div>
       ) : null}
-
-      <HistoryDrawer
-        open={historyOpen}
-        history={history}
-        onClose={() => setHistoryOpen(false)}
-        onLoad={(h) => {
-          load(h.sql);
-          setHistoryOpen(false);
-        }}
-        // Both drawers occupy the same right-hand slot, so handing over closes
-        // this one.
-        onOpenSaved={
-          onOpenSavedQueries &&
-          (() => {
-            setHistoryOpen(false);
-            onOpenSavedQueries();
-          })
-        }
-      />
     </div>
   );
 }

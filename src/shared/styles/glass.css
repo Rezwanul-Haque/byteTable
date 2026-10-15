@@ -355,6 +355,18 @@
 [data-material] .ctx-item:hover {
   background: rgba(255, 255, 255, 0.1);
 }
+/* The completion popup's cursor row gets the SAME neutral lift, a touch
+   brighter. Not an accent fill: `aria-selected` here is where the keyboard is,
+   not a chosen value — the app marks chosen with accent TEXT and no fill
+   (`.sel-opt.active`) and reserves a fill for the row you are on. An accent
+   wash also takes its colour from a user setting, so on a muted accent the
+   cursor row turns into a dull block of it across a dense list, which is the
+   one row that has to stay legible. White lifts off any backdrop, and the
+   specular lip gives it the raised-glass read. */
+[data-material] .cm-tooltip-autocomplete.ac-popup > ul > li.ac-item[aria-selected] {
+  background: rgba(255, 255, 255, 0.14);
+  box-shadow: var(--glass-hi);
+}
 [data-material] .proj-dd-sep,
 [data-material] .tabmenu-sep,
 [data-material] .ctx-sep {
@@ -415,6 +427,12 @@
 [data-material] .structure-card,
 [data-material] .proj-acc,
 [data-material] .connect-card,
+/* The query drawers' rows — a saved query, a history entry, and the "Saved
+   queries" hand-off at the top of the history list. Cards sitting on an
+   already-blurred drawer, so they take the tier's tint and the specular lip
+   instead of the flat `--bg2` that left them as slabs. */
+[data-material] .sq-item,
+[data-material] .sq-drawer-link,
 /* The new-connection modal's engine tiles are the same thing: cards sitting on
    an already-blurred surface. Flat `--bg2` left them as grey slabs on glass. */
 [data-material] .engine-choice {

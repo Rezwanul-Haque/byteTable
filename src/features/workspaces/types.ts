@@ -142,9 +142,9 @@ export interface WorkspaceConnection {
 export type TableTabMode = "data" | "structure";
 
 /**
- * One entry in a SQL tab's per-tab run history (M6, spec §3.7): the executed
- * SQL, whether it succeeded, and outcome details. Newest-first, deduplicated
- * by `sql`, capped at 20 (`SQL_HISTORY_MAX`). Clicking an entry reloads its
+ * One entry in a workspace's run history (M6, spec §3.7): the executed SQL,
+ * whether it succeeded, and outcome details. Newest-first, deduplicated by
+ * `sql`, capped by the `sqlHistoryMax` setting. Clicking an entry reloads its
  * SQL into the editor.
  */
 export interface SqlHistoryEntry {
@@ -192,8 +192,15 @@ export interface SqlTabState {
   runs: SqlRun[];
   /** The focused result tab's id (defaults to the first after each run). */
   activeRunId: string | null;
-  /** Per-tab run history, newest-first, deduped, capped at 20. */
-  history: SqlHistoryEntry[];
+  /**
+   * LEGACY per-tab run history. The list is workspace-scoped now
+   * (`WorkspaceUiState.history`) — a record of what you have been running
+   * against a database is not a property of the tab you happened to type it
+   * in, and this one died whenever that tab was closed. Still read when a
+   * session saved by an earlier build is restored, which folds it into the
+   * workspace list; nothing writes it.
+   */
+  history?: SqlHistoryEntry[];
   /** Editor-pane height (px) from the editor/results splitter; null = CSS
    *  default (38%). Per-tab so each query keeps its own split. */
   editorHeight: number | null;
@@ -309,6 +316,13 @@ export interface WorkspaceUiState {
   expandedTables?: string[];
   /** Open editor tabs, left-to-right. Empty → the content area is EmptyState. */
   tabs?: Tab[];
+  /**
+   * Run history for the whole workspace: every statement executed against this
+   * connection, newest-first, deduped by SQL, capped by `sqlHistoryMax` (see
+   * `SQL_HISTORY_DEFAULT`). Workspace-scoped on purpose — it answers "what have
+   * I been running here", which outlives any single tab.
+   */
+  history?: SqlHistoryEntry[];
   /**
    * The focused tab's id, or null when no tab is open. Always references a
    * tab in `tabs` (or null) — the store maintains this invariant on close.

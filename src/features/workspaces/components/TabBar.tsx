@@ -67,6 +67,12 @@ interface TabBarProps {
    *  toolbar, so the saved list is reachable without opening a query tab.
    *  Omitted for engines with no saved queries, which hides the button. */
   onOpenSavedQueries?: () => void;
+  /** True when the run-history drawer is open — lights its toggle. */
+  historyOpen?: boolean;
+  /** Toggle the active query tab's run history. Unlike the saved queries it is
+   *  PER TAB, so the owner omits it whenever the active tab is not a query tab
+   *  and the button goes with it — there would be no history to show. */
+  onOpenHistory?: () => void;
   /** Open the Processes tab (M26). Omitted for engines with no server process
    *  list, which hides the button. */
   onOpenProcesses?: () => void;
@@ -91,6 +97,8 @@ export function TabBar({
   onToggleConsole,
   savedQueriesOpen = false,
   onOpenSavedQueries,
+  historyOpen = false,
+  onOpenHistory,
   onOpenProcesses,
   onDiscardAll,
 }: TabBarProps) {
@@ -212,6 +220,21 @@ export function TabBar({
             onClick={onOpenSavedQueries}
           >
             <Icon name="bookmarks" size={15} />
+          </button>
+        ) : null}
+        {/* Beside the saved queries, and for the same reason: the run history
+            belongs to the workspace, so reading back what was run here must not
+            depend on which tab is open. */}
+        {onOpenHistory ? (
+          <button
+            type="button"
+            className={"tabbar-tool tabbar-tool-icon" + (historyOpen ? " active" : "")}
+            title={t("menu.query.history")}
+            aria-label={t("menu.query.history")}
+            aria-pressed={historyOpen}
+            onClick={onOpenHistory}
+          >
+            <Icon name="history" size={15} />
           </button>
         ) : null}
         {onOpenProcesses ? (

@@ -897,6 +897,24 @@ export function SettingsModal({ tab: initialTab, onClose }: SettingsModalProps) 
                   ]}
                 />
               </SetRow>
+              {/* Per workspace, not per tab — and bounded because the list is
+                  persisted with the session, full SQL and all. 100 is the
+                  app's ceiling (SQL_HISTORY_HARD_MAX). */}
+              <SetRow
+                label="Query history size"
+                hint="Statements a workspace remembers — the oldest drops off"
+              >
+                <SetSeg<number>
+                  value={settings.sqlHistoryMax}
+                  onChange={(v) => setSetting("sqlHistoryMax", v)}
+                  options={[
+                    { value: 10, label: "10" },
+                    { value: 30, label: "30" },
+                    { value: 50, label: "50" },
+                    { value: 100, label: "100" },
+                  ]}
+                />
+              </SetRow>
               <SetRow label="Relative timestamps" hint="Show “2h ago” instead of full datetimes">
                 <SetToggle
                   on={settings.relativeTime}

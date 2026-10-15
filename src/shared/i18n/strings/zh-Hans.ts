@@ -463,7 +463,7 @@ export const zhHans: StringTable = {
   "ws.sql.chipThis": "本工作区",
   "ws.sql.chipGlobal": "全局",
   "ws.sql.deleteAria": "删除 {name}",
-  "ws.sql.historySub": "最近查询 · 本标签页",
+  "ws.sql.historySub": "最近查询 · 本工作区",
   "ws.sql.historyTitle": "查询历史",
   "ws.sql.emptyHistory": "暂无内容 — 运行查询后会显示在这里。",
   "ws.sql.queryOk": "查询成功",

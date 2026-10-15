@@ -30,10 +30,10 @@ import { ObjectExplorer } from "../../db_objects/components/ObjectExplorer";
 import { TableOverview } from "../../browse/sql/components/TableOverview";
 import { useWorkspacesStore } from "../state";
 import { useTabMetaStore } from "../tabMeta";
-import type { Tab, Workspace } from "../types";
+import type { SqlHistoryEntry, Tab, Workspace } from "../types";
 import { selectedSchema, unsavedSummary, unsavedTabIds } from "../types";
 import { tabLabels } from "../tabLabels";
-import { SavedQueriesDrawer } from "./QueryDrawers";
+import { HistoryDrawer, SavedQueriesDrawer } from "./QueryDrawers";
 import { UnsavedTabsModal, type UnsavedTab } from "./UnsavedTabsModal";
 import { SqlEditorTab } from "./SqlEditorTab";
 import { TabBar } from "./TabBar";
@@ -59,22 +59,16 @@ function TabBody({
   tab,
   workspace,
   currentSchema,
-  onOpenSavedQueries,
 }: {
   tab: Tab;
   workspace: Workspace;
   currentSchema: string;
-  /** Open the saved-queries drawer this component hosts (the query tab offers
-   *  it from its history drawer). */
-  onOpenSavedQueries: () => void;
 }) {
   switch (tab.kind) {
     case "table":
       return <TableTab tab={tab} handleId={workspace.handleId} currentSchema={currentSchema} />;
     case "sql":
-      return (
-        <SqlEditorTab workspace={workspace} tab={tab} onOpenSavedQueries={onOpenSavedQueries} />
-      );
+      return <SqlEditorTab workspace={workspace} tab={tab} />;
     case "map":
       return <SchemaMap workspace={workspace} schema={tab.schema} />;
     case "board":
@@ -159,10 +153,25 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
   // and the query tab's history drawer — a saved query is workspace-wide, so
   // browsing the list must not depend on a query tab being open.
   const [savedOpen, setSavedOpen] = useState(false);
+  // The run-history drawer. Hosted here, exactly like the saved queries and
+  // for the same reason: the history is the WORKSPACE's (every statement run
+  // against this connection), so browsing it must not depend on which tab — or
+  // whether any query tab — happens to be open.
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   // Query ▸ Saved Queries (bt:cmd bus). Claimed here, not by the SQL tab: the
   // menu item is enabled for the whole SQL workspace, tabs or not.
-  useBtCmd("saved-queries", () => setSavedOpen(true));
+  useBtCmd("saved-queries", () => {
+    setHistoryOpen(false);
+    setSavedOpen(true);
+  });
+  // Claimed here too, not by the SQL tab: the history is the workspace's, so
+  // Query ▸ History works with no query tab open — the menu item is enabled
+  // for the whole SQL workspace.
+  useBtCmd("query-history", () => {
+    setSavedOpen(false);
+    setHistoryOpen(true);
+  });
 
   // Memoised so the label/dirty derivations below have a stable dependency.
   const tabs = useMemo(() => workspace.ui.tabs ?? [], [workspace.ui.tabs]);
@@ -239,6 +248,18 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
   //
   // Either way the tab is linked to the entry, so editing and saving again
   // updates it rather than leaving a second copy behind.
+  // A history entry loads exactly like a saved query — into the active query
+  // tab, or a new one when the active tab is something else — except it links
+  // to no saved entry: re-running something out of the history must not make
+  // "Save" overwrite whatever query it happened to come from.
+  const loadHistoryEntry = (entry: SqlHistoryEntry) => {
+    if (activeTab?.kind === "sql") {
+      setSqlText(activeTab.id, entry.sql);
+      setSqlSavedLink(activeTab.id, null);
+    } else openSqlTabWith(entry.sql);
+    setHistoryOpen(false);
+  };
+
   const loadSavedQuery = (q: SavedQuery) => {
     if (activeTab?.kind === "sql") {
       setSqlText(activeTab.id, q.sql);
@@ -269,7 +290,18 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
           consoleOpen={consoleOpen}
           onToggleConsole={() => togglePanel(workspace.id, shellLabel(workspace.saved.engine))}
           savedQueriesOpen={savedOpen}
-          onOpenSavedQueries={() => setSavedOpen((open) => !open)}
+          onOpenSavedQueries={() => {
+            setHistoryOpen(false);
+            setSavedOpen((open) => !open);
+          }}
+          // Always offered, like Saved queries: the list belongs to the
+          // workspace, not to a query tab. Both drawers slide into the same
+          // right-hand slot, so each opener closes the other.
+          historyOpen={historyOpen}
+          onOpenHistory={() => {
+            setSavedOpen(false);
+            setHistoryOpen((open) => !open);
+          }}
           onOpenProcesses={hasProcesses ? () => openProcessesTab(procSchema) : undefined}
           onDiscardAll={dirtyTabs.length > 1 ? () => setDiscardOpen(true) : undefined}
         />
@@ -289,7 +321,6 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
             tab={activeTab}
             workspace={workspace}
             currentSchema={currentSchema}
-            onOpenSavedQueries={() => setSavedOpen(true)}
           />
         ) : null}
         {/* Slides in over the tab body (`.tab-content` is its positioning
@@ -299,6 +330,17 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
           connectionId={workspace.saved.id}
           onClose={() => setSavedOpen(false)}
           onLoad={loadSavedQuery}
+        />
+        <HistoryDrawer
+          open={historyOpen}
+          history={workspace.ui.history ?? []}
+          onClose={() => setHistoryOpen(false)}
+          onLoad={loadHistoryEntry}
+          // Both drawers share this slot, so handing over closes this one.
+          onOpenSaved={() => {
+            setHistoryOpen(false);
+            setSavedOpen(true);
+          }}
         />
       </div>
       {/* Every close entry point funnels here (see `UnsavedTabsModal`). Rendered

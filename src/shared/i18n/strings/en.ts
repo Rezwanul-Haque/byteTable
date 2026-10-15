@@ -486,7 +486,7 @@ export const en = {
   "ws.sql.chipThis": "this workspace",
   "ws.sql.chipGlobal": "global",
   "ws.sql.deleteAria": "Delete {name}",
-  "ws.sql.historySub": "Recent queries · this tab",
+  "ws.sql.historySub": "Recent queries · this workspace",
   "ws.sql.historyTitle": "Query history",
   "ws.sql.emptyHistory": "Nothing yet — run a query and it shows up here.",
   "ws.sql.queryOk": "Query OK",

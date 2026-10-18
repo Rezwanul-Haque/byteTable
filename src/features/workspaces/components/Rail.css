@@ -557,12 +557,14 @@
      run of children reads as one continuous trunk;
    - `bottom: 50%` stops at the tile's midpoint, which is where the elbow meets
      it — so the last child cannot leave a trailing stub below itself, and no
-     `:has(+ :not(.ws-child))` selector or JS `ws-child-last` class is needed;
-   - the part that overshoots up into the parent tile is covered by `.ws-tile`
-     (z-index 2, opaque) sitting over the spine (z-index 0). */
-/* The tile sits ABOVE the spine and is opaque, which is what hides the part of
-   the spine that overshoots up into the parent tile. Without this the trunk
-   would be drawn across the parent. */
+     `:has(+ :not(.ws-child))` selector or JS `ws-child-last` class is needed.
+
+   Nothing hides any part of a spine: the overshoot of a non-first child runs
+   through the gutter LEFT of the previous child tile (children are inset 9px,
+   the spine sits at 3px), and the first child's segment is shortened below so
+   it stops at the parent tile instead of inside it. */
+/* The tile sits above the spine so the trunk can never be painted across a
+   tile's face. */
 .ws-tile {
   z-index: 2;
 }
@@ -593,6 +595,21 @@
 
 .ws-child .ws-spine {
   z-index: 0;
+}
+
+/* The FIRST child of a run meets the PARENT tile rather than a sibling spine,
+   so it must not use the overlap offset: `-24px` lands a third of the way up
+   the 40px parent tile, which only looked right while tiles were opaque enough
+   to cover it. Liquid Glass's tiles are translucent (rgba white 8%), so that
+   overshoot showed through and the trunk appeared to dead-end inside the
+   parent. The real gap above a first child is 6px (8px `.rail-list` gap − the
+   2px `.ws-child` margin), and `-10px` puts the segment's head 4px INTO the
+   parent's box — i.e. inside its transparent rounded bottom-left corner (11px,
+   14px under Liquid Glass), which at the spine's x is ~3-4px of empty space.
+   The line therefore stops exactly against the corner's curve in every
+   material, with nothing having to hide it. */
+:not(.ws-child) + .ws-child .ws-spine {
+  top: -10px;
 }
 
 /* Compact child tile: 32px against the parent's 40px, icon over a truncated

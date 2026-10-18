@@ -4,7 +4,7 @@
 // the pending-changes bar (N pending changes · Review SQL · Discard · Apply).
 //
 // EDITING-STATE MODEL (see ../../structure/ops.ts for the full write-up): the
-// user's edits accumulate as an ordered `AlterOp[]` (pendingOps) persisted per
+// user's edits accumulate as an ordered `EditorOp[]` (pendingOps) persisted per
 // table tab in the workspace `ui` (so a draft survives the Data↔Structure mode
 // switch — which unmounts this view — and workspace switches). The rows shown
 // are a *working column set* derived on render by replaying pendingOps over the
@@ -38,15 +38,22 @@ import { highlightSql } from "../../shared/highlightSql";
 import { useIntrospectionStore, tableMetaKey, tablesKey } from "../../../introspection/state";
 import { useTabMetaStore } from "../../../workspaces/tabMeta";
 import { useWorkspacesStore } from "../../../workspaces/state";
-import { alterApply, alterPreview, type AlterOp, type ColumnInfo } from "../../../structure/api";
+import { alterApply, alterPreview, type ColumnInfo } from "../../../structure/api";
 import {
   applyOpsToColumns,
   applyOpsToForeignKeys,
   applyOpsToIndexes,
   generateForeignKeyName,
   generateIndexName,
+  stageForeignKeyDrop,
+  stageForeignKeyEdit,
+  stageForeignKeyRestore,
+  stageIndexDrop,
+  stageIndexEdit,
+  stageIndexRestore,
   toWireBatch,
   stTypesFor,
+  type EditorOp,
   type WorkingColumn,
   type WorkingForeignKey,
   type WorkingIndex,
@@ -121,7 +128,12 @@ export function StructureView({
     "indexes",
   );
   const [addingIndex, setAddingIndex] = useState(false);
+  /** Name of the index whose card is currently showing the inline edit form,
+   *  or null. One at a time: the form replaces the card it belongs to. */
+  const [editingIndex, setEditingIndex] = useState<string | null>(null);
   const [addingFk, setAddingFk] = useState(false);
+  /** Display name of the foreign key whose card is showing the edit form. */
+  const [editingFk, setEditingFk] = useState<string | null>(null);
 
   const loadTableMeta = useIntrospectionStore((state) => state.loadTableMeta);
   const invalidate = useIntrospectionStore((state) => state.invalidate);
@@ -193,7 +205,7 @@ export function StructureView({
   // ---- op staging ------------------------------------------------------
   // All mutators go through `setOps`, which keeps the persisted batch.
   const setOps = useCallback(
-    (next: AlterOp[]) => setTabStructureOps(tabId, next),
+    (next: EditorOp[]) => setTabStructureOps(tabId, next),
     [setTabStructureOps, tabId],
   );
 
@@ -354,18 +366,18 @@ export function StructureView({
     setAddingIndex(false);
   };
 
-  const dropIndex = (ix: WorkingIndex) => {
-    if (ix.primary) return; // primary-key index is protected
-    if (ix.isNew) {
-      // A just-staged index: remove its addIndex op.
-      setOps(ops.filter((o) => !(o.op === "addIndex" && o.name === ix.name)));
-      return;
-    }
-    setOps([...ops, { op: "dropIndex", name: ix.name }]);
-  };
+  // Index drop / restore / redefine all go through the staging helpers rather
+  // than splicing ops here: an edit is a drop + add pair that has to stay
+  // consistent (see stageIndexEdit), and doing it in three places would be
+  // three chances to leave a stray add behind.
+  const dropIndex = (ix: WorkingIndex) => setOps(stageIndexDrop(ops, ix));
 
-  const undropIndex = (ix: WorkingIndex) => {
-    setOps(ops.filter((o) => !(o.op === "dropIndex" && o.name === ix.name)));
+  const restoreIndex = (ix: WorkingIndex) => setOps(stageIndexRestore(ops, ix));
+
+  const saveIndexEdit = (ix: WorkingIndex, name: string, cols: string[], unique: boolean) => {
+    if (cols.length === 0 || name.trim() === "") return;
+    setOps(stageIndexEdit(ops, ix, name.trim(), cols, unique));
+    setEditingIndex(null);
   };
 
   const addForeignKey = (
@@ -384,26 +396,31 @@ export function StructureView({
     setAddingFk(false);
   };
 
-  const dropForeignKey = (fk: WorkingForeignKey) => {
-    if (fk.isNew) {
-      setOps(ops.filter((o) => !(o.op === "addForeignKey" && o.name === fk.name)));
-      return;
-    }
-    setOps([...ops, { op: "dropForeignKey", name: fk.name, columns: fk.columns }]);
-  };
+  // Same three staging helpers as the indexes, for the same reason: an FK edit
+  // is a drop + add pair that has to stay consistent.
+  const dropForeignKey = (fk: WorkingForeignKey) => setOps(stageForeignKeyDrop(ops, fk));
 
-  const undropForeignKey = (fk: WorkingForeignKey) => {
+  const restoreForeignKey = (fk: WorkingForeignKey) => setOps(stageForeignKeyRestore(ops, fk));
+
+  const saveFkEdit = (
+    fk: WorkingForeignKey,
+    name: string,
+    cols: string[],
+    refTable: string,
+    refCols: string[],
+    onDelete: string | null,
+  ) => {
+    if (cols.length === 0 || !refTable || refCols.length === 0 || name.trim() === "") return;
     setOps(
-      ops.filter(
-        (o) =>
-          !(
-            o.op === "dropForeignKey" &&
-            (o.name === fk.name ||
-              (o.columns.length === fk.columns.length &&
-                o.columns.every((c, i) => c === fk.columns[i])))
-          ),
-      ),
+      stageForeignKeyEdit(ops, fk, {
+        name: name.trim(),
+        columns: cols,
+        refTable,
+        refColumns: refCols,
+        onDelete,
+      }),
     );
+    setEditingFk(null);
   };
 
   // ---- preview / apply / discard ---------------------------------------
@@ -761,56 +778,103 @@ export function StructureView({
             }}
           >
             {addingIndex ? (
-              <AddIndexForm
+              <IndexForm
                 columns={working.filter((c) => !c.markedForDrop)}
                 onCancel={() => setAddingIndex(false)}
-                onAdd={addIndex}
+                onSubmit={(_name, cols, unique) => addIndex(cols, unique)}
               />
             ) : null}
             <div className="acc-scroll">
               {workingIndexes.length === 0 ? (
                 <div className="structure-none">{t("stv.noIndexes")}</div>
               ) : (
-                workingIndexes.map((ix) => (
-                  <div
-                    key={ix.name}
-                    className={
-                      "structure-card" +
-                      (ix.isNew ? " structure-card-new" : "") +
-                      (ix.markedForDrop ? " structure-card-drop" : "")
-                    }
-                  >
-                    <div className="structure-card-name">
-                      {ix.name}
-                      {ix.primary ? (
-                        <span className="tag tag-accent">PRIMARY</span>
-                      ) : ix.unique ? (
-                        <span className="tag">UNIQUE</span>
-                      ) : null}
-                      <span style={{ flex: 1 }} />
-                      {ix.primary ? null : ix.markedForDrop ? (
-                        <button
-                          type="button"
-                          className="card-drop"
-                          title={t("stv.keepName", { name: ix.name })}
-                          onClick={() => undropIndex(ix)}
-                        >
-                          <Icon name="undo" size={13} />
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="card-drop"
-                          title={t("stv.dropName", { name: ix.name })}
-                          onClick={() => dropIndex(ix)}
-                        >
-                          <Icon name="delete" size={13} />
-                        </button>
-                      )}
+                workingIndexes.map((ix) =>
+                  // The edit form REPLACES its card rather than opening below
+                  // it: the card's own columns are what is being edited, so
+                  // showing both would put two conflicting answers side by side.
+                  editingIndex === ix.name ? (
+                    <IndexForm
+                      key={ix.name}
+                      columns={working.filter((c) => !c.markedForDrop)}
+                      initial={{ name: ix.name, columns: ix.columns, unique: ix.unique }}
+                      onCancel={() => setEditingIndex(null)}
+                      onSubmit={(name, cols, unique) => saveIndexEdit(ix, name, cols, unique)}
+                    />
+                  ) : (
+                    <div
+                      key={ix.name}
+                      className={
+                        "structure-card" +
+                        (ix.isNew || ix.isEdited ? " structure-card-new" : "") +
+                        (ix.markedForDrop ? " structure-card-drop" : "")
+                      }
+                    >
+                      <div className="structure-card-name">
+                        {ix.name}
+                        {ix.primary ? (
+                          <span className="tag tag-accent">PRIMARY</span>
+                        ) : ix.unique ? (
+                          <span className="tag">UNIQUE</span>
+                        ) : null}
+                        <span style={{ flex: 1 }} />
+                        {/* The primary-key index is protected from every edit,
+                            not just from dropping: redefining it is a table
+                            rebuild, not a CREATE INDEX. */}
+                        {ix.primary || ix.markedForDrop ? null : (
+                          <button
+                            type="button"
+                            className="card-drop"
+                            title={t("stv.editName", { name: ix.name })}
+                            onClick={() => {
+                              setAddingIndex(false);
+                              setEditingIndex(ix.name);
+                            }}
+                          >
+                            <Icon name="edit" size={13} />
+                          </button>
+                        )}
+                        {ix.primary ? null : ix.markedForDrop || ix.isEdited ? (
+                          <button
+                            type="button"
+                            className="card-drop"
+                            title={
+                              ix.markedForDrop
+                                ? t("stv.keepName", { name: ix.name })
+                                : t("stv.revertName", { name: ix.name })
+                            }
+                            onClick={() => restoreIndex(ix)}
+                          >
+                            <Icon name="undo" size={13} />
+                          </button>
+                        ) : null}
+                        {ix.primary || ix.markedForDrop ? null : (
+                          <button
+                            type="button"
+                            className="card-drop"
+                            title={t("stv.dropName", { name: ix.name })}
+                            onClick={() => dropIndex(ix)}
+                          >
+                            <Icon name="delete" size={13} />
+                          </button>
+                        )}
+                      </div>
+                      <div className="structure-card-detail">
+                        ({ix.columns.join(", ")})
+                        {/* What it is replacing, so a staged redefinition can be
+                            read without opening the SQL preview. */}
+                        {ix.was ? (
+                          <span className="structure-card-was">
+                            {" "}
+                            {t("stv.indexWas", {
+                              columns: ix.was.columns.join(", "),
+                              kind: ix.was.unique ? t("stv.uniqueTag") : t("stv.indexTag"),
+                            })}
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
-                    <div className="structure-card-detail">({ix.columns.join(", ")})</div>
-                  </div>
-                ))
+                  ),
+                )
               )}
             </div>
           </AccSection>
@@ -832,61 +896,109 @@ export function StructureView({
             }}
           >
             {addingFk ? (
-              <AddFkForm
+              <FkForm
                 handleId={handleId}
                 schema={schema}
                 table={table}
                 columns={working.filter((c) => !c.markedForDrop)}
                 onCancel={() => setAddingFk(false)}
-                onAdd={addForeignKey}
+                onSubmit={addForeignKey}
               />
             ) : null}
             <div className="acc-scroll">
               {workingForeignKeys.length === 0 && !addingFk ? (
                 <div className="structure-none">{t("stv.noFks")}</div>
               ) : (
-                workingForeignKeys.map((fk) => (
-                  <div
-                    key={fk.name}
-                    className={
-                      "structure-card" +
-                      (fk.isNew ? " structure-card-new" : "") +
-                      (fk.markedForDrop ? " structure-card-drop" : "")
-                    }
-                  >
-                    <div className="structure-card-name">
-                      {fk.name}
-                      <span style={{ flex: 1 }} />
-                      {fk.markedForDrop ? (
-                        <button
-                          type="button"
-                          className="card-drop"
-                          title={t("stv.keepName", { name: fk.name })}
-                          onClick={() => undropForeignKey(fk)}
-                        >
-                          <Icon name="undo" size={13} />
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="card-drop"
-                          title={t("stv.dropName", { name: fk.name })}
-                          onClick={() => dropForeignKey(fk)}
-                        >
-                          <Icon name="delete" size={13} />
-                        </button>
-                      )}
+                workingForeignKeys.map((fk) =>
+                  editingFk === fk.name ? (
+                    <FkForm
+                      key={fk.name}
+                      handleId={handleId}
+                      schema={schema}
+                      table={table}
+                      columns={working.filter((c) => !c.markedForDrop)}
+                      initial={{
+                        name: fk.name,
+                        columns: fk.columns,
+                        refTable: fk.refTable,
+                        refColumns: fk.refColumns,
+                        onDelete: fk.onDelete,
+                      }}
+                      onCancel={() => setEditingFk(null)}
+                      onSubmit={(cols, refTable, refCols, onDelete, name) =>
+                        saveFkEdit(fk, name ?? fk.name, cols, refTable, refCols, onDelete)
+                      }
+                    />
+                  ) : (
+                    <div
+                      key={fk.name}
+                      className={
+                        "structure-card" +
+                        (fk.isNew || fk.isEdited ? " structure-card-new" : "") +
+                        (fk.markedForDrop ? " structure-card-drop" : "")
+                      }
+                    >
+                      <div className="structure-card-name">
+                        {fk.name}
+                        <span style={{ flex: 1 }} />
+                        {fk.markedForDrop ? null : (
+                          <button
+                            type="button"
+                            className="card-drop"
+                            title={t("stv.editName", { name: fk.name })}
+                            onClick={() => {
+                              setAddingFk(false);
+                              setEditingFk(fk.name);
+                            }}
+                          >
+                            <Icon name="edit" size={13} />
+                          </button>
+                        )}
+                        {fk.markedForDrop || fk.isEdited ? (
+                          <button
+                            type="button"
+                            className="card-drop"
+                            title={
+                              fk.markedForDrop
+                                ? t("stv.keepName", { name: fk.name })
+                                : t("stv.revertName", { name: fk.name })
+                            }
+                            onClick={() => restoreForeignKey(fk)}
+                          >
+                            <Icon name="undo" size={13} />
+                          </button>
+                        ) : null}
+                        {fk.markedForDrop ? null : (
+                          <button
+                            type="button"
+                            className="card-drop"
+                            title={t("stv.dropName", { name: fk.name })}
+                            onClick={() => dropForeignKey(fk)}
+                          >
+                            <Icon name="delete" size={13} />
+                          </button>
+                        )}
+                      </div>
+                      <div className="structure-card-detail">
+                        ({fk.columns.join(", ")}) → {fk.refTable}({fk.refColumns.join(", ")})
+                        {fk.onDelete ? (
+                          <span className="tag" style={{ marginLeft: 8 }}>
+                            ON DELETE {fk.onDelete}
+                          </span>
+                        ) : null}
+                        {fk.was ? (
+                          <div className="structure-card-was">
+                            {t("stv.fkWas", {
+                              name: fk.was.name,
+                              columns: fk.was.columns.join(", "),
+                              ref: `${fk.was.refTable}(${fk.was.refColumns.join(", ")})`,
+                            })}
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
-                    <div className="structure-card-detail">
-                      ({fk.columns.join(", ")}) → {fk.refTable}({fk.refColumns.join(", ")})
-                      {fk.onDelete ? (
-                        <span className="tag" style={{ marginLeft: 8 }}>
-                          ON DELETE {fk.onDelete}
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-                ))
+                  ),
+                )
               )}
             </div>
           </AccSection>
@@ -1496,21 +1608,50 @@ function AccSection({
   );
 }
 
-interface AddIndexFormProps {
+interface IndexFormProps {
   columns: WorkingColumn[];
-  onAdd: (columns: string[], unique: boolean) => void;
+  /** Pre-filled definition — present when editing an existing index, absent
+   *  when adding one. Also what flips the form's wording and submit action.
+   *  `name` is editable: a rename is part of the same drop + re-create. */
+  initial?: { name: string; columns: string[]; unique: boolean };
+  onSubmit: (name: string, columns: string[], unique: boolean) => void;
   onCancel: () => void;
 }
 
-/** Inline "add index" form: toggle column chips + a unique flag. */
-function AddIndexForm({ columns, onAdd, onCancel }: AddIndexFormProps) {
-  const [picked, setPicked] = useState<string[]>([]);
-  const [unique, setUnique] = useState(false);
+/** Inline index form: toggle column chips + a unique flag. Serves both "add"
+ *  and "edit" — the two differ only in their starting state and their labels,
+ *  and a second component would be the same fifty lines with a different
+ *  default. */
+function IndexForm({ columns, initial, onSubmit, onCancel }: IndexFormProps) {
+  const [picked, setPicked] = useState<string[]>(initial?.columns ?? []);
+  const [unique, setUnique] = useState(initial?.unique ?? false);
+  const [name, setName] = useState(initial?.name ?? "");
   const t = useT();
+  const editing = initial !== undefined;
+  // Column order is the INDEX's order, not the table's: (a, b) and (b, a) are
+  // different indexes, so a chip click appends rather than slotting into place.
+  const dirty =
+    editing &&
+    (name.trim() !== initial.name ||
+      unique !== initial.unique ||
+      picked.length !== initial.columns.length ||
+      picked.some((c, i) => c !== initial.columns[i]));
   const toggle = (n: string) =>
     setPicked((p) => (p.includes(n) ? p.filter((x) => x !== n) : [...p, n]));
   return (
     <div className="st-addform">
+      {editing ? (
+        <label className="st-addform-row">
+          <Icon name="edit" size={12} />
+          <input
+            className="st-name-input"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            aria-label={t("stv.indexNameAria")}
+            spellCheck={false}
+          />
+        </label>
+      ) : null}
       <div className="st-addform-cols">
         {columns.map((c) => (
           <button
@@ -1527,6 +1668,11 @@ function AddIndexForm({ columns, onAdd, onCancel }: AddIndexFormProps) {
         <Checkbox checked={unique} onChange={(e) => setUnique(e.target.checked)} />{" "}
         {t("stv.uniqueIndex")}
       </label>
+      {editing ? (
+        <div className="st-addform-note">
+          <Icon name="info" size={12} /> {t("stv.indexEditHint")}
+        </div>
+      ) : null}
       <div className="st-addform-actions">
         <Btn variant="text" small onClick={onCancel}>
           {t("common.cancel")}
@@ -1534,37 +1680,51 @@ function AddIndexForm({ columns, onAdd, onCancel }: AddIndexFormProps) {
         <Btn
           variant="filled"
           small
-          icon="add"
-          disabled={picked.length === 0}
-          onClick={() => onAdd(picked, unique)}
+          icon={editing ? "check" : "add"}
+          // Editing starts on the current definition, so an untouched form has
+          // nothing to stage — disabled until something actually differs.
+          disabled={picked.length === 0 || (editing && (!dirty || name.trim() === ""))}
+          onClick={() => onSubmit(name.trim(), picked, unique)}
         >
-          {t("stv.addIndex")}
+          {editing ? t("stv.saveIndex") : t("stv.addIndex")}
         </Btn>
       </div>
     </div>
   );
 }
 
-interface AddFkFormProps {
+interface FkFormProps {
   handleId: string;
   schema: string;
   table: string;
   columns: WorkingColumn[];
-  onAdd: (
+  /** Pre-filled definition — present when editing, absent when adding. */
+  initial?: {
+    name: string;
+    columns: string[];
+    refTable: string;
+    refColumns: string[];
+    onDelete: string | null;
+  };
+  onSubmit: (
     columns: string[],
     refTable: string,
     refColumns: string[],
     onDelete: string | null,
+    /** The (possibly renamed) constraint name — only sent when editing. */
+    name?: string,
   ) => void;
   onCancel: () => void;
 }
 
 const ON_DELETE_ACTIONS = ["RESTRICT", "CASCADE", "SET NULL", "NO ACTION"] as const;
 
-/** Inline "add foreign key" form: a local column → referenced table.column, plus
- *  an ON DELETE action. The referenced table's columns are introspected lazily
- *  via the store (other tables in the same schema). */
-function AddFkForm({ handleId, schema, table, columns, onAdd, onCancel }: AddFkFormProps) {
+/** Inline foreign-key form: a local column → referenced table.column, plus an
+ *  ON DELETE action, and when editing, the constraint name. The referenced
+ *  table's columns are introspected lazily via the store (other tables in the
+ *  same schema). Serves both add and edit — see {@link IndexForm} for the same
+ *  reasoning. */
+function FkForm({ handleId, schema, table, columns, initial, onSubmit, onCancel }: FkFormProps) {
   const loadTables = useIntrospectionStore((s) => s.loadTables);
   const loadTableMeta = useIntrospectionStore((s) => s.loadTableMeta);
   const tablesEntry = useIntrospectionStore((s) => s.tables[tablesKey(handleId, schema)]);
@@ -1579,13 +1739,15 @@ function AddFkForm({ handleId, schema, table, columns, onAdd, onCancel }: AddFkF
     [tablesEntry, table],
   );
 
-  const [col, setCol] = useState(columns[0]?.name ?? "");
+  const editing = initial !== undefined;
+  const [col, setCol] = useState(initial?.columns[0] ?? columns[0]?.name ?? "");
   // Selections start empty and fall back to a derived default (first other
   // table / referenced pk) — derived rather than set via effects to avoid
-  // cascading-render set-state-in-effect.
-  const [refTableSel, setRefTable] = useState("");
-  const [refColSel, setRefCol] = useState("");
-  const [onDelete, setOnDelete] = useState<string>("RESTRICT");
+  // cascading-render set-state-in-effect. When editing they start populated.
+  const [refTableSel, setRefTable] = useState(initial?.refTable ?? "");
+  const [refColSel, setRefCol] = useState(initial?.refColumns[0] ?? "");
+  const [onDelete, setOnDelete] = useState<string>(initial?.onDelete ?? "RESTRICT");
+  const [name, setName] = useState(initial?.name ?? "");
 
   const refTable = refTableSel || otherTables[0] || "";
 
@@ -1614,10 +1776,31 @@ function AddFkForm({ handleId, schema, table, columns, onAdd, onCancel }: AddFkF
     );
   }
 
-  const canAdd = col !== "" && refTable !== "" && refCol !== "";
+  const canAdd = col !== "" && refTable !== "" && refCol !== "" && (!editing || name.trim() !== "");
+  // Editing starts on the current definition, so an untouched form has nothing
+  // to stage.
+  const dirty =
+    editing &&
+    (name.trim() !== initial.name ||
+      col !== initial.columns[0] ||
+      refTable !== initial.refTable ||
+      refCol !== initial.refColumns[0] ||
+      (onDelete || null) !== initial.onDelete);
 
   return (
     <div className="st-addform">
+      {editing ? (
+        <label className="st-addform-row">
+          <Icon name="edit" size={12} />
+          <input
+            className="st-name-input"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            aria-label={t("stv.constraintNameAria")}
+            spellCheck={false}
+          />
+        </label>
+      ) : null}
       <div className="st-fk-grid">
         <Select
           aria-label={t("stv.localColAria")}
@@ -1652,6 +1835,11 @@ function AddFkForm({ handleId, schema, table, columns, onAdd, onCancel }: AddFkF
           onChange={setOnDelete}
         />
       </label>
+      {editing ? (
+        <div className="st-addform-note">
+          <Icon name="info" size={12} /> {t("stv.fkEditHint")}
+        </div>
+      ) : null}
       <div className="st-addform-actions">
         <Btn variant="text" small onClick={onCancel}>
           {t("common.cancel")}
@@ -1659,11 +1847,11 @@ function AddFkForm({ handleId, schema, table, columns, onAdd, onCancel }: AddFkF
         <Btn
           variant="filled"
           small
-          icon="add"
-          disabled={!canAdd}
-          onClick={() => onAdd([col], refTable, [refCol], onDelete)}
+          icon={editing ? "check" : "add"}
+          disabled={!canAdd || (editing && !dirty)}
+          onClick={() => onSubmit([col], refTable, [refCol], onDelete, name.trim())}
         >
-          {t("stv.addFkBtn")}
+          {editing ? t("stv.saveFk") : t("stv.addFkBtn")}
         </Btn>
       </div>
     </div>

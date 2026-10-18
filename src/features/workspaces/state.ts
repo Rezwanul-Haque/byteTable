@@ -15,7 +15,8 @@ import { useSettingsStore } from "../settings/state";
 import { newCondition } from "../browse/sql/filter";
 import { readKeptSchemas, readSchemaColor, readSchemaSession, readSession } from "./session";
 import type { CellValue } from "../../shared/api/engine";
-import type { AlterOp, DbObjectInfo, DbObjectKind, SortSpec } from "../../shared/api/engine";
+import type { DbObjectInfo, DbObjectKind, SortSpec } from "../../shared/api/engine";
+import type { EditorOp } from "../structure/ops";
 import { t } from "../../shared/i18n";
 import type {
   DataFileRef,
@@ -351,7 +352,7 @@ interface WorkspacesFeatureState {
    * Data↔Structure mode switch and workspace switches. No-op when there is no
    * active workspace.
    */
-  setTabStructureOps: (tabId: string, ops: AlterOp[]) => void;
+  setTabStructureOps: (tabId: string, ops: EditorOp[]) => void;
 
   // --- SQL editor (M6) ---------------------------------------------------
   // All operate on the active workspace's `ui` tabs and are no-ops when the

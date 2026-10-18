@@ -58,6 +58,53 @@
 
 import type { AlterOp, ColumnInfo, ForeignKeyInfo, IndexInfo } from "../../shared/api/engine";
 
+// ---------------------------------------------------------------------------
+// Editor-only ops
+// ---------------------------------------------------------------------------
+
+/**
+ * Redefine an existing index. NOT a wire op — no engine can redefine an index
+ * in place (Postgres/MySQL `ALTER INDEX` only renames, SQLite has neither), so
+ * `toWireBatch` expands this into `dropIndex` + `addIndex`.
+ *
+ * It exists as its own op because the expansion is NOT recoverable from the
+ * pair afterwards: once the name is editable, a drop of `a` followed by an add
+ * of `b` is indistinguishable from "drop a, and separately create b", and the
+ * rail would show a deletion next to an unrelated creation. `from` is the link
+ * the display needs, and keeping it means the editor never has to guess.
+ */
+export interface ReplaceIndexOp {
+  op: "replaceIndex";
+  /** The name the SERVER knows the index by — what gets dropped. */
+  from: string;
+  /** The new name. Equal to `from` when only the definition changed. */
+  name: string;
+  columns: string[];
+  unique: boolean;
+}
+
+/** Redefine an existing foreign key. Expands to `dropForeignKey` +
+ *  `addForeignKey`, for the same reason as {@link ReplaceIndexOp}.
+ *  `fromColumns` is carried because that — not the name — is how SQLite
+ *  identifies a constraint it never named. */
+export interface ReplaceForeignKeyOp {
+  op: "replaceForeignKey";
+  from: string;
+  fromColumns: string[];
+  name: string;
+  columns: string[];
+  refTable: string;
+  refColumns: string[];
+  onDelete: string | null;
+}
+
+/**
+ * What the structure editor accumulates and persists per tab: the wire ops plus
+ * the two replace intents above. Everything downstream of `toWireBatch` is
+ * plain `AlterOp` — the replaces never reach the backend.
+ */
+export type EditorOp = AlterOp | ReplaceIndexOp | ReplaceForeignKeyOp;
+
 /** The list of SQLite types offered in the type-change select (prototype list,
  *  adapted to SQLite-native affinities). The current type is prepended if not
  *  already present so the select always shows the column's real type. */
@@ -295,7 +342,7 @@ export interface WorkingColumn {
  *  shows struck-through rather than vanishing — matching the prototype's
  *  "marked for drop" affordance. Mirrors the backend's `compute_target_columns`
  *  for everything else. */
-export function applyOpsToColumns(columns: ColumnInfo[], ops: AlterOp[]): WorkingColumn[] {
+export function applyOpsToColumns(columns: ColumnInfo[], ops: EditorOp[]): WorkingColumn[] {
   const working: WorkingColumn[] = columns.map((c) => ({
     name: c.name,
     dataType: c.dataType,
@@ -373,7 +420,7 @@ export function applyOpsToColumns(columns: ColumnInfo[], ops: AlterOp[]): Workin
  * column names (a column rename runs before a new index/FK over it), and FK/
  * index drops precede adds so a re-create in the same batch is well-ordered.
  */
-export function toWireBatch(ops: AlterOp[]): AlterOp[] {
+export function toWireBatch(ops: EditorOp[]): AlterOp[] {
   const drops: AlterOp[] = [];
   const adds: AlterOp[] = [];
   const inPlace: AlterOp[] = [];
@@ -399,6 +446,29 @@ export function toWireBatch(ops: AlterOp[]): AlterOp[] {
       case "addForeignKey":
         structAdds.push(op);
         break;
+      // The editor-only replaces expand here, and ONLY here — the drop lands in
+      // the drop phase and the add in the add phase, so re-creating under the
+      // same name cannot collide with itself.
+      case "replaceIndex":
+        structDrops.push({ op: "dropIndex", name: op.from });
+        structAdds.push({
+          op: "addIndex",
+          name: op.name,
+          columns: op.columns,
+          unique: op.unique,
+        });
+        break;
+      case "replaceForeignKey":
+        structDrops.push({ op: "dropForeignKey", name: op.from, columns: op.fromColumns });
+        structAdds.push({
+          op: "addForeignKey",
+          name: op.name,
+          columns: op.columns,
+          refTable: op.refTable,
+          refColumns: op.refColumns,
+          onDelete: op.onDelete,
+        });
+        break;
       default:
         inPlace.push(op);
     }
@@ -411,13 +481,24 @@ export function toWireBatch(ops: AlterOp[]): AlterOp[] {
 // ---------------------------------------------------------------------------
 
 /** An index in the working (post-edit) set the rail renders. Carries the
- *  staged add/drop flags so the card shows accent-new / struck-drop styling. */
+ *  staged add/drop/edit flags so the card shows accent-new / struck-drop /
+ *  edited styling. */
 export interface WorkingIndex {
   name: string;
+  /** The WORKING definition — the staged one when `isEdited`, else the
+   *  introspected one. */
   columns: string[];
   unique: boolean;
   primary: boolean;
   isNew: boolean;
+  /** Staged for redefinition (a `replaceIndex` op). Never true together with
+   *  `isNew` — a not-yet-applied index is edited by rewriting its own
+   *  `addIndex` op, which needs no drop. */
+  isEdited: boolean;
+  /** What an edited index is replacing, for the card's "was (…)" line. Its
+   *  `name` is also the identity every staged op for this card is filed under,
+   *  so a staged RENAME cannot orphan them. Set only when `isEdited`. */
+  was?: { name: string; columns: string[]; unique: boolean };
   markedForDrop: boolean;
 }
 
@@ -430,6 +511,17 @@ export interface WorkingForeignKey {
   refColumns: string[];
   onDelete: string | null;
   isNew: boolean;
+  /** Staged for redefinition (a `replaceForeignKey` op). */
+  isEdited: boolean;
+  /** What an edited foreign key is replacing — `name` + `columns` together are
+   *  its identity, since SQLite matches on columns and server engines on name. */
+  was?: {
+    name: string;
+    columns: string[];
+    refTable: string;
+    refColumns: string[];
+    onDelete: string | null;
+  };
   markedForDrop: boolean;
 }
 
@@ -443,16 +535,23 @@ export function foreignKeyName(
   return fk.name ?? `${table}_${fk.columns.join("_")}_fkey`;
 }
 
-/** Replay `ops` over the introspected indexes to produce the rail's working
- *  set: staged `addIndex`es appended (flagged new), `dropIndex`es kept but
- *  flagged for drop (struck-through, matching the column affordance). */
-export function applyOpsToIndexes(indexes: IndexInfo[], ops: AlterOp[]): WorkingIndex[] {
+/**
+ * Replay `ops` over the introspected indexes to produce the rail's working
+ * set: staged `addIndex`es appended (flagged new), `dropIndex`es kept but
+ * flagged for drop (struck-through, matching the column affordance).
+ *
+ * A `replaceIndex` op shows as ONE card flagged `isEdited` carrying both
+ * definitions — not as a drop next to an unrelated-looking creation, which is
+ * what its `dropIndex` + `addIndex` expansion would otherwise look like.
+ */
+export function applyOpsToIndexes(indexes: IndexInfo[], ops: EditorOp[]): WorkingIndex[] {
   const working: WorkingIndex[] = indexes.map((ix) => ({
     name: ix.name,
     columns: ix.columns,
     unique: ix.unique,
     primary: ix.primary,
     isNew: false,
+    isEdited: false,
     markedForDrop: false,
   }));
   for (const op of ops) {
@@ -463,14 +562,92 @@ export function applyOpsToIndexes(indexes: IndexInfo[], ops: AlterOp[]): Working
         unique: op.unique,
         primary: false,
         isNew: true,
+        isEdited: false,
         markedForDrop: false,
       });
     } else if (op.op === "dropIndex") {
       const ix = working.find((w) => w.name === op.name);
       if (ix) ix.markedForDrop = true;
+    } else if (op.op === "replaceIndex") {
+      const ix = working.find((w) => w.name === op.from && !w.isNew);
+      if (ix) {
+        ix.was = { name: ix.name, columns: ix.columns, unique: ix.unique };
+        ix.name = op.name;
+        ix.columns = op.columns;
+        ix.unique = op.unique;
+        ix.isEdited = true;
+      }
     }
   }
   return working;
+}
+
+/** The name the SERVER knows this index by. Every staged op for a card is filed
+ *  under it, so a staged RENAME cannot orphan them (the card's own `name` is
+ *  the new one the moment an edit is staged). */
+function indexIdentity(ix: WorkingIndex): string {
+  return ix.was?.name ?? ix.name;
+}
+
+/** Every staged op touching one index, dropped — the base each staging helper
+ *  below builds on, so an index can never accumulate two adds or a stale drop.
+ *  `isNew` indexes are keyed by their current name, which IS their add op's. */
+function withoutIndexOps(ops: EditorOp[], ix: WorkingIndex): EditorOp[] {
+  const id = indexIdentity(ix);
+  return ops.filter((o) => {
+    if (o.op === "addIndex") return o.name !== ix.name;
+    if (o.op === "dropIndex") return o.name !== id;
+    if (o.op === "replaceIndex") return o.from !== id;
+    return true;
+  });
+}
+
+/**
+ * Stage a redefinition of `ix` — new name, columns and/or uniqueness.
+ *
+ * Three outcomes:
+ *   - a not-yet-applied index (`isNew`) rewrites its own `addIndex` op — no
+ *     drop, because there is nothing on the server to drop;
+ *   - a definition equal to the introspected one clears the ops entirely, so
+ *     editing back to where you started leaves no pending change, matching how
+ *     column edits behave;
+ *   - anything else stages one `replaceIndex`, which `toWireBatch` expands into
+ *     `DROP INDEX <old>` + `CREATE INDEX <new>`.
+ */
+export function stageIndexEdit(
+  ops: EditorOp[],
+  ix: WorkingIndex,
+  name: string,
+  columns: string[],
+  unique: boolean,
+): EditorOp[] {
+  const rest = withoutIndexOps(ops, ix);
+  if (ix.isNew) return [...rest, { op: "addIndex", name, columns, unique }];
+  // `was` holds the server's definition once an edit is staged; before that the
+  // working definition IS the server's.
+  const from = indexIdentity(ix);
+  const original = ix.was ?? { name: ix.name, columns: ix.columns, unique: ix.unique };
+  if (
+    name === original.name &&
+    sameColumns(original.columns, columns) &&
+    original.unique === unique
+  )
+    return rest;
+  return [...rest, { op: "replaceIndex", from, name, columns, unique }];
+}
+
+/** Stage dropping `ix`. A not-yet-applied index is simply forgotten; an edited
+ *  one loses its staged redefinition too, leaving a plain drop of the original. */
+export function stageIndexDrop(ops: EditorOp[], ix: WorkingIndex): EditorOp[] {
+  if (ix.primary) return ops; // the primary-key index is protected
+  const rest = withoutIndexOps(ops, ix);
+  return ix.isNew ? rest : [...rest, { op: "dropIndex", name: indexIdentity(ix) }];
+}
+
+/** Undo whatever is staged for `ix` — undrop a dropped index, or revert an
+ *  edited one to the server's definition. Both are "forget the ops". */
+export function stageIndexRestore(ops: EditorOp[], ix: WorkingIndex): EditorOp[] {
+  return withoutIndexOps(ops, ix);
 }
 
 /** Replay `ops` over the introspected foreign keys to produce the rail's
@@ -479,7 +656,7 @@ export function applyOpsToIndexes(indexes: IndexInfo[], ops: AlterOp[]): Working
  *  (nameless SQLite FKs). */
 export function applyOpsToForeignKeys(
   foreignKeys: ForeignKeyInfo[],
-  ops: AlterOp[],
+  ops: EditorOp[],
   table: string,
 ): WorkingForeignKey[] {
   const working: WorkingForeignKey[] = foreignKeys.map((fk) => ({
@@ -489,8 +666,14 @@ export function applyOpsToForeignKeys(
     refColumns: fk.refColumns,
     onDelete: fk.onDelete,
     isNew: false,
+    isEdited: false,
     markedForDrop: false,
   }));
+  // Both lookups below use the backend's own matching rule: by name for server
+  // engines, falling back to local columns for SQLite, whose `foreign_key_list`
+  // exposes no constraint name.
+  const match = (name: string, columns: string[]) =>
+    working.find((w) => w.name === name) ?? working.find((w) => sameColumns(w.columns, columns));
   for (const op of ops) {
     if (op.op === "addForeignKey") {
       working.push({
@@ -500,16 +683,101 @@ export function applyOpsToForeignKeys(
         refColumns: op.refColumns,
         onDelete: op.onDelete,
         isNew: true,
+        isEdited: false,
         markedForDrop: false,
       });
     } else if (op.op === "dropForeignKey") {
-      const fk =
-        working.find((w) => w.name === op.name) ??
-        working.find((w) => sameColumns(w.columns, op.columns));
+      const fk = match(op.name, op.columns);
       if (fk) fk.markedForDrop = true;
+    } else if (op.op === "replaceForeignKey") {
+      const fk = match(op.from, op.fromColumns);
+      if (fk && !fk.isNew) {
+        fk.was = {
+          name: fk.name,
+          columns: fk.columns,
+          refTable: fk.refTable,
+          refColumns: fk.refColumns,
+          onDelete: fk.onDelete,
+        };
+        fk.name = op.name;
+        fk.columns = op.columns;
+        fk.refTable = op.refTable;
+        fk.refColumns = op.refColumns;
+        fk.onDelete = op.onDelete;
+        fk.isEdited = true;
+      }
     }
   }
   return working;
+}
+
+/** What the SERVER knows this foreign key by — name AND local columns, because
+ *  which of the two identifies it depends on the engine. */
+function foreignKeyIdentity(fk: WorkingForeignKey): { name: string; columns: string[] } {
+  return fk.was
+    ? { name: fk.was.name, columns: fk.was.columns }
+    : { name: fk.name, columns: fk.columns };
+}
+
+/** Every staged op touching one foreign key, dropped. See `withoutIndexOps`. */
+function withoutForeignKeyOps(ops: EditorOp[], fk: WorkingForeignKey): EditorOp[] {
+  const id = foreignKeyIdentity(fk);
+  const isSame = (name: string, columns: string[]) =>
+    name === id.name || sameColumns(columns, id.columns);
+  return ops.filter((o) => {
+    if (o.op === "addForeignKey") return o.name !== fk.name;
+    if (o.op === "dropForeignKey") return !isSame(o.name, o.columns);
+    if (o.op === "replaceForeignKey") return !isSame(o.from, o.fromColumns);
+    return true;
+  });
+}
+
+/** Stage a redefinition of `fk` — name, local column, referenced table/column
+ *  and/or ON DELETE. Mirrors {@link stageIndexEdit}, including clearing the ops
+ *  when edited back to the server's definition. */
+export function stageForeignKeyEdit(
+  ops: EditorOp[],
+  fk: WorkingForeignKey,
+  next: {
+    name: string;
+    columns: string[];
+    refTable: string;
+    refColumns: string[];
+    onDelete: string | null;
+  },
+): EditorOp[] {
+  const rest = withoutForeignKeyOps(ops, fk);
+  if (fk.isNew) return [...rest, { op: "addForeignKey", ...next }];
+  const id = foreignKeyIdentity(fk);
+  const original = fk.was ?? {
+    name: fk.name,
+    columns: fk.columns,
+    refTable: fk.refTable,
+    refColumns: fk.refColumns,
+    onDelete: fk.onDelete,
+  };
+  if (
+    next.name === original.name &&
+    sameColumns(original.columns, next.columns) &&
+    original.refTable === next.refTable &&
+    sameColumns(original.refColumns, next.refColumns) &&
+    original.onDelete === next.onDelete
+  )
+    return rest;
+  return [...rest, { op: "replaceForeignKey", from: id.name, fromColumns: id.columns, ...next }];
+}
+
+/** Stage dropping `fk`; a not-yet-applied one is simply forgotten. */
+export function stageForeignKeyDrop(ops: EditorOp[], fk: WorkingForeignKey): EditorOp[] {
+  const rest = withoutForeignKeyOps(ops, fk);
+  if (fk.isNew) return rest;
+  const id = foreignKeyIdentity(fk);
+  return [...rest, { op: "dropForeignKey", name: id.name, columns: id.columns }];
+}
+
+/** Undo whatever is staged for `fk` — undrop, or revert an edit. */
+export function stageForeignKeyRestore(ops: EditorOp[], fk: WorkingForeignKey): EditorOp[] {
+  return withoutForeignKeyOps(ops, fk);
 }
 
 function sameColumns(a: string[], b: string[]): boolean {

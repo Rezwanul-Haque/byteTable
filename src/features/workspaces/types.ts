@@ -7,7 +7,6 @@
 // nothing in connections imports workspaces back.
 
 import type {
-  AlterOp,
   CellValue,
   Combinator,
   DbObjectKind,
@@ -16,6 +15,7 @@ import type {
   QueryResult,
   SortSpec,
 } from "../../shared/api/engine";
+import type { EditorOp } from "../structure/ops";
 import type {
   ConnectionKind,
   EngineInfo,
@@ -365,8 +365,10 @@ export interface WorkspaceUiState {
   tableViews?: Record<string, TabViewState>;
   /**
    * Per-table-tab structure-editor draft (M8 §3.6 / §4), keyed by tab id: the
-   * accumulated {@link AlterOp} batch the pending-changes bar sends to
-   * `alterApply`. The "snapshot for discard" is the introspected
+   * accumulated {@link EditorOp} batch the pending-changes bar expands (via
+   * `toWireBatch`) and sends to `alterApply`. Wider than the wire type: an
+   * index/FK redefinition is held as one `replaceIndex`/`replaceForeignKey`
+   * intent and only becomes a drop + add on the way out. The "snapshot for discard" is the introspected
    * {@link TableMeta} in the introspection cache (always re-derivable), so only
    * the ops live here — discard just clears this entry. The working column set
    * the structure view displays is derived on render from the introspected
@@ -375,7 +377,7 @@ export interface WorkspaceUiState {
    * unmounts the view) and workspace switches. Sparse — only tabs with edits.
    * `closeTab` prunes it.
    */
-  structureEdits?: Record<string, AlterOp[]>;
+  structureEdits?: Record<string, EditorOp[]>;
   /**
    * Per-table-tab staged data-grid edits (the save bar's uncommitted batch),
    * keyed by tab id. Same survives-the-unmount rationale as `filters`, and it

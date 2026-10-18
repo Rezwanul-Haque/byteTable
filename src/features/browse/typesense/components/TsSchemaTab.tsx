@@ -10,7 +10,7 @@
 
 import { useT } from "../../../../shared/i18n/useT";
 import { Icon } from "../../../../shared/ui/Icon";
-import { EngineBadge } from "../../../../shared/ui/EngineBadge";
+import { EngineMark } from "../../../../shared/ui/EngineMark";
 import type { CollectionDescriptor } from "../api";
 import { tsBytes, tsCount } from "../format";
 import { TsFlag, TsLoading, TsTypeTag } from "./TsBits";
@@ -38,7 +38,7 @@ export function TsSchemaTab({
   return (
     <div className="rdash" data-screen-label={"Typesense schema: " + collection.name}>
       <div className="rdash-head">
-        <EngineBadge engine="typesense" size={22} />
+        <EngineMark engine="typesense" size={22} />
         <h2>{t("tsx.schema.head", { name: collection.name })}</h2>
         <span className="structure-sub">
           {t("tsx.schema.sub", {

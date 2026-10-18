@@ -5,7 +5,7 @@
 // COUNT(*)). Reuses the shared .rdash-* dashboard chrome + .structure-table.
 
 import { useT } from "../../../../shared/i18n/useT";
-import { EngineBadge } from "../../../../shared/ui/EngineBadge";
+import { EngineMark } from "../../../../shared/ui/EngineMark";
 import { Icon } from "../../../../shared/ui/Icon";
 import {
   replicationLabel,
@@ -59,7 +59,7 @@ export function CassandraDashboard({
   return (
     <div className="rdash">
       <div className="rdash-head">
-        <EngineBadge engine="cassandra" size={22} />
+        <EngineMark engine="cassandra" size={22} />
         <h2>
           {ks} · {t("cass.dash.keyspaceSuffix")}
         </h2>

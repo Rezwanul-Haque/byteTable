@@ -20,7 +20,7 @@ import { appErrorMessage } from "../../../../shared/api/error";
 import { useT } from "../../../../shared/i18n/useT";
 import { BulkDeleteModal } from "../../../../shared/ui/BulkDeleteModal";
 import { Btn } from "../../../../shared/ui/Btn";
-import { EngineBadge } from "../../../../shared/ui/EngineBadge";
+import { EngineMark } from "../../../../shared/ui/EngineMark";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { useReadOnly } from "../../../../shared/ui/readOnlyContext";
@@ -663,7 +663,7 @@ export function RedisSidebar(props: RedisSidebarProps) {
     <aside className="redis-sidebar" data-screen-label={"Redis workspace: " + workspaceName}>
       <div className="sidebar-conn">
         <span className="ws-color-bar" style={{ background: workspaceColor }} />
-        <EngineBadge engine="redis" size={26} />
+        <EngineMark engine="redis" size={26} />
         <div className="sidebar-conn-info">
           <div className="sidebar-conn-name">
             {workspaceName}

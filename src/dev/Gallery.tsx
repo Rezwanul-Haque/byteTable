@@ -6,7 +6,8 @@ import { useState } from "react";
 
 import { BTLogo } from "../shared/ui/BTLogo";
 import { Btn } from "../shared/ui/Btn";
-import { EngineBadge, type Engine } from "../shared/ui/EngineBadge";
+import type { BadgeEngine } from "../shared/types";
+import { EngineMark } from "../shared/ui/EngineMark";
 import { EnvTag, type Env } from "../shared/ui/EnvTag";
 import { Icon } from "../shared/ui/Icon";
 import { IconBtn } from "../shared/ui/IconBtn";
@@ -16,7 +17,21 @@ import { useToast } from "../shared/ui/toastContext";
 import { PreferencesPanel } from "../features/preferences/components/PreferencesPanel";
 import "./Gallery.css";
 
-const ENGINES: Engine[] = ["sqlite", "mysql", "postgres"];
+/** Every mark, so the set can be read as a set — one glyph drifting in weight
+ *  or silhouette only shows up next to the other ten. */
+const MARKS: BadgeEngine[] = [
+  "sqlite",
+  "mysql",
+  "postgres",
+  "mssql",
+  "redis",
+  "dynamodb",
+  "mongodb",
+  "cassandra",
+  "clickhouse",
+  "typesense",
+  "csv",
+];
 const ENVS: Env[] = ["dev", "staging", "production"];
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
@@ -94,14 +109,17 @@ export function Gallery() {
         </div>
       </Section>
 
-      <Section label="Engine badges">
+      <Section label="Engine marks">
         <div className="gallery-row">
-          {ENGINES.map((engine) => (
-            <EngineBadge key={engine} engine={engine} size={22} />
+          {MARKS.map((engine) => (
+            <EngineMark key={engine} engine={engine} size={34} />
           ))}
-          {ENGINES.map((engine) => (
-            <EngineBadge key={engine + "-28"} engine={engine} size={28} />
+          {MARKS.map((engine) => (
+            <EngineMark key={engine + "-18"} engine={engine} size={18} />
           ))}
+          <span className="gallery-note">
+            Simple Icons where the brand has one, drawn in-house otherwise; the picker uses 34px
+          </span>
         </div>
       </Section>
 

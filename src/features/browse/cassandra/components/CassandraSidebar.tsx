@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react";
 
 import { useT } from "../../../../shared/i18n/useT";
-import { EngineBadge } from "../../../../shared/ui/EngineBadge";
+import { EngineMark } from "../../../../shared/ui/EngineMark";
 import { dropWordSelection } from "../../../../shared/ui/dropWordSelection";
 import { Icon } from "../../../../shared/ui/Icon";
 import { useReadOnly } from "../../../../shared/ui/readOnlyContext";
@@ -131,7 +131,7 @@ export function CassandraSidebar({
     <aside className="sidebar cass-sidebar">
       <div className="sidebar-conn" title={detail}>
         <span className="ws-color-bar" style={{ background: workspaceColor }} />
-        <EngineBadge engine="cassandra" size={26} />
+        <EngineMark engine="cassandra" size={26} />
         <div className="sidebar-conn-info">
           <div className="sidebar-conn-name">{workspaceName}</div>
           <div className="sidebar-conn-detail">

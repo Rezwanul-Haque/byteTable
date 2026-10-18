@@ -19,7 +19,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { appErrorMessage } from "../../../../shared/api/error";
 import { useT } from "../../../../shared/i18n/useT";
-import { EngineBadge } from "../../../../shared/ui/EngineBadge";
+import { EngineMark } from "../../../../shared/ui/EngineMark";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import type { KvDbInfo, KvServerInfo } from "../../../connections/api";
@@ -176,7 +176,7 @@ export function DashboardTab({
   return (
     <div className="rdash" data-screen-label="Redis keyspace dashboard">
       <div className="rdash-head">
-        <EngineBadge engine="redis" size={22} />
+        <EngineMark engine="redis" size={22} />
         <h2>{t("redis.tab.dashTitle")}</h2>
         {serverInfo ? (
           <span className="rdash-sub">

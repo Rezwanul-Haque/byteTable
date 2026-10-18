@@ -20,13 +20,15 @@ import { isDataFileWorkspace, workspaceBadge, type Workspace } from "../types";
 import "./Rail.css";
 
 // Tile chip/tooltip engine names — prototype ui.jsx ENGINE_META (label +
-// short only; the badge colors live in EngineBadge.tsx, which keeps its own
-// private copy by the same precedent).
+// short only). The rail's chip is neutral (--bg3 under --text-dim, see
+// Rail.css) because the tile around it already carries the WORKSPACE colour,
+// so it has no use for the engine tints in shared/ui/engineMeta. A private
+// copy, as the prototype had it.
 const ENGINE_META = {
   sqlite: { label: "SQLite", short: "SQ" },
   mysql: { label: "MySQL", short: "My" },
   postgres: { label: "PostgreSQL", short: "Pg" },
-  mssql: { label: "MS SQL Server", short: "MSS" },
+  mssql: { label: "SQL Server", short: "MSS" },
   redis: { label: "Redis", short: "Rd" },
   dynamodb: { label: "DynamoDB", short: "Dy" },
   mongodb: { label: "MongoDB", short: "Mg" },

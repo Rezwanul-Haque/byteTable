@@ -46,6 +46,13 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  /* Matches .modal-actions. Load-bearing, not cosmetic: a title row may hold
+     several right-aligned controls (the connect modal has a read-only chip, an
+     import trigger and the close button), and each of those pushes itself over
+     with `margin-left: auto`. Only the FIRST auto margin gets any free space —
+     `space-between` has already been satisfied by then — so the rest resolve to
+     zero and the controls render edge to edge with no space between them. */
+  gap: 8px;
   font-size: 15px;
   font-weight: 600;
 }

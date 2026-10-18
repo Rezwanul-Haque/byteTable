@@ -21,7 +21,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { appErrorMessage } from "../../../shared/api/error";
 import { useT } from "../../../shared/i18n/useT";
 import { Btn } from "../../../shared/ui/Btn";
-import { EngineBadge } from "../../../shared/ui/EngineBadge";
+import { EngineMark } from "../../../shared/ui/EngineMark";
 import { dropWordSelection } from "../../../shared/ui/dropWordSelection";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
@@ -517,7 +517,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
     <aside className="sidebar">
       <div className="sidebar-conn" title={connectionDetail(workspace.saved.params)}>
         <span className="ws-color-bar" style={{ background: workspace.color }} />
-        <EngineBadge engine={engine} size={26} />
+        <EngineMark engine={engine} size={26} />
         <div className="sidebar-conn-info">
           <div className="sidebar-conn-name">{workspace.name}</div>
           {/* Detail line (design refresh): the env as a small uppercase, env-

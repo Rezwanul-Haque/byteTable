@@ -30,7 +30,7 @@ import { expandTilde, tildify, useHomeDir } from "../../../shared/homeDir";
 import { useT } from "../../../shared/i18n/useT";
 import type { Engine, Env } from "../../../shared/types";
 import { Btn } from "../../../shared/ui/Btn";
-import { EngineBadge } from "../../../shared/ui/EngineBadge";
+import { EngineMark } from "../../../shared/ui/EngineMark";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { InfoHint } from "../../../shared/ui/InfoHint";
@@ -59,7 +59,7 @@ const ENGINES: { engine: Engine; label: string }[] = [
   { engine: "sqlite", label: "SQLite" },
   { engine: "mysql", label: "MySQL" },
   { engine: "postgres", label: "PostgreSQL" },
-  { engine: "mssql", label: "MS SQL Server" },
+  { engine: "mssql", label: "SQL Server" },
   { engine: "redis", label: "Redis" },
   { engine: "dynamodb", label: "DynamoDB" },
   { engine: "mongodb", label: "MongoDB" },
@@ -1085,7 +1085,10 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
                 className={"engine-choice" + (engine === e.engine ? " active" : "")}
                 onClick={() => pickEngine(e.engine)}
               >
-                <EngineBadge engine={e.engine} size={28} />
+                {/* The largest the mark is used anywhere — this is where the
+                    engine is being CHOSEN, so it is the one place the logo has
+                    to carry on its own, with the label only confirming it. */}
+                <EngineMark engine={e.engine} size={34} />
                 <span>{e.label}</span>
               </button>
             ))}

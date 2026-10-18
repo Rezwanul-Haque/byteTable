@@ -20,7 +20,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { appErrorMessage } from "../../../../shared/api/error";
 import { useT } from "../../../../shared/i18n/useT";
-import { EngineBadge } from "../../../../shared/ui/EngineBadge";
+import { EngineMark } from "../../../../shared/ui/EngineMark";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import {
@@ -540,7 +540,7 @@ export function ClusterDashboard({
   return (
     <div className="rdash cl-dash" data-screen-label="Redis cluster dashboard">
       <div className="rdash-head">
-        <EngineBadge engine="redis" size={22} />
+        <EngineMark engine="redis" size={22} />
         <h2>{t("redis.tab.clusterTitle")}</h2>
         <span className="rdash-sub">
           {"cluster · " +

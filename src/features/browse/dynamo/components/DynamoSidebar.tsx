@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 
 import { useT } from "../../../../shared/i18n/useT";
 import { Btn } from "../../../../shared/ui/Btn";
-import { EngineBadge } from "../../../../shared/ui/EngineBadge";
+import { EngineMark } from "../../../../shared/ui/EngineMark";
 import { dropWordSelection } from "../../../../shared/ui/dropWordSelection";
 import { Icon } from "../../../../shared/ui/Icon";
 import { useReadOnly } from "../../../../shared/ui/readOnlyContext";
@@ -107,7 +107,7 @@ export function DynamoSidebar({
     <aside className="sidebar ddb-sidebar">
       <div className="sidebar-conn ddb-sidebar-conn">
         <span className="ws-color-bar" style={{ background: workspaceColor }} />
-        <EngineBadge engine="dynamodb" size={26} />
+        <EngineMark engine="dynamodb" size={26} />
         <div className="sidebar-conn-info">
           <div className="sidebar-conn-name">{workspaceName}</div>
           <div className="sidebar-conn-detail">

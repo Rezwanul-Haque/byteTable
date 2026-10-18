@@ -3,7 +3,7 @@
 // size). The default tab when a MongoDB workspace opens. Ported from the
 // prototype's MongoDashboard; reads real CollectionDescriptor[].
 
-import { EngineBadge } from "../../../../shared/ui/EngineBadge";
+import { EngineMark } from "../../../../shared/ui/EngineMark";
 import { Icon } from "../../../../shared/ui/Icon";
 import { useT } from "../../../../shared/i18n/useT";
 import type { CollectionDescriptor } from "../api";
@@ -29,7 +29,7 @@ export function MongoDashboard({
   return (
     <div className="rdash">
       <div className="rdash-head">
-        <EngineBadge engine="mongodb" size={22} />
+        <EngineMark engine="mongodb" size={22} />
         <h2>{t("mongo.dashTitle", { db })}</h2>
         <span className="structure-sub">{serverVersion}</span>
       </div>

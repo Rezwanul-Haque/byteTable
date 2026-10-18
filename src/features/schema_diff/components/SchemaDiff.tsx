@@ -49,8 +49,8 @@ import "./SchemaDiff.css";
 
 /**
  * Per-engine badge for the connection cards — the app's own engine identity
- * (short tag + tint, as in `EngineBadge`) rather than the prototype's private
- * table, so a card reads the same as every other engine badge in ByteTable.
+ * (short tag + tint, the `ENGINE_META` pairing) rather than the prototype's
+ * private table, so a card agrees with every other engine surface in ByteTable.
  */
 const SD_ENGINE: Partial<Record<Engine, { short: string; color: string; name: string }>> = {
   postgres: { short: "Pg", color: "#61afef", name: "PostgreSQL" },

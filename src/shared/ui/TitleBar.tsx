@@ -23,7 +23,7 @@ import { selectShowConnect, useWorkspacesStore } from "../../features/workspaces
 import { isDataFileWorkspace, workspaceBadge } from "../../features/workspaces/types";
 import { connectionDetail } from "../../features/connections/api";
 import { normalizeEnv } from "../types";
-import { EngineBadge } from "./EngineBadge";
+import { EngineMark } from "./EngineMark";
 import { ENV_COLOR } from "./envColors";
 import { TitleMenuBar } from "./TitleMenuBar";
 import { buildMenus, type MenuCtx, type TitleBarCtx } from "./titlebarMenus";
@@ -140,7 +140,7 @@ export function TitleBar({ ctx }: { ctx: TitleBarCtx }) {
       <div className="bt-titlebar-center" data-tauri-drag-region>
         {ws ? (
           <>
-            <EngineBadge engine={workspaceBadge(ws)} size={18} />
+            <EngineMark engine={workspaceBadge(ws)} size={18} />
             <span className="tb-ws-name">{ws.name}</span>
             {/* A data file has no deployment environment — it is a file. */}
             {ws.file ? null : <EnvPill env={ws.saved.env} color={ws.saved.color} />}

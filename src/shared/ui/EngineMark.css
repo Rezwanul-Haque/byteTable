@@ -1,0 +1,12 @@
+/* Engine mark — the glyph is the whole box, so it needs no padding of its own.
+   `block` kills the inline baseline gap under it inside the picker's column.
+
+   No theme-dependent recolouring here, deliberately: these are brand marks, and
+   every glyph paints with `currentColor` from the engine's own tint (set inline
+   by EngineMark.tsx). ClickHouse's neon yellow is faint on a light theme; that
+   is the brand's colour and it stays. */
+
+.engine-mark {
+  display: block;
+  flex: none;
+}

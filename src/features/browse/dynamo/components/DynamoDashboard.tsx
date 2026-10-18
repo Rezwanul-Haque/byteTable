@@ -5,7 +5,7 @@
 
 import { useT } from "../../../../shared/i18n/useT";
 import { Icon } from "../../../../shared/ui/Icon";
-import { EngineBadge } from "../../../../shared/ui/EngineBadge";
+import { EngineMark } from "../../../../shared/ui/EngineMark";
 import type { TableDescriptor } from "../api";
 
 interface DynamoDashboardProps {
@@ -33,7 +33,7 @@ export function DynamoDashboard({ tables, region, loading, error }: DynamoDashbo
   return (
     <div className="ddb-dash">
       <div className="ddb-dash-head">
-        <EngineBadge engine="dynamodb" size={22} />
+        <EngineMark engine="dynamodb" size={22} />
         <h2>{t("dyn.dash.title")}</h2>
         <span className="ddb-dash-sub">{region}</span>
       </div>

@@ -1,8 +1,11 @@
-// Per-engine display name, badge initials and accent — the source EngineBadge
-// renders from. Its own module rather than a const inside EngineBadge.tsx so
-// non-badge callers (the connect modal's import dialog names the engine a
-// pasted string resolved to) can read the label without a component file
-// exporting a constant, which react-refresh forbids.
+// Per-engine display name, short tag and accent — the app's one engine
+// identity. EngineMark paints its logo in `color`, the import sheet tints its
+// detection dot with it, and SchemaDiff stamps `short` on a connection card.
+//
+// A module of its own rather than a const inside the component that renders
+// it: react-refresh forbids a component file exporting a constant, and the
+// non-rendering callers (the import dialog naming the engine a pasted string
+// resolved to) need the label without pulling in a component at all.
 
 import { t, type StringKey } from "../i18n";
 import type { BadgeEngine } from "../types";
@@ -23,7 +26,7 @@ export const ENGINE_META: Record<BadgeEngine, EngineMeta> = {
   postgres: { label: "PostgreSQL", short: "Pg", color: "#61afef" },
   // SQL Server (M21): crimson `MSS` badge (prototype ui.jsx ENGINE_META),
   // distinct from Redis's vermilion and the production/error reds.
-  mssql: { label: "MS SQL Server", short: "MSS", color: "#d1495b" },
+  mssql: { label: "SQL Server", short: "MSS", color: "#d1495b" },
   // Redis (M13, REDIS_SPEC §1): vermilion, deliberately distinct from the
   // pinkish production/error red.
   redis: { label: "Redis", short: "Rd", color: "#e8533d" },
@@ -35,7 +38,11 @@ export const ENGINE_META: Record<BadgeEngine, EngineMeta> = {
   // a cyan-blue distinct from Postgres/Dynamo blues and SQLite's teal.
   cassandra: { label: "Cassandra", short: "Cs", color: "#1798c1" },
   // ClickHouse (M25): the ClickHouse yellow (prototype ui.jsx ENGINE_META),
-  // distinct from every other engine tint.
+  // distinct from every other engine tint. It is also the BRAND's own neon
+  // yellow, which is why it stays this colour on a light theme even though it
+  // measures 1.07:1 against white: a darker twin was tried and read as the
+  // wrong logo. If the legibility ever has to be solved, solve it with a
+  // container behind the mark — never by shifting the yellow.
   clickhouse: { label: "ClickHouse", short: "CH", color: "#faff69" },
   // Typesense (M30): the Typesense amber (prototype ui.jsx ENGINE_META),
   // warmer than MySQL's gold and unlike ClickHouse's acid yellow.

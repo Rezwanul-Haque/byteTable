@@ -110,13 +110,13 @@ export type AffectedEngine = Engine | "na";
 
 // Ordered engine options for the "Affected engine" dropdown — `na` first so the
 // default when nothing is open reads sensibly. Engine display names are a
-// private copy by the same precedent as Rail.tsx / EngineBadge.tsx.
+// private copy by the same precedent as Rail.tsx.
 export const AFFECTED_ENGINES: { id: AffectedEngine; label: string }[] = [
   { id: "na", label: "N/A — not engine-specific" },
   { id: "sqlite", label: "SQLite" },
   { id: "mysql", label: "MySQL" },
   { id: "postgres", label: "PostgreSQL" },
-  { id: "mssql", label: "MS SQL Server" },
+  { id: "mssql", label: "SQL Server" },
   { id: "redis", label: "Redis" },
   { id: "dynamodb", label: "DynamoDB" },
   { id: "mongodb", label: "MongoDB" },

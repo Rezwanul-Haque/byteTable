@@ -11,7 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { isAppErrorPayload } from "../../../shared/api/error";
 import { BrandMark } from "../../../shared/ui/BrandMark";
 import { Btn } from "../../../shared/ui/Btn";
-import { EngineBadge } from "../../../shared/ui/EngineBadge";
+import { EngineMark } from "../../../shared/ui/EngineMark";
 import { EnvTag } from "../../../shared/ui/EnvTag";
 import { ReadOnlyTag } from "../../../shared/ui/ReadOnlyTag";
 import { Icon } from "../../../shared/ui/Icon";
@@ -509,7 +509,7 @@ export function ConnectScreen() {
                             }}
                             disabled={connecting !== null}
                           >
-                            <EngineBadge engine={c.engine} size={34} />
+                            <EngineMark engine={c.engine} size={34} />
                             <div className="connect-card-info">
                               <div className="connect-card-name">
                                 {c.name}
@@ -685,7 +685,7 @@ export function ConnectScreen() {
           pointer-events:none so it never becomes its own hit-test target. */}
       {drag ? (
         <div className="connect-drag-pill" style={{ left: drag.x, top: drag.y }}>
-          <EngineBadge engine={drag.connection.engine} size={18} />
+          <EngineMark engine={drag.connection.engine} size={18} />
           <span className="connect-drag-name">{drag.connection.name}</span>
           <span className="connect-drag-to">
             {drag.over

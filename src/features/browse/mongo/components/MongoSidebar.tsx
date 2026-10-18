@@ -6,7 +6,7 @@
 
 import { useEffect, useState } from "react";
 
-import { EngineBadge } from "../../../../shared/ui/EngineBadge";
+import { EngineMark } from "../../../../shared/ui/EngineMark";
 import { dropWordSelection } from "../../../../shared/ui/dropWordSelection";
 import { Icon } from "../../../../shared/ui/Icon";
 import { useReadOnly } from "../../../../shared/ui/readOnlyContext";
@@ -128,7 +128,7 @@ export function MongoSidebar({
     <aside className="sidebar">
       <div className="sidebar-conn" title={detail}>
         <span className="ws-color-bar" style={{ background: workspaceColor }} />
-        <EngineBadge engine="mongodb" size={26} />
+        <EngineMark engine="mongodb" size={26} />
         <div className="sidebar-conn-info">
           <div className="sidebar-conn-name">{workspaceName}</div>
           <div className="sidebar-conn-detail">

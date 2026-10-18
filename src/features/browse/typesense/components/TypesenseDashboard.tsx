@@ -10,7 +10,7 @@
 
 import { useT } from "../../../../shared/i18n/useT";
 import { Icon } from "../../../../shared/ui/Icon";
-import { EngineBadge } from "../../../../shared/ui/EngineBadge";
+import { EngineMark } from "../../../../shared/ui/EngineMark";
 import { InfoHint } from "../../../../shared/ui/InfoHint";
 import type { AnalyticsOverview, ClusterStats, CollectionDescriptor, NodeInfo } from "../api";
 import { tsBytes, tsCount } from "../format";
@@ -57,7 +57,7 @@ export function TypesenseDashboard({
   return (
     <div className="rdash" data-screen-label="Typesense dashboard">
       <div className="rdash-head">
-        <EngineBadge engine="typesense" size={22} />
+        <EngineMark engine="typesense" size={22} />
         <h2>{t("tsx.dash.head")}</h2>
         <span className="structure-sub">
           {version ? t("tsx.dash.version", { version }) : ""}

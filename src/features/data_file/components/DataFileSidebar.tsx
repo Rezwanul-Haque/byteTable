@@ -9,7 +9,7 @@
 
 import { useState } from "react";
 
-import { EngineBadge } from "../../../shared/ui/EngineBadge";
+import { EngineMark } from "../../../shared/ui/EngineMark";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { useT } from "../../../shared/i18n/useT";
@@ -69,7 +69,7 @@ export function DataFileSidebar({
     <aside className="sidebar">
       <div className="sidebar-conn" title={doc.path ?? doc.name}>
         <span className="ws-color-bar" style={{ background: workspaceColor }} />
-        <EngineBadge engine="csv" size={26} />
+        <EngineMark engine="csv" size={26} />
         <div className="sidebar-conn-info">
           <div className="sidebar-conn-name">{workspaceName}</div>
           <div className="sidebar-conn-detail">

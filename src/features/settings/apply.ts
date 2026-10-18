@@ -49,6 +49,62 @@ function mixHex(a: string, b: string, t: number): string {
   return "#" + [0, 1, 2].map((i) => ch(i).toString(16).padStart(2, "0")).join("");
 }
 
+/**
+ * Liquid Glass's boot gradient — the splash and the connect screen behind it.
+ *
+ * It lives in TypeScript, unusually for a colour in this app, because it has to
+ * reach two renderers that cannot share a stylesheet: `liquid.css` paints it
+ * through `--lg-boot-grad` (written below), and index.html's splash paints it
+ * before any stylesheet exists, off the copy persisted into SPLASH_THEME_KEY.
+ * One literal, so they cannot drift — and they had: the splash approximated
+ * this with a centred radial built from two of its stops, so boot → connect
+ * jumped from a glow in the middle of the window to a diagonal wash.
+ */
+const LIQUID_BOOT_GRADIENT = [
+  "radial-gradient(120% 90% at 15% 0%, rgba(20, 110, 130, 0.55), transparent 60%)",
+  "radial-gradient(110% 90% at 100% 100%, rgba(30, 70, 140, 0.5), transparent 60%)",
+  "linear-gradient(160deg, #0b3444 0%, #0c3f52 40%, #0f3557 75%, #10284a 100%)",
+].join(", ");
+
+/**
+ * Frosted Glass's backdrop — four soft blooms over a deep base, painted on the
+ * full-window boxes (body / #root / .bt-app-root) and, at boot, on the splash.
+ *
+ * Here rather than in glass.css for the reason LIQUID_BOOT_GRADIENT is: the
+ * splash has to paint it before a stylesheet exists. The accent is baked in
+ * instead of read through `var(--accent)` — the splash has no tokens yet —
+ * which costs nothing, since applySettings re-runs on every accent change.
+ *
+ * The COLOURS are the material's own (indigo, cyan, violet, teal); the accent
+ * is a tint mixed into each, strongest in the lead bloom and barely there in
+ * the base. That order matters: letting the accent lead painted the whole
+ * window one hue and lost the gradient. A custom accent should colour the room,
+ * not become it. The nesting reads "tint the hue, then set the alpha"; oklab
+ * keeps the tint even, so a dark or vivid accent shifts the wash without
+ * muddying it.
+ *
+ * WIDE AND DIM, not small and bright. Every one of these hues is a pale, high
+ * luminance pastel, so a tight bloom puts its hottest, most desaturated core
+ * right on a window corner and the four of them read as white lights switched
+ * on behind the glass rather than as a wash of colour. Each radius is therefore
+ * far larger than the area it has to cover and each alpha low enough that only
+ * the falloff is ever on screen — the composition (which hue sits in which
+ * corner) is the prototype's, the intensity is not. Lowering an alpha only
+ * darkens the composite behind the text, so the ≥4.5:1 body contrast the
+ * milestone requires cannot regress here; raising one can.
+ */
+function glassBackdrop(accent: string): string {
+  const bloom = (hue: string, tint: number, alpha: number) =>
+    `color-mix(in oklab, color-mix(in oklab, ${accent} ${tint}%, ${hue}) ${alpha}%, transparent)`;
+  return [
+    `radial-gradient(1500px 950px at 8% -10%, ${bloom("#7c9cff", 32, 28)}, transparent 62%)`,
+    `radial-gradient(1250px 820px at 100% 0%, ${bloom("#7cd5ff", 18, 19)}, transparent 62%)`,
+    `radial-gradient(1250px 950px at 60% 110%, ${bloom("#b08cff", 22, 22)}, transparent 64%)`,
+    `radial-gradient(1000px 700px at 0% 100%, ${bloom("#2dd4a7", 14, 13)}, transparent 62%)`,
+    `color-mix(in oklab, ${accent} 6%, #0b1120)`,
+  ].join(", ");
+}
+
 /** The bundled image as a CSS url(), for the first paint before anything is
  *  cached. */
 function wallpaperFallback(): string {
@@ -111,9 +167,11 @@ export function applySettings(input: Partial<Settings> | null | undefined): void
       if (document.documentElement.getAttribute("data-material") === "liquid")
         document.documentElement.style.setProperty("--lg-wall", url);
     });
+    html.style.setProperty("--lg-boot-grad", LIQUID_BOOT_GRADIENT);
     ensureLensDefs();
   } else {
     html.style.removeProperty("--lg-wall");
+    html.style.removeProperty("--lg-boot-grad");
   }
   html.classList.toggle("bt-lg-nowall", theme.material === "liquid" && s.wallpaper === "none");
   // Edge refraction renders in Chromium only (WebView2); WKWebView and
@@ -141,6 +199,14 @@ export function applySettings(input: Partial<Settings> | null | undefined): void
   root.setProperty("--accent", accent);
   root.setProperty("--on-accent", custom ? (theme.light ? "#ffffff" : "#0c1512") : theme.onAccent);
 
+  // The frosted backdrop, rebuilt around the resolved accent. Written here
+  // rather than declared in glass.css so the splash can persist the identical
+  // string — see glassBackdrop(). Liquid gets it too and simply covers it with
+  // the wallpaper; the rules that read it are attribute-scoped, so a flat
+  // palette never sees the token at all.
+  if (theme.material) root.setProperty("--glass-backdrop", glassBackdrop(accent));
+  else root.removeProperty("--glass-backdrop");
+
   // Persist the RESOLVED accent so the next launch's inline splash (painted
   // before any JS/CSS loads, see index.html) can tint its logo + wordmark to
   // the user's accent instead of the hardcoded default.
@@ -163,6 +229,11 @@ export function applySettings(input: Partial<Settings> | null | undefined): void
               // is open, and boot → connect must not jump colour. Fixed, not
               // accent-tinted, for the same reason — it has to match the
               // gradient `liquid.css` paints behind the connect screen.
+              //
+              // `grad` is that whole gradient, so the pre-JS splash paints it
+              // exactly; gradA/gradB stay as the radial fallback for the first
+              // ever launch on this theme, when nothing is persisted yet.
+              grad: LIQUID_BOOT_GRADIENT,
               bg: "#0b3444",
               gradA: "#0c3f52",
               gradB: "#10284a",
@@ -173,6 +244,13 @@ export function applySettings(input: Partial<Settings> | null | undefined): void
             }
           : theme.material
             ? {
+                // The frosted backdrop itself, so boot → app does not jump from
+                // a centred glow to the four corner blooms. The mixHex values
+                // below stay: `bg` is the gradient's own base colour (what
+                // shows if a webview cannot parse color-mix), `bar` tints the
+                // progress track, and gradA/gradB are the radial fallback for
+                // a first launch with nothing persisted.
+                grad: glassBackdrop(accent),
                 bg: mixHex(accent, "#0b1120", 0.06),
                 gradA: mixHex(accent, "#18224a", 0.18),
                 gradB: mixHex(accent, "#0b1120", 0.06),

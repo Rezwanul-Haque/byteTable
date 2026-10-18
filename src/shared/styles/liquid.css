@@ -31,6 +31,12 @@
   --lg-lift: 0 14px 40px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.2);
   --lg-filter: blur(30px) saturate(180%);
   --lg-filter-float: blur(18px) saturate(200%) brightness(1.05);
+  /* --lg-boot-grad (the splash + connect gradient, see the section near the end
+     of this file) is the one token NOT declared here: `applySettings` writes
+     it, because index.html's pre-JS splash has to paint the same gradient
+     before this stylesheet exists and can only do that from a JS literal.
+     Written on the same pass that sets `data-material`, so wherever these rules
+     apply, the value is there. */
 }
 
 /* ================= The "desktop" =================
@@ -539,13 +545,15 @@
    use the same calm teal→blue so boot → connect has no colour jump. The
    gradient goes on the frame, not on `.connect-screen`: painting the screen
    itself leaves the strip behind the rail showing the wallpaper, and the rail
-   then looks like it sits on a separate square. */
+   then looks like it sits on a separate square.
+
+   `--lg-boot-grad` comes from applySettings (LIQUID_BOOT_GRADIENT), which is
+   the single definition: the splash is painted TWICE — once by index.html
+   before this stylesheet exists, then by this rule — and the two have to be the
+   same gradient or boot flashes. */
 [data-material="liquid"] #bt-splash,
 [data-material="liquid"] .app-frame:has(.connect-screen) {
-  background:
-    radial-gradient(120% 90% at 15% 0%, rgba(20, 110, 130, 0.55), transparent 60%),
-    radial-gradient(110% 90% at 100% 100%, rgba(30, 70, 140, 0.5), transparent 60%),
-    linear-gradient(160deg, #0b3444 0%, #0c3f52 40%, #0f3557 75%, #10284a 100%);
+  background: var(--lg-boot-grad);
 }
 
 /* ================= Reduced transparency =================

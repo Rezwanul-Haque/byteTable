@@ -52,37 +52,12 @@
      row, and backdrop-filter is per-element compositing. */
   --glass-gutter: rgba(12, 18, 36, 0.96);
   --glass-gutter-hover: rgba(26, 34, 58, 0.96);
-  /* The backdrop — four soft blooms over a deep base. The COLOURS are the
-     material's own (indigo, cyan, violet, teal); the accent is a tint mixed
-     into each, strongest in the lead bloom and barely there in the base. That
-     order matters: letting the accent lead painted the whole window one hue
-     and lost the gradient. A custom accent should colour the room, not become
-     it. Each `color-mix(… X%, transparent)` sets the bloom's alpha, so the
-     nesting reads "tint the hue, then set the alpha"; oklab keeps the tint
-     even, so a dark or vivid accent shifts the wash without muddying it.
-     Declared once as a token because three full-window boxes paint it. */
-  --glass-backdrop:
-    radial-gradient(
-      1100px 700px at 8% -10%,
-      color-mix(in oklab, color-mix(in oklab, var(--accent) 32%, #7c9cff) 46%, transparent),
-      transparent 60%
-    ),
-    radial-gradient(
-      900px 600px at 100% 0%,
-      color-mix(in oklab, color-mix(in oklab, var(--accent) 18%, #7cd5ff) 32%, transparent),
-      transparent 60%
-    ),
-    radial-gradient(
-      900px 700px at 60% 110%,
-      color-mix(in oklab, color-mix(in oklab, var(--accent) 22%, #b08cff) 36%, transparent),
-      transparent 62%
-    ),
-    radial-gradient(
-      700px 500px at 0% 100%,
-      color-mix(in oklab, color-mix(in oklab, var(--accent) 14%, #2dd4a7) 22%, transparent),
-      transparent 60%
-    ),
-    color-mix(in oklab, var(--accent) 6%, #0b1120);
+  /* --glass-backdrop (the four blooms the full-window boxes paint, below) is
+     the one token NOT declared here: `applySettings` writes it, because the
+     pre-JS splash in index.html has to paint the same backdrop before this
+     stylesheet exists and can only do that from a JS literal. It is written on
+     the same pass that sets `data-material`, so wherever these rules apply the
+     value is there. Its make-up is documented at glassBackdrop() in apply.ts. */
 }
 
 /* ================= Backdrop =================

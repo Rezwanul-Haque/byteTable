@@ -22,6 +22,11 @@
           r.setProperty("--splash-text", t.text);
           r.setProperty("--splash-dim", t.dim);
           r.setProperty("--splash-bar", t.bar);
+          // A material theme persists its FULL background (a multi-stop
+          // gradient), because the same gradient is painted by its stylesheet
+          // once that loads — approximating it here with the radial below made
+          // boot visibly jump the moment the real one took over.
+          if (t.grad) r.setProperty("--splash-grad", t.grad);
           document.documentElement.style.colorScheme = t.light ? "light" : "dark";
         }
       } catch (e) {}
@@ -56,10 +61,15 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        background: radial-gradient(
-          900px 560px at 50% 38%,
-          var(--splash-grad-a, #1b1e24),
-          var(--splash-grad-b, #131418) 72%
+        /* --splash-grad is a whole persisted background (material themes);
+           everything else gets the two-stop radial built from the tokens. */
+        background: var(
+          --splash-grad,
+          radial-gradient(
+            900px 560px at 50% 38%,
+            var(--splash-grad-a, #1b1e24),
+            var(--splash-grad-b, #131418) 72%
+          )
         );
         border-radius: 10px;
         overflow: hidden;

@@ -395,6 +395,8 @@
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Ten engines supported, side by side</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>MongoDB connection-string parsing, incl. Atlas <code>mongodb+srv://</code></li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Open a SQLite file straight from disk</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Open a CSV or TSV file as its own workspace — profiled, quality-checked and queryable with SQL</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Double-click a <code>.db</code>, <code>.sqlite</code> or <code>.sql</code> file in Finder, Explorer or your file manager</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Paste a connection URL or ODBC string and have the fields filled in</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>AWS profile, static-key or local-endpoint auth for DynamoDB</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Secrets in the OS keychain — never in a config file</li>
@@ -411,16 +413,20 @@
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Multiple live connections as colored, renamable workspaces</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Open a schema, keyspace or database as its own sub-workspace — same connection, nested in the rail, with its own tabs</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Sub-workspaces start temporary and close with their parent — <code>⌘</code>-click the tile to keep one</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Lock a workspace read-only — every write affordance hides and the core refuses the command</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Tabbed interface, one tab set per workspace</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Saves tabs between sessions — reopen a connection, get its tabs back</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Global quick search: jump to any table or command with <code>⌘K</code></li>
-          <li><span class="msym"><svg><use href="#chk"/></svg></span>12 themes including light, plus accent, fonts, size and density</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Jump between schemas from a searchable switcher, with system schemas one opt-in away</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Brainstorm board: a free-form canvas per schema for notes, diagrams and draft tables</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>16 themes including three light ones and two glass materials, plus accent, fonts, size and density</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>8 interface languages — English, বাংলা, Español, Deutsch, 日本語, 简体中文, 繁體中文, العربية</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Full right-to-left layout for Arabic — SQL, data and identifiers stay left-to-right</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Region-aware dates, numbers, 12/24-hour clock and first day of the week</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Switch language from any workspace in one click — no restart</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Keyboard-first: <code>⌘↩</code> run, <code>⌘S</code> save, <code>⌘,</code> settings, <code>Ctrl+`</code> terminal</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>System tray, native window controls, auto-update</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>ByteTable's own CPU and memory in the status bar — see what the app costs you</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Report an issue from inside the app, with the environment prefilled</li>
         </ul>
       </div>
@@ -435,11 +441,15 @@
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Run the statement at the caret, the selection, or the whole buffer</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>One-click SQL formatter</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Per-tab query history</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Run history for the whole workspace, capped where you want it, from the tab strip</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Saved queries — global, or scoped to one connection</li>
-          <li><span class="msym"><svg><use href="#chk"/></svg></span>Explain panel + written-vs-run execution-order minimap</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Open saved queries from the tab strip; saving updates the one you loaded</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Explain panel with the engine's real plan — table, tree and raw server output — plus a written-vs-run minimap</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Editor font zoom and ligature toggle</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Sortable query result tables — click a header, NULLs sink to the bottom</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Download query results as CSV — selected rows or all, in the sorted order</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>A failed result tab points straight at the statement that failed</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Open a JSON or binary result cell in a read-only viewer</li>
         </ul>
       </div>
 
@@ -447,12 +457,14 @@
         <h3>Table data</h3>
         <ul>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>View table data in a virtualized grid with server-side paging</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Open the same table in a second tab, with its own filters and sort</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Sortable columns, pickable columns, rows-per-page footer</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Stackable filter builder — 13 operators, plus a raw <code>WHERE</code> escape hatch</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>See the exact SQL a filter will run before it runs</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Inline-editing of table data</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Stage changes before applying — edits and new rows commit in one batch</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Review the batch SQL before it touches production</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Staged edits live per tab — unsaved tabs are marked, and one tool discards them all</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Clickable foreign keys — peek the referenced row, or open it filtered</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Column insights from any header: distinct, nulls, min/max/avg and a top-5</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Insights respect the filter you're looking at, not the whole table</li>
@@ -467,6 +479,7 @@
         <h3>Schema &amp; structure</h3>
         <ul>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Structure view: columns, indexes, foreign keys, referenced-by, DDL</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Table overview: size, row estimate, keys and indexes at a glance</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Alter existing tables — staged into reviewable <code>ALTER</code> statements</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>No-code table creator</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Easy auto-increment column creation</li>
@@ -479,6 +492,8 @@
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Empty a schema, or delete the schema itself — type its name to arm it</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Interactive schema map: draggable ER diagram, movable FK edges, zoom</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Export the schema map to PNG or SVG</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Group tables into labelled frames on the map, recolour them, and draw edges between groups</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Fit the whole schema to the window, or zoom with <code>⌘</code>/<code>Ctrl</code> plus and minus</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Schema diff for PostgreSQL, MySQL &amp; SQLite — compare two connections, or two schemas in one</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Read the exact change DDL for a diff and copy it out</li>
         </ul>
@@ -500,11 +515,14 @@
         <ul>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Redis keyspace browser: db0–db15, <code>SCAN</code> tree/flat list, TTL &amp; memory info</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Type-aware Redis editors for string, hash, list, set, zset and stream</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Redis Cluster view: slot coverage, per-shard health and the keys each node owns</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>DynamoDB: key schema + GSI/LSI, scan/query, JSON item editor, PartiQL console</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>MongoDB: find with projection/sort, tree ⇄ table views, JSON schema validation</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>MongoDB aggregation-pipeline builder and a real <code>executionStats</code> explain</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Drop a MongoDB database or collection, with stage examples and a highlighted editor</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Cassandra: CQL query builder with an explicit <code>ALLOW FILTERING</code> opt-in</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Per-query consistency level, secondary indexes and materialized views</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Cassandra system keyspaces, plus drop, truncate and empty from the workspace</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>ClickHouse: <code>ENGINE</code>, sort key, partitions, data-skipping indexes, <code>ALTER … UPDATE</code></li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Typesense: relevance playground with a per-hit x-ray, facets, curation and typo budgets</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Single-table-design and collection schema maps for DynamoDB and MongoDB</li>

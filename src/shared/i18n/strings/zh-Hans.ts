@@ -228,6 +228,13 @@ export const zhHans: StringTable = {
   "shell.quit.body": "您确定要关闭吗？",
   "shell.fileOpen.noDialog": "原生文件对话框需要桌面应用",
   "shell.fileOpen.opened": "工作区“{name}”已打开",
+  "shell.fileOpen.scriptOpened": "已在新查询标签页中打开“{name}”",
+  "shell.fileOpen.scriptFailed": "无法打开“{name}”",
+  "shell.sqlView.readOnly": "只读",
+  "shell.sqlView.connectToRun": "连接数据库后即可运行此脚本。",
+  "shell.sqlView.notSqlEngine": "{engine} 不支持 SQL — 请打开 SQL 连接以运行此脚本。",
+  "shell.sqlView.copied": "脚本已复制到剪贴板",
+  "shell.sqlView.copyFailed": "无法复制脚本",
   "shell.fileOpen.openedEditable": "已打开“{name}” — 可编辑，并可用 SQL 查询",
 
   // ws.* — 工作区：侧栏磁贴、标签页命名、子工作区、行数统计。

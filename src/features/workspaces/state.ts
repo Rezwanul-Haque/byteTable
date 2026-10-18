@@ -244,8 +244,11 @@ interface WorkspacesFeatureState {
    * `savedQueryId` links the new tab to the saved query the SQL came from, so
    * saving from it updates that entry (see `SqlTabState.savedQueryId`). Omit
    * for SQL that is not a saved query (object DDL, templates).
+   *
+   * `title` overrides the generated "Query N" — used when the SQL came from a
+   * file the user can name, where "Query 3" would throw that name away.
    */
-  openSqlTabWith: (sql: string, savedQueryId?: string | null) => void;
+  openSqlTabWith: (sql: string, savedQueryId?: string | null, title?: string) => void;
   /**
    * Open the schema-map tab for `schema` (one per schema) and focus it; if
    * already open, focus the existing one.
@@ -894,11 +897,14 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
       };
     }),
 
-  openSqlTabWith: (sql, savedQueryId = null) =>
+  openSqlTabWith: (sql, savedQueryId = null, titleOverride) =>
     set((state) => {
       const id = state.activeWorkspaceId;
       if (id === null) return state;
-      const title = nextSqlTitle(id);
+      // The counter still advances for a named tab, so a later "Query N" never
+      // collides with one the user has already seen.
+      const generated = nextSqlTitle(id);
+      const title = titleOverride ?? generated;
       return {
         workspaces: patchActiveUi(state, (ui) => {
           const tab: Tab = {

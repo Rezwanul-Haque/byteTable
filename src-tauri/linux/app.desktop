@@ -1,12 +1,19 @@
 [Desktop Entry]
 Categories={{categories}}
 {{#if comment}}Comment={{comment}}
-{{/if}}Exec={{exec}}
+{{/if}}Exec={{exec}} {{exec_arg}}
 Icon={{icon}}
 Name={{name}}
 Terminal=false
 Type=Application
-StartupNotify=true
+{{#if mime_type}}MimeType={{mime_type}}
+{{/if}}StartupNotify=true
+# `{{exec_arg}}` and `MimeType` above are what make a double-clicked database
+# reach us (bundle.fileAssociations fills the mime type): without the argument
+# placeholder the file manager launches ByteTable with no path at all, and
+# without MimeType it never offers ByteTable in "Open With" to begin with. Both
+# are in Tauri's default template — they were lost when this file replaced it.
+#
 # StartupWMClass maps the running WINDOW (X11 WM_CLASS / Wayland app_id) to THIS
 # entry, so the dock shows the bundled icon AND the running-window dot instead of
 # a generic fallback. It must equal the class the window reports. The window's

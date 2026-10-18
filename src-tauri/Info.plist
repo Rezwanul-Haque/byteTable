@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS-only Info.plist additions, merged by the Tauri bundler into the plist it
+  generates from tauri.conf.json.
+
+  THIS FILE EXISTS FOR ONE KEY: CFBundleTypeIconFile. Tauri's `fileAssociations`
+  cannot express a document icon — `FileAssociation` in tauri-utils has ext,
+  name, description, role, mimeType, rank and exportedType, and no icon — so
+  without this, Finder has no artwork for our file types and draws some other
+  registered app's instead (TablePlus's, on the machine that reported it).
+
+  CFBundleDocumentTypes IS DUPLICATED HERE on purpose. The bundler builds its
+  own copy of this array from `bundle.fileAssociations`, which still has to stay
+  there because it is what drives Windows (installer registration) and Linux
+  (the .desktop MimeType). This file overrides the macOS half of it. Keep the
+  extension lists in the two files IDENTICAL — `DATABASE_EXTENSIONS` and
+  `SCRIPT_EXTENSIONS` in src/features/file_open/mod.rs are the third copy, and
+  an extension present in one but not the others is silently dropped somewhere.
+
+  The icon values are base names, no extension: macOS resolves them against
+  Contents/Resources, where `bundle.resources` in tauri.conf.json puts them.
+  One icon per type: the artwork carries a DB / SQL label, so the two differ.
+-->
+<plist version="1.0">
+  <dict>
+    <key>CFBundleDocumentTypes</key>
+    <array>
+      <dict>
+        <key>CFBundleTypeName</key>
+        <string>SQLite Database</string>
+        <key>CFBundleTypeExtensions</key>
+        <array>
+          <string>sqlite</string>
+          <string>sqlite3</string>
+          <string>db</string>
+          <string>db3</string>
+        </array>
+        <key>CFBundleTypeRole</key>
+        <string>Editor</string>
+        <key>LSHandlerRank</key>
+        <string>Default</string>
+        <key>CFBundleTypeIconFile</key>
+        <string>document-db</string>
+      </dict>
+      <dict>
+        <key>CFBundleTypeName</key>
+        <string>SQL Script</string>
+        <key>CFBundleTypeExtensions</key>
+        <array>
+          <string>sql</string>
+        </array>
+        <key>CFBundleTypeRole</key>
+        <string>Editor</string>
+        <key>LSHandlerRank</key>
+        <string>Default</string>
+        <key>CFBundleTypeIconFile</key>
+        <string>document-sql</string>
+      </dict>
+    </array>
+  </dict>
+</plist>

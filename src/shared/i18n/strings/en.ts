@@ -245,6 +245,14 @@ export const en = {
   "shell.quit.body": "Do you really want to close?",
   "shell.fileOpen.noDialog": "Native file dialog requires the desktop app",
   "shell.fileOpen.opened": "Workspace “{name}” opened",
+  "shell.fileOpen.scriptOpened": "Opened “{name}” in a new query tab",
+  "shell.fileOpen.scriptFailed": "Could not open “{name}”",
+  "shell.sqlView.readOnly": "read-only",
+  "shell.sqlView.connectToRun": "Connect to a database to run this script.",
+  "shell.sqlView.notSqlEngine":
+    "{engine} does not run SQL — open a SQL connection to run this script.",
+  "shell.sqlView.copied": "Script copied to clipboard",
+  "shell.sqlView.copyFailed": "Could not copy the script",
   "shell.fileOpen.openedEditable": "Opened “{name}” — editable, and queryable with SQL",
 
   // ws.* — workspaces feature: rail, tab labels, scopes, row counts.

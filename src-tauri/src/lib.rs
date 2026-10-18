@@ -305,13 +305,25 @@ pub fn run() {
     }
 
     tauri::Builder::default()
+        // Managed HERE, on the builder, NOT in `setup` — and that is load-
+        // bearing. macOS delivers the "open these documents" Apple Event
+        // BEFORE the setup hook runs, so a double-clicked database reaches
+        // `RunEvent::Opened` while setup has not yet managed anything. With
+        // `panic = "abort"` in the release profile, the `state()` panic that
+        // caused was an instant crash on every cold open.
+        .manage(features::file_open::PendingOpens::default())
         .plugin(tauri_plugin_os::init())
         // Single-instance guard (MUST be the first plugin registered): a second
         // launch — e.g. clicking the AppImage again — does not spawn another
         // process; instead this callback fires in the already-running instance
         // and brings its window to the front.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        // The `args` are load-bearing on Windows/Linux: double-clicking a
+        // database while ByteTable is already running starts a second process
+        // whose argv holds the path, and this callback is where that argv
+        // reaches the instance that will actually open it.
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             show_main_window(app);
+            features::file_open::queue_open(app, features::file_open::paths_from_args(args));
         }))
         // Opener plugin: lets the frontend open external links (donate modal)
         // in the OS default browser. Scoped to https URLs in
@@ -420,6 +432,16 @@ pub fn run() {
             // memory readout. Managed rather than built per call because CPU
             // usage is a delta and needs the previous sample to exist.
             app.manage(features::app_metrics::commands::AppMetricsState::default());
+
+            // Windows / Linux cold start: the OS launched us WITH the file, so
+            // the path is in our own argv. (macOS does not do this — it sends
+            // an Apple Event instead; see the `Opened` arm in the run loop.)
+            // Queued rather than emitted: there is no webview yet.
+            #[cfg(not(target_os = "macos"))]
+            {
+                let paths = features::file_open::paths_from_args(std::env::args());
+                app.state::<features::file_open::PendingOpens>().push(paths);
+            }
 
             // System tray: persistent ByteTable icon. Left-click toggles the
             // window; right-click opens the menu (Show / Quit). The app keeps
@@ -531,6 +553,8 @@ pub fn run() {
             features::processes::commands::process_list,
             features::processes::commands::process_kill,
             features::app_metrics::commands::app_metrics_read,
+            features::file_open::commands::file_open_take_pending,
+            features::file_open::commands::file_open_read_script,
             features::saved_queries::commands::saved_query_list,
             features::saved_queries::commands::saved_query_save,
             features::saved_queries::commands::saved_query_delete,
@@ -660,6 +684,15 @@ pub fn run() {
             // Dock click must bring it back — without this the tray icon is the
             // only way in. `has_visible_windows` is false exactly when hidden.
             // `Reopen` only exists on macOS, so gate the arm to that target.
+            // macOS: Finder asking us to open files — a double-click, a drop on
+            // the Dock icon, or "Open With". Fires whether or not the app was
+            // already running, and is the ONLY delivery mechanism here: unlike
+            // Windows/Linux, the path never appears in argv.
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Opened { ref urls } => {
+                let paths: Vec<_> = urls.iter().filter_map(|u| u.to_file_path().ok()).collect();
+                features::file_open::queue_open(app_handle, paths);
+            }
             #[cfg(target_os = "macos")]
             tauri::RunEvent::Reopen {
                 has_visible_windows,

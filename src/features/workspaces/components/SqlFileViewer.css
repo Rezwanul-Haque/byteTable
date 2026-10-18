@@ -1,0 +1,82 @@
+/* Read-only `.sql` file viewer (opened by a double-click with no workspace).
+   Sized like the structure view's DDL modal, which is the same job: a static,
+   highlighted, scrollable SQL block in a dialog.
+
+   The `.sql-*` highlight palette is re-stated here, scoped to this modal, for
+   the reason StructureView.css gives for its own copy: this surface must not
+   depend on another feature's stylesheet having been loaded first. It can open
+   over the connect screen, where no browse feature has mounted at all. */
+
+.sqlview-modal {
+  width: 660px;
+  max-height: 82vh;
+}
+
+.sqlview-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 13px;
+  /* The file name can be long; the actions must not be pushed off the edge. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sqlview-actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
+.sqlview-block {
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 13px 15px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.65;
+  white-space: pre;
+  overflow: auto;
+  min-height: 0;
+  /* Takes the slack in the modal's column so the footer stays pinned. */
+  flex: 1;
+}
+
+/* Focusable so the block can be scrolled by keyboard — it is the only content
+   in the dialog, and without this a long script is mouse-only. */
+.sqlview-block:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.sqlview-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  flex: none;
+}
+
+/* ---------- SQL highlight palette (§3.7), scoped to this viewer ---------- */
+.sqlview-block .sql-kw {
+  color: var(--accent);
+  font-weight: 500;
+}
+.sqlview-block .sql-string {
+  color: #e5c07b;
+}
+.sqlview-block .sql-num {
+  color: #7fb8e8;
+}
+.sqlview-block .sql-func {
+  color: #c678dd;
+}
+.sqlview-block .sql-comment {
+  color: var(--text-faint);
+  font-style: italic;
+}

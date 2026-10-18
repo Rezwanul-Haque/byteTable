@@ -32,6 +32,8 @@ import { useOpenSqliteFile } from "./features/workspaces/connect";
 import { useToast } from "./shared/ui/toastContext";
 import { useT } from "./shared/i18n/useT";
 import { isAppErrorPayload } from "./shared/api/error";
+import { useOsFileOpen } from "./features/workspaces/osFileOpen";
+import { SqlFileViewer } from "./features/workspaces/components/SqlFileViewer";
 import { useTrayWorkspaces } from "./features/workspaces/trayMenu";
 import { useHandleReadOnlySync } from "./features/workspaces/hooks/useHandleReadOnlySync";
 import {
@@ -286,6 +288,9 @@ export function App() {
           clicks. Renders nothing; must sit inside ToastProvider (it toasts on
           a failed open). */}
       <TrayWorkspacesBridge />
+      {/* Databases the OS asked us to open (double-click in Finder/Explorer).
+          Inside the provider because it toasts on open; renders nothing. */}
+      <OsFileOpenBridge />
       {/* Keeps the active workspace's read-only mode on its backend handle.
           Inside the provider because it toasts if the push fails. */}
       <ReadOnlySyncBridge />
@@ -443,6 +448,21 @@ export function App() {
 function TrayWorkspacesBridge() {
   useTrayWorkspaces();
   return null;
+}
+
+/** Mounts the OS file-association bridge inside the toast context. Separate
+ *  from `FileOpenBridge`, which is the in-app File ▸ Open menu: this one is
+ *  woken by the operating system, not by the user clicking anything in
+ *  ByteTable.
+ *
+ *  Renders the read-only script viewer when a `.sql` arrives with no workspace
+ *  to put it in. It lives HERE, at the app root, so it can mount over the
+ *  connect screen — the state it exists for is "nothing is open". */
+function OsFileOpenBridge() {
+  const { viewed, dismiss } = useOsFileOpen();
+  return viewed ? (
+    <SqlFileViewer name={viewed.name} sql={viewed.sql} engine={viewed.engine} onClose={dismiss} />
+  ) : null;
 }
 
 /** Pushes the active workspace's read-only mode to its connection handle (see

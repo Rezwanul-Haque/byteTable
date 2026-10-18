@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  shared-mime-info package, installed to /usr/share/mime/packages/.
+
+  WHY THIS IS NEEDED AT ALL: on Linux the desktop entry's `MimeType=` only says
+  which types ByteTable handles — it does not say what a file IS. That is
+  shared-mime-info's job, and the mimetype ICON is looked up by the type the
+  system decides on. Without this, a `.db` file on a stock system is usually
+  `application/octet-stream`, so neither our association nor our icon applies to
+  it, and the icons would look broken for the most common extension.
+
+  `application/vnd.sqlite3` already exists in shared-mime-info; this ADDS the
+  extensions it does not cover, and the magic match that identifies a real
+  SQLite file whatever it is called.
+
+  THE `*.db` GLOB IS DELIBERATELY WEAK (weight 40, below the default 50).
+  `.db` is not ours — Thunderbird, Realm, Berkeley DB and others use it — so a
+  package that claimed every `.db` on the user's system as SQLite would be
+  rude and often wrong. At weight 40 any other definition wins, and the magic
+  match above still identifies genuine SQLite files regardless of extension.
+
+  NOT declared here: `.sql`. Distributions already map it, they just disagree on
+  whether it is `application/sql` or `text/x-sql`, so the desktop entry claims
+  BOTH rather than this file imposing one.
+-->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/vnd.sqlite3">
+    <comment>SQLite database</comment>
+    <magic priority="60">
+      <match type="string" value="SQLite format 3" offset="0"/>
+    </magic>
+    <glob pattern="*.sqlite"/>
+    <glob pattern="*.sqlite3"/>
+    <glob pattern="*.db3"/>
+    <glob pattern="*.db" weight="40"/>
+  </mime-type>
+</mime-info>

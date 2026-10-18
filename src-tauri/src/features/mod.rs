@@ -8,6 +8,7 @@ pub mod connections;
 pub mod dynamo;
 pub mod explain;
 pub mod export;
+pub mod file_open;
 pub mod generate;
 pub mod insights;
 pub mod introspection;

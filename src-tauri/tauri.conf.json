@@ -46,10 +46,61 @@
     ],
     "linux": {
       "deb": {
-        "desktopTemplate": "./linux/app.desktop"
+        "desktopTemplate": "./linux/app.desktop",
+        "files": {
+          "/usr/share/mime/packages/bytetable.xml": "linux/bytetable-mime.xml",
+          "/usr/share/icons/hicolor/scalable/mimetypes/application-vnd.sqlite3.svg": "icons/document/linux/application-vnd.sqlite3.svg",
+          "/usr/share/icons/hicolor/48x48/mimetypes/application-vnd.sqlite3.png": "icons/document/linux/application-vnd.sqlite3.48.png",
+          "/usr/share/icons/hicolor/128x128/mimetypes/application-vnd.sqlite3.png": "icons/document/linux/application-vnd.sqlite3.128.png",
+          "/usr/share/icons/hicolor/scalable/mimetypes/application-sql.svg": "icons/document/linux/application-sql.svg",
+          "/usr/share/icons/hicolor/48x48/mimetypes/application-sql.png": "icons/document/linux/application-sql.48.png",
+          "/usr/share/icons/hicolor/128x128/mimetypes/application-sql.png": "icons/document/linux/application-sql.128.png",
+          "/usr/share/icons/hicolor/scalable/mimetypes/text-x-sql.svg": "icons/document/linux/text-x-sql.svg",
+          "/usr/share/icons/hicolor/48x48/mimetypes/text-x-sql.png": "icons/document/linux/text-x-sql.48.png",
+          "/usr/share/icons/hicolor/128x128/mimetypes/text-x-sql.png": "icons/document/linux/text-x-sql.128.png"
+        }
       },
       "rpm": {
-        "desktopTemplate": "./linux/app.desktop"
+        "desktopTemplate": "./linux/app.desktop",
+        "files": {
+          "/usr/share/mime/packages/bytetable.xml": "linux/bytetable-mime.xml",
+          "/usr/share/icons/hicolor/scalable/mimetypes/application-vnd.sqlite3.svg": "icons/document/linux/application-vnd.sqlite3.svg",
+          "/usr/share/icons/hicolor/48x48/mimetypes/application-vnd.sqlite3.png": "icons/document/linux/application-vnd.sqlite3.48.png",
+          "/usr/share/icons/hicolor/128x128/mimetypes/application-vnd.sqlite3.png": "icons/document/linux/application-vnd.sqlite3.128.png",
+          "/usr/share/icons/hicolor/scalable/mimetypes/application-sql.svg": "icons/document/linux/application-sql.svg",
+          "/usr/share/icons/hicolor/48x48/mimetypes/application-sql.png": "icons/document/linux/application-sql.48.png",
+          "/usr/share/icons/hicolor/128x128/mimetypes/application-sql.png": "icons/document/linux/application-sql.128.png",
+          "/usr/share/icons/hicolor/scalable/mimetypes/text-x-sql.svg": "icons/document/linux/text-x-sql.svg",
+          "/usr/share/icons/hicolor/48x48/mimetypes/text-x-sql.png": "icons/document/linux/text-x-sql.48.png",
+          "/usr/share/icons/hicolor/128x128/mimetypes/text-x-sql.png": "icons/document/linux/text-x-sql.128.png"
+        }
+      }
+    },
+    "resources": {
+      "icons/document/document-db.icns": "document-db.icns",
+      "icons/document/document-sql.icns": "document-sql.icns",
+      "icons/document/windows/document-db.ico": "document-db.ico",
+      "icons/document/windows/document-sql.ico": "document-sql.ico"
+    },
+    "fileAssociations": [
+      {
+        "ext": ["sqlite", "sqlite3", "db", "db3"],
+        "name": "SQLite Database",
+        "description": "SQLite database file",
+        "role": "Editor",
+        "mimeType": "application/vnd.sqlite3"
+      },
+      {
+        "ext": ["sql"],
+        "name": "SQL Script",
+        "description": "SQL script",
+        "role": "Editor",
+        "mimeType": "application/sql;text/x-sql"
+      }
+    ],
+    "windows": {
+      "nsis": {
+        "installerHooks": "windows/installer-hooks.nsh"
       }
     }
   },

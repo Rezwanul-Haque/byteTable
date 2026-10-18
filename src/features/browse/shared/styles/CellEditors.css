@@ -32,6 +32,13 @@
   max-width: 100%;
   padding: 0;
   cursor: pointer;
+  /* The same chip renders as a <button> when it opens the viewer and as a
+     <span> when it does not (GridCell). The global form reset inherits
+     font-FAMILY onto buttons but not font-size, so without this the button
+     kept the UA's 13.33px while the span inherited the grid's --grid-fs — and
+     `.bin-val`'s relative 0.92em resolved against two different parents, so
+     UUID/binary values visibly changed size between the two forms. */
+  font: inherit;
 }
 .bin-badge {
   font-family: var(--mono);

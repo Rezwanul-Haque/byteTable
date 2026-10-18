@@ -12,6 +12,7 @@ import { useT } from "../../../../shared/i18n/useT";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
+import { useReadOnly } from "../../../../shared/ui/readOnlyContext";
 import { Select } from "../../../../shared/ui/Select";
 import { useToast } from "../../../../shared/ui/toastContext";
 import {
@@ -100,6 +101,10 @@ export function DynamoTableTab({
   // Multi-select (by current-page row index); cleared on any (re)fetch.
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [deleteOpen, setDeleteOpen] = useState(false);
+  // Read-only workspace: scan/query, export and the item drawer's read side all
+  // stay; new item, item writes, import and the table-level destructive actions
+  // go.
+  const readOnly = useReadOnly();
   // One item queued for deletion from the drawer's header button, kept separate
   // from the grid's multi-select so the two cannot be confused for each other.
   const [deleteItem, setDeleteItem] = useState<DynamoItem | null>(null);
@@ -454,7 +459,8 @@ export function DynamoTableTab({
   // whole item, which is exactly what the drawer staged, so a batch write and a
   // per-item loop have identical semantics — the batch is simply fewer calls.
   const saveStaged = useCallback(async () => {
-    if (staged.size === 0 || savingEdits) return;
+    // ⌘S is a window listener, so the commit path checks the mode too.
+    if (readOnly || staged.size === 0 || savingEdits) return;
     const list = [...staged.values()];
     if (
       isProduction &&
@@ -496,7 +502,7 @@ export function DynamoTableTab({
     } finally {
       setSavingEdits(false);
     }
-  }, [staged, savingEdits, isProduction, handleId, t.name, toast, fetchAt, tr]);
+  }, [readOnly, staged, savingEdits, isProduction, handleId, t.name, toast, fetchAt, tr]);
 
   useEffect(() => {
     saveStagedRef.current = () => void saveStaged();
@@ -786,7 +792,7 @@ export function DynamoTableTab({
             {tr("dyn.tt.runScan")}
           </Btn>
         ) : null}
-        {mode !== "structure" ? (
+        {mode !== "structure" && !readOnly ? (
           <IconBtn
             icon="add_box"
             title={tr("dyn.tt.newItemTitle")}
@@ -812,39 +818,44 @@ export function DynamoTableTab({
               >
                 <Icon name="download" size={15} /> {tr("dyn.ctx.exportTable")}
               </button>
-              <button
-                type="button"
-                className="ddb-ctx-item"
-                onClick={() => {
-                  setActionsOpen(false);
-                  onImport(t.name);
-                }}
-              >
-                <Icon name="upload" size={15} /> {tr("dyn.ctx.importItems")}
-              </button>
-              {/* Destructive last, behind a separator — same order as the
-                  sidebar's per-table menu. */}
-              <div className="ddb-ctx-sep" />
-              <button
-                type="button"
-                className="ddb-ctx-item danger"
-                onClick={() => {
-                  setActionsOpen(false);
-                  onTruncate(t.name);
-                }}
-              >
-                <Icon name="delete_sweep" size={15} /> {tr("dyn.ctx.emptyTable")}
-              </button>
-              <button
-                type="button"
-                className="ddb-ctx-item danger"
-                onClick={() => {
-                  setActionsOpen(false);
-                  onDelete(t.name);
-                }}
-              >
-                <Icon name="delete_forever" size={15} /> {tr("dyn.ctx.deleteTable")}
-              </button>
+              {/* Import / empty / delete all write; open + export do not. */}
+              {readOnly ? null : (
+                <>
+                  <button
+                    type="button"
+                    className="ddb-ctx-item"
+                    onClick={() => {
+                      setActionsOpen(false);
+                      onImport(t.name);
+                    }}
+                  >
+                    <Icon name="upload" size={15} /> {tr("dyn.ctx.importItems")}
+                  </button>
+                  {/* Destructive last, behind a separator — same order as the
+                    sidebar's per-table menu. */}
+                  <div className="ddb-ctx-sep" />
+                  <button
+                    type="button"
+                    className="ddb-ctx-item danger"
+                    onClick={() => {
+                      setActionsOpen(false);
+                      onTruncate(t.name);
+                    }}
+                  >
+                    <Icon name="delete_sweep" size={15} /> {tr("dyn.ctx.emptyTable")}
+                  </button>
+                  <button
+                    type="button"
+                    className="ddb-ctx-item danger"
+                    onClick={() => {
+                      setActionsOpen(false);
+                      onDelete(t.name);
+                    }}
+                  >
+                    <Icon name="delete_forever" size={15} /> {tr("dyn.ctx.deleteTable")}
+                  </button>
+                </>
+              )}
             </div>
           ) : null}
         </div>
@@ -946,15 +957,17 @@ export function DynamoTableTab({
               <Btn icon="download" variant="tonal" small onClick={() => void exportSelectedCsv()}>
                 {tr("dyn.tt.exportCsv")}
               </Btn>
-              <Btn
-                icon="delete"
-                variant="tonal"
-                small
-                className="ddb-selbar-del"
-                onClick={() => setDeleteOpen(true)}
-              >
-                {tr("dyn.tt.deleteSelected")}
-              </Btn>
+              {readOnly ? null : (
+                <Btn
+                  icon="delete"
+                  variant="tonal"
+                  small
+                  className="ddb-selbar-del"
+                  onClick={() => setDeleteOpen(true)}
+                >
+                  {tr("dyn.tt.deleteSelected")}
+                </Btn>
+              )}
               <IconBtn
                 icon="close"
                 title={tr("dyn.tt.clearSel")}

@@ -203,6 +203,21 @@ body[data-platform="macos"] .ri-drawer {
   font-size: 12px;
   font-family: var(--mono);
 }
+/* Read-only workspace: a `fieldset[disabled]` wrapper around a field's editor,
+   so the platform disables every control inside it whatever shape the editor
+   took. Resets the element's own browser chrome — it is a transparent wrapper,
+   not a visible group. */
+.ri-field-lock {
+  all: unset;
+  display: block;
+  min-width: 0;
+  cursor: not-allowed;
+}
+
+.ri-field-lock > * {
+  opacity: 0.75;
+}
+
 .ri-pk-note {
   display: inline-flex;
   align-items: center;

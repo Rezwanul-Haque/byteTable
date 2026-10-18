@@ -12,6 +12,7 @@ import { useT } from "../../../../shared/i18n/useT";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
+import { useReadOnly } from "../../../../shared/ui/readOnlyContext";
 import { BulkDeleteModal } from "../../../../shared/ui/BulkDeleteModal";
 import { Modal } from "../../../../shared/ui/Modal";
 import { useToast } from "../../../../shared/ui/toastContext";
@@ -42,6 +43,7 @@ export function MongoDocModal({
 }) {
   const toast = useToast();
   const t = useT();
+  const readOnly = useReadOnly();
   const [text, setText] = useState(() => mongoStringify(doc));
   const [dirty, setDirty] = useState(!!isNew);
   const [busy, setBusy] = useState(false);
@@ -168,7 +170,7 @@ export function MongoDocModal({
           <span className="mg-doc-hint">{t("mongo.oidHint")}</span>
         </div>
         <div className="modal-actions ddb-item-actions">
-          {!isNew ? (
+          {!isNew && !readOnly ? (
             <Btn
               variant="text"
               small
@@ -183,15 +185,19 @@ export function MongoDocModal({
           <Btn variant="text" small onClick={onClose}>
             {t("common.cancel")}
           </Btn>
-          <Btn
-            icon="save"
-            variant="filled"
-            small
-            disabled={!dirty || !!error || !!validationErr || busy}
-            onClick={() => void save()}
-          >
-            {isNew ? t("mongo.insert") : t("mongo.saveChanges")}
-          </Btn>
+          {/* Read-only: the modal becomes a document VIEWER — Cancel is the
+              only way out, because there is nothing to write. */}
+          {readOnly ? null : (
+            <Btn
+              icon="save"
+              variant="filled"
+              small
+              disabled={!dirty || !!error || !!validationErr || busy}
+              onClick={() => void save()}
+            >
+              {isNew ? t("mongo.insert") : t("mongo.saveChanges")}
+            </Btn>
+          )}
         </div>
       </Modal>
       {/* Stacked over the editor (Esc closes the top-most modal): the same

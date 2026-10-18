@@ -237,6 +237,17 @@ export interface SavedConnection {
   /** Optional project label for grouping connections on the connect screen
    *  (absent ⇒ "Ungrouped"). Assigned/created in the new-connection modal. */
   project?: string;
+  /**
+   * Open this connection as a **read-only workspace**: the backend refuses
+   * every mutating command for the whole session, and the workspace hides its
+   * mutation affordances (schema sub-workspaces included — they share the
+   * handle). Chosen in the new-connection modal and persisted here, so a
+   * production connection stays guarded on every connect.
+   *
+   * Optional + omitted when false on the Rust side, so connections saved
+   * before the feature existed load as writable.
+   */
+  readOnly?: boolean;
   createdAt?: number;
 }
 
@@ -294,6 +305,12 @@ export interface OpenResult {
   kind: ConnectionKind;
   schemas: SchemaInfo[];
   keyspace?: KeyspaceOverview;
+  /**
+   * Whether this session is a read-only workspace — the backend's answer, not
+   * the saved entry's field, because the backend's is the one with teeth (it
+   * refuses every mutating command on `handleId`). Always present on the wire.
+   */
+  readOnly: boolean;
 }
 
 /**
@@ -407,21 +424,45 @@ export function connectionTest(
  * Open a saved entry by id or ad-hoc params. For a saved id the secrets come
  * from the OS keychain (M12 Task 3); a transiently-typed `password` / `sshSecret`
  * overrides them (first connect before save). SQLite needs no secrets.
+ *
+ * `readOnly` asks for a read-only workspace for this session — what the modal
+ * passes when it opens an entry it has not saved yet, and what an ad-hoc open
+ * uses. It can only tighten: a saved entry marked `readOnly` opens read-only
+ * whatever is passed here, so the returned {@link OpenResult.readOnly} (not
+ * this argument) is the truth about the session.
  */
 export function connectionOpen(
   target: OpenTarget,
   secrets?: { password?: string; sshSecret?: string },
+  readOnly?: boolean,
 ): Promise<OpenResult> {
   return invoke<OpenResult>("connection_open", {
     id: target.id,
     params: target.params,
     password: secrets?.password,
     sshSecret: secrets?.sshSecret,
+    readOnly,
   });
 }
 
 export function connectionClose(handleId: string): Promise<void> {
   return invoke("connection_close", { handleId });
+}
+
+/**
+ * Set an OPEN session's read-only mode. Session-scoped — the saved connection
+ * keeps whatever it was saved with, so the next connect starts from that again.
+ *
+ * Both directions, unlike the open path: this follows an explicit action on a
+ * workspace the user is looking at, not something a code path can do by
+ * accident.
+ *
+ * Call it only from `useHandleReadOnlySync`, which owns the one rule that makes
+ * a per-workspace flag work on a shared handle: the handle carries the ACTIVE
+ * workspace's mode.
+ */
+export function connectionSetReadOnly(handleId: string, readOnly: boolean): Promise<void> {
+  return invoke("connection_set_read_only", { handleId, readOnly });
 }
 
 /**

@@ -14,6 +14,25 @@ use crate::shared::error::AppError;
 use super::application;
 use super::domain::{ExplainCapabilities, Measurement, RawPlan, ServerPlan};
 
+/// The read-only-workspace gate for the two commands here that really execute
+/// `sql` (`EXPLAIN ANALYZE` and the measure pass). Plan-only commands are not
+/// gated: planning a statement changes nothing, and seeing the plan of a write
+/// you cannot run is exactly what a read-only workspace is for.
+async fn refuse_executing_writes(
+    state: &ConnectionsState,
+    handle_id: &ConnectionHandleId,
+    sql: &str,
+) -> Result<(), AppError> {
+    if state.manager().is_read_only(handle_id).await
+        && !crate::shared::readonly::sql_is_read_only(sql)
+    {
+        return Err(crate::shared::readonly::read_only_error(
+            "run a statement that changes data or structure",
+        ));
+    }
+    Ok(())
+}
+
 /// Which forms of EXPLAIN this connection's engine supports, so the panel can
 /// disable what it cannot offer instead of failing on click.
 #[tauri::command]
@@ -52,6 +71,9 @@ pub async fn explain_raw(
     schema: Option<String>,
     analyze: bool,
 ) -> Result<RawPlan, AppError> {
+    if analyze {
+        refuse_executing_writes(&state, &handle_id, &sql).await?;
+    }
     application::raw(state.manager(), &handle_id, &sql, schema, analyze).await
 }
 
@@ -67,5 +89,6 @@ pub async fn explain_measure(
     sql: String,
     schema: Option<String>,
 ) -> Result<Measurement, AppError> {
+    refuse_executing_writes(&state, &handle_id, &sql).await?;
     application::measure(state.manager(), &handle_id, &sql, schema).await
 }

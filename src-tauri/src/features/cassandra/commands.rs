@@ -71,6 +71,10 @@ pub async fn cassandra_insert_row(
     handle_id: ConnectionHandleId,
     request: CassInsertRow,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "insert rows")
+        .await?;
     application::insert_row(state.manager(), &handle_id, request).await
 }
 
@@ -80,6 +84,10 @@ pub async fn cassandra_update_row(
     handle_id: ConnectionHandleId,
     request: CassUpdateRow,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "change rows")
+        .await?;
     application::update_row(state.manager(), &handle_id, request).await
 }
 
@@ -89,6 +97,10 @@ pub async fn cassandra_delete_row(
     handle_id: ConnectionHandleId,
     request: CassDeleteRow,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "delete rows")
+        .await?;
     application::delete_row(state.manager(), &handle_id, request).await
 }
 
@@ -100,6 +112,15 @@ pub async fn cassandra_run_cql(
     cql: String,
     consistency: Option<String>,
 ) -> Result<CassCqlResult, AppError> {
+    // The CQL editor can send anything, so the statement decides — the SQL
+    // classifier reads CQL's statement vocabulary just as well.
+    if state.manager().is_read_only(&handle_id).await
+        && !crate::shared::readonly::sql_is_read_only(&cql)
+    {
+        return Err(crate::shared::readonly::read_only_error(
+            "run a statement that changes data or structure",
+        ));
+    }
     application::run_cql(
         state.manager(),
         &handle_id,
@@ -116,6 +137,10 @@ pub async fn cassandra_delete_rows(
     handle_id: ConnectionHandleId,
     request: CassDeleteRows,
 ) -> Result<u64, AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "delete rows")
+        .await?;
     application::delete_rows(state.manager(), &handle_id, request).await
 }
 
@@ -135,6 +160,10 @@ pub async fn cassandra_create_index(
     handle_id: ConnectionHandleId,
     request: CassCreateIndex,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "create indexes")
+        .await?;
     application::create_index(state.manager(), &handle_id, request).await
 }
 
@@ -145,6 +174,10 @@ pub async fn cassandra_drop_index(
     keyspace: String,
     name: String,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "drop indexes")
+        .await?;
     application::drop_index(state.manager(), &handle_id, &keyspace, &name).await
 }
 
@@ -154,6 +187,10 @@ pub async fn cassandra_create_mv(
     handle_id: ConnectionHandleId,
     request: CassCreateMv,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "create materialized views")
+        .await?;
     application::create_mv(state.manager(), &handle_id, request).await
 }
 
@@ -164,6 +201,10 @@ pub async fn cassandra_drop_mv(
     keyspace: String,
     name: String,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "drop materialized views")
+        .await?;
     application::drop_mv(state.manager(), &handle_id, &keyspace, &name).await
 }
 
@@ -173,6 +214,10 @@ pub async fn cassandra_create_keyspace(
     handle_id: ConnectionHandleId,
     request: CassCreateKeyspace,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "create keyspaces")
+        .await?;
     application::create_keyspace(state.manager(), &handle_id, request).await
 }
 
@@ -184,6 +229,10 @@ pub async fn cassandra_drop_table(
     name: String,
     drop_views: Option<bool>,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "drop tables")
+        .await?;
     application::drop_table(
         state.manager(),
         &handle_id,
@@ -200,6 +249,10 @@ pub async fn cassandra_drop_keyspace(
     handle_id: ConnectionHandleId,
     keyspace: String,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "drop keyspaces")
+        .await?;
     application::drop_keyspace(state.manager(), &handle_id, &keyspace).await
 }
 
@@ -210,6 +263,10 @@ pub async fn cassandra_truncate_table(
     keyspace: String,
     name: String,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "empty tables")
+        .await?;
     application::truncate_table(state.manager(), &handle_id, &keyspace, &name).await
 }
 
@@ -219,6 +276,10 @@ pub async fn cassandra_empty_keyspace(
     handle_id: ConnectionHandleId,
     keyspace: String,
 ) -> Result<u64, AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "empty keyspaces")
+        .await?;
     application::empty_keyspace(state.manager(), &handle_id, &keyspace).await
 }
 
@@ -228,5 +289,9 @@ pub async fn cassandra_create_table(
     handle_id: ConnectionHandleId,
     request: CassCreateTable,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "create tables")
+        .await?;
     application::create_table(state.manager(), &handle_id, request).await
 }

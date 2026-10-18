@@ -1,0 +1,32 @@
+/* Read-only badge — EnvTag's pill, in the neutral "informational" palette
+   (--text-dim on a faint fill) rather than a warning color: a read-only
+   workspace is a deliberate, benign choice, not an alarm. */
+
+.ro-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 1px 6px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  background: var(--bg1);
+  color: var(--text-dim);
+  flex: none;
+}
+
+/* Icon-only, for the tight rows (the sidebar header's detail line). Bare
+   glyph, no chrome at all — both because that is what the tunnel-lock
+   indicator beside it looks like, and because a bordered pill is taller than
+   the 10px mono line it sits on, which would push the whole sidebar down by a
+   few pixels every time the mode is toggled. */
+.ro-tag.compact {
+  padding: 0;
+  gap: 0;
+  border: none;
+  background: none;
+}

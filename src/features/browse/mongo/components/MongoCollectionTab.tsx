@@ -14,6 +14,7 @@ import { BulkDeleteModal } from "../../../../shared/ui/BulkDeleteModal";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
+import { useReadOnly } from "../../../../shared/ui/readOnlyContext";
 import { Select } from "../../../../shared/ui/Select";
 import { useToast } from "../../../../shared/ui/toastContext";
 import {
@@ -117,6 +118,9 @@ export function MongoCollectionTab({
   // Grid multi-select (by row index into the current result); cleared on re-run.
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [deleteOpen, setDeleteOpen] = useState(false);
+  // Read-only workspace: find / aggregate / explain / export stay; insert,
+  // delete, import and the collection-level destructive actions go.
+  const readOnly = useReadOnly();
   /** The single document the row's trash icon is asking to delete. */
   const [delDoc, setDelDoc] = useState<MongoDoc | null>(null);
   const persisted = useRef({ filter, proj, sort, limit, stages, view, mode });
@@ -369,7 +373,7 @@ export function MongoCollectionTab({
             {t("mongo.explain")}
           </Btn>
         ) : null}
-        {mode !== "structure" ? (
+        {mode !== "structure" && !readOnly ? (
           <IconBtn
             icon="add_box"
             title={t("mongo.insertDocTitle")}
@@ -394,36 +398,41 @@ export function MongoCollectionTab({
               >
                 <Icon name="download" size={15} /> {t("mongo.menu.exportColl")}
               </div>
-              <div
-                className="ctx-item"
-                onClick={() => {
-                  setActionsOpen(false);
-                  onImport(coll);
-                }}
-              >
-                <Icon name="upload" size={15} /> {t("mongo.menu.importDocs")}
-              </div>
-              {/* Destructive last, behind a separator — same order as the
-                  sidebar's collection menu and the SQL table menu. */}
-              <div className="ctx-sep" />
-              <div
-                className="ctx-item danger"
-                onClick={() => {
-                  setActionsOpen(false);
-                  onTruncate(coll);
-                }}
-              >
-                <Icon name="delete_sweep" size={15} /> {t("mongo.menu.emptyColl")}
-              </div>
-              <div
-                className="ctx-item danger"
-                onClick={() => {
-                  setActionsOpen(false);
-                  onDrop(coll);
-                }}
-              >
-                <Icon name="delete_forever" size={15} /> {t("mongo.menu.dropColl")}
-              </div>
+              {/* Import and the destructive pair write; export above does not. */}
+              {readOnly ? null : (
+                <>
+                  <div
+                    className="ctx-item"
+                    onClick={() => {
+                      setActionsOpen(false);
+                      onImport(coll);
+                    }}
+                  >
+                    <Icon name="upload" size={15} /> {t("mongo.menu.importDocs")}
+                  </div>
+                  {/* Destructive last, behind a separator — same order as the
+                    sidebar's collection menu and the SQL table menu. */}
+                  <div className="ctx-sep" />
+                  <div
+                    className="ctx-item danger"
+                    onClick={() => {
+                      setActionsOpen(false);
+                      onTruncate(coll);
+                    }}
+                  >
+                    <Icon name="delete_sweep" size={15} /> {t("mongo.menu.emptyColl")}
+                  </div>
+                  <div
+                    className="ctx-item danger"
+                    onClick={() => {
+                      setActionsOpen(false);
+                      onDrop(coll);
+                    }}
+                  >
+                    <Icon name="delete_forever" size={15} /> {t("mongo.menu.dropColl")}
+                  </div>
+                </>
+              )}
             </div>
           ) : null}
         </div>
@@ -554,15 +563,17 @@ export function MongoCollectionTab({
               <Btn icon="download" variant="tonal" small onClick={() => void exportSelectedCsv()}>
                 {t("mongo.exportCsvBtn")}
               </Btn>
-              <Btn
-                icon="delete"
-                variant="tonal"
-                small
-                className="ddb-selbar-del"
-                onClick={() => setDeleteOpen(true)}
-              >
-                {t("mongo.deleteSelected")}
-              </Btn>
+              {readOnly ? null : (
+                <Btn
+                  icon="delete"
+                  variant="tonal"
+                  small
+                  className="ddb-selbar-del"
+                  onClick={() => setDeleteOpen(true)}
+                >
+                  {t("mongo.deleteSelected")}
+                </Btn>
+              )}
             </div>
           ) : null}
           {view === "tree" ? (

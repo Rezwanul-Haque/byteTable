@@ -16,6 +16,7 @@
 import { connectionIsTunneled, connectionUser, tunnelTitle } from "../../connections/api";
 import { ResourceMeter } from "../../app_metrics/components/ResourceMeter";
 import { EnvTag } from "../../../shared/ui/EnvTag";
+import { ReadOnlyTag } from "../../../shared/ui/ReadOnlyTag";
 import { BuiltByCredit } from "../../../shared/ui/BuiltByCredit";
 import { Icon } from "../../../shared/ui/Icon";
 import { useT } from "../../../shared/i18n/useT";
@@ -64,6 +65,10 @@ export function StatusBar({ workspace }: { workspace: Workspace }) {
       <span className="ws-chip" style={{ background: workspace.color }} />
       <span className="status-strong">{workspace.name}</span>
       <EnvTag env={workspace.saved.env} />
+      {/* The persistent reminder: whatever tab you are on, the strip says
+          whether this session can write. Sub-workspaces inherit the flag with
+          the connection, so they badge themselves too. */}
+      {workspace.readOnly ? <ReadOnlyTag /> : null}
       <span className="status-dim">{workspace.info.serverVersion}</span>
       {/* Tunnel lock (M12 Task 3): shown when the connection routes through an
           SSH bastion. SQLite never tunnels. */}

@@ -15,6 +15,7 @@ import { Btn } from "../../../../shared/ui/Btn";
 import { BulkDeleteModal } from "../../../../shared/ui/BulkDeleteModal";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
+import { useReadOnly } from "../../../../shared/ui/readOnlyContext";
 import { Select } from "../../../../shared/ui/Select";
 import { useFilterShortcut } from "../../../../shared/hooks/useFilterShortcut";
 import { useToast } from "../../../../shared/ui/toastContext";
@@ -95,6 +96,9 @@ export function CassandraTableTab({
 }: CassandraTableTabProps) {
   // `tr`, not `t`: `t` is this tab's table descriptor throughout.
   const tr = useT();
+  // Read-only workspace: query, filter and export stay; add row, inline cell
+  // editing, bulk delete and import go.
+  const readOnly = useReadOnly();
   const toast = useToast();
   const tableName = t.name;
   const [pkVals, setPkVals] = useState<Record<string, string>>({});
@@ -410,7 +414,7 @@ export function CassandraTableTab({
           </>
         ) : null}
         <div style={{ flex: 1 }} />
-        {mode === "query" ? (
+        {mode === "query" && !readOnly ? (
           <IconBtn icon="add_box" title={tr("cass.tab.addRow")} onClick={() => setNewRow(true)} />
         ) : null}
         <div className="table-actions" style={{ position: "relative" }}>
@@ -431,15 +435,17 @@ export function CassandraTableTab({
               >
                 <Icon name="download" size={15} /> {tr("cass.tab.exportTable")}
               </div>
-              <div
-                className="ctx-item"
-                onClick={() => {
-                  setActionsOpen(false);
-                  onImport(tableName);
-                }}
-              >
-                <Icon name="upload" size={15} /> {tr("cass.tab.importRows")}
-              </div>
+              {readOnly ? null : (
+                <div
+                  className="ctx-item"
+                  onClick={() => {
+                    setActionsOpen(false);
+                    onImport(tableName);
+                  }}
+                >
+                  <Icon name="upload" size={15} /> {tr("cass.tab.importRows")}
+                </div>
+              )}
             </div>
           ) : null}
         </div>
@@ -695,21 +701,23 @@ export function CassandraTableTab({
               <Btn icon="download" variant="tonal" small onClick={exportSelectedCsv}>
                 {tr("cass.tab.exportCsv")}
               </Btn>
-              <Btn
-                icon="delete"
-                variant="tonal"
-                small
-                className="cass-selbar-del"
-                onClick={() => setBulkDeleteOpen(true)}
-              >
-                {tr("cass.tab.deleteSelected")}
-              </Btn>
+              {readOnly ? null : (
+                <Btn
+                  icon="delete"
+                  variant="tonal"
+                  small
+                  className="cass-selbar-del"
+                  onClick={() => setBulkDeleteOpen(true)}
+                >
+                  {tr("cass.tab.deleteSelected")}
+                </Btn>
+              )}
             </div>
           ) : null}
           <CassRowGrid
             table={{ columns: result?.columns ?? t.columns }}
             rows={displayRows}
-            editable
+            editable={!readOnly}
             onEditCell={stageEdit}
             isCellEdited={isCellEdited}
             onComplexEdit={(r) => setRowView(r)}

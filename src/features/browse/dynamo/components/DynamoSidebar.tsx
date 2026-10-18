@@ -10,6 +10,7 @@ import { Btn } from "../../../../shared/ui/Btn";
 import { EngineBadge } from "../../../../shared/ui/EngineBadge";
 import { dropWordSelection } from "../../../../shared/ui/dropWordSelection";
 import { Icon } from "../../../../shared/ui/Icon";
+import { useReadOnly } from "../../../../shared/ui/readOnlyContext";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { LanguageChip } from "../../../../shared/ui/LanguageChip";
 import type { TableDescriptor } from "../api";
@@ -84,6 +85,7 @@ export function DynamoSidebar({
   showDashboard = true,
 }: DynamoSidebarProps) {
   const t = useT();
+  const readOnly = useReadOnly();
   const [q, setQ] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null);
@@ -292,16 +294,18 @@ export function DynamoSidebar({
               {/* Create sits at the TOP, accent-tinted and with no separator
                   under it — the treatment the SQL, Cassandra and Mongo sidebars
                   all give their own create action. */}
-              <button
-                type="button"
-                className="ddb-ctx-item ctx-item-accent"
-                onClick={() => {
-                  setCtxMenu(null);
-                  onCreateTable();
-                }}
-              >
-                <Icon name="add_box" size={15} /> {t("dyn.ctx.createTable")}
-              </button>
+              {readOnly ? null : (
+                <button
+                  type="button"
+                  className="ddb-ctx-item ctx-item-accent"
+                  onClick={() => {
+                    setCtxMenu(null);
+                    onCreateTable();
+                  }}
+                >
+                  <Icon name="add_box" size={15} /> {t("dyn.ctx.createTable")}
+                </button>
+              )}
               <button
                 type="button"
                 className="ddb-ctx-item"
@@ -317,29 +321,33 @@ export function DynamoSidebar({
 
               {/* Destructive last, behind a separator. Region-wide here — the
                   single-table versions live on a table's own right-click menu. */}
-              <div className="ddb-ctx-sep" />
-              <button
-                type="button"
-                className="ddb-ctx-item danger"
-                disabled={tables.length === 0}
-                onClick={() => {
-                  setCtxMenu(null);
-                  onEmptyAllTables();
-                }}
-              >
-                <Icon name="delete_sweep" size={15} /> {t("dyn.ctx.emptyAll")}
-              </button>
-              <button
-                type="button"
-                className="ddb-ctx-item danger"
-                disabled={tables.length === 0}
-                onClick={() => {
-                  setCtxMenu(null);
-                  onDropAllTables();
-                }}
-              >
-                <Icon name="delete_forever" size={15} /> {t("dyn.ctx.dropAll")}
-              </button>
+              {readOnly ? null : (
+                <>
+                  <div className="ddb-ctx-sep" />
+                  <button
+                    type="button"
+                    className="ddb-ctx-item danger"
+                    disabled={tables.length === 0}
+                    onClick={() => {
+                      setCtxMenu(null);
+                      onEmptyAllTables();
+                    }}
+                  >
+                    <Icon name="delete_sweep" size={15} /> {t("dyn.ctx.emptyAll")}
+                  </button>
+                  <button
+                    type="button"
+                    className="ddb-ctx-item danger"
+                    disabled={tables.length === 0}
+                    onClick={() => {
+                      setCtxMenu(null);
+                      onDropAllTables();
+                    }}
+                  >
+                    <Icon name="delete_forever" size={15} /> {t("dyn.ctx.dropAll")}
+                  </button>
+                </>
+              )}
             </>
           ) : (
             <>
@@ -386,42 +394,47 @@ export function DynamoSidebar({
               >
                 <Icon name="download" size={15} /> {t("dyn.ctx.exportTable")}
               </button>
-              <button
-                type="button"
-                className="ddb-ctx-item"
-                onClick={() => {
-                  const tbl = ctxMenu.table;
-                  setCtxMenu(null);
-                  if (tbl) onImportTable(tbl);
-                }}
-              >
-                <Icon name="upload" size={15} /> {t("dyn.ctx.importItems")}
-              </button>
-              {/* Destructive last, behind a separator — the same placement the
-                  SQL, Cassandra and Mongo sidebars use. */}
-              <div className="ddb-ctx-sep" />
-              <button
-                type="button"
-                className="ddb-ctx-item danger"
-                onClick={() => {
-                  const tbl = ctxMenu.table;
-                  setCtxMenu(null);
-                  if (tbl) onTruncateTable(tbl);
-                }}
-              >
-                <Icon name="delete_sweep" size={15} /> {t("dyn.ctx.emptyTable")}
-              </button>
-              <button
-                type="button"
-                className="ddb-ctx-item danger"
-                onClick={() => {
-                  const tbl = ctxMenu.table;
-                  setCtxMenu(null);
-                  if (tbl) onDeleteTable(tbl);
-                }}
-              >
-                <Icon name="delete_forever" size={15} /> {t("dyn.ctx.deleteTable")}
-              </button>
+              {/* Import, empty and delete all write; open/export above do not. */}
+              {readOnly ? null : (
+                <>
+                  <button
+                    type="button"
+                    className="ddb-ctx-item"
+                    onClick={() => {
+                      const tbl = ctxMenu.table;
+                      setCtxMenu(null);
+                      if (tbl) onImportTable(tbl);
+                    }}
+                  >
+                    <Icon name="upload" size={15} /> {t("dyn.ctx.importItems")}
+                  </button>
+                  {/* Destructive last, behind a separator — the same placement
+                      the SQL, Cassandra and Mongo sidebars use. */}
+                  <div className="ddb-ctx-sep" />
+                  <button
+                    type="button"
+                    className="ddb-ctx-item danger"
+                    onClick={() => {
+                      const tbl = ctxMenu.table;
+                      setCtxMenu(null);
+                      if (tbl) onTruncateTable(tbl);
+                    }}
+                  >
+                    <Icon name="delete_sweep" size={15} /> {t("dyn.ctx.emptyTable")}
+                  </button>
+                  <button
+                    type="button"
+                    className="ddb-ctx-item danger"
+                    onClick={() => {
+                      const tbl = ctxMenu.table;
+                      setCtxMenu(null);
+                      if (tbl) onDeleteTable(tbl);
+                    }}
+                  >
+                    <Icon name="delete_forever" size={15} /> {t("dyn.ctx.deleteTable")}
+                  </button>
+                </>
+              )}
             </>
           )}
         </div>

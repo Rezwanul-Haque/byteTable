@@ -53,8 +53,24 @@ pub struct SavedConnection {
     /// new-connection modal; persisted so the grouping survives restarts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project: Option<String>,
+    /// Open this connection as a **read-only workspace**: every mutating
+    /// command is refused for the whole session (see
+    /// `crate::shared::readonly`). Chosen in the new-connection modal and
+    /// persisted, so a production connection stays guarded on every connect
+    /// without the user having to remember.
+    ///
+    /// `#[serde(default)]` + skip-when-false keeps the registry file unchanged
+    /// for every connection saved before this existed: absent ⇒ writable.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub read_only: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_at: Option<u64>,
+}
+
+/// `skip_serializing_if` predicate for a default-false flag — keeps the
+/// persisted JSON (and the wire payload) free of `"readOnly": false` noise.
+fn is_false(flag: &bool) -> bool {
+    !*flag
 }
 
 /// A saved-registry entry this build cannot fully parse — almost always a
@@ -97,6 +113,7 @@ mod tests {
             env: Env::Dev,
             color: Some("#56b6c2".into()),
             project: None,
+            read_only: false,
             created_at: Some(1_700_000_000_000),
         }
     }
@@ -144,6 +161,35 @@ mod tests {
         });
         let conn: SavedConnection = serde_json::from_value(json).expect("deserialize");
         assert_eq!(conn.color, None);
+    }
+
+    #[test]
+    fn read_only_defaults_to_false_and_is_omitted_when_unset() {
+        // Every connection saved before the read-only workspace existed loads
+        // as writable, and re-saving one must not add the flag to the file.
+        let json = serde_json::json!({
+            "id": "x",
+            "name": "n",
+            "engine": "sqlite",
+            "params": { "engine": "sqlite", "path": "/p" },
+            "env": "dev",
+        });
+        let conn: SavedConnection = serde_json::from_value(json).expect("deserialize");
+        assert!(!conn.read_only);
+        let back = serde_json::to_value(&conn).expect("serialize");
+        assert!(back.get("readOnly").is_none());
+    }
+
+    #[test]
+    fn read_only_is_camel_case_on_the_wire_when_set() {
+        let conn = SavedConnection {
+            read_only: true,
+            ..sample()
+        };
+        let json = serde_json::to_value(&conn).expect("serialize");
+        assert_eq!(json["readOnly"], serde_json::json!(true));
+        let back: SavedConnection = serde_json::from_value(json).expect("deserialize");
+        assert!(back.read_only);
     }
 
     #[test]

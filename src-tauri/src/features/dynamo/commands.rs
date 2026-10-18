@@ -85,6 +85,10 @@ pub async fn dynamo_put_item(
     table: String,
     item: Value,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "write items")
+        .await?;
     application::put_item(state.manager(), &handle_id, &table, item).await
 }
 
@@ -95,6 +99,10 @@ pub async fn dynamo_delete_item(
     table: String,
     key: Value,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "delete items")
+        .await?;
     application::delete_item(state.manager(), &handle_id, &table, key).await
 }
 
@@ -105,6 +113,10 @@ pub async fn dynamo_batch_write(
     table: String,
     items: Vec<Value>,
 ) -> Result<BatchWriteResult, AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "write items")
+        .await?;
     application::batch_write(state.manager(), &handle_id, &table, items).await
 }
 
@@ -115,6 +127,10 @@ pub async fn dynamo_batch_delete(
     table: String,
     keys: Vec<Value>,
 ) -> Result<BatchWriteResult, AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "delete items")
+        .await?;
     application::batch_delete(state.manager(), &handle_id, &table, keys).await
 }
 
@@ -125,6 +141,16 @@ pub async fn dynamo_execute_statement(
     statement: String,
     next_token: Option<String>,
 ) -> Result<StatementResult, AppError> {
+    // PartiQL covers both reads and writes, so the statement decides (the SQL
+    // classifier shares the vocabulary that matters: SELECT reads, INSERT /
+    // UPDATE / DELETE do not).
+    if state.manager().is_read_only(&handle_id).await
+        && !crate::shared::readonly::sql_is_read_only(&statement)
+    {
+        return Err(crate::shared::readonly::read_only_error(
+            "run a statement that changes items",
+        ));
+    }
     application::execute_statement(state.manager(), &handle_id, &statement, next_token).await
 }
 
@@ -137,6 +163,10 @@ pub async fn dynamo_create_table(
     handle_id: ConnectionHandleId,
     spec: CreateTableSpec,
 ) -> Result<TableDescriptor, AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "create tables")
+        .await?;
     application::create_table(state.manager(), &handle_id, spec).await
 }
 
@@ -147,6 +177,10 @@ pub async fn dynamo_delete_table(
     handle_id: ConnectionHandleId,
     table: String,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "delete tables")
+        .await?;
     application::delete_table(state.manager(), &handle_id, &table).await
 }
 
@@ -159,5 +193,9 @@ pub async fn dynamo_truncate_table(
     handle_id: ConnectionHandleId,
     table: String,
 ) -> Result<u64, AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "empty tables")
+        .await?;
     application::truncate_table(state.manager(), &handle_id, &table).await
 }

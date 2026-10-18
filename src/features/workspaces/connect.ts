@@ -34,6 +34,10 @@ function toWorkspaceConnection(saved: SavedConnection, opened: OpenResult): Work
     // populated for kind === "kv"). Both ride straight off the open result.
     kind: opened.kind,
     keyspace: opened.keyspace,
+    // The backend's answer, not `saved.readOnly`: it is what actually guards
+    // the handle, and it is what every sub-workspace sharing that handle
+    // inherits. `?? false` only covers a desktop shell older than the field.
+    readOnly: opened.readOnly ?? false,
   };
 }
 

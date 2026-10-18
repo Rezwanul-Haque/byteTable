@@ -124,6 +124,10 @@ pub async fn execute_script_text(
     sql: String,
     on_progress: Channel<Progress>,
 ) -> Result<ImportResult, AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "run a SQL script")
+        .await?;
     let progress = move |done, total| {
         let _ = on_progress.send(Progress { done, total });
     };
@@ -143,6 +147,10 @@ pub async fn import_sql(
     path: String,
     on_progress: Channel<Progress>,
 ) -> Result<ImportResult, AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "import SQL")
+        .await?;
     let progress = move |done, total| {
         let _ = on_progress.send(Progress { done, total });
     };

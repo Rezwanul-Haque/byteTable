@@ -4,6 +4,7 @@
 //! between slices lives here.
 
 pub mod error;
+pub mod readonly;
 
 // Engine port families are grouped under `ports/`; re-exported here at their
 // historical paths so `crate::shared::engine` (= the SQL family) /

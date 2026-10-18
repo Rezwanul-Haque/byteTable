@@ -19,6 +19,7 @@ import { useT } from "../../../../shared/i18n/useT";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
+import { useReadOnly } from "../../../../shared/ui/readOnlyContext";
 import { Modal, ModalActions, ModalTitle } from "../../../../shared/ui/Modal";
 import { useToast } from "../../../../shared/ui/toastContext";
 import { CellContent } from "../../shared/components/GridCell";
@@ -354,6 +355,9 @@ function StringViewer({
   // Save/Discard bar appears only when it diverges from the stored value — the
   // SQL-grid staged-edit pattern, no Edit button.
   const [draft, setDraft] = useState(pretty);
+  // Read-only workspace: the value stays fully visible (and copyable) in the
+  // same editor, just not typeable — so there is never a draft to save.
+  const readOnly = useReadOnly();
   // Keep the highlight overlay scrolled in lock-step with the textarea.
   const hlRef = useRef<HTMLPreElement | null>(null);
   // Adopt the stored value when it changes externally (a refresh / another
@@ -365,7 +369,7 @@ function StringViewer({
     lastPrettyRef.current = pretty;
   }, [pretty]);
 
-  const dirty = draft !== pretty;
+  const dirty = draft !== pretty && !readOnly;
 
   const save = async () => {
     try {
@@ -432,6 +436,7 @@ function StringViewer({
           <textarea
             className="rstr-edit rstr-edit-overlay"
             value={draft}
+            readOnly={readOnly}
             onChange={(e) => setDraft(e.target.value)}
             onScroll={(e) => {
               if (hlRef.current) {
@@ -447,6 +452,7 @@ function StringViewer({
         <textarea
           className="rstr-edit"
           value={draft}
+          readOnly={readOnly}
           onChange={(e) => setDraft(e.target.value)}
           spellCheck={false}
           aria-label={t("redis.kt.editValueAria", { name: keyName })}
@@ -478,8 +484,12 @@ interface KeyGridProps {
   empty: string;
 }
 
-function KeyGrid({ columns, rows, onEdit, empty }: KeyGridProps) {
+function KeyGrid({ columns, rows, onEdit: onEditProp, empty }: KeyGridProps) {
   const t = useT();
+  // Read-only workspace: an absent `onEdit` is already this grid's "not
+  // editable" state, so withholding it disables double-click editing, staging
+  // and the save bar in one move.
+  const onEdit = useReadOnly() ? undefined : onEditProp;
   const [editing, setEditing] = useState<{ row: number; col: number; draft: string } | null>(null);
   // Staged edits keyed "row,col" — nothing is written until Save (the SQL-grid
   // pattern). Survives the auto-refresh re-fetch because it's local state.
@@ -733,6 +743,7 @@ function SetViewer({
   onMutated: () => void;
 }) {
   const t = useT();
+  const readOnly = useReadOnly();
   const [adding, setAdding] = useState("");
   const rows = members.map((m) => [m]);
 
@@ -775,22 +786,25 @@ function SetViewer({
 
   return (
     <div className="rset">
-      <div className="rset-add">
-        <input
-          className="rinfo-ttl-input rset-add-input"
-          placeholder={t("redis.kt.newMember")}
-          value={adding}
-          spellCheck={false}
-          aria-label={t("redis.kt.addMemberAria", { name: keyName })}
-          onChange={(e) => setAdding(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") void add();
-          }}
-        />
-        <Btn variant="tonal" icon="add" small onClick={add}>
-          {t("redis.kt.addSadd")}
-        </Btn>
-      </div>
+      {/* SADD is a write, so the composer goes away read-only. */}
+      {readOnly ? null : (
+        <div className="rset-add">
+          <input
+            className="rinfo-ttl-input rset-add-input"
+            placeholder={t("redis.kt.newMember")}
+            value={adding}
+            spellCheck={false}
+            aria-label={t("redis.kt.addMemberAria", { name: keyName })}
+            onChange={(e) => setAdding(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void add();
+            }}
+          />
+          <Btn variant="tonal" icon="add" small onClick={add}>
+            {t("redis.kt.addSadd")}
+          </Btn>
+        </div>
+      )}
       <SetGrid members={members} rows={rows} onEdit={onEdit} onRemove={remove} />
     </div>
   );
@@ -809,6 +823,7 @@ function SetGrid({
   onRemove: (member: string) => void;
 }) {
   const t = useT();
+  const readOnly = useReadOnly();
   const [editing, setEditing] = useState<{ row: number; draft: string } | null>(null);
   // Staged member edits keyed by row index — nothing written until Save.
   const [staged, setStaged] = useState<Map<number, string>>(new Map());
@@ -884,8 +899,10 @@ function SetGrid({
                       (isEditing ? " cell-editing" : "") +
                       (isEdited ? " cell-edited" : "")
                     }
-                    onDoubleClick={() => setEditing({ row: ri, draft: shown })}
-                    title={t("redis.kt.dblClickEdit")}
+                    onDoubleClick={
+                      readOnly ? undefined : () => setEditing({ row: ri, draft: shown })
+                    }
+                    title={readOnly ? undefined : t("redis.kt.dblClickEdit")}
                   >
                     {isEditing ? (
                       <input
@@ -912,12 +929,14 @@ function SetGrid({
                     )}
                   </div>
                   <div className="dg-td rset-remove-cell">
-                    <IconBtn
-                      icon="close"
-                      size={14}
-                      title={t("redis.kt.removeMember", { member: m })}
-                      onClick={() => onRemove(m)}
-                    />
+                    {readOnly ? null : (
+                      <IconBtn
+                        icon="close"
+                        size={14}
+                        title={t("redis.kt.removeMember", { member: m })}
+                        onClick={() => onRemove(m)}
+                      />
+                    )}
                   </div>
                 </div>
               );
@@ -1034,6 +1053,7 @@ function InfoPanel({
 }) {
   const t = useT();
   const [ttlDraft, setTtlDraft] = useState("");
+  const readOnly = useReadOnly();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const meta = REDIS_TYPES[view.keyType];
 
@@ -1130,36 +1150,46 @@ function InfoPanel({
         )}
       </div>
 
-      <div className="rinfo-actions">
-        <h3>
-          <Icon name="bolt" size={14} /> {t("redis.kt.quickActions")}
-        </h3>
-        <div className="rinfo-act-row">
-          <input
-            className="rinfo-ttl-input"
-            placeholder={t("redis.kt.seconds")}
-            value={ttlDraft}
-            spellCheck={false}
-            aria-label={t("redis.kt.ttlAria")}
-            onChange={(e) => setTtlDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") void setTtl();
-            }}
-          />
-          <Btn variant="tonal" icon="schedule" small onClick={setTtl}>
-            {t("redis.kt.setTtl")}
-          </Btn>
-          {hasTtl ? (
-            <Btn variant="text" small onClick={persist}>
-              {t("redis.kt.persistBtn")}
+      {/* Every quick action here writes (EXPIRE / PERSIST / DEL), so the whole
+          panel is dropped rather than shown with three dead buttons. */}
+      {readOnly ? null : (
+        <div className="rinfo-actions">
+          <h3>
+            <Icon name="bolt" size={14} /> {t("redis.kt.quickActions")}
+          </h3>
+          <div className="rinfo-act-row">
+            <input
+              className="rinfo-ttl-input"
+              placeholder={t("redis.kt.seconds")}
+              value={ttlDraft}
+              spellCheck={false}
+              aria-label={t("redis.kt.ttlAria")}
+              onChange={(e) => setTtlDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void setTtl();
+              }}
+            />
+            <Btn variant="tonal" icon="schedule" small onClick={setTtl}>
+              {t("redis.kt.setTtl")}
             </Btn>
-          ) : null}
-          <div className="rinfo-act-spacer" />
-          <Btn variant="text" icon="delete" small className="rinfo-del-btn" onClick={requestDelete}>
-            {t("redis.delKeyBtn")}
-          </Btn>
+            {hasTtl ? (
+              <Btn variant="text" small onClick={persist}>
+                {t("redis.kt.persistBtn")}
+              </Btn>
+            ) : null}
+            <div className="rinfo-act-spacer" />
+            <Btn
+              variant="text"
+              icon="delete"
+              small
+              className="rinfo-del-btn"
+              onClick={requestDelete}
+            >
+              {t("redis.delKeyBtn")}
+            </Btn>
+          </div>
         </div>
-      </div>
+      )}
 
       {confirmDelete ? (
         <Modal

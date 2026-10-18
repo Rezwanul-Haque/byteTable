@@ -30,6 +30,7 @@ import { SidebarObjectGroups } from "../../db_objects/components/SidebarObjectGr
 import { isDiffable } from "../../schema_diff/handles";
 import { useToast } from "../../../shared/ui/toastContext";
 import { LanguageChip } from "../../../shared/ui/LanguageChip";
+import { ReadOnlyTag } from "../../../shared/ui/ReadOnlyTag";
 import { normalizeEnv } from "../../../shared/types";
 import {
   connectionDetail,
@@ -321,10 +322,15 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   // The switcher lists user schemas first, then the server's own behind a
   // separator. A system schema is browsable but never writable from here:
   // `schemaIsSystem` drops the schema- and table-level write actions, which
-  // the engines refuse anyway (mutate.rs `is_system_schema`).
+  // the engines refuse anyway (mutate.rs `is_system_schema`). A read-only
+  // workspace drops the same set, via `noWrites` below.
   const userSchemas = workspace.schemas.filter((s) => !s.isSystem);
   const systemSchemas = workspace.schemas.filter((s) => s.isSystem);
   const schemaIsSystem = systemSchemas.some((s) => s.name === schemaName);
+  // A read-only workspace is as unwritable as a system schema, and for exactly
+  // the same reason: the backend refuses these commands, so offering them could
+  // only ever produce an error toast. One flag drives both.
+  const noWrites = schemaIsSystem || workspace.readOnly;
 
   const tables = tablesEntry?.tables ?? null;
   const tablesError = errorsMap[tKey];
@@ -531,6 +537,10 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
               {normalizeEnv(workspace.saved.env)}
             </span>
             <span className="conn-eng">{ENGINE_LABEL[engine] ?? engine}</span>
+            {/* Icon-only here: the detail line is tight, and the sidebar is
+                where the user starts every destructive action, so the lock
+                belongs next to the env. */}
+            {workspace.readOnly ? <ReadOnlyTag compact /> : null}
           </div>
         </div>
         <LanguageChip />
@@ -701,7 +711,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
               onKeyDown={onMenuKeyDown}
             >
               <div className="ctx-menu-label">{t("ws.sb.schemaLabel", { schema: schemaName })}</div>
-              {!schemaIsSystem ? (
+              {!noWrites ? (
                 <>
                   <button
                     type="button"
@@ -741,7 +751,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
               {/* A system schema is read-only from the sidebar: the engines
                   refuse to drop or rewrite their own catalog anyway, so the
                   write actions would only ever produce an error toast. */}
-              {!schemaIsSystem ? (
+              {!noWrites ? (
                 <>
                   <button
                     type="button"
@@ -769,7 +779,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
               >
                 <Icon name="monitoring" size={15} /> {t("ws.sb.tableOverview")}
               </button>
-              {!schemaIsSystem ? (
+              {!noWrites ? (
                 <>
                   <div className="ctx-sep" />
                   <button
@@ -1020,7 +1030,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
           </button>
           {/* Same read-only rule as the schema menu: a catalog table is
               browsable and exportable, never writable from here. */}
-          {!schemaIsSystem ? (
+          {!noWrites ? (
             <>
               <button
                 type="button"

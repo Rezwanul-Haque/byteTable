@@ -415,7 +415,10 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
   const [commitOpen, setCommitOpen] = useState(false);
-  const editable = EDITABLE_ENGINES.has(workspace.saved.engine);
+  // The visual designer stages DDL and commits it as a migration, so a
+  // read-only workspace never enters edit mode — the map stays a map. Same
+  // gate as an engine that has no designer support at all.
+  const editable = EDITABLE_ENGINES.has(workspace.saved.engine) && !workspace.readOnly;
   // Edit mode keeps its OWN positions, seeded (spread apart so the wider 340px
   // cards don't overlap) from the read-mode layout when editing starts and
   // discarded on exit. The read-mode `positions` are never touched, so leaving

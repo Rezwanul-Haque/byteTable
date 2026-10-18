@@ -26,5 +26,9 @@ pub async fn process_kill(
     handle_id: ConnectionHandleId,
     target: ProcessKill,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "kill server processes")
+        .await?;
     application::kill_process(state.manager(), &handle_id, target).await
 }

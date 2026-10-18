@@ -25,6 +25,7 @@ import { appErrorMessage } from "../../../shared/api/error";
 import { exportSave } from "../../../shared/api/engine";
 import { useT } from "../../../shared/i18n/useT";
 import { Icon } from "../../../shared/ui/Icon";
+import { useReadOnly } from "../../../shared/ui/readOnlyContext";
 import { ENV_COLOR } from "../../../shared/ui/envColors";
 import { useToast } from "../../../shared/ui/toastContext";
 import { normalizeEnv, type Engine } from "../../../shared/types";
@@ -664,7 +665,12 @@ export function SchemaDiff({ currentConn, compareOnly }: SchemaDiffProps) {
   const selected = plan.filter((s) => s.on);
   const destructiveOn = selected.filter((s) => s.destructive).length;
   const gateOk = !targetIsProd || confirm.trim() === (target?.name ?? "");
-  const canReview = selected.length > 0 && !applying;
+  // The target side of a diff is always THIS workspace's connection, so a
+  // read-only workspace can compare and export the migration but never run it.
+  // Gating `canReview` stops the flow at its single entry point (the review
+  // sheet), and `gateOk` keeps the Apply button itself unarmable.
+  const readOnly = useReadOnly();
+  const canReview = selected.length > 0 && !applying && !readOnly;
 
   const stats = useMemo(() => {
     let tablesNew = 0;
@@ -1165,7 +1171,7 @@ export function SchemaDiff({ currentConn, compareOnly }: SchemaDiffProps) {
                 <button
                   type="button"
                   className={"sd-apply-btn" + (destructiveOn > 0 ? " danger" : "")}
-                  disabled={!gateOk || applying}
+                  disabled={!gateOk || applying || readOnly}
                   onClick={doApply}
                 >
                   <Icon name="bolt" size={16} />{" "}

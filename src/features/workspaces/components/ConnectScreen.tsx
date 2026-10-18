@@ -13,6 +13,7 @@ import { BrandMark } from "../../../shared/ui/BrandMark";
 import { Btn } from "../../../shared/ui/Btn";
 import { EngineBadge } from "../../../shared/ui/EngineBadge";
 import { EnvTag } from "../../../shared/ui/EnvTag";
+import { ReadOnlyTag } from "../../../shared/ui/ReadOnlyTag";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { useContextMenu } from "../../../shared/hooks/useContextMenu";
@@ -513,6 +514,11 @@ export function ConnectScreen() {
                               <div className="connect-card-name">
                                 {c.name}
                                 <EnvTag env={c.env} />
+                                {/* On the card, not just in the modal: the
+                                    user picks a connection from here, so this
+                                    is where "you won't be able to write" has
+                                    to be visible. */}
+                                {c.readOnly ? <ReadOnlyTag /> : null}
                               </div>
                               <div className="connect-card-detail">
                                 {c.params.engine === "sqlite"

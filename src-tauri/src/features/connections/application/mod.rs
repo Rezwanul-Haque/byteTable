@@ -77,6 +77,12 @@ pub struct ConnectionHandleId(pub String);
 #[derive(Default)]
 pub struct ConnectionManager {
     open: RwLock<HashMap<ConnectionHandleId, OpenConnection>>,
+    /// Handles opened as a **read-only workspace**. A separate set rather than
+    /// a field on [`OpenConnection`] so the mode is a property of the *session*
+    /// the user opened, not of the driver connection, and so every existing
+    /// `get_*` accessor keeps working untouched: reads never consult it, and
+    /// writes go through [`Self::ensure_writable`].
+    read_only: RwLock<std::collections::HashSet<ConnectionHandleId>>,
 }
 
 impl ConnectionManager {
@@ -86,9 +92,82 @@ impl ConnectionManager {
 
     /// Store a freshly opened connection (of either kind) and mint its handle.
     pub async fn insert(&self, connection: OpenConnection) -> ConnectionHandleId {
+        self.insert_with_mode(connection, false).await
+    }
+
+    /// Store a freshly opened connection, recording whether its session is
+    /// read-only. Every mutating command refuses a handle inserted with
+    /// `read_only` — see [`Self::ensure_writable`].
+    pub async fn insert_with_mode(
+        &self,
+        connection: OpenConnection,
+        read_only: bool,
+    ) -> ConnectionHandleId {
         let id = ConnectionHandleId(uuid::Uuid::new_v4().to_string());
         self.open.write().await.insert(id.clone(), connection);
+        if read_only {
+            self.read_only.write().await.insert(id.clone());
+        }
         id
+    }
+
+    /// Whether this handle's session was opened read-only.
+    pub async fn is_read_only(&self, handle: &ConnectionHandleId) -> bool {
+        self.read_only.read().await.contains(handle)
+    }
+
+    /// Change an OPEN session's mode (the rail's read-only toggle).
+    ///
+    /// Unlike the open path — where the saved entry's flag is a floor a
+    /// renderer cannot lift — this sets the mode outright in both directions:
+    /// it is reached only from an explicit, deliberate user action on a
+    /// workspace they are looking at. It is a *session* override and nothing
+    /// more: the registry is untouched, so the next connect goes back to what
+    /// the connection was saved with.
+    ///
+    /// Scope note: read-only is a property of a WORKSPACE on the renderer's
+    /// side, and a parent and its schema sub-workspaces deliberately share one
+    /// handle — so the renderer keeps this set to whatever the *active*
+    /// workspace wants, re-pushing it on every switch (see
+    /// `useHandleReadOnlySync`). Only the active workspace can issue commands,
+    /// so the handle only ever needs to hold one workspace's mode.
+    /// A closed handle is a `NotFound` error rather than a silent no-op: the
+    /// caller is about to tell the user their workspace is now read-only, and
+    /// that must not be a lie.
+    pub async fn set_read_only(
+        &self,
+        handle: &ConnectionHandleId,
+        read_only: bool,
+    ) -> Result<(), AppError> {
+        if !self.open.read().await.contains_key(handle) {
+            return Err(not_open(handle));
+        }
+        let mut guard = self.read_only.write().await;
+        if read_only {
+            guard.insert(handle.clone());
+        } else {
+            guard.remove(handle);
+        }
+        Ok(())
+    }
+
+    /// The guard every mutating command calls first: `Ok(())` on a writable
+    /// handle, [`AppError::ReadOnly`] on a read-only one. `action` names what
+    /// is being refused, so the message reads as a sentence ("…cannot delete
+    /// rows").
+    ///
+    /// Unknown handles pass: "is it writable?" is not the question a closed
+    /// handle should answer — the command's own `get_*` call reports the real
+    /// problem (`not_open`) a line later, and answering here would mask it.
+    pub async fn ensure_writable(
+        &self,
+        handle: &ConnectionHandleId,
+        action: &str,
+    ) -> Result<(), AppError> {
+        if self.is_read_only(handle).await {
+            return Err(crate::shared::readonly::read_only_error(action));
+        }
+        Ok(())
     }
 
     /// The SQL connection behind a handle. A handle that is open but holds a
@@ -227,6 +306,10 @@ impl ConnectionManager {
     /// when the handle is unknown (already closed); see [`close_connection`]
     /// for why that is not an error.
     pub async fn remove(&self, handle: &ConnectionHandleId) -> Option<OpenConnection> {
+        // Forget the mode with the handle: ids are fresh UUIDs, so a stale
+        // entry could never be hit, but leaking one per closed connection for
+        // the life of the process is still a leak.
+        self.read_only.write().await.remove(handle);
         self.open.write().await.remove(handle)
     }
 
@@ -237,6 +320,7 @@ impl ConnectionManager {
     /// renderer left to show them to; drop-managed drivers release their
     /// resources regardless.
     pub async fn close_all(&self) {
+        self.read_only.write().await.clear();
         let connections: Vec<_> = self.open.write().await.drain().collect();
         for (_, connection) in connections {
             match connection {
@@ -625,6 +709,13 @@ pub struct OpenedConnection {
     /// Initial keyspace payload for a key-value connection; `None` for SQL.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub keyspace: Option<KeyspaceOverview>,
+    /// Whether this session is a **read-only workspace**: every mutating
+    /// command on `handle_id` will be refused. Always sent (never skipped) so
+    /// the renderer reads the mode off the open result rather than inferring it
+    /// from the saved entry — the backend's answer is the one with teeth, and
+    /// it is what the workspace (and every sub-workspace sharing the handle)
+    /// badges itself with.
+    pub read_only: bool,
 }
 
 /// The initial Redis payload returned alongside the open handle (M13): the
@@ -647,6 +738,10 @@ pub struct KeyspaceOverview {
 /// the modal's "Open" works before anything is stored. For an ad-hoc params
 /// target (no id — e.g. "Open SQLite file…") only the transient secrets apply.
 /// SQLite carries no secrets.
+// Eight collaborators + two flags, each of which the caller must choose
+// explicitly (same reasoning as `generate_run`): bundling them into a struct
+// would only move the argument list one line up.
+#[allow(clippy::too_many_arguments)]
 pub async fn open_connection<R: ConnectionRepository + ?Sized, S: SecretStore + ?Sized>(
     repository: &R,
     registry: &ConnectorRegistry,
@@ -655,26 +750,31 @@ pub async fn open_connection<R: ConnectionRepository + ?Sized, S: SecretStore + 
     target: OpenTarget,
     transient: &TransientSecrets,
     timeout: Duration,
+    read_only_request: bool,
 ) -> Result<OpenedConnection, AppError> {
-    let (params, saved_id) = match target {
-        OpenTarget::Params(params) => (params, None),
+    let (params, saved_id, saved_read_only) = match target {
+        OpenTarget::Params(params) => (params, None, false),
         OpenTarget::SavedId(id) => {
-            let params = repository
+            let saved = repository
                 .get(&id)?
-                .ok_or_else(|| AppError::NotFound(format!("saved connection '{id}'")))?
-                .params;
-            (params, Some(id))
+                .ok_or_else(|| AppError::NotFound(format!("saved connection '{id}'")))?;
+            (saved.params, Some(id), saved.read_only)
         }
         // The caller supplies the endpoint; the saved entry supplies the
         // credentials. It must still be a real entry — resolving a secret
-        // under an id nobody saved would silently open unauthenticated.
+        // under an id nobody saved would silently open unauthenticated. It
+        // also supplies the read-only mode: a cluster peer is the same
+        // configured server, so it must not be a way around the restriction.
         OpenTarget::ParamsAs { params, saved_id } => {
-            if repository.get(&saved_id)?.is_none() {
-                return Err(AppError::NotFound(format!("saved connection '{saved_id}'")));
-            }
-            (params, Some(saved_id))
+            let saved = repository
+                .get(&saved_id)?
+                .ok_or_else(|| AppError::NotFound(format!("saved connection '{saved_id}'")))?;
+            (params, Some(saved_id), saved.read_only)
         }
     };
+    // The request can only ADD the restriction: an entry saved read-only can
+    // never be opened writable, whatever the renderer asks for.
+    let read_only = saved_read_only || read_only_request;
 
     // Merge keychain-stored secrets with transient ones (transient wins).
     let secret = resolve_open_secret(secret_store, &params, saved_id.as_deref(), transient)?;
@@ -728,13 +828,14 @@ pub async fn open_connection<R: ConnectionRepository + ?Sized, S: SecretStore + 
 
     let engine_info = connection.engine_info();
     let kind = connection.kind();
-    let handle_id = manager.insert(connection).await;
+    let handle_id = manager.insert_with_mode(connection, read_only).await;
     Ok(OpenedConnection {
         handle_id,
         engine_info,
         kind,
         schemas,
         keyspace,
+        read_only,
     })
 }
 
@@ -1003,6 +1104,7 @@ mod tests {
             env: Env::Dev,
             color: None,
             project: None,
+            read_only: false,
             created_at: None,
         }
     }
@@ -1106,6 +1208,7 @@ mod tests {
             OpenTarget::Params(postgres_params()),
             &no_secrets(),
             Duration::from_millis(30),
+            false,
         )
         .await
         .unwrap_err();
@@ -1128,6 +1231,7 @@ mod tests {
             OpenTarget::Params(sqlite_params()),
             &no_secrets(),
             DEFAULT_CONNECT_TIMEOUT,
+            false,
         )
         .await
         .expect("open");
@@ -1169,6 +1273,7 @@ mod tests {
             env: Env::Dev,
             color: None,
             project: None,
+            read_only: false,
             created_at: None,
         }
     }
@@ -1431,6 +1536,7 @@ mod tests {
             OpenTarget::Params(sqlite_params()),
             &no_secrets(),
             DEFAULT_CONNECT_TIMEOUT,
+            false,
         )
         .await
         .expect("open");
@@ -1511,6 +1617,7 @@ mod tests {
             OpenTarget::SavedId(saved.id.clone()),
             &no_secrets(),
             DEFAULT_CONNECT_TIMEOUT,
+            false,
         )
         .await
         .expect("open");
@@ -1525,6 +1632,7 @@ mod tests {
             OpenTarget::SavedId("ghost".into()),
             &no_secrets(),
             DEFAULT_CONNECT_TIMEOUT,
+            false,
         )
         .await
         .unwrap_err();
@@ -1558,6 +1666,7 @@ mod tests {
             },
             &no_secrets(),
             DEFAULT_CONNECT_TIMEOUT,
+            false,
         )
         .await
         .expect("open");
@@ -1576,6 +1685,7 @@ mod tests {
             },
             &no_secrets(),
             DEFAULT_CONNECT_TIMEOUT,
+            false,
         )
         .await
         .unwrap_err();
@@ -1644,5 +1754,232 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+
+    // -- read-only workspaces -----------------------------------------------
+
+    #[tokio::test]
+    async fn ensure_writable_refuses_only_read_only_handles() {
+        let manager = ConnectionManager::new();
+        let writable = manager
+            .insert(OpenConnection::sql(FakeConnection {
+                closed: Arc::new(AtomicBool::new(false)),
+            }))
+            .await;
+        let guarded = manager
+            .insert_with_mode(
+                OpenConnection::sql(FakeConnection {
+                    closed: Arc::new(AtomicBool::new(false)),
+                }),
+                true,
+            )
+            .await;
+
+        assert!(!manager.is_read_only(&writable).await);
+        assert!(manager.is_read_only(&guarded).await);
+        assert!(manager
+            .ensure_writable(&writable, "delete rows")
+            .await
+            .is_ok());
+
+        let err = manager
+            .ensure_writable(&guarded, "delete rows")
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::ReadOnly(_)));
+        assert!(err.to_string().contains("delete rows"));
+
+        // An unknown handle is the `get_*` call's problem to report, not this
+        // guard's — it must not masquerade as a read-only refusal.
+        assert!(manager
+            .ensure_writable(&ConnectionHandleId("ghost".into()), "delete rows")
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    async fn set_read_only_flips_a_live_session_both_ways() {
+        // The rail's toggle: unlike the open path (where the saved flag is a
+        // floor), an explicit user action sets the mode outright.
+        let manager = ConnectionManager::new();
+        let handle = manager
+            .insert(OpenConnection::sql(FakeConnection {
+                closed: Arc::new(AtomicBool::new(false)),
+            }))
+            .await;
+
+        manager.set_read_only(&handle, true).await.expect("lock");
+        assert!(manager.is_read_only(&handle).await);
+        assert!(manager
+            .ensure_writable(&handle, "delete rows")
+            .await
+            .is_err());
+
+        manager.set_read_only(&handle, false).await.expect("unlock");
+        assert!(!manager.is_read_only(&handle).await);
+        assert!(manager
+            .ensure_writable(&handle, "delete rows")
+            .await
+            .is_ok());
+
+        // Setting the same mode twice is idempotent, not an error.
+        manager.set_read_only(&handle, true).await.expect("lock");
+        manager.set_read_only(&handle, true).await.expect("re-lock");
+        assert!(manager.is_read_only(&handle).await);
+    }
+
+    #[tokio::test]
+    async fn set_read_only_on_a_closed_handle_is_an_error() {
+        let manager = ConnectionManager::new();
+        let err = manager
+            .set_read_only(&ConnectionHandleId("ghost".into()), true)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::NotFound(_)));
+    }
+
+    #[tokio::test]
+    async fn closing_a_read_only_handle_forgets_its_mode() {
+        let manager = ConnectionManager::new();
+        let handle = manager
+            .insert_with_mode(
+                OpenConnection::sql(FakeConnection {
+                    closed: Arc::new(AtomicBool::new(false)),
+                }),
+                true,
+            )
+            .await;
+        close_connection(&manager, &handle).await.expect("close");
+        assert!(!manager.is_read_only(&handle).await);
+    }
+
+    #[tokio::test]
+    async fn a_connection_saved_read_only_opens_read_only() {
+        let closed = Arc::new(AtomicBool::new(false));
+        let registry = registry_with_fake(closed);
+        let manager = ConnectionManager::new();
+        let repo = FakeRepository::default();
+        let store = InMemorySecretStore::default();
+        let saved = save_connection(
+            &repo,
+            &store,
+            SavedConnection {
+                read_only: true,
+                ..new_connection("Prod (read-only)")
+            },
+            &no_secrets(),
+        )
+        .expect("save");
+
+        // Even asked for writable: the saved flag is the floor, so a renderer
+        // bug cannot open a guarded connection for writing.
+        let opened = open_connection(
+            &repo,
+            &registry,
+            &store,
+            &manager,
+            OpenTarget::SavedId(saved.id.clone()),
+            &no_secrets(),
+            DEFAULT_CONNECT_TIMEOUT,
+            false,
+        )
+        .await
+        .expect("open");
+
+        assert!(opened.read_only, "the open result reports the mode");
+        assert!(manager.is_read_only(&opened.handle_id).await);
+    }
+
+    #[tokio::test]
+    async fn an_ad_hoc_open_can_ask_for_read_only() {
+        let closed = Arc::new(AtomicBool::new(false));
+        let registry = registry_with_fake(closed);
+        let manager = ConnectionManager::new();
+        let repo = FakeRepository::default();
+        let store = InMemorySecretStore::default();
+
+        let opened = open_connection(
+            &repo,
+            &registry,
+            &store,
+            &manager,
+            OpenTarget::Params(sqlite_params()),
+            &no_secrets(),
+            DEFAULT_CONNECT_TIMEOUT,
+            true,
+        )
+        .await
+        .expect("open");
+
+        assert!(opened.read_only);
+        assert!(manager.is_read_only(&opened.handle_id).await);
+    }
+
+    #[tokio::test]
+    async fn a_writable_entry_opens_writable() {
+        let closed = Arc::new(AtomicBool::new(false));
+        let registry = registry_with_fake(closed);
+        let manager = ConnectionManager::new();
+        let repo = FakeRepository::default();
+        let store = InMemorySecretStore::default();
+        let saved =
+            save_connection(&repo, &store, new_connection("Dev DB"), &no_secrets()).expect("save");
+
+        let opened = open_connection(
+            &repo,
+            &registry,
+            &store,
+            &manager,
+            OpenTarget::SavedId(saved.id),
+            &no_secrets(),
+            DEFAULT_CONNECT_TIMEOUT,
+            false,
+        )
+        .await
+        .expect("open");
+
+        assert!(!opened.read_only);
+        assert!(!manager.is_read_only(&opened.handle_id).await);
+    }
+
+    #[tokio::test]
+    async fn a_cluster_peer_inherits_the_saved_entrys_read_only_mode() {
+        // `ParamsAs` authenticates another endpoint of the SAME configured
+        // server (a Redis Cluster peer), so it must not be a way around the
+        // restriction.
+        let closed = Arc::new(AtomicBool::new(false));
+        let registry = registry_with_fake(closed);
+        let manager = ConnectionManager::new();
+        let repo = FakeRepository::default();
+        let store = InMemorySecretStore::default();
+        let saved = save_connection(
+            &repo,
+            &store,
+            SavedConnection {
+                read_only: true,
+                ..new_connection("Cache (read-only)")
+            },
+            &no_secrets(),
+        )
+        .expect("save");
+
+        let opened = open_connection(
+            &repo,
+            &registry,
+            &store,
+            &manager,
+            OpenTarget::ParamsAs {
+                params: sqlite_params(),
+                saved_id: saved.id,
+            },
+            &no_secrets(),
+            DEFAULT_CONNECT_TIMEOUT,
+            false,
+        )
+        .await
+        .expect("open");
+
+        assert!(opened.read_only);
+        assert!(manager.is_read_only(&opened.handle_id).await);
     }
 }

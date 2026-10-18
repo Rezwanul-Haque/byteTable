@@ -24,6 +24,37 @@ use crate::shared::mongo::{
 
 use super::application;
 
+/// Aggregation stages that write their result into a collection rather than
+/// returning it. An aggregate is otherwise a read, so these two are the only
+/// reason the pipeline needs inspecting in a read-only workspace.
+const WRITING_STAGES: [&str; 2] = ["$out", "$merge"];
+
+/// Refuse an aggregation that would write. `$out` replaces a whole collection
+/// and `$merge` upserts into one, so a pipeline containing either is a
+/// mutation wearing a query's clothes.
+async fn refuse_writing_pipeline(
+    state: &ConnectionsState,
+    handle_id: &ConnectionHandleId,
+    pipeline: &[Value],
+) -> Result<(), AppError> {
+    if !state.manager().is_read_only(handle_id).await {
+        return Ok(());
+    }
+    let writes = pipeline.iter().any(|stage| {
+        stage.as_object().is_some_and(|fields| {
+            fields
+                .keys()
+                .any(|key| WRITING_STAGES.contains(&key.as_str()))
+        })
+    });
+    if writes {
+        return Err(crate::shared::readonly::read_only_error(
+            "run an aggregation that writes its result to a collection",
+        ));
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn mongo_list_databases(
     state: State<'_, ConnectionsState>,
@@ -71,6 +102,7 @@ pub async fn mongo_aggregate(
     coll: String,
     pipeline: Vec<Value>,
 ) -> Result<AggregateResult, AppError> {
+    refuse_writing_pipeline(&state, &handle_id, &pipeline).await?;
     application::aggregate(state.manager(), &handle_id, &db, &coll, pipeline).await
 }
 
@@ -125,6 +157,10 @@ pub async fn mongo_insert_one(
     coll: String,
     doc: Value,
 ) -> Result<Value, AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "insert documents")
+        .await?;
     application::insert_one(state.manager(), &handle_id, &db, &coll, doc).await
 }
 
@@ -137,6 +173,10 @@ pub async fn mongo_replace_one(
     id: Value,
     doc: Value,
 ) -> Result<WriteResult, AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "change documents")
+        .await?;
     application::replace_one(state.manager(), &handle_id, &db, &coll, id, doc).await
 }
 
@@ -148,6 +188,10 @@ pub async fn mongo_delete_one(
     coll: String,
     id: Value,
 ) -> Result<DeleteResult, AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "delete documents")
+        .await?;
     application::delete_one(state.manager(), &handle_id, &db, &coll, id).await
 }
 
@@ -159,6 +203,10 @@ pub async fn mongo_delete_many(
     coll: String,
     ids: Vec<Value>,
 ) -> Result<DeleteResult, AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "delete documents")
+        .await?;
     application::delete_many(state.manager(), &handle_id, &db, &coll, ids).await
 }
 
@@ -170,6 +218,10 @@ pub async fn mongo_insert_many(
     coll: String,
     docs: Vec<Value>,
 ) -> Result<InsertManyResult, AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "insert documents")
+        .await?;
     application::insert_many(state.manager(), &handle_id, &db, &coll, docs).await
 }
 
@@ -183,6 +235,10 @@ pub async fn mongo_create_collection(
     db: String,
     coll: String,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "create collections")
+        .await?;
     application::create_collection(state.manager(), &handle_id, &db, &coll).await
 }
 
@@ -194,6 +250,10 @@ pub async fn mongo_drop_collection(
     db: String,
     coll: String,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "drop collections")
+        .await?;
     application::drop_collection(state.manager(), &handle_id, &db, &coll).await
 }
 
@@ -206,6 +266,10 @@ pub async fn mongo_truncate_collection(
     db: String,
     coll: String,
 ) -> Result<u64, AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "empty collections")
+        .await?;
     application::truncate_collection(state.manager(), &handle_id, &db, &coll).await
 }
 
@@ -217,6 +281,10 @@ pub async fn mongo_empty_database(
     handle_id: ConnectionHandleId,
     db: String,
 ) -> Result<Vec<String>, AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "empty databases")
+        .await?;
     application::empty_database(state.manager(), &handle_id, &db).await
 }
 
@@ -228,6 +296,10 @@ pub async fn mongo_drop_database(
     handle_id: ConnectionHandleId,
     db: String,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "drop databases")
+        .await?;
     application::drop_database(state.manager(), &handle_id, &db).await
 }
 
@@ -239,6 +311,10 @@ pub async fn mongo_create_index(
     coll: String,
     spec: CreateIndexSpec,
 ) -> Result<String, AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "create indexes")
+        .await?;
     application::create_index(state.manager(), &handle_id, &db, &coll, spec).await
 }
 
@@ -250,5 +326,9 @@ pub async fn mongo_set_validator(
     coll: String,
     validator: Option<Value>,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "change collection validation")
+        .await?;
     application::set_validator(state.manager(), &handle_id, &db, &coll, validator).await
 }

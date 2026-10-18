@@ -25,6 +25,7 @@ import { appErrorMessage } from "../../../../shared/api/error";
 import { t as i18nT, type StringKey } from "../../../../shared/i18n";
 import { useT } from "../../../../shared/i18n/useT";
 import { Icon } from "../../../../shared/ui/Icon";
+import { useReadOnly } from "../../../../shared/ui/readOnlyContext";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { ENV_COLOR } from "../../../../shared/ui/envColors";
 import { normalizeEnv } from "../../../../shared/types";
@@ -123,6 +124,9 @@ export function RedisClientsTab({
   const [sel, setSel] = useState<Set<number>>(() => new Set());
   const [inspectId, setInspectId] = useState<number | null>(null);
   const [kill, setKill] = useState<KillTarget | null>(null);
+  // Read-only workspace: the client list stays fully inspectable; the kill
+  // verbs (per row, bulk, by filter) go.
+  const readOnly = useReadOnly();
   const [filterOpen, setFilterOpen] = useState(false);
   const [sort, setSort] = useState<Sort>({ col: "age", dir: "desc" });
   const [updated, setUpdated] = useState<Date | null>(null);
@@ -393,8 +397,9 @@ export function RedisClientsTab({
         >
           <Icon name="autorenew" size={13} /> {t("redis.ct.auto")}
         </button>
-        {/* In the toolbar, never in the wrapping stats strip — see the CSS note. */}
-        <div className="rc-kf-wrap" onClick={(e) => e.stopPropagation()}>
+        {/* In the toolbar, never in the wrapping stats strip — see the CSS note.
+            Hidden in a read-only workspace: CLIENT KILL changes server state. */}
+        <div className="rc-kf-wrap" onClick={(e) => e.stopPropagation()} hidden={readOnly}>
           <button
             type="button"
             className="rc-kfbtn"
@@ -464,14 +469,16 @@ export function RedisClientsTab({
             {t("redis.ct.clear")}
           </button>
           <div style={{ flex: 1 }} />
-          <button
-            type="button"
-            className="btn btn-danger proc-kill-sel"
-            onClick={() => setKill(killSelected())}
-          >
-            <Icon name="dangerous" size={15} />
-            <span>{t("redis.ct.killSelectedBtn")}</span>
-          </button>
+          {readOnly ? null : (
+            <button
+              type="button"
+              className="btn btn-danger proc-kill-sel"
+              onClick={() => setKill(killSelected())}
+            >
+              <Icon name="dangerous" size={15} />
+              <span>{t("redis.ct.killSelectedBtn")}</span>
+            </button>
+          )}
         </div>
       ) : null}
 
@@ -584,8 +591,14 @@ export function RedisClientsTab({
                     <button
                       type="button"
                       className="proc-kill"
-                      disabled={c.isSelf}
-                      title={c.isSelf ? t("redis.ct.selfTitle") : "CLIENT KILL ID " + c.id}
+                      disabled={c.isSelf || readOnly}
+                      title={
+                        readOnly
+                          ? t("ws.readOnly.title")
+                          : c.isSelf
+                            ? t("redis.ct.selfTitle")
+                            : "CLIENT KILL ID " + c.id
+                      }
                       onClick={(e) => {
                         e.stopPropagation();
                         setKill(killOne(c));

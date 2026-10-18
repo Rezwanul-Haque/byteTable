@@ -206,6 +206,12 @@ interface FormState {
   // verdict — they live on their own actions in the opt-out list.
   env: Env;
   envColors: Record<Env, string>;
+  /**
+   * Open this connection as a read-only workspace. Like the env picker it says
+   * nothing about whether the connection *works*, so toggling it does not reset
+   * the test verdict — the backend's `connection_test` is a read either way.
+   */
+  readOnly: boolean;
   // Footer.
   test: TestState;
   saving: boolean;
@@ -246,6 +252,7 @@ const INITIAL: FormState = {
   sshPassword: "",
   env: "dev",
   envColors: { ...ENV_COLOR },
+  readOnly: false,
   test: IDLE,
   saving: false,
 };
@@ -262,6 +269,9 @@ type Action =
   // it never invalidates the test verdict.
   | { type: "env"; env: Env }
   | { type: "envColor"; color: string }
+  // Read-only is a session policy, not a param — it cannot make a working
+  // connection fail, so it stays out of the verdict-resetting path too.
+  | { type: "readOnly"; readOnly: boolean }
   // Project label is connect-screen metadata — never invalidates the verdict.
   | { type: "project"; project: string }
   // Engine switch: resets section + auto-fills the default port when untouched.
@@ -278,6 +288,8 @@ function reducer(state: FormState, action: Action): FormState {
       return { ...state, test: action.test };
     case "env":
       return { ...state, env: action.env };
+    case "readOnly":
+      return { ...state, readOnly: action.readOnly };
     case "project":
       return { ...state, project: action.project };
     case "envColor":
@@ -319,6 +331,7 @@ function formStateFromConnection(c: SavedConnection): FormState {
     name: c.name,
     project: c.project ?? "",
     env: c.env,
+    readOnly: c.readOnly ?? false,
     portTouched: true,
     userTouched: true,
     envColors: { ...ENV_COLOR, [c.env]: c.color ?? ENV_COLOR[c.env] },
@@ -573,6 +586,7 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
     sshPassword,
     env,
     envColors,
+    readOnly,
     test: testState,
     saving,
   } = state;
@@ -947,6 +961,9 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
           env,
           color: envColor,
           ...(project.trim() ? { project: project.trim() } : {}),
+          // Only sent when on: the Rust side omits a false flag from the
+          // registry file, so writable connections keep their current JSON.
+          ...(readOnly ? { readOnly: true } : {}),
         },
         secrets(),
       );
@@ -1001,8 +1018,32 @@ export function NewConnectionModal({ onClose, edit }: NewConnectionModalProps) {
       <Modal label={edit ? "Edit connection" : "New connection"} onClose={onClose}>
         <ModalTitle>
           <span>{edit ? t("connect.edit") : t("connect.new")}</span>
-          {/* A quiet trigger, not a form field: `margin-left: auto` parks it
-              next to the close button at the right end of the title row. */}
+          {/* A chip in the title row rather than a field in the form: it is a
+              one-bit policy for the whole connection, not another parameter,
+              and the form has no vertical room to spare. `margin-left: auto`
+              on the first chip parks the pair at the right end of the row; the
+              info hint carries the explanation a label would have cost three
+              lines to print.
+
+              The pill is a SPAN wrapping two controls, not one button: the hint
+              is focusable in its own right (that is how it opens by keyboard),
+              and a focusable element nested inside a <button> is both invalid
+              and unreachable by Tab. So the border/fill live on the wrapper and
+              the toggle inside it is borderless — one pill on screen, two
+              properly separate controls in the accessibility tree. */}
+          <span className={"conn-ro-chip" + (readOnly ? " on" : "")}>
+            <button
+              type="button"
+              className="conn-ro-toggle"
+              aria-pressed={readOnly}
+              onClick={() => dispatch({ type: "readOnly", readOnly: !readOnly })}
+              title={t("conn.readOnly.hint")}
+            >
+              <Icon name={readOnly ? "lock" : "lock_open"} size={13} />
+              {t("conn.readOnly.chip")}
+            </button>
+            <InfoHint text={t("conn.readOnly.hint")} />
+          </span>
           <button
             type="button"
             className="imp-trigger"

@@ -357,6 +357,10 @@
   align-items: center;
   gap: 8px;
   padding: 5px 8px;
+  /* 20px for the hover-revealed copy/delete buttons + 10px padding. The delete
+     one is absent in a read-only workspace, so without a floor the whole key
+     list would re-flow on a toggle. */
+  min-height: 30px;
   border-radius: 7px;
   cursor: pointer;
   transition: background 0.1s;
@@ -399,6 +403,14 @@
 .rkey-item:hover .rkey-del,
 .rkey-item:focus-within .rkey-del {
   opacity: 1;
+}
+
+/* Holds a hover-revealed action's place when there is no action (a read-only
+   workspace), so the row's geometry never depends on the mode. */
+.rkey-slot {
+  flex: none;
+  width: 20px;
+  height: 20px;
 }
 
 .rkey-ttl {

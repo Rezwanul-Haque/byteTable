@@ -12,10 +12,11 @@ import { useT } from "../../../shared/i18n/useT";
 import { BTLogo } from "../../../shared/ui/BTLogo";
 import { dropWordSelection } from "../../../shared/ui/dropWordSelection";
 import { Icon } from "../../../shared/ui/Icon";
+import { InfoHint } from "../../../shared/ui/InfoHint";
 import { useToast } from "../../../shared/ui/toastContext";
 import { SCOPE_NOUN_KEYS, scopeNoun, scopeNounTitle } from "../scopes";
 import { selectShowConnect, useWorkspacesStore, WORKSPACE_COLORS } from "../state";
-import { workspaceBadge, type Workspace } from "../types";
+import { isDataFileWorkspace, workspaceBadge, type Workspace } from "../types";
 import "./Rail.css";
 
 // Tile chip/tooltip engine names — prototype ui.jsx ENGINE_META (label +
@@ -106,6 +107,7 @@ export function Rail({
   const recolorWorkspace = useWorkspacesStore((state) => state.recolorWorkspace);
   const closeWorkspace = useWorkspacesStore((state) => state.closeWorkspace);
   const keepWorkspace = useWorkspacesStore((state) => state.keepWorkspace);
+  const setWorkspaceReadOnly = useWorkspacesStore((state) => state.setWorkspaceReadOnly);
   const toast = useToast();
   const t = useT();
 
@@ -472,6 +474,41 @@ export function Rail({
             ))}
           </div>
           <div className="ws-edit-sep" />
+          {/* Read-only for THIS workspace. A data-file workspace is left out:
+              its "connection" is a private in-memory database that exists to be
+              edited, so there is nothing to protect.
+              The two non-obvious parts — the flag is per-workspace, and it
+              lasts only until the next connect — are in the hint rather than a
+              paragraph: four lines of explanation under a one-line toggle made
+              this popover a third taller for something read once. */}
+          {isDataFileWorkspace(editingWs) ? null : (
+            <>
+              {/* The row is a DIV wrapping two controls, not one button: the
+                  hint is focusable in its own right, and nesting a focusable
+                  element inside a <button> is both invalid and unreachable by
+                  Tab (same shape as the connect modal's chip). */}
+              <div className={"ws-edit-ro" + (editingWs.readOnly ? " on" : "")}>
+                <button
+                  type="button"
+                  className="ws-edit-ro-toggle"
+                  aria-pressed={editingWs.readOnly}
+                  onClick={() => {
+                    const next = !editingWs.readOnly;
+                    setWorkspaceReadOnly(editPop.id, next);
+                    toast(next ? t("ws.rail.ro.on") : t("ws.rail.ro.off"), "ok");
+                  }}
+                >
+                  <Icon name={editingWs.readOnly ? "lock" : "lock_open"} size={14} />
+                  <span>{t("ws.rail.ro.label")}</span>
+                  <span className={"ws-edit-ro-state" + (editingWs.readOnly ? " on" : "")}>
+                    {editingWs.readOnly ? t("ws.rail.ro.stateOn") : t("ws.rail.ro.stateOff")}
+                  </span>
+                </button>
+                <InfoHint text={t("ws.rail.ro.note")} />
+              </div>
+              <div className="ws-edit-sep" />
+            </>
+          )}
           {/* Only while temporary: once kept there is nothing left to do. */}
           {editingWs.parentId && editingWs.temp ? (
             <button

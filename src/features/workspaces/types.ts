@@ -125,6 +125,26 @@ export interface WorkspaceConnection {
    */
   kind: ConnectionKind;
   /**
+   * This workspace is **read-only**: it hides every mutation affordance, and
+   * the backend refuses the matching commands.
+   *
+   * Per workspace, not per connection. A schema sub-workspace (M32) inherits
+   * the flag when it is created — it spreads the parent's connection, so the
+   * initial value comes along for free — and is independent from then on:
+   * locking a schema you only browse leaves the parent (and its siblings)
+   * writable, and unlocking one does not unlock the others.
+   *
+   * The backend's guard is keyed by `handleId`, which a parent and its
+   * sub-workspaces share, so the handle is kept pointed at the ACTIVE
+   * workspace's mode by `useHandleReadOnlySync` — the only workspace that can
+   * issue commands is the one on screen.
+   *
+   * The initial value is the open result's, not the saved entry's: the backend
+   * resolves it (saved flag, possibly tightened) and its answer is the one with
+   * teeth.
+   */
+  readOnly: boolean;
+  /**
    * The initial Redis keyspace overview (server identity + per-db key counts),
    * present only for `kind === "kv"` connections — the Redis workspace renders
    * its db switcher + dashboard header off it immediately, without a round trip.

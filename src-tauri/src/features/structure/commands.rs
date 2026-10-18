@@ -42,5 +42,9 @@ pub async fn alter_apply(
     table: String,
     ops: Vec<AlterOp>,
 ) -> Result<AlterResult, AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "change table structure")
+        .await?;
     application::apply_alter(state.manager(), &handle_id, &schema, &table, &ops).await
 }

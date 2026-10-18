@@ -168,6 +168,10 @@ pub async fn typesense_upsert_document(
     collection: String,
     document: Value,
 ) -> Result<Value, AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "write documents")
+        .await?;
     application::upsert_document(state.manager(), &handle_id, &collection, document).await
 }
 
@@ -178,6 +182,10 @@ pub async fn typesense_delete_document(
     collection: String,
     id: String,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "delete documents")
+        .await?;
     application::delete_document(state.manager(), &handle_id, &collection, &id).await
 }
 
@@ -187,5 +195,15 @@ pub async fn typesense_raw_http(
     handle_id: ConnectionHandleId,
     request: HttpConsoleRequest,
 ) -> Result<HttpConsoleResponse, AppError> {
+    // The console sends arbitrary requests, so the method decides: GET/HEAD
+    // read, everything else can create, change or delete collections, keys and
+    // documents.
+    if state.manager().is_read_only(&handle_id).await
+        && !crate::shared::readonly::http_method_is_read_only(&request.method)
+    {
+        return Err(crate::shared::readonly::read_only_error(
+            "send a request that changes data",
+        ));
+    }
     application::raw_http(state.manager(), &handle_id, request).await
 }

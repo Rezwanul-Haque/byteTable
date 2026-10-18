@@ -652,6 +652,80 @@
   color: var(--text);
 }
 
+/* Read-only toggle in the rail popover. Shaped like the Keep row below it (a
+   full-width action, not a form control), with the current state spelled out on
+   the right — a lock glyph alone reads as "click to lock" to some people and
+   "it is locked" to others. The row is the wrapper; the toggle and the hint
+   sit inside it (see the JSX note on why they are two controls). */
+.ws-edit-ro {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: 7px;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: var(--bg1);
+  transition:
+    color 0.12s,
+    background 0.12s;
+}
+
+/* Borderless and full-width: the row around it supplies the chrome, and the
+   whole row should be the click target except where the hint sits. */
+.ws-edit-ro-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.ws-edit-ro:hover {
+  color: var(--text);
+  background: var(--bg2);
+}
+
+.ws-edit-ro.on {
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+}
+
+.ws-edit-ro.on:hover {
+  background: color-mix(in oklab, var(--accent) 20%, transparent);
+}
+
+.ws-edit-ro-state {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  color: var(--text-faint);
+}
+
+.ws-edit-ro-state.on {
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+  color: var(--accent);
+}
+
+/* Trails the state pill; keeps its own faint→accent colouring. */
+.ws-edit-ro .info-hint {
+  flex: none;
+}
+
 .ws-edit-keep {
   display: flex;
   align-items: center;

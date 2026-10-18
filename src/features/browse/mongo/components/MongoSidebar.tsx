@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import { EngineBadge } from "../../../../shared/ui/EngineBadge";
 import { dropWordSelection } from "../../../../shared/ui/dropWordSelection";
 import { Icon } from "../../../../shared/ui/Icon";
+import { useReadOnly } from "../../../../shared/ui/readOnlyContext";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { Btn } from "../../../../shared/ui/Btn";
 import { useT } from "../../../../shared/i18n/useT";
@@ -96,6 +97,7 @@ export function MongoSidebar({
   onCloseWorkspace: () => void;
 }) {
   const t = useT();
+  const readOnly = useReadOnly();
   const [q, setQ] = useState("");
   const [dbOpen, setDbOpen] = useState(false);
   // M36: dropdown (default) or an icon that opens the database list as a
@@ -357,24 +359,28 @@ export function MongoSidebar({
               {/* Create sits at the TOP, accent-tinted and with no separator
                   under it — the same treatment the SQL and Cassandra sidebars
                   give their own create action. */}
-              <div
-                className="ctx-item ctx-item-accent"
-                onClick={() => {
-                  setCtxMenu(null);
-                  onCreateColl();
-                }}
-              >
-                <Icon name="create_new_folder" size={15} /> {t("mongo.menu.createColl")}
-              </div>
-              <div
-                className="ctx-item"
-                onClick={() => {
-                  setCtxMenu(null);
-                  onImportColl(null);
-                }}
-              >
-                <Icon name="upload" size={15} /> {t("mongo.menu.importInto")}
-              </div>
+              {readOnly ? null : (
+                <>
+                  <div
+                    className="ctx-item ctx-item-accent"
+                    onClick={() => {
+                      setCtxMenu(null);
+                      onCreateColl();
+                    }}
+                  >
+                    <Icon name="create_new_folder" size={15} /> {t("mongo.menu.createColl")}
+                  </div>
+                  <div
+                    className="ctx-item"
+                    onClick={() => {
+                      setCtxMenu(null);
+                      onImportColl(null);
+                    }}
+                  >
+                    <Icon name="upload" size={15} /> {t("mongo.menu.importInto")}
+                  </div>
+                </>
+              )}
               <div
                 className="ctx-item"
                 onClick={() => {
@@ -398,25 +404,29 @@ export function MongoSidebar({
                   no other engine's scope menu carries one. */}
               {/* Destructive last, behind a separator — the same placement the
                   SQL and Cassandra sidebars use. */}
-              <div className="ctx-sep" />
-              <div
-                className="ctx-item danger"
-                onClick={() => {
-                  setCtxMenu(null);
-                  onEmptyDb();
-                }}
-              >
-                <Icon name="delete_sweep" size={15} /> {t("mongo.menu.dropAllColls")}
-              </div>
-              <div
-                className="ctx-item danger"
-                onClick={() => {
-                  setCtxMenu(null);
-                  onDropDb();
-                }}
-              >
-                <Icon name="delete_forever" size={15} /> {t("mongo.menu.dropDb")}
-              </div>
+              {readOnly ? null : (
+                <>
+                  <div className="ctx-sep" />
+                  <div
+                    className="ctx-item danger"
+                    onClick={() => {
+                      setCtxMenu(null);
+                      onEmptyDb();
+                    }}
+                  >
+                    <Icon name="delete_sweep" size={15} /> {t("mongo.menu.dropAllColls")}
+                  </div>
+                  <div
+                    className="ctx-item danger"
+                    onClick={() => {
+                      setCtxMenu(null);
+                      onDropDb();
+                    }}
+                  >
+                    <Icon name="delete_forever" size={15} /> {t("mongo.menu.dropDb")}
+                  </div>
+                </>
+              )}
             </>
           ) : (
             <>
@@ -449,37 +459,41 @@ export function MongoSidebar({
               >
                 <Icon name="download" size={15} /> {t("mongo.menu.exportColl")}
               </div>
-              <div
-                className="ctx-item"
-                onClick={() => {
-                  const c = ctxMenu.coll;
-                  setCtxMenu(null);
-                  if (c) onImportColl(c);
-                }}
-              >
-                <Icon name="upload" size={15} /> {t("mongo.menu.importDocs")}
-              </div>
-              <div className="ctx-sep" />
-              <div
-                className="ctx-item danger"
-                onClick={() => {
-                  const c = ctxMenu.coll;
-                  setCtxMenu(null);
-                  if (c) onTruncateColl(c);
-                }}
-              >
-                <Icon name="delete_sweep" size={15} /> {t("mongo.menu.emptyColl")}
-              </div>
-              <div
-                className="ctx-item danger"
-                onClick={() => {
-                  const c = ctxMenu.coll;
-                  setCtxMenu(null);
-                  if (c) onDropColl(c);
-                }}
-              >
-                <Icon name="delete_forever" size={15} /> {t("mongo.menu.dropColl")}
-              </div>
+              {readOnly ? null : (
+                <>
+                  <div
+                    className="ctx-item"
+                    onClick={() => {
+                      const c = ctxMenu.coll;
+                      setCtxMenu(null);
+                      if (c) onImportColl(c);
+                    }}
+                  >
+                    <Icon name="upload" size={15} /> {t("mongo.menu.importDocs")}
+                  </div>
+                  <div className="ctx-sep" />
+                  <div
+                    className="ctx-item danger"
+                    onClick={() => {
+                      const c = ctxMenu.coll;
+                      setCtxMenu(null);
+                      if (c) onTruncateColl(c);
+                    }}
+                  >
+                    <Icon name="delete_sweep" size={15} /> {t("mongo.menu.emptyColl")}
+                  </div>
+                  <div
+                    className="ctx-item danger"
+                    onClick={() => {
+                      const c = ctxMenu.coll;
+                      setCtxMenu(null);
+                      if (c) onDropColl(c);
+                    }}
+                  >
+                    <Icon name="delete_forever" size={15} /> {t("mongo.menu.dropColl")}
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>

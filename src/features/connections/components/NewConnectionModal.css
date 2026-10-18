@@ -261,6 +261,76 @@
   padding: 8px 11px;
 }
 
+/* Read-only chip in the title row — same geometry as `.imp-trigger` next to it
+   (the two read as one pair), but it is a TOGGLE, so it also has an `on` state:
+   accent text, tint and border, with a filled lock glyph. It takes the
+   `margin-left: auto` that pushes the pair right, which is why the import
+   trigger drops its own when it follows.
+
+   The pill is the wrapper; the toggle and the info hint sit inside it (see the
+   JSX note on why they are two controls). Right padding is tighter than left
+   because the hint glyph carries its own optical space. */
+.conn-ro-chip {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 3px 7px 3px 9px;
+  font-family: var(--ui);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  transition:
+    color 0.12s,
+    border-color 0.12s,
+    background 0.12s;
+}
+
+/* Hovering either control lights the whole pill — it reads as one thing. */
+.conn-ro-chip:hover {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+  background: color-mix(in oklab, var(--accent) 8%, transparent);
+}
+
+.conn-ro-chip.on {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 55%, var(--border));
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+  font-weight: 600;
+}
+
+/* Borderless: the pill around it supplies the chrome. */
+.conn-ro-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.conn-ro-chip .msym {
+  flex: none;
+}
+
+/* Only spacing: the hint keeps its own faint→accent colouring, which already
+   reads as subordinate to the label beside it. */
+.conn-ro-chip .info-hint {
+  margin-left: 1px;
+}
+
+/* The chip owns the auto margin; the import trigger just follows it. */
+.modal-title .conn-ro-chip ~ .imp-trigger {
+  margin-left: 0;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

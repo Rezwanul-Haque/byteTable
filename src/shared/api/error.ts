@@ -13,7 +13,14 @@ export type AppErrorKind =
   | "notFound"
   | "invalid"
   | "database"
-  | "unsupported";
+  | "unsupported"
+  /**
+   * The workspace was opened read-only, so the backend refused a mutating
+   * command before it reached the database. Distinct from `unsupported`: the
+   * engine can do it, the user's own connection setting says not to — see
+   * `src-tauri/src/shared/readonly.rs`.
+   */
+  | "readOnly";
 
 /** Shape of the rejection value from `invoke()` when a command fails. */
 export interface AppErrorPayload {

@@ -72,6 +72,10 @@ pub async fn drop_object(
     name: String,
     detail: Option<String>,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "drop database objects")
+        .await?;
     application::drop_object(
         state.manager(),
         &handle_id,
@@ -92,5 +96,9 @@ pub async fn run_object_ddl(
     handle_id: ConnectionHandleId,
     statements: Vec<String>,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "create or change database objects")
+        .await?;
     application::run_object_ddl(state.manager(), &handle_id, &statements).await
 }

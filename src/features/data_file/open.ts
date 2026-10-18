@@ -54,6 +54,10 @@ async function connectFile(file: DataFileRef): Promise<WorkspaceConnection> {
     // the shared plumbing expects a non-empty list.
     schemas: [{ name: "main", tableCount: 1, isSystem: false }],
     kind: "sql",
+    // The data-file viewer is an editor: its scratch database is private and
+    // in-memory, so there is nothing to protect and no registry entry that
+    // could ask for it.
+    readOnly: false,
   };
 }
 

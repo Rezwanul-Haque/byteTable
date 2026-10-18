@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import { appErrorMessage } from "../../../../shared/api/error";
 import { useT } from "../../../../shared/i18n/useT";
 import { Btn } from "../../../../shared/ui/Btn";
+import { useReadOnly } from "../../../../shared/ui/readOnlyContext";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { Icon } from "../../../../shared/ui/Icon";
 import { useToast } from "../../../../shared/ui/toastContext";
@@ -47,6 +48,9 @@ export function MongoStructure({
   const [unique, setUnique] = useState(false);
   const [editingValidator, setEditingValidator] = useState(false);
   const [validatorText, setValidatorText] = useState("");
+  // Read-only workspace: the schema/index/validation views stay readable;
+  // creating an index and writing a validator do not.
+  const readOnly = useReadOnly();
 
   useEffect(() => {
     let live = true;
@@ -244,7 +248,7 @@ export function MongoStructure({
                 </Btn>
               </div>
             ) : (
-              <div className="mg-add-index">
+              <div className="mg-add-index" hidden={readOnly}>
                 <Btn icon="add" variant="tonal" small onClick={() => setCreating(true)}>
                   {t("mongo.createIndex")}
                 </Btn>
@@ -282,17 +286,19 @@ export function MongoStructure({
                   <Icon name="verified" size={15} style={{ color: "var(--accent)" }} />{" "}
                   {t("mongo.validatorLabel")} <span className="mg-val-level">strict · error</span>
                   <div style={{ flex: 1 }} />
-                  <Btn
-                    icon="edit"
-                    variant="text"
-                    small
-                    onClick={() => {
-                      setValidatorText(JSON.stringify(validator, null, 2));
-                      setEditingValidator(true);
-                    }}
-                  >
-                    {t("mongo.edit")}
-                  </Btn>
+                  {readOnly ? null : (
+                    <Btn
+                      icon="edit"
+                      variant="text"
+                      small
+                      onClick={() => {
+                        setValidatorText(JSON.stringify(validator, null, 2));
+                        setEditingValidator(true);
+                      }}
+                    >
+                      {t("mongo.edit")}
+                    </Btn>
+                  )}
                 </div>
                 <pre className="ddl-block">{JSON.stringify(validator, null, 2)}</pre>
               </>
@@ -303,19 +309,21 @@ export function MongoStructure({
                   {t("mongo.noValidationPre")}
                   <b>{coll}</b>
                 </div>
-                <Btn
-                  icon="add"
-                  variant="tonal"
-                  small
-                  onClick={() => {
-                    setValidatorText(
-                      '{\n  "$jsonSchema": {\n    "bsonType": "object",\n    "required": [],\n    "properties": {}\n  }\n}',
-                    );
-                    setEditingValidator(true);
-                  }}
-                >
-                  {t("mongo.addValidator")}
-                </Btn>
+                {readOnly ? null : (
+                  <Btn
+                    icon="add"
+                    variant="tonal"
+                    small
+                    onClick={() => {
+                      setValidatorText(
+                        '{\n  "$jsonSchema": {\n    "bsonType": "object",\n    "required": [],\n    "properties": {}\n  }\n}',
+                      );
+                      setEditingValidator(true);
+                    }}
+                  >
+                    {t("mongo.addValidator")}
+                  </Btn>
+                )}
               </div>
             )}
           </div>

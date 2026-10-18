@@ -23,6 +23,7 @@ import { Btn } from "../../../../shared/ui/Btn";
 import { EngineBadge } from "../../../../shared/ui/EngineBadge";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
+import { useReadOnly } from "../../../../shared/ui/readOnlyContext";
 import { useToast } from "../../../../shared/ui/toastContext";
 import { LanguageChip } from "../../../../shared/ui/LanguageChip";
 import type { KvDbInfo } from "../../../connections/api";
@@ -167,6 +168,9 @@ export function RedisSidebar(props: RedisSidebarProps) {
   const [selectMode, setSelectMode] = useState(false);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [deleteOpen, setDeleteOpen] = useState(false);
+  // Read-only workspace: scanning, copying and exporting keys stay; DEL (per
+  // key and bulk) and the new-key composer do not.
+  const readOnly = useReadOnly();
   const toast = useToast();
   const isProduction = envLabel === "production";
 
@@ -481,17 +485,24 @@ export function RedisSidebar(props: RedisSidebarProps) {
                 void copyKeyValue(name);
               }}
             />
-            <IconBtn
-              icon="delete"
-              size={12}
-              danger
-              className="rkey-del"
-              title={t("redis.delKeyBtn")}
-              onClick={(e) => {
-                e.stopPropagation();
-                void deleteKey(name);
-              }}
-            />
+            {/* An empty slot, not nothing: the button is hover-revealed, so
+                its box is part of the row either way — dropping it would slide
+                every key's TTL chip left when the mode is toggled. */}
+            {readOnly ? (
+              <span className="rkey-slot" aria-hidden="true" />
+            ) : (
+              <IconBtn
+                icon="delete"
+                size={12}
+                danger
+                className="rkey-del"
+                title={t("redis.delKeyBtn")}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void deleteKey(name);
+                }}
+              />
+            )}
           </>
         ) : null}
         <span className={"rkey-ttl" + (ttl >= 0 ? " live" : "")}>{humanTTL(ttl)}</span>
@@ -916,14 +927,16 @@ export function RedisSidebar(props: RedisSidebarProps) {
             disabled={selectedKeys.size === 0}
             onClick={() => void exportSelectedCsv()}
           />
-          <IconBtn
-            icon="delete"
-            size={15}
-            title={t("redis.deleteSelected")}
-            className="rkey-selbar-del"
-            disabled={selectedKeys.size === 0}
-            onClick={() => setDeleteOpen(true)}
-          />
+          {readOnly ? null : (
+            <IconBtn
+              icon="delete"
+              size={15}
+              title={t("redis.deleteSelected")}
+              className="rkey-selbar-del"
+              disabled={selectedKeys.size === 0}
+              onClick={() => setDeleteOpen(true)}
+            />
+          )}
         </div>
       ) : null}
 

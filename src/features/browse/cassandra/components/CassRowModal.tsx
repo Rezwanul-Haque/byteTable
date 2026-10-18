@@ -11,6 +11,7 @@ import { useT } from "../../../../shared/i18n/useT";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
+import { useReadOnly } from "../../../../shared/ui/readOnlyContext";
 import { useToast } from "../../../../shared/ui/toastContext";
 import {
   cassDeleteRow,
@@ -53,6 +54,7 @@ export function CassRowModal({
   onSaved,
 }: CassRowModalProps) {
   const t = useT();
+  const readOnly = useReadOnly();
   const toast = useToast();
   const keyCols = new Set(keyColumns(table));
   const [draft, setDraft] = useState<Row>(() => {
@@ -243,7 +245,7 @@ export function CassRowModal({
           </div>
         ) : null}
         <div className="modal-actions ddb-item-actions">
-          {!isNew ? (
+          {!isNew && !readOnly ? (
             <button className="btn btn-danger-text" onClick={() => void doDelete()} disabled={busy}>
               <Icon name="delete" size={15} /> {t("cass.row.delete")}
             </button>
@@ -252,14 +254,17 @@ export function CassRowModal({
           <Btn variant="text" onClick={onClose}>
             {t("cass.row.cancel")}
           </Btn>
-          <Btn
-            variant="filled"
-            icon="check"
-            disabled={!dirty || busy}
-            onClick={() => void doSave()}
-          >
-            {isNew ? t("cass.row.insertBtn") : t("cass.row.save")}
-          </Btn>
+          {/* Read-only: the modal is a row viewer, so Cancel is the only exit. */}
+          {readOnly ? null : (
+            <Btn
+              variant="filled"
+              icon="check"
+              disabled={!dirty || busy}
+              onClick={() => void doSave()}
+            >
+              {isNew ? t("cass.row.insertBtn") : t("cass.row.save")}
+            </Btn>
+          )}
         </div>
       </div>
     </div>

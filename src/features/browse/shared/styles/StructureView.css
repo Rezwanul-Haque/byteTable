@@ -375,8 +375,14 @@ body.col-resizing .structure-rail-resizer::after {
   width: 30px;
 }
 
+/* Block-level, not inline-flex, and that matters: this cell's only child
+   decides the row's height. An INLINE box is placed against the text baseline,
+   and an EMPTY one (the read-only slot below) baselines on its bottom edge —
+   so it sits a full 22px above the baseline and makes the line box ~4px taller
+   than the button does, which is the row jumping on a read-only toggle. As a
+   block box the cell is simply 22px + padding, whichever child is in it. */
 .st-drop {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
   width: 22px;
@@ -385,6 +391,15 @@ body.col-resizing .structure-rail-resizer::after {
   color: var(--text-faint);
   opacity: 0;
   transition: opacity 0.1s;
+}
+
+/* Holds `.st-drop`'s place in a read-only workspace — see the note in the JSX.
+   Same box, same display type, so the column keeps its width AND the row keeps
+   its height. */
+.st-drop-slot {
+  display: block;
+  width: 22px;
+  height: 22px;
 }
 
 .st-editable-table tbody tr:hover .st-drop {
@@ -555,6 +570,9 @@ body.col-resizing .structure-rail-resizer::after {
   display: flex;
   align-items: center;
   gap: 8px;
+  /* Height of the hover-revealed `.card-drop`, which is absent in a read-only
+     workspace — the card must not resize when it goes. */
+  min-height: 20px;
   flex-wrap: wrap;
   word-break: break-all;
 }
@@ -640,6 +658,10 @@ body.col-resizing .structure-rail-resizer::after {
   gap: 7px;
   width: 100%;
   padding: 9px 10px;
+  /* 20px `.rail-add` + 18px padding. The add affordance is absent in a
+     read-only workspace, and without this floor every accordion head would
+     shrink with it — see the note on `.obj-sec-head`. */
+  min-height: 38px;
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
@@ -697,6 +719,15 @@ body.col-resizing .structure-rail-resizer::after {
   flex: none;
 }
 
+/* Holds a hover-revealed action's place where there is no action (a read-only
+   workspace): the control is invisible until hover anyway, so keeping its box
+   is what the row already looked like. */
+.rail-add-slot {
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+
 .rail-add:hover {
   color: var(--accent);
   background: var(--bg2);
@@ -718,6 +749,12 @@ body.col-resizing .structure-rail-resizer::after {
 
 .structure-card:hover .card-drop {
   opacity: 1;
+}
+
+.card-drop-slot {
+  width: 20px;
+  height: 20px;
+  flex: none;
 }
 
 .card-drop:hover {

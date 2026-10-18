@@ -10,6 +10,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { save } from "@tauri-apps/plugin-dialog";
 
 import { Btn } from "../../../shared/ui/Btn";
+import { useReadOnly } from "../../../shared/ui/readOnlyContext";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { ENV_COLOR } from "../../../shared/ui/envColors";
@@ -207,6 +208,7 @@ export function ObjectExplorer({
   const [sel, setSel] = useState<Set<string>>(() => new Set());
   const [copied, setCopied] = useState("");
   const [dropOpen, setDropOpen] = useState(false);
+  const readOnly = useReadOnly();
   const [dropping, setDropping] = useState(false);
 
   // Eager-load every class list (for counts + instant facet switches).
@@ -624,14 +626,18 @@ export function ObjectExplorer({
           <Btn icon="download" variant="text" onClick={() => void exportDdl()}>
             {t("obj.exportDdl")}
           </Btn>
-          <Btn
-            icon="delete"
-            variant="text"
-            className="obj-drop-btn"
-            onClick={() => setDropOpen(true)}
-          >
-            {t("obj.dropEllipsis")}
-          </Btn>
+          {/* Selecting objects to export their DDL is still useful read-only;
+              bulk-dropping them is not on offer. */}
+          {readOnly ? null : (
+            <Btn
+              icon="delete"
+              variant="text"
+              className="obj-drop-btn"
+              onClick={() => setDropOpen(true)}
+            >
+              {t("obj.dropEllipsis")}
+            </Btn>
+          )}
         </div>
       ) : null}
 

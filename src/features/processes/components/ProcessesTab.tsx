@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEven
 
 import { appErrorMessage } from "../../../shared/api/error";
 import { Icon } from "../../../shared/ui/Icon";
+import { useReadOnly } from "../../../shared/ui/readOnlyContext";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { ENV_COLOR } from "../../../shared/ui/envColors";
 import { normalizeEnv, type Engine } from "../../../shared/types";
@@ -62,6 +63,7 @@ export function ProcessesTab({
   const [auto, setAuto] = useState(true);
   const [sel, setSel] = useState<Set<string>>(() => new Set());
   const [killTarget, setKillTarget] = useState<ProcessInfo[] | null>(null);
+  const readOnly = useReadOnly();
   const [colW, setColW] = useState<Record<string, number>>({});
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -280,9 +282,16 @@ export function ProcessesTab({
             {tr("proc.clear")}
           </button>
           <div style={{ flex: 1 }}></div>
-          <button className="btn btn-danger proc-kill-sel" onClick={() => setKillTarget(selProcs)}>
-            <Icon name="dangerous" size={15} /> <span>{tr("proc.killSelected")}</span>
-          </button>
+          {/* Killing a session is a server-state change, so it goes with the
+              other writes in a read-only workspace. The list itself stays. */}
+          {readOnly ? null : (
+            <button
+              className="btn btn-danger proc-kill-sel"
+              onClick={() => setKillTarget(selProcs)}
+            >
+              <Icon name="dangerous" size={15} /> <span>{tr("proc.killSelected")}</span>
+            </button>
+          )}
         </div>
       ) : null}
       <div className="proc-grid-wrap">
@@ -351,8 +360,14 @@ export function ProcessesTab({
               <div className="dg-td proc-kill-cell">
                 <button
                   className="proc-kill"
-                  title={p.isSelf ? tr("proc.ownConn") : tr("proc.kill")}
-                  disabled={p.isSelf}
+                  title={
+                    readOnly
+                      ? tr("ws.readOnly.title")
+                      : p.isSelf
+                        ? tr("proc.ownConn")
+                        : tr("proc.kill")
+                  }
+                  disabled={p.isSelf || readOnly}
                   onClick={(e) => {
                     e.stopPropagation();
                     setKillTarget([p]);

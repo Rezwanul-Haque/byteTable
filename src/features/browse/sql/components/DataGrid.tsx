@@ -72,6 +72,7 @@ import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { CopyButton } from "../../../../shared/ui/CopyButton";
 import { Modal, ModalActions, ModalTitle } from "../../../../shared/ui/Modal";
+import { useReadOnly } from "../../../../shared/ui/readOnlyContext";
 import { useToast } from "../../../../shared/ui/toastContext";
 import { useT } from "../../../../shared/i18n/useT";
 import { useContextMenu } from "../../../../shared/hooks/useContextMenu";
@@ -526,6 +527,11 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   // --- inline edit -----------------------------------------------------
   const toast = useToast();
   const t = useT();
+  // A read-only workspace makes the whole grid browse-only: no cell editor, no
+  // staged rows, no bulk delete. The backend refuses those commands anyway —
+  // this is so the UI never invites one. (`workspace`-prefixed to keep it
+  // distinct from the per-cell `readOnlyReason` below.)
+  const workspaceReadOnly = useReadOnly();
   const [editing, setEditing] = useState<EditState | null>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
   // Enter then blur must not double-commit one edit session.
@@ -965,8 +971,13 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   // A real cell is editable when the table has a pk, the cell's own column is
   // NOT a pk column, and the row's pk values are all present. Staged-row cells
   // are always editable (no commit until save).
+  //
+  // A read-only workspace is checked first and reported the same way, so the
+  // cell's own tooltip explains why it will not open — one mechanism for "you
+  // cannot edit this", rather than a silently dead double-click.
   const readOnlyReason = useCallback(
     (rowIndex: number, ci: number): string | null => {
+      if (workspaceReadOnly) return t("ws.readOnly.title");
       if (!hasPk) return t("grid.roNoPk");
       const colName = columns[ci]?.name;
       if (colName && colMeta.get(colName)?.pk) return t("grid.roPkCol");
@@ -974,7 +985,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       if (!row || buildPk(row) === null) return t("grid.roNoKey");
       return null;
     },
-    [hasPk, columns, colMeta, buildPk, t],
+    [workspaceReadOnly, hasPk, columns, colMeta, buildPk, t],
   );
 
   // The displayed value for a real cell = pending override (if any) else cache.
@@ -1500,6 +1511,10 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   // Save (⌘S / Save button). Folds in an open (un-blurred) inline edit, then
   // either runs the batch or parks it on the production confirm.
   const save = useCallback(() => {
+    // Nothing can be staged in a read-only workspace, but ⌘S is a window
+    // listener and a restored session can carry staged rows from a writable
+    // one — so the commit path checks too.
+    if (workspaceReadOnly) return;
     // Effective staging = current state + any open inline edit, applied without
     // waiting for the async setState the blur/Enter path would do.
     let edits = pendingEdits;
@@ -1549,6 +1564,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     }
     runSave(sql, nNew, nUpdated);
   }, [
+    workspaceReadOnly,
     editing,
     columns,
     colMeta,
@@ -1574,6 +1590,9 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
 
   // Add a staged new row at the top of page 0 (prototype `addRow`).
   const addRow = useCallback(() => {
+    // Also reached by ⌘I and the toolbar's "+", which is why the guard lives
+    // here rather than only on the button.
+    if (workspaceReadOnly) return;
     if (columns.length === 0) return;
     // Clear filter + jump to page 0 (table tab) and sort so the new row is
     // visible at the top.
@@ -1609,7 +1628,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     });
     stagedKeySeq.current += 1;
     setNewRows((prev) => [{ key: stagedKeySeq.current, values }, ...prev]);
-  }, [columns, colMeta, newRows, onAddRowReset]);
+  }, [workspaceReadOnly, columns, colMeta, newRows, onAddRowReset]);
 
   /**
    * Duplicate rows (M34 row menu): stage a copy of each, at the top of page 0,
@@ -2008,7 +2027,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         icon: "content_copy",
         // A staged row can be duplicated too; it just has nothing saved behind
         // it yet. Only an unloaded row (still shimmering) has nothing to copy.
-        disabled: keys.every((k) => valuesForKey(k) === null),
+        // Read-only: duplicating stages an insert that could never be saved.
+        disabled: workspaceReadOnly || keys.every((k) => valuesForKey(k) === null),
         onSelect: () => {
           const rows = orderedKeys(keys)
             .map(valuesForKey)
@@ -2197,6 +2217,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           column={cellModal.column}
           type={cellModal.type}
           value={cellModal.value}
+          readOnly={workspaceReadOnly}
           onClose={() => setCellModal(null)}
           onSave={(next) => {
             commitCellValue(cellModal.target, cellModal.col, next);
@@ -2213,6 +2234,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           value={cellModal.value}
           fk={cellModal.fk}
           handleId={handleId}
+          readOnly={workspaceReadOnly}
           onClose={() => setCellModal(null)}
           onSave={(next) => {
             commitCellValue(cellModal.target, cellModal.col, next);
@@ -2378,15 +2400,19 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
           <Btn icon="download" variant="tonal" small onClick={() => void exportSelectedCsv()}>
             {t("ws.grid.exportCsv")}
           </Btn>
-          <Btn
-            icon="delete"
-            variant="tonal"
-            small
-            className="dg-selbar-del"
-            onClick={() => setBulkDeleteOpen(true)}
-          >
-            {t("grid.deleteSelected")}
-          </Btn>
+          {/* Selecting rows to export is still useful read-only; deleting them
+              is not on offer. */}
+          {workspaceReadOnly ? null : (
+            <Btn
+              icon="delete"
+              variant="tonal"
+              small
+              className="dg-selbar-del"
+              onClick={() => setBulkDeleteOpen(true)}
+            >
+              {t("grid.deleteSelected")}
+            </Btn>
+          )}
         </div>
       ) : null}
       <div className="datagrid-wrap" ref={scrollRef}>
@@ -2496,8 +2522,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
                         }}
                         onDoubleClick={() => {
                           clearPendingHop();
-                          if (editable && json) openCellModal("json", target, ci, c);
-                          else if (editable && bin) openCellModal("binary", target, ci, c);
+                          if (json) openCellModal("json", target, ci, c);
+                          else if (bin) openCellModal("binary", target, ci, c);
                           else if (editable) startEdit(target, ci);
                         }}
                       >
@@ -2530,15 +2556,17 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
                             type={c.typeHint}
                             fk={fk}
                             onFkClick={fk ? (value, e) => onFkClick(fk, value, bin, e) : undefined}
+                            /* Opening these is a READ — the modals have their
+                               own view-only mode — so a read-only workspace
+                               keeps them. Dropping the handler would also
+                               re-render the chip as a span instead of a
+                               button, a layout change for a capability the
+                               user still has. */
                             onJsonClick={
-                              editable && json
-                                ? () => openCellModal("json", target, ci, c)
-                                : undefined
+                              json ? () => openCellModal("json", target, ci, c) : undefined
                             }
                             onBinClick={
-                              editable && bin
-                                ? () => openCellModal("binary", target, ci, c)
-                                : undefined
+                              bin ? () => openCellModal("binary", target, ci, c) : undefined
                             }
                           />
                         )}

@@ -176,6 +176,19 @@ interface WorkspacesFeatureState {
   renameWorkspace: (id: string, name: string) => void;
   recolorWorkspace: (id: string, color: string) => void;
   /**
+   * Turn ONE workspace's read-only mode on or off (the rail's toggle).
+   *
+   * Per workspace, not per connection: a schema sub-workspace inherits the flag
+   * from its parent when it is created and is independent from then on, so
+   * locking a schema you only ever browse does not lock the parent you work in
+   * (nor its siblings), and unlocking one does not unlock the others.
+   *
+   * Store-only. Pushing the mode to the backend is
+   * `useHandleReadOnlySync`'s job — the handle can only hold one mode, so it
+   * holds the ACTIVE workspace's, and that hook is its single writer.
+   */
+  setWorkspaceReadOnly: (id: string, readOnly: boolean) => void;
+  /**
    * Merge a patch into a workspace's per-workspace UI state (`ui`) — the
    * action the WorkspaceUiState doc promises (M3: sidebar schema +
    * expanded tables).
@@ -480,7 +493,7 @@ function stringifySeed(value: CellValue): string {
 function patchWorkspace(
   workspaces: Workspace[],
   id: string,
-  patch: Partial<Pick<Workspace, "name" | "color" | "schemas">>,
+  patch: Partial<Pick<Workspace, "name" | "color" | "schemas" | "readOnly">>,
 ): Workspace[] {
   return workspaces.map((ws) => (ws.id === id ? { ...ws, ...patch } : ws));
 }
@@ -755,6 +768,9 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
 
   recolorWorkspace: (id, color) =>
     set((state) => ({ workspaces: patchWorkspace(state.workspaces, id, { color }) })),
+
+  setWorkspaceReadOnly: (id, readOnly) =>
+    set((state) => ({ workspaces: patchWorkspace(state.workspaces, id, { readOnly }) })),
 
   patchWorkspaceUi: (id, patch) =>
     set((state) => ({

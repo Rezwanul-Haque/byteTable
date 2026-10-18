@@ -32,6 +32,10 @@ pub async fn row_update(
     handle_id: ConnectionHandleId,
     req: UpdateCellRequest,
 ) -> Result<UpdateResult, AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "change cell values")
+        .await?;
     application::update_cell(state.manager(), &handle_id, req).await
 }
 
@@ -45,6 +49,10 @@ pub async fn rows_delete(
     handle_id: ConnectionHandleId,
     req: DeleteRowsRequest,
 ) -> Result<DeleteRowsResult, AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "delete rows")
+        .await?;
     application::delete_rows(state.manager(), &handle_id, req).await
 }
 
@@ -62,6 +70,10 @@ pub async fn truncate_table(
     table: String,
     force: bool,
 ) -> Result<TruncateResult, AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "empty tables")
+        .await?;
     application::truncate_table(state.manager(), &handle_id, &schema, &table, force).await
 }
 
@@ -82,6 +94,10 @@ pub async fn drop_table(
     table: String,
     force: bool,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "drop tables")
+        .await?;
     application::drop_table(state.manager(), &handle_id, &schema, &table, force).await
 }
 
@@ -97,6 +113,10 @@ pub async fn drop_schema(
     handle_id: ConnectionHandleId,
     schema: String,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "empty schemas")
+        .await?;
     application::drop_schema(state.manager(), &handle_id, &schema).await
 }
 
@@ -109,6 +129,10 @@ pub async fn create_schema(
     handle_id: ConnectionHandleId,
     schema: String,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "create schemas")
+        .await?;
     application::create_schema(state.manager(), &handle_id, &schema).await
 }
 
@@ -127,5 +151,9 @@ pub async fn delete_schema(
     handle_id: ConnectionHandleId,
     schema: String,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "delete schemas")
+        .await?;
     application::delete_schema(state.manager(), &handle_id, &schema).await
 }

@@ -67,6 +67,10 @@ pub async fn generate_run(
     seed: Option<u64>,
     on_progress: Channel<GenProgress>,
 ) -> Result<GenerateSummary, AppError> {
+    conns
+        .manager()
+        .ensure_writable(&handle_id, "generate rows")
+        .await?;
     let cancel = gen.register(&run_id);
     let progress = move |p: GenProgress| {
         let _ = on_progress.send(p);

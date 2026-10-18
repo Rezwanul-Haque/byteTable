@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 
 import { Icon } from "../../../shared/ui/Icon";
 import type { Engine, Env } from "../../../shared/types";
+import { useReadOnly } from "../../../shared/ui/readOnlyContext";
 import { useToast } from "../../../shared/ui/toastContext";
 import { useT } from "../../../shared/i18n/useT";
 import type { StringKey } from "../../../shared/i18n";
@@ -69,6 +70,7 @@ export function SidebarObjectGroups({
   // Accordion: only one section open at a time.
   const [openSec, setOpenSec] = useState<DbObjectKind | null>(null);
   const [dropTarget, setDropTarget] = useState<DbObjectInfo | null>(null);
+  const readOnly = useReadOnly();
   const [dropping, setDropping] = useState(false);
 
   // Eager-load every class' list so we know counts (to hide zero-count classes)
@@ -152,17 +154,28 @@ export function SidebarObjectGroups({
                 </span>
               ) : null}
               <span className="obj-sec-count">{list?.length ?? ""}</span>
-              <button
-                type="button"
-                className="sec-new-btn"
-                title={t("obj.newObject", { label: t(KIND_KEY[kind]) })}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  openSqlTabWith(newObjectTemplate(engine, kind));
-                }}
-              >
-                <Icon name="add" size={14} />
-              </button>
+              {/* Both of this panel's write paths go away in a read-only
+                  workspace: "New …" only exists to open a CREATE template, and
+                  the row's Drop would be refused by the backend.
+                  An empty slot takes the button's place rather than nothing at
+                  all: it is invisible until the row is hovered even when it IS
+                  there, so removing its box would move the count 26px right and
+                  resize every section header for no reason the user can see. */}
+              {readOnly ? (
+                <span className="sec-new-slot" aria-hidden="true" />
+              ) : (
+                <button
+                  type="button"
+                  className="sec-new-btn"
+                  title={t("obj.newObject", { label: t(KIND_KEY[kind]) })}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openSqlTabWith(newObjectTemplate(engine, kind));
+                  }}
+                >
+                  <Icon name="add" size={14} />
+                </button>
+              )}
             </div>
             {isOpen ? (
               <div className="obj-sec-body obj-sec-body-scroll">
@@ -189,17 +202,21 @@ export function SidebarObjectGroups({
                           style={{ color: "var(--text-faint)", flex: "none" }}
                         />
                         <span className="obj-item-name">{obj.name}</span>
-                        <button
-                          type="button"
-                          className="obj-item-drop"
-                          title={t("obj.item.drop", { name: obj.name })}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDropTarget(obj);
-                          }}
-                        >
-                          <Icon name="delete" size={13} />
-                        </button>
+                        {readOnly ? (
+                          <span className="obj-item-slot" aria-hidden="true" />
+                        ) : (
+                          <button
+                            type="button"
+                            className="obj-item-drop"
+                            title={t("obj.item.drop", { name: obj.name })}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDropTarget(obj);
+                            }}
+                          >
+                            <Icon name="delete" size={13} />
+                          </button>
+                        )}
                       </div>
                     ))}
                     {filter === "" && list.length > CAP ? (

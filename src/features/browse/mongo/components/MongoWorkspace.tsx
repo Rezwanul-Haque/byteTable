@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { isAppErrorPayload } from "../../../../shared/api/error";
 import { useT } from "../../../../shared/i18n/useT";
 import { ENV_COLOR } from "../../../../shared/ui/envColors";
+import { ReadOnlyTag } from "../../../../shared/ui/ReadOnlyTag";
 import { BuiltByCredit } from "../../../../shared/ui/BuiltByCredit";
 import { Icon } from "../../../../shared/ui/Icon";
 import { useBtCmd } from "../../../../shared/ui/btCmd";
@@ -497,6 +498,7 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
         >
           {env}
         </span>
+        {workspace.readOnly ? <ReadOnlyTag /> : null}
         <span className="status-dim">{serverVersion}</span>
         <span className="status-dim">
           <Icon name="database" size={11} /> {db}

@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { isAppErrorPayload } from "../../../../shared/api/error";
 import { useT } from "../../../../shared/i18n/useT";
 import { ENV_COLOR } from "../../../../shared/ui/envColors";
+import { ReadOnlyTag } from "../../../../shared/ui/ReadOnlyTag";
 import { BuiltByCredit } from "../../../../shared/ui/BuiltByCredit";
 import { ResourceMeter } from "../../../app_metrics/components/ResourceMeter";
 import { Icon } from "../../../../shared/ui/Icon";
@@ -494,6 +495,7 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
         >
           {env}
         </span>
+        {workspace.readOnly ? <ReadOnlyTag /> : null}
         <span className="status-dim">{serverVersion}</span>
         <span className="status-dim">
           <Icon name="hub" size={11} /> {ks}

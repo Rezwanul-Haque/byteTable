@@ -16,6 +16,7 @@ import { useT } from "../../../../shared/i18n/useT";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
+import { useReadOnly } from "../../../../shared/ui/readOnlyContext";
 import { Select } from "../../../../shared/ui/Select";
 import { useToast } from "../../../../shared/ui/toastContext";
 import {
@@ -250,6 +251,7 @@ function TsDocDrawer({
   onChanged: () => void;
 }) {
   const t = useT();
+  const readOnly = useReadOnly();
   const toast = useToast();
   const [text, setText] = useState(() => JSON.stringify(doc, null, 2));
   const [error, setError] = useState<string | null>(null);
@@ -314,6 +316,7 @@ function TsDocDrawer({
         className="ts-drawer-json"
         value={text}
         spellCheck={false}
+        readOnly={readOnly}
         onChange={(e) => setText(e.target.value)}
       />
       {error ? (
@@ -322,22 +325,28 @@ function TsDocDrawer({
         </div>
       ) : null}
       <div className="ts-drawer-foot">
-        <button
-          type="button"
-          className="btn btn-danger-text"
-          onClick={() => void remove()}
-          disabled={busy || !id}
-          title={id ? t("tsx.docs.deleteTitle") : t("tsx.docs.noIdToDelete")}
-        >
-          <Icon name="delete" size={14} /> {t("tsx.docs.delete")}
-        </button>
+        {/* Read-only: the drawer shows the document's JSON and nothing else —
+            upsert and delete are the only other things it does. */}
+        {readOnly ? null : (
+          <button
+            type="button"
+            className="btn btn-danger-text"
+            onClick={() => void remove()}
+            disabled={busy || !id}
+            title={id ? t("tsx.docs.deleteTitle") : t("tsx.docs.noIdToDelete")}
+          >
+            <Icon name="delete" size={14} /> {t("tsx.docs.delete")}
+          </button>
+        )}
         <div style={{ flex: 1 }} />
         <Btn variant="text" onClick={onClose}>
           {t("tsx.docs.cancel")}
         </Btn>
-        <Btn variant="filled" icon="save" onClick={() => void save()} disabled={busy}>
-          {t("tsx.docs.upsert")}
-        </Btn>
+        {readOnly ? null : (
+          <Btn variant="filled" icon="save" onClick={() => void save()} disabled={busy}>
+            {t("tsx.docs.upsert")}
+          </Btn>
+        )}
       </div>
     </div>
   );

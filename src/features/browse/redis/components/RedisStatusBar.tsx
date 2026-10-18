@@ -5,6 +5,8 @@
 // in here. (The prototype's "mock engine" tag is dropped in production.)
 
 import { EnvTag } from "../../../../shared/ui/EnvTag";
+import { ReadOnlyTag } from "../../../../shared/ui/ReadOnlyTag";
+import { useReadOnly } from "../../../../shared/ui/readOnlyContext";
 import { BuiltByCredit } from "../../../../shared/ui/BuiltByCredit";
 import { ResourceMeter } from "../../../app_metrics/components/ResourceMeter";
 import { Icon } from "../../../../shared/ui/Icon";
@@ -56,6 +58,9 @@ export function RedisStatusBar(props: RedisStatusBarProps) {
     onOpenProcesses,
   } = props;
   const t = useT();
+  // From the context rather than the prop list: the mode belongs to the whole
+  // workspace, and every surface that shows or acts on it reads it the same way.
+  const readOnly = useReadOnly();
 
   const clusterKeys = cluster ? totalKeys(cluster.shards) : null;
   // The node this connection is attached to, per CLUSTER NODES' `myself` flag.
@@ -70,6 +75,7 @@ export function RedisStatusBar(props: RedisStatusBarProps) {
       <span className="ws-chip" style={{ background: workspaceColor }} />
       <span className="status-strong">{workspaceName}</span>
       <EnvTag env={env} />
+      {readOnly ? <ReadOnlyTag /> : null}
       <span className="status-dim">{serverVersion}</span>
       {isTunneled ? (
         <span className="status-dim status-tunnel" title={tunnelHint}>

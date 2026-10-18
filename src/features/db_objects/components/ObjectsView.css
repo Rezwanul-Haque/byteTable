@@ -215,6 +215,12 @@
   align-items: center;
   gap: 7px;
   padding: 6px 8px 5px 4px;
+  /* 19px `.sec-new-btn` + 11px padding. Pinned because the tallest thing in
+     this row is that button, and it is not always there: it is hidden in a
+     read-only workspace, and without a floor every section would quietly lose
+     3px — four sections' worth of the panel jumping on a toggle. A row's
+     height should not be an accident of which optional controls it carries. */
+  min-height: 30px;
   cursor: pointer;
   user-select: none;
   border-radius: 6px;
@@ -276,6 +282,14 @@
 .obj-sec-head:hover .sec-new-btn {
   opacity: 1;
 }
+/* Holds the "+" button's place where there is no button to show (a read-only
+   workspace). The button is invisible until hover anyway, so an empty box of
+   the same size is exactly what the row looked like before. */
+.sec-new-slot {
+  width: 19px;
+  height: 19px;
+  flex: none;
+}
 .sec-new-btn:hover {
   color: var(--accent);
   background: var(--bg3);
@@ -292,6 +306,9 @@
   align-items: center;
   gap: 8px;
   padding: 5px 8px;
+  /* Same reason as `.obj-sec-head`: the hover-revealed drop button (17px) is
+     the tallest child and is absent in a read-only workspace. */
+  min-height: 27px;
   border-radius: 7px;
   cursor: pointer;
   user-select: none;
@@ -339,6 +356,13 @@
 }
 .obj-item:hover .obj-item-drop {
   opacity: 1;
+}
+/* The drop button's place, for a read-only workspace — see `.sec-new-slot`. */
+.obj-item-slot {
+  margin-left: auto;
+  width: 17px;
+  height: 17px;
+  flex: none;
 }
 .obj-item-drop:hover {
   color: var(--danger);

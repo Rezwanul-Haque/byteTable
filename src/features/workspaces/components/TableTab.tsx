@@ -31,6 +31,7 @@ import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Icon } from "../../../shared/ui/Icon";
 import { useT } from "../../../shared/i18n/useT";
 import { Select } from "../../../shared/ui/Select";
+import { useReadOnly } from "../../../shared/ui/readOnlyContext";
 import { useFilterShortcut } from "../../../shared/hooks/useFilterShortcut";
 import type { ColumnInfo, SortSpec } from "../../../shared/api/engine";
 import { useWorkspacesStore } from "../state";
@@ -74,6 +75,9 @@ export function TableTab({
   const engine = useWorkspacesStore(
     (state) => state.workspaces.find((ws) => ws.handleId === handleId)?.saved.engine,
   );
+  // Read-only workspace: the toolbar keeps browse + export and drops add-row,
+  // import, truncate and drop.
+  const readOnly = useReadOnly();
   const closeTab = useWorkspacesStore((state) => state.closeTab);
 
   // --- filter state (per-tab, persisted in workspace ui) ---------------
@@ -445,11 +449,15 @@ export function TableTab({
 
             <div style={{ flex: 1 }} />
 
-            <IconBtn
-              icon="add_box"
-              title={t("ws.table.addRow")}
-              onClick={() => gridRef.current?.addRow()}
-            />
+            {/* Nothing to add in a read-only workspace: the grid refuses to
+                stage a row and the backend would refuse the insert. */}
+            {readOnly ? null : (
+              <IconBtn
+                icon="add_box"
+                title={t("ws.table.addRow")}
+                onClick={() => gridRef.current?.addRow()}
+              />
+            )}
             <IconBtn
               icon="refresh"
               title={t("common.refresh")}
@@ -489,40 +497,46 @@ export function TableTab({
                   >
                     <Icon name="code" size={15} /> Export as SQL (schema + data)
                   </button>
-                  <button
-                    type="button"
-                    className="ctx-item"
-                    role="menuitem"
-                    onClick={() => {
-                      setActionsOpen(false);
-                      setImportOpen(true);
-                    }}
-                  >
-                    <Icon name="upload" size={15} /> Import data
-                  </button>
-                  <div className="ctx-sep" />
-                  <button
-                    type="button"
-                    className="ctx-item danger"
-                    role="menuitem"
-                    onClick={() => {
-                      setActionsOpen(false);
-                      setTruncateOpen(true);
-                    }}
-                  >
-                    <Icon name="delete_sweep" size={15} /> Truncate table
-                  </button>
-                  <button
-                    type="button"
-                    className="ctx-item danger"
-                    role="menuitem"
-                    onClick={() => {
-                      setActionsOpen(false);
-                      setDropOpen(true);
-                    }}
-                  >
-                    <Icon name="delete_forever" size={15} /> Drop table
-                  </button>
+                  {/* Export stays; everything that writes goes away in a
+                      read-only workspace. */}
+                  {readOnly ? null : (
+                    <>
+                      <button
+                        type="button"
+                        className="ctx-item"
+                        role="menuitem"
+                        onClick={() => {
+                          setActionsOpen(false);
+                          setImportOpen(true);
+                        }}
+                      >
+                        <Icon name="upload" size={15} /> Import data
+                      </button>
+                      <div className="ctx-sep" />
+                      <button
+                        type="button"
+                        className="ctx-item danger"
+                        role="menuitem"
+                        onClick={() => {
+                          setActionsOpen(false);
+                          setTruncateOpen(true);
+                        }}
+                      >
+                        <Icon name="delete_sweep" size={15} /> Truncate table
+                      </button>
+                      <button
+                        type="button"
+                        className="ctx-item danger"
+                        role="menuitem"
+                        onClick={() => {
+                          setActionsOpen(false);
+                          setDropOpen(true);
+                        }}
+                      >
+                        <Icon name="delete_forever" size={15} /> Drop table
+                      </button>
+                    </>
+                  )}
                 </div>
               ) : null}
             </div>

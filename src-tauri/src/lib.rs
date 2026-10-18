@@ -494,6 +494,7 @@ pub fn run() {
             features::connections::commands::connection_test,
             features::connections::commands::connection_open,
             features::connections::commands::connection_close,
+            features::connections::commands::connection_set_read_only,
             features::connections::commands::connection_schemas,
             features::connections::commands::connection_tables,
             features::connections::commands::query_run,

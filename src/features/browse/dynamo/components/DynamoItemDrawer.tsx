@@ -24,6 +24,7 @@ import { useT } from "../../../../shared/i18n/useT";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
+import { useReadOnly } from "../../../../shared/ui/readOnlyContext";
 import { Select } from "../../../../shared/ui/Select";
 import { useToast } from "../../../../shared/ui/toastContext";
 import type { DynamoItem, TableDescriptor } from "../api";
@@ -161,6 +162,7 @@ function AttrValueField({
   asTimestamp?: boolean;
 }) {
   const t = useT();
+  const readOnly = useReadOnly();
   if (type === "NULL") return <input className="ri-input" value="null" readOnly disabled />;
   // An `S` holding an ISO-8601 timestamp gets the calendar + clock editor the
   // SQL inspector gives a temporal column. DynamoDB declares no such type, so
@@ -210,6 +212,7 @@ function AttrValueField({
     <input
       className="ri-input"
       value={raw}
+      readOnly={readOnly}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
       spellCheck={false}
@@ -311,6 +314,7 @@ export function DynamoItemDrawer({
   const stageRef = useRef<() => void>(() => {});
   const toast = useToast();
   const t = useT();
+  const readOnly = useReadOnly();
 
   // Which shape the preview renders. Plain JSON is what the item IS; DynamoDB
   // JSON is what the wire carries — the form you paste into the AWS CLI, a
@@ -496,6 +500,9 @@ export function DynamoItemDrawer({
   // here: the save bar commits the batch, so an item can be composed, reviewed
   // beside the others, and abandoned without ever reaching the table.
   const stage = () => {
+    // The drawer is a reader in a read-only workspace: ⌘S and the footer are
+    // both routed through here, so one guard covers both.
+    if (readOnly) return;
     if (invalid) {
       toast(t("dyn.id.badJsonIn", { name: invalid }), "err");
       return;
@@ -649,7 +656,7 @@ export function DynamoItemDrawer({
             </div>
           ) : null}
         </div>
-        {onDelete ? (
+        {onDelete && !readOnly ? (
           <button
             type="button"
             className="ri-close ddb-ri-delete"
@@ -877,8 +884,8 @@ export function DynamoItemDrawer({
           is something to stage, and ONLY the hint when there is not. Showing
           both at once is what wrapped the footer onto three lines — the hint
           took the flex space the buttons needed. */}
-      <div className={"ri-foot" + (dirty || create ? " dirty" : "")}>
-        {dirty || create ? (
+      <div className={"ri-foot" + ((dirty || create) && !readOnly ? " dirty" : "")}>
+        {(dirty || create) && !readOnly ? (
           <>
             <Icon name="edit_note" size={15} style={{ color: "var(--accent)" }} />
             <span className="ri-foot-n">

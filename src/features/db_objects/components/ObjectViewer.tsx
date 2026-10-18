@@ -15,6 +15,7 @@ import { highlightSql } from "../../browse/shared/highlightSql";
 import { formatSql } from "../../workspaces/formatSql";
 import { appErrorMessage } from "../../../shared/api/error";
 import { Btn } from "../../../shared/ui/Btn";
+import { useReadOnly } from "../../../shared/ui/readOnlyContext";
 import { Icon } from "../../../shared/ui/Icon";
 import { ENV_COLOR } from "../../../shared/ui/envColors";
 import { useToast } from "../../../shared/ui/toastContext";
@@ -106,6 +107,9 @@ export function ObjectViewer({
   const [dropOpen, setDropOpen] = useState(false);
   const [dropping, setDropping] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  // Read-only workspace: the viewer is pure reading anyway — it keeps Browse
+  // data and Copy DDL, and drops Edit / Refresh / Drop.
+  const readOnly = useReadOnly();
 
   const refresh = async () => {
     setRefreshing(true);
@@ -236,7 +240,9 @@ export function ObjectViewer({
               {t("obj.browseData")}
             </Btn>
           ) : null}
-          {objectKind === "materialized_view" ? (
+          {/* REFRESH MATERIALIZED VIEW rewrites the view's stored rows, so it
+              is a write like any other. */}
+          {objectKind === "materialized_view" && !readOnly ? (
             <Btn
               icon={refreshing ? "hourglass_top" : "refresh"}
               variant="tonal"
@@ -247,21 +253,27 @@ export function ObjectViewer({
               {refreshing ? t("obj.refreshing") : t("obj.refresh")}
             </Btn>
           ) : null}
-          <Btn icon="edit" variant="tonal" small disabled={ddl === null} onClick={onEdit}>
-            {t("obj.editDef")}
-          </Btn>
+          {/* "Edit definition" exists only to open a CREATE OR REPLACE in the
+              editor; reading the DDL is what "Copy DDL" is for, and it stays. */}
+          {readOnly ? null : (
+            <Btn icon="edit" variant="tonal" small disabled={ddl === null} onClick={onEdit}>
+              {t("obj.editDef")}
+            </Btn>
+          )}
           <Btn icon="content_copy" variant="tonal" small disabled={ddl === null} onClick={copyDdl}>
             {t("obj.copyDdl")}
           </Btn>
-          <Btn
-            icon="delete"
-            variant="tonal"
-            small
-            className="obj-drop-btn"
-            onClick={() => setDropOpen(true)}
-          >
-            {t("obj.drop")}
-          </Btn>
+          {readOnly ? null : (
+            <Btn
+              icon="delete"
+              variant="tonal"
+              small
+              className="obj-drop-btn"
+              onClick={() => setDropOpen(true)}
+            >
+              {t("obj.drop")}
+            </Btn>
+          )}
         </div>
       </div>
 

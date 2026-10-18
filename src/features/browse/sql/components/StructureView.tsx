@@ -23,7 +23,16 @@
 // and bump this tab's grid refetch nonce so the data grid re-fetches with the
 // new columns when the user returns to Data mode.
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from "react";
 
 import { highlightSql } from "../../shared/highlightSql";
 import { useIntrospectionStore, tableMetaKey, tablesKey } from "../../../introspection/state";
@@ -44,6 +53,7 @@ import {
 } from "../../../structure/ops";
 import { appErrorMessage } from "../../../../shared/api/error";
 import { Btn } from "../../../../shared/ui/Btn";
+import { useReadOnly } from "../../../../shared/ui/readOnlyContext";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
@@ -64,6 +74,10 @@ interface StructureViewProps {
   /** The schema the workspace is on; the prefix is dropped for it (tab-title rule). */
   currentSchema: string;
 }
+
+/** Stable no-op for the read-only branch of `setEditingCell`: a fresh arrow
+ *  each render would change every cell's prop identity for nothing. */
+const NOOP_SET_CELL: Dispatch<SetStateAction<string | null>> = () => {};
 
 /** Normalize a typed column name the way the prototype did: trim, collapse
  *  non-word runs to `_`, lowercase. Keeps identifiers safe + matches the
@@ -148,7 +162,14 @@ export function StructureView({
   const [previewError, setPreviewError] = useState<string | null>(null);
   // Which cell is being edited: `${origin}:${kind}` or null. Plus the column to
   // auto-focus into name-edit right after Add column.
-  const [editingCell, setEditingCell] = useState<string | null>(null);
+  // Read-only workspace: the structure view stays fully readable (columns,
+  // indexes, FKs, DDL) and simply stops being an editor. `setEditingCell` is
+  // the one funnel every editable cell opens through, so neutering it here
+  // disables name / type / default / comment editing in one place.
+  const readOnly = useReadOnly();
+  const [editingCellState, setEditingCellState] = useState<string | null>(null);
+  const editingCell = readOnly ? null : editingCellState;
+  const setEditingCell = readOnly ? NOOP_SET_CELL : setEditingCellState;
   const [autoEditName, setAutoEditName] = useState<string | null>(null);
 
   // Fetch on mount/table change, AND re-fetch if the cached meta gets evicted
@@ -476,7 +497,10 @@ export function StructureView({
     setAutoEditName((n) => (n === name ? null : n));
     toast(t("stv.columnDiscarded", { name }));
     return true;
-  }, [ops, setOps, toast, t]);
+    // `setEditingCell` is one of two stable identities (the state setter, or
+    // the module-level no-op in a read-only workspace), so listing it costs
+    // nothing and keeps the hook honest.
+  }, [ops, setOps, setEditingCell, toast, t]);
 
   const applyRef = useRef(applyPending);
   applyRef.current = applyPending;
@@ -655,9 +679,11 @@ export function StructureView({
             <span className="columns-count">
               {q ? filteredCols.length + " " + t("common.of") + " " + colCount : colCount}
             </span>
-            <button type="button" className="add-col-btn" onClick={addColumn}>
-              <Icon name="add" size={14} /> {t("stv.addColumn")}
-            </button>
+            {readOnly ? null : (
+              <button type="button" className="add-col-btn" onClick={addColumn}>
+                <Icon name="add" size={14} /> {t("stv.addColumn")}
+              </button>
+            )}
             <IconBtn
               icon={railCollapsed ? "right_panel_open" : "right_panel_close"}
               size={16}
@@ -705,6 +731,7 @@ export function StructureView({
                       onChangeComment={changeComment}
                       onDrop={dropColumn}
                       onUndrop={undropColumn}
+                      readOnly={readOnly}
                     />
                   ))
                 )}
@@ -1057,6 +1084,9 @@ interface ColumnRowProps {
   onChangeComment: (col: WorkingColumn, raw: string) => void;
   onDrop: (col: WorkingColumn) => void;
   onUndrop: (col: WorkingColumn) => void;
+  /** Read-only workspace: locks the NULL toggle and drops the delete action
+   *  (the editable cells are already inert — see `setEditingCell`). */
+  readOnly: boolean;
 }
 
 function ColumnRow({
@@ -1075,6 +1105,7 @@ function ColumnRow({
   onChangeComment,
   onDrop,
   onUndrop,
+  readOnly,
 }: ColumnRowProps) {
   const cellId = (kind: string) => (col.origin ?? "new:" + col.name) + ":" + kind;
   const rowClass = (col.isNew ? "st-row-new" : "") + (col.markedForDrop ? " st-row-drop" : "");
@@ -1139,10 +1170,16 @@ function ColumnRow({
       <td className="st-null">
         <button
           type="button"
-          className={"st-null-toggle" + (col.pk ? " locked" : "")}
+          className={"st-null-toggle" + (col.pk || readOnly ? " locked" : "")}
           onClick={() => onToggleNullable(col)}
-          disabled={col.pk}
-          title={col.pk ? t("stv.pkNotNull") : t("stv.toggleNullable")}
+          disabled={col.pk || readOnly}
+          title={
+            readOnly
+              ? t("ws.readOnly.title")
+              : col.pk
+                ? t("stv.pkNotNull")
+                : t("stv.toggleNullable")
+          }
         >
           {col.nullable ? (
             <span className="cell-dim">NULL</span>
@@ -1197,7 +1234,13 @@ function ColumnRow({
         </td>
       ) : null}
       <td className="st-actions">
-        {col.pk ? null : col.markedForDrop ? (
+        {/* The drop control is invisible until the row is hovered, so its box is
+            part of the table's geometry either way. A pk row has never had one;
+            a read-only workspace keeps the empty slot instead, because dropping
+            it would resize this column and re-wrap every other one. */}
+        {col.pk ? null : readOnly ? (
+          <span className="st-drop-slot" aria-hidden="true" />
+        ) : col.markedForDrop ? (
           <button
             type="button"
             className="st-drop st-undrop"

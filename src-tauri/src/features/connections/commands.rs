@@ -42,6 +42,33 @@ fn clamp_row_limit(mut options: QueryOptions) -> QueryOptions {
     options
 }
 
+/// The read-only-workspace gate for the SQL editor: on a read-only handle,
+/// refuse the whole run unless every statement in it provably only reads (see
+/// `crate::shared::readonly`). A writable handle pays nothing — the
+/// classification only happens once the handle is known to be read-only.
+///
+/// All-or-nothing on purpose: a batch runs session-pinned, so letting the
+/// reads through and dropping the writes would execute half of what the user
+/// asked for and silently renumber their result tabs.
+async fn refuse_writes_in_read_only(
+    manager: &ConnectionManager,
+    handle_id: &ConnectionHandleId,
+    statements: &[String],
+) -> Result<(), AppError> {
+    if !manager.is_read_only(handle_id).await {
+        return Ok(());
+    }
+    if statements
+        .iter()
+        .all(|sql| crate::shared::readonly::sql_is_read_only(sql))
+    {
+        return Ok(());
+    }
+    Err(crate::shared::readonly::read_only_error(
+        "run a statement that changes data or structure",
+    ))
+}
+
 /// Managed state for the connections slice, registered in `lib.rs`.
 ///
 /// Commands depend only on ports (`ConnectionRepository`, the shared
@@ -187,6 +214,10 @@ fn connect_timeout(settings: &State<'_, SettingsState>) -> Duration {
 /// must be provided. For a saved id the secrets are sourced from the keychain
 /// (a transiently-typed `password` / `sshSecret` overrides, for first connect
 /// before save).
+///
+/// `read_only` asks for a read-only workspace for this session — useful for an
+/// ad-hoc open, or when the modal opens an entry it has not saved yet. It can
+/// only tighten: an entry saved read-only opens read-only regardless.
 #[tauri::command]
 pub async fn connection_open(
     state: State<'_, ConnectionsState>,
@@ -195,6 +226,7 @@ pub async fn connection_open(
     params: Option<ConnectionParams>,
     password: Option<String>,
     ssh_secret: Option<String>,
+    read_only: Option<bool>,
 ) -> Result<OpenedConnection, AppError> {
     let target = match (id, params) {
         (Some(id), None) => OpenTarget::SavedId(id),
@@ -218,8 +250,25 @@ pub async fn connection_open(
         target,
         &secrets,
         connect_timeout(&settings),
+        read_only.unwrap_or(false),
     )
     .await
+}
+
+/// Set a live session's read-only mode (the rail's workspace toggle).
+/// Session-scoped: the saved connection is not touched, so the next connect
+/// uses whatever the registry says.
+///
+/// The renderer calls this with the ACTIVE workspace's mode — read-only is
+/// per-workspace there, and a parent and its sub-workspaces share this handle,
+/// so the handle tracks whichever of them is on screen (`useHandleReadOnlySync`).
+#[tauri::command]
+pub async fn connection_set_read_only(
+    state: State<'_, ConnectionsState>,
+    handle_id: ConnectionHandleId,
+    read_only: bool,
+) -> Result<(), AppError> {
+    state.manager.set_read_only(&handle_id, read_only).await
 }
 
 #[tauri::command]
@@ -260,6 +309,7 @@ pub async fn query_run(
     sql: String,
     options: Option<QueryOptions>,
 ) -> Result<QueryResult, AppError> {
+    refuse_writes_in_read_only(&state.manager, &handle_id, std::slice::from_ref(&sql)).await?;
     application::run_query(
         &state.manager,
         &handle_id,
@@ -281,6 +331,7 @@ pub async fn query_run_batch(
     statements: Vec<String>,
     options: Option<QueryOptions>,
 ) -> Result<Vec<StatementOutcome>, AppError> {
+    refuse_writes_in_read_only(&state.manager, &handle_id, &statements).await?;
     application::run_batch(
         &state.manager,
         &handle_id,

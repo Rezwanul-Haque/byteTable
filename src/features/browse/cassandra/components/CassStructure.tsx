@@ -14,6 +14,7 @@ import { useT } from "../../../../shared/i18n/useT";
 import { Btn } from "../../../../shared/ui/Btn";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
+import { useReadOnly } from "../../../../shared/ui/readOnlyContext";
 import { useToast } from "../../../../shared/ui/toastContext";
 import {
   cassCreateIndex,
@@ -175,6 +176,9 @@ export function CassStructure({
   onChanged,
 }: CassStructureProps) {
   const t = useT();
+  // Read-only workspace: columns, indexes, MVs and DDL stay readable; the
+  // create/drop affordances that stage CQL go.
+  const readOnly = useReadOnly();
   const toast = useToast();
   const [colQuery, setColQuery] = useState("");
   const [openSection, setOpenSection] = useState<"indexes" | "mvs" | "ddl" | null>("indexes");
@@ -464,19 +468,26 @@ export function CassStructure({
               <Icon name="bolt" size={15} /> {t("cass.struct.secondaryIndexes")}{" "}
               <span className="rail-count">{idxCount}</span>
               <span style={{ flex: 1 }} />
-              <span
-                className="rail-add"
-                role="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setOpenSection("indexes");
-                  setAddingIndex(!addingIndex);
-                  setAddingMv(false);
-                }}
-                title={t("cass.struct.addIndex")}
-              >
-                <Icon name={addingIndex && openSection === "indexes" ? "close" : "add"} size={15} />
-              </span>
+              {readOnly ? (
+                <span className="rail-add-slot" aria-hidden="true" />
+              ) : (
+                <span
+                  className="rail-add"
+                  role="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setOpenSection("indexes");
+                    setAddingIndex(!addingIndex);
+                    setAddingMv(false);
+                  }}
+                  title={t("cass.struct.addIndex")}
+                >
+                  <Icon
+                    name={addingIndex && openSection === "indexes" ? "close" : "add"}
+                    size={15}
+                  />
+                </span>
+              )}
             </button>
             {openSection === "indexes" ? (
               <div className="acc-body">
@@ -496,13 +507,17 @@ export function CassStructure({
                         <div className="structure-card-name">
                           {idx.name} <span className="tag">2i</span>
                           <span style={{ flex: 1 }} />
-                          <button
-                            className="card-drop"
-                            title={t("cass.struct.dropIndex", { name: idx.name })}
-                            onClick={() => dropIndex(idx.name)}
-                          >
-                            <Icon name="delete" size={13} />
-                          </button>
+                          {readOnly ? (
+                            <span className="card-drop-slot" aria-hidden="true" />
+                          ) : (
+                            <button
+                              className="card-drop"
+                              title={t("cass.struct.dropIndex", { name: idx.name })}
+                              onClick={() => dropIndex(idx.name)}
+                            >
+                              <Icon name="delete" size={13} />
+                            </button>
+                          )}
                         </div>
                         <div className="structure-card-detail mg-mono">
                           {t("cass.struct.on")} {table.name} ({idx.target})
@@ -528,19 +543,23 @@ export function CassStructure({
               <Icon name="dvr" size={15} /> {t("cass.struct.materializedViews")}{" "}
               <span className="rail-count">{mvCount}</span>
               <span style={{ flex: 1 }} />
-              <span
-                className="rail-add"
-                role="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setOpenSection("mvs");
-                  setAddingMv(!addingMv);
-                  setAddingIndex(false);
-                }}
-                title={t("cass.struct.addMv")}
-              >
-                <Icon name={addingMv && openSection === "mvs" ? "close" : "add"} size={15} />
-              </span>
+              {readOnly ? (
+                <span className="rail-add-slot" aria-hidden="true" />
+              ) : (
+                <span
+                  className="rail-add"
+                  role="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setOpenSection("mvs");
+                    setAddingMv(!addingMv);
+                    setAddingIndex(false);
+                  }}
+                  title={t("cass.struct.addMv")}
+                >
+                  <Icon name={addingMv && openSection === "mvs" ? "close" : "add"} size={15} />
+                </span>
+              )}
             </button>
             {openSection === "mvs" ? (
               <div className="acc-body">
@@ -556,13 +575,17 @@ export function CassStructure({
                         <div className="structure-card-name">
                           {mv.name} <span className="tag">{t("cass.struct.view")}</span>
                           <span style={{ flex: 1 }} />
-                          <button
-                            className="card-drop"
-                            title={t("cass.struct.dropMv", { name: mv.name })}
-                            onClick={() => dropMv(mv.name)}
-                          >
-                            <Icon name="delete" size={13} />
-                          </button>
+                          {readOnly ? (
+                            <span className="card-drop-slot" aria-hidden="true" />
+                          ) : (
+                            <button
+                              className="card-drop"
+                              title={t("cass.struct.dropMv", { name: mv.name })}
+                              onClick={() => dropMv(mv.name)}
+                            >
+                              <Icon name="delete" size={13} />
+                            </button>
+                          )}
                         </div>
                         <div className="structure-card-detail mg-mono">
                           {t("cass.struct.primaryKey")} (({mv.partitionKey.join(", ")})

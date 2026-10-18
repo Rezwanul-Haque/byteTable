@@ -51,5 +51,9 @@ pub async fn schema_diff_apply(
     schema: String,
     statements: Vec<MigrationStatement>,
 ) -> Result<u64, AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "apply schema changes")
+        .await?;
     application::apply_migration(state.manager(), &handle_id, &schema, &statements).await
 }

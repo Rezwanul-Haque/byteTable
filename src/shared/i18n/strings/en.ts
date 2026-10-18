@@ -266,6 +266,16 @@ export const en = {
   "ws.rail.nameLabel": "Name",
   "ws.rail.colorLabel": "Color",
   "ws.rail.setColorAria": "Set color {color}",
+  // The rail popover's read-only toggle. `stateOn`/`stateOff` are the pill that
+  // reports the CURRENT state, so the row never has to be read as an imperative.
+  "ws.rail.ro.label": "Read-only",
+  "ws.rail.ro.stateOn": "On",
+  "ws.rail.ro.stateOff": "Off",
+  "ws.rail.ro.note":
+    "Applies to this workspace only, until you reconnect. A schema workspace starts from its parent's setting, then keeps its own. The connection's own setting lives in its connect form.",
+  "ws.rail.ro.on": "Workspace is now read-only",
+  "ws.rail.ro.off": "Workspace can write again",
+  "ws.rail.ro.fail": "Could not change the read-only mode.",
   "ws.rail.keep": "Keep this workspace",
   "ws.rail.closeScope": "Close {noun} workspace",
   "ws.rail.remove": "Remove workspace",
@@ -3267,6 +3277,16 @@ export const en = {
   "conn.setColor": "Set color {color}",
   "conn.envWarn":
     "Production — destructive actions (DROP, DELETE, TRUNCATE, FLUSHDB) will require confirmation.",
+  "conn.readOnly": "Read-only workspace",
+  // The title-row chip: short enough to sit beside "Import From URL"; the
+  // explanation lives in the info hint next to it (conn.readOnly.hint).
+  "conn.readOnly.chip": "Read-only",
+  // ws.readOnly* — the badge and refusals shown inside a read-only workspace.
+  "ws.readOnly": "Read-only",
+  "ws.readOnly.title": "Read-only workspace — edits, deletes and DDL are blocked",
+  "ws.readOnly.blocked": "This workspace is read-only.",
+  "conn.readOnly.hint":
+    "Browse, query and export only. Edits, deletes and DDL are refused for the whole workspace — its schema sub-workspaces included.",
   "conn.tab.general": "General",
   "conn.tab.ssh": "SSH tunnel",
   "conn.tabsAria": "Server connection settings",

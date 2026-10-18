@@ -21,6 +21,7 @@ import { isAppErrorPayload } from "../../../../shared/api/error";
 import { useT } from "../../../../shared/i18n/useT";
 import type { StringKey } from "../../../../shared/i18n/strings/en";
 import { Icon } from "../../../../shared/ui/Icon";
+import { ReadOnlyTag } from "../../../../shared/ui/ReadOnlyTag";
 import { BuiltByCredit } from "../../../../shared/ui/BuiltByCredit";
 import { ResourceMeter } from "../../../app_metrics/components/ResourceMeter";
 import { SidebarResizer } from "../../../../shared/ui/SidebarResizer";
@@ -510,6 +511,7 @@ export function TypesenseWorkspace({ workspace }: { workspace: Workspace }) {
         >
           {env}
         </span>
+        {workspace.readOnly ? <ReadOnlyTag /> : null}
         <span className="status-dim">{workspace.info.serverVersion}</span>
         {collection ? (
           <span className="status-dim">

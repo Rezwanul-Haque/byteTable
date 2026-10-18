@@ -11,6 +11,7 @@
 // command that would not have done what it claimed.
 
 import { Icon } from "../../../../shared/ui/Icon";
+import { useReadOnly } from "../../../../shared/ui/readOnlyContext";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { useT } from "../../../../shared/i18n/useT";
 import {
@@ -100,6 +101,7 @@ export function RedisClientInspector({
   onClose: () => void;
 }) {
   const t = useT();
+  const readOnly = useReadOnly();
   const risk = clientRisk(client);
   const line = infoLine(client);
   const typeColor = CLIENT_TYPE_COLOR[client.clientType] ?? "var(--text-faint)";
@@ -159,7 +161,10 @@ export function RedisClientInspector({
         </div>
       </div>
 
-      <div className="rc-inspect-foot">
+      {/* Every action in this footer changes server state (CLIENT NO-EVICT /
+          UNPAUSE / KILL), so a read-only workspace shows the inspector without
+          it. */}
+      <div className="rc-inspect-foot" hidden={readOnly}>
         <button
           type="button"
           className="rc-act"

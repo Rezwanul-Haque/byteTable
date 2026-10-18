@@ -13,6 +13,7 @@ import { connectionDetail } from "../../../connections/api";
 import { TerminalPanel } from "../../../console/components/TerminalPanel";
 import { shellLabel, usePanelStore } from "../../../console/state";
 import { ENV_COLOR } from "../../../../shared/ui/envColors";
+import { ReadOnlyTag } from "../../../../shared/ui/ReadOnlyTag";
 import { BuiltByCredit } from "../../../../shared/ui/BuiltByCredit";
 import { ResourceMeter } from "../../../app_metrics/components/ResourceMeter";
 import { Icon } from "../../../../shared/ui/Icon";
@@ -453,6 +454,7 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
         >
           {env}
         </span>
+        {workspace.readOnly ? <ReadOnlyTag /> : null}
         <span className="ddb-status-dim">{workspace.info.serverVersion}</span>
         <span className="ddb-status-dim">
           <Icon name="public" size={11} /> {detail}

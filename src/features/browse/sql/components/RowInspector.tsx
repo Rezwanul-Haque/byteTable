@@ -19,6 +19,7 @@ import type { CellValue, FkRef } from "../../../../shared/api/engine";
 import type { StringKey } from "../../../../shared/i18n";
 import { useT } from "../../../../shared/i18n/useT";
 import { Icon } from "../../../../shared/ui/Icon";
+import { useReadOnly } from "../../../../shared/ui/readOnlyContext";
 import { useToast } from "../../../../shared/ui/toastContext";
 import { CellContent } from "../../shared/components/GridCell";
 import {
@@ -74,6 +75,7 @@ function RowInspectorField({
   schemaName,
   tableName,
   stagedNew,
+  readOnly,
   handleId,
 }: {
   col: InspectorColumn;
@@ -92,6 +94,8 @@ function RowInspectorField({
    *  and a join table's whole pk is the user's to supply), so the pk lock below
    *  is for existing rows only. */
   stagedNew: boolean;
+  /** Read-only workspace: the field renders its value but accepts no input. */
+  readOnly: boolean;
   /** Connection, for the fk existence check in the key editors. */
   handleId?: string;
 }) {
@@ -410,6 +414,13 @@ function RowInspectorField({
             </span>
           </div>
         )
+      ) : readOnly ? (
+        // A read-only workspace locks every field the same way a pk is locked.
+        // `fieldset[disabled]` is the one wrapper the platform propagates to
+        // every nested input/textarea/button, whatever shape `body` took.
+        <fieldset className="ri-field-lock" disabled>
+          {body}
+        </fieldset>
       ) : (
         body
       )}
@@ -495,6 +506,10 @@ export function RowInspector({
   // active draft, an absent key means "unchanged".
   const [drafts, setDrafts] = useState<Map<number, CellValue>>(new Map());
   const t = useT();
+  // Read-only workspace: the drawer stays the best way to READ a wide row, so
+  // it keeps navigation, copy and refresh — only its fields stop taking input,
+  // which also means the "Stage changes" footer can never appear.
+  const readOnly = useReadOnly();
 
   // Reset drafts whenever the targeted row changes (nav / retarget / close).
   // Done during render (React's "adjust state on prop change" pattern, as in
@@ -733,6 +748,7 @@ export function RowInspector({
                 schemaName={schemaName}
                 tableName={tableName}
                 stagedNew={isStagedNew}
+                readOnly={readOnly}
                 handleId={handleId}
               />
             ))}

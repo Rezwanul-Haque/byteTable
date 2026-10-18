@@ -77,6 +77,10 @@ pub async fn kv_set_string(
     key: String,
     value: String,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "set values")
+        .await?;
     application::set_string(state.manager(), &handle_id, db, &key, &value).await
 }
 
@@ -89,6 +93,10 @@ pub async fn kv_hash_set(
     field: String,
     value: String,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "change hash fields")
+        .await?;
     application::hash_set(state.manager(), &handle_id, db, &key, &field, &value).await
 }
 
@@ -100,6 +108,10 @@ pub async fn kv_hash_del(
     key: String,
     field: String,
 ) -> Result<bool, AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "delete hash fields")
+        .await?;
     application::hash_del(state.manager(), &handle_id, db, &key, &field).await
 }
 
@@ -112,6 +124,10 @@ pub async fn kv_list_set(
     index: i64,
     value: String,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "change list items")
+        .await?;
     application::list_set(state.manager(), &handle_id, db, &key, index, &value).await
 }
 
@@ -123,6 +139,10 @@ pub async fn kv_set_add(
     key: String,
     member: String,
 ) -> Result<bool, AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "add set members")
+        .await?;
     application::set_add(state.manager(), &handle_id, db, &key, &member).await
 }
 
@@ -134,6 +154,10 @@ pub async fn kv_set_remove(
     key: String,
     member: String,
 ) -> Result<bool, AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "remove set members")
+        .await?;
     application::set_remove(state.manager(), &handle_id, db, &key, &member).await
 }
 
@@ -146,6 +170,10 @@ pub async fn kv_zset_add(
     member: String,
     score: f64,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "add sorted-set members")
+        .await?;
     application::zset_add(state.manager(), &handle_id, db, &key, &member, score).await
 }
 
@@ -157,6 +185,10 @@ pub async fn kv_zset_remove(
     key: String,
     member: String,
 ) -> Result<bool, AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "remove sorted-set members")
+        .await?;
     application::zset_remove(state.manager(), &handle_id, db, &key, &member).await
 }
 
@@ -167,6 +199,10 @@ pub async fn kv_delete_key(
     db: u8,
     key: String,
 ) -> Result<bool, AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "delete keys")
+        .await?;
     application::delete_key(state.manager(), &handle_id, db, &key).await
 }
 
@@ -178,6 +214,10 @@ pub async fn kv_rename_key(
     key: String,
     new_key: String,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "rename keys")
+        .await?;
     application::rename_key(state.manager(), &handle_id, db, &key, &new_key).await
 }
 
@@ -189,6 +229,10 @@ pub async fn kv_expire(
     key: String,
     seconds: i64,
 ) -> Result<bool, AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "change key expiry")
+        .await?;
     application::expire(state.manager(), &handle_id, db, &key, seconds).await
 }
 
@@ -199,6 +243,10 @@ pub async fn kv_persist(
     db: u8,
     key: String,
 ) -> Result<bool, AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "change key expiry")
+        .await?;
     application::persist(state.manager(), &handle_id, db, &key).await
 }
 
@@ -211,6 +259,10 @@ pub async fn kv_create_key(
     key_type: KeyType,
     initial: Option<String>,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "create keys")
+        .await?;
     application::create_key(
         state.manager(),
         &handle_id,
@@ -229,6 +281,16 @@ pub async fn kv_command(
     db: u8,
     args: Vec<String>,
 ) -> Result<RespReply, AppError> {
+    // The command palette can send anything, so what was typed decides: reads
+    // stay available in a read-only workspace, writers (and anything the
+    // allowlist cannot vouch for, including EVAL) are refused.
+    if state.manager().is_read_only(&handle_id).await
+        && !crate::shared::readonly::redis_command_is_read_only(&args)
+    {
+        return Err(crate::shared::readonly::read_only_error(
+            "run a command that changes data or server state",
+        ));
+    }
     application::run_command(state.manager(), &handle_id, db, args).await
 }
 
@@ -249,6 +311,10 @@ pub async fn kv_client_kill(
     filter: KvKillFilter,
     value: String,
 ) -> Result<u64, AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "disconnect clients")
+        .await?;
     application::client_kill(state.manager(), &handle_id, filter, &value).await
 }
 
@@ -258,6 +324,10 @@ pub async fn kv_client_kill_ids(
     handle_id: ConnectionHandleId,
     ids: Vec<i64>,
 ) -> Result<u64, AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "disconnect clients")
+        .await?;
     application::client_kill_ids(state.manager(), &handle_id, &ids).await
 }
 
@@ -267,6 +337,10 @@ pub async fn kv_client_no_evict(
     handle_id: ConnectionHandleId,
     on: bool,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "change server settings")
+        .await?;
     application::client_no_evict(state.manager(), &handle_id, on).await
 }
 
@@ -275,6 +349,10 @@ pub async fn kv_client_unpause(
     state: State<'_, ConnectionsState>,
     handle_id: ConnectionHandleId,
 ) -> Result<(), AppError> {
+    state
+        .manager()
+        .ensure_writable(&handle_id, "change server settings")
+        .await?;
     application::client_unpause(state.manager(), &handle_id).await
 }
 

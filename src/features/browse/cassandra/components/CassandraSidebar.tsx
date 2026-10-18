@@ -10,6 +10,7 @@ import { useT } from "../../../../shared/i18n/useT";
 import { EngineBadge } from "../../../../shared/ui/EngineBadge";
 import { dropWordSelection } from "../../../../shared/ui/dropWordSelection";
 import { Icon } from "../../../../shared/ui/Icon";
+import { useReadOnly } from "../../../../shared/ui/readOnlyContext";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { Btn } from "../../../../shared/ui/Btn";
 import { LanguageChip } from "../../../../shared/ui/LanguageChip";
@@ -98,6 +99,9 @@ export function CassandraSidebar({
 }: CassandraSidebarProps) {
   // `tr`, not `t`: the table list below maps with `t` as the row variable.
   const tr = useT();
+  // Read-only workspace: browse / export / map stay; create, import and the
+  // destructive keyspace + table actions go.
+  const readOnly = useReadOnly();
   const [q, setQ] = useState("");
   const [ksOpen, setKsOpen] = useState(false);
   // M36: dropdown (default) or an icon that opens the keyspace list as a
@@ -190,17 +194,21 @@ export function CassandraSidebar({
                 {/* Create sits at the TOP, like the SQL schema switcher — the
                   keyspace list grows, and the action should not drift down
                   with it. */}
-                <div
-                  className="schema-pop-create"
-                  onClick={() => {
-                    setKsOpen(false);
-                    onCreateKeyspace();
-                  }}
-                >
-                  <Icon name="add" size={14} />
-                  <span>{tr("cass.sidebar.createKeyspace")}</span>
-                </div>
-                <div className="schema-pop-sep" />
+                {readOnly ? null : (
+                  <>
+                    <div
+                      className="schema-pop-create"
+                      onClick={() => {
+                        setKsOpen(false);
+                        onCreateKeyspace();
+                      }}
+                    >
+                      <Icon name="add" size={14} />
+                      <span>{tr("cass.sidebar.createKeyspace")}</span>
+                    </div>
+                    <div className="schema-pop-sep" />
+                  </>
+                )}
                 {keyspaces.map((d) => (
                   <div
                     key={d}
@@ -367,24 +375,29 @@ export function CassandraSidebar({
         >
           {ctxMenu.ks ? (
             <>
-              <div
-                className="ctx-item ctx-item-accent"
-                onClick={() => {
-                  setCtxMenu(null);
-                  onCreateTable();
-                }}
-              >
-                <Icon name="add" size={15} /> {tr("cass.sidebar.ctxCreateTable")}
-              </div>
-              <div
-                className="ctx-item"
-                onClick={() => {
-                  setCtxMenu(null);
-                  onImportTable(null);
-                }}
-              >
-                <Icon name="upload" size={15} /> {tr("cass.sidebar.ctxImportInto")}
-              </div>
+              {/* Create + import write; export below does not. */}
+              {readOnly ? null : (
+                <>
+                  <div
+                    className="ctx-item ctx-item-accent"
+                    onClick={() => {
+                      setCtxMenu(null);
+                      onCreateTable();
+                    }}
+                  >
+                    <Icon name="add" size={15} /> {tr("cass.sidebar.ctxCreateTable")}
+                  </div>
+                  <div
+                    className="ctx-item"
+                    onClick={() => {
+                      setCtxMenu(null);
+                      onImportTable(null);
+                    }}
+                  >
+                    <Icon name="upload" size={15} /> {tr("cass.sidebar.ctxImportInto")}
+                  </div>
+                </>
+              )}
               <div
                 className="ctx-item"
                 onClick={() => {
@@ -395,24 +408,29 @@ export function CassandraSidebar({
                 <Icon name="download" size={15} /> {tr("cass.sidebar.ctxExportKeyspace")}
               </div>
               <div className="ctx-sep" />
-              <div
-                className="ctx-item danger"
-                onClick={() => {
-                  setCtxMenu(null);
-                  onEmptyKeyspace();
-                }}
-              >
-                <Icon name="delete_sweep" size={15} /> {tr("cass.sidebar.ctxEmptyKeyspace")}
-              </div>
-              <div
-                className="ctx-item danger"
-                onClick={() => {
-                  setCtxMenu(null);
-                  onDropKeyspace();
-                }}
-              >
-                <Icon name="delete_forever" size={15} /> {tr("cass.sidebar.ctxDropKeyspace")}
-              </div>
+              {/* Destructive keyspace actions. */}
+              {readOnly ? null : (
+                <>
+                  <div
+                    className="ctx-item danger"
+                    onClick={() => {
+                      setCtxMenu(null);
+                      onEmptyKeyspace();
+                    }}
+                  >
+                    <Icon name="delete_sweep" size={15} /> {tr("cass.sidebar.ctxEmptyKeyspace")}
+                  </div>
+                  <div
+                    className="ctx-item danger"
+                    onClick={() => {
+                      setCtxMenu(null);
+                      onDropKeyspace();
+                    }}
+                  >
+                    <Icon name="delete_forever" size={15} /> {tr("cass.sidebar.ctxDropKeyspace")}
+                  </div>
+                </>
+              )}
             </>
           ) : (
             <>
@@ -425,15 +443,20 @@ export function CassandraSidebar({
               >
                 <Icon name="table_chart" size={15} /> {tr("cass.sidebar.ctxOpenTable")}
               </div>
-              <div
-                className="ctx-item"
-                onClick={() => {
-                  if (ctxMenu.table) onAddIndex(ctxMenu.table);
-                  setCtxMenu(null);
-                }}
-              >
-                <Icon name="bolt" size={15} /> {tr("cass.sidebar.ctxAddIndexOrMv")}
-              </div>
+              {/* Creating an index or materialized view is DDL. */}
+              {readOnly ? null : (
+                <>
+                  <div
+                    className="ctx-item"
+                    onClick={() => {
+                      if (ctxMenu.table) onAddIndex(ctxMenu.table);
+                      setCtxMenu(null);
+                    }}
+                  >
+                    <Icon name="bolt" size={15} /> {tr("cass.sidebar.ctxAddIndexOrMv")}
+                  </div>
+                </>
+              )}
               <div
                 className="ctx-item"
                 onClick={() => {
@@ -454,37 +477,42 @@ export function CassandraSidebar({
               >
                 <Icon name="download" size={15} /> {tr("cass.sidebar.ctxExportTable")}
               </div>
-              <div
-                className="ctx-item"
-                onClick={() => {
-                  const t = ctxMenu.table;
-                  setCtxMenu(null);
-                  if (t) onImportTable(t);
-                }}
-              >
-                <Icon name="upload" size={15} /> {tr("cass.sidebar.ctxImportRows")}
-              </div>
-              <div className="ctx-sep" />
-              <div
-                className="ctx-item danger"
-                onClick={() => {
-                  const t = ctxMenu.table;
-                  setCtxMenu(null);
-                  if (t) onTruncateTable(t);
-                }}
-              >
-                <Icon name="delete_sweep" size={15} /> {tr("cass.sidebar.ctxTruncate")}
-              </div>
-              <div
-                className="ctx-item danger"
-                onClick={() => {
-                  const t = ctxMenu.table;
-                  setCtxMenu(null);
-                  if (t) onDropTable(t);
-                }}
-              >
-                <Icon name="delete_forever" size={15} /> {tr("cass.sidebar.ctxDropTable")}
-              </div>
+              {/* Import + the destructive table actions. */}
+              {readOnly ? null : (
+                <>
+                  <div
+                    className="ctx-item"
+                    onClick={() => {
+                      const t = ctxMenu.table;
+                      setCtxMenu(null);
+                      if (t) onImportTable(t);
+                    }}
+                  >
+                    <Icon name="upload" size={15} /> {tr("cass.sidebar.ctxImportRows")}
+                  </div>
+                  <div className="ctx-sep" />
+                  <div
+                    className="ctx-item danger"
+                    onClick={() => {
+                      const t = ctxMenu.table;
+                      setCtxMenu(null);
+                      if (t) onTruncateTable(t);
+                    }}
+                  >
+                    <Icon name="delete_sweep" size={15} /> {tr("cass.sidebar.ctxTruncate")}
+                  </div>
+                  <div
+                    className="ctx-item danger"
+                    onClick={() => {
+                      const t = ctxMenu.table;
+                      setCtxMenu(null);
+                      if (t) onDropTable(t);
+                    }}
+                  >
+                    <Icon name="delete_forever" size={15} /> {tr("cass.sidebar.ctxDropTable")}
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>

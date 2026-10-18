@@ -45,6 +45,15 @@ pub enum AppError {
     /// "MySQL connections arrive in a later milestone").
     #[error("{0}")]
     Unsupported(String),
+
+    /// The connection was opened as a **read-only workspace**, so a mutating
+    /// command was refused before it reached the database (see
+    /// `crate::shared::readonly`). Its own kind — not `Unsupported` — because
+    /// the engine is perfectly capable of the operation and the renderer wants
+    /// to tell the two apart: this one is the user's own setting, undone by
+    /// reconnecting writable. The payload is already a full sentence.
+    #[error("{0}")]
+    ReadOnly(String),
 }
 
 impl From<std::io::Error> for AppError {
@@ -70,6 +79,7 @@ impl AppError {
             Self::Invalid(_) => "invalid",
             Self::Database(_) => "database",
             Self::Unsupported(_) => "unsupported",
+            Self::ReadOnly(_) => "readOnly",
         }
     }
 }
@@ -117,6 +127,7 @@ mod tests {
             (AppError::Invalid("x".into()), "invalid"),
             (AppError::Database("x".into()), "database"),
             (AppError::Unsupported("x".into()), "unsupported"),
+            (AppError::ReadOnly("x".into()), "readOnly"),
         ];
         for (err, expected_kind) in cases {
             let json = serde_json::to_value(&err).expect("serialize");

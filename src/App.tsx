@@ -4,6 +4,7 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 
 import { ToastProvider } from "./shared/ui/ToastProvider";
+import { ReadOnlyProvider } from "./shared/ui/ReadOnlyProvider";
 import { useRepaintOnRestore } from "./shared/hooks/useRepaintOnRestore";
 import { usePreferencesStore } from "./features/preferences/state";
 import { useSettingsStore } from "./features/settings/state";
@@ -32,6 +33,7 @@ import { useToast } from "./shared/ui/toastContext";
 import { useT } from "./shared/i18n/useT";
 import { isAppErrorPayload } from "./shared/api/error";
 import { useTrayWorkspaces } from "./features/workspaces/trayMenu";
+import { useHandleReadOnlySync } from "./features/workspaces/hooks/useHandleReadOnlySync";
 import {
   appVersion,
   checkForUpdate,
@@ -284,6 +286,9 @@ export function App() {
           clicks. Renders nothing; must sit inside ToastProvider (it toasts on
           a failed open). */}
       <TrayWorkspacesBridge />
+      {/* Keeps the active workspace's read-only mode on its backend handle.
+          Inside the provider because it toasts if the push fails. */}
+      <ReadOnlySyncBridge />
       {/* File ▸ Open ▸ Open CSV / Open DB. Inside the provider because both
           flows toast; renders the sheet (CSV) or nothing (the native picker). */}
       <FileOpenBridge request={fileOpenRequest} onDone={() => setFileOpenRequest(null)} />
@@ -300,59 +305,69 @@ export function App() {
             onReportIssue={() => setBugOpen(true)}
             version={version}
           />
-          <div className="app-body">
-            {!showConnect && activeWorkspace ? (
-              // §2 workspace layout: sidebar (248px) | tab bar + content,
-              // status bar across the bottom. Keying the shell by workspace id
-              // resets its transient local state (palette open, sidebar search,
-              // open popovers) per workspace; the structural state (tabs,
-              // active tab, schema, expanded rows) lives on workspace.ui and
-              // survives switches.
-              //
-              // M13 (REDIS_SPEC §11): route on the engine family. A key-value
-              // connection renders the Redis workspace (a sibling shell); every
-              // relational engine renders the SQL workspace. Neither imports the
-              // other — only the App, the shared host, knows both.
-              // M17: a document-store connection renders the DynamoDB workspace
-              // (a third sibling shell). Key-value → Redis; everything else → SQL.
-              //
-              // M35: a workspace carrying a `file` is the data-file viewer
-              // and editor. It is checked FIRST and by the file, not by `kind`:
-              // its handle really is a SQL connection (a private in-memory
-              // SQLite database holding the parsed rows), so routing on `kind`
-              // would land it in the relational shell.
-              isDataFileWorkspace(activeWorkspace) ? (
-                <DataFileWorkspace
-                  key={activeWorkspace.id}
-                  workspace={activeWorkspace}
-                  file={activeWorkspace.file}
-                />
-              ) : activeWorkspace.kind === "kv" ? (
-                <RedisWorkspace key={activeWorkspace.id} workspace={activeWorkspace} />
-              ) : activeWorkspace.kind === "document" ? (
-                <DynamoWorkspace key={activeWorkspace.id} workspace={activeWorkspace} />
-              ) : activeWorkspace.kind === "mongo" ? (
-                // M18: a MongoDB connection renders the MongoDB workspace (a fourth
-                // sibling shell). Document → DynamoDB; key-value → Redis; the rest → SQL.
-                <MongoWorkspace key={activeWorkspace.id} workspace={activeWorkspace} />
-              ) : activeWorkspace.kind === "cassandra" ? (
-                // M19: a Cassandra connection renders the Cassandra workspace (a
-                // fifth sibling shell, the wide-column vertical slice). Mongo →
-                // MongoDB; document → DynamoDB; key-value → Redis; the rest → SQL.
-                <CassandraWorkspace key={activeWorkspace.id} workspace={activeWorkspace} />
-              ) : activeWorkspace.kind === "typesense" ? (
-                // M30: a Typesense connection renders the Typesense workspace (a
-                // sixth sibling shell, the search vertical slice). Collections
-                // replace databases and every read is a search call, so none of
-                // the table-store shells fit.
-                <TypesenseWorkspace key={activeWorkspace.id} workspace={activeWorkspace} />
+          {/* One wrapper for every shell: a read-only workspace hides its
+              mutation affordances wherever they sit in the tree (and a schema
+              sub-workspace inherits the flag with the connection).
+              False while the connect screen is up, even with a read-only
+              workspace still open behind it — that screen belongs to no
+              workspace, and its own forms must stay fully editable. */}
+          <ReadOnlyProvider
+            readOnly={!showConnect && activeWorkspace ? activeWorkspace.readOnly : false}
+          >
+            <div className="app-body">
+              {!showConnect && activeWorkspace ? (
+                // §2 workspace layout: sidebar (248px) | tab bar + content,
+                // status bar across the bottom. Keying the shell by workspace id
+                // resets its transient local state (palette open, sidebar search,
+                // open popovers) per workspace; the structural state (tabs,
+                // active tab, schema, expanded rows) lives on workspace.ui and
+                // survives switches.
+                //
+                // M13 (REDIS_SPEC §11): route on the engine family. A key-value
+                // connection renders the Redis workspace (a sibling shell); every
+                // relational engine renders the SQL workspace. Neither imports the
+                // other — only the App, the shared host, knows both.
+                // M17: a document-store connection renders the DynamoDB workspace
+                // (a third sibling shell). Key-value → Redis; everything else → SQL.
+                //
+                // M35: a workspace carrying a `file` is the data-file viewer
+                // and editor. It is checked FIRST and by the file, not by `kind`:
+                // its handle really is a SQL connection (a private in-memory
+                // SQLite database holding the parsed rows), so routing on `kind`
+                // would land it in the relational shell.
+                isDataFileWorkspace(activeWorkspace) ? (
+                  <DataFileWorkspace
+                    key={activeWorkspace.id}
+                    workspace={activeWorkspace}
+                    file={activeWorkspace.file}
+                  />
+                ) : activeWorkspace.kind === "kv" ? (
+                  <RedisWorkspace key={activeWorkspace.id} workspace={activeWorkspace} />
+                ) : activeWorkspace.kind === "document" ? (
+                  <DynamoWorkspace key={activeWorkspace.id} workspace={activeWorkspace} />
+                ) : activeWorkspace.kind === "mongo" ? (
+                  // M18: a MongoDB connection renders the MongoDB workspace (a fourth
+                  // sibling shell). Document → DynamoDB; key-value → Redis; the rest → SQL.
+                  <MongoWorkspace key={activeWorkspace.id} workspace={activeWorkspace} />
+                ) : activeWorkspace.kind === "cassandra" ? (
+                  // M19: a Cassandra connection renders the Cassandra workspace (a
+                  // fifth sibling shell, the wide-column vertical slice). Mongo →
+                  // MongoDB; document → DynamoDB; key-value → Redis; the rest → SQL.
+                  <CassandraWorkspace key={activeWorkspace.id} workspace={activeWorkspace} />
+                ) : activeWorkspace.kind === "typesense" ? (
+                  // M30: a Typesense connection renders the Typesense workspace (a
+                  // sixth sibling shell, the search vertical slice). Collections
+                  // replace databases and every read is a search call, so none of
+                  // the table-store shells fit.
+                  <TypesenseWorkspace key={activeWorkspace.id} workspace={activeWorkspace} />
+                ) : (
+                  <WorkspaceShell key={activeWorkspace.id} workspace={activeWorkspace} />
+                )
               ) : (
-                <WorkspaceShell key={activeWorkspace.id} workspace={activeWorkspace} />
-              )
-            ) : (
-              <ConnectScreen />
-            )}
-          </div>
+                <ConnectScreen />
+              )}
+            </div>
+          </ReadOnlyProvider>
         </div>
       </div>
 
@@ -427,6 +442,13 @@ export function App() {
 /** Mounts the tray↔workspaces bridge inside the toast context; renders nothing. */
 function TrayWorkspacesBridge() {
   useTrayWorkspaces();
+  return null;
+}
+
+/** Pushes the active workspace's read-only mode to its connection handle (see
+ *  `useHandleReadOnlySync`); renders nothing. */
+function ReadOnlySyncBridge() {
+  useHandleReadOnlySync();
   return null;
 }
 

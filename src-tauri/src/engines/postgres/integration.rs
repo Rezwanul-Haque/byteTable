@@ -1532,3 +1532,111 @@ async fn undecodable_types_come_back_as_text_with_their_real_type_hint() {
         .execute(&pool)
         .await;
 }
+
+/// M39: the privilege catalog, end to end — adapter rows through the
+/// effective-grant resolver. Covers the two Postgres-specific rules: a grant
+/// reaches a user through role membership (with the chain recorded), and a
+/// `PUBLIC` grant reaches everyone.
+#[tokio::test]
+async fn privileges_resolve_role_inheritance_and_public_grants() {
+    let Some((params, secret)) = gate("privileges_resolve_role_inheritance_and_public_grants")
+    else {
+        return;
+    };
+    let pool = raw_pool(&params, &secret).await;
+    let schema = "bt_it_priv";
+
+    // Teardown first so reruns are clean. The schema goes before the roles:
+    // CASCADE removes the ACL entries that would otherwise pin them.
+    let teardown = [
+        format!("DROP SCHEMA IF EXISTS {schema} CASCADE"),
+        "DROP ROLE IF EXISTS bt_it_app".to_string(),
+        "DROP ROLE IF EXISTS bt_it_reader".to_string(),
+    ];
+    for stmt in &teardown {
+        let _ = sqlx::query(stmt).execute(&pool).await;
+    }
+
+    for stmt in [
+        "CREATE ROLE bt_it_reader",
+        "CREATE ROLE bt_it_app LOGIN",
+        "GRANT bt_it_reader TO bt_it_app",
+        &format!("CREATE SCHEMA {schema}"),
+        &format!("CREATE TABLE {schema}.ledger (id int)"),
+        &format!("GRANT SELECT ON {schema}.ledger TO bt_it_reader"),
+        &format!("GRANT INSERT ON {schema}.ledger TO PUBLIC"),
+    ] {
+        sqlx::query(stmt).execute(&pool).await.expect(stmt);
+    }
+
+    let conn = open_conn(&params, &secret).await;
+    let reader = conn
+        .clone()
+        .as_privilege_reader()
+        .expect("postgres exposes a privilege reader");
+
+    let principals = reader.list_principals().await.expect("principals");
+    let memberships = reader.list_memberships().await.expect("memberships");
+    let page = reader.list_grants(Some(schema)).await.expect("grants");
+
+    assert!(
+        principals.iter().any(|p| p.name == "PUBLIC"),
+        "PUBLIC should be listed as a principal in its own right"
+    );
+    let app = principals
+        .iter()
+        .find(|p| p.name == "bt_it_app")
+        .expect("bt_it_app listed");
+    assert!(app.can_login);
+    assert!(!app.is_superuser);
+    assert!(
+        memberships
+            .iter()
+            .any(|e| e.member == "bt_it_app" && e.role == "bt_it_reader"),
+        "membership edge should point member -> role"
+    );
+
+    let effective = crate::features::privileges::domain::resolve_effective(
+        &principals,
+        &memberships,
+        &page.grants,
+    );
+    let cell = |who: &str, privilege: &str| {
+        effective
+            .iter()
+            .find(|g| {
+                g.grantee == who
+                    && g.privilege == privilege
+                    && g.object.as_deref() == Some("ledger")
+            })
+            .cloned()
+    };
+
+    let inherited = cell("bt_it_app", "SELECT").expect("SELECT inherited through the role");
+    assert_eq!(
+        inherited.state,
+        crate::shared::privileges::PrivilegeState::Granted
+    );
+    assert_eq!(inherited.via, vec!["bt_it_reader".to_string()]);
+
+    let public = cell("bt_it_app", "INSERT").expect("INSERT held via PUBLIC");
+    assert_eq!(public.via, vec!["PUBLIC".to_string()]);
+
+    // The owner's implicit rights are synthesized even though relacl is not
+    // NULL any more (the explicit grants above populated it) — the owner holds
+    // them through the ACL at that point, so they must still be present.
+    assert!(
+        cell("postgres", "SELECT").is_some() || {
+            // postgres is a superuser, so the resolver passes direct rows only.
+            page.grants
+                .iter()
+                .any(|g| g.grantee == "postgres" && g.privilege == "SELECT")
+        },
+        "the table owner's own privileges must be visible"
+    );
+
+    for stmt in &teardown {
+        let _ = sqlx::query(stmt).execute(&pool).await;
+    }
+    let _ = conn.close().await;
+}

@@ -302,6 +302,34 @@ impl ConnectionManager {
         })
     }
 
+    /// The M39 privilege-catalog capability behind a handle. Unlike the process
+    /// list this is SQL-only: the four engines that model privileges as
+    /// grantee × privilege × object opt in via `as_privilege_reader`, and the
+    /// other families are not asked at all (Redis ACL, Mongo role documents and
+    /// Typesense API keys are different enough models that mapping them here
+    /// would misreport — see `shared::privileges`). Everything else is a §5
+    /// `Unsupported` and the renderer shows the empty state.
+    pub async fn get_privilege_reader(
+        &self,
+        handle: &ConnectionHandleId,
+    ) -> Result<Arc<dyn crate::shared::privileges::PrivilegeReader>, AppError> {
+        let reader = {
+            let guard = self.open.read().await;
+            match guard.get(handle) {
+                Some(OpenConnection::Sql(conn)) => Arc::clone(conn).as_privilege_reader(),
+                Some(OpenConnection::Kv(_))
+                | Some(OpenConnection::Mongo(_))
+                | Some(OpenConnection::Document(_))
+                | Some(OpenConnection::WideColumn(_))
+                | Some(OpenConnection::Search(_)) => None,
+                None => return Err(not_open(handle)),
+            }
+        };
+        reader.ok_or_else(|| {
+            AppError::Unsupported("This engine has no privilege catalog to inspect.".into())
+        })
+    }
+
     /// Remove a handle, returning the connection for teardown — or `None`
     /// when the handle is unknown (already closed); see [`close_connection`]
     /// for why that is not an error.

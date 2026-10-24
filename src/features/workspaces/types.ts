@@ -265,6 +265,10 @@ export type Tab =
   // The live server process/session list with kill actions (M26). Singleton;
   // `schema` is the active schema shown in the DB column for a fresh listing.
   | { id: string; kind: "processes"; schema: string }
+  // The privilege catalog (M39): users/roles/logins and their effective grants,
+  // read-only. Singleton; `schema` scopes the grant matrix's object rows (the
+  // whole database would be unbounded).
+  | { id: string; kind: "privileges"; schema: string }
   // Schema Diff & Sync (M28): structural comparison against another SQL
   // connection. Singleton per workspace; the tab carries no state of its own —
   // which two schemas are compared lives in the component, and the workspace's

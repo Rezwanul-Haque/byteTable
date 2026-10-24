@@ -32,6 +32,7 @@ const KNOWN_KINDS = new Set<Tab["kind"]>([
   "sql",
   "map",
   "processes",
+  "privileges",
   "object",
   "objexplorer",
   "diff",

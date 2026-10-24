@@ -462,3 +462,116 @@ async fn mssql_mutation_roundtrip() {
         .await;
     let _ = conn.close().await;
 }
+
+/// M39: the privilege catalog, end to end. SQL Server is the engine that
+/// forced the four-state cell, so this proves the rule that motivated it —
+/// a `DENY` on the user beats a `GRANT` the user inherits from a role.
+#[tokio::test]
+async fn privileges_resolve_deny_over_an_inherited_grant() {
+    let Some((params, secret)) = gate("privileges_resolve_deny_over_an_inherited_grant") else {
+        return;
+    };
+    let conn = open_conn(&params, &secret).await;
+
+    // Teardown first so reruns are clean; membership and permissions go with
+    // the principals, but the table has to be dropped before the role that
+    // holds a permission on it.
+    let teardown = [
+        "DROP TABLE IF EXISTS dbo.bt_it_priv",
+        "DROP USER IF EXISTS bt_it_app",
+        "DROP ROLE IF EXISTS bt_it_reader",
+    ];
+    for stmt in teardown {
+        let _ = conn.run_query(stmt, QueryOptions::default()).await;
+    }
+
+    for stmt in [
+        "CREATE TABLE dbo.bt_it_priv (id int)",
+        "CREATE ROLE bt_it_reader",
+        "CREATE USER bt_it_app WITHOUT LOGIN",
+        "ALTER ROLE bt_it_reader ADD MEMBER bt_it_app",
+        "GRANT SELECT ON dbo.bt_it_priv TO bt_it_reader",
+        "DENY SELECT ON dbo.bt_it_priv TO bt_it_app",
+    ] {
+        conn.run_query(stmt, QueryOptions::default())
+            .await
+            .unwrap_or_else(|e| panic!("{stmt}: {e}"));
+    }
+
+    let reader = conn
+        .clone()
+        .as_privilege_reader()
+        .expect("sql server exposes a privilege reader");
+
+    let principals = reader.list_principals().await.expect("principals");
+    let memberships = reader.list_memberships().await.expect("memberships");
+    let page = reader.list_grants(Some("dbo")).await.expect("grants");
+
+    // Both principal spaces are listed, and they are told apart.
+    assert!(
+        principals
+            .iter()
+            .any(|p| p.scope == crate::shared::privileges::PrincipalScope::Server),
+        "server logins should be listed alongside database users"
+    );
+    assert!(
+        principals.iter().any(|p| p.name == "bt_it_reader"
+            && p.kind == crate::shared::privileges::PrincipalKind::Role),
+        "the database role should be listed as a role"
+    );
+    assert!(
+        memberships
+            .iter()
+            .any(|e| e.member == "bt_it_app" && e.role == "bt_it_reader"),
+        "membership edge should point member -> role"
+    );
+
+    // The catalog records the grant and the deny as separate rows.
+    let direct_state = |who: &str| {
+        page.grants
+            .iter()
+            .find(|g| {
+                g.grantee == who
+                    && g.privilege == "SELECT"
+                    && g.object.as_deref() == Some("bt_it_priv")
+            })
+            .map(|g| g.state)
+    };
+    assert_eq!(
+        direct_state("bt_it_reader"),
+        Some(crate::shared::privileges::PrivilegeState::Granted)
+    );
+    assert_eq!(
+        direct_state("bt_it_app"),
+        Some(crate::shared::privileges::PrivilegeState::Denied),
+        "DENY must survive as its own state, not as an absent row"
+    );
+
+    let effective = crate::features::privileges::domain::resolve_effective(
+        &principals,
+        &memberships,
+        &page.grants,
+    );
+    let resolved = effective
+        .iter()
+        .find(|g| {
+            g.grantee == "bt_it_app"
+                && g.privilege == "SELECT"
+                && g.object.as_deref() == Some("bt_it_priv")
+        })
+        .expect("resolved cell for bt_it_app");
+    assert_eq!(
+        resolved.state,
+        crate::shared::privileges::PrivilegeState::Denied,
+        "the deny on the user must beat the grant inherited from bt_it_reader"
+    );
+    assert!(
+        resolved.via.is_empty(),
+        "the winning row is the direct deny, so it has no role chain"
+    );
+
+    for stmt in teardown {
+        let _ = conn.run_query(stmt, QueryOptions::default()).await;
+    }
+    let _ = conn.close().await;
+}

@@ -23,6 +23,7 @@ import { shellLabel, usePanelStore } from "../../console/state";
 import { tablesKey, useIntrospectionStore } from "../../introspection/state";
 import { isDiffable } from "../../schema_diff/handles";
 import { selectQueriesForConnection, useSavedQueriesStore } from "../../saved_queries/state";
+import { PRIV_SOURCES } from "../../privileges/api";
 import { useWorkspacesStore } from "../state";
 import type { Workspace } from "../types";
 import { homeSchema } from "../types";
@@ -49,6 +50,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
   const openSqlTab = useWorkspacesStore((state) => state.openSqlTab);
   const openSqlTabWith = useWorkspacesStore((state) => state.openSqlTabWith);
   const openProcessesTab = useWorkspacesStore((state) => state.openProcessesTab);
+  const openPrivilegesTab = useWorkspacesStore((state) => state.openPrivilegesTab);
   const openDiffTab = useWorkspacesStore((state) => state.openDiffTab);
   const openBoardTab = useWorkspacesStore((state) => state.openBoardTab);
   const patchWorkspaceUi = useWorkspacesStore((state) => state.patchWorkspaceUi);
@@ -131,6 +133,20 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
       hint: t("ws.palette.procHint"),
       run: () => openProcessesTab(schemaName),
     };
+    // Only the engines whose privileges ByteTable reads (PRIV_SOURCES) —
+    // Redis/Mongo/SQLite model access differently and have no entry.
+    const privCmds: Command[] =
+      workspace.saved.engine in PRIV_SOURCES
+        ? [
+            {
+              id: "privileges",
+              icon: "admin_panel_settings",
+              label: t("menu.view.privileges"),
+              hint: t("ws.palette.privHint"),
+              run: () => openPrivilegesTab(schemaName),
+            },
+          ]
+        : [];
     // Schema diff (M28) — only for the engines with a structural snapshot.
     const diffCmds: Command[] = isDiffable(workspace.saved)
       ? [
@@ -162,6 +178,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
       openTerminal,
       board,
       processes,
+      ...privCmds,
       ...diffCmds,
       ...savedCmds,
     ];
@@ -178,6 +195,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
     openSqlTabWith,
     openBoardTab,
     openProcessesTab,
+    openPrivilegesTab,
     openDiffTab,
     patchWorkspaceUi,
     openPanel,

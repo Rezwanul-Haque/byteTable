@@ -23,6 +23,7 @@ export type BtCmdId =
   | "schema-map"
   | "brainstorm-board"
   | "processes"
+  | "privileges"
   | "run"
   | "format"
   | "explain"

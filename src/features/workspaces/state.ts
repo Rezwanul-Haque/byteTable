@@ -268,6 +268,7 @@ interface WorkspacesFeatureState {
    * list with kill actions. `schema` seeds the DB column for a fresh listing.
    */
   openProcessesTab: (schema: string) => void;
+  openPrivilegesTab: (schema: string) => void;
   /**
    * Open (or focus) the singleton Schema diff tab (M28) — the structural
    * comparison between this workspace's schema and another SQL connection's.
@@ -969,6 +970,20 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
         const existing = tabs.find((t) => t.kind === "processes");
         if (existing) return { activeTabId: existing.id };
         const tab: Tab = { id: newTabId("processes"), kind: "processes", schema };
+        return { tabs: [...tabs, tab], activeTabId: tab.id };
+      }),
+    })),
+
+  openPrivilegesTab: (schema) =>
+    set((state) => ({
+      workspaces: patchActiveUi(state, (ui) => {
+        const tabs = ui.tabs ?? [];
+        // Singleton: one Privileges tab per workspace. The schema it was
+        // opened on scopes the matrix; re-opening focuses the existing tab
+        // rather than silently re-scoping it under the user.
+        const existing = tabs.find((t) => t.kind === "privileges");
+        if (existing) return { activeTabId: existing.id };
+        const tab: Tab = { id: newTabId("privileges"), kind: "privileges", schema };
         return { tabs: [...tabs, tab], activeTabId: tab.id };
       }),
     })),

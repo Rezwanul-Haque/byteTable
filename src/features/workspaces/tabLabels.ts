@@ -35,6 +35,8 @@ function tabTitle(tab: Tab, currentSchema: string, t: Translate): string {
       return t("ws.tabTitle.board", { name: tab.name ?? tab.schema });
     case "processes":
       return t("ws.tabTitle.processes");
+    case "privileges":
+      return t("ws.tabTitle.privileges");
     case "diff":
       return t("ws.tabTitle.diff");
     case "object":

@@ -17,6 +17,7 @@
 pub mod document;
 pub mod keyvalue;
 pub mod mongo;
+pub mod privileges;
 pub mod process;
 pub mod search;
 pub mod sql;

@@ -149,6 +149,18 @@ pub trait EngineConnection: Send + Sync {
         None
     }
 
+    /// The M39 privilege-catalog capability for this connection, when the
+    /// engine models privileges as grantee × privilege × object (Postgres /
+    /// MySQL / SQL Server / ClickHouse). SQLite has no principals and keeps the
+    /// default `None`, so the Privileges tab shows its empty state. Returning
+    /// `Some` opts the adapter in — the concrete type must also
+    /// `impl PrivilegeReader`.
+    fn as_privilege_reader(
+        self: std::sync::Arc<Self>,
+    ) -> Option<std::sync::Arc<dyn crate::shared::privileges::PrivilegeReader>> {
+        None
+    }
+
     /// Schemas visible on this connection (SQLite: `main` + attached).
     ///
     /// Server internals are NOT included — see [`Self::list_system_schemas`].

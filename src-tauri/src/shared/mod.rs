@@ -12,4 +12,4 @@ pub mod readonly;
 // physical only).
 mod ports;
 pub use ports::sql as engine;
-pub use ports::{document, keyvalue, mongo, process, search, widecolumn};
+pub use ports::{document, keyvalue, mongo, privileges, process, search, widecolumn};

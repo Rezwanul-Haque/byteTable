@@ -1607,3 +1607,87 @@ async fn binary_collation_text_decodes_as_text_not_hex() {
         .execute(&pool)
         .await;
 }
+
+/// M39: the privilege catalog, end to end. MySQL's wrinkles are that an
+/// account is `user@host` rather than a bare name, and that a role is an
+/// ordinary account distinguishable only by its presence in
+/// `mysql.role_edges` — both are exercised here.
+#[tokio::test]
+async fn privileges_resolve_role_inheritance_for_user_at_host_accounts() {
+    let Some((params, secret)) =
+        gate("privileges_resolve_role_inheritance_for_user_at_host_accounts")
+    else {
+        return;
+    };
+    let pool = raw_pool(&params, &secret).await;
+
+    // Account DDL must go through the TEXT protocol: MySQL rejects CREATE
+    // ROLE / CREATE USER over the prepared-statement protocol that
+    // `sqlx::query` uses (error 1295).
+    let teardown = [
+        "DROP USER IF EXISTS 'bt_it_app'@'%'",
+        "DROP ROLE IF EXISTS 'bt_it_reader'@'%'",
+    ];
+    for stmt in teardown {
+        let _ = sqlx::raw_sql(stmt).execute(&pool).await;
+    }
+
+    for stmt in [
+        "CREATE ROLE 'bt_it_reader'@'%'",
+        "CREATE USER 'bt_it_app'@'%' IDENTIFIED BY 'bytetable'",
+        "GRANT SELECT ON byteshop.* TO 'bt_it_reader'@'%'",
+        "GRANT 'bt_it_reader'@'%' TO 'bt_it_app'@'%'",
+    ] {
+        sqlx::raw_sql(stmt).execute(&pool).await.expect(stmt);
+    }
+
+    let conn = open_conn(&params, &secret).await;
+    let reader = conn
+        .clone()
+        .as_privilege_reader()
+        .expect("mysql exposes a privilege reader");
+
+    let principals = reader.list_principals().await.expect("principals");
+    let memberships = reader.list_memberships().await.expect("memberships");
+    let page = reader.list_grants(Some("byteshop")).await.expect("grants");
+
+    // Accounts are named `user@host`, matching the GRANTEE column once its
+    // quotes are stripped — if these two disagreed nothing would ever resolve.
+    let role = principals
+        .iter()
+        .find(|p| p.name == "bt_it_reader@%")
+        .expect("role listed as user@host");
+    assert_eq!(role.kind, crate::shared::privileges::PrincipalKind::Role);
+    assert!(
+        principals
+            .iter()
+            .any(|p| p.name == "bt_it_app@%"
+                && p.kind == crate::shared::privileges::PrincipalKind::User),
+        "a plain account is a user, not a role"
+    );
+    assert!(
+        memberships
+            .iter()
+            .any(|e| e.member == "bt_it_app@%" && e.role == "bt_it_reader@%"),
+        "role_edges TO_* is the member and FROM_* the role"
+    );
+
+    let effective = crate::features::privileges::domain::resolve_effective(
+        &principals,
+        &memberships,
+        &page.grants,
+    );
+    let inherited = effective
+        .iter()
+        .find(|g| g.grantee == "bt_it_app@%" && g.privilege == "SELECT")
+        .expect("SELECT inherited through the role");
+    assert_eq!(inherited.via, vec!["bt_it_reader@%".to_string()]);
+    // A schema-level grant carries no object — the wildcard encoding.
+    assert_eq!(inherited.schema.as_deref(), Some("byteshop"));
+    assert_eq!(inherited.object, None);
+
+    for stmt in teardown {
+        let _ = sqlx::raw_sql(stmt).execute(&pool).await;
+    }
+    let _ = conn.close().await;
+}

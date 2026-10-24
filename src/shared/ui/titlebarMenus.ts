@@ -55,6 +55,11 @@ export interface MenuCtx {
   hasPalette: boolean;
   /** The active workspace exposes a server process list (SQL, Redis, Mongo). */
   hasProcesses: boolean;
+  /** The active workspace's engine has a privilege catalog ByteTable reads
+   *  (Postgres/MySQL/SQL Server/ClickHouse). Unlike `hasProcesses` this is
+   *  checked per ENGINE, not per workspace kind, because SQLite is a SQL
+   *  workspace with no principals at all. */
+  hasPrivileges: boolean;
   /** The active workspace docks a terminal/console panel. The M35 data-file
    *  viewer does not — there is no server to talk to. */
   hasTerminal: boolean;
@@ -99,7 +104,8 @@ export function execEdit(cmd: "undo" | "redo" | "cut" | "copy" | "paste"): void 
 }
 
 export function buildMenus(m: MenuCtx): Menu[] {
-  const { hasWs, isSql, hasPalette, hasProcesses, hasTerminal, zoomChanged, ctx } = m;
+  const { hasWs, isSql, hasPalette, hasProcesses, hasPrivileges, hasTerminal, zoomChanged, ctx } =
+    m;
 
   return [
     {
@@ -220,6 +226,12 @@ export function buildMenus(m: MenuCtx): Menu[] {
           hint: "Ctrl+Shift+P",
           enabled: hasProcesses,
           run: () => emitCmd("processes"),
+        },
+        {
+          id: "privileges",
+          label: t("menu.view.privileges"),
+          enabled: hasPrivileges,
+          run: () => emitCmd("privileges"),
         },
         "—",
         {

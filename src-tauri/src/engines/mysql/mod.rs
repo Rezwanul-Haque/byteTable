@@ -81,6 +81,7 @@ mod error;
 mod introspect;
 mod mutate;
 mod objects;
+mod privileges;
 mod processes;
 mod query;
 mod sql;
@@ -194,6 +195,12 @@ impl EngineConnection for MysqlEngineConnection {
     fn as_process_reader(
         self: std::sync::Arc<Self>,
     ) -> Option<std::sync::Arc<dyn crate::shared::process::ProcessReader>> {
+        Some(self)
+    }
+
+    fn as_privilege_reader(
+        self: std::sync::Arc<Self>,
+    ) -> Option<std::sync::Arc<dyn crate::shared::privileges::PrivilegeReader>> {
         Some(self)
     }
 

@@ -16,6 +16,7 @@ import { useEffect, useMemo, useState } from "react";
 import { BrainstormBoard } from "../../brainstorm_board/components/BrainstormBoard";
 import { PROC_SOURCES } from "../../processes/api";
 import { ProcessesTab } from "../../processes/components/ProcessesTab";
+import { PrivilegesTab } from "../../privileges/components/PrivilegesTab";
 import { SchemaDiff } from "../../schema_diff/components/SchemaDiff";
 import { SchemaMap } from "../../schema_map/components/SchemaMap";
 import { selectPanel, shellLabel, usePanelStore } from "../../console/state";
@@ -91,6 +92,14 @@ function TabBody({
           handleId={workspace.handleId}
           engine={workspace.saved.engine}
           env={workspace.saved.env}
+          schemaName={tab.schema}
+        />
+      );
+    case "privileges":
+      return (
+        <PrivilegesTab
+          handleId={workspace.handleId}
+          engine={workspace.saved.engine}
           schemaName={tab.schema}
         />
       );

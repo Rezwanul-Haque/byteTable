@@ -29,6 +29,7 @@ export function WorkspaceShell({ workspace }: { workspace: Workspace }) {
   const openMapTab = useWorkspacesStore((state) => state.openMapTab);
   const openBoardTab = useWorkspacesStore((state) => state.openBoardTab);
   const openProcessesTab = useWorkspacesStore((state) => state.openProcessesTab);
+  const openPrivilegesTab = useWorkspacesStore((state) => state.openPrivilegesTab);
   const togglePanel = usePanelStore((state) => state.togglePanel);
   const requestTabClose = useTabMetaStore((state) => state.requestTabClose);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -49,6 +50,9 @@ export function WorkspaceShell({ workspace }: { workspace: Workspace }) {
   useBtCmd("brainstorm-board", () => openBoardTab(home));
   useBtCmd("processes", () => {
     openProcessesTab(home);
+  });
+  useBtCmd("privileges", () => {
+    openPrivilegesTab(home);
   });
 
   // §3.12: ⌘/Ctrl+K toggles the palette, ⌘/Ctrl+T opens a new SQL tab.

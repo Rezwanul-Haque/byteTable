@@ -20,6 +20,7 @@ import { abbreviatePath, tildify, useHomeDir } from "../homeDir";
 import { useT } from "../i18n/useT";
 import { useSettingsStore } from "../../features/settings/state";
 import { selectShowConnect, useWorkspacesStore } from "../../features/workspaces/state";
+import { PRIV_SOURCES } from "../../features/privileges/api";
 import { isDataFileWorkspace, workspaceBadge } from "../../features/workspaces/types";
 import { connectionDetail } from "../../features/connections/api";
 import { normalizeEnv } from "../types";
@@ -90,6 +91,7 @@ export function TitleBar({ ctx }: { ctx: TitleBarCtx }) {
     isSql: isSqlShell,
     hasPalette: isSqlShell || ws?.kind === "kv",
     hasProcesses: isSqlShell || ws?.kind === "kv" || ws?.kind === "mongo",
+    hasPrivileges: isSqlShell && !!ws && ws.saved.engine in PRIV_SOURCES,
     hasTerminal: ws !== null && !isFile,
     zoomChanged: settings.fontSize !== 13,
     ctx,

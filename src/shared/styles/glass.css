@@ -597,9 +597,19 @@
 /* `:not(.disabled)` matters here: without it a greyed row lights up under the
    pointer, which reads as available. (The base rule in TitleBar.css already
    excludes it — this override has to as well.) */
+/* The `color` matters as much as the background: the base rule pairs its
+   accent fill with --on-accent (#0c1512 — near-black, legible ON teal). Swap
+   the fill for a translucent white over a dark blur and that text turns into
+   black-on-dark. The neutral lift takes the normal foreground, as every other
+   menu under glass does (.tabmenu-item / .ctx-item / .lang-item above). */
 [data-material] .tb-menu-item:hover:not(.disabled),
-[data-material] .tb-menu-parent.hot {
+[data-material] .tb-menu-parent.hot,
+[data-material] .tb-menu-sub .tb-menu-item:hover:not(.disabled) {
   background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+[data-material] .tb-menu-item:hover:not(.disabled) .tb-menu-hint-key {
+  color: var(--text-dim);
 }
 [data-material] .tb-menu-sep {
   background: rgba(255, 255, 255, 0.12);

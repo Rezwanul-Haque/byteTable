@@ -23,4 +23,5 @@ pub mod schema_diff;
 pub mod schema_map;
 pub mod search;
 pub mod settings;
+pub mod snippets;
 pub mod structure;

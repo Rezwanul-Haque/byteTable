@@ -8,8 +8,11 @@
 //
 // Splitting respects SQL lexical context so a `;` inside a string, a quoted
 // identifier, a line comment (-- …) or a block comment (/* … */) does NOT end
-// a statement. The returned range is trimmed of surrounding whitespace and the
-// trailing semicolon, so the engine receives just the statement text.
+// a statement — those spans are jumped with the shared `skipNonCode` lexer.
+// The returned range is trimmed of surrounding whitespace and the trailing
+// semicolon, so the engine receives just the statement text.
+
+import { skipNonCode } from "./sqlLex";
 
 export interface StatementRange {
   /** Inclusive start offset of the trimmed statement. */
@@ -17,12 +20,6 @@ export interface StatementRange {
   /** Exclusive end offset of the trimmed statement. */
   to: number;
 }
-
-/** A Postgres dollar-quote OPENING delimiter at the current position: `$$` or a
- *  tagged `$tag$` (tag = letter/underscore then word chars). Sticky — only
- *  matches at `lastIndex`. A bare `$1` positional parameter does NOT match (no
- *  closing `$` after the digit). */
-const DOLLAR_QUOTE_OPEN = /\$([A-Za-z_][A-Za-z0-9_]*)?\$/y;
 
 const WORD_CHAR = /[A-Za-z0-9_]/;
 /** A transaction-control keyword right after `BEGIN` (so `BEGIN; …` /
@@ -61,49 +58,12 @@ function topLevelSemicolons(doc: string): number[] {
       i = j;
       continue;
     }
-    // String literal or quoted identifier: skip to the matching quote,
-    // treating a doubled quote ('' or "") as an escaped quote, not a close.
-    if (c === "'" || c === '"') {
-      const quote = c;
-      i++;
-      while (i < n) {
-        if (doc[i] === quote) {
-          if (doc[i + 1] === quote) {
-            i += 2;
-            continue;
-          }
-          i++;
-          break;
-        }
-        i++;
-      }
+    // String literal, quoted identifier, comment or dollar-quoted body: a `;`
+    // in any of them is content, not a terminator. Jump the whole span.
+    const skipped = skipNonCode(doc, i);
+    if (skipped !== null) {
+      i = skipped;
       continue;
-    }
-    // Line comment: skip to end of line.
-    if (c === "-" && doc[i + 1] === "-") {
-      i += 2;
-      while (i < n && doc[i] !== "\n") i++;
-      continue;
-    }
-    // Block comment: skip to the closing */.
-    if (c === "/" && doc[i + 1] === "*") {
-      i += 2;
-      while (i < n && !(doc[i] === "*" && doc[i + 1] === "/")) i++;
-      i += 2;
-      continue;
-    }
-    // Dollar-quoted string (Postgres `$$ … $$` / `$tag$ … $tag$`): a `;` inside
-    // a function/procedure body must NOT terminate the statement. Skip to the
-    // matching closing delimiter.
-    if (c === "$") {
-      DOLLAR_QUOTE_OPEN.lastIndex = i;
-      const m = DOLLAR_QUOTE_OPEN.exec(doc);
-      if (m) {
-        const delim = m[0];
-        const end = doc.indexOf(delim, i + delim.length);
-        i = end === -1 ? n : end + delim.length;
-        continue;
-      }
     }
     if (c === ";") {
       if (depth === 0) semis.push(i);

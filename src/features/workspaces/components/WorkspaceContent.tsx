@@ -34,6 +34,9 @@ import { useTabMetaStore } from "../tabMeta";
 import type { SqlHistoryEntry, Tab, Workspace } from "../types";
 import { selectedSchema, unsavedSummary, unsavedTabIds } from "../types";
 import { tabLabels } from "../tabLabels";
+import type { Snippet } from "../../snippets/api";
+import { SnippetsDrawer } from "../../snippets/components/SnippetsDrawer";
+import { insertSnippetIntoActiveEditor } from "../../../shared/ui/activeCodeEditor";
 import { HistoryDrawer, SavedQueriesDrawer } from "./QueryDrawers";
 import { UnsavedTabsModal, type UnsavedTab } from "./UnsavedTabsModal";
 import { SqlEditorTab } from "./SqlEditorTab";
@@ -149,6 +152,8 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
   const openSqlTabWith = useWorkspacesStore((state) => state.openSqlTabWith);
   const setSqlText = useWorkspacesStore((state) => state.setSqlText);
   const setSqlSavedLink = useWorkspacesStore((state) => state.setSqlSavedLink);
+  const setSqlParams = useWorkspacesStore((state) => state.setSqlParams);
+  const setSqlParamDefs = useWorkspacesStore((state) => state.setSqlParamDefs);
   const openProcessesTab = useWorkspacesStore((state) => state.openProcessesTab);
   const consoleOpen = usePanelStore((state) => selectPanel(state, workspace.id).open);
   const togglePanel = usePanelStore((state) => state.togglePanel);
@@ -173,6 +178,10 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
   // against this connection), so browsing it must not depend on which tab — or
   // whether any query tab — happens to be open.
   const [historyOpen, setHistoryOpen] = useState(false);
+  // The snippet-library drawer. Hosted here for the same reason again: the
+  // library is global, so managing it must not depend on a query tab. Inserting
+  // from it does need an editor, which the insert handler below checks.
+  const [snippetsOpen, setSnippetsOpen] = useState(false);
 
   // Query ▸ Saved Queries (bt:cmd bus). Claimed here, not by the SQL tab: the
   // menu item is enabled for the whole SQL workspace, tabs or not.
@@ -187,6 +196,20 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
     setSavedOpen(false);
     setHistoryOpen(true);
   });
+
+  // Insert a snippet into the editor the user was last in. The drawer took
+  // focus when they clicked, so this goes through the last-focused-view
+  // registry (the same one the title bar's Undo uses) rather than a ref the
+  // drawer does not have. With no query tab open there is no editor to insert
+  // into — say so instead of appearing to do nothing. The drawer stays open: a
+  // snippet is often one of several being pasted in.
+  const insertSnippet = (snippet: Snippet) => {
+    if (insertSnippetIntoActiveEditor(snippet.body)) {
+      toast(t("ws.snip.inserted", { name: snippet.name }), "ok");
+    } else {
+      toast(t("ws.snip.needsTab"), "info");
+    }
+  };
 
   // Memoised so the label/dirty derivations below have a stable dependency.
   const tabs = useMemo(() => workspace.ui.tabs ?? [], [workspace.ui.tabs]);
@@ -267,19 +290,28 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
   // tab, or a new one when the active tab is something else — except it links
   // to no saved entry: re-running something out of the history must not make
   // "Save" overwrite whatever query it happened to come from.
+  // A history entry's SQL is already RESOLVED (parameters were substituted
+  // before the run), so it carries no declarations and no values — any the
+  // target tab had described a different buffer and are cleared with it.
   const loadHistoryEntry = (entry: SqlHistoryEntry) => {
     if (activeTab?.kind === "sql") {
       setSqlText(activeTab.id, entry.sql);
       setSqlSavedLink(activeTab.id, null);
+      setSqlParams(activeTab.id, {});
+      setSqlParamDefs(activeTab.id, []);
     } else openSqlTabWith(entry.sql);
     setHistoryOpen(false);
   };
 
+  // A saved query brings its parameter declarations AND the values it last ran
+  // with, so a report query reopens ready to run rather than ready to fill in.
   const loadSavedQuery = (q: SavedQuery) => {
     if (activeTab?.kind === "sql") {
       setSqlText(activeTab.id, q.sql);
       setSqlSavedLink(activeTab.id, q.id);
-    } else openSqlTabWith(q.sql, q.id);
+      setSqlParams(activeTab.id, q.paramValues ?? {});
+      setSqlParamDefs(activeTab.id, q.params ?? []);
+    } else openSqlTabWith(q.sql, q.id, undefined, q.paramValues ?? {}, q.params ?? []);
     setSavedOpen(false);
     toast(t("ws.sql.loaded", { name: q.name }), "ok");
   };
@@ -307,14 +339,22 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
           savedQueriesOpen={savedOpen}
           onOpenSavedQueries={() => {
             setHistoryOpen(false);
+            setSnippetsOpen(false);
             setSavedOpen((open) => !open);
           }}
+          snippetsOpen={snippetsOpen}
+          onOpenSnippets={() => {
+            setSavedOpen(false);
+            setHistoryOpen(false);
+            setSnippetsOpen((open) => !open);
+          }}
           // Always offered, like Saved queries: the list belongs to the
-          // workspace, not to a query tab. Both drawers slide into the same
-          // right-hand slot, so each opener closes the other.
+          // workspace, not to a query tab. All three drawers slide into the same
+          // right-hand slot, so each opener closes the others.
           historyOpen={historyOpen}
           onOpenHistory={() => {
             setSavedOpen(false);
+            setSnippetsOpen(false);
             setHistoryOpen((open) => !open);
           }}
           onOpenProcesses={hasProcesses ? () => openProcessesTab(procSchema) : undefined}
@@ -346,12 +386,18 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
           onClose={() => setSavedOpen(false)}
           onLoad={loadSavedQuery}
         />
+        <SnippetsDrawer
+          open={snippetsOpen}
+          engine={workspace.info.engine}
+          onClose={() => setSnippetsOpen(false)}
+          onInsert={insertSnippet}
+        />
         <HistoryDrawer
           open={historyOpen}
           history={workspace.ui.history ?? []}
           onClose={() => setHistoryOpen(false)}
           onLoad={loadHistoryEntry}
-          // Both drawers share this slot, so handing over closes this one.
+          // The drawers share this slot, so handing over closes this one.
           onOpenSaved={() => {
             setHistoryOpen(false);
             setSavedOpen(true);

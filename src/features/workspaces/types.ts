@@ -16,6 +16,7 @@ import type {
   SortSpec,
 } from "../../shared/api/engine";
 import type { EditorOp } from "../structure/ops";
+import type { ParamDef } from "./sqlParams";
 import type {
   ConnectionKind,
   EngineInfo,
@@ -236,6 +237,36 @@ export interface SqlTabState {
    * stored by earlier builds restore without it.
    */
   savedQueryId?: string | null;
+  /**
+   * Entered values for this buffer's `:placeholders`, keyed by parameter name
+   * (raw text, not SQL — see `sqlParams.ts`).
+   *
+   * The DEFINITIONS are not here: they belong to the saved query, and the
+   * detected parameter LIST is derived from `text` on every render, so editing
+   * the SQL can never leave a stale list behind. Only the values the user
+   * typed need to survive a tab switch, which is what this is for. Values for
+   * a placeholder that has since been edited away are harmless — nothing reads
+   * a value for a parameter that is no longer detected — and are dropped the
+   * next time the query is saved.
+   *
+   * Optional because sessions stored by earlier builds restore without it.
+   */
+  params?: Record<string, string>;
+  /**
+   * Parameter DECLARATIONS for this buffer — type, label, default, choices.
+   *
+   * On the tab rather than only on the saved query, for the same reason `text`
+   * is: declaring `${table}` as a raw parameter has to work on a scratch buffer
+   * that has never been saved, and the declaration editor should affect the
+   * inputs as you type rather than at some later save. Saving copies these to
+   * the saved query (pruned to what the query actually uses), and loading a
+   * saved query seeds them back.
+   *
+   * Declarations for names NOT in the buffer are kept rather than pruned, so
+   * commenting a clause out for a minute does not discard its type and default
+   * — only a save prunes. Optional because earlier sessions restore without it.
+   */
+  paramDefs?: ParamDef[];
 }
 
 /**

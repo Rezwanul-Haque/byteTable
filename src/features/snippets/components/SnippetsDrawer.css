@@ -1,0 +1,112 @@
+/* Snippet library drawer. The panel, scrim, search box, list and rows are the
+   shared `.sq-*` drawer styles from
+   workspaces/components/QueryDrawers.css — this file covers only what is new
+   here: the create/edit form, and the shorthand chip on a list row. */
+
+/* The "New snippet" button is the drawers' shared `.sq-drawer-link` nav row
+   (QueryDrawers.css), so it needs no rules here — it matches the history
+   drawer's "Saved queries" link exactly. */
+
+/* A group ("Your snippets" / "Starters") and its rows.
+
+   This wrapper has to re-declare the column gap: `.sq-list` is a flex column
+   whose `gap` falls between ITS children, and grouping made those children the
+   two sections rather than the individual cards — which left the cards inside a
+   group touching. Same 7px, so a grouped list is spaced exactly like an
+   ungrouped one. */
+.snip-section {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+/* Group heading, shown only when both groups are on screen. Aligned with the
+   cards (which sit at the list's own 10px padding edge) and spaced by the gap
+   above, so it only needs to lift itself off the group before it. */
+.snip-group {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  padding: 5px 2px 0;
+}
+
+/* Shorthand badge on a list row — mono, like the editor token it is typed as. */
+.snip-abbr {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+  border-radius: 4px;
+  padding: 1px 5px;
+  white-space: nowrap;
+  flex: none;
+}
+
+/* ---------- create / edit form ---------- */
+
+/* Fills the drawer below the header and scrolls on its own, so the action row
+   stays reachable on a short window. */
+.snip-form {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 14px 14px;
+}
+
+.snip-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.snip-label {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+
+.snip-hint {
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.snip-input {
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 7px 9px;
+  font-size: 12px;
+  outline: none;
+  width: 100%;
+}
+
+.snip-input:focus {
+  border-color: var(--accent);
+}
+
+/* The body is SQL, so it gets the mono face and resists shrinking below a
+   readable height. */
+.snip-body {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  resize: vertical;
+  min-height: 120px;
+}
+
+.snip-select {
+  width: 100%;
+}
+
+.snip-form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 2px;
+}

@@ -161,14 +161,16 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
       : [];
     // Saved queries visible from this workspace (global + this-workspace-
     // attached). Selecting one opens a fresh SQL tab seeded with its SQL, and
-    // linked to it so saving from that tab updates the entry.
+    // linked to it so saving from that tab updates the entry. Its parameter
+    // declarations and last-used values come along, so a parameterized query
+    // opened from here is as ready to run as one opened from the drawer.
     const savedCmds: Command[] = selectQueriesForConnection(savedQueries, workspace.saved.id).map(
       (q) => ({
         id: "saved-" + q.id,
         icon: "bookmark",
         label: q.name,
         hint: t("ws.palette.savedHint"),
-        run: () => openSqlTabWith(q.sql, q.id),
+        run: () => openSqlTabWith(q.sql, q.id, undefined, q.paramValues ?? {}, q.params ?? []),
       }),
     );
     return [

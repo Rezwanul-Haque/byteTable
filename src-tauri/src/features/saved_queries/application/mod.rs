@@ -96,6 +96,8 @@ mod tests {
             sql: sql.into(),
             saved_at: 0,
             connection_id: None,
+            params: Vec::new(),
+            param_values: std::collections::BTreeMap::new(),
         }
     }
 

@@ -13,6 +13,13 @@
 
 import { invoke } from "@tauri-apps/api/core";
 
+// A TYPE-ONLY import of the parameter contract, which lives with the module
+// that implements it (`workspaces/sqlParams.ts` owns what a kind means, how a
+// default resolves, how a value is rendered). Erased at compile time, so this
+// adds no runtime coupling and keeps `sqlParams.ts` a pure, Tauri-free module
+// its unit tests can import directly.
+import type { ParamDef } from "../workspaces/sqlParams";
+
 /**
  * A named SQL snippet the user has saved. Mirrors Rust's `SavedQuery`:
  * `id` is assigned on first save (send "" for new entries), `savedAt` is
@@ -31,6 +38,18 @@ export interface SavedQuery {
   sql: string;
   savedAt: number;
   connectionId?: string | null;
+  /**
+   * Declared query parameters, in prompt order. Absent/empty for a query with
+   * no `:placeholders` — the backend omits both this and `paramValues` from the
+   * wire when empty, so every query saved before the feature arrives unchanged.
+   */
+  params?: ParamDef[];
+  /**
+   * The values this query last ran with, keyed by parameter name — the raw text
+   * the user typed, not SQL. Restored into the tab when the query is loaded, so
+   * a report query reopens ready to run, and rewritten after each run.
+   */
+  paramValues?: Record<string, string>;
 }
 
 /**
@@ -51,6 +70,10 @@ export interface SavedQueryInput {
    * new query.
    */
   savedAt?: number;
+  /** Parameter declarations to store. Omit to store none. */
+  params?: ParamDef[];
+  /** Last-used parameter values to store. Omit to store none. */
+  paramValues?: Record<string, string>;
 }
 
 export function savedQueryList(): Promise<SavedQuery[]> {
@@ -71,6 +94,11 @@ export function savedQuerySave(query: SavedQueryInput): Promise<SavedQuery> {
     // Pass the attachment through. Rust's Option deserializes from absent or
     // null, so a global query (null/undefined) is fine either way.
     connectionId: query.connectionId ?? null,
+    // Rust defaults both of these when absent, and skips them on the way out
+    // when empty — so sending [] / {} for an unparameterized query stores and
+    // round-trips exactly as before the feature existed.
+    params: query.params ?? [],
+    paramValues: query.paramValues ?? {},
   };
   return invoke<SavedQuery>("saved_query_save", { query: payload });
 }

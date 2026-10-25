@@ -30,6 +30,8 @@ use features::schema_map::commands::SchemaMapState;
 use features::schema_map::infrastructure::JsonFileMapLayoutRepository;
 use features::settings::commands::SettingsState;
 use features::settings::infrastructure::JsonFileSettingsStore;
+use features::snippets::commands::SnippetsState;
+use features::snippets::infrastructure::JsonFileSnippetRepository;
 use shared::engine::Engine;
 
 /// Bring the main window back to the foreground (from hidden/minimized tray state).
@@ -418,6 +420,12 @@ pub fn run() {
                 JsonFileSavedQueryRepository::new(config_dir.join("saved_queries.json"));
             app.manage(SavedQueriesState::new(Box::new(saved_queries)));
 
+            // Snippets slice: the global library of reusable SQL fragments.
+            // Its own store, not part of saved_queries — a snippet is inserted
+            // at the caret with tab stops, not loaded as a whole buffer.
+            let snippets = JsonFileSnippetRepository::new(config_dir.join("snippets.json"));
+            app.manage(SnippetsState::new(Box::new(snippets)));
+
             // Schema-map slice: per-(connectionId, schema) ER-diagram layouts
             // in one local JSON store. The connectionId is the persisted
             // SavedConnection id, so layouts survive restarts.
@@ -561,6 +569,9 @@ pub fn run() {
             features::saved_queries::commands::saved_query_list,
             features::saved_queries::commands::saved_query_save,
             features::saved_queries::commands::saved_query_delete,
+            features::snippets::commands::snippet_list,
+            features::snippets::commands::snippet_save,
+            features::snippets::commands::snippet_delete,
             features::schema_diff::commands::schema_snapshot,
             features::schema_diff::commands::schema_diff_compare,
             features::schema_diff::commands::schema_diff_apply,

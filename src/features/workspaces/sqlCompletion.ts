@@ -124,10 +124,10 @@ function renderIcon(completion: Completion): Node | null {
   return span;
 }
 
-/** Source-table hint for a column row (position 70). */
+/** Source hint (position 70): a column's table, or a snippet's full name. */
 function renderHint(completion: Completion): Node | null {
   const c = completion as BtCompletion;
-  if (c.btKind !== "column" || !c.btSource) return null;
+  if ((c.btKind !== "column" && c.btKind !== "snippet") || !c.btSource) return null;
   const span = document.createElement("span");
   span.className = "ac-hint";
   span.textContent = c.btSource;

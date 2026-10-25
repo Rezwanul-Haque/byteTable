@@ -355,7 +355,14 @@
    a hard-edged slab tight around the glyphs, which is how the Redis clients and
    SQL processes stat strips (`.rc-stat`, `.proc-stat`: a flex column / a span,
    no padding, no radius) ended up looking broken. Those read as text on the
-   strip they sit in, exactly as they do on a flat theme. */
+   strip they sit in, exactly as they do on a flat theme.
+
+   The SAME mistake was later made with the two EXPLAIN summary strips —
+   `.ex-stat` (the SQL plan's Total time / Rows read / Selectivity tiles) and
+   `.mg-estat` (MongoDB's) — which are likewise bare flex columns. Both are
+   deliberately absent below: their strip (`.ex-summary`) is the surface that
+   gets the treatment, and the numbers on it are text. Before adding a class
+   here, check it really does have its own border, radius and padding. */
 [data-material] .rdash-stat,
 [data-material] .ddb-dash-stat,
 [data-material] .ddb-structure-card,
@@ -365,9 +372,7 @@
 [data-material] .csvv-issue,
 [data-material] .ex-table-wrap,
 [data-material] .ex-tnode,
-[data-material] .ex-stat,
 [data-material] .cl-shard,
-[data-material] .mg-estat,
 [data-material] .sd-stat,
 [data-material] .sd-conn-card,
 [data-material] .ts-hit,

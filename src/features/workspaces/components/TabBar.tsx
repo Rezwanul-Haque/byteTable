@@ -68,6 +68,12 @@ interface TabBarProps {
    *  toolbar, so the saved list is reachable without opening a query tab.
    *  Omitted for engines with no saved queries, which hides the button. */
   onOpenSavedQueries?: () => void;
+  /** True when the snippet-library drawer is open — lights its toggle. */
+  snippetsOpen?: boolean;
+  /** Open the snippet-library drawer. Like the saved queries it is global, so
+   *  it does not need a query tab; omitted for engines with no SQL editor,
+   *  which hides the button. */
+  onOpenSnippets?: () => void;
   /** True when the run-history drawer is open — lights its toggle. */
   historyOpen?: boolean;
   /** Toggle the active query tab's run history. Unlike the saved queries it is
@@ -98,6 +104,8 @@ export function TabBar({
   onToggleConsole,
   savedQueriesOpen = false,
   onOpenSavedQueries,
+  snippetsOpen = false,
+  onOpenSnippets,
   historyOpen = false,
   onOpenHistory,
   onOpenProcesses,
@@ -221,6 +229,21 @@ export function TabBar({
             onClick={onOpenSavedQueries}
           >
             <Icon name="bookmarks" size={15} />
+          </button>
+        ) : null}
+        {/* Beside the saved queries: the snippet library is global, so
+            managing it must not require a query tab either — only INSERTING
+            from it does, which the drawer says when there is nowhere to go. */}
+        {onOpenSnippets ? (
+          <button
+            type="button"
+            className={"tabbar-tool tabbar-tool-icon" + (snippetsOpen ? " active" : "")}
+            title={t("ws.snip.manage")}
+            aria-label={t("ws.snip.manage")}
+            aria-pressed={snippetsOpen}
+            onClick={onOpenSnippets}
+          >
+            <Icon name="bolt" size={15} />
           </button>
         ) : null}
         {/* Beside the saved queries, and for the same reason: the run history

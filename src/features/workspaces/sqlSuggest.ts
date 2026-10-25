@@ -45,8 +45,16 @@ export interface EditorSchema {
   tables: EditorSchemaTable[];
 }
 
-/** Kind tag shown on each row (and used to pick the leading icon). */
-export type SuggestKind = "table" | "column" | "keyword" | "fn";
+/**
+ * Kind tag shown on each row (and used to pick the leading icon).
+ *
+ * `snippet` is never produced by {@link suggestSql} — snippet rows come from
+ * the user's library through its own completion source
+ * (`snippetCompletion.ts`). It lives in this union because the kind vocabulary
+ * is what the shared row renderer keys its icon and tag off, and a row the
+ * renderer has no entry for comes out blank.
+ */
+export type SuggestKind = "table" | "column" | "keyword" | "fn" | "snippet";
 
 /** One ranked suggestion — surface-agnostic (no DOM, no CM types). */
 export interface Suggestion {
@@ -76,6 +84,7 @@ export const SUGGEST_KIND_LABEL: Record<SuggestKind, string> = {
   column: "column",
   keyword: "keyword",
   fn: "fn",
+  snippet: "snippet",
 };
 
 /** Hard cap on rows returned — keeps the popup scroll bounded on wide schemas. */
@@ -101,6 +110,7 @@ const ICON: Record<SuggestKind, string> = {
   column: "view_column",
   keyword: "code",
   fn: "function",
+  snippet: "bolt",
 };
 
 /**

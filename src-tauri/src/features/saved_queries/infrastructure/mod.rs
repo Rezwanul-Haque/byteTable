@@ -120,6 +120,8 @@ mod tests {
             sql: format!("SELECT '{id}'"),
             saved_at: 1_700_000_000_000,
             connection_id: None,
+            params: Vec::new(),
+            param_values: std::collections::BTreeMap::new(),
         }
     }
 
@@ -166,6 +168,45 @@ mod tests {
         let all = repo.list().expect("list after upsert");
         assert_eq!(all.len(), 2);
         assert_eq!(all[0].connection_id.as_deref(), Some("conn-2"));
+    }
+
+    #[test]
+    fn params_and_last_used_values_survive_the_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = repo_in(&dir);
+        let mut values = std::collections::BTreeMap::new();
+        values.insert("status".to_string(), "paid".to_string());
+        let parameterized = SavedQuery {
+            sql: "SELECT * FROM orders WHERE status = :status".into(),
+            params: vec![super::super::domain::ParamDef {
+                name: "status".into(),
+                label: Some("Order status".into()),
+                kind: Some("text".into()),
+                default: Some("due".into()),
+                choices: vec!["paid".into(), "due".into()],
+            }],
+            param_values: values,
+            ..query("a", "Orders by status")
+        };
+        repo.save(&parameterized).expect("save");
+        assert_eq!(repo.list().expect("list"), vec![parameterized]);
+    }
+
+    #[test]
+    fn a_file_written_before_the_params_feature_still_loads() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("saved_queries.json");
+        fs::write(
+            &path,
+            r#"[{"id":"a","name":"Alpha","sql":"SELECT 1","savedAt":1700000000000}]"#,
+        )
+        .expect("write legacy file");
+        let all = JsonFileSavedQueryRepository::new(path)
+            .list()
+            .expect("list");
+        assert_eq!(all.len(), 1);
+        assert!(all[0].params.is_empty());
+        assert!(all[0].param_values.is_empty());
     }
 
     #[test]

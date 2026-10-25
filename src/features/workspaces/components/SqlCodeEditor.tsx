@@ -64,6 +64,8 @@ import { useT } from "../../../shared/i18n/useT";
 import type { Engine } from "../../../shared/types";
 import { clearActiveCodeEditor, setActiveCodeEditor } from "../../../shared/ui/activeCodeEditor";
 
+import type { Snippet } from "../../snippets/api";
+
 import {
   completionAddToOptions,
   completionOptionClass,
@@ -72,6 +74,7 @@ import {
   sqlDialectFor,
   type EditorSchema,
 } from "../sqlCompletion";
+import { makeSnippetCompletionSource } from "../snippetCompletion";
 import { statementRangeAt } from "../sqlStatement";
 import "./SqlCodeEditor.css";
 
@@ -230,11 +233,29 @@ interface SqlCodeEditorProps {
    * Omitted (or a non-SQL engine) falls back to the ANSI core / StandardSQL.
    */
   engine?: Engine;
+  /**
+   * The user's snippet library, already narrowed to this engine. Offered in the
+   * completion list beside the schema rows and expanded with tab stops. Read
+   * live via a ref like `schema`, so saving a snippet in the manager makes it
+   * available in an open editor without re-mounting. Defaults to none.
+   */
+  snippets?: Snippet[];
 }
 
 export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>(
   function SqlCodeEditor(
-    { value, onChange, onRun, onRunBatch, onFormat, onCaret, onAllSelected, schema, engine },
+    {
+      value,
+      onChange,
+      onRun,
+      onRunBatch,
+      onFormat,
+      onCaret,
+      onAllSelected,
+      schema,
+      engine,
+      snippets,
+    },
     ref,
   ) {
     const t = useT();
@@ -259,6 +280,8 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
     // fixed for a mounted tab in practice, but a ref keeps the source honest
     // without re-creating the extensions.
     const engineRef = useRef<Engine | undefined>(engine);
+    // Live snippet library, read by its completion source per keystroke.
+    const snippetsRef = useRef<Snippet[]>(snippets ?? []);
     onChangeRef.current = onChange;
     onRunRef.current = onRun;
     onRunBatchRef.current = onRunBatch;
@@ -267,6 +290,7 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
     onAllSelectedRef.current = onAllSelected;
     schemaRef.current = schema ?? { tables: [] };
     engineRef.current = engine;
+    snippetsRef.current = snippets ?? [];
 
     // The Run/Explain buttons resolve the statement at the caret through this
     // handle — the same logic as ⌘/Ctrl+Enter. Falls back to the buffer (or "")
@@ -405,7 +429,12 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
             // closeOnBlur (default) dismisses on blur; activateOnTyping pops it as
             // the user types (and right after FROM/JOIN/INTO/UPDATE).
             autocompletion({
+              // Two sources, both reading live refs: the schema/keyword engine
+              // and the user's snippet library. Snippets go FIRST so a matched
+              // abbreviation heads the list — it is the more specific match
+              // (the user named it) where a keyword row is generic.
               override: [
+                makeSnippetCompletionSource(() => snippetsRef.current),
                 makeSqlCompletionSource(
                   () => schemaRef.current,
                   () => engineRef.current,

@@ -17,6 +17,7 @@ import { readKeptSchemas, readSchemaColor, readSchemaSession, readSession } from
 import type { CellValue } from "../../shared/api/engine";
 import type { DbObjectInfo, DbObjectKind, SortSpec } from "../../shared/api/engine";
 import type { EditorOp } from "../structure/ops";
+import type { ParamDef } from "./sqlParams";
 import { t } from "../../shared/i18n";
 import type {
   DataFileRef,
@@ -247,8 +248,19 @@ interface WorkspacesFeatureState {
    *
    * `title` overrides the generated "Query N" — used when the SQL came from a
    * file the user can name, where "Query 3" would throw that name away.
+   *
+   * `params` / `paramDefs` seed the tab's query-parameter values and
+   * declarations, so loading a saved query restores what it last ran with in
+   * the SAME update that creates the tab — the alternative (create, then set)
+   * would need the new tab's id, which this action does not hand back.
    */
-  openSqlTabWith: (sql: string, savedQueryId?: string | null, title?: string) => void;
+  openSqlTabWith: (
+    sql: string,
+    savedQueryId?: string | null,
+    title?: string,
+    params?: Record<string, string>,
+    paramDefs?: ParamDef[],
+  ) => void;
   /**
    * Open the schema-map tab for `schema` (one per schema) and focus it; if
    * already open, focus the existing one.
@@ -369,6 +381,15 @@ interface WorkspacesFeatureState {
   /** Link a SQL tab to the saved query its buffer came from (null unlinks), so
    *  the next save updates that entry. See `SqlTabState.savedQueryId`. */
   setSqlSavedLink: (tabId: string, savedQueryId: string | null) => void;
+  /** Set one query-parameter value on a SQL tab (see `SqlTabState.params`).
+   *  An empty string is kept rather than deleted, so clearing an input is not
+   *  silently undone by the parameter's declared default. */
+  setSqlParam: (tabId: string, name: string, value: string) => void;
+  /** Replace a SQL tab's whole parameter-value map — loading a saved query
+   *  restores its last-used values in one update. */
+  setSqlParams: (tabId: string, values: Record<string, string>) => void;
+  /** Replace a SQL tab's parameter declarations (see `SqlTabState.paramDefs`). */
+  setSqlParamDefs: (tabId: string, defs: ParamDef[]) => void;
   /** Replace a SQL tab's result set with one run-outcome per executed
    *  statement, focusing the first (the × dismiss clears them). */
   setSqlRuns: (tabId: string, runs: SqlRun[]) => void;
@@ -898,7 +919,7 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
       };
     }),
 
-  openSqlTabWith: (sql, savedQueryId = null, titleOverride) =>
+  openSqlTabWith: (sql, savedQueryId = null, titleOverride, params, paramDefs) =>
     set((state) => {
       const id = state.activeWorkspaceId;
       if (id === null) return state;
@@ -918,6 +939,8 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
             history: [],
             editorHeight: null,
             savedQueryId,
+            params: params ?? {},
+            paramDefs: paramDefs ?? [],
           };
           return { tabs: [...(ui.tabs ?? []), tab], activeTabId: tab.id };
         }),
@@ -1206,6 +1229,19 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
 
   setSqlSavedLink: (tabId, savedQueryId) =>
     set((state) => ({ workspaces: patchSqlTab(state, tabId, () => ({ savedQueryId })) })),
+
+  setSqlParam: (tabId, name, value) =>
+    set((state) => ({
+      workspaces: patchSqlTab(state, tabId, (t) => ({
+        params: { ...(t.params ?? {}), [name]: value },
+      })),
+    })),
+
+  setSqlParams: (tabId, values) =>
+    set((state) => ({ workspaces: patchSqlTab(state, tabId, () => ({ params: values })) })),
+
+  setSqlParamDefs: (tabId, defs) =>
+    set((state) => ({ workspaces: patchSqlTab(state, tabId, () => ({ paramDefs: defs })) })),
 
   setSqlRuns: (tabId, runs) =>
     set((state) => ({

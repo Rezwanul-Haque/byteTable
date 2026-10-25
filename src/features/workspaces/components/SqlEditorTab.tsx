@@ -23,6 +23,13 @@
 // browse half (SavedQueriesDrawer) is hosted by WorkspaceContent, because its
 // opener sits on the tab strip and must work with no query tab open — as does
 // the history drawer beside it.
+//
+// QUERY PARAMETERS: a buffer holding `:name` / `${name}` / `?` placeholders
+// grows a ParamBar under the toolbar, and every run RESOLVES the buffer through
+// `applyParams` before anything else touches it — so the statement splitter,
+// the result tabs, the history and the backend's read-only guard all see the
+// SQL that actually ran. A run with a value missing opens the prompt dialog
+// instead of running; ⇧⌘↩ opens it on demand. See `../sqlParams` for the model.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -40,6 +47,8 @@ import { useTabMenu } from "../../../shared/hooks/useTabMenu";
 import { useToast } from "../../../shared/ui/toastContext";
 import { columnsKey, tablesKey, useIntrospectionStore } from "../../introspection/state";
 import { useSavedQueriesStore } from "../../saved_queries/state";
+import { libraryForEngine } from "../../snippets/builtins";
+import { selectSnippetsForEngine, useSnippetsStore } from "../../snippets/state";
 import { useWorkspacesStore } from "../state";
 import { useBtCmd } from "../../../shared/ui/btCmd";
 import type { SqlRun, Tab, Workspace } from "../types";
@@ -49,7 +58,16 @@ import { detectedTable } from "../explainClauses";
 import { formatSql } from "../formatSql";
 import { previewHtml } from "../sqlPreview";
 import { splitStatements, statementRanges } from "../sqlStatement";
+import {
+  applyParams,
+  defsToStore,
+  detectParams,
+  missingParams,
+  valuesToStore,
+  type DetectedParam,
+} from "../sqlParams";
 import { type EditorSchema } from "../sqlCompletion";
+import { ParamBar, ParamPrompt } from "./QueryParams";
 import { SqlCodeEditor, type SqlCodeEditorHandle } from "./SqlCodeEditor";
 import { SqlResultGrid } from "./SqlResultGrid";
 import "./SqlEditorTab.css";
@@ -190,6 +208,8 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   const setSqlEditorHeight = useWorkspacesStore((s) => s.setSqlEditorHeight);
 
   const setSqlSavedLink = useWorkspacesStore((s) => s.setSqlSavedLink);
+  const setSqlParams = useWorkspacesStore((s) => s.setSqlParams);
+  const setSqlParamDefs = useWorkspacesStore((s) => s.setSqlParamDefs);
 
   const saveQuery = useSavedQueriesStore((s) => s.save);
   // Resolved live rather than cached on the tab: a rename or a delete from the
@@ -222,6 +242,12 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   // ('result') or the execution-order teaching panel ('explain'). Local —
   // it's a view flip, not buffer/result state, so it need not survive a switch.
   const [view, setView] = useState<"result" | "explain">("result");
+  // The parameter prompt, when open: the run it is gathering values for.
+  // `source` is the SQL that run will use (the caret statement, a selection, or
+  // the whole buffer), captured when the prompt opened so the dialog cannot
+  // drift from what Run was about to do. Local — an open dialog is not state
+  // worth surviving a tab switch.
+  const [prompt, setPrompt] = useState<{ source: string; forceBatch: boolean } | null>(null);
 
   // Resizable editor/results split. `tab.editorHeight` (px, in the store)
   // overrides the CSS default height of the editor pane; the results pane
@@ -320,6 +346,33 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
 
   const text = tab.text;
 
+  // --- Query parameters -----------------------------------------------------
+  // The parameter LIST is derived from the buffer on every change and never
+  // stored, so it cannot go stale: delete a `:placeholder` and its row is gone.
+  // The VALUES and DECLARATIONS do live on the tab (so they survive a switch)
+  // and are copied to the saved query on save.
+  const engine = workspace.info.engine;
+  const detectedParams = useMemo(() => detectParams(text, engine), [text, engine]);
+  const paramValues = tab.params ?? {};
+  const paramDefs = tab.paramDefs ?? [];
+  const hasParams = detectedParams.length > 0;
+
+  // --- Snippets -------------------------------------------------------------
+  // The library for this engine — the user's snippets plus the built-in
+  // starters — fed to the editor's completion source. Loaded once (the store
+  // guards re-calls) so typing `sel` works without ever opening the drawer.
+  // `t` is a dependency because the built-ins' names are localized.
+  const allSnippets = useSnippetsStore((s) => s.snippets);
+  const loadSnippets = useSnippetsStore((s) => s.load);
+  useEffect(() => {
+    void loadSnippets();
+  }, [loadSnippets]);
+  const editorSnippets = useMemo(
+    () => libraryForEngine(selectSnippetsForEngine(allSnippets, engine), engine),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allSnippets, engine, t],
+  );
+
   // Optional, client-side enrichment for the Explain panel: if the detected
   // FROM table already has cached introspection columns (no fetch is issued),
   // surface its column count on the FROM step. Falls back to null otherwise —
@@ -396,6 +449,36 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
     [tableEntries, columnsCache, workspace.handleId, schemaName],
   );
 
+  /**
+   * Write the values a run just used back to the saved query this tab came
+   * from, so reopening it comes back ready to run ("remembers what it last ran
+   * with"). A no-op for an unlinked buffer — a scratch query has nowhere to
+   * remember into, and its values still live on the tab.
+   *
+   * Only writes when something actually changed, so re-running the same query
+   * does not touch the store file on every ⌘↵. Failures are swallowed on
+   * purpose: this is bookkeeping that follows a successful run, and a toast
+   * about it would be noise over the result the user asked for.
+   */
+  const rememberParamValues = (present: DetectedParam[], values: Record<string, string>) => {
+    if (!linked) return;
+    const toStore = valuesToStore(present, paramDefs, values);
+    const stored = linked.paramValues ?? {};
+    const unchanged =
+      Object.keys(toStore).length === Object.keys(stored).length &&
+      Object.entries(toStore).every(([k, v]) => stored[k] === v);
+    if (unchanged) return;
+    void saveQuery({
+      id: linked.id,
+      savedAt: linked.savedAt,
+      name: linked.name,
+      sql: linked.sql,
+      connectionId: linked.connectionId,
+      params: linked.params,
+      paramValues: toStore,
+    }).catch(() => {});
+  };
+
   // Run SQL. With no override the whole buffer runs; the toolbar Run button and
   // ⌘/Ctrl+Enter pass the statement at the caret, OR — when the user has
   // selected text spanning several statements — that whole selection. The
@@ -408,9 +491,32 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   // failing statement doesn't hide the others; the run continues through all of
   // them and the first tab is focused. Latest `running` is read off state so
   // double-fires are ignored; runs / history go to the store (survive switches).
-  const run = (override?: string, opts?: { forceBatch?: boolean }) => {
-    const source = (override ?? text).trim();
-    if (running || source === "") return;
+  const run = (
+    override?: string,
+    opts?: { forceBatch?: boolean; values?: Record<string, string> },
+  ) => {
+    const raw = (override ?? text).trim();
+    if (running || raw === "") return;
+
+    // Resolve `:placeholders` FIRST, so everything downstream — the statement
+    // split, the result tabs, the history entries and the backend's read-only
+    // classifier — works on the SQL that actually runs. `opts.values` is the
+    // prompt dialog handing back what the user just typed, which has not
+    // reached the store yet.
+    const values = opts?.values ?? paramValues;
+    const present = detectParams(raw, engine);
+    if (present.length > 0) {
+      // Something still unfilled: ask instead of running. The prompt resumes
+      // this exact run (same source, same batch choice) once values are in.
+      if (missingParams(present, paramDefs, values).length > 0) {
+        setPrompt({ source: raw, forceBatch: opts?.forceBatch === true });
+        return;
+      }
+      // The values this run used become the remembered ones.
+      if (opts?.values) setSqlParams(tab.id, values);
+      rememberParamValues(present, values);
+    }
+    const source = applyParams(raw, values, paramDefs, engine);
     const statements = splitStatements(source);
     if (statements.length === 0) return;
     // Batch when there is more than one statement (they must share a session),
@@ -540,9 +646,15 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   // None of those is a saved query, so the tab stops being linked to one — the
   // next save must not overwrite the entry the previous text came from. (A
   // saved query is loaded by WorkspaceContent, which links instead.)
+  //
+  // Parameter values and declarations go with it: they described the OLD
+  // buffer, and carrying a `:status` default into unrelated SQL that happens to
+  // use the same name would quietly change what that query runs.
   const load = (sql: string) => {
     setSqlText(tab.id, sql);
     setSqlSavedLink(tab.id, null);
+    setSqlParams(tab.id, {});
+    setSqlParamDefs(tab.id, []);
     setPop(null);
   };
 
@@ -593,6 +705,11 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
       name,
       sql: text,
       connectionId,
+      // Pruned to the parameters this buffer actually has, and to declarations
+      // that say something beyond the default — so an unparameterized query
+      // saves exactly as it did before the feature existed.
+      params: defsToStore(detectedParams, paramDefs),
+      paramValues: valuesToStore(detectedParams, paramDefs, paramValues),
     })
       .then((stored) => {
         setSqlSavedLink(tab.id, stored.id);
@@ -633,6 +750,36 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   useBtCmd("explain", runExplain);
   useBtCmd("save-query", () => setPop("save"));
   useBtCmd("open-sql-file", openFile);
+
+  /**
+   * Open the parameter prompt for the run ⌘↵ would have done, without running.
+   * The way to CHANGE values that are already filled in — a plain run would
+   * just use them, which is the point of not nagging on every run.
+   */
+  const promptForRun = () => {
+    if (!hasParams) return;
+    const raw = (editorRef.current?.pickStatement() ?? text).trim();
+    if (raw === "") return;
+    setPrompt({ source: raw, forceBatch: false });
+  };
+
+  // ⇧⌘↩ / ⇧Ctrl+↵ — "run, but ask me about the parameters first". Scoped like
+  // the ⌘S handler below: only the active SQL tab is mounted, so only it hears
+  // this. Inert for a buffer with no parameters, so the chord never swallows a
+  // keystroke it has nothing to do with.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || !e.shiftKey) return;
+      if (e.key !== "Enter") return;
+      if (!hasParams) return;
+      e.preventDefault();
+      promptForRun();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // `promptForRun` reads the latest text/editor ref on each call.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasParams, text]);
 
   const { runs, activeRunId } = tab;
   const runDisabled = running || text.trim() === "";
@@ -705,6 +852,16 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
         >
           {allSelected ? t("ws.sql.explainAll") : t("ws.sql.explain")}
         </Btn>
+        {/* Only for a parameterized buffer: the way to revisit values that are
+            already filled in, since a plain run just uses them. */}
+        {hasParams ? (
+          <IconBtn
+            icon="tune"
+            title={t("ws.params.runWith")}
+            active={prompt !== null}
+            onClick={promptForRun}
+          />
+        ) : null}
         <span className="sql-hint">⌘↩ / Ctrl+Enter</span>
         <div className="sql-snippets">
           {snippets.map((s) => (
@@ -778,6 +935,36 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
         </div>
       </div>
 
+      {/* Between the toolbar and the editor: close to the Run button that will
+          consume the values, and above the SQL the placeholders are written in. */}
+      {hasParams ? (
+        <ParamBar
+          params={detectedParams}
+          defs={paramDefs}
+          values={paramValues}
+          engine={engine}
+          sql={text}
+          onChange={(values) => setSqlParams(tab.id, values)}
+          onDefsChange={(defs) => setSqlParamDefs(tab.id, defs)}
+        />
+      ) : null}
+
+      {prompt ? (
+        <ParamPrompt
+          params={detectParams(prompt.source, engine)}
+          defs={paramDefs}
+          values={paramValues}
+          engine={engine}
+          sql={prompt.source}
+          onRun={(values) => {
+            const pending = prompt;
+            setPrompt(null);
+            run(pending.source, { forceBatch: pending.forceBatch, values });
+          }}
+          onClose={() => setPrompt(null)}
+        />
+      ) : null}
+
       <div
         className={"sql-editor-wrap" + (editorGrows ? " grow" : "")}
         ref={editorWrapRef}
@@ -806,6 +993,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
             onAllSelected={setAllSelected}
             schema={editorSchema}
             engine={workspace.info.engine}
+            snippets={editorSnippets}
           />
         </div>
         <ExecutionMinimap sql={text} caret={caret} />

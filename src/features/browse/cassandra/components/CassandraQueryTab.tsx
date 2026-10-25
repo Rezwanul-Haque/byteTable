@@ -4,7 +4,7 @@
 // statement selection (⌘A + Run) runs each `;`-separated statement IN ORDER,
 // one result tab per statement. Results render through the shared wide-column grid.
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { isAppErrorPayload } from "../../../../shared/api/error";
 import { useT } from "../../../../shared/i18n/useT";
@@ -16,6 +16,8 @@ import {
   type SqlCodeEditorHandle,
 } from "../../../workspaces/components/SqlCodeEditor";
 import { splitStatements, statementRanges } from "../../../workspaces/sqlStatement";
+import { libraryForEngine } from "../../../snippets/builtins";
+import { selectSnippetsForEngine, useSnippetsStore } from "../../../snippets/state";
 import { cassRunCql, type CassColumn, type CassCqlResult, type TableDescriptor } from "../api";
 import { csvOf, download } from "../cassIo";
 import { CassRowGrid } from "./CassRowGrid";
@@ -51,6 +53,22 @@ export function CassandraQueryTab({ handleId, ks, tables }: CassandraQueryTabPro
   const editorRef = useRef<SqlCodeEditorHandle>(null);
   const editorWrapRef = useRef<HTMLDivElement>(null);
   const tabRef = useRef<HTMLDivElement>(null);
+
+  // The snippet library (global store + the CQL built-ins), offered in this
+  // editor's completion exactly as in the SQL tab — the built-ins here are the
+  // CQL shapes, so `sel` expands with a partition-key predicate rather than a
+  // bare WHERE. Managing the library lives in the SQL workspaces' drawer; this
+  // shell only consumes it.
+  const allSnippets = useSnippetsStore((s) => s.snippets);
+  const loadSnippets = useSnippetsStore((s) => s.load);
+  useEffect(() => {
+    void loadSnippets();
+  }, [loadSnippets]);
+  const editorSnippets = useMemo(
+    () => libraryForEngine(selectSnippetsForEngine(allSnippets, "cassandra"), "cassandra"),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allSnippets, t],
+  );
 
   const schema = useMemo(
     () => ({
@@ -206,6 +224,7 @@ export function CassandraQueryTab({ handleId, ks, tables }: CassandraQueryTabPro
             onAllSelected={setAllSelected}
             schema={schema}
             engine="cassandra"
+            snippets={editorSnippets}
           />
         </div>
       </div>

@@ -14,6 +14,7 @@
 // SqlCodeEditor registers on focus and clears on unmount (a destroyed view
 // would throw if a command reached it).
 
+import { snippet } from "@codemirror/autocomplete";
 import { redo, undo } from "@codemirror/commands";
 import type { EditorView } from "@codemirror/view";
 
@@ -43,4 +44,29 @@ export function runCodeEditorHistory(cmd: "undo" | "redo"): boolean {
   // "belongs" to the editor, so report handled either way rather than letting
   // execCommand loose on a contenteditable CodeMirror manages.
   return ran || true;
+}
+
+/**
+ * Insert a snippet `template` at the caret of the last-focused editor,
+ * replacing the selection if there is one. Returns false when there is no
+ * editor to insert into, so the caller can say so instead of silently doing
+ * nothing.
+ *
+ * Goes through the registry for the same reason undo/redo does: the snippet
+ * library is a DRAWER, so clicking a snippet has already moved focus out of
+ * the editor by the time this runs — "the view the user means" is the
+ * last-focused one, not the focused one.
+ *
+ * Uses CodeMirror's own `snippet()`, so `#{1:label}` fields become real tab
+ * stops (Tab / Shift-Tab between them, `#{0}` for the final caret) rather than
+ * literal text the user has to clean up.
+ */
+export function insertSnippetIntoActiveEditor(template: string): boolean {
+  if (!active) return false;
+  const { from, to } = active.state.selection.main;
+  // `snippet()` dispatches the change itself; the `completion` argument is only
+  // used to annotate the transaction as a completion pick, which this is not.
+  snippet(template)(active, null, from, to);
+  active.focus();
+  return true;
 }

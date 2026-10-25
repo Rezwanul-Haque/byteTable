@@ -598,3 +598,28 @@ button.priv-mc:focus-visible {
 .priv-form-seg {
   flex: none;
 }
+
+/* ---- empty states ---- */
+
+/* The shared `.tab-content .empty-state` centers its children but sets neither
+   `text-align` nor a measure, so a long body stretches the full width of the
+   pane and reads as left-aligned text touching both edges. The Processes tab
+   hit the same thing and scoped its own fix (`.proc-tab > .empty-state`); this
+   does the equivalent rather than changing the shared rule under screens that
+   cannot be checked here.
+
+   Both of this tab's empty states are covered: the no-catalog one at the root,
+   and the superuser notice nested in the detail pane. */
+.priv-tab .empty-state {
+  text-align: center;
+  padding: 0 24px;
+}
+.priv-tab .empty-state p {
+  margin: 0;
+}
+.priv-tab .empty-state span {
+  /* A readable measure — the superuser copy is two sentences, far longer than
+     the one-liners the shared rule was written for. */
+  max-width: 460px;
+  line-height: 1.5;
+}

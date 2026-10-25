@@ -3,10 +3,12 @@
 //! inheritance into them. No Tauri, no drivers.
 
 use crate::features::connections::application::{ConnectionHandleId, ConnectionManager};
+use crate::shared::engine::AlterResult;
 use crate::shared::error::AppError;
-use crate::shared::privileges::PrivilegeSnapshot;
+use crate::shared::privileges::{PrivilegeReader, PrivilegeSnapshot};
 
 use super::domain;
+use super::domain::ops::GrantOp;
 
 /// Everything the Privileges tab shows, in one round trip.
 ///
@@ -38,7 +40,76 @@ pub async fn privilege_snapshot(
         memberships,
         grants,
         truncated: page.truncated,
+        capabilities: reader.grant_capabilities(),
     })
+}
+
+/// Preview the statements a batch of staged edits implies (the "Review SQL"
+/// panel). Pure: never mutates the database.
+///
+/// The self-lockout guard runs here too, so the preview refuses the same batch
+/// the apply would — finding out only at apply time that a change is forbidden
+/// would be a worse experience than not offering it.
+pub async fn preview_privileges(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    ops: &[GrantOp],
+) -> Result<AlterResult, AppError> {
+    let reader = manager.get_privilege_reader(handle).await?;
+    refuse_self_lockout(reader.as_ref(), ops).await?;
+    reader.apply_grants(ops, false).await
+}
+
+/// Apply a batch of staged edits. Atomic on the engines whose
+/// [`GrantCapabilities::atomic`](crate::shared::privileges::GrantCapabilities)
+/// is true; sequential and stop-on-first-failure on the rest.
+pub async fn apply_privileges(
+    manager: &ConnectionManager,
+    handle: &ConnectionHandleId,
+    ops: &[GrantOp],
+) -> Result<AlterResult, AppError> {
+    let reader = manager.get_privilege_reader(handle).await?;
+    refuse_self_lockout(reader.as_ref(), ops).await?;
+    reader.apply_grants(ops, true).await
+}
+
+/// Refuse a batch that would take access away from the account this connection
+/// is authenticated as.
+///
+/// Revoking your own rights — or dropping yourself from the role that carries
+/// them — can break the live connection, and on some engines locks you out of
+/// fixing it. The Processes tab protects its own session the same way
+/// (`ProcessInfo::is_self`); this is that guard for the write path.
+///
+/// Only removals are checked: granting yourself more cannot lock you out.
+async fn refuse_self_lockout(
+    reader: &dyn PrivilegeReader,
+    ops: &[GrantOp],
+) -> Result<(), AppError> {
+    if !ops.iter().any(|op| op.breaks_connection()) {
+        return Ok(());
+    }
+    // A principal we cannot identify is an empty string, which matches no real
+    // account — so a failed probe degrades to "no guard", not "refuse
+    // everything". Worth it: an engine that cannot answer `current_user` should
+    // not make the editor unusable.
+    let me = reader.current_principal().await.unwrap_or_default();
+    if me.is_empty() {
+        return Ok(());
+    }
+
+    for op in ops.iter().filter(|op| op.breaks_connection()) {
+        if op.subject().eq_ignore_ascii_case(&me) {
+            return Err(AppError::Invalid(format!(
+                "This batch would {} your own account ({me}), which can break \
+                 this connection and leave you unable to undo it. Make the \
+                 change from another account with privilege-administration \
+                 rights.",
+                op.verb()
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Rewrap a "you may not read the privilege catalog" engine error into a

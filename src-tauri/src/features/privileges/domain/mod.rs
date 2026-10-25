@@ -22,6 +22,8 @@
 //! the renderer has it. The renderer resolves that last step with
 //! [`GrantEntry::specificity`] — narrower scope first, then state rank.
 
+pub mod ops;
+
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 

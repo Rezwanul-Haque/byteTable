@@ -100,6 +100,7 @@ function TabBody({
         <PrivilegesTab
           handleId={workspace.handleId}
           engine={workspace.saved.engine}
+          env={workspace.saved.env}
           schemaName={tab.schema}
         />
       );

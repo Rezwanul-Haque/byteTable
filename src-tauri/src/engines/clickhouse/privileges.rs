@@ -24,12 +24,15 @@
 
 use async_trait::async_trait;
 
-use crate::shared::engine::{EngineConnection, QueryOptions};
+use crate::features::privileges::domain::ops::{self, GrantOp, Scope, MASKED_SECRET};
+use crate::shared::engine::{AlterResult, EngineConnection, QueryOptions};
 use crate::shared::error::AppError;
 use crate::shared::privileges::{
-    self, GrantPage, MembershipEdge, Principal, PrivilegeReader, PRIVILEGE_ROW_LIMIT,
+    self, GrantCapabilities, GrantPage, MembershipEdge, Principal, PrincipalKind, PrivilegeReader,
+    PRIVILEGE_ROW_LIMIT,
 };
 
+use super::sql::{qualified, quote_ident};
 use super::ClickhouseEngineConnection;
 
 /// The fixed principal SELECT: users, then roles.
@@ -83,6 +86,28 @@ impl PrivilegeReader for ClickhouseEngineConnection {
             .run_query(&grants_sql(schema), catalog_options())
             .await?;
         Ok(privileges::map_grant_rows(result))
+    }
+
+    fn grant_capabilities(&self) -> GrantCapabilities {
+        // A partial revoke IS a deny here, so the state is writable; access
+        // control has no transaction; and a narrower revoke is exactly how a
+        // partial revoke is created.
+        GrantCapabilities {
+            can_deny: true,
+            atomic: false,
+            can_narrow_wildcard: true,
+        }
+    }
+
+    async fn current_principal(&self) -> Result<String, AppError> {
+        let result = self
+            .run_query("SELECT currentUser()", QueryOptions::default())
+            .await?;
+        Ok(privileges::first_cell(&result))
+    }
+
+    async fn apply_grants(&self, ops: &[GrantOp], apply: bool) -> Result<AlterResult, AppError> {
+        apply_grants(self, ops, apply).await
     }
 }
 
@@ -173,5 +198,309 @@ mod tests {
     #[test]
     fn escapes_a_quote_in_the_database_name() {
         assert!(grants_sql(Some("o'brien")).contains("`database` = 'o\\'brien'"));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2 — statement generation + sequential apply
+// ---------------------------------------------------------------------------
+
+/// The `ON …` target for a scope. ClickHouse has all three levels natively.
+fn target_sql(scope: &Scope) -> String {
+    match (&scope.schema, &scope.object) {
+        (Some(schema), Some(object)) => qualified(schema, object),
+        (Some(schema), None) => format!("{}.*", quote_ident(schema)),
+        _ => "*.*".to_string(),
+    }
+}
+
+/// The SQL one staged op implies.
+///
+/// **`Deny` and `Revoke` generate the same statement**, and that is correct
+/// rather than a shortcut. ClickHouse has no `DENY`; its deny-equivalent is a
+/// `REVOKE` on a scope narrower than an existing wildcard grant, which the
+/// server records as a `is_partial_revoke` row — exactly the state Phase 1
+/// reads back as [`PrivilegeState::Denied`]. So "deny SELECT on shop" and
+/// "revoke SELECT on shop" are one operation whose *meaning* depends on
+/// whether a broader grant exists, not two different statements.
+fn op_statement(op: &GrantOp, reveal: bool) -> Result<String, AppError> {
+    Ok(match op {
+        GrantOp::Grant {
+            grantee,
+            privilege,
+            scope,
+            grantable,
+        } => format!(
+            "GRANT {privilege} ON {} TO {}{}",
+            target_sql(scope),
+            quote_ident(grantee),
+            if *grantable { " WITH GRANT OPTION" } else { "" }
+        ),
+        GrantOp::Revoke {
+            grantee,
+            privilege,
+            scope,
+        }
+        | GrantOp::Deny {
+            grantee,
+            privilege,
+            scope,
+        } => format!(
+            "REVOKE {privilege} ON {} FROM {}",
+            target_sql(scope),
+            quote_ident(grantee)
+        ),
+        GrantOp::RevokeGrantOption {
+            grantee,
+            privilege,
+            scope,
+        } => format!(
+            "REVOKE GRANT OPTION FOR {privilege} ON {} FROM {}",
+            target_sql(scope),
+            quote_ident(grantee)
+        ),
+        GrantOp::AddMember { member, role } => {
+            format!("GRANT {} TO {}", quote_ident(role), quote_ident(member))
+        }
+        GrantOp::DropMember { member, role } => {
+            format!("REVOKE {} FROM {}", quote_ident(role), quote_ident(member))
+        }
+        GrantOp::CreatePrincipal {
+            name,
+            principal_kind,
+            password,
+            ..
+        } => {
+            let ident = quote_ident(name);
+            if *principal_kind == PrincipalKind::Role {
+                format!("CREATE ROLE {ident}")
+            } else {
+                match password {
+                    // `sha256_password`, not `plaintext_password`: ClickHouse
+                    // hashes the value on receipt, so what lands in
+                    // `system.users` is a digest rather than the password
+                    // itself. The `BY` operand is still the plaintext in
+                    // transit — masked in the shown statement either way.
+                    Some(secret) => format!(
+                        "CREATE USER {ident} IDENTIFIED WITH sha256_password BY {}",
+                        secret_literal(secret, reveal)
+                    ),
+                    None => format!("CREATE USER {ident} NOT IDENTIFIED"),
+                }
+            }
+        }
+        GrantOp::DropPrincipal {
+            name,
+            principal_kind,
+            ..
+        } => format!(
+            "DROP {} {}",
+            if *principal_kind == PrincipalKind::Role {
+                "ROLE"
+            } else {
+                "USER"
+            },
+            quote_ident(name)
+        ),
+    })
+}
+
+/// A password literal — the real one only when `reveal`, which is true solely
+/// for the statement that is executed. See [`MASKED_SECRET`].
+fn secret_literal(secret: &str, reveal: bool) -> String {
+    super::sql::ch_string_literal(if reveal { secret } else { MASKED_SECRET })
+}
+
+/// Preview or apply a batch.
+///
+/// **Not atomic**: ClickHouse has no transactions for access-control
+/// statements, so the batch runs in order and stops at the first failure, with
+/// [`GrantCapabilities::atomic`] reporting `false`.
+pub(super) async fn apply_grants(
+    conn: &ClickhouseEngineConnection,
+    ops: &[GrantOp],
+    apply: bool,
+) -> Result<AlterResult, AppError> {
+    ops::validate_ops(ops)?;
+    // Two renderings: `statements` is what the caller SEES (passwords masked)
+    // and is the only one that ever leaves this function; `executed` is what
+    // runs and is dropped on the way out.
+    let statements = ops
+        .iter()
+        .map(|op| op_statement(op, false))
+        .collect::<Result<Vec<_>, AppError>>()?;
+
+    if !apply {
+        return Ok(AlterResult {
+            statements,
+            applied: false,
+        });
+    }
+
+    let executed = ops
+        .iter()
+        .map(|op| op_statement(op, true))
+        .collect::<Result<Vec<_>, AppError>>()?;
+
+    for (i, statement) in executed.iter().enumerate() {
+        if let Err(err) = conn.run_query(statement, QueryOptions::default()).await {
+            return Err(AppError::Database(format!(
+                "{err} ClickHouse has no transaction for access control, so the \
+                 {i} statement(s) before this one are already in effect."
+            )));
+        }
+    }
+
+    Ok(AlterResult {
+        statements,
+        applied: true,
+    })
+}
+
+#[cfg(test)]
+mod write_tests {
+    use super::*;
+
+    fn scope(schema: Option<&str>, object: Option<&str>) -> Scope {
+        Scope {
+            schema: schema.map(Into::into),
+            object: object.map(Into::into),
+        }
+    }
+
+    #[test]
+    fn renders_the_three_scope_levels() {
+        assert_eq!(
+            target_sql(&scope(Some("shop"), Some("orders"))),
+            "`shop`.`orders`"
+        );
+        assert_eq!(target_sql(&scope(Some("shop"), None)), "`shop`.*");
+        assert_eq!(target_sql(&scope(None, None)), "*.*");
+    }
+
+    #[test]
+    fn a_deny_is_a_revoke_on_the_narrower_scope() {
+        // ClickHouse's deny IS a partial revoke — same statement, and the
+        // server records it as is_partial_revoke, which Phase 1 reads as denied.
+        let deny = GrantOp::Deny {
+            grantee: "app".into(),
+            privilege: "SELECT".into(),
+            scope: scope(Some("system"), None),
+        };
+        let revoke = GrantOp::Revoke {
+            grantee: "app".into(),
+            privilege: "SELECT".into(),
+            scope: scope(Some("system"), None),
+        };
+        assert_eq!(
+            op_statement(&deny, false).unwrap(),
+            op_statement(&revoke, false).unwrap()
+        );
+        assert_eq!(
+            op_statement(&deny, false).unwrap(),
+            "REVOKE SELECT ON `system`.* FROM `app`"
+        );
+    }
+
+    #[test]
+    fn grants_with_and_without_the_grant_option() {
+        let plain = GrantOp::Grant {
+            grantee: "app".into(),
+            privilege: "SELECT".into(),
+            scope: scope(None, None),
+            grantable: false,
+        };
+        assert_eq!(
+            op_statement(&plain, false).unwrap(),
+            "GRANT SELECT ON *.* TO `app`"
+        );
+        let grantable = GrantOp::Grant {
+            grantee: "app".into(),
+            privilege: "SELECT".into(),
+            scope: scope(None, None),
+            grantable: true,
+        };
+        assert!(op_statement(&grantable, false)
+            .unwrap()
+            .ends_with(" WITH GRANT OPTION"));
+    }
+
+    #[test]
+    fn role_membership_uses_grant_role_to_member() {
+        let op = GrantOp::AddMember {
+            member: "app".into(),
+            role: "writer".into(),
+        };
+        assert_eq!(op_statement(&op, false).unwrap(), "GRANT `writer` TO `app`");
+    }
+
+    #[test]
+    fn a_backtick_in_a_name_cannot_break_out() {
+        let op = GrantOp::AddMember {
+            member: "ev`il".into(),
+            role: "writer".into(),
+        };
+        assert!(op_statement(&op, false).unwrap().contains("`ev\\`il`"));
+    }
+    #[test]
+    fn a_user_is_created_with_a_hashed_password_not_a_plaintext_one() {
+        let op = GrantOp::CreatePrincipal {
+            name: "app".into(),
+            principal_kind: PrincipalKind::User,
+            scope: crate::shared::privileges::PrincipalScope::Database,
+            password: Some("hunter2".into()),
+        };
+        let sql = op_statement(&op, true).unwrap();
+        assert!(
+            sql.contains("IDENTIFIED WITH sha256_password BY"),
+            "got {sql}"
+        );
+        assert!(!sql.contains("plaintext_password"));
+    }
+
+    #[test]
+    fn a_password_is_masked_in_the_statement_that_is_shown() {
+        let op = GrantOp::CreatePrincipal {
+            name: "app".into(),
+            principal_kind: PrincipalKind::User,
+            scope: crate::shared::privileges::PrincipalScope::Database,
+            password: Some("hunter2".into()),
+        };
+        let shown = op_statement(&op, false).unwrap();
+        assert!(
+            !shown.contains("hunter2"),
+            "the real password leaked: {shown}"
+        );
+        assert!(shown.contains(MASKED_SECRET), "no mask in {shown}");
+
+        // …and the executed form carries the real one.
+        let executed = op_statement(&op, true).unwrap();
+        assert!(executed.contains("hunter2"));
+    }
+
+    #[test]
+    fn a_role_is_created_without_a_password_clause() {
+        let op = GrantOp::CreatePrincipal {
+            name: "writer".into(),
+            principal_kind: PrincipalKind::Role,
+            scope: crate::shared::privileges::PrincipalScope::Database,
+            password: None,
+        };
+        let sql = op_statement(&op, false).unwrap();
+        assert!(sql.to_uppercase().contains("ROLE"), "got {sql}");
+        assert!(!sql.to_uppercase().contains("PASSWORD"));
+        assert!(!sql.to_uppercase().contains("IDENTIFIED"));
+    }
+    #[test]
+    fn drops_the_grant_option_without_touching_the_privilege() {
+        let op = GrantOp::RevokeGrantOption {
+            grantee: "app".into(),
+            privilege: "SELECT".into(),
+            scope: scope(Some("shop"), None),
+        };
+        assert_eq!(
+            op_statement(&op, false).unwrap(),
+            "REVOKE GRANT OPTION FOR SELECT ON `shop`.* FROM `app`"
+        );
     }
 }

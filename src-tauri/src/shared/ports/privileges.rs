@@ -13,15 +13,20 @@
 //! this shape would be a lossy lie, so they get the §5 `Unsupported` empty
 //! state instead.
 //!
-//! **Phase 1 is read-only.** There is deliberately no `grant` / `revoke` method
-//! here: the editor is a later milestone and will reuse the M8 preview/apply
-//! pipeline (`AlterResult`) rather than widening this trait.
+//! Reads are unconditional; writes go through one `apply_grants(ops, apply)`
+//! method reusing the M8 preview/apply pipeline (`AlterResult`) rather than a
+//! method per verb. `ensure_writable` at the command layer — not this trait —
+//! is what a read-only workspace refuses on.
+//!
+//! The engines diverge on two things the write path cannot paper over, so
+//! [`GrantCapabilities`] reports both rather than letting the UI assume: whether
+//! `DENY` is expressible, and whether a batch is atomic.
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::shared::engine::QueryResult;
+use crate::shared::engine::{AlterResult, QueryResult};
 use crate::shared::error::AppError;
 
 /// What one grantee × privilege × object cell holds.
@@ -233,12 +238,53 @@ pub struct PrivilegeSnapshot {
     /// True when the grant list hit the adapter's row cap — the renderer warns
     /// rather than quietly showing a partial matrix.
     pub truncated: bool,
+    /// What this engine's editor may offer (Phase 2). Rides along with the
+    /// data so the renderer never has to guess, or ask again.
+    pub capabilities: GrantCapabilities,
 }
 
-/// The privilege-catalog capability: read principals, memberships and grants.
-/// Adapters map driver errors to §5 human sentences before they cross here.
+/// What an engine's write path can actually express (M39 Phase 2).
 ///
-/// Read-only by construction; see the module docs.
+/// Both flags exist because the four engines genuinely differ, and hiding that
+/// would mean generating SQL an engine rejects or promising a rollback that
+/// never happens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrantCapabilities {
+    /// Whether [`GrantOp::Deny`](crate::features::privileges::domain::ops::GrantOp::Deny)
+    /// can be written. True for SQL Server (a real `DENY`) and ClickHouse (a
+    /// partial revoke, which behaves identically); false for Postgres and
+    /// MySQL, which have no such state. The renderer reads this so the deny
+    /// state is never offered where it cannot be written.
+    pub can_deny: bool,
+    /// Whether a multi-statement batch is applied atomically.
+    ///
+    /// True for Postgres and SQL Server, whose `GRANT`/`REVOKE` are
+    /// transactional. **False for MySQL**, where they force an implicit commit
+    /// so a half-applied batch cannot be rolled back, and for ClickHouse, which
+    /// has no DCL transactions at all. The renderer states this before apply —
+    /// quietly dropping M8's rollback guarantee on half the engines would be
+    /// the worse failure.
+    pub atomic: bool,
+    /// Whether `REVOKE` works on a scope **narrower** than the grant that
+    /// actually conferred the privilege.
+    ///
+    /// False for **MySQL**, which rejects `REVOKE SELECT ON db.tbl FROM u`
+    /// when `u` only holds `SELECT ON *.*` — error 1147, "There is no such
+    /// grant defined for user … on table …". Postgres and SQL Server treat the
+    /// same revoke as a harmless no-op, and ClickHouse records it as the
+    /// partial revoke Phase 1 reads back as `Denied`.
+    ///
+    /// The renderer reads this to refuse the edit up front, because the cell a
+    /// user is most likely to click first — one filled in by a wildcard grant —
+    /// is exactly the one that would fail.
+    pub can_narrow_wildcard: bool,
+}
+
+/// The privilege-catalog capability: read principals, memberships and grants,
+/// and — Phase 2 — preview or apply changes to them.
+///
+/// Adapters map driver errors to §5 human sentences before they cross here.
 #[async_trait]
 pub trait PrivilegeReader: Send + Sync {
     /// Every principal the connection can see.
@@ -252,6 +298,30 @@ pub trait PrivilegeReader: Send + Sync {
     /// Wildcard and database-level grants are returned regardless of `schema`,
     /// encoded per [`GrantEntry`].
     async fn list_grants(&self, schema: Option<&str>) -> Result<GrantPage, AppError>;
+
+    /// What this engine's write path can express. Pure — no round trip.
+    fn grant_capabilities(&self) -> GrantCapabilities;
+
+    /// The principal this connection is authenticated as, in the same spelling
+    /// [`Principal::name`] uses (MySQL: `user@host`).
+    ///
+    /// Used only for the self-lockout guard, which is why it is on the port
+    /// rather than read from connection params: what the server thinks you are
+    /// is what its `REVOKE` will act on, and that is not always what was typed
+    /// into the connect dialog.
+    async fn current_principal(&self) -> Result<String, AppError>;
+
+    /// Preview or apply a batch of staged changes — the M8 contract, reused.
+    ///
+    /// `apply == false` returns the statements the batch implies and **must not
+    /// touch the database**. `apply == true` executes them, in a transaction on
+    /// the engines whose [`GrantCapabilities::atomic`] is true and sequentially
+    /// on the rest; either way it stops at the first failure.
+    async fn apply_grants(
+        &self,
+        ops: &[crate::features::privileges::domain::ops::GrantOp],
+        apply: bool,
+    ) -> Result<AlterResult, AppError>;
 }
 
 // ---------------------------------------------------------------------------
@@ -346,6 +416,18 @@ pub fn map_grant_rows(result: QueryResult) -> GrantPage {
             })
             .collect(),
     }
+}
+
+/// The first column of the first row, as text — for the single-value probes
+/// (`SELECT current_user` and friends) the write path's self-lockout guard
+/// needs. Empty when the query returned nothing, which the caller treats as
+/// "unknown principal" rather than a match.
+pub fn first_cell(result: &QueryResult) -> String {
+    result
+        .rows
+        .first()
+        .map(|row| cell_string(row, 0))
+        .unwrap_or_default()
 }
 
 fn cell_string(row: &[Value], i: usize) -> String {

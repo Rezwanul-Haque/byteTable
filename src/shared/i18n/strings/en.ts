@@ -3639,6 +3639,60 @@ export const en = {
 
   // priv.* — Privileges (users, roles & effective grants) tab. Read-only.
   "priv.title": "Privileges",
+  "priv.blocked.inherited":
+    "This is granted through the role {role}, not to this account. Revoking it here would change nothing — edit the role, or use Denied where the engine supports it.",
+  "priv.cellmenu.inherited": "Granted through {chain}, not directly to this account.",
+  "priv.blocked.widerGrantRemains":
+    "A wider grant also gives this privilege. Revoking it here would only uncover that grant, so the privilege would still be held — narrow the wider grant instead.",
+  "priv.cellmenu.coveredByWider":
+    "A schema- or server-wide grant also gives this privilege, underneath the one written against this object.",
+  "priv.new.title": "New user or role",
+  "priv.new.kind": "Type",
+  "priv.new.kindUser": "User",
+  "priv.new.kindRole": "Role",
+  "priv.new.kindLogin": "Server login",
+  "priv.new.name": "Name",
+  "priv.new.password": "Password",
+  "priv.new.passwordHint": "Leave empty for no password",
+  "priv.new.needName": "-- enter a name",
+  "priv.new.confirm": "Create",
+  "priv.new.masked":
+    "The password is hidden above. Everything else is exactly what will run — only the secret is replaced, so it never reaches the screen or the logs.",
+  "priv.drop.title": "Drop {name}",
+  "priv.drop.desc":
+    "The principal and every privilege granted directly to it are removed. This cannot be undone.",
+  "priv.drop.confirm": "Drop",
+  "priv.set.none": "Not held",
+  "priv.set.granted": "Granted",
+  "priv.set.grantable": "Granted + grant option",
+  "priv.set.denied": "Denied",
+  "priv.legend.grantable": "+ grant option",
+  "priv.legend.wildcard": "from a schema- or server-wide grant",
+  "priv.cellmenu.wildcard":
+    "This access comes from a wider grant, not one written against this object.",
+  "priv.blocked.wildcardNarrow":
+    "MySQL can only revoke a privilege at the scope it was granted. This one comes from a wider grant, so narrow it there instead.",
+  "priv.err.preview": "The statements for these changes could not be prepared.",
+  "priv.err.apply": "The privilege changes could not be applied.",
+  "priv.staged": "{count} cell(s) changed · {ops} statement(s)",
+  "priv.discard": "Discard",
+  "priv.reviewSql": "Review SQL…",
+  "priv.applied": "Applied {count} statement(s).",
+  "priv.wasState": "was {state}",
+  "priv.clickToChange": "Click to change",
+  "priv.review.title": "Review {count} privilege change(s)",
+  "priv.review.desc":
+    "These statements run against the connected database. Nothing has changed yet.",
+  "priv.review.loading": "-- preparing statements…",
+  "priv.review.empty": "-- nothing to apply",
+  "priv.review.apply": "Apply changes",
+  "priv.review.applying": "Applying…",
+  "priv.atomic.yes": "Applied as one transaction — a failure rolls the whole batch back.",
+  "priv.atomic.no":
+    "This engine commits each statement immediately, so a failure partway leaves the earlier ones in effect.",
+  "priv.arm.prefix": "This is",
+  "priv.arm.production": "production",
+  "priv.arm.type": "Type",
   "priv.source": "System source",
   "priv.filterPlaceholder": "Filter users and roles…",
   "priv.principals": "principals",

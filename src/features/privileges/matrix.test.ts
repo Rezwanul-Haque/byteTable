@@ -37,7 +37,12 @@ describe("fillCell", () => {
       grant({ schema: "shop", object: "orders", privilege: "SELECT", state: "grantable" }),
     ];
     const cell = fillCell(grants, "shop", "orders", "SELECT");
-    expect(cell).toEqual({ state: "grantable", via: [], wildcard: false });
+    expect(cell).toEqual({
+      state: "grantable",
+      via: [],
+      wildcard: false,
+      coveredByWider: false,
+    });
   });
 
   it("expands a schema-wide grant across objects", () => {
@@ -95,6 +100,27 @@ describe("fillCell", () => {
       grant({ schema: "shop", object: "orders", privilege: "SELECT", state: "denied" }),
     ];
     expect(fillCell(grants, "shop", "orders", "SELECT")?.state).toBe("denied");
+  });
+
+  it("reports a broader grant sitting under an explicit one", () => {
+    // The trap this exists for: revoking the table grant here would just
+    // uncover the *.* grant, so "Not held" cannot be reached from this cell.
+    const grants = [
+      grant({ privilege: "SELECT", state: "granted" }),
+      grant({ schema: "shop", object: "orders", privilege: "SELECT", state: "grantable" }),
+    ];
+    const cell = fillCell(grants, "shop", "orders", "SELECT");
+    expect(cell?.state).toBe("grantable");
+    expect(cell?.wildcard).toBe(false);
+    expect(cell?.coveredByWider).toBe(true);
+  });
+
+  it("does not claim wider coverage when the wider entry is a deny", () => {
+    const grants = [
+      grant({ privilege: "SELECT", state: "denied" }),
+      grant({ schema: "shop", object: "orders", privilege: "SELECT", state: "granted" }),
+    ];
+    expect(fillCell(grants, "shop", "orders", "SELECT")?.coveredByWider).toBe(false);
   });
 
   it("carries the role chain of the winning entry", () => {

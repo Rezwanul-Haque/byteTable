@@ -553,6 +553,8 @@ pub fn run() {
             features::processes::commands::process_list,
             features::processes::commands::process_kill,
             features::privileges::commands::privilege_snapshot,
+            features::privileges::commands::privilege_preview,
+            features::privileges::commands::privilege_apply,
             features::app_metrics::commands::app_metrics_read,
             features::file_open::commands::file_open_take_pending,
             features::file_open::commands::file_open_read_script,

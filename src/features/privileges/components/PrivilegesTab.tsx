@@ -2,19 +2,24 @@
 // and for the selected principal an effective-grants matrix, its role
 // membership, and its engine-specific attributes on the right.
 //
-// READ-ONLY. Nothing here can grant or revoke; the backend exposes no command
-// that mutates. The editor is a later milestone.
+// Phase 2 adds the editor: matrix cells cycle through the states the ENGINE
+// can write (see `capabilities`), staged changes collect in a bar, and nothing
+// reaches the database until the Review SQL modal is confirmed.
 //
 // No prototype exists for this feature (every earlier milestone had a
 // `bytetable/*.jsx` to match), so the shell is composed from the established
 // patterns: the Processes tab's toolbar/footer chrome and the object explorer's
 // left-list / right-detail split.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
 import { appErrorMessage } from "../../../shared/api/error";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
+import { useReadOnly } from "../../../shared/ui/readOnlyContext";
+import { useToast } from "../../../shared/ui/toastContext";
+import { ENV_COLOR } from "../../../shared/ui/envColors";
+import { normalizeEnv } from "../../../shared/types";
 import { useT } from "../../../shared/i18n/useT";
 import type { StringKey } from "../../../shared/i18n";
 import type { Engine } from "../../../shared/types";
@@ -22,20 +27,18 @@ import { tablesKey, useIntrospectionStore } from "../../introspection/state";
 import {
   PRIV_SOURCES,
   privilegeSnapshot,
+  type GrantCapabilities,
   type Principal,
   type PrivilegeSnapshot,
   type PrivilegeState,
 } from "../api";
 import { fillCell, grantsByGrantee, matrixObjects, roleChainsFor } from "../matrix";
+import { cellKey, stagedOps, type StagedCell } from "../edit";
+import { STATE_GLYPH } from "../glyphs";
+import { CellMenu, type CellMenuTarget } from "./CellMenu";
+import { PrincipalModal, type PrincipalModalMode } from "./PrincipalModal";
+import { GrantReviewModal } from "./GrantReviewModal";
 import "./Privileges.css";
-
-/** The glyph each cell state renders as. */
-const STATE_GLYPH: Record<PrivilegeState, string> = {
-  none: "—",
-  granted: "●",
-  grantable: "◎",
-  denied: "✕",
-};
 
 /** Cell-state labels, as a table rather than a built key, so a renamed string
  *  is a type error instead of a missing translation at runtime. */
@@ -57,15 +60,21 @@ const PANE_KEY: Record<Pane, StringKey> = {
 export function PrivilegesTab({
   handleId,
   engine,
+  env,
   schemaName,
 }: {
   handleId: string;
   engine: Engine;
+  /** Connection deployment env — drives the editor's production arming gate. */
+  env: string;
   /** The schema the matrix is scoped to — database-wide and wildcard grants
    *  still come back, but object rows are this schema's. */
   schemaName: string;
 }) {
   const tr = useT();
+  const toast = useToast();
+  const readOnly = useReadOnly();
+  const envColor = ENV_COLOR[normalizeEnv(env)] ?? ENV_COLOR.dev;
   const cfg = PRIV_SOURCES[engine];
 
   // Matrix rows come from the schema's already-introspected table list. It may
@@ -84,6 +93,11 @@ export function PrivilegesTab({
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  // Staged cell edits, keyed by object + privilege. Nothing here has touched
+  // the database — `stagedOps` turns them into ops only for preview/apply.
+  const [staged, setStaged] = useState<Map<string, StagedCell>>(() => new Map());
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [principalModal, setPrincipalModal] = useState<PrincipalModalMode | null>(null);
 
   // A ref so the refresh button always calls the latest closure.
   const refresh = useRef<() => void>(() => {});
@@ -107,6 +121,9 @@ export function PrivilegesTab({
   useEffect(() => {
     if (!cfg) return;
     setLoaded(false);
+    // Staged edits are keyed to the rows they were made against; dropping them
+    // on a reload is safer than replaying them onto data that may have moved.
+    setStaged(new Map());
     refresh.current();
   }, [handleId, schemaName, effective, cfg]);
 
@@ -143,6 +160,80 @@ export function PrivilegesTab({
     () => (current ? roleChainsFor(snapshot?.memberships ?? [], current.name) : []),
     [snapshot, current],
   );
+
+  // Until the snapshot lands, assume the most RESTRICTIVE engine: no deny, and
+  // no narrowing of a wildcard grant. A permissive default would briefly offer
+  // edits the engine cannot perform.
+  const capabilities: GrantCapabilities = snapshot?.capabilities ?? {
+    canDeny: false,
+    atomic: true,
+    canNarrowWildcard: false,
+  };
+  // Editing works in BOTH views. Gating it to `effective` was backwards: the
+  // direct view is the SAFER surface to edit, because every cell there is a
+  // grant written against this principal. In the effective view an inherited
+  // cell belongs to a role, and the cell menu refuses to narrow it (see
+  // `blockedReason`) rather than emitting a revoke that would do nothing.
+  const editable = !readOnly && !!current && !current.isSuperuser;
+  const pendingOps = useMemo(
+    () => (current ? stagedOps(staged, current.name, schemaName) : []),
+    [staged, current, schemaName],
+  );
+
+  // The open cell menu. Explicit state selection, not a click-through cycle:
+  // cycling made `granted → grantable` (i.e. WITH GRANT OPTION) a single stray
+  // click away, so a misclick ESCALATED privilege.
+  const [menu, setMenu] = useState<CellMenuTarget | null>(null);
+
+  const openCellMenu = (
+    e: ReactMouseEvent,
+    object: string,
+    privilege: string,
+    from: PrivilegeState,
+    wildcard: boolean,
+    coveredByWider: boolean,
+    via: string[],
+  ) => {
+    if (!editable) return;
+    const key = cellKey(object, privilege);
+    const staging = staged.get(key);
+    setMenu({
+      x: e.clientX,
+      y: e.clientY,
+      object,
+      privilege,
+      // The ORIGINAL state, so re-picking it clears the staged change rather
+      // than staging a move from the pending value.
+      from: staging?.from ?? from,
+      current: staging?.to ?? from,
+      wildcard,
+      coveredByWider,
+      via,
+    });
+  };
+
+  const chooseState = (target: CellMenuTarget, to: PrivilegeState) => {
+    setStaged((prev) => {
+      const next = new Map(prev);
+      const key = cellKey(target.object, target.privilege);
+      if (to === target.from) next.delete(key);
+      else
+        next.set(key, {
+          object: target.object,
+          privilege: target.privilege,
+          from: target.from,
+          to,
+        });
+      return next;
+    });
+    setMenu(null);
+  };
+
+  const onApplied = (statements: string[]) => {
+    setStaged(new Map());
+    toast(tr("priv.applied", { count: statements.length }), "ok");
+    refresh.current();
+  };
 
   // Engines whose privileges ByteTable does not read — a different model, not
   // a missing one. See PRIV_SOURCES.
@@ -220,12 +311,33 @@ export function PrivilegesTab({
             {tr("priv.effective")}
           </button>
         </div>
+        {readOnly ? null : (
+          <IconBtn
+            icon="person_add"
+            title={tr("priv.new.title")}
+            onClick={() => setPrincipalModal({ kind: "create" })}
+          />
+        )}
         <IconBtn icon="refresh" title={tr("priv.refreshNow")} onClick={() => refresh.current()} />
       </div>
 
       {snapshot?.truncated ? (
         <div className="priv-warn">
           <Icon name="warning" size={14} /> {tr("priv.truncated")}
+        </div>
+      ) : null}
+
+      {pendingOps.length ? (
+        <div className="priv-staged">
+          <Icon name="edit" size={14} />
+          <span>{tr("priv.staged", { count: staged.size, ops: pendingOps.length })}</span>
+          <button className="priv-clear" onClick={() => setStaged(new Map())}>
+            {tr("priv.discard")}
+          </button>
+          <div style={{ flex: 1 }}></div>
+          <button className="btn btn-filled priv-review-btn" onClick={() => setReviewOpen(true)}>
+            <Icon name="code" size={15} /> <span>{tr("priv.reviewSql")}</span>
+          </button>
         </div>
       ) : null}
 
@@ -305,6 +417,13 @@ export function PrivilegesTab({
                   <span className="priv-scope" title={tr("priv.scopeTitle")}>
                     {schemaName}
                   </span>
+                  {readOnly ? null : (
+                    <IconBtn
+                      icon="person_remove"
+                      title={tr("priv.drop.title", { name: current.name })}
+                      onClick={() => setPrincipalModal({ kind: "drop", principal: current })}
+                    />
+                  )}
                 </div>
 
                 {pane === "grants" ? (
@@ -327,6 +446,9 @@ export function PrivilegesTab({
                       objects={objects}
                       schema={schemaName}
                       grants={currentGrants}
+                      staged={staged}
+                      editable={editable}
+                      onOpenMenu={openCellMenu}
                     />
                   )
                 ) : pane === "membership" ? (
@@ -373,8 +495,60 @@ export function PrivilegesTab({
         </div>
       )}
 
+      {menu ? (
+        <CellMenu
+          target={menu}
+          capabilities={capabilities}
+          onChoose={chooseState}
+          onClose={() => setMenu(null)}
+        />
+      ) : null}
+
+      {principalModal ? (
+        <PrincipalModal
+          handleId={handleId}
+          engine={engine}
+          mode={principalModal}
+          env={env}
+          envColor={envColor}
+          onDone={(statements) => {
+            // A dropped principal may be the selected one; clearing the
+            // selection lets the refresh pick a valid default.
+            if (principalModal.kind === "drop") setSelected(null);
+            toast(tr("priv.applied", { count: statements.length }), "ok");
+            refresh.current();
+          }}
+          onClose={() => setPrincipalModal(null)}
+        />
+      ) : null}
+
+      {reviewOpen && current ? (
+        <GrantReviewModal
+          handleId={handleId}
+          ops={pendingOps}
+          capabilities={capabilities}
+          env={env}
+          envColor={envColor}
+          onApplied={onApplied}
+          onClose={() => setReviewOpen(false)}
+        />
+      ) : null}
+
       <div className="priv-foot">
         <span>{tr("priv.foot", { schema: schemaName })}</span>
+        {/* The glyph language is not guessable — eight symbols across four
+            states and two derivations — so it is spelled out rather than left
+            to tooltips. */}
+        <span className="priv-legend">
+          <b className="granted">●</b> {tr("priv.state.granted")}
+          <b className="grantable">◎</b> {tr("priv.legend.grantable")}
+          {capabilities.canDeny ? (
+            <>
+              <b className="denied">✕</b> {tr("priv.state.denied")}
+            </>
+          ) : null}
+          <b className="granted wild">●</b> {tr("priv.legend.wildcard")}
+        </span>
         <div style={{ flex: 1 }}></div>
         <span className="dim">{effective ? tr("priv.footEffective") : tr("priv.footDirect")}</span>
       </div>
@@ -382,17 +556,34 @@ export function PrivilegesTab({
   );
 }
 
+/** How a cell asks for its state menu. */
+type CellMenuOpener = (
+  e: ReactMouseEvent,
+  object: string,
+  privilege: string,
+  from: PrivilegeState,
+  wildcard: boolean,
+  coveredByWider: boolean,
+  via: string[],
+) => void;
+
 /** The object × privilege grid for one principal. */
 function GrantMatrix({
   privileges,
   objects,
   schema,
   grants,
+  staged,
+  editable,
+  onOpenMenu,
 }: {
   privileges: string[];
   objects: string[];
   schema: string;
   grants: Parameters<typeof fillCell>[0];
+  staged: Map<string, StagedCell>;
+  editable: boolean;
+  onOpenMenu: CellMenuOpener;
 }) {
   const tr = useT();
   const template = "minmax(160px, 1.4fr) " + privileges.map(() => "minmax(64px, 1fr)").join(" ");
@@ -413,6 +604,9 @@ function GrantMatrix({
             privileges={privileges}
             schema={schema}
             grants={grants}
+            staged={staged}
+            editable={editable}
+            onOpenMenu={onOpenMenu}
           />
         ))}
       </div>
@@ -425,11 +619,17 @@ function Row({
   privileges,
   schema,
   grants,
+  staged,
+  editable,
+  onOpenMenu,
 }: {
   object: string;
   privileges: string[];
   schema: string;
   grants: Parameters<typeof fillCell>[0];
+  staged: Map<string, StagedCell>;
+  editable: boolean;
+  onOpenMenu: CellMenuOpener;
 }) {
   const tr = useT();
   return (
@@ -439,32 +639,65 @@ function Row({
       </div>
       {privileges.map((privilege) => {
         const cell = fillCell(grants, schema, object, privilege);
-        if (!cell) {
+        const actual: PrivilegeState = cell?.state ?? "none";
+        const pending = staged.get(cellKey(object, privilege));
+        // A staged cell shows what it WILL be, not what it is — with the
+        // original kept in the tooltip so the change stays legible.
+        const shown = pending ? pending.to : actual;
+
+        const parts = [privilege + " · " + tr(STATE_KEY[shown])];
+        if (pending) parts.push(tr("priv.wasState", { state: tr(STATE_KEY[pending.from]) }));
+        if (!pending && cell?.via.length) {
+          parts.push(tr("priv.viaChain", { chain: cell.via.join(" → ") }));
+        }
+        if (!pending && cell?.wildcard) parts.push(tr("priv.viaWildcard"));
+        if (editable) parts.push(tr("priv.clickToChange"));
+
+        // Derivation never changes the glyph — fill means held, full stop. A
+        // staged cell is not derived at all: once you ask for it, the grant
+        // will name this object.
+        const wildcard = !pending && !!cell?.wildcard;
+
+        const className = [
+          "priv-mc",
+          shown,
+          pending ? "staged" : "",
+          wildcard ? "wild" : "",
+          !pending && cell?.via.length ? "inh" : "",
+          editable ? "editable" : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
+
+        // A non-editable matrix stays a plain div: a disabled button would
+        // still take focus and imply an affordance that is not there.
+        if (!editable) {
           return (
-            <div className="priv-mc none" key={privilege}>
-              {STATE_GLYPH.none}
+            <div className={className} key={privilege} title={parts.join("\n")}>
+              {STATE_GLYPH[shown]}
             </div>
           );
         }
-        // The tooltip is the whole point of the effective view: a cell that
-        // cannot say where its grant came from is no better than the direct
-        // list it replaced.
-        const parts = [privilege + " · " + tr(STATE_KEY[cell.state])];
-        if (cell.via.length) parts.push(tr("priv.viaChain", { chain: cell.via.join(" → ") }));
-        if (cell.wildcard) parts.push(tr("priv.viaWildcard"));
         return (
-          <div
-            className={
-              "priv-mc " +
-              cell.state +
-              (cell.wildcard ? " wild" : "") +
-              (cell.via.length ? " inh" : "")
-            }
+          <button
+            type="button"
+            className={className}
             key={privilege}
             title={parts.join("\n")}
+            onClick={(e) =>
+              onOpenMenu(
+                e,
+                object,
+                privilege,
+                actual,
+                wildcard,
+                !!cell?.coveredByWider,
+                cell?.via ?? [],
+              )
+            }
           >
-            {STATE_GLYPH[cell.state]}
-          </div>
+            {STATE_GLYPH[shown]}
+          </button>
         );
       })}
     </>

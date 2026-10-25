@@ -9,10 +9,10 @@
 //! `ConnectionManager` (the same cross-feature composition as
 //! introspection/structure/processes); commands read `ConnectionsState`.
 //!
-//! **Nothing here mutates.** There is no `ensure_writable` call because no
-//! command writes: the port exposes reads only, and the grant/revoke editor is
-//! a later milestone that will reuse the M8 preview/apply pipeline rather than
-//! widening this slice.
+//! Phase 2 adds the grant/revoke editor on the M8 preview/apply pipeline:
+//! `privilege_preview` is pure, `privilege_apply` calls `ensure_writable`
+//! first, and both refuse a batch that would strip the connected account's own
+//! access (the write-path equivalent of the Processes tab's `is_self` guard).
 
 pub mod application;
 pub mod commands;

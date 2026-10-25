@@ -76,6 +76,26 @@ export interface GrantEntry {
   via?: string[];
 }
 
+/** What an engine's write path can express (mirrors Rust `GrantCapabilities`).
+ *
+ *  Both flags exist because the four engines genuinely differ; the editor reads
+ *  them rather than assuming. */
+export interface GrantCapabilities {
+  /** Whether a `deny` state can be written. True for SQL Server (a real `DENY`)
+   *  and ClickHouse (a partial revoke, which behaves the same); false for
+   *  Postgres and MySQL, which have no such state. */
+  canDeny: boolean;
+  /** Whether a batch is applied atomically. True for Postgres and SQL Server;
+   *  **false for MySQL**, whose GRANT/REVOKE force an implicit commit, and for
+   *  ClickHouse, which has no DCL transactions. Shown before apply rather than
+   *  discovered afterwards. */
+  atomic: boolean;
+  /** Whether `REVOKE` works on a scope narrower than the grant that conferred
+   *  the privilege. **False for MySQL** (error 1147); true elsewhere. The
+   *  editor refuses such an edit up front rather than staging SQL that fails. */
+  canNarrowWildcard: boolean;
+}
+
 /** Everything the tab shows, in one round trip (mirrors Rust
  *  `PrivilegeSnapshot`). */
 export interface PrivilegeSnapshot {
@@ -84,6 +104,79 @@ export interface PrivilegeSnapshot {
   grants: GrantEntry[];
   /** The grant list hit the backend's row cap — the matrix is partial. */
   truncated: boolean;
+  capabilities: GrantCapabilities;
+}
+
+/** What a staged op targets (mirrors Rust `Scope`), reusing the same wildcard
+ *  encoding `GrantEntry` uses. */
+export interface Scope {
+  schema?: string;
+  object?: string;
+}
+
+/** One staged change (mirrors Rust `GrantOp`; `kind` is the serde tag). */
+export type GrantOp =
+  | { kind: "grant"; grantee: string; privilege: string; scope: Scope; grantable: boolean }
+  | { kind: "revoke"; grantee: string; privilege: string; scope: Scope }
+  | { kind: "deny"; grantee: string; privilege: string; scope: Scope }
+  | { kind: "revokeGrantOption"; grantee: string; privilege: string; scope: Scope }
+  | { kind: "addMember"; member: string; role: string }
+  | { kind: "dropMember"; member: string; role: string }
+  | {
+      kind: "createPrincipal";
+      name: string;
+      /** Not `kind` — that is the discriminant. */
+      principalKind: PrincipalKind;
+      /** SQL Server only: `server` makes a LOGIN, `database` a USER. */
+      scope: PrincipalScope;
+      /** Omitted for a role. Masked in every statement that is displayed. */
+      password?: string;
+    }
+  | {
+      kind: "dropPrincipal";
+      name: string;
+      principalKind: PrincipalKind;
+      scope: PrincipalScope;
+    };
+
+/** What a password is replaced with in any statement shown to the user —
+ *  mirrors Rust `MASKED_SECRET`. The backend does the masking; this is only
+ *  here so the UI can explain itself. */
+export const MASKED_SECRET = "••••••••";
+
+/** The statements a batch implies, and whether they ran (mirrors Rust
+ *  `AlterResult` — the same DTO the structure editor's Review SQL panel uses). */
+export interface GrantResult {
+  statements: string[];
+  applied: boolean;
+}
+
+/** True when the op takes access away — the ops that need the production
+ *  arming gate. Mirrors Rust `GrantOp::removes_access`. */
+export function removesAccess(op: GrantOp): boolean {
+  return (
+    op.kind === "revoke" ||
+    op.kind === "deny" ||
+    op.kind === "dropMember" ||
+    op.kind === "dropPrincipal" ||
+    op.kind === "revokeGrantOption"
+  );
+}
+
+/** True when the batch creates a principal with a password, so the Review SQL
+ *  panel must say that the secret it is showing is masked. */
+export function carriesSecret(ops: GrantOp[]): boolean {
+  return ops.some((op) => op.kind === "createPrincipal" && !!op.password);
+}
+
+/** Preview the SQL a staged batch implies. Pure: runs nothing. */
+export function privilegePreview(handleId: string, ops: GrantOp[]): Promise<GrantResult> {
+  return invoke<GrantResult>("privilege_preview", { handleId, ops });
+}
+
+/** Apply a staged batch. Atomic only where `capabilities.atomic` is true. */
+export function privilegeApply(handleId: string, ops: GrantOp[]): Promise<GrantResult> {
+  return invoke<GrantResult>("privilege_apply", { handleId, ops });
 }
 
 /**

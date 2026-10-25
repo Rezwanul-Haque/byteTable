@@ -36,6 +36,16 @@ export interface Cell {
    *  this object — the UI marks these so an inherited-from-`*.*` cell is not
    *  mistaken for a grant someone wrote against this table. */
   wildcard: boolean;
+  /**
+   * True when a BROADER grant also confers this privilege, underneath the one
+   * that won the cell.
+   *
+   * This is what makes "set it to Not held" a lie on an explicitly granted
+   * cell: revoking the grant that names this object just uncovers the wider
+   * one, and the privilege is still held. The editor refuses that edit rather
+   * than running a REVOKE whose visible result is "still granted".
+   */
+  coveredByWider: boolean;
 }
 
 /**
@@ -75,38 +85,43 @@ export function fillCell(
   object: string,
   privilege: string,
 ): Cell | null {
-  let best: GrantEntry | null = null;
-  let bestScope = -1;
-  let bestPriv = -1;
-
+  // Collect every covering entry first. The winner alone is not enough: the
+  // cell also has to know whether something BROADER grants the same privilege,
+  // which only survives if the losers are inspected too.
+  const covering: { grant: GrantEntry; scope: number; priv: number }[] = [];
   for (const grant of grants) {
     if (!coversScope(grant, schema, object)) continue;
     const priv = coversPrivilege(grant, privilege);
     if (priv < 0) continue;
+    covering.push({ grant, scope: specificity(grant), priv });
+  }
+  if (!covering.length) return null;
 
-    const scope = specificity(grant);
+  let best = covering[0]!;
+  for (const candidate of covering) {
     // Specificity first (scope, then how precisely the privilege is named),
     // and only then how much access the state represents.
     const better =
-      best === null ||
-      scope > bestScope ||
-      (scope === bestScope && priv > bestPriv) ||
-      (scope === bestScope &&
-        priv === bestPriv &&
-        STATE_RANK[grant.state] > STATE_RANK[best.state]);
-
-    if (better) {
-      best = grant;
-      bestScope = scope;
-      bestPriv = priv;
-    }
+      candidate.scope > best.scope ||
+      (candidate.scope === best.scope && candidate.priv > best.priv) ||
+      (candidate.scope === best.scope &&
+        candidate.priv === best.priv &&
+        STATE_RANK[candidate.grant.state] > STATE_RANK[best.grant.state]);
+    if (better) best = candidate;
   }
 
-  if (!best) return null;
+  const wildcard = best.scope < 2 || best.priv === 0;
+  const coveredByWider = covering.some(
+    (entry) =>
+      entry.scope < best.scope &&
+      (entry.grant.state === "granted" || entry.grant.state === "grantable"),
+  );
+
   return {
-    state: best.state,
-    via: best.via ?? [],
-    wildcard: bestScope < 2 || bestPriv === 0,
+    state: best.grant.state,
+    via: best.grant.via ?? [],
+    wildcard,
+    coveredByWider,
   };
 }
 

@@ -666,7 +666,9 @@ export function RedisSidebar(props: RedisSidebarProps) {
         <EngineMark engine="redis" size={26} />
         <div className="sidebar-conn-info">
           <div className="sidebar-conn-name">
-            {workspaceName}
+            <span className="sidebar-conn-label" title={workspaceName}>
+              {workspaceName}
+            </span>
             <span className="env-dot" style={{ background: envColor }} title={envLabel} />
           </div>
           <div className="sidebar-conn-detail" title={nodeDetail ? detail + " (configured)" : ""}>

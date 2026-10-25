@@ -35,6 +35,19 @@
   display: flex;
   align-items: center;
   gap: 7px;
+  min-width: 0;
+}
+
+/* The name truncates; anything beside it (Redis' env dot) must not.
+   `.sidebar-conn-name` is a flex row, and a bare text child inside one is an
+   anonymous flex item that `text-overflow` cannot reach — so the name gets its
+   own span. Without this a long connection name overflowed the info column and
+   ran under the language chip and the disconnect button. */
+.sidebar-conn-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sidebar-conn-detail {

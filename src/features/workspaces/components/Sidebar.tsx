@@ -519,7 +519,11 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
         <span className="ws-color-bar" style={{ background: workspace.color }} />
         <EngineMark engine={engine} size={26} />
         <div className="sidebar-conn-info">
-          <div className="sidebar-conn-name">{workspace.name}</div>
+          <div className="sidebar-conn-name">
+            <span className="sidebar-conn-label" title={workspace.name}>
+              {workspace.name}
+            </span>
+          </div>
           {/* Detail line (design refresh): the env as a small uppercase, env-
               colored label + the engine name. The host:port detail moves to the
               header's hover tooltip. Tunnel lock (M12) shows when reached through

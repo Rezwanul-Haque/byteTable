@@ -115,7 +115,11 @@ export function TypesenseSidebar({
         <span className="ws-color-bar" style={{ background: workspaceColor }} />
         <EngineMark engine="typesense" size={26} />
         <div className="sidebar-conn-info">
-          <div className="sidebar-conn-name">{workspaceName}</div>
+          <div className="sidebar-conn-name">
+            <span className="sidebar-conn-label" title={workspaceName}>
+              {workspaceName}
+            </span>
+          </div>
           <div className="sidebar-conn-detail">
             <span className="conn-env" style={{ color: envColor }}>
               {env}

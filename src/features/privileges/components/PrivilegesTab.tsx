@@ -16,6 +16,7 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEven
 import { appErrorMessage } from "../../../shared/api/error";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
+import { Select } from "../../../shared/ui/Select";
 import { useReadOnly } from "../../../shared/ui/readOnlyContext";
 import { useToast } from "../../../shared/ui/toastContext";
 import { ENV_COLOR } from "../../../shared/ui/envColors";
@@ -62,14 +63,16 @@ export function PrivilegesTab({
   engine,
   env,
   schemaName,
+  schemas = [],
 }: {
   handleId: string;
   engine: Engine;
   /** Connection deployment env — drives the editor's production arming gate. */
   env: string;
-  /** The schema the matrix is scoped to — database-wide and wildcard grants
-   *  still come back, but object rows are this schema's. */
+  /** The workspace's current schema — the tab's starting scope. */
   schemaName: string;
+  /** Every schema on the connection, for the tab's own scope switcher. */
+  schemas?: string[];
 }) {
   const tr = useT();
   const toast = useToast();
@@ -77,13 +80,24 @@ export function PrivilegesTab({
   const envColor = ENV_COLOR[normalizeEnv(env)] ?? ENV_COLOR.dev;
   const cfg = PRIV_SOURCES[engine];
 
+  // The matrix's own scope. It follows the workspace's schema until the tab's
+  // switcher is used, after which the tab holds its own — so you can audit
+  // `analytics` grants while browsing `public` tables.
+  const [scope, setScope] = useState(schemaName);
+  // Follow the workspace when it moves, unless this tab has been pointed
+  // somewhere else deliberately.
+  const [pinned, setPinned] = useState(false);
+  useEffect(() => {
+    if (!pinned) setScope(schemaName);
+  }, [schemaName, pinned]);
+
   // Matrix rows come from the schema's already-introspected table list. It may
   // legitimately be empty (the sidebar has not expanded this schema yet), in
   // which case `matrixObjects` still yields every object a grant names.
   const tablesMap = useIntrospectionStore((state) => state.tables);
   const tables = useMemo(
-    () => (tablesMap[tablesKey(handleId, schemaName)]?.tables ?? []).map((t) => t.name),
-    [tablesMap, handleId, schemaName],
+    () => (tablesMap[tablesKey(handleId, scope)]?.tables ?? []).map((t) => t.name),
+    [tablesMap, handleId, scope],
   );
 
   const [snapshot, setSnapshot] = useState<PrivilegeSnapshot | null>(null);
@@ -104,7 +118,7 @@ export function PrivilegesTab({
   refresh.current = () => {
     void (async () => {
       try {
-        const next = await privilegeSnapshot(handleId, schemaName, effective);
+        const next = await privilegeSnapshot(handleId, scope, effective);
         setSnapshot(next);
         setError(null);
       } catch (err) {
@@ -125,7 +139,7 @@ export function PrivilegesTab({
     // on a reload is safer than replaying them onto data that may have moved.
     setStaged(new Map());
     refresh.current();
-  }, [handleId, schemaName, effective, cfg]);
+  }, [handleId, scope, effective, cfg]);
 
   // Memoised rather than derived inline: these feed the hooks below, and a
   // fresh array identity each render would re-run every one of them.
@@ -153,8 +167,8 @@ export function PrivilegesTab({
     [current, byGrantee],
   );
   const objects = useMemo(
-    () => matrixObjects(tables, currentGrants, schemaName),
-    [tables, currentGrants, schemaName],
+    () => matrixObjects(tables, currentGrants, scope),
+    [tables, currentGrants, scope],
   );
   const roles = useMemo(
     () => (current ? roleChainsFor(snapshot?.memberships ?? [], current.name) : []),
@@ -176,8 +190,8 @@ export function PrivilegesTab({
   // `blockedReason`) rather than emitting a revoke that would do nothing.
   const editable = !readOnly && !!current && !current.isSuperuser;
   const pendingOps = useMemo(
-    () => (current ? stagedOps(staged, current.name, schemaName) : []),
-    [staged, current, schemaName],
+    () => (current ? stagedOps(staged, current.name, scope) : []),
+    [staged, current, scope],
   );
 
   // The open cell menu. Explicit state selection, not a click-through cycle:
@@ -414,9 +428,30 @@ export function PrivilegesTab({
                     </button>
                   ))}
                   <div style={{ flex: 1 }}></div>
-                  <span className="priv-scope" title={tr("priv.scopeTitle")}>
-                    {schemaName}
-                  </span>
+                  {/* The scope switcher. A static chip here was a trap: the
+                      tab froze the schema it was opened on, so the matrix
+                      could silently describe a different schema than the one
+                      the sidebar showed. */}
+                  {schemas.length > 1 ? (
+                    <Select
+                      value={scope}
+                      options={schemas.map((name) => ({ value: name, label: name }))}
+                      onChange={(name) => {
+                        setScope(name);
+                        // Picking explicitly detaches the tab from the
+                        // workspace's schema; "same as the workspace" re-attaches.
+                        setPinned(name !== schemaName);
+                        setStaged(new Map());
+                      }}
+                      className="priv-scope-select"
+                      title={tr("priv.scopeTitle")}
+                      aria-label={tr("priv.scopeTitle")}
+                    />
+                  ) : (
+                    <span className="priv-scope" title={tr("priv.scopeTitle")}>
+                      {scope}
+                    </span>
+                  )}
                   {readOnly ? null : (
                     <IconBtn
                       icon="person_remove"
@@ -438,13 +473,13 @@ export function PrivilegesTab({
                     </div>
                   ) : objects.length === 0 ? (
                     <div className="dg-empty-body">
-                      <Icon name="table" size={22} /> {tr("priv.noObjects", { schema: schemaName })}
+                      <Icon name="table" size={22} /> {tr("priv.noObjects", { schema: scope })}
                     </div>
                   ) : (
                     <GrantMatrix
                       privileges={cfg.privileges}
                       objects={objects}
-                      schema={schemaName}
+                      schema={scope}
                       grants={currentGrants}
                       staged={staged}
                       editable={editable}
@@ -535,7 +570,7 @@ export function PrivilegesTab({
       ) : null}
 
       <div className="priv-foot">
-        <span>{tr("priv.foot", { schema: schemaName })}</span>
+        <span>{tr("priv.foot", { schema: scope })}</span>
         {/* The glyph language is not guessable — eight symbols across four
             states and two derivations — so it is spelled out rather than left
             to tooltips. */}

@@ -623,3 +623,11 @@ button.priv-mc:focus-visible {
   max-width: 460px;
   line-height: 1.5;
 }
+
+/* The scope switcher sits where the static schema chip was, so it keeps that
+   chip's compact, monospace look rather than the full-width form select. */
+.priv-scope-select {
+  flex: none;
+  min-width: 108px;
+  max-width: 200px;
+}

@@ -101,7 +101,12 @@ function TabBody({
           handleId={workspace.handleId}
           engine={workspace.saved.engine}
           env={workspace.saved.env}
-          schemaName={tab.schema}
+          // The workspace's LIVE schema, not `tab.schema`: the latter is frozen
+          // at open time, so switching schema in the sidebar left the matrix
+          // scoped to wherever the tab started. The tab can still scope itself
+          // elsewhere from its own switcher.
+          schemaName={selectedSchema(workspace) ?? tab.schema}
+          schemas={workspace.schemas.map((s) => s.name)}
         />
       );
     case "diff":

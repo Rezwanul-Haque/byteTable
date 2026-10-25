@@ -19,6 +19,11 @@
 // back to one. See the `allowMultipleSelections` block in the extensions below
 // for the Linux Alt+click caveat.
 //
+// VIM MODE is opt-in via Settings ▸ Behavior ▸ SQL editor ▸ Keybindings, and
+// lives in a Compartment so toggling it reconfigures a live view instead of
+// re-mounting one (the same trick the font size uses). See `vimFor` below for
+// why the compartment sits FIRST in the extension list.
+//
 // React integration is imperative (the documented CM pattern): one EditorView
 // instance per mount, created in a layout effect. The buffer is controlled by
 // the parent (the SQL tab's store-backed `text`): `value` prop changes that
@@ -40,7 +45,7 @@ import {
   indentUnit,
   syntaxHighlighting,
 } from "@codemirror/language";
-import { Compartment, EditorSelection, EditorState } from "@codemirror/state";
+import { Compartment, EditorSelection, EditorState, Prec } from "@codemirror/state";
 import {
   EditorView,
   crosshairCursor,
@@ -50,6 +55,7 @@ import {
   rectangularSelection,
 } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
+import { vim } from "@replit/codemirror-vim";
 import {
   forwardRef,
   useEffect,
@@ -64,6 +70,8 @@ import { useT } from "../../../shared/i18n/useT";
 import type { Engine } from "../../../shared/types";
 import { clearActiveCodeEditor, setActiveCodeEditor } from "../../../shared/ui/activeCodeEditor";
 
+import type { EditorKeymap } from "../../settings/api";
+import { useSettingsStore } from "../../settings/state";
 import type { Snippet } from "../../snippets/api";
 
 import {
@@ -161,6 +169,37 @@ const sqlTheme = EditorView.theme(
     },
     ".cm-lineNumbers .cm-gutterElement": { padding: "0 8px 0 12px" },
     ".cm-activeLineGutter": { backgroundColor: "transparent", color: "var(--text)" },
+    // ---- vim mode chrome (only rendered when the vim extension is active) ----
+    // These live here rather than in the CSS file because the vim package ships
+    // its own look as a CodeMirror BASE theme, and CM layers plain themes above
+    // base themes — so these win without specificity games. The block cursor is
+    // the exception (a Prec.highest theme) and is overridden in the CSS file.
+    ".cm-panels": {
+      backgroundColor: "var(--bg1)",
+      color: "var(--text-dim)",
+    },
+    ".cm-panels-bottom": { borderTop: "1px solid var(--border)" },
+    // The mode indicator (--NORMAL--) and the `:`/`/` prompt share this panel.
+    ".cm-vim-panel": {
+      fontFamily: "var(--mono)",
+      fontSize: "11.5px",
+      padding: "2px 16px",
+      minHeight: "18px",
+      alignItems: "center",
+      gap: "8px",
+    },
+    ".cm-vim-panel input": {
+      fontFamily: "var(--mono)",
+      fontSize: "11.5px",
+      color: "var(--text)",
+      flex: "1",
+      caretColor: "var(--accent)",
+    },
+    // `/` search hits — the package defaults to a cyan that fights the theme.
+    ".cm-searchMatch": {
+      backgroundColor: "color-mix(in oklab, var(--accent) 28%, transparent)",
+      outline: "1px solid color-mix(in oklab, var(--accent) 45%, transparent)",
+    },
   },
   { dark: true },
 );
@@ -180,6 +219,23 @@ function readStoredFontPx(): number {
 
 function fontSizeTheme(px: number) {
   return EditorView.theme({ "&": { fontSize: px + "px" } });
+}
+
+/**
+ * The extension for a keybinding preference — vim's, or nothing at all.
+ *
+ * `status: true` is not cosmetic: it adds the panel under the editor that shows
+ * the mode (`--NORMAL--`) AND hosts the `:`/`/` prompt. Without it, ex commands
+ * and searches are typed blind. The panel is themed in SqlCodeEditor.css.
+ *
+ * Goes FIRST in the extension list. CodeMirror runs same-precedence DOM
+ * handlers in extension order, and vim's key handling is a view plugin rather
+ * than a keymap — put it after `defaultKeymap` and bindings like Escape
+ * (simplifySelection) would be consumed before vim ever sees them, leaving
+ * insert mode impossible to exit from a visual selection.
+ */
+function vimFor(mode: EditorKeymap) {
+  return mode === "vim" ? vim({ status: true }) : [];
 }
 
 /** macOS shows ⌘/⌥ glyphs in the context-menu shortcut hints; other platforms
@@ -265,6 +321,15 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
     // can reconfigure the font without re-mounting the view.
     const fontCompartmentRef = useRef(new Compartment());
     const fontPxRef = useRef(readStoredFontPx());
+    // Keybinding set (default / vim), read straight from the settings store
+    // rather than threaded through as a prop: it is a global user choice, and
+    // every caller of this editor would otherwise have to forward it. Lives in
+    // a compartment so flipping the setting reconfigures the open view.
+    const editorKeymap = useSettingsStore((state) => state.settings.editorKeymap);
+    const vimCompartmentRef = useRef(new Compartment());
+    // What the view was built with, so the swap effect below can skip the
+    // mount pass (where the state is already seeded with the right value).
+    const mountedKeymapRef = useRef(editorKeymap);
     // Keep the latest callbacks reachable from the (mount-once) CM extensions
     // without re-creating the EditorView on every parent render.
     const onChangeRef = useRef(onChange);
@@ -382,6 +447,8 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
         state: EditorState.create({
           doc: value,
           extensions: [
+            // First, deliberately — see vimFor's comment on handler ordering.
+            vimCompartmentRef.current.of(vimFor(editorKeymap)),
             lineNumbers(),
             history(),
             drawSelection(),
@@ -406,24 +473,31 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
             crosshairCursor(),
             // Mod-Enter must win over any default binding; indentWithTab makes
             // Tab insert indentation (configured to two spaces below).
-            runKeymap,
+            // Prec.highest so the app's own shortcuts (Run, zoom, completion)
+            // outrank vim mode: vim only swallows keys it has a mapping for, so
+            // this is belt-and-braces, but "⌘↵ runs the query" should not
+            // depend on vim's mapping table staying free of those keys.
+            Prec.highest(runKeymap),
             // Format shortcut (⇧⌥F) by PHYSICAL key — event.code is layout- and
             // Option-char-independent, so it fires on macOS where Option+F would
             // otherwise insert a special char instead of triggering the keymap.
-            EditorView.domEventHandlers({
-              focus: (_e, v) => {
-                setActiveCodeEditor(v);
-                return false;
-              },
-              keydown: (e) => {
-                if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === "KeyF") {
-                  e.preventDefault();
-                  onFormatRef.current?.();
-                  return true;
-                }
-                return false;
-              },
-            }),
+            // Also Prec.highest, for the same reason as runKeymap above.
+            Prec.highest(
+              EditorView.domEventHandlers({
+                focus: (_e, v) => {
+                  setActiveCodeEditor(v);
+                  return false;
+                },
+                keydown: (e) => {
+                  if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === "KeyF") {
+                    e.preventDefault();
+                    onFormatRef.current?.();
+                    return true;
+                  }
+                  return false;
+                },
+              }),
+            ),
             // Context-aware SQL autocomplete. The source reads the live schema
             // ref; CM owns caret-positioning, ↑/↓, hover/click, and blur-dismiss.
             // closeOnBlur (default) dismisses on blur; activateOnTyping pops it as
@@ -497,6 +571,19 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
       // Mount once; the buffer is reconciled via the effect below.
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    // Swap the keybinding set when the preference changes. Reconfiguring the
+    // compartment is enough to clean up after vim: its view plugin's destroy()
+    // calls Vim.leaveVimMode and drops the status panel with the extension.
+    // Skips the mount pass (the state is seeded with the right value above).
+    useEffect(() => {
+      const view = viewRef.current;
+      if (!view || mountedKeymapRef.current === editorKeymap) return;
+      mountedKeymapRef.current = editorKeymap;
+      view.dispatch({
+        effects: vimCompartmentRef.current.reconfigure(vimFor(editorKeymap)),
+      });
+    }, [editorKeymap]);
 
     // Reconcile external `value` changes (snippet / history / saved-query load)
     // into the view. Skip when the doc already matches — typing updates `value`

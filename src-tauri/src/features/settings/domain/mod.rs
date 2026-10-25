@@ -105,6 +105,17 @@ pub enum MacChrome {
     Frameless,
 }
 
+/// Which keybinding set the SQL editor uses. `Default` is CodeMirror's own
+/// (VS Code-ish) bindings; `Vim` swaps in modal editing. A renderer concern —
+/// mirrored here only so the choice survives a localStorage clear.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EditorKeymap {
+    #[default]
+    Default,
+    Vim,
+}
+
 /// First day of the week for calendar-style surfaces. `Auto` defers to the
 /// region's own convention (`Intl.Locale.weekInfo` in the renderer).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -166,6 +177,9 @@ fn default_auto_refresh_sec() -> u32 {
 fn default_connect_timeout_sec() -> u32 {
     5
 }
+fn default_editor_keymap() -> EditorKeymap {
+    EditorKeymap::default()
+}
 fn default_true() -> bool {
     true
 }
@@ -204,6 +218,9 @@ pub struct Settings {
     /// Rows fetched before paging — 100, 300, or 1000 in the UI.
     #[serde(default = "default_default_limit")]
     pub default_limit: u32,
+    /// Keybinding set for the SQL editor (`default` or `vim`).
+    #[serde(default = "default_editor_keymap")]
+    pub editor_keymap: EditorKeymap,
     #[serde(default = "default_true")]
     pub restore_tabs: bool,
     /// Periodically refresh the sidebar object list (all engines) + the Redis
@@ -278,6 +295,7 @@ impl Default for Settings {
             relative_time: false,
             confirm_prod: true,
             default_limit: default_default_limit(),
+            editor_keymap: default_editor_keymap(),
             restore_tabs: true,
             auto_refresh: true,
             auto_refresh_sec: default_auto_refresh_sec(),
@@ -315,6 +333,7 @@ mod tests {
         assert!(!s.relative_time);
         assert!(s.confirm_prod);
         assert_eq!(s.default_limit, 300);
+        assert_eq!(s.editor_keymap, EditorKeymap::Default);
         assert!(s.restore_tabs);
         assert!(s.auto_refresh);
         assert_eq!(s.auto_refresh_sec, 10);
@@ -387,6 +406,7 @@ mod tests {
             relative_time: true,
             confirm_prod: false,
             default_limit: 1000,
+            editor_keymap: EditorKeymap::Vim,
             restore_tabs: false,
             auto_refresh: false,
             auto_refresh_sec: 30,
@@ -419,6 +439,7 @@ mod tests {
         assert_eq!(back.font_size, 13);
         assert!(back.ligatures);
         assert_eq!(back.default_limit, 300);
+        assert_eq!(back.editor_keymap, EditorKeymap::Default);
         assert!(back.restore_tabs);
         // A pre-M31 file has no language keys; the renderer treats a blob with
         // no `locale` as a first run and follows the OS language instead.

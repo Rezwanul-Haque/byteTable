@@ -106,6 +106,7 @@ export const en = {
   "set.sec.queryDefaults": "Query defaults",
   "set.sec.liveData": "Live data",
   "set.sec.objects": "Database objects",
+  "set.sec.editor": "SQL editor",
   "set.sec.safety": "Safety",
   "set.sec.connecting": "Connecting",
   "set.sec.session": "Session",

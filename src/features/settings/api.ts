@@ -51,6 +51,12 @@ export type TitlebarPosition =
 export type MacChrome = "native" | "frameless";
 /** Liquid Glass's backdrop image: bundled, the user's own, or none. */
 export type WallpaperChoice = "default" | "custom" | "none";
+/**
+ * Which keybinding set the SQL editor uses. `"default"` is CodeMirror's own
+ * (VS Code-ish) bindings; `"vim"` swaps in modal editing, with its own status
+ * line under the editor for the mode and the `:`/`/` prompt.
+ */
+export type EditorKeymap = "default" | "vim";
 /** `"auto"` (theme's own accent) or a `#rrggbb` hex string. */
 export type Accent = "auto" | string;
 /** Curated mono key or a probed `"sys:<Family>"` id. */
@@ -78,6 +84,8 @@ export interface Settings {
    * left to grow with a long working day.
    */
   sqlHistoryMax: number;
+  /** Keybinding set for the SQL editor. */
+  editorKeymap: EditorKeymap;
   restoreTabs: boolean;
   /** Periodically refresh the sidebar object list (+ Redis keyspace). */
   autoRefresh: boolean;
@@ -142,6 +150,7 @@ export const DEFAULTS: Settings = {
   confirmProd: true,
   defaultLimit: 300,
   sqlHistoryMax: 30,
+  editorKeymap: "default",
   restoreTabs: true,
   autoRefresh: true,
   autoRefreshSec: 10,
@@ -165,6 +174,8 @@ export const DEFAULTS: Settings = {
 const REGION_IDS = new Set<string>(REGIONS.map((r) => r.id));
 /** Valid `firstDay` ids. */
 const FIRST_DAYS = new Set<string>(["auto", "mon", "sun", "sat"]);
+/** Valid `editorKeymap` ids. */
+const EDITOR_KEYMAPS = new Set<string>(["default", "vim"]);
 
 /**
  * The settings a profile starts from when NOTHING is stored — DEFAULTS, except
@@ -199,6 +210,7 @@ export function mergeSettings(stored: unknown): Settings {
   if (!isLocaleId(merged.locale)) merged.locale = DEFAULTS.locale;
   if (!REGION_IDS.has(merged.region)) merged.region = DEFAULTS.region;
   if (!FIRST_DAYS.has(merged.firstDay)) merged.firstDay = DEFAULTS.firstDay;
+  if (!EDITOR_KEYMAPS.has(merged.editorKeymap)) merged.editorKeymap = DEFAULTS.editorKeymap;
   return merged;
 }
 

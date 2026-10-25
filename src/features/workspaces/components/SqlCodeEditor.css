@@ -98,6 +98,24 @@
   transform: rotate(45deg);
 }
 
+/* ---- vim mode block cursor ----
+ * @replit/codemirror-vim paints the normal-mode cursor as a pink (#ff9696)
+ * block from a Prec.highest theme, which no plain CM theme of ours can outrank
+ * — so it is overridden here, where the extra `.sql-cm` qualifier beats their
+ * single-class rules outright. The character under the block takes the editor
+ * background so it stays readable. */
+.sql-cm .cm-fat-cursor {
+  background: var(--accent);
+  color: var(--bg0);
+}
+
+/* Unfocused: hollow outline, matching their behaviour but in the accent. */
+.sql-cm .cm-editor:not(.cm-focused) .cm-fat-cursor {
+  background: none;
+  outline: 1px solid var(--accent);
+  color: transparent !important;
+}
+
 /* ---- right-click context menu (Run Selected / Run All / Format / clipboard) ---- */
 .sql-ctx-overlay {
   position: fixed;

@@ -36,6 +36,7 @@ import type {
   ConnectTimeoutSec,
   DefaultLimit,
   Density,
+  EditorKeymap,
   ScopeSwitcher,
   Settings,
   SidebarSide,
@@ -952,6 +953,20 @@ export function SettingsModal({ tab: initialTab, onClose }: SettingsModalProps) 
 
           {tab === "behavior" ? (
             <>
+              <div className="set-section-label">{t("set.sec.editor")}</div>
+              <SetRow
+                label="Keybindings"
+                hint="Vim gives the SQL editor modal editing, with its own status line under the editor for the mode and the : / search prompt. ⌘↵ still runs, and the autocomplete popup still works in insert mode."
+              >
+                <SetSeg<EditorKeymap>
+                  value={settings.editorKeymap}
+                  onChange={(v) => setSetting("editorKeymap", v)}
+                  options={[
+                    { value: "default", label: "Default" },
+                    { value: "vim", label: "Vim" },
+                  ]}
+                />
+              </SetRow>
               <div className="set-section-label">{t("set.sec.safety")}</div>
               <SetRow
                 label="Confirm writes on production"

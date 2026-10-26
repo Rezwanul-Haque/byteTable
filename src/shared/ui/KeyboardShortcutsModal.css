@@ -1,14 +1,44 @@
+/* The panel itself must NOT scroll.
+   `.modal` falls back to `max-height: calc(100vh - 48px)` with its own
+   `overflow-y: auto`, which gave this sheet two faults at once: it grew to
+   very nearly the window height, and its scrollbar was painted inside the
+   panel's own rounded box, so the corner radius sliced the thumb's ends off
+   at the top and bottom. Capping here and scrolling the GROUPS instead fixes
+   both — the inner box sits inside the panel's 20px padding, well clear of
+   the curve — and keeps the title and the footnote in place while the list
+   moves, which is what you want from a reference sheet. */
+/* Two caps, and the smaller wins: `vh` keeps it off the edges of a short
+   window, the pixel value stops it stretching to absurd heights on a tall
+   one. Tuned to show roughly four groups before scrolling. */
+.shortcuts-modal {
+  display: flex;
+  flex-direction: column;
+  max-height: min(82vh, 760px);
+  overflow: hidden;
+}
+
+/* Pinned above the scroll box. `flex: none` so a long list cannot squeeze the
+   heading — a flex child shrinks by default. */
 .shortcuts-title {
   font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.01em;
   margin-bottom: 14px;
+  flex: none;
 }
 
+/* The one scrolling box. `min-height: 0` is load-bearing: a flex child's
+   default `min-height: auto` refuses to shrink below its content, so without
+   it this would push the panel past its own max-height and nothing would
+   scroll at all. The right padding keeps the keycaps off the scrollbar thumb. */
 .shortcuts-groups {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .shortcuts-group-title {
@@ -56,8 +86,11 @@
   white-space: nowrap;
 }
 
+/* Outside the scroll box, so the "these follow your platform" caveat is
+   visible without scrolling to the end of the list to find it. */
 .shortcuts-note {
   margin-top: 16px;
   font-size: 11.5px;
   color: var(--text-faint);
+  flex: none;
 }

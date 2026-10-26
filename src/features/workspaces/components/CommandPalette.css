@@ -32,7 +32,12 @@
   background: none;
   border: none;
   outline: none;
-  font-size: 14px;
+  /* 17px, not the prototype's 14px — the one deliberate divergence from the
+     byte-identical port. A command palette's query line is the focal point of
+     the surface (Spotlight and Raycast both sit around here), and at 14px in a
+     44px row it read as an afterthought. The caret scales with it, which is the
+     reason this changed: an empty field's caret looked lost against the row. */
+  font-size: 17px;
 }
 
 .palette-list {

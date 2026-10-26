@@ -33,7 +33,10 @@
   background: none;
   border: none;
   outline: none;
-  font-size: 14px;
+  /* 17px — see the note in CommandPalette.css. Both sheets declare
+     `.palette-*` (REDIS_SPEC §11 keeps the Redis slice self-contained), so the
+     two palettes drift apart unless this lands in both. */
+  font-size: 17px;
 }
 
 .palette-list {

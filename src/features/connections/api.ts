@@ -16,6 +16,22 @@ import type { EngineInfo, SchemaInfo, TableInfo } from "../../shared/api/engine"
 import { t } from "../../shared/i18n";
 import type { Engine, Env } from "../../shared/types";
 
+// Encrypted connection-bundle export / import (M40). Its own module because
+// it is a separate backend slice; re-exported here so the slice keeps ONE
+// public contract for other features to import from.
+export {
+  BUNDLE_EXTENSION,
+  connectionBundleExport,
+  connectionBundleImport,
+  connectionBundleInspect,
+  type BundleEntryPreview,
+  type BundlePreview,
+  type ExportOutcome,
+  type ImportAction,
+  type ImportFailure,
+  type ImportOutcome,
+} from "./bundle";
+
 export {
   queryRun,
   type CellValue,

@@ -103,6 +103,19 @@ keyring = { version = "3", features = [
     "windows-native",
     "sync-secret-service",
 ] }
+# Connection-bundle encryption (M40): Argon2id stretches the user's passphrase
+# into a 32-byte key, AES-256-GCM seals the bundle payload with the cleartext
+# header as associated data. Deliberately the STABLE lines, not the
+# 0.11.0-rc/0.6.0-rc copies russh already pulls in via ssh-key: a release
+# candidate's API moves under us, and the file format these produce has to stay
+# readable by every future build. The duplicate copies cost a little compile
+# time and no runtime size (the RC ones are linked for SSH either way).
+# `zeroize` wipes the derived key and the passphrase copy; `rand` draws the salt
+# and nonce from the OS CSPRNG.
+aes-gcm = "0.10"
+argon2 = "0.5"
+zeroize = { version = "1", features = ["zeroize_derive"] }
+rand = "0.8"
 # Pure-Rust async SSH client for the M12 Task 3 tunnel (local listener → SSH
 # `direct-tcpip` channel → bastion → db host:port). Chosen over `ssh2`/libssh2
 # deliberately: russh needs no system OpenSSL/libssh2 (matching the `tls-rustls`

@@ -27,6 +27,8 @@ import {
   type SavedConnection,
   type UnsupportedConnection,
 } from "../../connections/api";
+import { ExportBundleModal } from "../../connections/components/ExportBundleModal";
+import { ImportBundleModal } from "../../connections/components/ImportBundleModal";
 import { NewConnectionModal } from "../../connections/components/NewConnectionModal";
 import { pickSqliteFile } from "../../connections/dialog";
 import { useConnectionsStore } from "../../connections/state";
@@ -81,6 +83,11 @@ export function ConnectScreen() {
   // the panel and competed with "New connection".
   const [fileMenu, setFileMenu] = useState(false);
   const [dataFileOpen, setDataFileOpen] = useState(false);
+  // M40: the two bundle modals, opened from the icon pair beside the search.
+  // `exportIds` is non-null while the export modal is up: an empty array means
+  // "everything", a single id means the card context menu's Export… was used.
+  const [exportIds, setExportIds] = useState<string[] | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
   const [openGroup, setOpenGroup] = useState<string | null>(null);
   // Non-null only while a card is being dragged between project groups.
   const [drag, setDrag] = useState<CardDrag | null>(null);
@@ -210,6 +217,13 @@ export function ConnectScreen() {
       label: t("ws.connect.duplicate"),
       icon: "content_copy",
       onSelect: () => void duplicateConn(c),
+    },
+    // M40: export just this one. The popover below exports a selection; this
+    // is the one-card shortcut, which is why it has no hover affordance.
+    {
+      label: t("bundle.export.one"),
+      icon: "download",
+      onSelect: () => setExportIds([c.id]),
     },
     { label: t("common.delete"), icon: "delete", danger: true, onSelect: () => void removeConn(c) },
   ]);
@@ -425,25 +439,55 @@ export function ConnectScreen() {
             </div>
           ) : null}
         </div>
-        {showSearch ? (
-          <div className="connect-search">
-            <Icon name="search" size={15} style={{ color: "var(--text-faint)" }} />
-            <input
-              placeholder={t("connect.filter")}
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              spellCheck={false}
-            />
-            {filter ? (
-              <IconBtn
-                icon="close"
-                size={13}
-                title={t("ws.connect.clear")}
-                onClick={() => setFilter("")}
+        {/* M40: the bundle actions sit beside the search rather than in the
+            bottom actions row, which already carries three controls at a fixed
+            panel width. The ROW is unconditional even though the search box is
+            not: `showSearch` hides the field below two connections, and import
+            is exactly what a fresh profile needs. With the field hidden the two
+            buttons right-align on their own. */}
+        <div className="connect-searchrow">
+          {showSearch ? (
+            <div className="connect-search">
+              <Icon name="search" size={15} style={{ color: "var(--text-faint)" }} />
+              <input
+                placeholder={t("connect.filter")}
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                spellCheck={false}
               />
-            ) : null}
+              {filter ? (
+                <IconBtn
+                  icon="close"
+                  size={13}
+                  title={t("ws.connect.clear")}
+                  onClick={() => setFilter("")}
+                />
+              ) : null}
+            </div>
+          ) : null}
+          {/* `download` = export, `upload` = import. Counter-intuitive read
+              alone, but it is the convention everywhere else in the app (the
+              CSV/DDL/table exports all use `download`; every import modal uses
+              `upload`), and matching it beats being locally sensible. */}
+          <div className="connect-transfer">
+            <IconBtn
+              icon="download"
+              size={16}
+              title={t("bundle.export.tip")}
+              // Nothing to export from an empty registry — the modal would
+              // open on a blank list behind a dead primary button.
+              disabled={savedConnections.length === 0 || connecting !== null}
+              onClick={() => setExportIds([])}
+            />
+            <IconBtn
+              icon="upload"
+              size={16}
+              title={t("bundle.import.tip")}
+              disabled={connecting !== null}
+              onClick={() => setImportOpen(true)}
+            />
           </div>
-        ) : null}
+        </div>
         {loaded && loadError !== null ? (
           // §5-style inline error: the backend's human sentence, where the
           // list would have been.
@@ -696,6 +740,26 @@ export function ConnectScreen() {
       ) : null}
 
       {showCompare ? <CompareSchemasModal onClose={() => setShowCompare(false)} /> : null}
+
+      {exportIds ? (
+        <ExportBundleModal
+          connections={savedConnections}
+          // An empty array is "the popover opened it" — the modal then ticks
+          // everything. A one-element array is the card menu's Export….
+          initialSelection={exportIds.length ? exportIds : undefined}
+          onClose={() => setExportIds(null)}
+        />
+      ) : null}
+
+      {importOpen ? (
+        <ImportBundleModal
+          onClose={() => setImportOpen(false)}
+          onImported={() => {
+            void load();
+            refreshUnsupported();
+          }}
+        />
+      ) : null}
 
       {showNew || editConn ? (
         <NewConnectionModal

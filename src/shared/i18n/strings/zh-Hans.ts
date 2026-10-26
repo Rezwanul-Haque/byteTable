@@ -4126,4 +4126,68 @@ export const zhHans: StringTable = {
   "board.toast.exportNeedsDesktop": "图片导出需要桌面应用",
   "board.toast.exampleLoaded": "已载入菜单服务示例 · ⌘Z 可撤销",
   "board.toast.cleared": "板面已清空 · ⌘Z 可撤销",
+
+  // ---- 加密连接包（M40）--------------------------------------------------
+  "conn.dlg.bundle": "ByteTable 连接包",
+  "bundle.export.tip": "将连接导出为加密文件",
+  "bundle.import.tip": "从加密文件导入连接",
+  "bundle.export.one": "导出…",
+  "bundle.needsApp": "连接包功能需要桌面应用。",
+
+  "bundle.export.title": "导出连接",
+  "bundle.export.lede": "将所选连接写入一个加密文件，可带到另一台设备。不会上传到任何服务器。",
+  "bundle.export.pick": "连接",
+  "bundle.export.selected": "{count, plural, other {已选 # 个}}",
+  "bundle.export.selectAll": "全选",
+  "bundle.export.selectNone": "全不选",
+  "bundle.export.secrets": "包含密码与 SSH 密钥口令",
+  "bundle.export.secretsHint":
+    "会把它们从本机钥匙串复制到文件中。文件用你的口令加密，导入时会重新存入对方的钥匙串。",
+  "bundle.export.promptWarn":
+    "{count, plural, other {系统可能会就每个已保存的密码请求访问授权——最多 # 次提示。}}",
+  "bundle.export.action": "选择文件并导出",
+  "bundle.export.working": "正在导出…",
+  "bundle.export.done": "{count, plural, other {已导出 # 个连接}}",
+  "bundle.export.denied":
+    "{count, plural, other {有 # 个连接未能导出密码}}：{names}。导入后需要重新输入密码。",
+
+  "bundle.passphrase": "口令",
+  "bundle.passphrase.ph": "口令",
+  "bundle.passphrase.confirm": "确认口令",
+  "bundle.passphrase.short": "至少需要 {count} 个字符。",
+  "bundle.passphrase.mismatch": "两次输入的口令不一致。",
+  "bundle.passphrase.noRecovery": "口令无法找回——没有它就无法打开该文件。",
+  "bundle.passphrase.rules":
+    "至少 {count} 个字符。这里长度远比符号重要：该文件只要存在就可被离线破解，所以几个不相关的词（“铜色 黎明 账本 冲洗”）胜过一个简短而巧妙的口令。请避免使用数据库名、公司名，以及你在别处用过的口令。",
+  "bundle.strength.aria": "口令强度",
+  "bundle.strength.weak": "弱",
+  "bundle.strength.fair": "一般",
+  "bundle.strength.good": "良好",
+  "bundle.strength.strong": "强",
+  "bundle.passphrase.tip": "几个不相关的词胜过一个简短而巧妙的口令——长度才能让该文件难以被破解。",
+
+  "bundle.import.title": "导入连接",
+  "bundle.import.lede": "打开从另一台设备导出的连接包。在你确认内容之前不会写入任何数据。",
+  "bundle.import.file": "连接包文件",
+  "bundle.import.choose": "选择文件",
+  "bundle.import.noFile": "尚未选择文件",
+  "bundle.import.unlock": "解锁",
+  "bundle.import.unlocking": "正在解锁…",
+  "bundle.import.action": "导入",
+  "bundle.import.working": "正在导入…",
+  "bundle.import.summary":
+    "{count, plural, other {# 个连接}} · {conflicts, plural, =0 {没有重复} other {# 个已存在}} · {warned, plural, =0 {无提醒} other {# 个需要注意}}",
+  "bundle.import.exportedOn": "导出于 {date} · ByteTable {version}",
+  "bundle.import.hasSecrets": "包含已保存的密码或 SSH 密钥口令",
+  "bundle.import.conflict": "本机已有相同 id 的连接：“{name}”。",
+  "bundle.import.unsupported": "此版本不支持“{engine}”引擎。该连接会被导入并保留，但无法在此打开。",
+  "bundle.import.done":
+    "导入 {imported} 个 · 替换 {replaced} 个 · 副本 {copied} 个 · 跳过 {skipped} 个",
+  "bundle.import.failed": "无法导入“{name}”：{reason}",
+
+  "bundle.import.actionAria": "如何处理“{name}”",
+  "bundle.action.skip": "跳过",
+  "bundle.action.import": "导入",
+  "bundle.action.replace": "替换",
+  "bundle.action.copy": "导入为副本",
 };

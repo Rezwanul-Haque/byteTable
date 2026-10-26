@@ -8,6 +8,7 @@
 //! surface. M6 (SQL editor) may move it to a dedicated query slice; the
 //! handle-id seam will survive that move.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use tauri::State;
@@ -74,22 +75,27 @@ async fn refuse_writes_in_read_only(
 /// Commands depend only on ports (`ConnectionRepository`, the shared
 /// `Connector` trait behind `ConnectorRegistry`); concrete adapters are
 /// chosen exclusively in the composition root.
+///
+/// The repository and secret store are `Arc`, not `Box`, because the
+/// connection-bundle slice (M40) needs the very same instances — sharing the
+/// secret store in particular keeps its keychain cache (and therefore the
+/// macOS prompt count) shared rather than letting a second instance start cold.
 pub struct ConnectionsState {
-    repository: Box<dyn ConnectionRepository>,
+    repository: Arc<dyn ConnectionRepository>,
     registry: ConnectorRegistry,
     manager: ConnectionManager,
     /// OS-keychain-backed store for server-connection secrets (M12 Task 3):
     /// the db password and the SSH key passphrase / bastion password. SQLite
     /// connections never touch it.
-    secret_store: Box<dyn SecretStore>,
+    secret_store: Arc<dyn SecretStore>,
 }
 
 impl ConnectionsState {
     pub fn new(
-        repository: Box<dyn ConnectionRepository>,
+        repository: Arc<dyn ConnectionRepository>,
         registry: ConnectorRegistry,
         manager: ConnectionManager,
-        secret_store: Box<dyn SecretStore>,
+        secret_store: Arc<dyn SecretStore>,
     ) -> Self {
         Self {
             repository,

@@ -542,7 +542,11 @@ pub fn duplicate_connection<R: ConnectionRepository + ?Sized, S: SecretStore + ?
 /// number is only stripped from something that is already a copy — a connection
 /// the user deliberately named `api 2` keeps it, and duplicates to
 /// `Copy of api 2`.
-fn copy_name(original: &str, taken: &[String]) -> String {
+///
+/// `pub` so the connection-bundle import (M40) names a "import as a copy"
+/// entry identically — an imported copy should sort next to its original the
+/// same way a duplicated one does, and that only holds if both go through this.
+pub fn copy_name(original: &str, taken: &[String]) -> String {
     const PREFIX: &str = "Copy of ";
     let base = match original.strip_prefix(PREFIX) {
         Some(rest) => rest

@@ -63,16 +63,31 @@ export function intlTag(): string {
 // ---- formatting ----------------------------------------------------------
 
 /**
+ * An arm selector inside a plural body: a keyword category (`one`, `other`,
+ * `few`, …) or an ICU **exact-value** match (`=0`, `=1`).
+ *
+ * `=N` is not decoration. Without it, a count-of-zero arm has to be phrased as
+ * a plural ("0 conflicts"), where English wants prose ("none already here").
+ * It was omitted originally, and the failure mode was nasty: `\w+` cannot match
+ * `=0`, so the *enclosing* `PLURAL_RE` stopped matching too and the whole
+ * `{conflicts, plural, …}` source string rendered verbatim into the UI — no
+ * error, no warning, just ICU syntax on screen.
+ */
+const PLURAL_SEL = String.raw`(?:=\d+|\w+)`;
+/**
  * `{count, plural, one {…} other {…}}` — matched as a whole, arms included.
  *
- * The body is spelled out as a sequence of `category {text}` arms rather than
+ * The body is spelled out as a sequence of `selector {text}` arms rather than
  * the prototype's `[^}]*(?:\{[^}]*\}[^}]*)*`: `[^}]` also matches `{`, so that
  * pattern greedily ate `one {# row` and stopped at the FIRST `}`, leaving
  * `other {# rows}}` in the output for every two-arm plural.
  */
-const PLURAL_RE = /\{(\w+),\s*plural,\s*((?:\w+\s*\{[^{}]*\}\s*)+)\}/g;
-/** One `category {text}` arm inside a plural body. */
-const PLURAL_ARM_RE = /(\w+)\s*\{([^{}]*)\}/g;
+const PLURAL_RE = new RegExp(
+  String.raw`\{(\w+),\s*plural,\s*((?:${PLURAL_SEL}\s*\{[^{}]*\}\s*)+)\}`,
+  "g",
+);
+/** One `selector {text}` arm inside a plural body. */
+const PLURAL_ARM_RE = new RegExp(String.raw`(${PLURAL_SEL})\s*\{([^{}]*)\}`, "g");
 /** A plain `{name}` placeholder. */
 const VAR_RE = /\{(\w+)\}/g;
 
@@ -96,7 +111,9 @@ export function format(template: string, vars?: Vars): string {
     } catch {
       category = n === 1 ? "one" : "other";
     }
-    const picked = forms[category] ?? forms.other ?? "";
+    // ICU order: an exact `=N` arm wins over the plural category, so a locale
+    // can give zero (or one) its own prose without disturbing the categories.
+    const picked = forms[`=${n}`] ?? forms[category] ?? forms.other ?? "";
     return picked.replace(/#/g, fmtNumber(n));
   });
   return withPlurals.replace(VAR_RE, (match, key: string) =>

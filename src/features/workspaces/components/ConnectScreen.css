@@ -490,7 +490,28 @@
   color: var(--text-faint);
 }
 
+/* Search field + the bundle export/import pair (M40) on one line. The row
+   always renders; the field inside it does not (hidden below two connections),
+   and `margin-inline-start: auto` on the pair keeps the buttons at the trailing
+   edge either way — in LTR and RTL alike. */
+.connect-searchrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.connect-transfer {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-inline-start: auto;
+  flex: none;
+}
+
 .connect-search {
+  /* Yields the width the two buttons take, instead of the row overflowing the
+     fixed-width panel. */
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;

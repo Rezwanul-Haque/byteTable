@@ -4321,6 +4321,94 @@ export const en = {
   "board.toast.exportNeedsDesktop": "Image export needs the desktop app",
   "board.toast.exampleLoaded": "Loaded the menu-service example · ⌘Z to undo",
   "board.toast.cleared": "Board cleared · ⌘Z to undo",
+
+  // ---- Encrypted connection bundles (M40) --------------------------------
+  // Export/import a set of connections, secrets included, as one
+  // passphrase-encrypted file. The copy around secrets and the passphrase is
+  // deliberately blunt: both describe consequences the user cannot undo once
+  // the file leaves their machine.
+  "conn.dlg.bundle": "ByteTable connection bundle",
+  // Tooltips on the two icon buttons beside the connect-screen search. They
+  // name the destination/source, because "Export" alone next to a database
+  // client reads as "export data".
+  "bundle.export.tip": "Export connections to an encrypted file",
+  "bundle.import.tip": "Import connections from an encrypted file",
+  "bundle.export.one": "Export…",
+  "bundle.needsApp": "Connection bundles require the desktop app.",
+
+  "bundle.export.title": "Export connections",
+  "bundle.export.lede":
+    "Writes the connections you pick to one encrypted file you can carry to another machine. Nothing is uploaded.",
+  "bundle.export.pick": "Connections",
+  "bundle.export.selected": "{count, plural, one {# selected} other {# selected}}",
+  "bundle.export.selectAll": "Select all",
+  "bundle.export.selectNone": "Select none",
+  "bundle.export.secrets": "Include passwords and SSH secrets",
+  "bundle.export.secretsHint":
+    "Copies them out of this machine's keychain and into the file. They are encrypted with your passphrase, and go back into the keychain on import.",
+  // Each keychain item has its own OS access ACL, so there is one prompt per
+  // connection and no way to batch them. Saying so up front is the only
+  // available fix — otherwise the run of dialogs reads as a malfunction.
+  "bundle.export.promptWarn":
+    "{count, plural, one {Your system may ask you to allow access to the saved password.} other {Your system may ask you to allow access to each saved password — up to # prompts.}}",
+  "bundle.export.action": "Choose file and export",
+  "bundle.export.working": "Exporting…",
+  "bundle.export.done":
+    "{count, plural, one {Exported # connection} other {Exported # connections}}",
+  "bundle.export.denied":
+    "{count, plural, one {# connection was exported without its password} other {# connections were exported without their passwords}}: {names}. They will need it retyped after import.",
+
+  "bundle.passphrase": "Passphrase",
+  "bundle.passphrase.ph": "Passphrase",
+  "bundle.passphrase.confirm": "Confirm passphrase",
+  "bundle.passphrase.short": "Use at least {count} characters.",
+  "bundle.passphrase.mismatch": "The two passphrases do not match.",
+  "bundle.passphrase.noRecovery":
+    "There is no way to recover this passphrase — without it the file cannot be opened.",
+  // Strength bands. A bundle is attacked offline, with unlimited guesses, by
+  // whoever ends up holding the file — so the hint pushes length over
+  // punctuation, which is what actually makes that attack expensive.
+  // Shown in the info hint beside the Passphrase heading, so the rules are
+  // readable before anything is typed rather than arriving as a red error.
+  "bundle.passphrase.rules":
+    "At least {count} characters. Length matters far more than symbols here: this file can be attacked offline for as long as it exists, so several unrelated words (“copper dawn ledger rinse”) beat a short clever one. Avoid your database or company name, and anything you use elsewhere.",
+  "bundle.strength.aria": "Passphrase strength",
+  "bundle.strength.weak": "Weak",
+  "bundle.strength.fair": "Fair",
+  "bundle.strength.good": "Good",
+  "bundle.strength.strong": "Strong",
+  "bundle.passphrase.tip":
+    "Several unrelated words beat a short clever one — length is what makes this file expensive to crack.",
+
+  "bundle.import.title": "Import connections",
+  "bundle.import.lede":
+    "Open a bundle exported from another machine. Nothing is written until you have reviewed what is inside.",
+  "bundle.import.file": "Bundle file",
+  "bundle.import.choose": "Choose file",
+  "bundle.import.noFile": "No file chosen",
+  "bundle.import.unlock": "Unlock",
+  "bundle.import.unlocking": "Unlocking…",
+  "bundle.import.action": "Import",
+  "bundle.import.working": "Importing…",
+  "bundle.import.summary":
+    "{count, plural, one {# connection} other {# connections}} · {conflicts, plural, =0 {none already here} one {# already here} other {# already here}} · {warned, plural, =0 {no warnings} one {# needs attention} other {# need attention}}",
+  "bundle.import.exportedOn": "Exported {date} · ByteTable {version}",
+  "bundle.import.hasSecrets": "Includes a saved password or SSH secret",
+  "bundle.import.conflict": "You already have a connection with this id: “{name}”.",
+  "bundle.import.unsupported":
+    "This build does not support the “{engine}” engine. It will be imported and kept, but cannot be opened here.",
+  "bundle.import.done":
+    "{imported} imported · {replaced} replaced · {copied} copied · {skipped} skipped",
+  "bundle.import.failed": "Could not import “{name}”: {reason}",
+
+  // Names the connection, because the preview is a list of near-identical
+  // controls — "What to do with Prod" is navigable by screen reader, "Action"
+  // repeated eighteen times is not.
+  "bundle.import.actionAria": "What to do with “{name}”",
+  "bundle.action.skip": "Skip",
+  "bundle.action.import": "Import",
+  "bundle.action.replace": "Replace",
+  "bundle.action.copy": "Import as copy",
 } as const;
 
 /** Every key the app may ask for. Other locales type-check against this. */

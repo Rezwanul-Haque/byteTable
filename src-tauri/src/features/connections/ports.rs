@@ -39,6 +39,22 @@ pub trait ConnectionRepository: Send + Sync {
     /// Insert or update (by id) one saved connection.
     fn save(&self, connection: &SavedConnection) -> Result<(), AppError>;
 
+    /// Insert or update (by id) one entry from its RAW registry JSON.
+    ///
+    /// Exists for the connection-bundle import (M40), which must be able to
+    /// write back an entry whose `engine` *this* build does not know — the same
+    /// rows `list_unsupported` reports. Parsing such an entry to a
+    /// `SavedConnection` is impossible by definition, so the import path hands
+    /// the raw object straight through, exactly as the JSON adapter already
+    /// preserves unreadable rows across a `save`.
+    ///
+    /// The default implementation parses and delegates to [`Self::save`], which
+    /// is correct for every in-memory fake (they have no raw layer to preserve)
+    /// and simply cannot carry an unknown engine — the real adapter overrides it.
+    fn save_raw(&self, entry: &serde_json::Value) -> Result<(), AppError> {
+        self.save(&serde_json::from_value::<SavedConnection>(entry.clone())?)
+    }
+
     /// Remove a saved connection. Returns `NotFound` for unknown ids so the
     /// renderer can tell a stale list from a successful delete.
     fn delete(&self, id: &str) -> Result<(), AppError>;

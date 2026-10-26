@@ -18,10 +18,12 @@ use engines::postgres::PostgresConnector;
 use engines::redis::RedisConnector;
 use engines::sqlite::SqliteConnector;
 use engines::typesense::TypesenseConnector;
+use features::connection_bundle::commands::ConnectionBundleState;
 use features::connections::application::{ConnectionManager, ConnectorRegistry};
 use features::connections::commands::ConnectionsState;
 use features::connections::infrastructure::JsonFileConnectionRepository;
-use features::connections::secrets::KeyringSecretStore;
+use features::connections::ports::ConnectionRepository;
+use features::connections::secrets::{KeyringSecretStore, SecretStore};
 use features::preferences::commands::PreferencesState;
 use features::preferences::infrastructure::JsonFilePreferencesStore;
 use features::saved_queries::commands::SavedQueriesState;
@@ -366,7 +368,14 @@ pub fn run() {
             // Postgres (M12 Task 1, sqlx) and MySQL (M12 Task 2, sqlx). An
             // unregistered engine would get a human "arrives in a later
             // milestone" error, but none remain.
-            let repository = JsonFileConnectionRepository::new(config_dir.join("connections.json"));
+            // Built as `Arc`s because the connection-bundle slice (M40) shares
+            // these very instances — one registry adapter and, crucially, ONE
+            // `KeyringSecretStore`, so its keychain cache (and the macOS access
+            // prompts it suppresses) is shared rather than duplicated.
+            let repository: Arc<dyn ConnectionRepository> = Arc::new(
+                JsonFileConnectionRepository::new(config_dir.join("connections.json")),
+            );
+            let secret_store: Arc<dyn SecretStore> = Arc::new(KeyringSecretStore::new());
             let mut registry = ConnectorRegistry::new();
             registry.register(Engine::Sqlite, Arc::new(SqliteConnector));
             registry.register(Engine::Postgres, Arc::new(PostgresConnector));
@@ -405,13 +414,22 @@ pub fn run() {
             // HTTP API by the `reqwest`-based adapter, like ClickHouse.
             registry.register(Engine::Typesense, Arc::new(TypesenseConnector));
             app.manage(ConnectionsState::new(
-                Box::new(repository),
+                Arc::clone(&repository),
                 registry,
                 ConnectionManager::new(),
                 // Server-connection secrets (db password, SSH passphrase/
                 // password) live in the OS keychain, never in the JSON
                 // registry (M12 Task 3).
-                Box::new(KeyringSecretStore::new()),
+                Arc::clone(&secret_store),
+            ));
+
+            // Connection-bundle slice (M40): encrypted export/import of a set
+            // of connections. No storage of its own — it reads and writes the
+            // registry and the keychain through the two adapters above.
+            app.manage(ConnectionBundleState::new(
+                repository,
+                secret_store,
+                app.package_info().version.to_string(),
             ));
 
             // Saved-queries slice: a single global JSON store shared across
@@ -529,6 +547,9 @@ pub fn run() {
             features::connections::commands::connection_tables,
             features::connections::commands::query_run,
             features::connections::commands::query_run_batch,
+            features::connection_bundle::commands::connection_bundle_export,
+            features::connection_bundle::commands::connection_bundle_inspect,
+            features::connection_bundle::commands::connection_bundle_import,
             features::introspection::commands::table_meta,
             features::introspection::commands::list_objects,
             features::introspection::commands::object_definition,

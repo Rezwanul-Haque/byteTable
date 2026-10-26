@@ -152,17 +152,26 @@ impl ConnectionRepository for JsonFileConnectionRepository {
     }
 
     fn save(&self, connection: &SavedConnection) -> Result<(), AppError> {
+        self.save_raw(&serde_json::to_value(connection)?)
+    }
+
+    /// Writes the entry verbatim, so a bundle import (M40) can round-trip a
+    /// connection whose engine this build does not know. `save` goes through
+    /// here too — upsert-by-id and the preserve-unreadable-rows rule are the
+    /// same either way, and belong in one place.
+    fn save_raw(&self, entry: &serde_json::Value) -> Result<(), AppError> {
+        let Some(id) = Self::entry_id(entry).map(str::to_string) else {
+            return Err(AppError::Invalid(
+                "a connection entry without an id cannot be saved".into(),
+            ));
+        };
         let _guard = self.lock_for_write()?;
         // Work on the RAW array so unreadable rows (unknown engines from other
         // builds) survive the write instead of being dropped.
         let mut raw = self.read_raw()?;
-        let value = serde_json::to_value(connection)?;
-        match raw
-            .iter_mut()
-            .find(|e| Self::entry_id(e) == Some(connection.id.as_str()))
-        {
-            Some(slot) => *slot = value,
-            None => raw.push(value),
+        match raw.iter_mut().find(|e| Self::entry_id(e) == Some(&id)) {
+            Some(slot) => *slot = entry.clone(),
+            None => raw.push(entry.clone()),
         }
         self.write_raw(&raw)
     }

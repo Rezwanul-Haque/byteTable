@@ -1057,7 +1057,7 @@ dependencies = [
 
 [[package]]
 name = "bytetable"
-version = "0.0.41"
+version = "0.0.42"
 dependencies = [
  "aes-gcm 0.10.3",
  "argon2 0.5.3",

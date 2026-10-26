@@ -49,3 +49,4 @@ packaging/homebrew/bytetable.rb
 packaging/homebrew/SHASUMS256.txt
 
 bin/
+graphify-out

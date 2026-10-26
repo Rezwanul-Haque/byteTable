@@ -34,6 +34,8 @@ import { useTabMetaStore } from "../tabMeta";
 import type { SqlHistoryEntry, Tab, Workspace } from "../types";
 import { selectedSchema, unsavedSummary, unsavedTabIds } from "../types";
 import { tabLabels } from "../tabLabels";
+import { applyParams } from "../sqlParams";
+import { useSchedulesStore } from "../../schedules/state";
 import type { Snippet } from "../../snippets/api";
 import { SnippetsDrawer } from "../../snippets/components/SnippetsDrawer";
 import { insertSnippetIntoActiveEditor } from "../../../shared/ui/activeCodeEditor";
@@ -156,6 +158,9 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
   const setSqlParams = useWorkspacesStore((state) => state.setSqlParams);
   const setSqlParamDefs = useWorkspacesStore((state) => state.setSqlParamDefs);
   const openProcessesTab = useWorkspacesStore((state) => state.openProcessesTab);
+  // M41: "Schedule this query" hands a resolved snapshot to the manager, which
+  // the app hosts — a schedule outlives this workspace.
+  const openSchedules = useSchedulesStore((state) => state.openManager);
   const consoleOpen = usePanelStore((state) => selectPanel(state, workspace.id).open);
   const togglePanel = usePanelStore((state) => state.togglePanel);
   // The close-confirm seam: any entry point parks its set here, this owns the
@@ -336,6 +341,18 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
     toast(t("ws.sql.loaded", { name: q.name }), "ok");
   };
 
+  // "Schedule this query" on a saved-query row. The parameters are resolved
+  // HERE, against this workspace's engine, because a schedule stores a
+  // resolved SQL snapshot: the placeholder lexer and the engine-correct
+  // literal rendering both live in the renderer, and the unattended run in
+  // Rust only expands `{{date}}`-style tokens. A query whose values are all
+  // defaults resolves exactly as pressing Run would.
+  const scheduleSavedQuery = (q: SavedQuery) => {
+    const sql = applyParams(q.sql, q.paramValues ?? {}, q.params ?? [], workspace.info.engine);
+    setSavedOpen(false);
+    openSchedules({ sql, savedQueryId: q.id, schema: currentSchema });
+  };
+
   // Only engines with a server process list (PROC_SOURCES) get the toggle.
   const hasProcesses = workspace.saved.engine in PROC_SOURCES;
 
@@ -405,6 +422,7 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
           connectionId={workspace.saved.id}
           onClose={() => setSavedOpen(false)}
           onLoad={loadSavedQuery}
+          onSchedule={scheduleSavedQuery}
         />
         <SnippetsDrawer
           open={snippetsOpen}

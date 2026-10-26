@@ -28,6 +28,9 @@ use features::preferences::commands::PreferencesState;
 use features::preferences::infrastructure::JsonFilePreferencesStore;
 use features::saved_queries::commands::SavedQueriesState;
 use features::saved_queries::infrastructure::JsonFileSavedQueryRepository;
+use features::schedules::commands::SchedulesState;
+use features::schedules::infrastructure::{JsonFileRunLogRepository, JsonFileScheduleRepository};
+use features::schedules::ports::{RunLogRepository, ScheduleRepository};
 use features::schema_map::commands::SchemaMapState;
 use features::schema_map::infrastructure::JsonFileMapLayoutRepository;
 use features::settings::commands::SettingsState;
@@ -438,6 +441,22 @@ pub fn run() {
                 JsonFileSavedQueryRepository::new(config_dir.join("saved_queries.json"));
             app.manage(SavedQueriesState::new(Box::new(saved_queries)));
 
+            // Schedules slice (M41): scheduled queries and exports. Two JSON
+            // stores — the schedules themselves and their run history — shared
+            // as `Arc`s with the background scheduler task spawned below, so
+            // the loop and the user's edits go through the same write mutexes
+            // rather than two instances racing the same files.
+            let schedule_store: Arc<dyn ScheduleRepository> = Arc::new(
+                JsonFileScheduleRepository::new(config_dir.join("schedules.json")),
+            );
+            let run_log: Arc<dyn RunLogRepository> = Arc::new(JsonFileRunLogRepository::new(
+                config_dir.join("schedule_runs.json"),
+            ));
+            app.manage(SchedulesState::new(schedule_store, run_log));
+            // Must come AFTER the manage above and after ConnectionsState /
+            // SettingsState: the loop resolves all three from the app handle.
+            features::schedules::scheduler::spawn(app.handle().clone());
+
             // Snippets slice: the global library of reusable SQL fragments.
             // Its own store, not part of saved_queries — a snippet is inserted
             // at the caret with tab stops, not loaded as a whole buffer.
@@ -590,6 +609,13 @@ pub fn run() {
             features::saved_queries::commands::saved_query_list,
             features::saved_queries::commands::saved_query_save,
             features::saved_queries::commands::saved_query_delete,
+            features::schedules::commands::schedule_list,
+            features::schedules::commands::schedule_save,
+            features::schedules::commands::schedule_delete,
+            features::schedules::commands::schedule_set_enabled,
+            features::schedules::commands::schedule_runs,
+            features::schedules::commands::schedule_run_now,
+            features::schedules::commands::schedule_reveal,
             features::snippets::commands::snippet_list,
             features::snippets::commands::snippet_save,
             features::snippets::commands::snippet_delete,

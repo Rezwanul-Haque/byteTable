@@ -312,6 +312,32 @@
   transform: rotate(40deg);
 }
 
+/* Scheduled queries (M41) — between the gear and the bug. Takes the gear's
+   neutral hover rather than a tinted one: it opens a manager, like Settings
+   does, where the bug's red says "you are reporting a problem". */
+.rail-schedules {
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  flex: none;
+  margin-bottom: 8px;
+  color: var(--text-faint);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+
+.rail-schedules:hover {
+  color: var(--text);
+  background: var(--bg3);
+}
+
 /* Report an issue (M24) — sits below the settings gear. Idle faint; hover
    reddens with a soft tinted background. Ported from the prototype .rail-bug. */
 .rail-bug {

@@ -51,6 +51,7 @@ export function SavedQueriesDrawer({
   connectionId,
   onClose,
   onLoad,
+  onSchedule,
 }: {
   open: boolean;
   /** Saved connection of the host workspace — picks up its attached queries on
@@ -58,6 +59,13 @@ export function SavedQueriesDrawer({
   connectionId: string;
   onClose: () => void;
   onLoad: (q: SavedQuery) => void;
+  /**
+   * Open the M41 schedules manager with a new schedule prefilled from this
+   * query. The host resolves the query's parameters before handing the SQL
+   * over — a schedule stores a resolved snapshot, and the drawer does not know
+   * the workspace's engine, which parameter rendering depends on.
+   */
+  onSchedule: (q: SavedQuery) => void;
 }) {
   const toast = useToast();
   const t = useT();
@@ -124,6 +132,18 @@ export function SavedQueriesDrawer({
                     >
                       {scoped ? t("ws.sql.chipThis") : t("ws.sql.chipGlobal")}
                     </span>
+                    <button
+                      type="button"
+                      className="sq-item-del"
+                      title={t("sched.scheduleThis")}
+                      aria-label={t("sched.scheduleThisAria", { name: item.name })}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSchedule(item);
+                      }}
+                    >
+                      <Icon name="schedule" size={14} />
+                    </button>
                     <button
                       type="button"
                       className="sq-item-del"

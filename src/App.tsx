@@ -26,7 +26,9 @@ import { OpenDataFileSheet } from "./features/data_file/components/OpenDataFileS
 import { useOpenDataFile } from "./features/data_file/open";
 import { startSessionPersistence } from "./features/workspaces/sessionSync";
 import { selectShowConnect, useWorkspacesStore } from "./features/workspaces/state";
-import { isDataFileWorkspace } from "./features/workspaces/types";
+import { isDataFileWorkspace, selectedSchema } from "./features/workspaces/types";
+import { SchedulesModal } from "./features/schedules/components/SchedulesModal";
+import { useSchedulesStore } from "./features/schedules/state";
 import { pickSqliteFile } from "./features/connections/dialog";
 import { useOpenSqliteFile } from "./features/workspaces/connect";
 import { useToast } from "./shared/ui/toastContext";
@@ -110,6 +112,10 @@ export function App() {
   const workspaces = useWorkspacesStore((state) => state.workspaces);
   const activeWorkspaceId = useWorkspacesStore((state) => state.activeWorkspaceId);
   const activeWorkspace = workspaces.find((ws) => ws.id === activeWorkspaceId) ?? null;
+  // Scheduled-queries manager (M41). Store-held for the same reason the
+  // settings tab is: three surfaces open it, one of them deep in a workspace.
+  const schedulesOpen = useSchedulesStore((state) => state.managerOpen);
+  const openSchedules = useSchedulesStore((state) => state.openManager);
   // Title-bar menu dispatch targets that act on global app state.
   const closeWorkspace = useWorkspacesStore((state) => state.closeWorkspace);
   const settings = useSettingsStore((state) => state.settings);
@@ -162,6 +168,10 @@ export function App() {
   // the APP's rather than the workspace's — a claim here beats threading a
   // callback through three components that have no other use for it.
   useBtCmd("new-connection", () => setNewConnOpen(true));
+  // Query ▸ Scheduled Queries. Claimed HERE, not by the workspace, so the menu
+  // item and the palette entry work with no connection open — which is the
+  // whole point of a schedule that runs on its own.
+  useBtCmd("schedules", () => openSchedules());
 
   // File ▸ Open ▸ … (M35). Which of the two file flows the menu asked for, or
   // null. Both need the toast context, so they run in FileOpenBridge below —
@@ -313,6 +323,7 @@ export function App() {
             onUpdate={() => setUpdateModalOpen(true)}
             onAbout={() => setAboutOpen(true)}
             onSettings={() => openSettings()}
+            onSchedules={() => openSchedules()}
             onReportIssue={() => setBugOpen(true)}
             version={version}
           />
@@ -389,6 +400,18 @@ export function App() {
       {newConnOpen ? <NewConnectionModal onClose={() => setNewConnOpen(false)} /> : null}
 
       {donateOpen ? <DonateModal onClose={() => setDonateOpen(false)} /> : null}
+
+      {/* Hosted at app level, not in the workspace: a schedule names its own
+          connection, so the manager has to open from the rail with nothing
+          connected at all. Its open state lives in the schedules store because
+          three places open it — the rail, the Query menu, and "Schedule this
+          query" inside a workspace's saved-query drawer. */}
+      {schedulesOpen ? (
+        <SchedulesModal
+          defaultConnectionId={activeWorkspace?.saved.id}
+          defaultSchema={activeWorkspace ? selectedSchema(activeWorkspace) : undefined}
+        />
+      ) : null}
 
       {bugOpen ? (
         <ReportIssueModal

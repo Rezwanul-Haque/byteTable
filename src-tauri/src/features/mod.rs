@@ -20,6 +20,7 @@ pub mod preferences;
 pub mod privileges;
 pub mod processes;
 pub mod saved_queries;
+pub mod schedules;
 pub mod schema_diff;
 pub mod schema_map;
 pub mod search;

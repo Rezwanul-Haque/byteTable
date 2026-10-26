@@ -85,6 +85,10 @@ interface RailProps {
   onAbout?: () => void;
   /** Settings gear click — opens the Settings modal (⌘,/Ctrl+,). */
   onSettings?: () => void;
+  /** Clock click — opens the scheduled-queries manager (M41). Belongs on the
+   *  rail rather than only in the Query menu because a schedule names its own
+   *  connection: it runs, and is worth checking on, with no workspace open. */
+  onSchedules?: () => void;
   /** Bug button click — opens the Report an issue modal (M24). */
   onReportIssue?: () => void;
   /** Running app version (no leading `v`), shown under the donate button. */
@@ -98,6 +102,7 @@ export function Rail({
   onUpdate,
   onAbout,
   onSettings,
+  onSchedules,
   onReportIssue,
   version,
 }: RailProps) {
@@ -333,6 +338,18 @@ export function Rail({
           aria-label={t("menu.file.settings")}
         >
           <Icon name="settings" size={20} />
+        </button>
+      ) : null}
+
+      {onSchedules ? (
+        <button
+          type="button"
+          className="rail-schedules"
+          onClick={onSchedules}
+          title={t("ws.rail.schedules")}
+          aria-label={t("ws.rail.schedules")}
+        >
+          <Icon name="schedule" size={20} />
         </button>
       ) : null}
 

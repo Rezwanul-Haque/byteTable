@@ -110,6 +110,27 @@ impl ConnectionsState {
     pub fn manager(&self) -> &ConnectionManager {
         &self.manager
     }
+
+    /// The saved-connection registry.
+    ///
+    /// These three accessors exist for the ONE caller that has to open a
+    /// connection with no renderer in the loop: the M41 scheduler, which
+    /// resolves a saved connection id into a live handle from a background
+    /// task. Every other slice receives a handle the renderer already opened
+    /// and needs nothing but [`Self::manager`].
+    pub fn repository(&self) -> &dyn ConnectionRepository {
+        self.repository.as_ref()
+    }
+
+    /// The per-engine connector registry. See [`Self::repository`].
+    pub fn registry(&self) -> &ConnectorRegistry {
+        &self.registry
+    }
+
+    /// The OS-keychain-backed secret store. See [`Self::repository`].
+    pub fn secret_store(&self) -> &dyn SecretStore {
+        self.secret_store.as_ref()
+    }
 }
 
 #[tauri::command]
@@ -205,7 +226,10 @@ pub async fn connection_test(
 /// change. A missing or unreadable file is NOT an error worth failing a connect
 /// over — fall back to the contract default, exactly as a fresh profile would.
 /// Zero would mean "give up instantly", so it also falls back.
-fn connect_timeout(settings: &State<'_, SettingsState>) -> Duration {
+///
+/// `pub(crate)` for the M41 scheduler, which opens connections from a
+/// background task and must honour the same budget the user set.
+pub(crate) fn connect_timeout(settings: &State<'_, SettingsState>) -> Duration {
     let secs = settings_app::get_settings(settings.store())
         .map(|s| s.connect_timeout_sec)
         .unwrap_or(0);

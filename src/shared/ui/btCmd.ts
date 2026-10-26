@@ -34,7 +34,8 @@ export type BtCmdId =
   | "save-query"
   | "saved-queries"
   | "query-history"
-  | "snippets";
+  | "snippets"
+  | "schedules";
 
 const EVENT = "bt:cmd";
 

@@ -313,6 +313,17 @@ export function buildMenus(m: MenuCtx): Menu[] {
           enabled: isSql,
           run: () => emitCmd("snippets"),
         },
+        "—",
+        {
+          // The one item in this menu that is ALWAYS enabled. Everything above
+          // acts on the SQL workspace in front of you; a schedule names its own
+          // connection and runs without one, so the app claims this command and
+          // the manager opens from the connect screen too.
+          id: "schedules",
+          label: t("menu.query.schedules"),
+          enabled: true,
+          run: () => emitCmd("schedules"),
+        },
       ],
     },
     {

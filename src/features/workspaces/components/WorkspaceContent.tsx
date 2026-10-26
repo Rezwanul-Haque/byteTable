@@ -187,6 +187,7 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
   // menu item is enabled for the whole SQL workspace, tabs or not.
   useBtCmd("saved-queries", () => {
     setHistoryOpen(false);
+    setSnippetsOpen(false);
     setSavedOpen(true);
   });
   // Claimed here too, not by the SQL tab: the history is the workspace's, so
@@ -194,7 +195,16 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
   // for the whole SQL workspace.
   useBtCmd("query-history", () => {
     setSavedOpen(false);
+    setSnippetsOpen(false);
     setHistoryOpen(true);
+  });
+  // Query ▸ Snippet Library. Claimed here as well — the library is global, so
+  // the menu item is enabled for the whole SQL workspace and needs no query
+  // tab to browse (inserting does, which `insertSnippet` below reports).
+  useBtCmd("snippets", () => {
+    setSavedOpen(false);
+    setHistoryOpen(false);
+    setSnippetsOpen(true);
   });
 
   // Insert a snippet into the editor the user was last in. The drawer took

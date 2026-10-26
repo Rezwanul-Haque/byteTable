@@ -29,7 +29,8 @@ export type BtCmdId =
   | "explain"
   | "save-query"
   | "saved-queries"
-  | "query-history";
+  | "query-history"
+  | "snippets";
 
 const EVENT = "bt:cmd";
 

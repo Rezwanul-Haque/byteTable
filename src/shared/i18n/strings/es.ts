@@ -49,6 +49,7 @@ export const es: StringTable = {
   "menu.query.save": "Guardar consulta",
   "menu.query.saved": "Consultas guardadas",
   "menu.query.history": "Historial de consultas",
+  "menu.query.snippets": "Biblioteca de fragmentos",
   "menu.help.shortcuts": "Atajos de teclado",
   "menu.help.checkUpdates": "Buscar actualizaciones",
   "menu.help.about": "Acerca de {app}",

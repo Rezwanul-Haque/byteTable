@@ -65,6 +65,7 @@ export const en = {
   "menu.query.save": "Save Query",
   "menu.query.saved": "Saved Queries",
   "menu.query.history": "Query History",
+  "menu.query.snippets": "Snippet Library",
   "menu.help.shortcuts": "Keyboard Shortcuts",
   "menu.help.checkUpdates": "Check for Updates",
   "menu.help.about": "About {app}",

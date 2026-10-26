@@ -50,6 +50,7 @@ export const ja: StringTable = {
   "menu.query.save": "クエリを保存",
   "menu.query.saved": "保存したクエリ",
   "menu.query.history": "クエリ履歴",
+  "menu.query.snippets": "スニペットライブラリ",
   "menu.help.shortcuts": "キーボードショートカット",
   "menu.help.checkUpdates": "アップデートを確認",
   "menu.help.about": "{app} について",

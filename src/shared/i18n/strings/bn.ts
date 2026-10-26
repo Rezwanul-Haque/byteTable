@@ -50,6 +50,7 @@ export const bn: StringTable = {
   "menu.query.save": "কোয়েরি সংরক্ষণ",
   "menu.query.saved": "সংরক্ষিত কোয়েরি",
   "menu.query.history": "কোয়েরি ইতিহাস",
+  "menu.query.snippets": "স্নিপেট লাইব্রেরি",
   "menu.help.shortcuts": "কীবোর্ড শর্টকাট",
   "menu.help.checkUpdates": "আপডেট চেক করুন",
   "menu.help.about": "{app} সম্পর্কে",

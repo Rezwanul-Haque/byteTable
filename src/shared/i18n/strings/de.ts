@@ -50,6 +50,7 @@ export const de: StringTable = {
   "menu.query.save": "Abfrage speichern",
   "menu.query.saved": "Gespeicherte Abfragen",
   "menu.query.history": "Abfrageverlauf",
+  "menu.query.snippets": "Snippet-Bibliothek",
   "menu.help.shortcuts": "Tastenkürzel",
   "menu.help.checkUpdates": "Nach Updates suchen",
   "menu.help.about": "Über {app}",

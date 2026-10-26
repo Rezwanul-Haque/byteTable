@@ -301,6 +301,15 @@ export function buildMenus(m: MenuCtx): Menu[] {
           enabled: isSql,
           run: () => emitCmd("query-history"),
         },
+        {
+          // Third of the drawers that share the right-hand slot, so it sits
+          // with them. Follows the workspace too: the library is global, and
+          // the drawer says so when there is no editor to insert into.
+          id: "snippets",
+          label: t("menu.query.snippets"),
+          enabled: isSql,
+          run: () => emitCmd("snippets"),
+        },
       ],
     },
     {

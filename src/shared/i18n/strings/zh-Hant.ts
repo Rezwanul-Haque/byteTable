@@ -50,6 +50,7 @@ export const zhHant: StringTable = {
   "menu.query.save": "儲存查詢",
   "menu.query.saved": "已儲存的查詢",
   "menu.query.history": "查詢紀錄",
+  "menu.query.snippets": "程式碼片段庫",
   "menu.help.shortcuts": "鍵盤快速鍵",
   "menu.help.checkUpdates": "檢查更新",
   "menu.help.about": "關於 {app}",

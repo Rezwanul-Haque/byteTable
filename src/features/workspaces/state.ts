@@ -262,6 +262,18 @@ interface WorkspacesFeatureState {
     paramDefs?: ParamDef[],
   ) => void;
   /**
+   * Open a fresh SQL editor tab for a snippet to expand into — what clicking a
+   * snippet does when no editor is live to receive it.
+   *
+   * The buffer opens EMPTY with the template parked in `pendingSnippet`, not
+   * seeded into `text`: the tab stops only materialize when the editor expands
+   * it (see `SqlTabState.pendingSnippet`).
+   */
+  openSqlTabWithSnippet: (template: string) => void;
+  /** Drop a SQL tab's parked snippet template, once its editor has expanded
+   *  it — otherwise re-mounting that tab would insert it a second time. */
+  clearPendingSnippet: (tabId: string) => void;
+  /**
    * Open the schema-map tab for `schema` (one per schema) and focus it; if
    * already open, focus the existing one.
    */
@@ -946,6 +958,37 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
         }),
       };
     }),
+
+  openSqlTabWithSnippet: (template) =>
+    set((state) => {
+      const id = state.activeWorkspaceId;
+      if (id === null) return state;
+      const title = nextSqlTitle(id);
+      return {
+        workspaces: patchActiveUi(state, (ui) => {
+          const tab: Tab = {
+            id: newTabId("sql"),
+            kind: "sql",
+            title,
+            // Empty: the editor expands the template on mount, which is what
+            // turns `#{1:label}` into a tab stop rather than literal text.
+            text: "",
+            runs: [],
+            activeRunId: null,
+            history: [],
+            editorHeight: null,
+            savedQueryId: null,
+            pendingSnippet: template,
+          };
+          return { tabs: [...(ui.tabs ?? []), tab], activeTabId: tab.id };
+        }),
+      };
+    }),
+
+  clearPendingSnippet: (tabId) =>
+    set((state) => ({
+      workspaces: patchSqlTab(state, tabId, () => ({ pendingSnippet: undefined })),
+    })),
 
   openMapTab: (schema) =>
     set((state) => ({

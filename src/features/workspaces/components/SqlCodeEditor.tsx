@@ -35,6 +35,7 @@ import {
   autocompletion,
   closeCompletion,
   completionKeymap,
+  snippet,
   startCompletion,
 } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
@@ -117,6 +118,17 @@ export interface SqlCodeEditorHandle {
    * current document are ignored.
    */
   revealRange: (from: number, to: number) => void;
+  /**
+   * Expand a snippet `template` at the caret, tab stops and all, and focus the
+   * editor. Returns false before the view exists, so a caller that must know
+   * whether it landed can retry.
+   *
+   * Distinct from `insertSnippetIntoActiveEditor`, which targets the
+   * LAST-FOCUSED editor wherever it is: this one targets THIS editor, which is
+   * what a tab opened specifically to receive a snippet needs — on mount it has
+   * never been focused, so the registry does not know about it yet.
+   */
+  insertSnippet: (template: string) => boolean;
 }
 
 /** §3.7 highlight palette, mapped onto lezer tags. Colors are literal where
@@ -380,6 +392,16 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
           effects: EditorView.scrollIntoView(EditorSelection.range(from, to), { y: "center" }),
         });
         view.focus();
+      },
+      insertSnippet: (template) => {
+        const view = viewRef.current;
+        if (!view) return false;
+        const { from, to } = view.state.selection.main;
+        // `snippet()` dispatches its own change; the null is the completion it
+        // would annotate the transaction with, and this is not a completion.
+        snippet(template)(view, null, from, to);
+        view.focus();
+        return true;
       },
     }));
 

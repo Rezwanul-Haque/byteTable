@@ -163,6 +163,7 @@ export const zhHans: StringTable = {
   "uix.sc.group.structure": "结构",
   "uix.sc.group.view": "视图",
   "uix.sc.general.palette": "命令面板",
+  "uix.sc.general.paletteShift": "命令面板（连按两次）",
   "uix.sc.general.settings": "设置",
   "uix.sc.general.terminal": "切换终端",
   "uix.sc.query.newTab": "新建查询标签页",
@@ -330,6 +331,7 @@ export const zhHans: StringTable = {
   "ws.palette.privHint": "用户、角色与有效授权",
   "ws.palette.diffHint": "比较环境",
   "ws.palette.savedHint": "已保存查询",
+  "ws.palette.snipHint": "可复用的 SQL，插入到光标处",
 
   // 标签页栏（TabBar.tsx）。
   "ws.tabs.openAria": "已打开的标签页",
@@ -575,7 +577,6 @@ export const zhHans: StringTable = {
   "ws.snip.saveFail": "无法保存代码片段。",
   "ws.snip.saved": "已保存“{name}”",
   "ws.snip.inserted": "已插入“{name}”",
-  "ws.snip.needsTab": "请先打开一个查询标签页再插入代码片段。",
   "ws.snip.loadFail": "无法读取代码片段库。",
   "ws.snip.builtin": "内置",
   "ws.snip.builtinTitle": "ByteTable 自带 — 可直接插入，也可以自己写一个",

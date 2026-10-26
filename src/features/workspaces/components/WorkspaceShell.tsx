@@ -20,6 +20,7 @@ import { PROC_SOURCES } from "../../processes/api";
 import { useWorkspacesStore } from "../state";
 import { useTabMetaStore } from "../tabMeta";
 import { useBtCmd } from "../../../shared/ui/btCmd";
+import { useDoubleShift } from "../../../shared/hooks/useDoubleShift";
 import type { Workspace } from "../types";
 import { homeSchema, unsavedTabIds } from "../types";
 
@@ -54,6 +55,10 @@ export function WorkspaceShell({ workspace }: { workspace: Workspace }) {
   useBtCmd("privileges", () => {
     openPrivilegesTab(home);
   });
+
+  // Double-tap Shift is the palette's second opener, beside ⌘K. Disabled while
+  // it is up so the gesture only ever opens (see the hook).
+  useDoubleShift(!paletteOpen, () => setPaletteOpen(true));
 
   // §3.12: ⌘/Ctrl+K toggles the palette, ⌘/Ctrl+T opens a new SQL tab.
   // M14: ⌃` (Ctrl+backtick, the VS Code convention) toggles the docked console

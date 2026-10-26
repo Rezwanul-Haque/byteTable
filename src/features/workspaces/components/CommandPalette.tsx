@@ -17,6 +17,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useT } from "../../../shared/i18n/useT";
+import { emitCmd } from "../../../shared/ui/btCmd";
 import { Icon } from "../../../shared/ui/Icon";
 import { Kbd } from "../../../shared/ui/Kbd";
 import { shellLabel, usePanelStore } from "../../console/state";
@@ -159,6 +160,17 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
           },
         ]
       : [];
+    // The library lives in a drawer WorkspaceContent owns, so this asks for it
+    // over the bt:cmd bus — the same path the Query menu item takes — instead
+    // of reaching across for another component's local state. That component is
+    // always mounted beside the palette, so the emit always lands.
+    const snippets: Command = {
+      id: "snippets",
+      icon: "bolt",
+      label: t("menu.query.snippets"),
+      hint: t("ws.palette.snipHint"),
+      run: () => emitCmd("snippets"),
+    };
     // Saved queries visible from this workspace (global + this-workspace-
     // attached). Selecting one opens a fresh SQL tab seeded with its SQL, and
     // linked to it so saving from that tab updates the entry. Its parameter
@@ -182,6 +194,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
       processes,
       ...privCmds,
       ...diffCmds,
+      snippets,
       ...savedCmds,
     ];
   }, [

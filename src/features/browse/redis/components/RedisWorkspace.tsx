@@ -35,6 +35,7 @@ import { useT } from "../../../../shared/i18n/useT";
 import { ENV_COLOR } from "../../../../shared/ui/envColors";
 import { useToast } from "../../../../shared/ui/toastContext";
 import { useBtCmd } from "../../../../shared/ui/btCmd";
+import { useDoubleShift } from "../../../../shared/hooks/useDoubleShift";
 import { RedisCommandPalette } from "./RedisCommandPalette";
 import { RedisSidebar } from "./RedisSidebar";
 import { SidebarResizer } from "../../../../shared/ui/SidebarResizer";
@@ -120,6 +121,9 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
 
   // Title-bar View menu → "Running Processes" opens the Clients tab (M26).
   useBtCmd("processes", () => openProcessesTab(wsId, initialDb));
+
+  // Double-tap Shift also opens the palette, as in the SQL workspace.
+  useDoubleShift(!paletteOpen, () => setPaletteOpen(true));
 
   // ⌘K palette toggle; ⌘T opens the console panel (M14: was "new CLI tab", now
   // the docked panel); ⌃` (Ctrl+backtick, the VS Code convention) toggles it —

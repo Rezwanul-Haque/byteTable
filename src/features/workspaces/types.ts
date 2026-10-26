@@ -267,6 +267,18 @@ export interface SqlTabState {
    * — only a save prunes. Optional because earlier sessions restore without it.
    */
   paramDefs?: ParamDef[];
+  /**
+   * A snippet template to expand into this buffer the moment its editor
+   * mounts, then clear.
+   *
+   * Clicking a snippet with no live editor opens a tab for it, and the
+   * expansion cannot ride in `text`: `#{1:label}` only becomes a real tab stop
+   * when CodeMirror's `snippet()` runs against a view, and that view does not
+   * exist yet when the tab is created. So the template is parked HERE and the
+   * editor claims it on mount (see SqlEditorTab) — seeding `text` instead would
+   * leave the markers in the buffer as literal text.
+   */
+  pendingSnippet?: string;
 }
 
 /**

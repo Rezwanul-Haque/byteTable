@@ -210,6 +210,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   const setSqlSavedLink = useWorkspacesStore((s) => s.setSqlSavedLink);
   const setSqlParams = useWorkspacesStore((s) => s.setSqlParams);
   const setSqlParamDefs = useWorkspacesStore((s) => s.setSqlParamDefs);
+  const clearPendingSnippet = useWorkspacesStore((s) => s.clearPendingSnippet);
 
   const saveQuery = useSavedQueriesStore((s) => s.save);
   // Resolved live rather than cached on the tab: a rename or a delete from the
@@ -296,6 +297,18 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
 
   // Engine-specific starter chips, resolved to the active schema.
   const snippets = snippetsFor(workspace.info.engine, schemaName);
+
+  // A snippet clicked with no live editor opened THIS tab to receive it: expand
+  // the template the store parked on the tab, then clear it so a later re-mount
+  // (tab switch, workspace switch) does not insert it again.
+  //
+  // The ref is populated by the time effects run — the child's
+  // useImperativeHandle commits first — so the insert lands on the first pass.
+  useEffect(() => {
+    const template = tab.pendingSnippet;
+    if (template === undefined) return;
+    if (editorRef.current?.insertSnippet(template)) clearPendingSnippet(tab.id);
+  }, [tab.pendingSnippet, tab.id, clearPendingSnippet]);
 
   // Outside-click / Esc closes the open popover (Rail/Sidebar pattern).
   useEffect(() => {

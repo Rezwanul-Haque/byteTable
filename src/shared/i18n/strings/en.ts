@@ -178,6 +178,7 @@ export const en = {
   "uix.sc.group.structure": "Structure",
   "uix.sc.group.view": "View",
   "uix.sc.general.palette": "Command palette",
+  "uix.sc.general.paletteShift": "Command palette (double-tap)",
   "uix.sc.general.settings": "Settings",
   "uix.sc.general.terminal": "Toggle terminal",
   "uix.sc.query.newTab": "New query tab",
@@ -352,6 +353,7 @@ export const en = {
   "ws.palette.privHint": "users, roles & effective grants",
   "ws.palette.diffHint": "compare environments",
   "ws.palette.savedHint": "saved query",
+  "ws.palette.snipHint": "reusable SQL, inserted at the cursor",
 
   // Tab strip (TabBar.tsx).
   "ws.tabs.openAria": "Open tabs",
@@ -601,7 +603,6 @@ export const en = {
   "ws.snip.saveFail": "Could not save snippet.",
   "ws.snip.saved": "Saved “{name}”",
   "ws.snip.inserted": "Inserted “{name}”",
-  "ws.snip.needsTab": "Open a query tab to insert a snippet.",
   "ws.snip.loadFail": "Could not read the snippet library.",
   "ws.snip.builtin": "built-in",
   "ws.snip.builtinTitle": "Ships with ByteTable — insert it, or write your own version",

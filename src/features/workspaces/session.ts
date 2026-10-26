@@ -91,7 +91,13 @@ function writeAll(sessions: StoredSessions): void {
  */
 function forStorage(ui: WorkspaceUiState): WorkspaceUiState {
   const tabs = (ui.tabs ?? []).map((tab) =>
-    tab.kind === "sql" ? { ...tab, runs: [], activeRunId: null } : tab,
+    tab.kind === "sql"
+      ? // `pendingSnippet` goes with the runs: it is a handoff to an editor that
+        // is about to mount, consumed within the commit. Persisting one caught
+        // mid-flight would expand the snippet a second time on restore, into a
+        // buffer that already has it.
+        { ...tab, runs: [], activeRunId: null, pendingSnippet: undefined }
+      : tab,
   );
   const activeTabId =
     ui.activeTabId !== undefined && tabs.some((t) => t.id === ui.activeTabId)

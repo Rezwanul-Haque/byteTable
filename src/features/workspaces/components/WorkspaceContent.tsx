@@ -150,6 +150,7 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
   const closeTab = useWorkspacesStore((state) => state.closeTab);
   const openSqlTab = useWorkspacesStore((state) => state.openSqlTab);
   const openSqlTabWith = useWorkspacesStore((state) => state.openSqlTabWith);
+  const openSqlTabWithSnippet = useWorkspacesStore((state) => state.openSqlTabWithSnippet);
   const setSqlText = useWorkspacesStore((state) => state.setSqlText);
   const setSqlSavedLink = useWorkspacesStore((state) => state.setSqlSavedLink);
   const setSqlParams = useWorkspacesStore((state) => state.setSqlParams);
@@ -210,15 +211,24 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
   // Insert a snippet into the editor the user was last in. The drawer took
   // focus when they clicked, so this goes through the last-focused-view
   // registry (the same one the title bar's Undo uses) rather than a ref the
-  // drawer does not have. With no query tab open there is no editor to insert
-  // into — say so instead of appearing to do nothing. The drawer stays open: a
-  // snippet is often one of several being pasted in.
+  // drawer does not have. Inserting into an editor that was already there
+  // leaves the drawer open: a snippet is often one of several being pasted in.
+  //
+  // With no live editor to insert into — no query tab open, or the active tab
+  // is a grid, which unmounts the editor and clears the registry — opening one
+  // is the obvious thing the user wanted, so the click does that instead of
+  // refusing. A FRESH tab rather than an existing query tab, deliberately: the
+  // registry cannot say which buffer they meant, and expanding a snippet into
+  // half-written SQL they cannot see is worse than one more tab. That path DOES
+  // close the drawer: it slides over the tab body, so leaving it up would hide
+  // the editor it just opened, with the caret parked on a tab stop the user
+  // cannot see.
   const insertSnippet = (snippet: Snippet) => {
-    if (insertSnippetIntoActiveEditor(snippet.body)) {
-      toast(t("ws.snip.inserted", { name: snippet.name }), "ok");
-    } else {
-      toast(t("ws.snip.needsTab"), "info");
+    if (!insertSnippetIntoActiveEditor(snippet.body)) {
+      openSqlTabWithSnippet(snippet.body);
+      setSnippetsOpen(false);
     }
+    toast(t("ws.snip.inserted", { name: snippet.name }), "ok");
   };
 
   // Memoised so the label/dirty derivations below have a stable dependency.

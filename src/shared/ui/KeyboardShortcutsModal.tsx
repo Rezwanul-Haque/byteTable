@@ -17,7 +17,7 @@ const GROUPS: Group[] = [
     title: "uix.sc.group.general",
     rows: [
       { keys: "⌘K", label: "uix.sc.general.palette" },
-      { keys: "⇧ ⇧", label: "uix.sc.general.paletteShift" },
+      { keys: "⇧⇧", label: "uix.sc.general.paletteShift" },
       { keys: "⌘,", label: "uix.sc.general.settings" },
       { keys: "Ctrl+`", label: "uix.sc.general.terminal" },
     ],

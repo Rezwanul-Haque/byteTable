@@ -203,7 +203,10 @@ export function buildMenus(m: MenuCtx): Menu[] {
         {
           id: "palette",
           label: t("menu.view.palette"),
-          hint: "⌘K",
+          // The only item with two accelerators. Both are worth showing: ⌘K is
+          // the one people look for, ⇧⇧ is the one nobody discovers on their
+          // own. Rendered as one hint string so the column stays single-slot.
+          hint: "⌘K / ⇧⇧",
           enabled: hasPalette,
           run: () => emitCmd("palette"),
         },

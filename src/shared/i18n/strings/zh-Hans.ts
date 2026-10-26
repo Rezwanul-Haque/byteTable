@@ -332,6 +332,11 @@ export const zhHans: StringTable = {
   "ws.palette.diffHint": "比较环境",
   "ws.palette.savedHint": "已保存查询",
   "ws.palette.snipHint": "可复用的 SQL，插入到光标处",
+  "ws.palette.newConnHint": "连接另一个数据库",
+  "ws.palette.boardHint": "勾画领域、流程与草稿结构",
+  "ws.palette.mapHint": "表及其关系",
+  "ws.palette.savedListHint": "浏览已保存列表",
+  "ws.palette.historyHint": "在此连接上运行过的全部语句",
 
   // 标签页栏（TabBar.tsx）。
   "ws.tabs.openAria": "已打开的标签页",

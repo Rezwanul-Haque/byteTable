@@ -1,13 +1,16 @@
 // Redis command palette (REDIS_SPEC §5) — ⌘K. Lists key-jump entries (icon
 // `vpn_key`, hint = type) plus the always-known commands: New CLI console,
-// Keyspace dashboard, switch-to-db entries (the non-empty other dbs), and close
-// workspace. The key entries are a bounded SCAN sample of the current db (the
+// Keyspace dashboard, connected clients, switch-to-db entries (the non-empty
+// other dbs), new connection, and close workspace. The last two are the only
+// ones that leave this connection, and sit together at the end.
+// The key entries are a bounded SCAN sample of the current db (the
 // `keyType` rides on every scan entry) — a quick-jump surface that complements
 // the sidebar's full MATCH browse; selecting one opens its key tab. Same
 // listbox a11y as the SQL palette.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { emitCmd } from "../../../../shared/ui/btCmd";
 import { Icon } from "../../../../shared/ui/Icon";
 import { Kbd } from "../../../../shared/ui/Kbd";
 import { useT } from "../../../../shared/i18n/useT";
@@ -142,6 +145,17 @@ export function RedisCommandPalette(props: RedisCommandPaletteProps) {
             hint: t("redis.nKeys", { count: d.keyCount }),
             run: () => setDbIndex(workspaceId, initialDb, d.index),
           }));
+    // Beside Close workspace: the two commands here that leave this connection
+    // behind, after the Redis-specific ones. App-level rather than ours, so it
+    // goes over the bt:cmd bus to App.tsx, which owns the modal — same wiring
+    // as the SQL palette's entry.
+    const newConnection: PaletteCommand = {
+      id: "new-connection",
+      icon: "add_link",
+      label: t("menu.file.newConnection"),
+      hint: t("ws.palette.newConnHint"),
+      run: () => emitCmd("new-connection"),
+    };
     const close: PaletteCommand = {
       id: "close-ws",
       icon: "power_settings_new",
@@ -149,7 +163,7 @@ export function RedisCommandPalette(props: RedisCommandPaletteProps) {
       hint: workspaceName,
       run: onCloseWorkspace,
     };
-    return [...keyCmds, cli, dash, clients, kickIdle, ...dbCmds, close];
+    return [...keyCmds, cli, dash, clients, kickIdle, ...dbCmds, newConnection, close];
   }, [
     sampleKeys,
     cluster,

@@ -52,8 +52,8 @@ function NoTabs() {
       <BTLogo size={40} accent="var(--text-faint)" fg="var(--text-faint)" />
       <p>{t("ws.empty.title")}</p>
       <span>
-        {t("ws.empty.pre")} <Kbd>⌘K</Kbd> / <Kbd>Ctrl+K</Kbd> {t("ws.empty.mid")} <Kbd>⌘T</Kbd> /{" "}
-        <Kbd>Ctrl+T</Kbd> {t("ws.empty.post")}
+        {t("ws.empty.pre")} <Kbd>⌘K</Kbd> / <Kbd>Ctrl+K</Kbd> / <Kbd>⇧⇧</Kbd> {t("ws.empty.mid")}{" "}
+        <Kbd>⌘T</Kbd> / <Kbd>Ctrl+T</Kbd> {t("ws.empty.post")}
       </span>
     </div>
   );

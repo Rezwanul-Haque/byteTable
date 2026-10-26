@@ -48,6 +48,7 @@ import { UpdateModal } from "./features/updater/components/UpdateModal";
 import { TitleBar } from "./shared/ui/TitleBar";
 import { KeyboardShortcutsModal } from "./shared/ui/KeyboardShortcutsModal";
 import type { TitleBarCtx } from "./shared/ui/titlebarMenus";
+import { useBtCmd } from "./shared/ui/btCmd";
 import { Modal, ModalActions } from "./shared/ui/Modal";
 import { Btn } from "./shared/ui/Btn";
 import { Icon } from "./shared/ui/Icon";
@@ -156,6 +157,11 @@ export function App() {
   // New-connection modal, opened app-level from the title-bar File menu (the
   // connect screen has its own copy for its "New connection" button).
   const [newConnOpen, setNewConnOpen] = useState(false);
+  // The command palette reaches it over the bus instead: the palette renders
+  // deep inside the workspace shell, and this is the one command in it that is
+  // the APP's rather than the workspace's — a claim here beats threading a
+  // callback through three components that have no other use for it.
+  useBtCmd("new-connection", () => setNewConnOpen(true));
 
   // File ▸ Open ▸ … (M35). Which of the two file flows the menu asked for, or
   // null. Both need the toast context, so they run in FileOpenBridge below —

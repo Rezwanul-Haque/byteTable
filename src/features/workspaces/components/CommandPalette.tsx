@@ -31,6 +31,14 @@ import { homeSchema } from "../types";
 import "./CommandPalette.css";
 
 interface Command {
+  /**
+   * React key for the row, and nothing else — no handler reads it.
+   *
+   * The fixed commands are all `cmd-`-prefixed to keep them out of the entity
+   * rows' namespaces (`open-<table>`, `schema-<name>`, `saved-<id>`), which are
+   * built from user data: a table called "terminal" or a schema called "map"
+   * would otherwise collide with a command and duplicate a key.
+   */
   id: string;
   icon: string;
   label: string;
@@ -50,6 +58,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
   const openTableTab = useWorkspacesStore((state) => state.openTableTab);
   const openSqlTab = useWorkspacesStore((state) => state.openSqlTab);
   const openSqlTabWith = useWorkspacesStore((state) => state.openSqlTabWith);
+  const openMapTab = useWorkspacesStore((state) => state.openMapTab);
   const openProcessesTab = useWorkspacesStore((state) => state.openProcessesTab);
   const openPrivilegesTab = useWorkspacesStore((state) => state.openPrivilegesTab);
   const openDiffTab = useWorkspacesStore((state) => state.openDiffTab);
@@ -105,8 +114,17 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
               run: () => patchWorkspaceUi(workspace.id, { schemaName: s.name }),
             }))
         : [];
+    // The one APP-level command here (every other one acts on this workspace),
+    // so it goes over the bus to App.tsx rather than through the store.
+    const newConnection: Command = {
+      id: "cmd-new-connection",
+      icon: "add_link",
+      label: t("menu.file.newConnection"),
+      hint: t("ws.palette.newConnHint"),
+      run: () => emitCmd("new-connection"),
+    };
     const newSql: Command = {
-      id: "new-sql",
+      id: "cmd-new-sql",
       icon: "terminal",
       label: t("ws.palette.newSql"),
       hint: "⌘T",
@@ -114,21 +132,31 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
     };
     const shell = shellLabel(workspace.saved.engine);
     const openTerminal: Command = {
-      id: "open-terminal",
+      id: "cmd-open-terminal",
       icon: "terminal",
       label: t("ws.palette.openTerminal", { shell }),
       hint: "Ctrl+`",
       run: () => openPanel(workspace.id, shell),
     };
     const board: Command = {
-      id: "board",
+      id: "cmd-board",
       icon: "draw",
-      label: "Brainstorm board",
-      hint: "sketch domain, flow & draft schema",
+      label: t("menu.file.brainstormBoard"),
+      hint: t("ws.palette.boardHint"),
       run: () => openBoardTab(schemaName),
     };
+    const schemaMap: Command = {
+      id: "cmd-schema-map",
+      // Matches the map TAB's icon (TAB_ICONS.map), as processes and privileges
+      // do — recognising the destination matters more than avoiding the clash
+      // with the schema-switch rows above, whose labels are unmistakable.
+      icon: "schema",
+      label: t("menu.view.schemaMap"),
+      hint: t("ws.palette.mapHint"),
+      run: () => openMapTab(schemaName),
+    };
     const processes: Command = {
-      id: "processes",
+      id: "cmd-processes",
       icon: "monitor_heart",
       label: t("menu.view.processes"),
       hint: t("ws.palette.procHint"),
@@ -140,7 +168,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
       workspace.saved.engine in PRIV_SOURCES
         ? [
             {
-              id: "privileges",
+              id: "cmd-privileges",
               icon: "admin_panel_settings",
               label: t("menu.view.privileges"),
               hint: t("ws.palette.privHint"),
@@ -152,7 +180,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
     const diffCmds: Command[] = isDiffable(workspace.saved)
       ? [
           {
-            id: "diff",
+            id: "cmd-diff",
             icon: "difference",
             label: t("ws.tabTitle.diff"),
             hint: t("ws.palette.diffHint"),
@@ -160,12 +188,28 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
           },
         ]
       : [];
-    // The library lives in a drawer WorkspaceContent owns, so this asks for it
-    // over the bt:cmd bus — the same path the Query menu item takes — instead
-    // of reaching across for another component's local state. That component is
-    // always mounted beside the palette, so the emit always lands.
+    // The three right-hand drawers live in WorkspaceContent's local state, so
+    // these ask for them over the bt:cmd bus — the same path the Query menu
+    // items take — instead of reaching across for another component's state.
+    // That component is always mounted beside the palette, so the emits land.
+    // `savedList`, not `savedQueries` — that name is taken by the store's
+    // saved-query array, which the per-query rows below are built from.
+    const savedList: Command = {
+      id: "cmd-saved-queries",
+      icon: "bookmarks",
+      label: t("menu.query.saved"),
+      hint: t("ws.palette.savedListHint"),
+      run: () => emitCmd("saved-queries"),
+    };
+    const queryHistory: Command = {
+      id: "cmd-query-history",
+      icon: "history",
+      label: t("menu.query.history"),
+      hint: t("ws.palette.historyHint"),
+      run: () => emitCmd("query-history"),
+    };
     const snippets: Command = {
-      id: "snippets",
+      id: "cmd-snippets",
       icon: "bolt",
       label: t("menu.query.snippets"),
       hint: t("ws.palette.snipHint"),
@@ -185,15 +229,24 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
         run: () => openSqlTabWith(q.sql, q.id, undefined, q.paramValues ?? {}, q.params ?? []),
       }),
     );
+    // Tables and schemas stay on top — jumping to a table is what the palette
+    // is for, and a filter-less open should show that first. The commands below
+    // them follow the app menus' order (File, then View, then Query), so the
+    // two surfaces are learnable as one. Individual saved queries go last:
+    // there can be dozens, and they would otherwise bury the commands.
     return [
       ...tableCmds,
       ...schemaCmds,
+      newConnection,
       newSql,
-      openTerminal,
       board,
+      openTerminal,
+      schemaMap,
       processes,
       ...privCmds,
       ...diffCmds,
+      savedList,
+      queryHistory,
       snippets,
       ...savedCmds,
     ];
@@ -209,6 +262,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
     openSqlTab,
     openSqlTabWith,
     openBoardTab,
+    openMapTab,
     openProcessesTab,
     openPrivilegesTab,
     openDiffTab,

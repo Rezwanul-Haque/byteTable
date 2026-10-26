@@ -354,6 +354,11 @@ export const en = {
   "ws.palette.diffHint": "compare environments",
   "ws.palette.savedHint": "saved query",
   "ws.palette.snipHint": "reusable SQL, inserted at the cursor",
+  "ws.palette.newConnHint": "connect to another database",
+  "ws.palette.boardHint": "sketch domain, flow & draft schema",
+  "ws.palette.mapHint": "tables & their relationships",
+  "ws.palette.savedListHint": "browse the saved list",
+  "ws.palette.historyHint": "everything run against this connection",
 
   // Tab strip (TabBar.tsx).
   "ws.tabs.openAria": "Open tabs",

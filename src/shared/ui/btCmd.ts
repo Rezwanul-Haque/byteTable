@@ -16,6 +16,10 @@ import { useEffect, useRef } from "react";
 
 /** Commands routed through the bus to the active workspace / query tab. */
 export type BtCmdId =
+  // App-level, unlike the rest: the new-connection modal belongs to App.tsx,
+  // which claims this so the command palette can reach it without a callback
+  // threaded down through the workspace shell.
+  | "new-connection"
   | "new-query"
   | "open-sql-file"
   | "palette"

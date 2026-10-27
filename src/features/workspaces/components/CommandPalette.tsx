@@ -25,6 +25,7 @@ import { tablesKey, useIntrospectionStore } from "../../introspection/state";
 import { isDiffable } from "../../schema_diff/handles";
 import { selectQueriesForConnection, useSavedQueriesStore } from "../../saved_queries/state";
 import { PRIV_SOURCES } from "../../privileges/api";
+import { useValueSearchStore } from "../../value_search/state";
 import { useWorkspacesStore } from "../state";
 import type { Workspace } from "../types";
 import { homeSchema } from "../types";
@@ -65,6 +66,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
   const openBoardTab = useWorkspacesStore((state) => state.openBoardTab);
   const patchWorkspaceUi = useWorkspacesStore((state) => state.patchWorkspaceUi);
   const openPanel = usePanelStore((state) => state.openPanel);
+  const openValueSearch = useValueSearchStore((state) => state.openModal);
   const tablesMap = useIntrospectionStore((state) => state.tables);
   const savedQueries = useSavedQueriesStore((state) => state.savedQueries);
   const loadSaved = useSavedQueriesStore((state) => state.load);
@@ -176,6 +178,21 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
             },
           ]
         : [];
+    // Search-all-tables. Relational workspaces only: the sweep rides on
+    // `fetch_rows`, which only the SQL engine family implements. Reads only,
+    // so there is no read-only gate; the modal states the full-scan cost.
+    const valueSearchCmds: Command[] =
+      workspace.kind === "sql"
+        ? [
+            {
+              id: "cmd-value-search",
+              icon: "travel_explore",
+              label: t("ws.sb.searchValues"),
+              hint: t("ws.palette.valueSearchHint"),
+              run: () => openValueSearch(handleId, schemaName),
+            },
+          ]
+        : [];
     // Schema diff (M28) — only for the engines with a structural snapshot.
     const diffCmds: Command[] = isDiffable(workspace.saved)
       ? [
@@ -244,6 +261,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
       schemaMap,
       processes,
       ...privCmds,
+      ...valueSearchCmds,
       ...diffCmds,
       savedList,
       queryHistory,
@@ -268,6 +286,8 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
     openDiffTab,
     patchWorkspaceUi,
     openPanel,
+    openValueSearch,
+    workspace.kind,
     t,
   ]);
 

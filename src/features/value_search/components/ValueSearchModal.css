@@ -1,0 +1,255 @@
+/* Search-all-tables modal. Needle + scope → live progress → per-table hits.
+   Uses the M0 design tokens (--bg0 / --bg1 / --bg2 / --border / --accent /
+   --muted / --text-dim / --danger). */
+
+.vs-modal .vs-query {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 12px 0 8px;
+}
+
+.vs-modal .vs-input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: var(--bg0, var(--bg1));
+  border: 1px solid var(--border);
+  color: inherit;
+  font: inherit;
+}
+
+.vs-modal .vs-input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.vs-modal .vs-modes {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+
+.vs-modal .vs-scope {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+
+.vs-modal .vs-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+/* The full-scan warning. Amber rather than red: it is a cost, not a danger —
+   nothing here writes. Matches the generate modal's warning block. */
+.vs-modal .vs-scan-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in oklab, #e0a000 12%, var(--bg1));
+  border: 1px solid color-mix(in oklab, #e0a000 40%, var(--border));
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.vs-modal .vs-scan-note .msym {
+  flex: none;
+  margin-top: 1px;
+  color: #e0a000;
+}
+
+.vs-modal .vs-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+
+.vs-modal .vs-bar {
+  flex: 1;
+  height: 8px;
+  border-radius: 5px;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.vs-modal .vs-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.15s ease;
+}
+
+.vs-modal .vs-progress-text {
+  flex: none;
+  max-width: 48%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.vs-modal .vs-results {
+  max-height: 380px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.vs-modal .vs-hit {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg1);
+}
+
+.vs-modal .vs-hit > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 12.5px;
+}
+
+.vs-modal .vs-hit-name {
+  color: var(--muted);
+  flex: none;
+}
+
+.vs-modal .vs-hit-name b {
+  color: inherit;
+  font-weight: 600;
+}
+
+.vs-modal .vs-hit-cols {
+  font-size: 11px;
+  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vs-modal .vs-hit-count {
+  margin-left: auto;
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.vs-modal .vs-hit-grid {
+  overflow-x: auto;
+  border-top: 1px solid var(--border);
+}
+
+.vs-modal .vs-hit-grid table {
+  border-collapse: collapse;
+  font-size: 11.5px;
+  width: max-content;
+  min-width: 100%;
+}
+
+.vs-modal .vs-hit-grid th,
+.vs-modal .vs-hit-grid td {
+  padding: 4px 10px;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vs-modal .vs-hit-grid th {
+  font-weight: 600;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.vs-modal .vs-hit-grid th.vs-col-hit {
+  color: var(--accent);
+}
+
+/* The cell that actually carries the needle — the whole point of the sweep. */
+.vs-modal .vs-hit-grid td.vs-cell-hit {
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+}
+
+.vs-modal .vs-null {
+  color: var(--text-faint, var(--muted));
+  font-style: italic;
+}
+
+.vs-modal .vs-hit-more {
+  margin: 0;
+  padding: 5px 10px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.vs-modal .vs-empty {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 16px 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.vs-modal .vs-summary {
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+.vs-modal .vs-summary p {
+  margin: 4px 0;
+}
+
+.vs-modal .vs-summary-icon {
+  vertical-align: -3px;
+}
+
+.vs-modal .vs-note {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.vs-modal .vs-errors {
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.vs-modal .vs-errors > summary {
+  cursor: pointer;
+}
+
+.vs-modal .vs-errors ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.vs-modal .vs-error {
+  color: var(--danger, #d23);
+  font-size: 13px;
+}

@@ -353,6 +353,7 @@ export const en = {
   "ws.palette.openTerminal": "Open {shell} terminal",
   "ws.palette.procHint": "view & kill sessions",
   "ws.palette.privHint": "users, roles & effective grants",
+  "ws.palette.valueSearchHint": "find a value in every table · full scan",
   "ws.palette.diffHint": "compare environments",
   "ws.palette.savedHint": "saved query",
   "ws.palette.snipHint": "reusable SQL, inserted at the cursor",
@@ -453,6 +454,7 @@ export const en = {
   "ws.sb.exportSchemaSql": "Export schema (.sql)",
   "ws.sb.generateData": "Generate data",
   "ws.sb.tableOverview": "Table overview",
+  "ws.sb.searchValues": "Search all tables…",
   "ws.sb.emptySchema": "Empty schema",
   "ws.sb.deleteSchema": "Delete schema",
   "ws.sb.loadingTables": "Loading tables…",
@@ -1162,6 +1164,35 @@ export const en = {
   "gen.prodPre": "This appends data to a",
   "gen.prodMid": "database. Type",
   "gen.confirmTitle": "Type the schema name to confirm",
+
+  // vs.* — search-all-tables modal (ValueSearchModal.tsx).
+  "vs.title": "Search all tables",
+  "vs.placeholder": "Paste a value — an email, an id, a fragment",
+  "vs.scanHint":
+    "This is a full table scan. No index can answer “this value, in any column”, so every table in scope is read end to end. Smallest tables are searched first, and you can stop at any time.",
+  "vs.scanNote":
+    "Full table scan — every table in scope is read end to end. Smallest first, so early results arrive quickly; stop any time.",
+  "vs.modeContains": "Contains",
+  "vs.modeExact": "Whole value",
+  "vs.modeContainsTitle": "Match anywhere inside a value. Searches every column.",
+  "vs.modeExactTitle":
+    "Match the whole value only. Searches the columns whose type the value fits — faster, and far less noise for short ids.",
+  "vs.scopeSchema": "Only {schema}",
+  "vs.includeSystem": "Include system schemas",
+  "vs.search": "Search",
+  "vs.starting": "Starting…",
+  "vs.scanning": "{table} — {done} of {total} tables",
+  "vs.matchedIn": "matched in",
+  "vs.matchCount": "{count} matching rows",
+  "vs.someMatches": "{count}+ matching rows",
+  "vs.showingOf": "Showing the first {shown} of {total} matching rows.",
+  "vs.noResults": "No table in scope holds that value.",
+  "vs.cancelledPrefix": "Cancelled — ",
+  "vs.summaryLine": "{scanned} of {total} tables searched in {seconds}s · {hits} with matches",
+  "vs.stoppedEarly":
+    "Stopped at {count} matching tables. Narrow the value, or scope the search to one schema.",
+  "vs.skipped": "{count} tables skipped — no column could hold that value.",
+  "vs.errorsHeading": "{count} tables could not be read",
 
   // dfile.* — data-file workspace (viewer/editor/sheet/tabs).
   "dfile.tabData": "Data",

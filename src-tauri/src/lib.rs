@@ -473,6 +473,10 @@ pub fn run() {
             // generation, keyed by the renderer's run id.
             app.manage(features::generate::commands::GenerateState::default());
 
+            // Value-search slice: per-run cancellation flags for the
+            // across-all-tables value sweep, keyed by the renderer's run id.
+            app.manage(features::value_search::commands::ValueSearchState::default());
+
             // App-metrics slice (M33): the sampler behind the status-bar CPU /
             // memory readout. Managed rather than built per call because CPU
             // usage is a delta and needs the previous sample to exist.
@@ -726,6 +730,8 @@ pub fn run() {
             features::generate::commands::generate_preview,
             features::generate::commands::generate_run,
             features::generate::commands::generate_cancel,
+            features::value_search::commands::value_search_run,
+            features::value_search::commands::value_search_cancel,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -47,6 +47,8 @@ import { EmptySchemaModal } from "../../export/components/EmptySchemaModal";
 import { ExportProgressModal } from "../../export/components/ExportProgressModal";
 import { TruncateModal } from "../../export/components/TruncateModal";
 import { GenerateModal } from "../../generate/components/GenerateModal";
+import { ValueSearchModal } from "../../value_search/components/ValueSearchModal";
+import { useValueSearchStore } from "../../value_search/state";
 import { useGenerateStore } from "../../generate/state";
 import { type ExportKind } from "../../export/exportFlow";
 import { ImportModal } from "../../import/components/ImportModal";
@@ -203,6 +205,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   const [deleteSchemaOpen, setDeleteSchemaOpen] = useState(false);
   // M16: open the Generate-data modal for this (handle, schema).
   const openGenerate = useGenerateStore((s) => s.openModal);
+  const openValueSearch = useValueSearchStore((s) => s.openModal);
   // Create-schema modal (from the schema switcher's "Create schema" item).
   const [createSchemaOpen, setCreateSchemaOpen] = useState(false);
   // Only reachable in `icon` mode; the dropdown has its own popover state.
@@ -783,6 +786,20 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
               >
                 <Icon name="monitoring" size={15} /> {t("ws.sb.tableOverview")}
               </button>
+              {/* Reads only, so it is offered on system schemas too — and in a
+                  read-only workspace. The modal states the full-scan cost
+                  before anything runs. */}
+              <button
+                type="button"
+                className="ctx-item"
+                role="menuitem"
+                onClick={() => {
+                  setSchemaMenu(false);
+                  openValueSearch(handleId, schemaName);
+                }}
+              >
+                <Icon name="travel_explore" size={15} /> {t("ws.sb.searchValues")}
+              </button>
               {!noWrites ? (
                 <>
                   <div className="ctx-sep" />
@@ -1183,6 +1200,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
       {/* Generate data (M16): append realistic fake data across the schema.
           The store gates its own visibility (renders only when opened). */}
       <GenerateModal />
+      <ValueSearchModal />
 
       {createSchemaOpen ? (
         <CreateSchemaModal

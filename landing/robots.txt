@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://rezwanul-haque.github.io/byteTable/sitemap.xml

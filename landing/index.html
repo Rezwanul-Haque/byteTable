@@ -3,11 +3,21 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>ByteTable — the free, local-first database client</title>
+<title>ByteTable — Free, Open-Source Database GUI for SQL &amp; NoSQL</title>
 <!-- Favicon: the ByteTable mark (matches the #bt nav logo) on a dark tile, inlined as an SVG data URI so the page stays self-contained. -->
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%230f1013'/%3E%3Crect x='3' y='4' width='8.5' height='4' rx='1.6' fill='%232dd4a7'/%3E%3Crect x='13.5' y='4' width='7.5' height='4' rx='1.6' fill='%232dd4a7' opacity='.45'/%3E%3Crect x='3' y='10' width='18' height='4' rx='1.6' fill='%23e7eaef' opacity='.55'/%3E%3Crect x='3' y='16' width='11' height='4' rx='1.6' fill='%23e7eaef' opacity='.35'/%3E%3Crect x='16.5' y='16' width='4.5' height='4' rx='1.2' fill='%232dd4a7'/%3E%3C/svg%3E" />
-<meta name="description" content="A free, open-source database client for SQLite, MySQL, PostgreSQL, SQL Server, Redis, DynamoDB, MongoDB, Cassandra, ClickHouse and Typesense. Local-first, cross-platform, no subscription. Forever." />
+<meta name="description" content="ByteTable is a free, open-source database client for PostgreSQL, MySQL, SQLite, SQL Server, Redis, MongoDB, DynamoDB, Cassandra, ClickHouse and Typesense. Native on macOS, Windows and Linux." />
+<meta name="keywords" content="database client, database GUI, SQL client, PostgreSQL GUI, MySQL GUI, SQLite browser, SQL Server client, Redis GUI, MongoDB GUI, DynamoDB GUI, Cassandra GUI, ClickHouse GUI, Typesense, TablePlus alternative, DBeaver alternative, open source, free" />
+<meta name="author" content="Rezwanul Haque" />
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
+<meta name="theme-color" content="#0f1013" />
+<meta name="color-scheme" content="dark" />
+<meta name="application-name" content="ByteTable" />
+<meta name="apple-mobile-web-app-title" content="ByteTable" />
 <link rel="canonical" href="https://rezwanul-haque.github.io/byteTable/" />
+<link rel="apple-touch-icon" href="brand/bytetable-icon-256.png" />
+<link rel="sitemap" type="application/xml" href="sitemap.xml" />
+<link rel="preload" as="image" href="shots/data-grid.png" fetchpriority="high" />
 <!-- Social link previews (Open Graph + Twitter Card). The image MUST be an
      absolute URL — scrapers don't resolve relative paths. Uses the wide
      1280×640 (2:1) brand banner so GitHub, Slack, Discord, X and LinkedIn all
@@ -15,7 +25,8 @@
      of these, re-scrape via the platform's link debugger to bust its cache. -->
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="ByteTable" />
-<meta property="og:title" content="ByteTable — the free, local-first database client" />
+<meta property="og:locale" content="en_US" />
+<meta property="og:title" content="ByteTable — Free, Open-Source Database GUI for SQL &amp; NoSQL" />
 <meta property="og:description" content="A free, open-source database client for SQLite, MySQL, PostgreSQL, SQL Server, Redis, DynamoDB, MongoDB, Cassandra, ClickHouse and Typesense. Local-first, cross-platform, no subscription. Forever." />
 <meta property="og:url" content="https://rezwanul-haque.github.io/byteTable/" />
 <meta property="og:image" content="https://rezwanul-haque.github.io/byteTable/brand/bytetable-logo-1280x640.png" />
@@ -24,7 +35,8 @@
 <meta property="og:image:height" content="640" />
 <meta property="og:image:alt" content="ByteTable — local-first database client for SQL, NoSQL, one workspace" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="ByteTable — the free, local-first database client" />
+<meta name="twitter:title" content="ByteTable — Free, Open-Source Database GUI for SQL &amp; NoSQL" />
+<meta name="twitter:image:alt" content="ByteTable — local-first database client for SQL, NoSQL, one workspace" />
 <meta name="twitter:description" content="A free, open-source database client for SQLite, MySQL, PostgreSQL, SQL Server, Redis, DynamoDB, MongoDB, Cassandra, ClickHouse and Typesense. Local-first, cross-platform, no subscription. Forever." />
 <meta name="twitter:image" content="https://rezwanul-haque.github.io/byteTable/brand/bytetable-logo-1280x640.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -255,6 +267,57 @@
   }
   @media (prefers-reduced-motion:reduce){ .coffee .smoke{ animation:none; } .btn:hover{ transform:none; } }
 </style>
+<!-- Structured data for search engines: the app itself (rich result with price,
+     OS and category) plus the site. softwareVersion is left out on purpose —
+     it would go stale between releases; the hero badge reads it live instead. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://rezwanul-haque.github.io/byteTable/#website",
+      "url": "https://rezwanul-haque.github.io/byteTable/",
+      "name": "ByteTable",
+      "inLanguage": "en"
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://rezwanul-haque.github.io/byteTable/#app",
+      "name": "ByteTable",
+      "url": "https://rezwanul-haque.github.io/byteTable/",
+      "description": "A free, open-source, local-first database client for SQLite, MySQL, PostgreSQL, SQL Server, Redis, DynamoDB, MongoDB, Cassandra, ClickHouse and Typesense.",
+      "applicationCategory": "DeveloperApplication",
+      "applicationSubCategory": "Database client",
+      "operatingSystem": "macOS, Windows, Linux",
+      "image": "https://rezwanul-haque.github.io/byteTable/brand/bytetable-logo-1280x640.png",
+      "screenshot": [
+        "https://rezwanul-haque.github.io/byteTable/shots/data-grid.png",
+        "https://rezwanul-haque.github.io/byteTable/shots/query.png",
+        "https://rezwanul-haque.github.io/byteTable/shots/ERD.png"
+      ],
+      "downloadUrl": "https://github.com/rezwanul-Haque/byteTable/releases/latest",
+      "installUrl": "https://github.com/rezwanul-Haque/byteTable/releases/latest",
+      "codeRepository": "https://github.com/rezwanul-Haque/byteTable",
+      "license": "https://www.apache.org/licenses/LICENSE-2.0",
+      "isAccessibleForFree": true,
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "author": { "@type": "Person", "name": "Rezwanul Haque", "url": "https://github.com/rezwanul-Haque" },
+      "featureList": [
+        "Ten database engines in one app: SQLite, MySQL, PostgreSQL, SQL Server, Redis, DynamoDB, MongoDB, Cassandra, ClickHouse, Typesense",
+        "SQL editor with schema-aware autocomplete, query parameters, snippets and optional vim keybindings",
+        "Virtualized data grid with inline editing and staged, reviewable changes",
+        "Interactive ER schema map and schema diff",
+        "Users, roles and privileges matrix",
+        "Scheduled saved queries that write results to a folder",
+        "Search a value across every table in a database",
+        "Encrypted connection export and import",
+        "Built-in SQL terminal, SSH tunnels, TLS and OS-keychain secrets"
+      ]
+    }
+  ]
+}
+</script>
 </head>
 <body>
 
@@ -270,7 +333,7 @@
      once and referenced with <use> so ~60 list items cost one path. -->
 <symbol id="chk" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></symbol></svg>
 
-<nav>
+<nav aria-label="Primary">
   <div class="wrap nav-in">
     <a class="brand" href="#top"><svg width="24" height="24"><use href="#bt"/></svg> ByteTable</a>
     <div class="nav-links">
@@ -285,9 +348,11 @@
   </div>
 </nav>
 
+<main id="main">
+
 <section class="hero" id="top">
   <div class="wrap">
-    <span class="badge"><b id="latestTag">v0.0.1</b> · free &amp; open source — forever</span>
+    <span class="badge"><b id="latestTag">v0.0.42</b> · free &amp; open source — forever</span>
     <h1>The database client<br>that never goes <span class="grad">behind a paywall</span></h1>
     <p class="sub">A fast, local-first GUI for SQLite, MySQL, PostgreSQL, SQL Server, Redis, DynamoDB, MongoDB, Cassandra, ClickHouse and Typesense. Cross-platform and fully native on macOS, Windows and Linux — no account, no subscription.</p>
     <div class="hero-cta">
@@ -315,35 +380,35 @@
     <div class="carousel" id="carousel">
       <div class="carousel-stage" id="stage">
         <figure class="slide" style="--c:#61afef">
-          <div class="slide-img"><img src="shots/data-grid.png" alt="Data grid &amp; inline editing" loading="lazy" /></div>
+          <div class="slide-img"><img src="shots/data-grid.png" alt="ByteTable data grid browsing a table with inline editing, filters and JSON-aware cells" width="3024" height="1964" fetchpriority="high" /></div>
           <figcaption><b>Data grid &amp; inline editing</b><span>Browse, sort, filter and edit — JSON &amp; UUID aware</span></figcaption>
         </figure>
         <figure class="slide" style="--c:#2dd4a7">
-          <div class="slide-img"><img src="shots/query.png" alt="SQL query editor" loading="lazy" /></div>
+          <div class="slide-img"><img src="shots/query.png" alt="ByteTable SQL query editor with a results grid, timing and export" width="3024" height="1964" loading="lazy" decoding="async" /></div>
           <figcaption><b>SQL query editor</b><span>Write &amp; run SQL with a results grid, timing and export</span></figcaption>
         </figure>
         <figure class="slide" style="--c:#e2b340">
-          <div class="slide-img"><img src="shots/explain.png" alt="Query explain &amp; analyze" loading="lazy" /></div>
+          <div class="slide-img"><img src="shots/explain.png" alt="ByteTable query explain panel showing the engine plan and written-vs-run order" width="3024" height="1898" loading="lazy" decoding="async" /></div>
           <figcaption><b>Query explain &amp; analyze</b><span>See written vs. run order, live row counts</span></figcaption>
         </figure>
         <figure class="slide" style="--c:#c678dd">
-          <div class="slide-img"><img src="shots/structure.png" alt="Structure &amp; staged DDL" loading="lazy" /></div>
+          <div class="slide-img"><img src="shots/structure.png" alt="ByteTable table structure editor staging columns, indexes and foreign keys as ALTER statements" width="3024" height="1964" loading="lazy" decoding="async" /></div>
           <figcaption><b>Structure &amp; staged DDL</b><span>Edit columns, indexes &amp; foreign keys with reviewable ALTERs</span></figcaption>
         </figure>
         <figure class="slide" style="--c:#e8533d">
-          <div class="slide-img"><img src="shots/ERD.png" alt="Interactive schema map" loading="lazy" /></div>
+          <div class="slide-img"><img src="shots/ERD.png" alt="ByteTable interactive schema map: a draggable ER diagram of tables and foreign keys" width="3024" height="1964" loading="lazy" decoding="async" /></div>
           <figcaption><b>Interactive schema map</b><span>Draggable ER diagram of tables &amp; foreign keys</span></figcaption>
         </figure>
         <figure class="slide" style="--c:#56b6c2">
-          <div class="slide-img"><img src="shots/sql-terminal.png" alt="Built-in SQL terminal" loading="lazy" /></div>
+          <div class="slide-img"><img src="shots/sql-terminal.png" alt="ByteTable built-in SQL terminal docked in a bottom panel" width="2876" height="1800" loading="lazy" decoding="async" /></div>
           <figcaption><b>Built-in SQL terminal</b><span>psql / mysql / sqlite, redis-cli, mongosh &amp; cqlsh in a bottom panel</span></figcaption>
         </figure>
         <figure class="slide" style="--c:#d19a66">
-          <div class="slide-img"><img src="shots/import.png" alt="Import &amp; export" loading="lazy" /></div>
+          <div class="slide-img"><img src="shots/import.png" alt="ByteTable import and export dialog with a per-table preview" width="3024" height="1902" loading="lazy" decoding="async" /></div>
           <figcaption><b>Import &amp; export</b><span>Paste SQL or load a dump; export tables with a progress bar</span></figcaption>
         </figure>
         <figure class="slide" style="--c:#e06c9c">
-          <div class="slide-img"><img src="shots/redis-keyspace.png" alt="Redis keyspace browser" loading="lazy" /></div>
+          <div class="slide-img"><img src="shots/redis-keyspace.png" alt="ByteTable Redis keyspace browser with type-aware key viewers" width="3024" height="1964" loading="lazy" decoding="async" /></div>
           <figcaption><b>Redis keyspace browser</b><span>Type-aware viewers for every key</span></figcaption>
         </figure>
       </div>
@@ -356,7 +421,7 @@
 
 <div class="lightbox" id="lightbox" aria-hidden="true" role="dialog" aria-label="Screenshot preview">
   <button class="lightbox-close" id="lbClose" aria-label="Close preview"><span class="msym"><svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></span></button>
-  <img id="lbImg" src="" alt="" />
+  <img id="lbImg" alt="" />
   <div class="lightbox-cap" id="lbCap"></div>
 </div>
 
@@ -404,6 +469,7 @@
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Filter your saved connections as you type</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Mark a connection <b>production</b> — writes then ask first</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Configurable connect timeout, so a bad host can't hang you</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Export connections as an encrypted bundle and import them on another machine — Argon2id + AES-256-GCM behind your passphrase</li>
         </ul>
       </div>
 
@@ -417,6 +483,8 @@
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Tabbed interface, one tab set per workspace</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Saves tabs between sessions — reopen a connection, get its tabs back</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Global quick search: jump to any table or command with <code>⌘K</code></li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>The command palette carries every menu command, so any action is a few keystrokes away</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Search a pasted value across every table in a database — right-click it in the sidebar, match exactly or anywhere in a value</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Jump between schemas from a searchable switcher, with system schemas one opt-in away</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Brainstorm board: a free-form canvas per schema for notes, diagrams and draft tables</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>16 themes including three light ones and two glass materials, plus accent, fonts, size and density</li>
@@ -438,12 +506,16 @@
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Schema-aware autocomplete — tables, columns, keys</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Per-engine SQL dialect — keywords, functions and highlighting match the connection</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Multi-cursor editing — <code>⌥</code>-click for extra cursors, <code>⌥</code>-drag for a column selection</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Optional vim keybindings in the SQL editor</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Run the statement at the caret, the selection, or the whole buffer</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Query parameters — <code>:name</code>, <code>${name}</code> or <code>?</code> — prompted for when you run, and safely quoted</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Snippet library: save reusable SQL, insert it from autocomplete or the Query menu</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>One-click SQL formatter</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Per-tab query history</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Run history for the whole workspace, capped where you want it, from the tab strip</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Saved queries — global, or scoped to one connection</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Open saved queries from the tab strip; saving updates the one you loaded</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Schedule saved queries — every few minutes, daily, weekly or monthly — and write each result to a folder as CSV or JSON</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Explain panel with the engine's real plan — table, tree and raw server output — plus a written-vs-run minimap</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Editor font zoom and ligature toggle</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Sortable query result tables — click a header, NULLs sink to the bottom</li>
@@ -496,6 +568,17 @@
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Fit the whole schema to the window, or zoom with <code>⌘</code>/<code>Ctrl</code> plus and minus</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Schema diff for PostgreSQL, MySQL &amp; SQLite — compare two connections, or two schemas in one</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Read the exact change DDL for a diff and copy it out</li>
+        </ul>
+      </div>
+
+      <div class="featgroup">
+        <h3>Users &amp; access</h3>
+        <ul>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Privileges tab for PostgreSQL, MySQL, SQL Server &amp; ClickHouse — users, roles and a grants matrix</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Switch between direct grants and effective ones inherited through roles</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Grant, revoke and deny from the matrix, staged and reviewed as SQL before it runs</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Create or drop users, roles and server logins</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Follows the workspace schema, with a switcher to look at any other</li>
         </ul>
       </div>
 
@@ -661,6 +744,8 @@
     </div>
   </div>
 </section>
+
+</main>
 
 <footer>
   <div class="wrap foot-in">
@@ -835,7 +920,8 @@
     var lbCap = document.getElementById('lbCap');
     var lbOpen = false;
     function openLb(img) {
-      lbImg.src = img.src; lbImg.alt = img.alt; lbCap.textContent = img.alt;
+      var cap = img.closest('figure').querySelector('figcaption b');
+      lbImg.src = img.src; lbImg.alt = img.alt; lbCap.textContent = cap ? cap.textContent : img.alt;
       lb.classList.add('open'); lb.setAttribute('aria-hidden', 'false');
       lbOpen = true; clearInterval(timer);
     }

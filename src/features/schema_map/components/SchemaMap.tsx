@@ -2775,9 +2775,13 @@ const Card = memo(function Card({
       />
       {/* Header — grab handle (drag), table icon, name, open btn. */}
       <g className="map-card-head" onPointerDown={onHeaderPointerDown}>
-        <rect className="map-card-head-bg" x={0} y={0} width={w} height={HEAD_H} rx={11} />
-        {/* square off the header's bottom corners (rx only rounds the top) */}
-        <rect className="map-card-head-bg" x={0} y={HEAD_H - 11} width={w} height={11} />
+        {/* One shape, top corners rounded and bottom square. Two overlapping
+            rects would paint the overlap twice, which shows as a band once a
+            glass material makes the header fill translucent. */}
+        <path
+          className="map-card-head-bg"
+          d={`M0 ${HEAD_H}V11A11 11 0 0 1 11 0H${w - 11}A11 11 0 0 1 ${w} 11V${HEAD_H}Z`}
+        />
         <line className="map-card-head-rule" x1={0} y1={HEAD_H} x2={w} y2={HEAD_H} />
         <CardIcon className="map-card-icon" icon={ICON_TABLE} x={9} y={HEAD_H / 2 - 7} size={14} />
         <text className="map-card-name" x={30} y={HEAD_H / 2} dominantBaseline="central">

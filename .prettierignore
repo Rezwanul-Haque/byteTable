@@ -9,3 +9,6 @@ docs/
 test-fixtures/
 # Standalone GitHub Pages page (hand-authored HTML/CSS/JS in one file).
 landing/
+# Local editor-tooling cache (the impeccable design hook), written into
+# whichever directory the session runs from; git-excluded locally, not source.
+**/.impeccable/

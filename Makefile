@@ -58,6 +58,13 @@ else
 # `ensure-cargo` just installed (into ~/.cargo/bin) is found without re-sourcing
 # a shell. `export` makes this visible to all recipe sub-shells.
 export PATH := $(HOME)/.cargo/bin:$(PATH)
+# The export reaches the recipe's ENVIRONMENT, but GNU Make 3.81 (the one macOS
+# ships) runs a metacharacter-free line like `cargo test …` without a shell and
+# resolves the program against the PATH make itself started with — so a cargo
+# that lives only in ~/.cargo/bin fails with "cargo: No such file or directory".
+# `env` is found in /usr/bin either way and does its lookup with the exported
+# PATH.
+CARGO := env cargo
 endif
 
 .DEFAULT_GOAL := help

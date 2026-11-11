@@ -41,13 +41,21 @@
 }
 .mg-map .map-canvas-wrap {
   flex: 1;
-  overflow: auto;
+  /* A fixed viewport: the world layer pans/zooms under one transform
+     (useCanvasNavigation), like the brainstorm board — nothing scrolls. */
+  overflow: hidden;
+  cursor: grab;
   min-height: 0;
   background-image: radial-gradient(
     color-mix(in oklab, var(--border) 70%, transparent) 1px,
     transparent 1px
   );
   background-size: 22px 22px;
+}
+/* Only empty canvas pans: a card's body is not a grab target (its header
+   keeps its own grab cursor for moving the card). */
+.mg-map .map-card {
+  cursor: default;
 }
 .mg-map .map-canvas {
   position: relative;

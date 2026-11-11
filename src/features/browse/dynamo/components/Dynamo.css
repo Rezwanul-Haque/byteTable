@@ -1359,18 +1359,25 @@
 }
 .ddb-map-canvas-wrap {
   flex: 1;
-  overflow: auto;
+  /* A fixed viewport: the world layer pans/zooms under one transform
+   * (useCanvasNavigation), like the brainstorm board — nothing scrolls. */
+  overflow: hidden;
+  cursor: grab;
   background: var(--bg0);
   position: relative;
-  /* Dot grid (22px), as on the relational schema map. `local` attachment keeps
-   * the dots under the cards as the canvas scrolls; the tile size is set inline
-   * from the zoom level. */
+  /* Dot grid (22px), as on the relational schema map. Its tile size and origin
+   * are set inline from the view, so the dots move with the cards. */
   background-image: radial-gradient(
     color-mix(in oklab, var(--border) 70%, transparent) 1px,
     transparent 1px
   );
   background-size: 22px 22px;
   background-attachment: local;
+}
+/* Only empty canvas pans: a card's body is not a grab target (its header
+   keeps its own grab cursor for moving the card). */
+.ddb-map-card {
+  cursor: default;
 }
 .ddb-map-canvas {
   position: relative;

@@ -21,8 +21,10 @@
 //
 // STRUCTURE:
 //   - pan/zoom: a `<g transform="translate(panX,panY) scale(zoom)">` wraps all
-//     content. Zoom is clamped 50–150% via toolbar controls (+ optional wheel).
-//     Pan is dragging empty canvas. The dot-grid is a CSS background on the
+//     content inside a fixed, viewport-sized SVG — the brainstorm board's model
+//     (shared/ui/canvasView + useWheelNavigation): wheel/two-finger scroll and
+//     dragging empty canvas pan, ⌘/Ctrl-wheel or pinch zooms around the cursor.
+//     Zooming changes one transform; the SVG never resizes or scrolls. The dot-grid is a CSS background on the
 //     wrapper behind the <svg> (cheap, and excluded from export by design —
 //     Task 3 paints its own grid into the export if wanted).
 //   - cards: pure geometry from diagram.ts; positions live in `positions`
@@ -44,7 +46,7 @@
 // auto-layout. Saves are debounced and fire on drag END, never per mousemove,
 // to avoid IPC spam. Zoom is persisted too. connectionId = workspace.saved.id.
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import type { TableMeta } from "../../../shared/api/engine";
 import { appErrorMessage } from "../../../shared/api/error";
@@ -55,6 +57,16 @@ import { BTLogo } from "../../../shared/ui/BTLogo";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Minimap, type MinimapItem } from "../../../shared/ui/Minimap";
+import { useWheelNavigation } from "../../../shared/hooks/useWheelNavigation";
+import {
+  centreOn,
+  clampZoom,
+  fitView,
+  visibleWorld,
+  zoomAt,
+  zoomKeyStep,
+  type CanvasView,
+} from "../../../shared/ui/canvasView";
 import { ENV_COLOR } from "../../../shared/ui/envColors";
 import { useToast } from "../../../shared/ui/toastContext";
 import { useIntrospectionStore } from "../../introspection/state";
@@ -78,7 +90,6 @@ import {
   CARD_PAD_T,
   CARD_W,
   contentBounds,
-  contentExtent,
   placeNewCards,
   crowFoot,
   HEAD_H,
@@ -137,12 +148,18 @@ async function saveDialog(defaultName: string, ext: string, label: string) {
   return save({ defaultPath: defaultName, filters: [{ name: label, extensions: [ext] }] });
 }
 
-const ZOOM_MIN = 0.5;
-const ZOOM_MAX = 1.5;
-const ZOOM_STEP = 0.1;
-/** How far fit-to-window may zoom out past the manual floor before it gives up
- *  and leaves the rest to scrolling. */
-const FIT_ZOOM_MIN = 0.2;
+// Zoom matches the brainstorm board's: same range, same button factor, same
+// wheel rate, same fit ceiling.
+const ZOOM_MIN = 0.25;
+const ZOOM_MAX = 2.5;
+/** One toolbar click or ⌘± press. */
+const ZOOM_FACTOR = 1.2;
+const ZOOM_LIMITS = { min: ZOOM_MIN, max: ZOOM_MAX };
+/** How long the view must be still before card shadows come back. */
+const VIEW_SETTLE_MS = 150;
+/** Fit never zooms IN past this — a three-table schema filling the window at
+ *  250% reads as a mistake, not a fit. */
+const FIT_ZOOM_MAX = 1.4;
 /** Breathing room left around the diagram when fitting it to the window. */
 const FIT_PAD = 28;
 /** Debounce (ms) for persisting positions after a drag settles. */
@@ -154,20 +171,6 @@ const SAVE_DEBOUNCE = 400;
 const MIN_CARD_W = CARD_W;
 const MAX_CARD_W = 720;
 const clampCardW = (w: number): number => Math.min(MAX_CARD_W, Math.max(MIN_CARD_W, w));
-
-const clampZoom = (z: number): number =>
-  Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(z * 10) / 10));
-
-/**
- * Clamp for a zoom coming back from a SAVED layout, which is not the same rule
- * as the manual one above: fit-to-window is allowed below ZOOM_MIN and lands on
- * whole percents, so `clampZoom` would round a fitted 0.42 to 0.4 and then floor
- * it to 0.5 — reopening the tab snapped a fitted map back to 50% and clipped the
- * right-hand groups back off screen. Honour the fit floor and 1% granularity so
- * what fit-to-window persisted is what reopening restores.
- */
-const clampSavedZoom = (z: number): number =>
-  Math.min(ZOOM_MAX, Math.max(FIT_ZOOM_MIN, Math.round(z * 100) / 100));
 
 type Positions = Record<string, { x: number; y: number }>;
 /** User-resized card widths by table (read-mode). Absent = default CARD_W. */
@@ -184,9 +187,9 @@ function spreadPositions(p: Positions): Positions {
 }
 
 /** Re-anchor a layout's bounding box to `margin` from the origin. Read-mode
- *  positions can sit anywhere (panned/dragged/saved), and edit mode navigates
- *  by scroll from 0,0 — so without this, spread cards land off-screen and the
- *  user has to hit Reset View. Keeps the arrangement, just shifts it into view. */
+ *  positions can sit anywhere (panned/dragged/saved), and edit mode opens on a
+ *  view at 0,0 — so without this, spread cards land off-screen and the user has
+ *  to hit Reset View. Keeps the arrangement, just shifts it into view. */
 const EDIT_MARGIN = 48;
 function anchorToOrigin(p: Positions): Positions {
   const vals = Object.values(p);
@@ -264,17 +267,13 @@ type Drag =
       moved: boolean;
     }
   | {
-      /** Canvas drag = scroll. The diagram used to move under an SVG transform
-       *  instead, inside a box that never grew to match: drag toward the far
-       *  side and the content slid out past the SVG's own viewport, which clips
-       *  it, while the scrollable width stayed put so scrolling could not reach
-       *  it either. Scrolling is the one navigation that cannot leave content
-       *  outside the box. */
+      /** Canvas drag = move the view's translation (the SVG fills the viewport,
+       *  so nothing can slide outside it). */
       kind: "pan";
       startX: number;
       startY: number;
-      origScrollLeft: number;
-      origScrollTop: number;
+      origX: number;
+      origY: number;
     };
 
 /** Width of a frame's grab band — the strip along each edge (and the square at
@@ -350,12 +349,12 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
   const [positions, setPositions] = useState<Positions | null>(null);
   // User-resized read-mode card widths by table (empty = all default width).
   const [widths, setWidths] = useState<Widths>({});
-  const [zoom, setZoom] = useState(1);
-  // A NON-NEGATIVE layout offset, not a free pan: fit-to-window uses it to
-  // centre content that is smaller than the viewport (scrolling alone cannot,
-  // since scroll stops at zero). The canvas is sized to include it, so content
-  // is always inside the box and always reachable by scrolling.
-  const [pan, setPan] = useState({ x: 0, y: 0 });
+  // The view, as on the brainstorm board: world point (wx, wy) is drawn at
+  // viewport pixel (x + wx·k, y + wy·k). Not part of the saved layout except
+  // `k`, which persists as the layout's zoom.
+  const [view, setView] = useState<CanvasView>({ x: 0, y: 0, k: 1 });
+  const zoom = view.k;
+  const pan = { x: view.x, y: view.y };
   // Movable-edge waypoints: a {dx,dy} offset per edge id, applied to the live
   // midpoint so a bend follows the connected cards. Empty = all edges straight.
   const [waypoints, setWaypoints] = useState<Record<string, Waypoint>>({});
@@ -427,13 +426,12 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
   const [editPositions, setEditPositions] = useState<Positions | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
 
-  // World-space top-left for a newly added table — derived from the current
-  // scroll so the card lands in view.
+  // World-space top-left for a newly added table — just inside the visible
+  // area's top-left, so the card lands in view.
   const newTablePos = useCallback(() => {
-    const wrap = wrapRef.current;
-    if (!wrap) return { x: 40, y: 40 };
-    return { x: wrap.scrollLeft / zoom + 40, y: wrap.scrollTop / zoom + 40 };
-  }, [zoom]);
+    const r = visibleWorld(view, 0, 0);
+    return { x: r.x + 40 / view.k, y: r.y + 40 / view.k };
+  }, [view]);
 
   const onCommitted = useCallback(() => {
     // Drop back to read mode and re-introspect: the map then reflects the
@@ -467,11 +465,10 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
     } else {
       // Seed edit positions from the read-mode layout, spread apart for the
       // wider cards and re-anchored to the origin so they land in view. Reset
-      // zoom + scroll so entering edit mode is centered without a Reset View.
+      // the view so entering edit mode starts there without a Reset View.
       setEditPositions(positions ? anchorToOrigin(spreadPositions(positions)) : {});
-      setZoom(1);
+      setView({ x: 0, y: 0, k: 1 });
       setEditing(true);
-      requestAnimationFrame(() => wrapRef.current?.scrollTo({ left: 0, top: 0 }));
     }
   };
 
@@ -565,7 +562,10 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
             savedGroups.map((g) => g.id),
           ),
         );
-        if (typeof layout.zoom === "number") setZoom(clampSavedZoom(layout.zoom));
+        if (typeof layout.zoom === "number") {
+          const k = clampZoom(layout.zoom, ZOOM_LIMITS);
+          setView((v) => ({ ...v, k }));
+        }
       } else {
         setPositions(autoLayout(Object.keys(metas), metas));
         setWidths({});
@@ -747,10 +747,8 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         : null,
     [linkFromTarget, linkCursor],
   );
-  // Scroll room covers the cards AND every frame — a frame stretched past the
-  // last card must not be cut off by the SVG's own box.
-  // The tight box around everything drawn — cards plus frames. Fit-to-window
-  // frames this; the scroll extent below just needs to reach past it.
+  // The tight box around everything drawn — cards, frames and bent arrows.
+  // Fit-to-window frames this, and the minimap draws within it.
   const contentBox = useMemo(() => {
     const b = contentBounds(cards, FIT_PAD);
     let left = b.x;
@@ -772,24 +770,8 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
       bottom = Math.max(bottom, l.my + FIT_PAD);
     }
     // Deliberately NOT clamped to the origin: a frame parked at x=0 has its
-    // padding at a negative coordinate, and fit-to-window restores that with a
-    // pan (scroll cannot go below zero).
+    // padding at a negative coordinate, and the view can show that freely.
     return { x: left, y: top, width: right - left, height: bottom - top };
-  }, [cards, boxes, linkModels]);
-
-  const extent = useMemo(() => {
-    const base = contentExtent(cards);
-    let width = base.width;
-    let height = base.height;
-    for (const b of boxes) {
-      width = Math.max(width, b.x + b.w + 80);
-      height = Math.max(height, b.y + b.h + 80);
-    }
-    for (const l of linkModels) {
-      width = Math.max(width, l.mx + 80);
-      height = Math.max(height, l.my + 80);
-    }
-    return { width, height };
   }, [cards, boxes, linkModels]);
 
   // The chosen export scope, resolved to a live frame (null = whole diagram).
@@ -1106,13 +1088,12 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
       return;
     }
     setSelected([]);
-    const wrap = wrapRef.current;
     dragRef.current = {
       kind: "pan",
       startX: e.clientX,
       startY: e.clientY,
-      origScrollLeft: wrap?.scrollLeft ?? 0,
-      origScrollTop: wrap?.scrollTop ?? 0,
+      origX: view.x,
+      origY: view.y,
     };
   };
 
@@ -1233,12 +1214,10 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
         return next;
       });
     } else {
-      // Drag right → content moves right → scroll left decreases.
-      const wrap = wrapRef.current;
-      if (wrap) {
-        wrap.scrollLeft = d.origScrollLeft - (e.clientX - d.startX);
-        wrap.scrollTop = d.origScrollTop - (e.clientY - d.startY);
-      }
+      // Drag right → content moves right.
+      const x = d.origX + e.clientX - d.startX;
+      const y = d.origY + e.clientY - d.startY;
+      setView((v) => ({ ...v, x, y }));
     }
   };
 
@@ -1286,62 +1265,120 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
     if (positions) persist(positions, zoom);
   };
 
+  // --- stable handlers for the memoised Card / Edge ----------------------
+  // Card and Edge are memo()'d so a pan/zoom — which changes nothing about any
+  // card or edge — re-renders neither. That only holds if their props keep
+  // their identity, so instead of a fresh arrow per item per render they get
+  // ONE object that never changes and takes the item's id; it calls the latest
+  // implementation through a ref refreshed after every commit.
+  const itemImpl = {
+    cardDown: onCardPointerDown,
+    cardResizeDown: onCardResizePointerDown,
+    cardOpen: (table: string) => openTableTab(schema, table),
+    edgeDown: onEdgePointerDown,
+    edgeHover: (id: string, hovering: boolean) =>
+      setHoveredEdge((cur) => (hovering ? id : cur === id ? null : cur)),
+    edgeHandleDown: onHandlePointerDown,
+    edgeReset: resetEdge,
+  };
+  const itemImplRef = useRef(itemImpl);
+  useLayoutEffect(() => {
+    itemImplRef.current = itemImpl;
+  });
+  const cardHandlers = useMemo<CardHandlers>(
+    () => ({
+      headerDown: (e, table) => itemImplRef.current.cardDown(e, table),
+      resizeDown: (e, table) => itemImplRef.current.cardResizeDown(e, table),
+      open: (table) => itemImplRef.current.cardOpen(table),
+    }),
+    [],
+  );
+  const edgeHandlers = useMemo<EdgeHandlers>(
+    () => ({
+      selectDown: (e, id) => itemImplRef.current.edgeDown(e, id),
+      hover: (id, hovering) => itemImplRef.current.edgeHover(id, hovering),
+      handleDown: (e, id) => itemImplRef.current.edgeHandleDown(e, id),
+      reset: (id) => itemImplRef.current.edgeReset(id),
+    }),
+    [],
+  );
+
   // --- zoom controls ---------------------------------------------------
-  const applyZoom = useCallback(
-    (z: number) => {
-      const next = clampZoom(z);
-      setZoom(next);
+  // The brainstorm board's model, from the same shared code: one continuous,
+  // unrounded range; buttons and ⌘± multiply by ZOOM_FACTOR around the middle of
+  // the view; ⌘/Ctrl-wheel or pinch scales with the gesture around the cursor,
+  // and a plain wheel pans. A zoom is one transform change — no resize, no
+  // scroll, no transition — which is what keeps it smooth at any zoom.
+
+  /** A user-driven view change: applied, and its zoom saved with the layout. */
+  const navigate = useCallback(
+    (next: CanvasView) => {
+      setView(next);
       // Read-mode positions are untouched in edit mode, so persisting the (read)
       // layout + zoom is safe either way.
-      if (positions) persist(positions, next);
+      if (next.k !== zoom && positions) persist(positions, next.k);
     },
-    [positions, persist],
+    [zoom, positions, persist],
   );
-  const onWheel = (e: React.WheelEvent) => {
-    if (!e.ctrlKey && !e.metaKey) return; // only zoom on pinch / ctrl+wheel
-    e.preventDefault();
-    applyZoom(zoom + (e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP));
-  };
+
+  useWheelNavigation(wrapRef, view, navigate, ZOOM_LIMITS);
+
+  // Card shadows are an SVG blur filter, and changing the view's transform
+  // repaints the whole SVG — so every pan/zoom step re-blurred every card, at a
+  // cost that grows with the zoom (the read map lagged where edit mode's CSS
+  // box-shadows, which the compositor handles, did not). While the view is
+  // moving the SVG carries `is-moving`, which drops the filter in CSS; it comes
+  // back once the view has been still for a beat. Toggled on the element, not
+  // through state, so it costs no extra render. A layout effect, so the first
+  // moved frame is already shadow-free.
+  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const viewKey = `${view.x},${view.y},${view.k}`;
+  const lastViewKey = useRef(viewKey);
+  useLayoutEffect(() => {
+    if (lastViewKey.current === viewKey) return;
+    lastViewKey.current = viewKey;
+    const svg = svgRef.current;
+    if (!svg) return;
+    svg.classList.add("is-moving");
+    if (settleTimer.current) clearTimeout(settleTimer.current);
+    settleTimer.current = setTimeout(() => svg.classList.remove("is-moving"), VIEW_SETTLE_MS);
+  }, [viewKey]);
+  useEffect(
+    () => () => {
+      if (settleTimer.current) clearTimeout(settleTimer.current);
+    },
+    [],
+  );
+
+  /** The toolbar buttons and ⌘± — scale around the middle of the view. */
+  const zoomBy = useCallback(
+    (factor: number) => {
+      const wrap = wrapRef.current;
+      if (!wrap) return;
+      const k = clampZoom(view.k * factor, ZOOM_LIMITS);
+      navigate(zoomAt(view, k, wrap.clientWidth / 2, wrap.clientHeight / 2));
+    },
+    [view, navigate],
+  );
 
   // ⌘/Ctrl with + or − zooms the diagram, matching the toolbar buttons. Only
   // the open tab is mounted, so this listener is live exactly while the map is
   // on screen. preventDefault keeps the webview's own page zoom out of it.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
-      // Both the character and the physical key are checked: "+" needs shift on
-      // most layouts, and the numeric keypad sends its own keys entirely.
-      const zoomIn = e.key === "+" || e.key === "=" || e.code === "Equal" || e.code === "NumpadAdd";
-      const zoomOut =
-        e.key === "-" || e.key === "_" || e.code === "Minus" || e.code === "NumpadSubtract";
-      if (!zoomIn && !zoomOut) return;
+      const step = zoomKeyStep(e);
+      if (!step) return;
       e.preventDefault();
-      applyZoom(zoom + (zoomIn ? ZOOM_STEP : -ZOOM_STEP));
+      zoomBy(step > 0 ? ZOOM_FACTOR : 1 / ZOOM_FACTOR);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [zoom, applyZoom]);
-
-  // A scroll a fit has queued for the next commit. Setting the zoom grows the
-  // wrap's scrollable extent, but only once React has re-rendered the SVG at the
-  // new size — a scrollTo issued before that is clamped to the OLD maximum. This
-  // flushes it in a LAYOUT effect, so zoom, pan and scroll all land in the same
-  // frame; doing it in requestAnimationFrame instead painted the intermediate
-  // state first, which is the shift you could see when the tab opened.
-  const pendingScroll = useRef<{ left: number; top: number } | null>(null);
-  useLayoutEffect(() => {
-    const next = pendingScroll.current;
-    if (!next) return;
-    pendingScroll.current = null;
-    wrapRef.current?.scrollTo(next);
-  });
+  }, [zoomBy]);
 
   /**
-   * Zoom and scroll so the whole diagram is on screen at once. Chooses the
-   * larger-fitting axis' scale, then centres the content in whatever slack is
-   * left. Fit may go below the manual zoom floor (a big schema simply doesn't
-   * fit at 50%), but never below FIT_ZOOM_MIN — past that the cards are illegible
-   * and scrolling serves better.
+   * Fit the whole diagram in the window, centred. Never below ZOOM_MIN — past
+   * that the cards are illegible and panning serves better — and never above
+   * FIT_ZOOM_MAX, so a three-table schema is not blown up to fill the screen.
    *
    * `save` is false for the automatic fit on open: that is a view restore, not a
    * user edit, so it must not overwrite the zoom the user last chose by hand.
@@ -1355,35 +1392,19 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
       const vw = wrap.clientWidth;
       const vh = wrap.clientHeight;
       if (vw === 0 || vh === 0) return false;
-      const raw = Math.min(vw / contentBox.width, vh / contentBox.height);
-      // Floor to 1% so rounding can never leave the content a hair too big.
-      const z = Math.min(ZOOM_MAX, Math.max(FIT_ZOOM_MIN, Math.floor(raw * 100) / 100));
-      setZoom(z);
-      // Where the framed content should sit: centred in whatever slack is left
-      // over. Scrolling gets it there when the content starts far enough into the
-      // canvas; when it doesn't (content near the origin, or a viewport wider than
-      // the diagram) scroll would have to go negative, so the shortfall becomes a
-      // pan instead — which is what keeps the left and top gaps equal to the right
-      // and bottom ones.
-      const wantX = contentBox.x * z - Math.max(0, (vw - contentBox.width * z) / 2);
-      const wantY = contentBox.y * z - Math.max(0, (vh - contentBox.height * z) / 2);
-      setPan({ x: Math.max(0, -wantX), y: Math.max(0, -wantY) });
-      if (save && positions) persist(positions, z);
-      const target = { left: Math.max(0, wantX), top: Math.max(0, wantY) };
-      // An unchanged zoom re-renders nothing, so there may be no next commit to
-      // flush a queued scroll — and none is needed: the extent is already right.
-      // (A scroll target above zero only ever pairs with a zero pan, so the pan
-      // change in the other branch can't shrink what this can reach either.)
-      if (z === zoom) wrap.scrollTo(target);
-      else pendingScroll.current = target;
+      // contentBox already carries FIT_PAD of breathing room on every side.
+      const box = { x: contentBox.x, y: contentBox.y, w: contentBox.width, h: contentBox.height };
+      const next = fitView(box, vw, vh, 0, { min: ZOOM_MIN, max: FIT_ZOOM_MAX });
+      setView(next);
+      if (save && positions) persist(positions, next.k);
       return true;
     },
-    [cards.length, contentBox, positions, zoom, persist],
+    [cards.length, contentBox, positions, persist],
   );
 
-  // The map's opening view IS the fitted view. Fit's centring lives in `pan` +
-  // scroll, neither of which is part of the saved layout, so restoring the saved
-  // zoom alone reopened the map hard against the top-left.
+  // The map's opening view IS the fitted view. Fit's centring lives in the
+  // view's translation, which is not part of the saved layout, so restoring the
+  // saved zoom alone reopened the map hard against the top-left.
   //
   // A LAYOUT effect is what makes this the default rather than a correction: it
   // runs in the same commit the cards first appear in, so the first frame the
@@ -1412,39 +1433,48 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
     ],
     [boxes, cards],
   );
-  /** The world rect the scrolled wrap shows: undo the scroll, the pan and the zoom. */
+  /** The world rect the viewport shows. */
   const minimapViewport = useCallback(() => {
     const wrap = wrapRef.current;
     if (!wrap || wrap.clientWidth === 0) return null;
-    return {
-      x: (wrap.scrollLeft - pan.x) / zoom,
-      y: (wrap.scrollTop - pan.y) / zoom,
-      w: wrap.clientWidth / zoom,
-      h: wrap.clientHeight / zoom,
-    };
-  }, [pan.x, pan.y, zoom]);
+    return visibleWorld(view, wrap.clientWidth, wrap.clientHeight);
+  }, [view]);
   /** Centre the view on a world point. A click on the minimap also zooms a
    *  zoomed-out (fitted) map in to 100%, so a jump lands somewhere readable. */
   const minimapNavigate = useCallback(
     (p: { x: number; y: number }, gesture: "jump" | "drag") => {
       const wrap = wrapRef.current;
       if (!wrap) return;
-      const z = gesture === "jump" && zoom < 1 ? 1 : zoom;
-      const target = {
-        left: Math.max(0, pan.x + p.x * z - wrap.clientWidth / 2),
-        top: Math.max(0, pan.y + p.y * z - wrap.clientHeight / 2),
-      };
-      if (z === zoom) {
-        wrap.scrollTo(target);
-        return;
-      }
-      // The wrap only grows to the new zoom's extent on the next commit, so the
-      // scroll waits for it (see pendingScroll).
-      pendingScroll.current = target;
-      applyZoom(z);
+      const k = gesture === "jump" && view.k < 1 ? 1 : view.k;
+      navigate(centreOn(p.x, p.y, k, wrap.clientWidth, wrap.clientHeight));
     },
-    [pan.x, pan.y, zoom, applyZoom],
+    [view.k, navigate],
   );
+
+  // Edit mode's HTML canvas has no drag gesture of its own, so a press on its
+  // empty space pans from here — the same drag read mode's SVG gives. Cards and
+  // their controls keep their own pointer behaviour. No preventDefault: it would
+  // stop the press from blurring a name input being edited.
+  const onEditCanvasPointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    if ((e.target as Element).closest(".map-card, button, input, select, textarea")) return;
+    const sx = e.clientX;
+    const sy = e.clientY;
+    const ox = view.x;
+    const oy = view.y;
+    const onMove = (me: PointerEvent) => {
+      window.getSelection()?.removeAllRanges();
+      const x = ox + me.clientX - sx;
+      const y = oy + me.clientY - sy;
+      setView((v) => ({ ...v, x, y }));
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
 
   const resetView = () => {
     if (!metas) return;
@@ -1453,8 +1483,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
     // the wider cards don't overlap — and leave the saved read layout untouched.
     if (editing) {
       setEditPositions(anchorToOrigin(spreadPositions(auto)));
-      setZoom(1);
-      requestAnimationFrame(() => wrapRef.current?.scrollTo({ left: 0, top: 0 }));
+      setView({ x: 0, y: 0, k: 1 });
       return;
     }
     // With frames on the canvas, a plain auto-layout would lay the whole schema
@@ -1472,9 +1501,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
       setGroups(regrouped);
     }
     setPositions(next);
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
-    requestAnimationFrame(() => wrapRef.current?.scrollTo({ left: 0, top: 0 }));
+    setView({ x: 0, y: 0, k: 1 });
     // Full reset to the initial state: re-run auto-layout, straighten every edge
     // (clear all bezier waypoints), AND drop custom card widths back to default.
     // The refs are cleared first so the debounced persist below writes the empty
@@ -1735,7 +1762,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
           icon="zoom_out"
           title={t("smap.zoomOutTitle")}
           aria-label={t("smap.zoomOut")}
-          onClick={() => applyZoom(zoom - ZOOM_STEP)}
+          onClick={() => zoomBy(1 / ZOOM_FACTOR)}
           disabled={zoom <= ZOOM_MIN}
         />
         <span className="map-zoom" aria-live="polite">
@@ -1745,7 +1772,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
           icon="zoom_in"
           title={t("smap.zoomInTitle")}
           aria-label={t("smap.zoomIn")}
-          onClick={() => applyZoom(zoom + ZOOM_STEP)}
+          onClick={() => zoomBy(ZOOM_FACTOR)}
           disabled={zoom >= ZOOM_MAX}
         />
         {hasBentEdges ? (
@@ -1852,24 +1879,25 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
       </div>
 
       <div
-        className="map-canvas-wrap"
+        className="map-canvas-wrap is-viewport"
         ref={wrapRef}
-        // Dot-grid now PANS+ZOOMS with the content: the CSS background's tile
-        // size scales with zoom and its origin tracks pan, so the grid moves
-        // under the cards instead of staying fixed (Task 2 left this as a TODO).
+        // The dot grid pans and zooms with the content: the CSS background's
+        // tile size scales with zoom and its origin tracks the view, so the grid
+        // moves under the cards instead of staying fixed.
         style={
           {
             backgroundSize: `${22 * zoom}px ${22 * zoom}px`,
-            backgroundPosition: editing ? "0 0" : `${pan.x}px ${pan.y}px`,
+            backgroundPosition: `${view.x}px ${view.y}px`,
           } as React.CSSProperties
         }
+        onPointerDown={editing ? onEditCanvasPointerDown : undefined}
       >
         {editing ? (
           <SchemaEditCanvas
             editor={editor}
             positions={editPositions ?? {}}
             setPositions={setEditPositions}
-            zoom={zoom}
+            view={view}
             wrapRef={wrapRef}
           />
         ) : (
@@ -1877,20 +1905,13 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
             <svg
               ref={svgRef}
               className={"map-svg" + (selectMode ? " is-picking" : "")}
-              // Size the SVG to the SCALED content extent (not the viewport) so cards
-              // laid out beyond the visible area aren't clipped by the SVG's own box
-              // — the wrap then scrolls to reach them. min-width/height:100% (CSS)
-              // keeps it filling the viewport when the schema is small.
-              // The offset is part of the canvas: content translated by it must
-              // still fall inside the box, or the SVG clips what scrolling would
-              // otherwise reach.
-              width={extent.width * zoom + pan.x}
-              height={extent.height * zoom + pan.y}
+              // Fills the viewport; the transform below does all the navigating.
+              width="100%"
+              height="100%"
               onPointerDown={onCanvasPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={endDrag}
               onPointerCancel={endDrag}
-              onWheel={onWheel}
             >
               <defs>
                 {/* Soft layered drop shadow for cards (lighter than a CSS filter,
@@ -1905,10 +1926,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
                   />
                 </filter>
               </defs>
-              <g
-                transform={`translate(${pan.x},${pan.y}) scale(${zoom})`}
-                className={dragRef.current ? "" : "map-eased"}
-              >
+              <g transform={`translate(${pan.x},${pan.y}) scale(${zoom})`}>
                 {/* Group frames sit behind everything — they are backdrops for
                     the cards they contain, not foreground objects. */}
                 <g className="map-groups-layer">
@@ -1952,12 +1970,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
                       selected={selectedEdge === edge.id}
                       hovered={hoveredEdge === edge.id}
                       bent={Boolean(waypoints[edge.id])}
-                      onSelectPointerDown={(e) => onEdgePointerDown(e, edge.id)}
-                      onHoverChange={(h) =>
-                        setHoveredEdge((cur) => (h ? edge.id : cur === edge.id ? null : cur))
-                      }
-                      onHandlePointerDown={(e) => onHandlePointerDown(e, edge.id)}
-                      onResetEdge={() => resetEdge(edge.id)}
+                      handlers={edgeHandlers}
                     />
                   ))}
                 </g>
@@ -1967,9 +1980,7 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
                     key={card.table}
                     card={card}
                     selected={selected.includes(card.table)}
-                    onHeaderPointerDown={(e) => onCardPointerDown(e, card.table)}
-                    onResizePointerDown={(e) => onCardResizePointerDown(e, card.table)}
-                    onOpen={() => openTableTab(schema, card.table)}
+                    handlers={cardHandlers}
                   />
                 ))}
 
@@ -2308,26 +2319,33 @@ const CARDINALITY_OPTIONS: { label: string; kind: CardinalityKind | null }[] = [
   { label: "M:N", kind: "M:N" },
 ];
 
-function Edge({
+/** Edge callbacks, keyed by edge id. One stable object for every edge, so the
+ *  memo()'d Edge is skipped on renders that change nothing about it. */
+interface EdgeHandlers {
+  selectDown: (e: React.PointerEvent, id: string) => void;
+  hover: (id: string, hovering: boolean) => void;
+  handleDown: (e: React.PointerEvent, id: string) => void;
+  reset: (id: string) => void;
+}
+
+const Edge = memo(function Edge({
   edge,
   selected,
   hovered,
   bent,
-  onSelectPointerDown,
-  onHoverChange,
-  onHandlePointerDown,
-  onResetEdge,
+  handlers,
 }: {
   edge: EdgeModel;
   selected: boolean;
   hovered: boolean;
   bent: boolean;
-  onSelectPointerDown: (e: React.PointerEvent) => void;
-  onHoverChange: (hovering: boolean) => void;
-  onHandlePointerDown: (e: React.PointerEvent) => void;
-  onResetEdge: () => void;
+  handlers: EdgeHandlers;
 }) {
   const t = useT();
+  const onSelectPointerDown = (e: React.PointerEvent) => handlers.selectDown(e, edge.id);
+  const onHoverChange = (hovering: boolean) => handlers.hover(edge.id, hovering);
+  const onHandlePointerDown = (e: React.PointerEvent) => handlers.handleDown(e, edge.id);
+  const onResetEdge = () => handlers.reset(edge.id);
   return (
     <g
       className={
@@ -2370,7 +2388,7 @@ function Edge({
       ) : null}
     </g>
   );
-}
+});
 
 /**
  * Cardinality override popover for the selected FK edge (1:1 / 1:N / M:N /
@@ -2706,20 +2724,27 @@ function GroupFrame({
 }
 
 /** One table card, rendered as an SVG group. */
-function Card({
+/** Card callbacks, keyed by table. One stable object for every card, so the
+ *  memo()'d Card is skipped on renders that change nothing about it. */
+interface CardHandlers {
+  headerDown: (e: React.PointerEvent, table: string) => void;
+  resizeDown: (e: React.PointerEvent, table: string) => void;
+  open: (table: string) => void;
+}
+
+const Card = memo(function Card({
   card,
   selected,
-  onHeaderPointerDown,
-  onResizePointerDown,
-  onOpen,
+  handlers,
 }: {
   card: CardModel;
   selected: boolean;
-  onHeaderPointerDown: (e: React.PointerEvent) => void;
-  onResizePointerDown: (e: React.PointerEvent) => void;
-  onOpen: () => void;
+  handlers: CardHandlers;
 }) {
   const t = useT();
+  const onHeaderPointerDown = (e: React.PointerEvent) => handlers.headerDown(e, card.table);
+  const onResizePointerDown = (e: React.PointerEvent) => handlers.resizeDown(e, card.table);
+  const onOpen = () => handlers.open(card.table);
   const { x, y, w, h, shownColumns, hiddenCount } = card;
   // Truncation budgets scale with width (widen-only), so a resized card reveals
   // more of long table/column names rather than just adding whitespace. The
@@ -2855,7 +2880,7 @@ function Card({
       </g>
     </g>
   );
-}
+});
 
 /** A group name reduced to a filename-safe slug for the default export name. */
 function fileSlug(s: string): string {

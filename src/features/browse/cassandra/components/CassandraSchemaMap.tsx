@@ -13,7 +13,8 @@ import { useT } from "../../../../shared/i18n/useT";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { Minimap } from "../../../../shared/ui/Minimap";
-import { useScrollMinimap } from "../../../../shared/hooks/useScrollMinimap";
+import { useCanvasNavigation } from "../../../../shared/hooks/useCanvasNavigation";
+import { ZOOM_FACTOR } from "../../../../shared/ui/canvasView";
 import { useToast } from "../../../../shared/ui/toastContext";
 import {
   exportCardMap,
@@ -85,9 +86,10 @@ export function CassandraSchemaMap({ ks, tables, onOpenTable }: CassandraSchemaM
     return p;
   };
   const [positions, setPositions] = useState(initPos);
-  const [zoom, setZoom] = useState(1);
   const wrapRef = useRef<HTMLDivElement | null>(null);
-  const minimap = useScrollMinimap(wrapRef, zoom, setZoom);
+  // Board-style pan/zoom (shared with the brainstorm board and schema map).
+  const nav = useCanvasNavigation(wrapRef, ".map-card");
+  const zoom = nav.view.k;
   // `tr`, not `t`: `tables.map((t) => …)` uses `t` as the row variable.
   const tr = useT();
   const toast = useToast();
@@ -254,20 +256,20 @@ export function CassandraSchemaMap({ ks, tables, onOpenTable }: CassandraSchemaM
         <IconBtn
           icon="zoom_out"
           title={tr("cass.map.zoomOut")}
-          onClick={() => setZoom((z) => Math.max(0.5, Math.round((z - 0.1) * 10) / 10))}
+          onClick={() => nav.zoomBy(1 / ZOOM_FACTOR)}
         />
         <span className="map-zoom">{Math.round(zoom * 100)}%</span>
         <IconBtn
           icon="zoom_in"
           title={tr("cass.map.zoomIn")}
-          onClick={() => setZoom((z) => Math.min(1.5, Math.round((z + 0.1) * 10) / 10))}
+          onClick={() => nav.zoomBy(ZOOM_FACTOR)}
         />
         <IconBtn
           icon="fit_screen"
           title={tr("cass.map.resetLayout")}
           onClick={() => {
             setPositions(initPos());
-            setZoom(1);
+            nav.reset();
           }}
         />
         <div style={{ position: "relative" }}>
@@ -297,14 +299,16 @@ export function CassandraSchemaMap({ ks, tables, onOpenTable }: CassandraSchemaM
           ) : null}
         </div>
       </div>
-      <div ref={wrapRef} className="map-canvas-wrap">
-        <div
-          className="map-canvas"
-          style={{ width: (maxX + 120) * zoom, height: (maxY + 120) * zoom }}
-        >
+      <div
+        ref={wrapRef}
+        className="map-canvas-wrap"
+        style={nav.gridStyle}
+        onPointerDown={nav.onPanStart}
+      >
+        <div className="map-canvas">
           <div
             className="map-inner"
-            style={{ transform: "scale(" + zoom + ")", width: maxX + 120, height: maxY + 120 }}
+            style={{ transform: nav.transform, width: maxX + 120, height: maxY + 120 }}
           >
             <svg className="map-edges" width={maxX + 120} height={maxY + 120}>
               {edges.map((e, i) => {
@@ -405,8 +409,8 @@ export function CassandraSchemaMap({ ks, tables, onOpenTable }: CassandraSchemaM
       {tables.length > 0 ? (
         <Minimap
           items={minimapItems}
-          getViewport={minimap.getViewport}
-          onNavigate={minimap.onNavigate}
+          getViewport={nav.getViewport}
+          onNavigate={nav.onNavigate}
           watch={wrapRef}
         />
       ) : null}

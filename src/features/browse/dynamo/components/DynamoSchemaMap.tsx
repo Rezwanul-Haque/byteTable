@@ -11,7 +11,8 @@ import { useT } from "../../../../shared/i18n/useT";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { Minimap } from "../../../../shared/ui/Minimap";
-import { useScrollMinimap } from "../../../../shared/hooks/useScrollMinimap";
+import { useCanvasNavigation } from "../../../../shared/hooks/useCanvasNavigation";
+import { ZOOM_FACTOR } from "../../../../shared/ui/canvasView";
 import { useToast } from "../../../../shared/ui/toastContext";
 import {
   exportCardMap,
@@ -44,9 +45,10 @@ export function DynamoSchemaMap({ handleId, tables, onOpenTable }: DynamoSchemaM
   const [model, setModel] = useState<DynamoModel | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({});
-  const [zoom, setZoom] = useState(1);
   const wrapRef = useRef<HTMLDivElement | null>(null);
-  const minimap = useScrollMinimap(wrapRef, zoom, setZoom);
+  // Board-style pan/zoom (shared with the brainstorm board and schema map).
+  const nav = useCanvasNavigation(wrapRef, ".ddb-map-card");
+  const zoom = nav.view.k;
   const t = useT();
   const toast = useToast();
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
@@ -212,7 +214,7 @@ export function DynamoSchemaMap({ handleId, tables, onOpenTable }: DynamoSchemaM
       p[e.id] = { x: 70 + (i % 3) * 400, y: 80 + Math.floor(i / 3) * 380 };
     });
     setPositions(p);
-    setZoom(1);
+    nav.reset();
   };
 
   const runExport = async (format: ExportFormat) => {
@@ -290,13 +292,13 @@ export function DynamoSchemaMap({ handleId, tables, onOpenTable }: DynamoSchemaM
         <IconBtn
           icon="zoom_out"
           title={t("dyn.sm.zoomOut")}
-          onClick={() => setZoom((z) => Math.max(0.5, Math.round((z - 0.1) * 10) / 10))}
+          onClick={() => nav.zoomBy(1 / ZOOM_FACTOR)}
         />
         <span className="ddb-map-zoom">{Math.round(zoom * 100)}%</span>
         <IconBtn
           icon="zoom_in"
           title={t("dyn.sm.zoomIn")}
-          onClick={() => setZoom((z) => Math.min(1.5, Math.round((z + 0.1) * 10) / 10))}
+          onClick={() => nav.zoomBy(ZOOM_FACTOR)}
         />
         <IconBtn icon="fit_screen" title={t("dyn.sm.reset")} onClick={resetLayout} />
         <div style={{ position: "relative" }}>
@@ -329,17 +331,14 @@ export function DynamoSchemaMap({ handleId, tables, onOpenTable }: DynamoSchemaM
       <div
         ref={wrapRef}
         className="ddb-map-canvas-wrap"
-        // Grid tile scales with zoom so the dots sit under the cards at any
-        // zoom level (matches the relational schema map).
-        style={{ backgroundSize: `${22 * zoom}px ${22 * zoom}px` }}
+        // The dot grid pans and zooms with the cards (matches the other maps).
+        style={nav.gridStyle}
+        onPointerDown={nav.onPanStart}
       >
-        <div
-          className="ddb-map-canvas"
-          style={{ width: (maxX + 120) * zoom, height: (maxY + 120) * zoom }}
-        >
+        <div className="ddb-map-canvas">
           <div
             className="ddb-map-inner"
-            style={{ transform: "scale(" + zoom + ")", width: maxX + 120, height: maxY + 120 }}
+            style={{ transform: nav.transform, width: maxX + 120, height: maxY + 120 }}
           >
             <svg className="ddb-map-edges" width={maxX + 120} height={maxY + 120}>
               {refs.map((r, i) => {
@@ -467,8 +466,8 @@ export function DynamoSchemaMap({ handleId, tables, onOpenTable }: DynamoSchemaM
       {entities.length > 0 ? (
         <Minimap
           items={minimapItems}
-          getViewport={minimap.getViewport}
-          onNavigate={minimap.onNavigate}
+          getViewport={nav.getViewport}
+          onNavigate={nav.onNavigate}
           watch={wrapRef}
         />
       ) : null}

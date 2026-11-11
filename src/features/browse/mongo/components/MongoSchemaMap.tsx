@@ -10,7 +10,8 @@ import { appErrorMessage } from "../../../../shared/api/error";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
 import { Minimap } from "../../../../shared/ui/Minimap";
-import { useScrollMinimap } from "../../../../shared/hooks/useScrollMinimap";
+import { useCanvasNavigation } from "../../../../shared/hooks/useCanvasNavigation";
+import { ZOOM_FACTOR } from "../../../../shared/ui/canvasView";
 import { useToast } from "../../../../shared/ui/toastContext";
 import { useT } from "../../../../shared/i18n/useT";
 import {
@@ -148,9 +149,10 @@ export function MongoSchemaMap({
     return out;
   }, [colls]);
   const [overrides, setOverrides] = useState<Record<string, { x: number; y: number }>>({});
-  const [zoom, setZoom] = useState(1);
   const wrapRef = useRef<HTMLDivElement | null>(null);
-  const minimap = useScrollMinimap(wrapRef, zoom, setZoom);
+  // Board-style pan/zoom (shared with the brainstorm board and schema map).
+  const nav = useCanvasNavigation(wrapRef, ".map-card");
+  const zoom = nav.view.k;
   const dragRef = useRef<{
     id: string;
     start: { x: number; y: number; ox: number; oy: number };
@@ -308,20 +310,16 @@ export function MongoSchemaMap({
         <IconBtn
           icon="zoom_out"
           title={t("mongo.zoomOut")}
-          onClick={() => setZoom((z) => Math.max(0.5, Math.round((z - 0.1) * 10) / 10))}
+          onClick={() => nav.zoomBy(1 / ZOOM_FACTOR)}
         />
         <span className="map-zoom">{Math.round(zoom * 100)}%</span>
-        <IconBtn
-          icon="zoom_in"
-          title={t("mongo.zoomIn")}
-          onClick={() => setZoom((z) => Math.min(1.5, Math.round((z + 0.1) * 10) / 10))}
-        />
+        <IconBtn icon="zoom_in" title={t("mongo.zoomIn")} onClick={() => nav.zoomBy(ZOOM_FACTOR)} />
         <IconBtn
           icon="fit_screen"
           title={t("mongo.resetLayout")}
           onClick={() => {
             initPos();
-            setZoom(1);
+            nav.reset();
           }}
         />
         <div style={{ position: "relative" }}>
@@ -351,14 +349,16 @@ export function MongoSchemaMap({
           ) : null}
         </div>
       </div>
-      <div ref={wrapRef} className="map-canvas-wrap">
-        <div
-          className="map-canvas"
-          style={{ width: (maxX + 120) * zoom, height: (maxY + 120) * zoom }}
-        >
+      <div
+        ref={wrapRef}
+        className="map-canvas-wrap"
+        style={nav.gridStyle}
+        onPointerDown={nav.onPanStart}
+      >
+        <div className="map-canvas">
           <div
             className="map-inner"
-            style={{ transform: "scale(" + zoom + ")", width: maxX + 120, height: maxY + 120 }}
+            style={{ transform: nav.transform, width: maxX + 120, height: maxY + 120 }}
           >
             <svg className="map-edges" width={maxX + 120} height={maxY + 120}>
               {refs.map((r, i) => {
@@ -442,8 +442,8 @@ export function MongoSchemaMap({
       {colls.length > 0 ? (
         <Minimap
           items={minimapItems}
-          getViewport={minimap.getViewport}
-          onNavigate={minimap.onNavigate}
+          getViewport={nav.getViewport}
+          onNavigate={nav.onNavigate}
           watch={wrapRef}
         />
       ) : null}

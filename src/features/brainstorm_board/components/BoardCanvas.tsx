@@ -30,20 +30,14 @@
 // is enforced in CSS (`.dim { pointer-events: none }`, SVG paths included) and
 // relied on here.
 
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-  type RefObject,
-} from "react";
+import { useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 
+import { useWheelNavigation } from "../../../shared/hooks/useWheelNavigation";
 import { Icon } from "../../../shared/ui/Icon";
 import { useT } from "../../../shared/i18n/useT";
 import type { BoardDiffInfo } from "../diff";
 import { tableStateLabel } from "../diff";
-import { boxOf, clampZoom, edgePath, inkPath, unionBox, volumeWidth } from "../geometry";
+import { boxOf, edgePath, inkPath, unionBox, volumeWidth } from "../geometry";
 import {
   edgeLayer,
   isEditable,
@@ -167,7 +161,9 @@ export function BoardCanvas(props: BoardCanvasProps) {
   // The wheel handler and the move/up listeners are registered once, so they
   // must read the CURRENT view rather than the one captured at subscribe time.
   const viewRef = useRef(view);
-  viewRef.current = view;
+  useLayoutEffect(() => {
+    viewRef.current = view;
+  });
 
   /** True when `layer` is drawn at full strength. An export lights everything. */
   const lit = (layer: string) => !!exportIds || activeLayer === "all" || layer === activeLayer;
@@ -199,31 +195,12 @@ export function BoardCanvas(props: BoardCanvasProps) {
   });
 
   // --- wheel: pan, and ⌘/Ctrl-wheel (or pinch) zoom around the cursor ---
-  // Registered natively because it must be non-passive to preventDefault — React
-  // attaches wheel listeners as passive, which would let the page scroll.
-  useEffect(() => {
-    const el = viewportRef.current;
-    if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      const v = viewRef.current;
-      if (e.ctrlKey || e.metaKey) {
-        // Keep the point under the cursor fixed: solve for the translation that
-        // leaves (mx,my) mapping to the same world point at the new scale.
-        const rect = el.getBoundingClientRect();
-        const mx = e.clientX - rect.left;
-        const my = e.clientY - rect.top;
-        const k = clampZoom(v.k * Math.exp(-e.deltaY * 0.0018), ZOOM_MIN, ZOOM_MAX);
-        setView({ k, x: mx - ((mx - v.x) * k) / v.k, y: my - ((my - v.y) * k) / v.k });
-      } else {
-        setView({ k: v.k, x: v.x - e.deltaX, y: v.y - e.deltaY });
-      }
-    };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-    // setView is a stable store/state setter for the board's lifetime.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Shared with the schema map. viewRef is the RENDERED view, which is what
+  // paces a fast pinch to one step per frame (see useWheelNavigation).
+  useWheelNavigation(viewportRef, view, setView, {
+    min: ZOOM_MIN,
+    max: ZOOM_MAX,
+  });
 
   // --- the pointer state machine ---------------------------------------
   // Handlers live in refs behind two stable forwarders, so the window listeners
@@ -236,7 +213,7 @@ export function BoardCanvas(props: BoardCanvasProps) {
     up: (e: PointerEvent) => onUpRef.current(e),
   }).current;
 
-  onMoveRef.current = (e) => {
+  const handleMove = (e: PointerEvent) => {
     const g = gesture.current;
     if (!g) return;
     if (g.kind === "pan") {
@@ -272,7 +249,7 @@ export function BoardCanvas(props: BoardCanvasProps) {
     }
   };
 
-  onUpRef.current = (e) => {
+  const handleUp = (e: PointerEvent) => {
     const g = gesture.current;
     gesture.current = null;
     window.removeEventListener("pointermove", listeners.move);
@@ -304,6 +281,10 @@ export function BoardCanvas(props: BoardCanvasProps) {
       }
     }
   };
+  useLayoutEffect(() => {
+    onMoveRef.current = handleMove;
+    onUpRef.current = handleUp;
+  });
 
   const begin = (e: { preventDefault: () => void }, next: Gesture) => {
     gesture.current = next;

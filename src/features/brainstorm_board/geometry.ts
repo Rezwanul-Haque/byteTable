@@ -141,8 +141,3 @@ export function volumeWidth(label: string | undefined): number {
   const n = parseFloat(match[1]) * (match[3] ? 1000 : 1);
   return Math.min(5, 1.3 + Math.log10(n + 1) * 0.95);
 }
-
-/** Clamp a zoom factor into the board's range. */
-export function clampZoom(k: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, k));
-}

@@ -62,16 +62,20 @@
   background-attachment: local;
 }
 
+/* The relational map is a fixed viewport, not a scroller: it navigates by one
+ * transform, like the brainstorm board, so nothing resizes while you zoom. (The
+ * Mongo/Cassandra maps share .map-canvas-wrap and set the same in their own
+ * scoped sheets.) */
+.map-canvas-wrap.is-viewport {
+  overflow: hidden;
+}
+
 .map-svg {
-  /* IN FLOW, deliberately: the SVG is the scrollable content. It used to be
-     absolutely positioned with a hidden spacer div reserving the scroll room
-     beside it — two boxes that had to agree on a size, and did not once a pan
-     offset entered the picture. min-* keeps it filling the wrap when the schema
-     is smaller than the viewport. */
+  /* Fills the viewport; the transform group inside does the panning/zooming. */
   position: relative;
   display: block;
-  min-width: 100%;
-  min-height: 100%;
+  width: 100%;
+  height: 100%;
   /* Empty-canvas drag = pan; cards stop propagation so they drag instead. */
   cursor: grab;
   touch-action: none;
@@ -92,14 +96,6 @@
 .map-svg.is-picking,
 .map-svg.is-picking:active {
   cursor: crosshair;
-}
-
-/* ---------- pan/zoom easing ---------- */
-/* Ease the transform group on zoom/reset (NOT during a drag — the component
- * drops .map-eased while dragging so card/edge moves stay 1:1 with the pointer,
- * §1.6 motion 100–150ms). */
-.map-eased {
-  transition: transform 130ms ease;
 }
 
 /* ---------- table groups (named frames) ---------- */
@@ -466,6 +462,13 @@
   /* Soft layered shadow via the SVG <filter id="mapCardShadow"> (set on the
    * element) — serialises cleanly into the export. */
   transition: stroke 130ms ease;
+}
+
+/* Shadows off while the view pans/zooms: re-blurring every card on each frame
+ * was the read map's zoom lag. The CSS property outranks the element's
+ * filter="…" attribute; SchemaMap removes the class once the view settles. */
+.map-svg.is-moving .map-card-box {
+  filter: none;
 }
 
 .map-card:hover .map-card-box {

@@ -14,6 +14,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Icon } from "../../../shared/ui/Icon";
+import { centreOn, clampZoom, fitView, visibleWorld, zoomAt } from "../../../shared/ui/canvasView";
 import { Minimap, type MinimapItem } from "../../../shared/ui/Minimap";
 import { useToast } from "../../../shared/ui/toastContext";
 import { useT } from "../../../shared/i18n/useT";
@@ -30,7 +31,7 @@ import {
   ungroup,
 } from "../doc";
 import { exportBoardImage, type ExportTarget, type ImageFormat } from "../exportImage";
-import { boxOf, clampZoom, unionBox } from "../geometry";
+import { boxOf, unionBox } from "../geometry";
 import { freeTableName, promoteSketch } from "../infer";
 import {
   boardTables,
@@ -481,20 +482,15 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
       const box = unionBox(boxes);
       if (!box) return;
       const rect = viewport.getBoundingClientRect();
-      const w = box.x2 - box.x1;
-      const h = box.y2 - box.y1;
-      const k = Math.max(
-        ZOOM_MIN,
-        Math.min(
-          FIT_ZOOM_MAX,
-          Math.min((rect.width - FIT_PAD * 2) / w, (rect.height - FIT_PAD * 2) / h),
+      setView(
+        fitView(
+          { x: box.x1, y: box.y1, w: box.x2 - box.x1, h: box.y2 - box.y1 },
+          rect.width,
+          rect.height,
+          FIT_PAD,
+          { min: ZOOM_MIN, max: FIT_ZOOM_MAX },
         ),
       );
-      setView({
-        k,
-        x: (rect.width - w * k) / 2 - box.x1 * k,
-        y: (rect.height - h * k) / 2 - box.y1 * k,
-      });
     },
     [activeLayer, docRef, sizes],
   );
@@ -505,10 +501,7 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
     const rect = viewport.getBoundingClientRect();
     const mx = rect.width / 2;
     const my = rect.height / 2;
-    setView((v) => {
-      const k = clampZoom(v.k * factor, ZOOM_MIN, ZOOM_MAX);
-      return { k, x: mx - ((mx - v.x) * k) / v.k, y: my - ((my - v.y) * k) / v.k };
-    });
+    setView((v) => zoomAt(v, clampZoom(v.k * factor, { min: ZOOM_MIN, max: ZOOM_MAX }), mx, my));
   }, []);
 
   // --- minimap ---------------------------------------------------------
@@ -552,25 +545,21 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
   const minimapViewport = useCallback(() => {
     const viewport = document.querySelector(".bb-viewport");
     if (!viewport || viewport.clientWidth === 0) return null;
-    return {
-      x: -view.x / view.k,
-      y: -view.y / view.k,
-      w: viewport.clientWidth / view.k,
-      h: viewport.clientHeight / view.k,
-    };
+    return visibleWorld(view, viewport.clientWidth, viewport.clientHeight);
   }, [view]);
   /** Centre the view on a world point; a click also zooms a zoomed-out board in to 100%. */
   const minimapNavigate = useCallback((p: { x: number; y: number }, gesture: "jump" | "drag") => {
     const viewport = document.querySelector(".bb-viewport");
     if (!viewport) return;
-    setView((v) => {
-      const k = gesture === "jump" && v.k < 1 ? 1 : v.k;
-      return {
-        k,
-        x: viewport.clientWidth / 2 - p.x * k,
-        y: viewport.clientHeight / 2 - p.y * k,
-      };
-    });
+    setView((v) =>
+      centreOn(
+        p.x,
+        p.y,
+        gesture === "jump" && v.k < 1 ? 1 : v.k,
+        viewport.clientWidth,
+        viewport.clientHeight,
+      ),
+    );
   }, []);
 
   // Fit once, after the first measurement pass — before it, every content-sized

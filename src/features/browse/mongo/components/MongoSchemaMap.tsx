@@ -9,6 +9,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { appErrorMessage } from "../../../../shared/api/error";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
+import { Minimap } from "../../../../shared/ui/Minimap";
+import { useScrollMinimap } from "../../../../shared/hooks/useScrollMinimap";
 import { useToast } from "../../../../shared/ui/toastContext";
 import { useT } from "../../../../shared/i18n/useT";
 import {
@@ -147,6 +149,8 @@ export function MongoSchemaMap({
   }, [colls]);
   const [overrides, setOverrides] = useState<Record<string, { x: number; y: number }>>({});
   const [zoom, setZoom] = useState(1);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const minimap = useScrollMinimap(wrapRef, zoom, setZoom);
   const dragRef = useRef<{
     id: string;
     start: { x: number; y: number; ox: number; oy: number };
@@ -204,6 +208,10 @@ export function MongoSchemaMap({
     if (!p) return;
     maxX = Math.max(maxX, p.x + CARD_W);
     maxY = Math.max(maxY, p.y + cardHeight(c));
+  });
+  const minimapItems = colls.flatMap((c) => {
+    const p = positions[c.id];
+    return p ? [{ x: p.x, y: p.y, w: CARD_W, h: cardHeight(c) }] : [];
   });
 
   const byId: Record<string, MapColl> = {};
@@ -343,7 +351,7 @@ export function MongoSchemaMap({
           ) : null}
         </div>
       </div>
-      <div className="map-canvas-wrap">
+      <div ref={wrapRef} className="map-canvas-wrap">
         <div
           className="map-canvas"
           style={{ width: (maxX + 120) * zoom, height: (maxY + 120) * zoom }}
@@ -431,6 +439,14 @@ export function MongoSchemaMap({
           </div>
         </div>
       </div>
+      {colls.length > 0 ? (
+        <Minimap
+          items={minimapItems}
+          getViewport={minimap.getViewport}
+          onNavigate={minimap.onNavigate}
+          watch={wrapRef}
+        />
+      ) : null}
     </div>
   );
 }

@@ -1704,3 +1704,15 @@ g.sel .bb-ink {
 .bb-ddl-foot .bb-hint {
   flex: 1;
 }
+
+/* Minimap (shared/ui/Minimap): bottom-right, lifted clear of the diff bar
+ * when there is one, and dropped on a stage too narrow to spare the corner. */
+.bb-stage .bb-minimap-raised {
+  bottom: 58px;
+}
+
+@container (max-width: 470px) {
+  .bb-stage .bt-minimap {
+    display: none;
+  }
+}

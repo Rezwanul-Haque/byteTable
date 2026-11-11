@@ -17,6 +17,11 @@ export const zhHans: StringTable = {
   "common.page": "页",
   "common.allFiles": "所有文件",
 
+  "minimap.label": "小地图",
+  "minimap.hint": "点击跳转，拖动平移",
+  "minimap.show": "显示小地图",
+  "minimap.hide": "隐藏小地图",
+
   // 标签条右键菜单（共享 hook：工作区、SQL 结果标签、终端）。
   "tabs.closeOthers": "关闭其他",
   "tabs.closeAll": "关闭全部",

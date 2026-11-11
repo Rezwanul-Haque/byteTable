@@ -14,6 +14,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Icon } from "../../../shared/ui/Icon";
+import { Minimap, type MinimapItem } from "../../../shared/ui/Minimap";
 import { useToast } from "../../../shared/ui/toastContext";
 import { useT } from "../../../shared/i18n/useT";
 import { boardDdl, diffBoard, diffInfoOf, EMPTY_DIFF, EMPTY_DIFF_INFO } from "../diff";
@@ -510,6 +511,68 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
     });
   }, []);
 
+  // --- minimap ---------------------------------------------------------
+  // The stage, not the canvas, is what the minimap watches: the viewport fills
+  // it, and pans/zooms already re-render this component.
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  // Objects in their layer's colour (faded off the focused layer); frames, ink
+  // and groups as outlines so they don't paint over what they surround.
+  const minimapItems = useMemo<MinimapItem[]>(() => {
+    const out: MinimapItem[] = [];
+    for (const group of doc.groups) {
+      const box = unionBox(
+        group.ids.map((id) => boxOf(doc.objects[id], sizes)).filter((b) => b !== null),
+      );
+      if (box)
+        out.push({
+          x: box.x1,
+          y: box.y1,
+          w: box.x2 - box.x1,
+          h: box.y2 - box.y1,
+          color: group.color,
+          outline: true,
+        });
+    }
+    for (const id of doc.order) {
+      const o = doc.objects[id];
+      const box = boxOf(o, sizes);
+      if (!o || !box) continue;
+      out.push({
+        x: box.x1,
+        y: box.y1,
+        w: box.x2 - box.x1,
+        h: box.y2 - box.y1,
+        color: o.type === "ink" ? o.color : LAYER_BY_ID[o.layer].color,
+        outline: o.type === "frame" || o.type === "ink",
+        dim: activeLayer !== "all" && o.layer !== activeLayer,
+      });
+    }
+    return out;
+  }, [doc, sizes, activeLayer]);
+  const minimapViewport = useCallback(() => {
+    const viewport = document.querySelector(".bb-viewport");
+    if (!viewport || viewport.clientWidth === 0) return null;
+    return {
+      x: -view.x / view.k,
+      y: -view.y / view.k,
+      w: viewport.clientWidth / view.k,
+      h: viewport.clientHeight / view.k,
+    };
+  }, [view]);
+  /** Centre the view on a world point; a click also zooms a zoomed-out board in to 100%. */
+  const minimapNavigate = useCallback((p: { x: number; y: number }, gesture: "jump" | "drag") => {
+    const viewport = document.querySelector(".bb-viewport");
+    if (!viewport) return;
+    setView((v) => {
+      const k = gesture === "jump" && v.k < 1 ? 1 : v.k;
+      return {
+        k,
+        x: viewport.clientWidth / 2 - p.x * k,
+        y: viewport.clientHeight / 2 - p.y * k,
+      };
+    });
+  }, []);
+
   // Fit once, after the first measurement pass — before it, every content-sized
   // object still reports its fallback box and the fit would be wrong.
   const fitted = useRef(initial.fitted);
@@ -881,7 +944,7 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
         ) : null}
       </div>
 
-      <div className="bb-stage">
+      <div className="bb-stage" ref={stageRef}>
         <BoardCanvas
           doc={doc}
           view={view}
@@ -999,6 +1062,16 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
             <Icon name={inspectorOpen ? "right_panel_close" : "right_panel_open"} size={16} />
           </button>
         </div>
+
+        {!isEmpty && !exporting ? (
+          <Minimap
+            className={liveSource !== "none" ? "bb-minimap-raised" : undefined}
+            items={minimapItems}
+            getViewport={minimapViewport}
+            onNavigate={minimapNavigate}
+            watch={stageRef}
+          />
+        ) : null}
 
         {exportMenu ? (
           <div className="bb-export" onPointerDown={(e) => e.stopPropagation()}>

@@ -1712,3 +1712,8 @@
   display: flex;
   width: 100%;
 }
+
+/* Anchors the corner minimap (shared/ui/Minimap) to the map, not the scroller. */
+.ddb-schema-map {
+  position: relative;
+}

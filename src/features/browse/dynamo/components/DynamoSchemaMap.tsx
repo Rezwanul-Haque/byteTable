@@ -10,6 +10,8 @@ import { appErrorMessage, isAppErrorPayload } from "../../../../shared/api/error
 import { useT } from "../../../../shared/i18n/useT";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
+import { Minimap } from "../../../../shared/ui/Minimap";
+import { useScrollMinimap } from "../../../../shared/hooks/useScrollMinimap";
 import { useToast } from "../../../../shared/ui/toastContext";
 import {
   exportCardMap,
@@ -43,6 +45,8 @@ export function DynamoSchemaMap({ handleId, tables, onOpenTable }: DynamoSchemaM
   const [error, setError] = useState<string | null>(null);
   const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({});
   const [zoom, setZoom] = useState(1);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const minimap = useScrollMinimap(wrapRef, zoom, setZoom);
   const t = useT();
   const toast = useToast();
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
@@ -170,6 +174,10 @@ export function DynamoSchemaMap({ handleId, tables, onOpenTable }: DynamoSchemaM
     if (!p) return;
     maxX = Math.max(maxX, p.x + CARD_W);
     maxY = Math.max(maxY, p.y + cardHeight(e));
+  });
+  const minimapItems = entities.flatMap((e) => {
+    const p = positions[e.id];
+    return p ? [{ x: p.x, y: p.y, w: CARD_W, h: cardHeight(e) }] : [];
   });
 
   const edgePath = (from: string, to: string) => {
@@ -319,6 +327,7 @@ export function DynamoSchemaMap({ handleId, tables, onOpenTable }: DynamoSchemaM
         </div>
       </div>
       <div
+        ref={wrapRef}
         className="ddb-map-canvas-wrap"
         // Grid tile scales with zoom so the dots sit under the cards at any
         // zoom level (matches the relational schema map).
@@ -455,6 +464,14 @@ export function DynamoSchemaMap({ handleId, tables, onOpenTable }: DynamoSchemaM
           </div>
         </div>
       </div>
+      {entities.length > 0 ? (
+        <Minimap
+          items={minimapItems}
+          getViewport={minimap.getViewport}
+          onNavigate={minimap.onNavigate}
+          watch={wrapRef}
+        />
+      ) : null}
     </div>
   );
 }

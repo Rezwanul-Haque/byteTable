@@ -12,6 +12,8 @@ import { appErrorMessage } from "../../../../shared/api/error";
 import { useT } from "../../../../shared/i18n/useT";
 import { Icon } from "../../../../shared/ui/Icon";
 import { IconBtn } from "../../../../shared/ui/IconBtn";
+import { Minimap } from "../../../../shared/ui/Minimap";
+import { useScrollMinimap } from "../../../../shared/hooks/useScrollMinimap";
 import { useToast } from "../../../../shared/ui/toastContext";
 import {
   exportCardMap,
@@ -84,6 +86,8 @@ export function CassandraSchemaMap({ ks, tables, onOpenTable }: CassandraSchemaM
   };
   const [positions, setPositions] = useState(initPos);
   const [zoom, setZoom] = useState(1);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const minimap = useScrollMinimap(wrapRef, zoom, setZoom);
   // `tr`, not `t`: `tables.map((t) => …)` uses `t` as the row variable.
   const tr = useT();
   const toast = useToast();
@@ -153,6 +157,7 @@ export function CassandraSchemaMap({ ks, tables, onOpenTable }: CassandraSchemaM
     maxX = Math.max(maxX, p.x + CARD_W);
     maxY = Math.max(maxY, p.y + cardHeight(t));
   });
+  const minimapItems = tables.map((t) => ({ ...pos(t.name), w: CARD_W, h: cardHeight(t) }));
 
   const colRowIndex = (t: TableDescriptor, key: string) => {
     const idx = t.columns.findIndex((f) => f.name === key);
@@ -292,7 +297,7 @@ export function CassandraSchemaMap({ ks, tables, onOpenTable }: CassandraSchemaM
           ) : null}
         </div>
       </div>
-      <div className="map-canvas-wrap">
+      <div ref={wrapRef} className="map-canvas-wrap">
         <div
           className="map-canvas"
           style={{ width: (maxX + 120) * zoom, height: (maxY + 120) * zoom }}
@@ -397,6 +402,14 @@ export function CassandraSchemaMap({ ks, tables, onOpenTable }: CassandraSchemaM
           </div>
         </div>
       </div>
+      {tables.length > 0 ? (
+        <Minimap
+          items={minimapItems}
+          getViewport={minimap.getViewport}
+          onNavigate={minimap.onNavigate}
+          watch={wrapRef}
+        />
+      ) : null}
     </div>
   );
 }

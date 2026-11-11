@@ -54,6 +54,7 @@ import { Btn } from "../../../shared/ui/Btn";
 import { BTLogo } from "../../../shared/ui/BTLogo";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
+import { Minimap, type MinimapItem } from "../../../shared/ui/Minimap";
 import { ENV_COLOR } from "../../../shared/ui/envColors";
 import { useToast } from "../../../shared/ui/toastContext";
 import { useIntrospectionStore } from "../../introspection/state";
@@ -1402,6 +1403,49 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
     if (fitToWindow(false)) autoFitDone.current = autoFitKey;
   }, [autoFitKey, editing, positions, cards.length, fitToWindow]);
 
+  // --- minimap -----------------------------------------------------------
+  // Cards as blocks, frames as outlines in their own colour.
+  const minimapItems = useMemo<MinimapItem[]>(
+    () => [
+      ...boxes.map((b) => ({ x: b.x, y: b.y, w: b.w, h: b.h, color: b.color, outline: true })),
+      ...cards.map((c) => ({ x: c.x, y: c.y, w: c.w, h: c.h })),
+    ],
+    [boxes, cards],
+  );
+  /** The world rect the scrolled wrap shows: undo the scroll, the pan and the zoom. */
+  const minimapViewport = useCallback(() => {
+    const wrap = wrapRef.current;
+    if (!wrap || wrap.clientWidth === 0) return null;
+    return {
+      x: (wrap.scrollLeft - pan.x) / zoom,
+      y: (wrap.scrollTop - pan.y) / zoom,
+      w: wrap.clientWidth / zoom,
+      h: wrap.clientHeight / zoom,
+    };
+  }, [pan.x, pan.y, zoom]);
+  /** Centre the view on a world point. A click on the minimap also zooms a
+   *  zoomed-out (fitted) map in to 100%, so a jump lands somewhere readable. */
+  const minimapNavigate = useCallback(
+    (p: { x: number; y: number }, gesture: "jump" | "drag") => {
+      const wrap = wrapRef.current;
+      if (!wrap) return;
+      const z = gesture === "jump" && zoom < 1 ? 1 : zoom;
+      const target = {
+        left: Math.max(0, pan.x + p.x * z - wrap.clientWidth / 2),
+        top: Math.max(0, pan.y + p.y * z - wrap.clientHeight / 2),
+      };
+      if (z === zoom) {
+        wrap.scrollTo(target);
+        return;
+      }
+      // The wrap only grows to the new zoom's extent on the next commit, so the
+      // scroll waits for it (see pendingScroll).
+      pendingScroll.current = target;
+      applyZoom(z);
+    },
+    [pan.x, pan.y, zoom, applyZoom],
+  );
+
   const resetView = () => {
     if (!metas) return;
     const auto = autoLayout(tables, metas);
@@ -2012,6 +2056,15 @@ export function SchemaMap({ workspace, schema }: { workspace: Workspace; schema:
           </>
         )}
       </div>
+
+      {!editing && cards.length > 0 ? (
+        <Minimap
+          items={minimapItems}
+          getViewport={minimapViewport}
+          onNavigate={minimapNavigate}
+          watch={wrapRef}
+        />
+      ) : null}
 
       {/* Grouping bar — floats over the canvas bottom while tables are picked.
           Everything you can do with a pick lives here: frame it as a new group,

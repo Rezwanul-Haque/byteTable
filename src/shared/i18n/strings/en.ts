@@ -20,6 +20,12 @@ export const en = {
   "common.page": "Page",
   "common.allFiles": "All files",
 
+  // Canvas minimap (schema map + brainstorm board).
+  "minimap.label": "Minimap",
+  "minimap.hint": "Click to jump there, drag to pan",
+  "minimap.show": "Show minimap",
+  "minimap.hide": "Hide minimap",
+
   // Tab-strip context menu (shared hook: workspaces, SQL result tabs, terminal).
   "tabs.closeOthers": "Close others",
   "tabs.closeAll": "Close all",

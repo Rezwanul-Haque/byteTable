@@ -1,0 +1,97 @@
+/* Minimap — positioned by the host (`right`/`bottom`) via its own class; this
+ * sheet only sets the panel's look. */
+.bt-minimap,
+.bt-minimap-show {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 6;
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--bg1) 94%, transparent);
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+
+.bt-minimap {
+  padding: 3px;
+  line-height: 0;
+}
+
+.bt-minimap svg {
+  display: block;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+}
+
+.bt-minimap-item {
+  fill: color-mix(in oklab, var(--text-dim) 45%, transparent);
+}
+
+.bt-minimap-item.is-outline {
+  fill: none;
+  stroke: color-mix(in oklab, var(--text-dim) 60%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 3 2;
+}
+
+.bt-minimap-item.is-dim {
+  opacity: 0.25;
+}
+
+.bt-minimap-view {
+  fill: color-mix(in oklab, var(--accent) 12%, transparent);
+  stroke: var(--accent);
+  stroke-width: 1.25;
+  cursor: grab;
+}
+
+.bt-minimap svg:active .bt-minimap-view {
+  cursor: grabbing;
+}
+
+/* A badge straddling the panel's top-right corner, outside the drawing, so it
+ * never covers the content or the viewport rectangle. */
+.bt-minimap-hide {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg2);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  color: var(--text-dim);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.bt-minimap:hover .bt-minimap-hide,
+.bt-minimap-hide:focus-visible {
+  opacity: 1;
+}
+
+.bt-minimap-hide:hover {
+  color: var(--text);
+}
+
+.bt-minimap-show {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.bt-minimap-show:hover {
+  color: var(--text);
+}

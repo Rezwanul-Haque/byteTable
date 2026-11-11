@@ -339,6 +339,11 @@ export function BoardCanvas(props: BoardCanvasProps) {
     // Form controls and anything marked no-drag (inline buttons, the inline
     // editor) own their own pointer behaviour.
     if (target.closest("textarea,input,select,[data-nodrag]")) return;
+    // Every gesture below preventDefault()s, which also stops the press from
+    // collapsing a text selection the way a normal click would. Drop any that
+    // got made anyway (a ⌘A in the inspector, a drag from outside the board),
+    // or it outlives every click on the canvas.
+    window.getSelection()?.removeAllRanges();
 
     const p = toWorld(e);
     const objectEl = target.closest<HTMLElement>("[data-oid]");

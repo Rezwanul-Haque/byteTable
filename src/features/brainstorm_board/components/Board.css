@@ -175,7 +175,7 @@
 
 /* ---------------------------------------------------------------- stage --- */
 /* `container-type: inline-size` so the floating bars respond to the STAGE's
-   width, not the window's: opening the inspector narrows the canvas by 272px
+   width, not the window's: pinning the inspector narrows the canvas by 272px
    and the overlays have to compact for that, not for a resize. */
 .bb-stage {
   flex: 1;
@@ -1070,9 +1070,23 @@ g.sel .bb-ink {
 }
 
 .bb-diff-l {
+  /* A button: it opens the "Compare against" drawer. */
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  margin: 0 -4px;
+  border-radius: 6px;
+  cursor: pointer;
   max-width: 230px;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.bb-diff-l:hover {
+  background: var(--bg2);
+  color: var(--text);
 }
 
 .bb-dot {
@@ -1269,6 +1283,125 @@ g.sel .bb-ink {
   display: flex;
   flex-direction: column;
   gap: 9px;
+}
+
+/* ------------------------------------------------- side rail + panels --- */
+/* Unpinned, the inspector is this icon rail — the tool rail's mirror — and the
+   panels below float over the canvas instead of narrowing it. */
+.bb-srail {
+  width: 44px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 0;
+  background: var(--bg1);
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.bb-srail-fill {
+  flex: 1;
+}
+
+.bb-srail-n {
+  position: absolute;
+  top: -1px;
+  right: -3px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  line-height: 14px;
+  text-align: center;
+  color: var(--text-dim);
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  pointer-events: none;
+}
+
+.bb-tool.on .bb-srail-n {
+  color: var(--accent);
+}
+
+.bb-panel {
+  position: relative;
+  display: flex;
+}
+
+.bb-panel.docked {
+  flex: none;
+}
+
+.bb-panel.float {
+  position: absolute;
+  top: 8px;
+  right: 52px;
+  /* Ends above the diff bar, so "Generate DDL" stays reachable while editing. */
+  max-height: calc(100% - 64px);
+  z-index: 9;
+  /* A column, so the inspector inside can shrink below its content and
+     scroll once the panel hits its max-height. */
+  flex-direction: column;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg1);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.bb-panel.float .bb-insp {
+  border-left: none;
+  background: none;
+  min-height: 0;
+  flex: 0 1 auto;
+}
+
+.bb-panel.float.bb-drawer .bb-insp {
+  padding-top: 8px;
+}
+
+/* Opened from the rail's foot: anchored low, but above the diff bar so
+   "Generate DDL" is never covered. */
+.bb-panel.float.bb-drawer.low {
+  top: auto;
+  bottom: 56px;
+}
+
+/* Room for the pin in the corner. */
+.bb-panel .bb-insp-h,
+.bb-drawer .bb-sec:first-child {
+  padding-right: 28px;
+}
+
+.bb-pin {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  z-index: 1;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.bb-pin:hover {
+  background: var(--bg2);
+  color: var(--text);
+}
+
+.bb-pin[aria-pressed="true"] {
+  color: var(--accent);
 }
 
 .bb-insp-h {

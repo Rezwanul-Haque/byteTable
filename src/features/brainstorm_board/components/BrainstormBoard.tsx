@@ -62,7 +62,16 @@ import { useBoardDoc } from "../hooks/useBoardDoc";
 import { useBoardLive } from "../hooks/useBoardLive";
 import { BoardCanvas, type EraseTarget } from "./BoardCanvas";
 import { BoardDdlSheet } from "./BoardDdlSheet";
-import { BoardInspector } from "./BoardInspector";
+import {
+  BoardActions,
+  BoardHead,
+  BoardInspector,
+  CompareSection,
+  GroupsSection,
+  LiveTablesSection,
+  ShortcutsSection,
+} from "./BoardInspector";
+import { BoardSideRail, type RailDrawer } from "./BoardSideRail";
 import "./Board.css";
 
 /** Breathing room left around the content when fitting. */
@@ -130,15 +139,19 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
   const [flowFlyout, setFlowFlyout] = useState(false);
   const [exportMenu, setExportMenu] = useState(false);
   const [exporting, setExporting] = useState<Set<string> | null>(null);
-  const [inspectorOpen, setInspectorOpen] = useState(initial.inspectorOpen);
+  const [inspectorPinned, setInspectorPinned] = useState(initial.inspectorPinned);
+  // Which rail drawer is open while the inspector is unpinned. Transient: a
+  // returning tab comes back to the bare rail.
+  const [drawer, setDrawer] = useState<RailDrawer | null>(null);
+  const [keysUnseen, setKeysUnseen] = useState(() => !readKeysSeen());
   const spaceRef = useRef(false);
 
   // Write through on change rather than on unmount: an unmount cleanup would
   // have to chase the latest value through refs for no gain, and nothing
   // subscribes to this store.
   useEffect(() => {
-    writeBoardViewState(tabId, { view, selection, activeLayer, tool, inspectorOpen });
-  }, [tabId, view, selection, activeLayer, tool, inspectorOpen]);
+    writeBoardViewState(tabId, { view, selection, activeLayer, tool, inspectorPinned });
+  }, [tabId, view, selection, activeLayer, tool, inspectorPinned]);
 
   // Read once, so the comparison source can be seeded from the stored board in
   // the same render the document is — adopting it in an effect afterwards would
@@ -581,20 +594,31 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
     writeBoardViewState(tabId, { fitted: true });
     fit();
   }, [sizes, fit, tabId, isEmpty]);
-  // Opening or closing the inspector changes the viewport width, so re-fit —
+  // Pinning or unpinning the inspector changes the viewport width, so re-fit —
   // but only on an actual TOGGLE. Firing on mount too would throw away the view
-  // a returning tab just restored.
-  const lastInspectorOpen = useRef(inspectorOpen);
+  // a returning tab just restored. The floating panel and drawers overlay the
+  // canvas, so they never get here.
+  const lastInspectorPinned = useRef(inspectorPinned);
   useEffect(() => {
-    if (lastInspectorOpen.current === inspectorOpen) return;
-    lastInspectorOpen.current = inspectorOpen;
+    if (lastInspectorPinned.current === inspectorPinned) return;
+    lastInspectorPinned.current = inspectorPinned;
     if (!fitted.current) return;
     const timer = setTimeout(() => fit(), 30);
     return () => clearTimeout(timer);
     // `fit` changes identity with every measurement; depending on it here would
     // re-fit on content changes, which is not what toggling the panel means.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inspectorOpen]);
+  }, [inspectorPinned]);
+
+  /** `?` and the rail's keyboard icon: toggle the shortcuts drawer (or, with
+   *  the panel pinned, there is nothing to open — the list is already shown). */
+  const openKeys = useCallback(() => {
+    if (keysUnseen) {
+      setKeysUnseen(false);
+      writeKeysSeen();
+    }
+    if (!inspectorPinned) setDrawer((open) => (open === "keys" ? null : "keys"));
+  }, [inspectorPinned, keysUnseen]);
 
   // --- groups ----------------------------------------------------------
   const groupSelection = useCallback(
@@ -779,8 +803,18 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
         return;
       }
       if (e.key === "Escape") {
+        // A drawer is the topmost thing on the board: Esc dismisses it alone.
+        if (drawer) {
+          setDrawer(null);
+          return;
+        }
         setSelection({ ids: [], edge: null });
         setToolRaw("select");
+        return;
+      }
+      if (e.key === "?") {
+        e.preventDefault();
+        openKeys();
         return;
       }
       if (e.key === "Enter" && selection.ids.length === 1) {
@@ -828,6 +862,8 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
     selectAll,
     setTool,
     setEditingId,
+    drawer,
+    openKeys,
   ]);
 
   // Close the flyout / export menu on any outside press.
@@ -843,6 +879,23 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
     window.addEventListener("pointerdown", close);
     return () => window.removeEventListener("pointerdown", close);
   }, [exportMenu]);
+  // The drawer closes on a press anywhere but itself and the controls that
+  // open it (those toggle it themselves).
+  useEffect(() => {
+    if (!drawer) return;
+    const close = (e: PointerEvent) => {
+      if (e.target instanceof Element && e.target.closest(".bb-drawer,.bb-srail,.bb-diff-l"))
+        return;
+      setDrawer(null);
+    };
+    window.addEventListener("pointerdown", close);
+    return () => window.removeEventListener("pointerdown", close);
+  }, [drawer]);
+  // A selection brings up the object inspector, which takes the drawer's place.
+  const hasSelection = selection.ids.length > 0 || selection.edge !== null;
+  useEffect(() => {
+    if (hasSelection) setDrawer(null);
+  }, [hasSelection]);
 
   const counts = layerCounts(doc);
 
@@ -874,6 +927,96 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
     patch: Parameters<typeof patchGroupIn>[2],
     withHistory = true,
   ) => apply((d) => patchGroupIn(d, groupId, patch), withHistory);
+
+  const liveLoading = liveSource === "workspace" && workspaceLive.loading;
+  const pinButton = (
+    <button
+      type="button"
+      className="bb-pin"
+      title={inspectorPinned ? t("board.rail.unpin") : t("board.rail.pin")}
+      aria-label={inspectorPinned ? t("board.rail.unpin") : t("board.rail.pin")}
+      aria-pressed={inspectorPinned}
+      onClick={() => {
+        setDrawer(null);
+        setInspectorPinned((pinned) => !pinned);
+      }}
+    >
+      <Icon name="push_pin" size={14} fill={inspectorPinned ? 1 : 0} />
+    </button>
+  );
+
+  // The object inspector, docked when pinned or floating while something is
+  // selected.
+  const inspector = (
+    <BoardInspector
+      doc={doc}
+      selection={selection}
+      apply={apply}
+      setSelection={setSelection}
+      live={live}
+      liveLabel={liveLabel}
+      liveSource={liveSource}
+      setLiveSource={setLiveSource}
+      liveLoading={liveLoading}
+      onAddLive={onAddLive}
+      onPromote={onPromote}
+      onJump={onJump}
+      isEmpty={isEmpty}
+      onLoadSample={onLoadSample}
+      onClear={onClear}
+      diffInfo={diffInfo}
+      onGroup={groupSelection}
+      onUngroup={(groupId) => {
+        apply((d) => ungroup(d, groupId));
+        toast(t("board.toast.ungrouped"), "ok");
+      }}
+      patchGroup={patchGroup}
+      onExport={(target, format) => void exportImage(target, format)}
+      onFocusGroup={focusGroup}
+    />
+  );
+
+  /** One board-level section, alone in a rail drawer. */
+  const drawerBody = (which: RailDrawer) => {
+    switch (which) {
+      case "compare":
+        return (
+          <CompareSection
+            liveSource={liveSource}
+            setLiveSource={setLiveSource}
+            liveLabel={liveLabel}
+          />
+        );
+      case "tables":
+        return (
+          <LiveTablesSection
+            doc={doc}
+            live={live}
+            liveLabel={liveLabel}
+            liveLoading={liveLoading}
+            onAddLive={onAddLive}
+          />
+        );
+      case "groups":
+        return (
+          <GroupsSection
+            doc={doc}
+            setSelection={setSelection}
+            onFocusGroup={focusGroup}
+            onExport={(target, format) => void exportImage(target, format)}
+          />
+        );
+      case "keys":
+        return <ShortcutsSection />;
+      case "board":
+        return (
+          <>
+            <BoardHead name={doc.name} />
+            <BoardActions isEmpty={isEmpty} onLoadSample={onLoadSample} onClear={onClear} />
+          </>
+        );
+    }
+  };
 
   return (
     <div
@@ -1042,14 +1185,6 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
           >
             <Icon name={exporting ? "hourglass_top" : "download"} size={16} />
           </button>
-          <button
-            type="button"
-            onClick={() => setInspectorOpen((open) => !open)}
-            title={inspectorOpen ? t("board.zoom.hideInspector") : t("board.zoom.showInspector")}
-            className={inspectorOpen ? "on" : undefined}
-          >
-            <Icon name={inspectorOpen ? "right_panel_close" : "right_panel_open"} size={16} />
-          </button>
         </div>
 
         {!isEmpty && !exporting ? (
@@ -1138,9 +1273,18 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
         {liveSource !== "none" ? (
           <div className="bb-diffbar">
             <Icon name="difference" size={15} style={{ color: "var(--accent)" }} />
-            <span className="bb-diff-l">
+            <button
+              type="button"
+              className="bb-diff-l"
+              title={t("board.diff.changeSource")}
+              onClick={() => {
+                if (inspectorPinned) return;
+                setSelection({ ids: [], edge: null });
+                setDrawer("compare");
+              }}
+            >
               {t("board.diff.vs")} <b>{liveLabel}</b>
-            </span>
+            </button>
             <span>
               <i className="bb-dot" style={{ background: "var(--accent)" }} />
               <b>+{diff.creates.length}</b> {t("board.diff.new")}
@@ -1162,34 +1306,41 @@ export function BrainstormBoard(props: BrainstormBoardProps) {
         ) : null}
       </div>
 
-      {inspectorOpen ? (
-        <BoardInspector
-          doc={doc}
-          selection={selection}
-          apply={apply}
-          setSelection={setSelection}
-          live={live}
-          liveLabel={liveLabel}
-          liveSource={liveSource}
-          setLiveSource={setLiveSource}
-          liveLoading={liveSource === "workspace" && workspaceLive.loading}
-          onAddLive={onAddLive}
-          onPromote={onPromote}
-          onJump={onJump}
-          isEmpty={isEmpty}
-          onLoadSample={onLoadSample}
-          onClear={onClear}
-          diffInfo={diffInfo}
-          onGroup={groupSelection}
-          onUngroup={(groupId) => {
-            apply((d) => ungroup(d, groupId));
-            toast(t("board.toast.ungrouped"), "ok");
-          }}
-          patchGroup={patchGroup}
-          onExport={(target, format) => void exportImage(target, format)}
-          onFocusGroup={focusGroup}
-        />
-      ) : null}
+      {inspectorPinned ? (
+        <div className="bb-panel docked">
+          {pinButton}
+          {inspector}
+        </div>
+      ) : (
+        <>
+          <BoardSideRail
+            drawer={drawer}
+            setDrawer={setDrawer}
+            onPin={() => {
+              setDrawer(null);
+              setInspectorPinned(true);
+            }}
+            comparing={liveSource !== "none"}
+            liveCount={liveLoading ? null : Object.keys(live).length}
+            groupCount={doc.groups.length}
+            diffCount={diff.count}
+            keysUnseen={keysUnseen}
+          />
+          {hasSelection && !exporting ? (
+            <div className="bb-panel float">
+              {pinButton}
+              {inspector}
+            </div>
+          ) : drawer ? (
+            // A drawer opens beside its icon: the ⋯ menu lives at the rail's
+            // foot, so its drawer rises from the bottom instead of the top.
+            <div className={"bb-panel float bb-drawer" + (drawer === "board" ? " low" : "")}>
+              {pinButton}
+              <div className="bb-insp">{drawerBody(drawer)}</div>
+            </div>
+          ) : null}
+        </>
+      )}
 
       {ddlOpen ? (
         <BoardDdlSheet
@@ -1272,4 +1423,24 @@ function FlowFlyout({
       ) : null}
     </div>
   );
+}
+
+/** Whether the user has opened the shortcuts list on any board. Browser storage
+ *  is a convenience here — when it is unavailable the hint simply shows again. */
+const KEYS_SEEN = "bt.board.keysSeen";
+
+function readKeysSeen(): boolean {
+  try {
+    return localStorage.getItem(KEYS_SEEN) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeKeysSeen(): void {
+  try {
+    localStorage.setItem(KEYS_SEEN, "1");
+  } catch {
+    // Not persisted; the hint returns next session.
+  }
 }

@@ -248,7 +248,13 @@
 [data-material] .ri-dt-yrmenu,
 [data-material] .ri-copyrow-menu,
 [data-material] .rc-kf,
-[data-material] .ts-sort-pop {
+[data-material] .ts-sort-pop,
+[data-material] .bb-layers,
+[data-material] .bb-zoom,
+[data-material] .bb-diffbar,
+[data-material] .bb-export,
+[data-material] .bb-fly,
+[data-material] .bb-panel.float {
   background: var(--glass-float-bg);
   backdrop-filter: var(--glass-float-filter);
   -webkit-backdrop-filter: var(--glass-float-filter);

@@ -292,7 +292,13 @@
 [data-material="liquid"] .oe-actionbar,
 [data-material="liquid"] .map-export-menu,
 [data-material="liquid"] .rc-kf,
-[data-material="liquid"] .ts-sort-pop {
+[data-material="liquid"] .ts-sort-pop,
+[data-material="liquid"] .bb-layers,
+[data-material="liquid"] .bb-zoom,
+[data-material="liquid"] .bb-diffbar,
+[data-material="liquid"] .bb-export,
+[data-material="liquid"] .bb-fly,
+[data-material="liquid"] .bb-panel.float {
   background: var(--lg-float);
   border-color: transparent;
   backdrop-filter: var(--lg-filter-float);

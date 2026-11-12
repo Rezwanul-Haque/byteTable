@@ -326,188 +326,34 @@ export function BoardInspector(props: BoardInspectorProps) {
   }
 
   // --- nothing selected: the board itself ------------------------------
+  // Only reached when the panel is pinned: unpinned, the board-level sections
+  // are reached one at a time from the side rail (`BoardSideRail`).
   if (!object) {
-    const onBoard = new Set(tables.map((t) => t.name));
-    const liveNames = Object.entries(live).sort(([a], [b]) => a.localeCompare(b));
     return (
       <div className="bb-insp">
-        <Head icon="draw" title={doc.name} sub={t("board.insp.boardSub")} />
-        <Section>{t("board.sec.compare")}</Section>
-        <div className="bb-seg">
-          {(
-            [
-              ["sample", t("board.source.sample")],
-              ["workspace", t("board.source.workspace")],
-              ["none", t("board.source.none")],
-            ] as [LiveSourceId, string][]
-          ).map(([value, label]) => (
-            <button
-              type="button"
-              key={value}
-              className={"bb-seg-btn" + (liveSource === value ? " active" : "")}
-              onClick={() => setLiveSource(value)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="bb-hint">
-          {liveSource === "none"
-            ? t("board.insp.standalone")
-            : t("board.insp.comparedWith", { source: liveLabel })}
-        </div>
+        <BoardHead name={doc.name} />
+        <CompareSection
+          liveSource={liveSource}
+          setLiveSource={setLiveSource}
+          liveLabel={liveLabel}
+        />
         {liveSource !== "none" ? (
-          <>
-            <Section>
-              {t("board.sec.liveTables")}
-              <em>{liveLoading ? "…" : liveNames.length}</em>
-            </Section>
-            {liveLoading ? (
-              <div className="bb-hint">{t("board.insp.readingSchema")}</div>
-            ) : liveNames.length === 0 ? (
-              <div className="bb-hint">{t("board.insp.noTables", { source: liveLabel })}</div>
-            ) : (
-              <div className="bb-live">
-                {liveNames.map(([table, columns]) => (
-                  <div key={table} className="bb-live-row">
-                    <Icon name="table_rows" size={14} />
-                    <span className="bb-live-n">{table}</span>
-                    <em>{t("board.insp.cols", { count: columns.length })}</em>
-                    {onBoard.has(table) ? (
-                      <span className="bb-live-on">{t("board.insp.onBoard")}</span>
-                    ) : (
-                      <button
-                        type="button"
-                        className="bb-mini"
-                        onClick={() => onAddLive(table)}
-                        title={t("board.insp.addLive")}
-                      >
-                        <Icon name="add" size={13} />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
+          <LiveTablesSection
+            doc={doc}
+            live={live}
+            liveLabel={liveLabel}
+            liveLoading={liveLoading}
+            onAddLive={onAddLive}
+          />
         ) : null}
-        <Section>
-          {t("board.sec.groups")}
-          <em>{doc.groups.length}</em>
-        </Section>
-        {doc.groups.length > 0 ? (
-          <div className="bb-live">
-            {doc.groups.map((g) => (
-              <div
-                key={g.id}
-                className="bb-live-row bb-grp-row"
-                onClick={() =>
-                  setSelection({ ids: g.ids.filter((id) => doc.objects[id]), edge: null })
-                }
-                title={t("board.insp.selectGroup")}
-              >
-                <i className="bb-dot" style={{ background: g.color, marginRight: 0 }} />
-                <span className="bb-live-n" style={{ fontFamily: "var(--ui)" }}>
-                  {g.name}
-                </span>
-                <em>{g.ids.length}</em>
-                <button
-                  type="button"
-                  className="bb-mini"
-                  title={t("board.group.focus")}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onFocusGroup(g.id);
-                  }}
-                >
-                  <Icon name="center_focus_strong" size={13} />
-                </button>
-                <button
-                  type="button"
-                  className="bb-mini"
-                  title={t("board.export.png")}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onExport({ kind: "group", id: g.id }, "png");
-                  }}
-                >
-                  <Icon name="download" size={13} />
-                </button>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="bb-hint">
-            {t("board.insp.groupsEmptyBefore")} <Kbd>⌘G</Kbd> {t("board.insp.groupsEmptyAfter")}
-          </div>
-        )}
-        <Section>{t("board.sec.shortcuts")}</Section>
-        <div className="bb-keys">
-          <span>
-            <kbd>V</kbd>select
-          </span>
-          <span>
-            <kbd>P</kbd>pen
-          </span>
-          <span>
-            <kbd>N</kbd>sticky
-          </span>
-          <span>
-            <kbd>E</kbd>sketch
-          </span>
-          <span>
-            <kbd>C</kbd>connect
-          </span>
-          <span>
-            <kbd>G</kbd>flow node
-          </span>
-          <span>
-            <kbd>D</kbd>table
-          </span>
-          <span>
-            <kbd>1</kbd>–<kbd>3</kbd>layer
-          </span>
-          <span>
-            <kbd>0</kbd>all
-          </span>
-          <span>
-            <kbd>Space</kbd>pan
-          </span>
-          <span>
-            <kbd>⌘Z</kbd>undo
-          </span>
-          <span>
-            <kbd>X</kbd>erase
-          </span>
-          <span>
-            <kbd>⌘A</kbd>select all
-          </span>
-          <span>
-            <kbd>⌘G</kbd>group
-          </span>
-          <span>
-            <kbd>⌫</kbd>delete
-          </span>
-          <span>
-            <kbd>⌘ wheel</kbd>zoom
-          </span>
-        </div>
-        <div className="bb-insp-acts">
-          {/* The example is an action, never a default: a new board is blank, and
-              this is how you ask for the demonstration. Both directions are one
-              ⌘Z away, so neither needs a confirm. */}
-          {isEmpty ? (
-            <button type="button" className="bb-btn" onClick={onLoadSample}>
-              <Icon name="auto_awesome" size={14} />
-              Load the example board
-            </button>
-          ) : (
-            <button type="button" className="bb-btn danger" onClick={onClear}>
-              <Icon name="restart_alt" size={14} />
-              Clear the board
-            </button>
-          )}
-        </div>
+        <GroupsSection
+          doc={doc}
+          setSelection={setSelection}
+          onFocusGroup={onFocusGroup}
+          onExport={onExport}
+        />
+        <ShortcutsSection />
+        <BoardActions isEmpty={isEmpty} onLoadSample={onLoadSample} onClear={onClear} />
       </div>
     );
   }
@@ -852,6 +698,269 @@ export function BoardInspector(props: BoardInspectorProps) {
       ) : null}
       {object.type === "frame" ? <div className="bb-hint">{t("board.insp.frameHint")}</div> : null}
       <div className="bb-insp-acts">{deleteButton}</div>
+    </div>
+  );
+}
+
+// --- board-level sections ------------------------------------------------
+// The nothing-selected panel, split so the side rail can show each one on its
+// own. Every section carries its own heading, so it reads the same docked in
+// the pinned panel or alone in a rail drawer.
+
+/** The board's own title block. */
+export function BoardHead({ name }: { name: string }) {
+  const t = useT();
+  return <Head icon="draw" title={name} sub={t("board.insp.boardSub")} />;
+}
+
+export function CompareSection({
+  liveSource,
+  setLiveSource,
+  liveLabel,
+}: {
+  liveSource: LiveSourceId;
+  setLiveSource: (source: LiveSourceId) => void;
+  liveLabel: string;
+}) {
+  const t = useT();
+  return (
+    <>
+      <Section>{t("board.sec.compare")}</Section>
+      <div className="bb-seg">
+        {(
+          [
+            ["sample", t("board.source.sample")],
+            ["workspace", t("board.source.workspace")],
+            ["none", t("board.source.none")],
+          ] as [LiveSourceId, string][]
+        ).map(([value, label]) => (
+          <button
+            type="button"
+            key={value}
+            className={"bb-seg-btn" + (liveSource === value ? " active" : "")}
+            onClick={() => setLiveSource(value)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="bb-hint">
+        {liveSource === "none"
+          ? t("board.insp.standalone")
+          : t("board.insp.comparedWith", { source: liveLabel })}
+      </div>
+    </>
+  );
+}
+
+export function LiveTablesSection({
+  doc,
+  live,
+  liveLabel,
+  liveLoading,
+  onAddLive,
+}: {
+  doc: BoardDoc;
+  live: LiveSchema;
+  liveLabel: string;
+  liveLoading: boolean;
+  onAddLive: (table: string) => void;
+}) {
+  const t = useT();
+  const onBoard = new Set(boardTables(doc).map((table) => table.name));
+  const liveNames = Object.entries(live).sort(([a], [b]) => a.localeCompare(b));
+  return (
+    <>
+      <Section>
+        {t("board.sec.liveTables")}
+        <em>{liveLoading ? "…" : liveNames.length}</em>
+      </Section>
+      {liveLoading ? (
+        <div className="bb-hint">{t("board.insp.readingSchema")}</div>
+      ) : liveNames.length === 0 ? (
+        <div className="bb-hint">{t("board.insp.noTables", { source: liveLabel })}</div>
+      ) : (
+        <div className="bb-live">
+          {liveNames.map(([table, columns]) => (
+            <div key={table} className="bb-live-row">
+              <Icon name="table_rows" size={14} />
+              <span className="bb-live-n">{table}</span>
+              <em>{t("board.insp.cols", { count: columns.length })}</em>
+              {onBoard.has(table) ? (
+                <span className="bb-live-on">{t("board.insp.onBoard")}</span>
+              ) : (
+                <button
+                  type="button"
+                  className="bb-mini"
+                  onClick={() => onAddLive(table)}
+                  title={t("board.insp.addLive")}
+                >
+                  <Icon name="add" size={13} />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+export function GroupsSection({
+  doc,
+  setSelection,
+  onFocusGroup,
+  onExport,
+}: {
+  doc: BoardDoc;
+  setSelection: (selection: BoardSelection) => void;
+  onFocusGroup: (groupId: string) => void;
+  onExport: (target: ExportTarget, format: ImageFormat) => void;
+}) {
+  const t = useT();
+  return (
+    <>
+      <Section>
+        {t("board.sec.groups")}
+        <em>{doc.groups.length}</em>
+      </Section>
+      {doc.groups.length > 0 ? (
+        <div className="bb-live">
+          {doc.groups.map((g) => (
+            <div
+              key={g.id}
+              className="bb-live-row bb-grp-row"
+              onClick={() =>
+                setSelection({ ids: g.ids.filter((id) => doc.objects[id]), edge: null })
+              }
+              title={t("board.insp.selectGroup")}
+            >
+              <i className="bb-dot" style={{ background: g.color, marginRight: 0 }} />
+              <span className="bb-live-n" style={{ fontFamily: "var(--ui)" }}>
+                {g.name}
+              </span>
+              <em>{g.ids.length}</em>
+              <button
+                type="button"
+                className="bb-mini"
+                title={t("board.group.focus")}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onFocusGroup(g.id);
+                }}
+              >
+                <Icon name="center_focus_strong" size={13} />
+              </button>
+              <button
+                type="button"
+                className="bb-mini"
+                title={t("board.export.png")}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onExport({ kind: "group", id: g.id }, "png");
+                }}
+              >
+                <Icon name="download" size={13} />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="bb-hint">
+          {t("board.insp.groupsEmptyBefore")} <Kbd>⌘G</Kbd> {t("board.insp.groupsEmptyAfter")}
+        </div>
+      )}
+    </>
+  );
+}
+
+export function ShortcutsSection() {
+  const t = useT();
+  return (
+    <>
+      <Section>{t("board.sec.shortcuts")}</Section>
+      <div className="bb-keys">
+        <span>
+          <kbd>V</kbd>select
+        </span>
+        <span>
+          <kbd>P</kbd>pen
+        </span>
+        <span>
+          <kbd>N</kbd>sticky
+        </span>
+        <span>
+          <kbd>E</kbd>sketch
+        </span>
+        <span>
+          <kbd>C</kbd>connect
+        </span>
+        <span>
+          <kbd>G</kbd>flow node
+        </span>
+        <span>
+          <kbd>D</kbd>table
+        </span>
+        <span>
+          <kbd>1</kbd>–<kbd>3</kbd>layer
+        </span>
+        <span>
+          <kbd>0</kbd>all
+        </span>
+        <span>
+          <kbd>Space</kbd>pan
+        </span>
+        <span>
+          <kbd>⌘Z</kbd>undo
+        </span>
+        <span>
+          <kbd>X</kbd>erase
+        </span>
+        <span>
+          <kbd>⌘A</kbd>select all
+        </span>
+        <span>
+          <kbd>⌘G</kbd>group
+        </span>
+        <span>
+          <kbd>⌫</kbd>delete
+        </span>
+        <span>
+          <kbd>⌘ wheel</kbd>zoom
+        </span>
+        <span>
+          <kbd>?</kbd>shortcuts
+        </span>
+      </div>
+    </>
+  );
+}
+
+export function BoardActions({
+  isEmpty,
+  onLoadSample,
+  onClear,
+}: {
+  isEmpty: boolean;
+  onLoadSample: () => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="bb-insp-acts">
+      {/* The example is an action, never a default: a new board is blank, and
+          this is how you ask for the demonstration. Both directions are one
+          ⌘Z away, so neither needs a confirm. */}
+      {isEmpty ? (
+        <button type="button" className="bb-btn" onClick={onLoadSample}>
+          <Icon name="auto_awesome" size={14} />
+          Load the example board
+        </button>
+      ) : (
+        <button type="button" className="bb-btn danger" onClick={onClear}>
+          <Icon name="restart_alt" size={14} />
+          Clear the board
+        </button>
+      )}
     </div>
   );
 }

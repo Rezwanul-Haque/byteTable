@@ -23,15 +23,13 @@ export interface BoardViewState {
   selection: BoardSelection;
   activeLayer: LayerFocus;
   tool: ToolId;
-  inspectorOpen: boolean;
+  /** Pinned, the inspector docks beside the canvas; unpinned (the default) it
+   *  collapses to the side rail and floats over the canvas only when needed. */
+  inspectorPinned: boolean;
   /** False until the board has fitted once, so returning to the tab does not
    *  re-fit over a view the user panned away from. */
   fitted: boolean;
 }
-
-/** Window width at or above which the inspector starts open. Below it the
- *  canvas needs the room more than the panel does. */
-const INSPECTOR_BREAKPOINT = 1280;
 
 const states = new Map<string, BoardViewState>();
 
@@ -53,7 +51,7 @@ export function defaultBoardViewState(): BoardViewState {
     selection: { ids: [], edge: null },
     activeLayer: "all",
     tool: "select",
-    inspectorOpen: window.innerWidth >= INSPECTOR_BREAKPOINT,
+    inspectorPinned: false,
     fitted: false,
   };
 }

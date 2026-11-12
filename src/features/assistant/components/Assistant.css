@@ -105,25 +105,28 @@ button.ai-ask-btn:hover {
   color: var(--on-accent);
   border-color: color-mix(in oklab, var(--on-accent) 35%, transparent);
 }
+/* Undo assistant edit: a 26px icon button beside the editor's format wand
+   (same size, so the two read as one cluster and cover as little code as
+   possible), accent-outlined so it is noticed right after an assistant edit. */
 .ai-undo {
   position: absolute;
   top: 8px;
-  right: 48px;
+  right: 46px;
   z-index: 3;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  justify-content: center;
+  width: 26px;
   height: 26px;
-  padding: 0 10px;
   border-radius: 7px;
-  font-size: 11.5px;
   color: var(--accent);
-  background: color-mix(in oklab, var(--bg2) 88%, transparent);
-  border: 1px solid color-mix(in oklab, var(--accent) 42%, var(--border));
+  background: var(--bg2);
+  border: 1px solid color-mix(in oklab, var(--accent) 50%, var(--border));
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   animation: ai-pop 0.16s ease-out;
 }
 .ai-undo:hover {
-  background: color-mix(in oklab, var(--accent) 12%, var(--bg2));
+  background: color-mix(in oklab, var(--accent) 14%, var(--bg2));
 }
 
 /* destination: accent = loopback, amber = leaves the machine */
@@ -2030,4 +2033,12 @@ body.bt-reduce-transparency .ai-suggest {
 .ai-set-scope > .msym {
   flex: none;
   color: var(--text-faint);
+}
+
+/* Undo sits over the code like the format wand: a solid surface so a selected
+   or highlighted line never shows through (--bg2 is translucent on glass). */
+[data-material] .sql-editor-main .ai-undo {
+  background: rgba(24, 26, 34, 0.96);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }

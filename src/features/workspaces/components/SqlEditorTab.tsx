@@ -1110,9 +1110,10 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
                 setSqlText(tab.id, aiUndo);
                 setAiUndo(tab.id, null);
               }}
-              title={t("ai.undo.title")}
+              title={t("ai.undo") + " — " + t("ai.undo.title")}
+              aria-label={t("ai.undo")}
             >
-              <Icon name="undo" size={14} /> {t("ai.undo")}
+              <Icon name="undo" size={15} />
             </button>
           ) : null}
           <button

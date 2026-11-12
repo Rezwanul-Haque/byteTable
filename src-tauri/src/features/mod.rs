@@ -2,6 +2,7 @@
 //! its domain, application, ports, infrastructure, and command layers.
 
 pub mod app_metrics;
+pub mod assistant;
 pub mod browse;
 pub mod cassandra;
 pub mod connection_bundle;

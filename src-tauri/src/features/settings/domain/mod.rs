@@ -14,6 +14,8 @@
 //! missing keys filled from `DEFAULTS`, and unknown/removed keys are ignored
 //! (no `deny_unknown_fields`). This is the "merge over DEFAULTS" rule.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 /// One of the curated theme palettes. The renderer owns the actual color
@@ -184,6 +186,135 @@ fn default_true() -> bool {
     true
 }
 
+fn default_ai_provider() -> String {
+    "local".to_string()
+}
+fn default_ai_runtime() -> String {
+    "ollama".to_string()
+}
+fn default_ai_ollama_url() -> String {
+    "http://localhost:11434".to_string()
+}
+fn default_ai_lm_url() -> String {
+    "http://localhost:1234/v1".to_string()
+}
+fn default_ai_custom_url() -> String {
+    "http://localhost:8080/v1".to_string()
+}
+fn default_ai_local_model() -> String {
+    "qwen2.5-coder:7b".to_string()
+}
+fn default_ai_vendor() -> String {
+    "anthropic".to_string()
+}
+fn default_ai_key_url() -> String {
+    "https://api.openai.com/v1".to_string()
+}
+fn default_ai_sample() -> u32 {
+    5
+}
+
+/// The assistant's keys (M44 §3), flattened into [`Settings`] so they keep
+/// their flat `ai*` names on the wire and in `settings.json`.
+///
+/// Mirrored like the rest of the contract, so the choices survive a
+/// localStorage clear. The assistant's commands receive these keys with each
+/// call; they do not read this copy back.
+///
+/// The choice-like keys (`aiProvider`, `aiRuntime`, `aiVendor`) are plain
+/// strings rather than enums on purpose: an unexpected value must degrade to
+/// "not ready" in the assistant, not fail the whole settings file's parse.
+///
+/// Secrets are NOT here — API keys live in the OS keychain (`aiCustomKey` only
+/// records that one exists).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiSettings {
+    /// The switch, per saved connection: `{ [connection id]: true }` means the
+    /// assistant is on in that connection's workspaces. Remembered, so a
+    /// reconnect comes back as it was; anything not in the map is off, and with
+    /// no workspace open nothing is on. While off the assistant makes no
+    /// network call at all.
+    #[serde(default)]
+    pub ai_enabled_for: BTreeMap<String, bool>,
+    /// `"local"` (a runtime URL) or `"key"` (a hosted API with the user's key).
+    #[serde(default = "default_ai_provider")]
+    pub ai_provider: String,
+    /// `"ollama"`, `"lmstudio"` or `"custom"`.
+    #[serde(default = "default_ai_runtime")]
+    pub ai_runtime: String,
+    #[serde(default = "default_ai_ollama_url")]
+    pub ai_ollama_url: String,
+    #[serde(default = "default_ai_lm_url")]
+    pub ai_lm_url: String,
+    /// Any OpenAI-compatible base URL.
+    #[serde(default = "default_ai_custom_url")]
+    pub ai_custom_url: String,
+    /// Free text; no discovery is assumed for a custom endpoint.
+    #[serde(default)]
+    pub ai_custom_model: String,
+    /// Whether an optional key for the custom URL is in the keychain.
+    #[serde(default)]
+    pub ai_custom_key: bool,
+    /// The selected Ollama model.
+    #[serde(default = "default_ai_local_model")]
+    pub ai_local_model: String,
+    /// The selected LM Studio model; empty = the first one it reports loaded.
+    #[serde(default)]
+    pub ai_lm_model: String,
+    /// `"anthropic"` or `"openai"` (OpenAI-compatible), for `aiProvider: "key"`.
+    #[serde(default = "default_ai_vendor")]
+    pub ai_vendor: String,
+    /// The hosted model; empty = the vendor's default.
+    #[serde(default)]
+    pub ai_key_model: String,
+    /// Base URL for the OpenAI-compatible key provider — OpenAI by default,
+    /// any compatible service (Groq, OpenRouter, Together, …) when edited.
+    #[serde(default = "default_ai_key_url")]
+    pub ai_key_url: String,
+    /// Include table/column comments in the schema context.
+    #[serde(default = "default_true")]
+    pub ai_comments: bool,
+    /// Rows per table when the per-message Rows switch is on (5 / 20 / 50).
+    #[serde(default = "default_ai_sample")]
+    pub ai_sample: u32,
+    /// Review before sending. Forced with rows and on production regardless.
+    #[serde(default = "default_true")]
+    pub ai_review: bool,
+    /// Keep the local prompt log.
+    #[serde(default = "default_true")]
+    pub ai_log: bool,
+    /// `{ [saved connection id]: true }` — production workspaces the user
+    /// allowed the assistant on.
+    #[serde(default)]
+    pub ai_allowed: BTreeMap<String, bool>,
+}
+
+impl Default for AiSettings {
+    fn default() -> Self {
+        Self {
+            ai_enabled_for: BTreeMap::new(),
+            ai_provider: default_ai_provider(),
+            ai_runtime: default_ai_runtime(),
+            ai_ollama_url: default_ai_ollama_url(),
+            ai_lm_url: default_ai_lm_url(),
+            ai_custom_url: default_ai_custom_url(),
+            ai_custom_model: String::new(),
+            ai_custom_key: false,
+            ai_local_model: default_ai_local_model(),
+            ai_lm_model: String::new(),
+            ai_vendor: default_ai_vendor(),
+            ai_key_model: String::new(),
+            ai_key_url: default_ai_key_url(),
+            ai_comments: true,
+            ai_sample: default_ai_sample(),
+            ai_review: true,
+            ai_log: true,
+            ai_allowed: BTreeMap::new(),
+        }
+    }
+}
+
 /// The full settings contract. Defaults mirror `DEFAULTS` in `settings.js` /
 /// `api.ts` exactly.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -278,6 +409,9 @@ pub struct Settings {
     pub hour12: bool,
     #[serde(default = "default_first_day")]
     pub first_day: FirstDay,
+    /// The assistant's keys (M44), flattened — see [`AiSettings`].
+    #[serde(flatten, default)]
+    pub ai: AiSettings,
 }
 
 impl Default for Settings {
@@ -310,6 +444,7 @@ impl Default for Settings {
             region: default_region(),
             hour12: false,
             first_day: default_first_day(),
+            ai: AiSettings::default(),
         }
     }
 }
@@ -421,6 +556,14 @@ mod tests {
             region: "ISO".to_string(),
             hour12: true,
             first_day: FirstDay::Sat,
+            ai: AiSettings {
+                ai_enabled_for: BTreeMap::from([("conn-1".to_string(), true)]),
+                ai_runtime: "custom".to_string(),
+                ai_custom_model: "sqlcoder".to_string(),
+                ai_sample: 20,
+                ai_allowed: BTreeMap::from([("conn-1".to_string(), true)]),
+                ..AiSettings::default()
+            },
         };
         let json = serde_json::to_string(&s).expect("serialize");
         let back: Settings = serde_json::from_str(&json).expect("deserialize");
@@ -462,6 +605,47 @@ mod tests {
                 ..Settings::default()
             }
         );
+    }
+
+    /// M44: the assistant ships off, and its keys keep their flat `ai*` names.
+    #[test]
+    fn assistant_keys_default_off_and_stay_flat() {
+        let s = Settings::default();
+        assert!(s.ai.ai_enabled_for.is_empty(), "off everywhere by default");
+        assert_eq!(s.ai.ai_provider, "local");
+        assert_eq!(s.ai.ai_ollama_url, "http://localhost:11434");
+        assert_eq!(s.ai.ai_sample, 5);
+        let json = serde_json::to_string(&s).expect("serialize");
+        assert!(json.contains(r#""aiEnabledFor":{}"#), "{json}");
+        assert!(
+            json.contains(r#""aiLmUrl":"http://localhost:1234/v1""#),
+            "{json}"
+        );
+        assert!(json.contains(r#""aiAllowed":{}"#), "{json}");
+        assert!(!json.contains(r#""ai":"#), "{json}");
+
+        let back: Settings =
+            serde_json::from_str(r#"{"aiEnabledFor":{"c1":true},"aiAllowed":{"p1":true}}"#)
+                .expect("de");
+        assert_eq!(back.ai.ai_enabled_for.get("c1"), Some(&true));
+        assert_eq!(back.ai.ai_allowed.get("p1"), Some(&true));
+        assert_eq!(back.ai.ai_runtime, "ollama");
+    }
+
+    /// Exactly what the renderer's `settingsSave` sends: every key, including
+    /// renderer-only ones the mirror doesn't model, through every shape the
+    /// IPC may hand it (a string, an owned `Value`, a borrowed `&Value`).
+    #[test]
+    fn the_renderers_full_payload_parses() {
+        let json = r##"{"theme":"liquidGlass","accent":"#2dd4a7","monoFont":"fira","uiFont":"plexSans","fontSize":13,"density":"comfortable","ligatures":true,"reduceMotion":false,"highlightRow":true,"relativeTime":false,"confirmProd":true,"defaultLimit":300,"sqlHistoryMax":30,"editorKeymap":"default","restoreTabs":true,"autoRefresh":true,"autoRefreshSec":10,"connectTimeoutSec":5,"showSystemSchemas":true,"scopeSwitcher":"dropdown","sidebarSide":"left","titlebarPosition":"topLeftIcon","macChrome":"native","wallpaper":"default","reduceTransparency":false,"locale":"en","region":"auto","hour12":false,"firstDay":"auto","aiEnabledFor":{"c1":true},"aiProvider":"local","aiRuntime":"ollama","aiOllamaUrl":"http://localhost:11434","aiLmUrl":"http://localhost:1234/v1","aiLmModel":"","aiCustomUrl":"http://localhost:8080/v1","aiCustomModel":"","aiCustomKey":false,"aiLocalModel":"qwen2.5-coder:7b","aiVendor":"anthropic","aiKeyModel":"","aiComments":true,"aiSample":5,"aiReview":true,"aiLog":true,"aiAllowed":{}}"##;
+        let s: Settings = serde_json::from_str(json).expect("renderer payload must parse");
+        assert_eq!(s.ai.ai_enabled_for.get("c1"), Some(&true));
+        assert_eq!(s.font_size, 13);
+        // Tauri's IPC hands commands a `serde_json::Value`, not a string.
+        let value: serde_json::Value = serde_json::from_str(json).unwrap();
+        // Tauri's IPC deserializes through a borrowed `&Value`.
+        let s = Settings::deserialize(&value).expect("IPC-shaped payload must parse");
+        assert_eq!(s.ai.ai_enabled_for.get("c1"), Some(&true));
     }
 
     #[test]

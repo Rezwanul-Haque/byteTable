@@ -133,7 +133,55 @@ export interface Settings {
   region: RegionId;
   hour12: boolean;
   firstDay: FirstDay;
+
+  // ---- AI assistant (M44 §3). Read by the BACKEND too: its hard gates
+  // (master switch, production allow-list, destination) decide from the disk
+  // mirror, so these keys must round-trip through `settings_save`. Secrets are
+  // not here — keys live in the OS keychain.
+  /**
+   * The switch, per saved connection: `{ [connection id]: true }` = on in that
+   * connection's workspaces. Remembered across reconnects; anything not in the
+   * map is off, and with no workspace open nothing is on. While off the
+   * assistant makes no network call at all.
+   */
+  aiEnabledFor: Record<string, boolean>;
+  /** A runtime URL, or a hosted API with the user's key. */
+  aiProvider: AiProvider;
+  aiRuntime: AiRuntime;
+  aiOllamaUrl: string;
+  aiLmUrl: string;
+  /** The LM Studio model; empty = the first one it reports loaded. */
+  aiLmModel: string;
+  /** Any OpenAI-compatible base URL. */
+  aiCustomUrl: string;
+  /** Free text; no discovery is assumed for a custom endpoint. */
+  aiCustomModel: string;
+  /** Whether an optional key for the custom URL is in the keychain. */
+  aiCustomKey: boolean;
+  /** The selected Ollama model. */
+  aiLocalModel: string;
+  aiVendor: AiVendor;
+  /** The hosted model; empty = the vendor's default. */
+  aiKeyModel: string;
+  /** Base URL for the OpenAI-compatible key provider: OpenAI by default, any
+   *  compatible service (Groq, OpenRouter, Together, …) when edited. */
+  aiKeyUrl: string;
+  /** Include table/column comments in the schema context. */
+  aiComments: boolean;
+  /** Rows per table when the per-message Rows switch is on. */
+  aiSample: AiSample;
+  /** Review before sending. Forced with rows and on production regardless. */
+  aiReview: boolean;
+  /** Keep the local prompt log. */
+  aiLog: boolean;
+  /** `{ [saved connection id]: true }` — production workspaces the user allowed. */
+  aiAllowed: Record<string, boolean>;
 }
+
+export type AiProvider = "local" | "key";
+export type AiRuntime = "ollama" | "lmstudio" | "custom";
+export type AiVendor = "anthropic" | "openai";
+export type AiSample = 5 | 20 | 50;
 
 /** The single source of truth for the contract shape and default values. */
 export const DEFAULTS: Settings = {
@@ -168,6 +216,24 @@ export const DEFAULTS: Settings = {
   region: "auto",
   hour12: false,
   firstDay: "auto",
+  aiEnabledFor: {},
+  aiProvider: "local",
+  aiRuntime: "ollama",
+  aiOllamaUrl: "http://localhost:11434",
+  aiLmUrl: "http://localhost:1234/v1",
+  aiLmModel: "",
+  aiCustomUrl: "http://localhost:8080/v1",
+  aiCustomModel: "",
+  aiCustomKey: false,
+  aiLocalModel: "qwen2.5-coder:7b",
+  aiVendor: "anthropic",
+  aiKeyModel: "",
+  aiKeyUrl: "https://api.openai.com/v1",
+  aiComments: true,
+  aiSample: 5,
+  aiReview: true,
+  aiLog: true,
+  aiAllowed: {},
 };
 
 /** Valid `region` ids, for validating a stored (or hand-edited) blob. */
@@ -176,6 +242,11 @@ const REGION_IDS = new Set<string>(REGIONS.map((r) => r.id));
 const FIRST_DAYS = new Set<string>(["auto", "mon", "sun", "sat"]);
 /** Valid `editorKeymap` ids. */
 const EDITOR_KEYMAPS = new Set<string>(["default", "vim"]);
+
+const AI_PROVIDERS = new Set<string>(["local", "key"]);
+const AI_RUNTIMES = new Set<string>(["ollama", "lmstudio", "custom"]);
+const AI_VENDORS = new Set<string>(["anthropic", "openai"]);
+const AI_SAMPLES = new Set<number>([5, 20, 50]);
 
 /**
  * The settings a profile starts from when NOTHING is stored — DEFAULTS, except
@@ -211,6 +282,14 @@ export function mergeSettings(stored: unknown): Settings {
   if (!REGION_IDS.has(merged.region)) merged.region = DEFAULTS.region;
   if (!FIRST_DAYS.has(merged.firstDay)) merged.firstDay = DEFAULTS.firstDay;
   if (!EDITOR_KEYMAPS.has(merged.editorKeymap)) merged.editorKeymap = DEFAULTS.editorKeymap;
+  // The assistant's choice keys are closed sets, and `aiAllowed` must be a
+  // plain map: `typeof null === "object"` would otherwise let a null through.
+  if (!AI_PROVIDERS.has(merged.aiProvider)) merged.aiProvider = DEFAULTS.aiProvider;
+  if (!AI_RUNTIMES.has(merged.aiRuntime)) merged.aiRuntime = DEFAULTS.aiRuntime;
+  if (!AI_VENDORS.has(merged.aiVendor)) merged.aiVendor = DEFAULTS.aiVendor;
+  if (!AI_SAMPLES.has(merged.aiSample)) merged.aiSample = DEFAULTS.aiSample;
+  if (!merged.aiAllowed || Array.isArray(merged.aiAllowed)) merged.aiAllowed = {};
+  if (!merged.aiEnabledFor || Array.isArray(merged.aiEnabledFor)) merged.aiEnabledFor = {};
   return merged;
 }
 

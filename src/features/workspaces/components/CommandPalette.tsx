@@ -26,6 +26,9 @@ import { isDiffable } from "../../schema_diff/handles";
 import { selectQueriesForConnection, useSavedQueriesStore } from "../../saved_queries/state";
 import { PRIV_SOURCES } from "../../privileges/api";
 import { useValueSearchStore } from "../../value_search/state";
+import { isAssistantEngine } from "../../assistant/logic";
+import { useAssistantStore } from "../../assistant/state";
+import { useSettingsStore } from "../../settings/state";
 import { useWorkspacesStore } from "../state";
 import type { Workspace } from "../types";
 import { homeSchema } from "../types";
@@ -50,6 +53,23 @@ interface Command {
 interface CommandPaletteProps {
   workspace: Workspace;
   onClose: () => void;
+}
+
+/**
+ * Hand a request to the assistant drawer of the workspace's SQL tab. The
+ * request goes through the assistant store: the SQL tab on screen picks it up
+ * at once, and when the active tab is something else a fresh SQL tab is opened
+ * and picks it up on mount. `text` asks the assistant that, through the
+ * drawer's normal review path.
+ */
+function askAssistantFrom(
+  activeIsSql: boolean,
+  openSqlTab: () => void,
+  what: "ask" | "panel",
+  text?: string,
+): void {
+  useAssistantStore.getState().requestOpen(what, text);
+  if (!activeIsSql) openSqlTab();
 }
 
 export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
@@ -90,6 +110,10 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
     workspace.schemas.some((s) => s.name === workspace.ui.schemaName)
       ? workspace.ui.schemaName
       : homeSchema(workspace)) ?? "main";
+
+  const activeIsSql =
+    (workspace.ui.tabs ?? []).find((tb) => tb.id === workspace.ui.activeTabId)?.kind === "sql";
+  const engine = workspace.info.engine;
 
   const commands = useMemo<Command[]>(() => {
     const tables = tablesMap[tablesKey(handleId, schemaName)]?.tables ?? [];
@@ -225,6 +249,32 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
       hint: t("ws.palette.historyHint"),
       run: () => emitCmd("query-history"),
     };
+    const askAssistant = (what: "ask" | "panel") => askAssistantFrom(activeIsSql, openSqlTab, what);
+    // M44: the assistant, for the SQL engines only. Ask / explain open the
+    // active SQL tab's drawer — or a fresh SQL tab that picks the request up.
+    const aiCmds: Command[] = isAssistantEngine(workspace.info.engine)
+      ? [
+          {
+            id: "cmd-ai-ask",
+            icon: "auto_awesome",
+            label: t("ai.palette.ask"),
+            hint: "⌘I",
+            run: () => askAssistant("ask"),
+          },
+          {
+            id: "cmd-ai-explain",
+            icon: "menu_book",
+            label: t("ai.palette.explain"),
+            run: () => askAssistant("panel"),
+          },
+          {
+            id: "cmd-ai-settings",
+            icon: "settings",
+            label: t("ai.palette.settings"),
+            run: () => useSettingsStore.getState().openSettings("ai"),
+          },
+        ]
+      : [];
     const snippets: Command = {
       id: "cmd-snippets",
       icon: "bolt",
@@ -266,6 +316,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
       savedList,
       queryHistory,
       snippets,
+      ...aiCmds,
       ...savedCmds,
     ];
   }, [
@@ -288,20 +339,35 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
     openPanel,
     openValueSearch,
     workspace.kind,
+    workspace.info.engine,
+    activeIsSql,
     t,
   ]);
 
   const trimmed = query.trim().toLowerCase();
-  const filtered = useMemo(
-    () =>
-      commands.filter(
-        (c) =>
-          trimmed === "" ||
-          c.label.toLowerCase().includes(trimmed) ||
-          (c.hint ?? "").toLowerCase().includes(trimmed),
-      ),
-    [commands, trimmed],
-  );
+  const asked = query.trim();
+  const filtered = useMemo(() => {
+    const hits = commands.filter(
+      (c) =>
+        trimmed === "" ||
+        c.label.toLowerCase().includes(trimmed) ||
+        (c.hint ?? "").toLowerCase().includes(trimmed),
+    );
+    // Nothing matched: the typed text becomes a question for the assistant
+    // (SQL engines only), so Enter still does something useful.
+    if (hits.length === 0 && asked !== "" && isAssistantEngine(engine)) {
+      return [
+        {
+          id: "cmd-ai-ask-text",
+          icon: "auto_awesome",
+          label: t("ai.palette.askFor", { text: asked }),
+          hint: t("ai.palette.askForHint"),
+          run: () => askAssistantFrom(activeIsSql, openSqlTab, "ask", asked),
+        },
+      ];
+    }
+    return hits;
+  }, [commands, trimmed, asked, engine, activeIsSql, openSqlTab, t]);
 
   const sel = Math.min(idx, Math.max(0, filtered.length - 1));
 

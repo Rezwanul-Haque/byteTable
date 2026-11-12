@@ -16,7 +16,7 @@ import { applyZoom } from "./zoom";
 
 /** The Settings modal's tabs. Lives here, not in the component, so any surface
  *  can ask for a specific one (the sidebar's language chip opens "language"). */
-export type SettingsTabId = "appearance" | "fonts" | "grid" | "language" | "behavior";
+export type SettingsTabId = "appearance" | "fonts" | "grid" | "language" | "behavior" | "ai";
 
 interface SettingsFeatureState {
   settings: Settings;
@@ -50,9 +50,13 @@ function persist(settings: Settings): void {
   applySettings(settings);
   applyZoom(settings.fontSize);
   writeCachedSettings(settings);
-  // Best-effort disk mirror. Swallows "not running inside Tauri" (plain browser
-  // dev) and real write errors alike; the in-memory state + cache stay valid.
-  void settingsSave(settings).catch(() => {});
+  // Best-effort disk mirror: the in-memory state + cache stay valid either way.
+  // A failure is logged rather than swallowed — the backend reads this copy
+  // (the connect timeout), so a mirror that silently stopped updating is a bug
+  // worth seeing. Plain browser dev (no Tauri) logs it too, harmlessly.
+  void settingsSave(settings).catch((err: unknown) => {
+    console.warn("settings: could not save the on-disk mirror", err);
+  });
   // Tell other windows to re-apply (desktop multi-window; no-op elsewhere).
   broadcastSettings(settings);
 }

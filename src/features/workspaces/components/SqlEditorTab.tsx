@@ -24,6 +24,12 @@
 // opener sits on the tab strip and must work with no query tab open — as does
 // the history drawer beside it.
 //
+// ASSISTANT (M44): the drawer (`AiPanel`) sits beside the editor with no
+// scrim; ⌘I / the Ask button opens it. Every assistant write to the buffer
+// goes through `aiEdit`, which keeps the previous text for the Undo pill. The
+// assistant never runs anything: "Apply & run" on a fix writes the fix, then
+// runs it once through the normal `run` path (and its production confirm).
+//
 // QUERY PARAMETERS: a buffer holding `:name` / `${name}` / `?` placeholders
 // grows a ParamBar under the toolbar, and every run RESOLVES the buffer through
 // `applyParams` before anything else touches it — so the statement splitter,
@@ -70,6 +76,12 @@ import { type EditorSchema } from "../sqlCompletion";
 import { ParamBar, ParamPrompt } from "./QueryParams";
 import { SqlCodeEditor, type SqlCodeEditorHandle } from "./SqlCodeEditor";
 import { SqlResultGrid } from "./SqlResultGrid";
+import { AiFix } from "../../assistant/components/AiFix";
+import { openAiSettings } from "../../assistant/openSettings";
+import { AiPanel, type AskRequest, type PlanRequest } from "../../assistant/components/AiPanel";
+import { useAssistant } from "../../assistant/hooks/useAssistant";
+import { isAssistantEngine } from "../../assistant/logic";
+import { useAssistantStore } from "../../assistant/state";
 import "./SqlEditorTab.css";
 
 type SqlTab = Extract<Tab, { kind: "sql" }>;
@@ -358,6 +370,63 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   }, [pop]);
 
   const text = tab.text;
+
+  // --- Assistant (M44) --------------------------------------------------------
+  // Only the SQL engines get an entry point; the connection it locks on is the
+  // SAVED one (the production allow-list is keyed by its id).
+  const aiConn = useMemo(
+    () => ({ id: workspace.saved.id, env: workspace.saved.env, name: workspace.saved.name }),
+    [workspace.saved.id, workspace.saved.env, workspace.saved.name],
+  );
+  const aiEnabledHere = isAssistantEngine(workspace.info.engine);
+  const { state: aiState } = useAssistant(aiConn);
+  const aiPanel = useAssistantStore((s) => !!s.open[tab.id]);
+  const setAiOpen = useAssistantStore((s) => s.setOpen);
+  const aiUndo = useAssistantStore((s) => s.undo[tab.id] ?? null);
+  const setAiUndo = useAssistantStore((s) => s.setUndo);
+  const [askNonce, setAskNonce] = useState(0);
+  const [planRequest, setPlanRequest] = useState<PlanRequest | null>(null);
+  const [askRequest, setAskRequest] = useState<AskRequest | null>(null);
+  // The text the assistant last wrote: the editor echoes an external value
+  // through onChange, and that echo must not count as the user typing.
+  const aiWrote = useRef<string | null>(null);
+  // Apply & run: the fixed statement waiting for the buffer to hold it.
+  const pendingRun = useRef<{ text: string; sql: string } | null>(null);
+
+  const openAsk = () => {
+    if (aiState === "on") {
+      setAiOpen(tab.id, true);
+      setAskNonce((n) => n + 1);
+    } else if (aiState === "locked") setAiOpen(tab.id, true);
+    else openAiSettings();
+  };
+  /** The one way the assistant writes to the editor; Undo restores `text`. */
+  const aiEdit = (next: string) => {
+    setAiUndo(tab.id, text);
+    aiWrote.current = next;
+    editorRef.current?.dismissCompletion();
+    setSqlText(tab.id, next);
+  };
+
+  /** The Ask button and ⌘I: open the drawer, or close it when it is open. */
+  const toggleAsk = () => (aiPanel ? setAiOpen(tab.id, false) : openAsk());
+
+  // ⌘I / Ctrl+I in the active SQL tab: the assistant. Capture phase, so the
+  // editor's own Mod-i (select parent syntax) never sees it first.
+  useEffect(() => {
+    if (!aiEnabledHere) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "i") {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleAsk();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+    // `toggleAsk` reads only the open flag, `aiState` and the tab id — the deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiEnabledHere, aiState, aiPanel, tab.id]);
 
   // --- Query parameters -----------------------------------------------------
   // The parameter LIST is derived from the buffer on every change and never
@@ -763,6 +832,28 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   useBtCmd("explain", runExplain);
   useBtCmd("save-query", () => setPop("save"));
   useBtCmd("open-sql-file", openFile);
+  // The palette's assistant requests (this tab on screen, or opened to receive
+  // one): open the drawer, and pass a typed question on to it.
+  const openRequest = useAssistantStore((s) => s.openRequest);
+  useEffect(() => {
+    if (!openRequest || !aiEnabledHere) return;
+    const r = useAssistantStore.getState().consumeOpenRequest();
+    if (r?.what === "ask") {
+      openAsk();
+      if (r.text) setAskRequest({ nonce: r.nonce, text: r.text });
+    } else if (r) setAiOpen(tab.id, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openRequest]);
+
+  // Apply & run (D4): run once the buffer holds the fixed text — exactly once.
+  useEffect(() => {
+    const p = pendingRun.current;
+    if (p && text === p.text) {
+      pendingRun.current = null;
+      run(p.sql);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text]);
 
   /**
    * Open the parameter prompt for the run ⌘↵ would have done, without running.
@@ -890,6 +981,30 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
         </div>
         <div style={{ flex: 1 }} />
 
+        {/* The assistant sits with the right-hand actions, as in the prototype:
+            after the spacer, before the file / save icons. */}
+        {aiEnabledHere ? (
+          // The same pill as Run: filled while the assistant is on, tonal when
+          // it is off or locked (the lock also turns it red). The shortcut is
+          // in the tooltip, as Run's is beside it.
+          <Btn
+            icon={aiState === "locked" ? "lock" : "auto_awesome"}
+            variant={aiState === "on" ? "filled" : "tonal"}
+            small
+            className={aiState === "locked" ? "ai-ask-locked" : undefined}
+            aria-pressed={aiPanel}
+            onClick={toggleAsk}
+            title={
+              aiState === "on"
+                ? t("ai.ask.btnTitle")
+                : aiState === "locked"
+                  ? t("ai.ask.btnLocked")
+                  : t("ai.ask.btnOff")
+            }
+          >
+            {t("ai.ask.btn")}
+          </Btn>
+        ) : null}
         {/* open a .sql/.txt file into the editor */}
         <IconBtn icon="folder_open" title={t("menu.file.openSqlFile")} onClick={openFile} />
 
@@ -986,6 +1101,20 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
         style={!editorGrows && tab.editorHeight != null ? { height: tab.editorHeight } : undefined}
       >
         <div className="sql-editor-main">
+          {aiUndo !== null ? (
+            <button
+              type="button"
+              className="ai-undo"
+              onClick={() => {
+                aiWrote.current = aiUndo;
+                setSqlText(tab.id, aiUndo);
+                setAiUndo(tab.id, null);
+              }}
+              title={t("ai.undo.title")}
+            >
+              <Icon name="undo" size={14} /> {t("ai.undo")}
+            </button>
+          ) : null}
           <button
             type="button"
             className="sql-format-fab"
@@ -998,7 +1127,13 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
           <SqlCodeEditor
             ref={editorRef}
             value={text}
-            onChange={(v) => setSqlText(tab.id, v)}
+            onChange={(v) => {
+              setSqlText(tab.id, v);
+              // The pill stays until the user types — the echo of an
+              // assistant write is not typing.
+              if (v !== aiWrote.current && aiUndo !== null) setAiUndo(tab.id, null);
+              aiWrote.current = null;
+            }}
             onRun={run}
             onRunBatch={(sql) => run(sql, { forceBatch: true })}
             onFormat={format}
@@ -1085,6 +1220,18 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
                   <Icon name="account_tree" size={13} /> {t("ws.sql.explainTab")}
                 </span>
                 <div style={{ flex: 1 }} />
+                {aiEnabledHere && aiState === "on" ? (
+                  <button
+                    type="button"
+                    className="ai-ask-btn slim"
+                    onClick={() => {
+                      setAiOpen(tab.id, true);
+                      setPlanRequest({ nonce: Date.now(), sql: activeExplainSql });
+                    }}
+                  >
+                    <Icon name="auto_awesome" size={13} /> {t("ai.plan.explainThis")}
+                  </button>
+                ) : null}
                 <span className="dim">{schemaName}</span>
               </div>
               {/* One explain tab per statement (only for a multi-statement
@@ -1165,6 +1312,32 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
                       onClick={() => goToStatement(activeRun.id)}
                       dangerouslySetInnerHTML={{ __html: previewHtml(activeRun.sql) }}
                     />
+                    {aiEnabledHere && error ? (
+                      <AiFix
+                        key={activeRun.id + "|" + error}
+                        conn={aiConn}
+                        handleId={workspace.handleId}
+                        schemaName={schemaName}
+                        engine={workspace.info.engine}
+                        sql={activeRun.sql}
+                        error={error}
+                        onApply={(fixed, andRun) => {
+                          // Replace just the failed statement when the buffer
+                          // still holds it; otherwise the fix becomes the buffer.
+                          const at = text.indexOf(activeRun.sql);
+                          const next =
+                            at >= 0
+                              ? text.slice(0, at) + fixed + text.slice(at + activeRun.sql.length)
+                              : fixed;
+                          aiEdit(next);
+                          if (andRun) pendingRun.current = { text: next, sql: fixed };
+                          else {
+                            clearSqlRuns(tab.id);
+                            toast(t("ai.fix.applied"), "ok");
+                          }
+                        }}
+                      />
+                    ) : null}
                   </div>
                 </div>
               )}
@@ -1211,6 +1384,37 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
             </>
           ) : null}
         </div>
+      ) : null}
+
+      {/* The shared drawer backdrop (as History / Saved use): dims the tab
+          behind the drawer and closes it on click. */}
+      {aiEnabledHere ? (
+        <div
+          className={"drawer-scrim" + (aiPanel ? " show" : "")}
+          onClick={() => setAiOpen(tab.id, false)}
+          aria-hidden="true"
+        />
+      ) : null}
+      {aiEnabledHere ? (
+        <AiPanel
+          tabId={tab.id}
+          wsKey={workspace.id}
+          open={aiPanel}
+          onClose={() => setAiOpen(tab.id, false)}
+          conn={aiConn}
+          handleId={workspace.handleId}
+          schemaName={schemaName}
+          engine={workspace.info.engine}
+          getSql={() => editorRef.current?.pickStatement() ?? text}
+          hasSql={text.trim() !== ""}
+          askNonce={askNonce}
+          planRequest={planRequest}
+          askRequest={askRequest}
+          onAccept={(next) => {
+            aiEdit(next);
+            toast(t("ai.ask.placed"), "ok");
+          }}
+        />
       ) : null}
     </div>
   );

@@ -38,6 +38,9 @@ interface SelectProps<T extends string> {
   /** Called whenever the popover closes (Escape / outside-click / after a pick).
    *  Inline editors map this to "exit edit mode". */
   onClose?: () => void;
+  /** Called whenever the popover opens — e.g. to refresh the options behind
+   *  it (the assistant's model list). */
+  onOpen?: () => void;
   /** Editable combobox: the trigger is a text input, the popover shows matching
    *  suggestions, and any typed value commits (Enter / blur / outside-click).
    *  Use for open-ended fields like a column type — pick `VARCHAR(255)` or type
@@ -46,6 +49,11 @@ interface SelectProps<T extends string> {
   /** Placeholder for the editable input. */
   placeholder?: string;
 }
+
+/** The popover's height cap (matches `.sel-pop` in Select.css) and the gap it
+ *  keeps from the window edges. */
+const POP_MAX_H = 280;
+const POP_MARGIN = 8;
 
 export function Select<T extends string>({
   value,
@@ -58,6 +66,7 @@ export function Select<T extends string>({
   placement = "down",
   autoOpen = false,
   onClose,
+  onOpen,
   editable = false,
   placeholder,
   "aria-label": ariaLabel,
@@ -106,6 +115,12 @@ export function Select<T extends string>({
   // Keep the latest onClose without making the close effect depend on it.
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const onOpenRef = useRef(onOpen);
+  onOpenRef.current = onOpen;
+  // One place for every way the popover opens (click, typing, focus, keys).
+  useEffect(() => {
+    if (open) onOpenRef.current?.();
+  }, [open]);
 
   const selectedIndex = Math.max(
     0,
@@ -118,6 +133,17 @@ export function Select<T extends string>({
     if (refocus) triggerRef.current?.focus();
     onCloseRef.current?.();
   };
+
+  // Keep a popover wider than its trigger inside the window: when it would
+  // cross the right edge (a trigger near the edge, long option labels), slide
+  // it left by the overflow. Measured after layout and written to the node
+  // directly — the width is only known once the options have rendered.
+  useLayoutEffect(() => {
+    const pop = popRef.current;
+    if (!open || !pos || !pop) return;
+    const overflow = pos.left + pop.offsetWidth - (window.innerWidth - POP_MARGIN);
+    pop.style.left = Math.max(POP_MARGIN, pos.left - Math.max(0, overflow)) + "px";
+  });
 
   // Measure the trigger so the portaled popover can be placed against it; keep
   // it aligned as the page scrolls/resizes while open.
@@ -290,14 +316,19 @@ export function Select<T extends string>({
               style={{
                 left: pos.left,
                 minWidth: pos.width,
+                maxWidth: window.innerWidth - POP_MARGIN * 2,
+                // The stylesheet's cap, unless less room than that is left.
                 ...(placement === "up"
                   ? {
                       bottom: window.innerHeight - pos.bottom + 4,
-                      maxHeight: Math.max(100, pos.bottom - 16),
+                      maxHeight: Math.min(POP_MAX_H, Math.max(100, pos.bottom - 16)),
                     }
                   : {
                       top: pos.top + 4,
-                      maxHeight: Math.max(100, window.innerHeight - pos.top - 16),
+                      maxHeight: Math.min(
+                        POP_MAX_H,
+                        Math.max(100, window.innerHeight - pos.top - 16),
+                      ),
                     }),
               }}
             >

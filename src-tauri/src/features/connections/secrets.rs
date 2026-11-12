@@ -85,19 +85,30 @@ pub trait SecretStore: Send + Sync {
 /// build prompts once ("Always Allow") and never again; the cache simply makes
 /// the dev experience match that.
 pub struct KeyringSecretStore {
+    /// The keychain service every entry of this store is filed under.
+    service: &'static str,
     /// account → Some(secret) (a hit) / None (a known-missing entry).
     cache: Mutex<HashMap<String, Option<String>>>,
 }
 
 impl KeyringSecretStore {
+    /// The connection-secrets store, under [`SERVICE`].
     pub fn new() -> Self {
+        Self::with_service(SERVICE)
+    }
+
+    /// A store under its own keychain service, so another slice's secrets
+    /// (the assistant's API keys, M44: `bytetable.assistant`) are never mixed
+    /// with database passwords.
+    pub fn with_service(service: &'static str) -> Self {
         Self {
+            service,
             cache: Mutex::new(HashMap::new()),
         }
     }
 
-    fn entry(account: &str) -> Result<keyring::Entry, AppError> {
-        keyring::Entry::new(SERVICE, account)
+    fn entry(&self, account: &str) -> Result<keyring::Entry, AppError> {
+        keyring::Entry::new(self.service, account)
             .map_err(|e| AppError::Io(format!("the OS keychain is unavailable ({e}).")))
     }
 }
@@ -110,7 +121,7 @@ impl Default for KeyringSecretStore {
 
 impl SecretStore for KeyringSecretStore {
     fn set(&self, account: &str, secret: &str) -> Result<(), AppError> {
-        Self::entry(account)?.set_password(secret).map_err(|e| {
+        self.entry(account)?.set_password(secret).map_err(|e| {
             AppError::Io(format!("could not save a secret to the OS keychain ({e})."))
         })?;
         // Keep the cache coherent with the write so the next read serves it
@@ -126,7 +137,7 @@ impl SecretStore for KeyringSecretStore {
         if let Some(cached) = self.cache.lock().unwrap().get(account) {
             return Ok(cached.clone());
         }
-        let result = match Self::entry(account)?.get_password() {
+        let result = match self.entry(account)?.get_password() {
             Ok(secret) => Some(secret),
             Err(keyring::Error::NoEntry) => None,
             Err(e) => {
@@ -144,7 +155,7 @@ impl SecretStore for KeyringSecretStore {
     }
 
     fn delete(&self, account: &str) -> Result<(), AppError> {
-        match Self::entry(account)?.delete_credential() {
+        match self.entry(account)?.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => {}
             Err(e) => {
                 return Err(AppError::Io(format!(

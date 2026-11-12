@@ -12,6 +12,10 @@ import {
   richSegments,
   sameSql,
   RUNTIMES,
+  actionsFor,
+  isAssistantEngine,
+  languageOf,
+  validateFor,
   mentionedTables,
   modelKeyOf,
   prevWordStart,
@@ -116,6 +120,108 @@ describe("starters", () => {
       { kind: "count", table: "cms_audit_logs" },
     ]);
     expect(startersFor([])).toEqual([]);
+  });
+});
+
+describe("non-SQL languages", () => {
+  const MONGO: SchemaTable[] = [
+    { name: "orders", columns: ["_id", "status", "createdAt"], indexes: [] },
+  ];
+  const TS: SchemaTable[] = [
+    { name: "products", columns: ["title", "brand", "price"], indexes: [] },
+  ];
+
+  it("maps every engine to a language", () => {
+    expect(languageOf("postgres")).toBe("sql");
+    expect(languageOf("cassandra")).toBe("cql");
+    expect(languageOf("dynamodb")).toBe("partiQl");
+    expect(languageOf("mongodb")).toBe("mongo");
+    expect(languageOf("typesense")).toBe("typesense");
+    expect(languageOf("redis")).toBe("redis");
+    expect(isAssistantEngine("redis")).toBe(true);
+    expect(actionsFor("mongo")).toEqual(["explain"]);
+    expect(actionsFor("sql")).toEqual(["explain", "plan", "index"]);
+  });
+
+  it("reads each language's answer, fenced or bare", () => {
+    expect(
+      parseSqlAnswer(
+        "// assume: shipped = status 'shipped'\n```javascript\ndb.orders.find({ status: 'shipped' })\n```",
+        "mongo",
+      ),
+    ).toMatchObject({
+      sql: "db.orders.find({ status: 'shipped' })",
+      assumptions: ["shipped = status 'shipped'"],
+    });
+    expect(parseSqlAnswer("db.orders.countDocuments({})", "mongo").sql).toBe(
+      "db.orders.countDocuments({})",
+    );
+    expect(
+      parseSqlAnswer(
+        "# assume: brand facet\nhttp\nGET /collections/products/documents/search?q=*",
+        "typesense",
+      ),
+    ).toMatchObject({
+      sql: "GET /collections/products/documents/search?q=*",
+      assumptions: ["brand facet"],
+    });
+    expect(
+      parseSqlAnswer("```redis\nSCAN 0 MATCH user:*:session COUNT 100\n```", "redis").sql,
+    ).toBe("SCAN 0 MATCH user:*:session COUNT 100");
+    expect(parseSqlAnswer("Use SCAN, not KEYS.", "redis").sql).toBeNull();
+  });
+
+  it("checks what it can name, per language", () => {
+    expect(validateFor("mongo", "db.orders.find({})", MONGO, "mongodb").unknown).toEqual([]);
+    expect(validateFor("mongo", "db.order.find({})", MONGO, "mongodb").unknown).toEqual(["order"]);
+    expect(validateFor("mongo", "db.orders.deleteMany({})", MONGO, "mongodb").write).toBe(true);
+    const guess = 'db.orders.find({ _id: ObjectId("318f615f") })';
+    expect(validateFor("mongo", guess, MONGO, "mongodb").parseError).toMatch(/24 hex/);
+    const hole = 'db.orders.find({ _id: ObjectId("<orderId>") })';
+    expect(validateFor("mongo", hole, MONGO, "mongodb").parseError).toMatch(/fill in/);
+    const real = 'db.orders.find({ _id: ObjectId("65f0a1b2c3d4e5f6a7b8c9d0") })';
+    expect(validateFor("mongo", real, MONGO, "mongodb").parseError).toBeUndefined();
+    expect(validateFor("mongo", "orders.find()", MONGO, "mongodb").parseError).toBeTruthy();
+    expect(
+      validateFor(
+        "typesense",
+        "GET /collections/products/documents/search?q=x&query_by=title,nme",
+        TS,
+        "typesense",
+      ).unknown,
+    ).toEqual(["nme"]);
+    expect(validateFor("typesense", "DELETE /collections/products", TS, "typesense").write).toBe(
+      true,
+    );
+    expect(validateFor("redis", "SCAN 0 MATCH a:*", [], "redis").write).toBeUndefined();
+    expect(validateFor("redis", "GET a\nDEL a", [], "redis").write).toBe(true);
+    expect(
+      validateFor(
+        "partiQl",
+        'SELECT * FROM "Orders" WHERE pk = 1',
+        [{ name: "Orders", columns: [], indexes: [] }],
+        "dynamodb",
+      ).unknown,
+    ).toEqual([]);
+    const SHOP: SchemaTable[] = [{ name: "ShopApp", columns: ["PK", "SK", "GSI1PK"], indexes: [] }];
+    const dq = `SELECT * FROM "ShopApp" WHERE PK = "USER#U-1006" AND SK = "PROFILE"`;
+    expect(validateFor("partiQl", dq, SHOP, "dynamodb").parseError).toMatch(/'USER#U-1006'/);
+    const sq = `SELECT * FROM "ShopApp" WHERE PK = 'USER#U-1006' AND SK = 'PROFILE'`;
+    expect(validateFor("partiQl", sq, SHOP, "dynamodb").parseError).toBeUndefined();
+    const fn = `SELECT * FROM "ShopApp" WHERE PK = 'USER' AND begins_with(SK, "ORDER#")`;
+    expect(validateFor("partiQl", fn, SHOP, "dynamodb").parseError).toMatch(/'ORDER#'/);
+    const attr = `SELECT * FROM "ShopApp" WHERE PK = "GSI1PK"`;
+    expect(validateFor("partiQl", attr, SHOP, "dynamodb").parseError).toBeUndefined();
+    expect(validateFor("partiQl", 'SELECT * FROM "Nope"', [], "dynamodb").unknown).toEqual([
+      "Nope",
+    ]);
+  });
+
+  it("offers Redis key patterns as starters", () => {
+    expect(startersFor([{ name: "user:*:session", columns: [], indexes: [] }], "redis")).toEqual([
+      { kind: "keys", table: "user:*:session" },
+    ]);
+    expect(startersFor(MONGO, "mongo")[0]).toEqual({ kind: "latest", table: "orders" });
   });
 });
 

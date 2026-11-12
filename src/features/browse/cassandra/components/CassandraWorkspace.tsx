@@ -54,6 +54,9 @@ import { CassandraTableTab } from "./CassandraTableTab";
 import { useCassTabsStore } from "../workspaceTabs";
 // Shared chrome the Cassandra slice REUSES (importing the owning components' CSS
 // keeps the workspace self-contained in `vite dev` and prod alike).
+import { AiAskTool } from "../../../assistant/components/AiAskTool";
+import { AiStatusChip } from "../../../assistant/components/AiStatusChip";
+import { AiWorkspaceHost } from "../../../assistant/components/AiWorkspaceHost";
 import "../../../workspaces/components/WorkspaceContent.css";
 import "../../../workspaces/components/Sidebar.css";
 import "../../../workspaces/components/TabBar.css";
@@ -426,6 +429,7 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
             <Icon name="add" size={16} />
           </button>
           <div className="tabbar-tools">
+            <AiAskTool workspace={workspace} className="tabbar-tool" />
             <button className="tabbar-tool" onClick={toggleShell} title={t("cass.ws.cqlsh")}>
               <Icon name="terminal" size={15} />
               <span>cqlsh</span>
@@ -435,6 +439,7 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
         </div>
 
         <div className="tab-content">
+          <AiWorkspaceHost workspace={workspace} scope={ks} />
           {tabs.map((tab) => (
             <div key={tab.id} style={{ display: tab.id === activeId ? "contents" : "none" }}>
               {tab.kind === "dashboard" ? (
@@ -503,6 +508,9 @@ export function CassandraWorkspace({ workspace }: { workspace: Workspace }) {
         <div style={{ flex: 1 }} />
         {activeTab?.kind === "table" ? <span className="status-dim">{activeTab.table}</span> : null}
         <ResourceMeter />
+        <AiStatusChip
+          conn={{ id: workspace.saved.id, env: workspace.saved.env, name: workspace.saved.name }}
+        />
         <BuiltByCredit className="status-dim" />
       </div>
 

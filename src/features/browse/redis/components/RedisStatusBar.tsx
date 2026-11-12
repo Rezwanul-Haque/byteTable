@@ -4,6 +4,7 @@
 // "RESP{N}". The active-key info is reported up by the active KeyTab and passed
 // in here. (The prototype's "mock engine" tag is dropped in production.)
 
+import type { ReactNode } from "react";
 import { EnvTag } from "../../../../shared/ui/EnvTag";
 import { ReadOnlyTag } from "../../../../shared/ui/ReadOnlyTag";
 import { useReadOnly } from "../../../../shared/ui/readOnlyContext";
@@ -40,6 +41,8 @@ interface RedisStatusBarProps {
   activeKeyMemory: number | null;
   /** Open (or focus) the connected-clients (processes) tab (M26). */
   onOpenProcesses: () => void;
+  /** More status items, before the credit (the assistant's chip). */
+  extra?: ReactNode;
 }
 
 export function RedisStatusBar(props: RedisStatusBarProps) {
@@ -56,6 +59,7 @@ export function RedisStatusBar(props: RedisStatusBarProps) {
     activeKeyType,
     activeKeyMemory,
     onOpenProcesses,
+    extra,
   } = props;
   const t = useT();
   // From the context rather than the prop list: the mode belongs to the whole
@@ -129,6 +133,7 @@ export function RedisStatusBar(props: RedisStatusBarProps) {
         <Icon name="monitor_heart" size={13} /> {t("redis.clientsBtn")}
       </button>
       <ResourceMeter />
+      {extra}
       <BuiltByCredit className="status-dim" />
       <span className="status-dim">RESP{respVersion}</span>
     </div>

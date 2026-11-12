@@ -152,14 +152,20 @@ pub async fn delete_schema(http: &ClickHouseHttp, schema: &str) -> Result<(), Ap
 /// statements applied (ClickHouse has no DDL transaction).
 pub async fn execute_script(
     http: &ClickHouseHttp,
-    _schema: &str,
+    schema: &str,
     sql: &str,
     on_progress: ProgressCallback<'_>,
 ) -> Result<ImportResult, AppError> {
     let statements = split_statements(sql);
     let total = statements.len() as u64;
+    // Unqualified names in the script land in the target schema.
+    let settings: Vec<(&str, String)> = if schema.is_empty() {
+        vec![]
+    } else {
+        vec![("database", schema.to_string())]
+    };
     for (i, stmt) in statements.iter().enumerate() {
-        http.execute(stmt, &[]).await?;
+        http.execute(stmt, &settings).await?;
         on_progress(i as u64 + 1, total);
     }
     Ok(ImportResult { statements: total })

@@ -11,7 +11,7 @@ import { useEffect, useState } from "react";
 import { dynamoListTables, type TableDescriptor } from "../../browse/dynamo/api";
 import { DynamoPartiqlTab } from "../../browse/dynamo/components/DynamoPartiqlTab";
 import type { Workspace } from "../../workspaces/types";
-import { usePanelStore, type TermSession } from "../state";
+import { usePanelStore, usePendingInput, type TermSession } from "../state";
 
 export function DynamoPartiqlSession({
   workspace,
@@ -22,6 +22,11 @@ export function DynamoPartiqlSession({
 }) {
   const patchSession = usePanelStore((s) => s.patchSession);
   const [tables, setTables] = useState<TableDescriptor[]>([]);
+  // The assistant's "Use in terminal": the statement replaces the PartiQL
+  // editor's text — not run until the user runs it.
+  usePendingInput(workspace.id, session, (text) =>
+    patchSession(workspace.id, session.id, { buffer: text }),
+  );
 
   // Fetch the table list once (for the preset chips). Best-effort.
   useEffect(() => {

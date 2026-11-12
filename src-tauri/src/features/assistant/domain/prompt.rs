@@ -33,6 +33,49 @@ impl PromptKind {
     }
 }
 
+/// The query language a workspace speaks — what the assistant writes, the
+/// fence it writes it in, and what a schema "object" is called. SQL is the
+/// prototype's contract, byte for byte; the others reuse its sections.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Language {
+    #[default]
+    Sql,
+    /// Cassandra.
+    Cql,
+    /// DynamoDB.
+    PartiQl,
+    /// MongoDB's shell.
+    Mongo,
+    /// Typesense's HTTP API, as ByteTable's HTTP console takes it.
+    Typesense,
+    /// Redis commands, as redis-cli takes them.
+    Redis,
+}
+
+impl Language {
+    /// What one entry under `[schema]` is called (plural).
+    fn noun(self) -> &'static str {
+        match self {
+            Self::Mongo | Self::Typesense => "collections",
+            Self::Redis => "key patterns",
+            _ => "tables",
+        }
+    }
+    /// The same, singular — "5 per table".
+    fn noun_one(self) -> &'static str {
+        match self {
+            Self::Mongo | Self::Typesense => "collection",
+            Self::Redis => "key pattern",
+            _ => "table",
+        }
+    }
+    /// Plan and index questions are about a SQL engine's optimizer.
+    pub fn supports(self, kind: PromptKind) -> bool {
+        self == Self::Sql || !matches!(kind, PromptKind::Plan | PromptKind::Index)
+    }
+}
+
 /// One column, as the schema line prints it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -50,6 +93,10 @@ pub struct ColumnSnap {
     pub fk: Option<String>,
     #[serde(default)]
     pub comment: Option<String>,
+    /// An engine's role for the column, printed after the type — "partition
+    /// key", "clustering desc", "facet sort". None for SQL.
+    #[serde(default)]
+    pub tag: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -70,6 +117,11 @@ pub struct TableSnap {
     pub columns: Vec<ColumnSnap>,
     #[serde(default)]
     pub indexes: Vec<IndexSnap>,
+    /// A fact the engine adapter supplies, printed after the entry whatever the
+    /// comments switch says — a Redis pattern's "hash · 120 keys". Never a
+    /// value.
+    #[serde(default)]
+    pub note: Option<String>,
 }
 
 /// The introspected structure of one schema: every base table, in the order
@@ -88,6 +140,9 @@ pub struct RowSample {
     /// The table's total row count, when known.
     pub total: Option<u64>,
     pub rows: Vec<Vec<serde_json::Value>>,
+    /// Each row is one document (a JSON object) rather than column values —
+    /// printed as compact JSON with long strings cut.
+    pub docs: bool,
 }
 
 /// The plan section: the engine's text EXPLAIN, or why there is none.
@@ -100,6 +155,8 @@ pub enum PlanText {
 /// Everything one prompt is built from.
 #[derive(Debug, Clone, Default)]
 pub struct PromptInput<'a> {
+    /// What the assistant writes (SQL unless the workspace speaks something else).
+    pub lang: Language,
     /// The dialect named in `[system]`, e.g. `PostgreSQL 16.4`.
     pub engine: &'a str,
     /// The tables the user left ticked; empty = all.
@@ -138,7 +195,10 @@ pub struct Prompt {
     pub row_tables: Vec<String>,
 }
 
-fn system(kind: PromptKind, engine: &str) -> String {
+fn system(kind: PromptKind, lang: Language, engine: &str) -> String {
+    if lang != Language::Sql {
+        return system_other(kind, lang, engine);
+    }
     match kind {
         PromptKind::Ask => format!(
             "You write {engine} for ByteTable. Reply with exactly one statement in a ```sql block.\n\
@@ -159,6 +219,76 @@ fn system(kind: PromptKind, engine: &str) -> String {
         PromptKind::Fix => "A statement failed. Return the smallest corrected statement in a ```sql block and one\n\
              sentence on what was wrong. Only reference columns that exist in [schema]."
             .to_string(),
+    }
+}
+
+/// `[system]` for the non-SQL languages: the same jobs, in each engine's terms.
+fn system_other(kind: PromptKind, lang: Language, engine: &str) -> String {
+    let (what, fence, unit, names) = match lang {
+        Language::Cql => (
+            format!("CQL for {engine}"),
+            "sql",
+            "statement",
+            "tables and columns",
+        ),
+        Language::PartiQl => (
+            "PartiQL for Amazon DynamoDB".to_string(),
+            "sql",
+            "statement",
+            "tables and attributes",
+        ),
+        Language::Mongo => (
+            "MongoDB shell (mongosh) commands".to_string(),
+            "javascript",
+            "command",
+            "collections and fields",
+        ),
+        Language::Typesense => (
+            "Typesense HTTP requests".to_string(),
+            "http",
+            "request",
+            "collections and fields",
+        ),
+        Language::Redis => (
+            "Redis commands".to_string(),
+            "redis",
+            "command",
+            "key patterns",
+        ),
+        Language::Sql => unreachable!("SQL has its own [system] text"),
+    };
+    let assume = match lang {
+        Language::Mongo => "//",
+        Language::Typesense | Language::Redis => "#",
+        _ => "--",
+    };
+    match kind {
+        PromptKind::Ask => {
+            let shape = match lang {
+                Language::Cql => "Restrict the full partition key (and clustering columns in order) — CQL has\nno joins, and filtering on anything else needs ALLOW FILTERING.",
+                Language::PartiQl => "Double-quote table names. String values take single quotes — PK = 'USER#1';\ndouble quotes name an attribute, so PK = \"USER#1\" matches nothing. Filter on the\npartition key (and sort key) where you can — a WHERE on anything else scans the whole table.",
+                Language::Mongo => "Write it as db.<collection>.find(...), .countDocuments(...) or .aggregate([...]).\n[schema] has field names and types, never values: when the question needs one you\nweren't given, put a placeholder like ObjectId(\"<userId>\") and say so in an assume line.",
+                Language::Typesense => "Write it as: GET /collections/<name>/documents/search?q=...&query_by=...\nquery_by takes string fields; filter_by and sort_by take facet / sortable fields.",
+                Language::Redis => "One command per line. [schema] lists key patterns and their types, never values.\nPrefer SCAN with MATCH over KEYS.",
+                Language::Sql => unreachable!(),
+            };
+            format!(
+                "You write {what} for ByteTable. Reply with exactly one {unit} in a ```{fence} block.\n\
+                 Use only the {names} listed under [schema]. {shape}\n\
+                 Begin with \"{assume} assume:\" lines for every interpretation you made. Never write\n\
+                 data-modifying {unit}s unless asked."
+            )
+        }
+        PromptKind::Explain => format!(
+            "You explain {what} to a developer in plain English, step by step.\n\
+             Be concise. Do not rewrite the {unit} unless asked."
+        ),
+        PromptKind::Fix => format!(
+            "A {unit} in {what} failed. Return the smallest corrected {unit} in a ```{fence} block and one\n\
+             sentence on what was wrong. Only reference {names} that exist in [schema]."
+        ),
+        // Refused before a prompt is built (`Language::supports`).
+        PromptKind::Plan | PromptKind::Index => String::new(),
     }
 }
 
@@ -251,6 +381,14 @@ fn contains_word(hay: &str, word: &str) -> bool {
 /// prototype prints it. Column comments (an addition: the prototype's sample
 /// schema has none) follow as `  -- col: comment` lines.
 fn schema_lines(t: &TableSnap, comments: bool) -> Vec<String> {
+    // A Redis key pattern has no columns: the pattern and its note are the line.
+    if t.columns.is_empty() && t.note.is_some() {
+        return vec![format!(
+            "{}  -- {}",
+            t.name,
+            t.note.as_deref().unwrap_or("")
+        )];
+    }
     let cols: Vec<String> = t
         .columns
         .iter()
@@ -266,10 +404,18 @@ fn schema_lines(t: &TableSnap, comments: bool) -> Vec<String> {
                 s.push_str(" -> ");
                 s.push_str(fk);
             }
+            if let Some(tag) = c.tag.as_deref().filter(|t| !t.is_empty()) {
+                s.push(' ');
+                s.push_str(tag);
+            }
             s
         })
         .collect();
     let mut line = format!("{}({})", t.name, cols.join(", "));
+    if let Some(note) = t.note.as_deref().filter(|n| !n.is_empty()) {
+        line.push_str("  -- ");
+        line.push_str(note);
+    }
     if comments {
         if let Some(c) = t.comment.as_deref().filter(|c| !c.trim().is_empty()) {
             line.push_str("  -- ");
@@ -313,6 +459,32 @@ fn quote_cut(s: &str) -> String {
     }
 }
 
+/// A sample document as one line of compact JSON: every string cut like a
+/// column value (22 characters), arrays to their first five items, the whole
+/// line capped so one wide document can't flood the prompt.
+fn sample_doc(v: &serde_json::Value) -> String {
+    fn cut(v: &serde_json::Value) -> serde_json::Value {
+        match v {
+            serde_json::Value::String(s) if s.chars().count() > 22 => {
+                serde_json::Value::String(format!("{}…", s.chars().take(21).collect::<String>()))
+            }
+            serde_json::Value::Array(a) => {
+                serde_json::Value::Array(a.iter().take(5).map(cut).collect())
+            }
+            serde_json::Value::Object(o) => {
+                serde_json::Value::Object(o.iter().map(|(k, v)| (k.clone(), cut(v))).collect())
+            }
+            other => other.clone(),
+        }
+    }
+    let line = cut(v).to_string();
+    if line.chars().count() > 400 {
+        format!("{}…", line.chars().take(399).collect::<String>())
+    } else {
+        line
+    }
+}
+
 /// `48` → `48`, `12345` → `12,345` (the prototype's `toLocaleString()`).
 pub fn thousands(n: u64) -> String {
     let s = n.to_string();
@@ -340,15 +512,16 @@ pub fn build_prompt(kind: PromptKind, schema: &SchemaSnapshot, c: &PromptInput<'
     };
 
     push("sec", "[system]".into());
-    for line in system(kind, engine).split('\n') {
+    for line in system(kind, c.lang, engine).split('\n') {
         push("", line.into());
     }
     push("", String::new());
 
+    let noun = c.lang.noun();
     let counted = if scope.len() == all {
-        format!("{} tables", scope.len())
+        format!("{} {noun}", scope.len())
     } else {
-        format!("{} of {} tables", scope.len(), all)
+        format!("{} of {} {noun}", scope.len(), all)
     };
     push(
         "sec",
@@ -377,19 +550,28 @@ pub fn build_prompt(kind: PromptKind, schema: &SchemaSnapshot, c: &PromptInput<'
         push("", String::new());
         push(
             "sec-rows",
-            format!("[sample rows] {n} per table · you turned on row data for this request"),
+            format!(
+                "[sample rows] {n} per {} · you turned on row data for this request",
+                c.lang.noun_one()
+            ),
         );
         for s in samples {
             row_tables.push(s.table.clone());
             let take: Vec<&Vec<serde_json::Value>> = s.rows.iter().take(n as usize).collect();
-            let total = s.total.map_or_else(|| "?".to_string(), thousands);
-            push(
-                "rows",
-                format!("{} ({} of {}):", s.table, take.len(), total),
-            );
+            let head = match s.total {
+                Some(total) => format!("{} ({} of {}):", s.table, take.len(), thousands(total)),
+                None => format!("{} ({} sampled):", s.table, take.len()),
+            };
+            push("rows", head);
             for r in take {
-                let vals: Vec<String> = r.iter().map(sample_value).collect();
-                push("rows", format!("  ({})", vals.join(", ")));
+                if s.docs {
+                    for d in r {
+                        push("rows", format!("  {}", sample_doc(d)));
+                    }
+                } else {
+                    let vals: Vec<String> = r.iter().map(sample_value).collect();
+                    push("rows", format!("  ({})", vals.join(", ")));
+                }
             }
         }
     }
@@ -609,6 +791,7 @@ mod tests {
             table: "orders".into(),
             total: Some(orders.total),
             rows: orders.rows.clone(),
+            docs: false,
         }];
         let p = build_prompt(
             PromptKind::Ask,
@@ -737,6 +920,170 @@ mod tests {
             },
         );
         assert!(p.text.contains("· 2 of 6 tables ·"), "{}", p.text);
+    }
+
+    fn snap(tables: Vec<TableSnap>) -> SchemaSnapshot {
+        SchemaSnapshot {
+            name: "app".into(),
+            tables,
+        }
+    }
+
+    fn tcol(name: &str, ty: &str, tag: Option<&str>) -> ColumnSnap {
+        ColumnSnap {
+            name: name.into(),
+            data_type: ty.into(),
+            pk: false,
+            unique: false,
+            fk: None,
+            comment: None,
+            tag: tag.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn cql_prompts_tag_key_roles_and_name_cql() {
+        let s = snap(vec![TableSnap {
+            name: "events".into(),
+            comment: None,
+            columns: vec![
+                tcol("user_id", "uuid", Some("partition key")),
+                tcol("ts", "timestamp", Some("clustering desc")),
+                tcol("kind", "text", None),
+            ],
+            indexes: vec![],
+            note: None,
+        }]);
+        let p = build_prompt(
+            PromptKind::Ask,
+            &s,
+            &PromptInput {
+                lang: Language::Cql,
+                engine: "Apache Cassandra 4.1",
+                request: "latest events",
+                ..PromptInput::default()
+            },
+        );
+        assert!(
+            p.text
+                .contains("You write CQL for Apache Cassandra 4.1 for ByteTable."),
+            "{}",
+            p.text
+        );
+        assert!(p.text.contains("ALLOW FILTERING"));
+        assert!(p.text.contains(
+            "events(user_id uuid partition key, ts timestamp clustering desc, kind text)"
+        ));
+        assert!(p.text.contains("[schema] app · 1 tables · metadata only"));
+    }
+
+    #[test]
+    fn mongo_and_redis_prompts_use_their_own_words() {
+        let mongo = snap(vec![TableSnap {
+            name: "orders".into(),
+            comment: None,
+            columns: vec![
+                tcol("_id", "objectId", None),
+                tcol("status", "string", None),
+            ],
+            indexes: vec![],
+            note: None,
+        }]);
+        let docs = vec![RowSample {
+            table: "orders".into(),
+            total: None,
+            rows: vec![vec![serde_json::json!({
+                "_id": "65f0", "status": "shipped", "note": "a very long note that keeps on going"
+            })]],
+            docs: true,
+        }];
+        let p = build_prompt(
+            PromptKind::Ask,
+            &mongo,
+            &PromptInput {
+                lang: Language::Mongo,
+                engine: "MongoDB 7.0",
+                request: "shipped orders",
+                rows: Some(&docs),
+                sample_n: 5,
+                ..PromptInput::default()
+            },
+        );
+        assert!(p.text.contains("```javascript block"));
+        assert!(p.text.contains("\"// assume:\""));
+        assert!(p.text.contains(r#"placeholder like ObjectId("<userId>")"#));
+        assert!(p
+            .text
+            .contains("[schema] app · 1 collections · metadata only"));
+        assert!(p.text.contains("[sample rows] 5 per collection"));
+        assert!(p.text.contains("orders (1 sampled):"));
+        assert!(
+            p.text
+                .contains(r#"  {"_id":"65f0","status":"shipped","note":"a very long note that…"}"#),
+            "{}",
+            p.text
+        );
+
+        let redis = snap(vec![TableSnap {
+            name: "user:*:session".into(),
+            comment: None,
+            columns: vec![],
+            indexes: vec![],
+            note: Some("hash · 120 keys in the sample".into()),
+        }]);
+        let p = build_prompt(
+            PromptKind::Ask,
+            &redis,
+            &PromptInput {
+                lang: Language::Redis,
+                engine: "Redis 7.2",
+                request: "active sessions",
+                ..PromptInput::default()
+            },
+        );
+        assert!(p
+            .text
+            .contains("[schema] app · 1 key patterns · metadata only"));
+        assert!(
+            p.text
+                .contains("\nuser:*:session  -- hash · 120 keys in the sample\n"),
+            "{}",
+            p.text
+        );
+        assert!(p.text.contains("Prefer SCAN with MATCH over KEYS."));
+    }
+
+    #[test]
+    fn partiql_prompt_says_strings_take_single_quotes() {
+        let p = build_prompt(
+            PromptKind::Ask,
+            &snap(vec![]),
+            &PromptInput {
+                lang: Language::PartiQl,
+                engine: "DynamoDB",
+                request: "user U-1006",
+                ..PromptInput::default()
+            },
+        );
+        assert!(p
+            .text
+            .contains("String values take single quotes — PK = 'USER#1'"));
+    }
+
+    #[test]
+    fn plan_and_index_are_sql_only() {
+        for lang in [
+            Language::Cql,
+            Language::PartiQl,
+            Language::Mongo,
+            Language::Typesense,
+            Language::Redis,
+        ] {
+            assert!(!lang.supports(PromptKind::Plan));
+            assert!(!lang.supports(PromptKind::Index));
+            assert!(lang.supports(PromptKind::Ask) && lang.supports(PromptKind::Explain));
+        }
+        assert!(Language::Sql.supports(PromptKind::Plan));
     }
 
     #[test]

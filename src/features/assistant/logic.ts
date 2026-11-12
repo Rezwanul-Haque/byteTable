@@ -11,17 +11,35 @@ import type { Engine } from "../../shared/types";
 import type { Settings } from "../settings/api";
 import type { SchemaTable } from "./api";
 
-/** Engines the assistant serves; every other workspace has no entry point. */
-const SQL_ENGINES: ReadonlySet<Engine> = new Set<Engine>([
-  "postgres",
-  "mysql",
-  "sqlite",
-  "mssql",
-  "clickhouse",
-]);
+/** The language each engine's workspace speaks — what the assistant writes
+ *  there. Every engine ByteTable connects to has one. */
+const LANGUAGE: Record<Engine, Language> = {
+  postgres: "sql",
+  mysql: "sql",
+  sqlite: "sql",
+  mssql: "sql",
+  clickhouse: "sql",
+  cassandra: "cql",
+  dynamodb: "partiQl",
+  mongodb: "mongo",
+  typesense: "typesense",
+  redis: "redis",
+};
 
+export function languageOf(engine: Engine): Language {
+  return LANGUAGE[engine];
+}
+
+/** Every engine has the assistant (M44 + the non-SQL follow-up). Kept as a
+ *  function: a future engine without one only needs an entry here. */
 export function isAssistantEngine(engine: Engine): boolean {
-  return SQL_ENGINES.has(engine);
+  return engine in LANGUAGE;
+}
+
+/** The quick questions each language offers (plan and index are about a SQL
+ *  optimizer; the backend refuses them elsewhere too). */
+export function actionsFor(lang: Language): ("explain" | "plan" | "index")[] {
+  return lang === "sql" ? ["explain", "plan", "index"] : ["explain"];
 }
 
 /** The workspace a surface is about: its SAVED connection (the production
@@ -161,7 +179,9 @@ export function mentionedTables(text: string, tables: readonly string[]): string
 export type Starter =
   | { kind: "latest"; table: string }
   | { kind: "countBy"; table: string; column: string }
-  | { kind: "count"; table: string };
+  | { kind: "count"; table: string }
+  /** Redis: a key pattern to look into. */
+  | { kind: "keys"; table: string };
 
 const TIME_COL =
   /^(created|updated|modified|inserted|logged|occurred|event)_?(at|on|time|date|ts)$|^(timestamp|created|ts)$/i;
@@ -174,7 +194,9 @@ const GROUP_COL =
  * count — each on a different table where the schema allows. Built from table
  * and column names only; no model is asked. Empty when nothing is loaded.
  */
-export function startersFor(schema: readonly SchemaTable[]): Starter[] {
+export function startersFor(schema: readonly SchemaTable[], lang: Language = "sql"): Starter[] {
+  // Redis has key patterns, not tables with columns: offer the commonest ones.
+  if (lang === "redis") return schema.slice(0, 3).map((t) => ({ kind: "keys", table: t.name }));
   const used = new Set<string>();
   const pick = (test: (t: SchemaTable) => boolean) => {
     const t = schema.find((x) => !used.has(x.name) && test(x)) ?? schema.find(test);
@@ -233,27 +255,45 @@ export function aiIntent(text: string, hasSql: boolean): AiKind {
 
 // ---------------------------------------------------------------- answers
 
-/** Language tags a model or gateway may put on (or in front of) SQL. */
+/** The query language a workspace speaks — mirrors Rust `prompt::Language`. */
+export type Language = "sql" | "cql" | "partiQl" | "mongo" | "typesense" | "redis";
+
+/** Language tags a model or gateway may put on (or in front of) code. */
 const SQL_TAG =
-  /^(?:sql|postgres(?:ql)?|psql|mysql|mariadb|sqlite3?|t-?sql|mssql|clickhouse|ddl)$/i;
-/** How a statement's first line can start. */
+  /^(?:sql|postgres(?:ql)?|psql|mysql|mariadb|sqlite3?|t-?sql|mssql|clickhouse|ddl|cql|partiql)$/i;
+const ANY_TAG = /^(?:javascript|js|mongo(?:sh)?|json|http|redis|bash|sh|shell|text|plaintext)$/i;
+/** How a SQL-family statement's first line can start. */
 const STATEMENT =
   /^[ \t]*(?:select|with|insert|update|delete|create|alter|drop|explain|show|pragma|merge|truncate)\b/i;
+/** How a bare command of each other language starts. */
+const BARE_START: Record<Exclude<Language, "sql" | "cql" | "partiQl">, RegExp> = {
+  mongo: /^[ \t]*(?:db\.|use\s+\w)/,
+  typesense: /^[ \t]*(?:GET|POST|PUT|PATCH|DELETE)\s+\//,
+  redis: /^[ \t]*[A-Z][A-Z.]+(?:\s|$)/,
+};
+/** `-- assume:`, `// assume:` or `# assume:` — any language's comment. */
+const ASSUME = /^\s*(?:--|\/\/|#)\s*assume[sd]?\s*:\s*(.*)$/i;
+const isAssume = (l: string) => ASSUME.test(l);
+const sqlFamily = (lang: Language) => lang === "sql" || lang === "cql" || lang === "partiQl";
 
 /**
- * Pull the SQL out of a model's answer, and what it said around it.
+ * Pull the code out of a model's answer, and what it said around it.
  *
  * Models and the gateways in front of them don't agree on one shape, so three
  * are read, in order:
- *   1. a fenced block — ```` ```sql ```` + newline, a bare ```` ``` ````, or
- *      the tag and the statement on one line (```` ```sql SELECT …``` ````);
- *   2. a bare statement anywhere in the answer, optionally after a `sql` tag
- *      line (a fence some gateway stripped), running to its `;` or the first
- *      blank line, with any `-- assume:` lines gathered from wherever they
- *      sit;
+ *   1. a fenced block — ```` ```sql ```` + newline, a bare ```` ``` ````, any
+ *      other language tag, or the tag and the statement on one line
+ *      (```` ```sql SELECT …``` ````);
+ *   2. a bare statement / command anywhere in the answer, optionally after a
+ *      lone tag line (a fence some gateway stripped), running to its `;` (SQL
+ *      family) or the first blank line, with any assumption lines gathered
+ *      from wherever they sit;
  *   3. nothing — the answer is prose.
  */
-export function extractSql(text: string): { code: string | null; rest: string } {
+export function extractCode(
+  text: string,
+  lang: Language = "sql",
+): { code: string | null; rest: string } {
   const src = String(text ?? "");
   const open = src.indexOf("```");
   if (open >= 0) {
@@ -265,14 +305,15 @@ export function extractSql(text: string): { code: string | null; rest: string } 
     // statement on the same line.
     const nl = body.indexOf("\n");
     const first = (nl >= 0 ? body.slice(0, nl) : body).trim();
-    if (SQL_TAG.test(first) || first === "") body = nl >= 0 ? body.slice(nl + 1) : "";
-    else body = body.replace(/^[ \t]*(?:sql|postgres(?:ql)?|mysql|sqlite)[ \t]+(?=\S)/i, "");
+    if (SQL_TAG.test(first) || ANY_TAG.test(first) || first === "")
+      body = nl >= 0 ? body.slice(nl + 1) : "";
+    else body = body.replace(/^[ \t]*(?:sql|postgres(?:ql)?|mysql|sqlite|cql)[ \t]+(?=\S)/i, "");
     const code = body.replace(/\s+$/, "").replace(/^\n+/, "");
-    // `-- assume:` lines written outside the fence still belong to the code.
+    // Assumption lines written outside the fence still belong to the code.
     const around = (src.slice(0, open) + "\n\n" + after).split("\n");
-    const assumeOut = around.filter((l) => /^\s*--\s*assume[sd]?\s*:/i.test(l));
+    const assumeOut = around.filter(isAssume);
     const rest = around
-      .filter((l) => !/^\s*--\s*assume[sd]?\s*:/i.test(l))
+      .filter((l) => !isAssume(l))
       .join("\n")
       .replace(/\n{3,}/g, "\n\n")
       .trim();
@@ -280,42 +321,47 @@ export function extractSql(text: string): { code: string | null; rest: string } 
     return { code: [...assumeOut, code].join("\n"), rest };
   }
 
-  // No fence: look for a bare statement anywhere in the answer. `-- assume:`
-  // lines are gathered wherever they sit (a model may put them before the
-  // statement, separated by a blank line); they ride along with the code so
-  // `parseSqlAnswer` lifts them into the Assumed list.
+  // No fence: look for a bare statement / command anywhere in the answer.
+  // Assumption lines are gathered wherever they sit (a model may put them
+  // before the statement, separated by a blank line); they ride along with the
+  // code so `parseSqlAnswer` lifts them into the Assumed list.
   const all = src.split("\n");
-  const assume = all.filter((l) => /^\s*--\s*assume[sd]?\s*:/i.test(l));
-  const lines = all.filter((l) => !/^\s*--\s*assume[sd]?\s*:/i.test(l));
+  const assume = all.filter(isAssume);
+  const lines = all.filter((l) => !isAssume(l));
+  const starts = sqlFamily(lang) ? STATEMENT : BARE_START[lang as keyof typeof BARE_START];
   for (let k = 0; k < lines.length; k++) {
-    // A `sql` tag line (a fence some gateway stripped) or a `sql ` prefix.
+    // A lone tag line (a fence some gateway stripped) or a `sql ` prefix.
     let i = k;
     let first = lines[i]!;
-    if (SQL_TAG.test(first.trim())) {
+    if (SQL_TAG.test(first.trim()) || ANY_TAG.test(first.trim())) {
       i++;
       while (i < lines.length && !lines[i]!.trim()) i++;
       first = lines[i] ?? "";
-    } else if (/^[ \t]*sql[ \t]+(?=\S)/i.test(first)) {
+    } else if (sqlFamily(lang) && /^[ \t]*sql[ \t]+(?=\S)/i.test(first)) {
       first = first.replace(/^[ \t]*sql[ \t]+/i, "");
     }
-    if (!STATEMENT.test(first)) continue;
+    if (!starts.test(first)) continue;
     const out: string[] = [first];
     let j = i + 1;
-    if (!/;\s*$/.test(first)) {
+    const ends = (l: string) => sqlFamily(lang) && /;\s*$/.test(l);
+    if (!ends(first)) {
       for (; j < lines.length; j++) {
         const line = lines[j]!;
         if (!line.trim()) break;
         out.push(line);
-        if (/;\s*$/.test(line)) {
+        if (ends(line)) {
           j++;
           break;
         }
       }
     }
     const code = out.join("\n").trim();
-    // Prose can start with "With …" or "Select …" too: a bare statement only
-    // counts when it reads as SQL — a CTE head, an uppercase keyword, or a `;`.
+    // Prose can start with "With …" or "Select …" too: a bare SQL statement
+    // only counts when it reads as SQL — a CTE head, an uppercase keyword, or
+    // a `;`. The other languages' starts (`db.`, `GET /`, an uppercase
+    // command) are specific enough on their own.
     const sqlish =
+      !sqlFamily(lang) ||
       /^\s*with\s+(?:recursive\s+)?[\w"`]+\s+as\s*\(/i.test(code) ||
       /^\s*(?:SELECT|WITH|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|EXPLAIN|SHOW|PRAGMA|MERGE|TRUNCATE)\b/.test(
         code,
@@ -330,21 +376,21 @@ export function extractSql(text: string): { code: string | null; rest: string } 
 
 export interface SqlAnswer {
   sql: string | null;
-  /** The `-- assume:` lines, lifted out of the SQL. */
+  /** The assumption lines, lifted out of the code. */
   assumptions: string[];
   /** Whatever the model said outside the block. */
   note: string;
 }
 
-/** Split an ask answer into SQL, assumption chips and prose. */
-export function parseSqlAnswer(text: string): SqlAnswer {
-  const { code: block, rest } = extractSql(text);
+/** Split an ask answer into code, assumptions and prose. */
+export function parseSqlAnswer(text: string, lang: Language = "sql"): SqlAnswer {
+  const { code: block, rest } = extractCode(text, lang);
   const assumptions: string[] = [];
   let sql: string | null = null;
   if (block !== null) {
     const kept: string[] = [];
     for (const line of block.split("\n")) {
-      const m = /^\s*--\s*assume[sd]?\s*:\s*(.*)$/i.exec(line);
+      const m = ASSUME.exec(line);
       if (m) {
         if (m[1]!.trim()) assumptions.push(m[1]!.trim());
       } else kept.push(line);
@@ -368,7 +414,7 @@ export type IndexAnswer =
 
 /** Read an index answer into one of the three outcomes (C11). */
 export function parseIndexAnswer(text: string, schema: SchemaTable[]): IndexAnswer {
-  const { code: block, rest: why } = extractSql(text);
+  const { code: block, rest: why } = extractCode(text, "sql");
   if (block && /\bcreate\s+(unique\s+)?index\b/i.test(block)) {
     return { outcome: "ddl", ddl: block.trim(), why };
   }
@@ -407,8 +453,8 @@ export type FixAnswer =
 
 /** Read a fix answer. No block, or a block identical to the failed statement,
  *  is "no small, safe fix" — and nothing is proposed. */
-export function parseFixAnswer(text: string, failed: string): FixAnswer {
-  const { code: block, rest: note } = extractSql(text);
+export function parseFixAnswer(text: string, failed: string, lang: Language = "sql"): FixAnswer {
+  const { code: block, rest: note } = extractCode(text, lang);
   if (!block || sameSql(block, failed)) {
     return {
       ok: false,
@@ -836,4 +882,119 @@ export function validate(sql: string, schema: SchemaTable[], engine: Engine): Va
   }
 
   return { unknown, tables: relations.size, cols: cols.size };
+}
+
+// ---------------------------------------------------------------- other languages
+
+/** Write commands for Redis — anything that is not certainly a read. */
+const REDIS_WRITES = new Set(
+  (
+    "SET SETNX SETEX PSETEX MSET MSETNX APPEND INCR INCRBY INCRBYFLOAT DECR DECRBY GETSET GETDEL " +
+    "DEL UNLINK EXPIRE PEXPIRE EXPIREAT PEXPIREAT PERSIST RENAME RENAMENX MOVE COPY RESTORE " +
+    "HSET HSETNX HMSET HDEL HINCRBY HINCRBYFLOAT LPUSH RPUSH LPUSHX RPUSHX LPOP RPOP LSET LREM " +
+    "LINSERT LTRIM LMOVE BLPOP BRPOP RPOPLPUSH SADD SREM SPOP SMOVE SINTERSTORE SUNIONSTORE " +
+    "SDIFFSTORE ZADD ZREM ZINCRBY ZPOPMIN ZPOPMAX ZREMRANGEBYSCORE ZREMRANGEBYRANK ZREMRANGEBYLEX " +
+    "ZUNIONSTORE ZINTERSTORE XADD XDEL XTRIM FLUSHDB FLUSHALL SWAPDB SELECT EVAL EVALSHA SCRIPT " +
+    "CONFIG SHUTDOWN BGSAVE SAVE MIGRATE PUBLISH"
+  ).split(" "),
+);
+const MONGO_WRITES =
+  /^(insert(One|Many)?|update(One|Many)?|replaceOne|delete(One|Many)?|remove|drop|dropIndex(es)?|createIndex(es)?|findOneAnd(Update|Replace|Delete)|findAndModify|bulkWrite|renameCollection|save)$/;
+
+/**
+ * The local check of generated code, for any language. SQL and CQL get the
+ * full table-and-column check; the others check what they can name — the
+ * table / collection exists, the method or command is a read — and leave
+ * fields alone (a schemaless store's fields can't be proven missing).
+ */
+export function validateFor(
+  lang: Language,
+  code: string,
+  schema: SchemaTable[],
+  engine: Engine,
+): Validation {
+  const c = String(code ?? "").trim();
+  const ok = (unknown: string[] = [], tables = 0): Validation => ({ unknown, tables, cols: 0 });
+  const known = (name: string) => schema.some((t) => t.name.toLowerCase() === name.toLowerCase());
+  if (lang === "sql" || lang === "cql") return validate(c, schema, engine);
+  if (!c) return { parseError: "it is empty", unknown: [], tables: 0, cols: 0 };
+  if (lang === "partiQl") {
+    if (/^\s*(insert|update|delete)\b/i.test(c)) return { write: true, ...ok() };
+    if (!/^\s*select\b/i.test(c))
+      return { parseError: "it isn’t a SELECT statement", unknown: [], tables: 0, cols: 0 };
+    // A double-quoted value is an attribute name in PartiQL, so the comparison
+    // silently matches nothing — the usual slip, and worth stopping on.
+    // A name the schema has is a real attribute-to-attribute comparison.
+    const attrs = new Set(schema.flatMap((t) => t.columns.map((x) => x.toLowerCase())));
+    const dq = [
+      ...c
+        .replace(/\bfrom\s+"[^"]+"/gi, "from t")
+        .matchAll(/(?:[=<>,(]|\b(?:in|between|and))\s*"([^"]*)"/gi),
+    ].find((x) => !attrs.has(x[1]!.toLowerCase()));
+    if (dq)
+      return {
+        parseError: `"${dq[1]}" is an attribute name in PartiQL — a string value takes single quotes: '${dq[1]}'`,
+        unknown: [],
+        tables: 0,
+        cols: 0,
+      };
+    const tables = [...c.matchAll(/\bfrom\s+(?:"([^"]+)"|([\w.-]+))/gi)].map((m) => m[1] ?? m[2]!);
+    return ok(
+      tables.filter((t) => !known(t.split(".")[0]!)),
+      tables.length,
+    );
+  }
+  if (lang === "mongo") {
+    const m = /\bdb\.(?:getCollection\(\s*["']([^"']+)["']\s*\)|([\w$-]+))\.(\w+)\s*\(/.exec(c);
+    if (!m)
+      return {
+        parseError: "expected db.<collection>.<method>(…)",
+        unknown: [],
+        tables: 0,
+        cols: 0,
+      };
+    const coll = m[1] ?? m[2]!;
+    // The model never sees values, so an id it writes is a placeholder or a
+    // guess — either way the shell would reject it.
+    const oid = [...c.matchAll(/ObjectId\(\s*["']([^"']*)["']\s*\)/g)]
+      .map((x) => x[1]!)
+      .find((v) => !/^[0-9a-fA-F]{24}$/.test(v));
+    if (oid !== undefined)
+      return {
+        parseError: /^<.*>$/.test(oid)
+          ? `fill in ObjectId("${oid}") with a real id`
+          : `ObjectId("${oid}") isn’t a real id (an ObjectId is 24 hex characters)`,
+        unknown: [],
+        tables: 0,
+        cols: 0,
+      };
+    if (MONGO_WRITES.test(m[3]!)) return { write: true, ...ok() };
+    return ok(known(coll) ? [] : [coll], 1);
+  }
+  if (lang === "typesense") {
+    const m = /^\s*(GET|POST|PUT|PATCH|DELETE)\s+(\S+)/i.exec(c);
+    if (!m) return { parseError: "expected METHOD /path", unknown: [], tables: 0, cols: 0 };
+    if (m[1]!.toUpperCase() !== "GET") return { write: true, ...ok() };
+    const coll = /\/collections\/([^/?\s]+)/.exec(m[2]!)?.[1];
+    if (!coll) return ok();
+    const name = decodeURIComponent(coll);
+    if (!known(name)) return ok([name], 1);
+    // query_by must name the collection's fields.
+    const fields = schema.find((t) => t.name.toLowerCase() === name.toLowerCase())!.columns;
+    const qb = /[?&]query_by=([^&\s]+)/.exec(m[2]!)?.[1];
+    const missing = qb
+      ? decodeURIComponent(qb)
+          .split(",")
+          .map((f) => f.trim())
+          .filter((f) => f && !fields.includes(f))
+      : [];
+    return ok(missing, 1);
+  }
+  // redis: every line is a command; any write marks the whole answer.
+  const cmds = c
+    .split("\n")
+    .map((l) => l.trim().split(/\s+/)[0]?.toUpperCase() ?? "")
+    .filter(Boolean);
+  if (cmds.some((x) => REDIS_WRITES.has(x))) return { write: true, ...ok() };
+  return ok();
 }

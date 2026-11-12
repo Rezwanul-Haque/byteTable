@@ -103,6 +103,10 @@ const NO_SESSIONS: SessionList = { ids: [], active: null };
 
 export const schemaKey = (handleId: string, schema: string) => handleId + "\u0000" + schema;
 
+/** The open-flag key for a non-SQL workspace's drawer (one per workspace; a
+ *  SQL workspace keys its drawers by tab id). */
+export const hostKey = (workspaceId: string) => "ws:" + workspaceId;
+
 /** Which endpoint a model list belongs to: provider, runtime, URLs, vendor. */
 export function modelsKey(s: AiSettingsKeys): string {
   return [

@@ -16,6 +16,7 @@ import {
 } from "../../browse/cassandra/api";
 import type { Workspace } from "../../workspaces/types";
 import type { TermSession } from "../state";
+import { recordHistory, usePendingInput } from "../state";
 import { focusPromptUnlessSelecting } from "../terminalBody";
 
 interface TextLine {
@@ -37,6 +38,7 @@ const PRESETS = ["SELECT * FROM users_by_id LIMIT 5;", "DESCRIBE TABLES;", "node
 
 export function CassandraShellSession({
   workspace,
+  session,
 }: {
   workspace: Workspace;
   session: TermSession;
@@ -56,6 +58,12 @@ export function CassandraShellSession({
   const [curKs, setCurKs] = useState(initialKs);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  // The assistant's "Use in terminal": the command lands on the prompt line,
+  // focused, and is not run until Enter.
+  usePendingInput(workspace.id, session, (text) => {
+    setInput(text);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  });
 
   useEffect(() => {
     if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
@@ -68,6 +76,9 @@ export function CassandraShellSession({
     if (!cmd) return;
     out([{ cls: "cli-prompt", text: "cqlsh:" + curKs + "> " + cmd }]);
     setHist((h) => [cmd, ...h]);
+    // Mirrored to the panel session too, so the assistant can explain the
+    // last command (its drawer reads the session's history).
+    recordHistory(workspace.id, session.id, cmd);
     setHi(-1);
     const low = cmd.toLowerCase().replace(/;$/, "");
     if (low === "help") {

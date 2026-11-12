@@ -49,9 +49,49 @@ pub fn mask_key(key: &str) -> String {
     format!("{}••••{}", &key[..prefix_end], tail)
 }
 
+/// A Redis key name reduced to its shape: every segment (split on `:`, `/`,
+/// `.`, `|`) that looks like an id or a value — any digit, an `@`, a long or
+/// hex-ish token — becomes `*`. `user:1042:session` → `user:*:session`,
+/// `email:ann@x.io` → `email:*`. What the prompt shows of Redis is these
+/// patterns, never key names as they are.
+pub fn key_pattern(key: &str) -> String {
+    let mut out = String::new();
+    let mut seg = String::new();
+    let flush = |seg: &mut String, out: &mut String| {
+        let idish = seg.chars().any(|c| c.is_ascii_digit() || c == '@')
+            || seg.chars().count() > 24
+            || (seg.len() >= 12 && seg.chars().all(|c| c.is_ascii_hexdigit() || c == '-'));
+        out.push_str(if idish && !seg.is_empty() { "*" } else { seg });
+        seg.clear();
+    };
+    for c in key.chars() {
+        if matches!(c, ':' | '/' | '.' | '|') {
+            flush(&mut seg, &mut out);
+            out.push(c);
+        } else {
+            seg.push(c);
+        }
+    }
+    flush(&mut seg, &mut out);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn key_patterns_hide_ids_and_values() {
+        assert_eq!(key_pattern("user:1042:session"), "user:*:session");
+        assert_eq!(key_pattern("email:ann@x.io"), "email:*.io");
+        assert_eq!(
+            key_pattern("cache/products/featured"),
+            "cache/products/featured"
+        );
+        assert_eq!(key_pattern("job:6f1c2a9e-77b0-4c1e"), "job:*");
+        assert_eq!(key_pattern("rate|login|deadbeefcafe0123"), "rate|login|*");
+        assert_eq!(key_pattern("counter"), "counter");
+    }
 
     #[test]
     fn masks_keep_only_prefix_and_tail() {

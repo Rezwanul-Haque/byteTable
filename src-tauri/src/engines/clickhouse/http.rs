@@ -96,7 +96,8 @@ impl ClickHouseHttp {
     }
 
     /// Run `sql` and parse a `FORMAT JSONCompact` result. `settings` are extra
-    /// URL query params (e.g. `max_result_rows`). A statement with no result set
+    /// URL query params (e.g. `max_result_rows`); a `database` among them is the
+    /// one unqualified names resolve in, in place of the connection's. A statement with no result set
     /// (DDL / mutation) yields an empty [`ChResult`]. Errors are §5 human
     /// sentences (unreachable host, or the server's `DB::Exception`).
     pub async fn query(
@@ -150,8 +151,12 @@ impl ClickHouseHttp {
             .client
             .post(&self.endpoint)
             .header("X-ClickHouse-User", &self.user)
-            .header("X-ClickHouse-Key", &self.password)
-            .query(&[("database", self.database.as_str())]);
+            .header("X-ClickHouse-Key", &self.password);
+        // One `database` param only: a request's own (the editor's schema)
+        // replaces the connection's rather than sitting beside it.
+        if !settings.iter().any(|(k, _)| *k == "database") {
+            req = req.query(&[("database", self.database.as_str())]);
+        }
         if json_format {
             req = req.query(&[("default_format", "JSONCompact")]);
         }

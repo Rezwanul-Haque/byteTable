@@ -4301,6 +4301,8 @@ export const zhHans: StringTable = {
   "sched.dow.sat": "星期六",
   // ---- AI assistant (M44)
   "set.tab.ai": "AI 助手",
+  "ai.alpha": "Alpha",
+  "ai.alpha.title": "早期版本——仍在各数据库引擎上测试中。运行前请检查它生成的内容。",
   "ai.title": "助手",
   "ai.settings": "AI 助手设置",
   "ai.working": "处理中",

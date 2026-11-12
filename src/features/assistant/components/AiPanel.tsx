@@ -49,7 +49,7 @@ import {
 /** Plain text into HTML, for code that isn't SQL (no highlighter for it). */
 const escHtml = (v: string) => v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 import { modelsKey, schemaKey, useAssistantStore, type AiMsg, type Msg } from "../state";
-import { AiFill, AiPromptSummary, AiPromptView, AiRich } from "./AiBits";
+import { AiAlphaTag, AiFill, AiPromptSummary, AiPromptView, AiRich } from "./AiBits";
 import { AiLockCard } from "./AiLockCard";
 import { AiModelRow } from "./AiModelRow";
 import { AiSessionList } from "./AiSessionList";
@@ -712,7 +712,10 @@ export function AiPanel({
             size={16}
             style={{ color: state === "locked" ? "var(--error)" : "var(--accent)" }}
           />{" "}
-          {t("ai.title")}
+          <span className="ai-alpha-host">
+            {t("ai.title")}
+            <AiAlphaTag />
+          </span>
         </span>
         <span style={{ display: "flex", gap: 2 }}>
           {state === "on" ? (

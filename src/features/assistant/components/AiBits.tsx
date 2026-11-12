@@ -10,6 +10,17 @@ import type { Dest, Prepared } from "../api";
 import { richSegments, splitSlots } from "../logic";
 
 /** `code` and **bold** in a model answer. */
+/** "Alpha" as a superscript on the assistant's name — the feature is early and still being
+ *  tried engine by engine, so its answers deserve a second look. */
+export function AiAlphaTag() {
+  const t = useT();
+  return (
+    <sup className="ai-alpha" title={t("ai.alpha.title")}>
+      {t("ai.alpha")}
+    </sup>
+  );
+}
+
 export function AiRich({ text }: { text: string }) {
   return (
     <>

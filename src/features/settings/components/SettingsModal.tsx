@@ -60,6 +60,7 @@ import { DEFAULT_WALLPAPER, cachedWallpaperUrl, storeCustomWallpaper } from "../
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { useSettingsStore, type SettingsTabId } from "../state";
 import { AiSettingsPane } from "../../assistant/components/AiSettingsPane";
+import { AiAlphaTag } from "../../assistant/components/AiBits";
 import { SetRow, SetSeg, SetToggle } from "./SetControls";
 import "./SettingsModal.css";
 
@@ -619,7 +620,15 @@ export function SettingsModal({ tab: initialTab, onClose }: SettingsModalProps) 
               className={"set-nav-item" + (tab === tb.id ? " active" : "")}
               onClick={() => setTab(tb.id)}
             >
-              <Icon name={tb.icon} size={16} /> {t(tb.key)}
+              <Icon name={tb.icon} size={16} />{" "}
+              {tb.id === "ai" ? (
+                <span className="ai-alpha-host">
+                  {t(tb.key)}
+                  <AiAlphaTag />
+                </span>
+              ) : (
+                t(tb.key)
+              )}
             </button>
           ))}
           <div style={{ flex: 1 }} />

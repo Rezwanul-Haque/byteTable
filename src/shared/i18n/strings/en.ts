@@ -4525,6 +4525,9 @@ export const en = {
   // you turn it on; structure, not data; you see what is sent; it proposes,
   // you run.
   "set.tab.ai": "AI assistant",
+  "ai.alpha": "Alpha",
+  "ai.alpha.title":
+    "Early release — still being tested across engines. Check what it writes before you run it.",
   "ai.title": "Assistant",
   "ai.settings": "AI assistant settings",
   "ai.working": "Working",

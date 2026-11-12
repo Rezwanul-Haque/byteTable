@@ -2053,3 +2053,31 @@ body.bt-reduce-transparency .ai-suggest {
 .ai-tool-locked {
   color: var(--error);
 }
+
+/* "Alpha" as a superscript badge on the assistant's name (drawer title,
+   Settings nav): a tiny pill in the warning color, raised to the name's top
+   edge so it rides the text instead of taking a column of its own. */
+.ai-alpha {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 7.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  padding: 1.5px 4px;
+  margin-left: 4px;
+  border-radius: 99px;
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  color: var(--warn);
+  vertical-align: top;
+  position: relative;
+  top: -3px;
+  cursor: help;
+}
+/* The name and its superscript as one unit, so the flex row's gap doesn't
+   push the mark away and the name doesn't break across lines. */
+.ai-alpha-host {
+  white-space: nowrap;
+}

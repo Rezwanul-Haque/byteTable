@@ -2042,3 +2042,14 @@ body.bt-reduce-transparency .ai-suggest {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
+
+/* Non-SQL workspaces host the drawer over their content area; these two
+   content containers become its positioning context (the others already
+   are). The tab-bar Ask button tints red on a locked workspace. */
+.ddb-tab-content,
+.redis-tab-content {
+  position: relative;
+}
+.ai-tool-locked {
+  color: var(--error);
+}

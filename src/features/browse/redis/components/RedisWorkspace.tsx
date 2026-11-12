@@ -43,6 +43,9 @@ import { useAutoRefresh } from "../../../settings/hooks/useAutoRefresh";
 import { RedisStatusBar } from "./RedisStatusBar";
 import { RedisTabBar } from "./RedisTabBar";
 import { RedisTabContent } from "./RedisTabContent";
+import { AiAskTool } from "../../../assistant/components/AiAskTool";
+import { AiStatusChip } from "../../../assistant/components/AiStatusChip";
+import { AiWorkspaceHost } from "../../../assistant/components/AiWorkspaceHost";
 import "./RedisTabContent.css";
 
 /** Empty per-db overview when a workspace somehow opened without a keyspace. */
@@ -338,8 +341,10 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
           consoleOpen={consoleOpen}
           onToggleConsole={() => togglePanel(wsId, termLabel)}
           onOpenClients={onOpenClients}
+          extraTools={<AiAskTool workspace={workspace} className="tabbar-tool" />}
         />
         <div className="redis-tab-content">
+          <AiWorkspaceHost workspace={workspace} scope={String(rs.dbIndex)} />
           {activeTab ? (
             <RedisTabContent
               tab={activeTab}
@@ -364,6 +369,11 @@ export function RedisWorkspace({ workspace }: { workspace: Workspace }) {
         <TerminalPanel workspace={workspace} />
       </main>
       <RedisStatusBar
+        extra={
+          <AiStatusChip
+            conn={{ id: workspace.saved.id, env: workspace.saved.env, name: workspace.saved.name }}
+          />
+        }
         workspaceColor={workspace.color}
         workspaceName={workspace.name}
         env={env}

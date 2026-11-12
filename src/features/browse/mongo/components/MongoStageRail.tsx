@@ -72,7 +72,11 @@ export function MongoStageRail({
               <Select
                 className="mg-stage-op"
                 value={s.op}
-                options={STAGE_OPTIONS}
+                options={
+                  STAGE_OPTIONS.some((o) => o.value === s.op)
+                    ? STAGE_OPTIONS
+                    : [{ value: s.op, label: s.op }, ...STAGE_OPTIONS]
+                }
                 // Switching the operator only changes which example the empty
                 // body shows; anything typed for the old operator stays, since
                 // most switches ($match → $project) keep the fields.

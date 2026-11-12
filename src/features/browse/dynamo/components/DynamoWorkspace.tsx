@@ -41,6 +41,9 @@ import { DynamoSchemaMap } from "./DynamoSchemaMap";
 import { DynamoSidebar } from "./DynamoSidebar";
 import { SidebarResizer } from "../../../../shared/ui/SidebarResizer";
 import { DynamoTableTab } from "./DynamoTableTab";
+import { AiAskTool } from "../../../assistant/components/AiAskTool";
+import { AiStatusChip } from "../../../assistant/components/AiStatusChip";
+import { AiWorkspaceHost } from "../../../assistant/components/AiWorkspaceHost";
 import "./Dynamo.css";
 // Grid family + shared ddb bits (reused by Mongo/Cassandra) — load last to keep
 // the datagrid cascade order it had as one file.
@@ -374,6 +377,7 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
             </button>
           </div>
           <div className="ddb-tabbar-tools">
+            <AiAskTool workspace={workspace} className="ddb-tabbar-tool" />
             <button
               type="button"
               className="ddb-tabbar-tool"
@@ -388,6 +392,7 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
         </div>
 
         <div className="ddb-tab-content">
+          <AiWorkspaceHost workspace={workspace} scope={""} />
           {tabs.map((t) => (
             <div key={t.id} style={{ display: t.id === activeId ? "contents" : "none" }}>
               {t.kind === "dashboard" ? (
@@ -468,6 +473,9 @@ export function DynamoWorkspace({ workspace }: { workspace: Workspace }) {
           </span>
         ) : null}
         <ResourceMeter className="ddb-status-dim" />
+        <AiStatusChip
+          conn={{ id: workspace.saved.id, env: workspace.saved.env, name: workspace.saved.name }}
+        />
         <BuiltByCredit className="ddb-status-dim" />
       </div>
 

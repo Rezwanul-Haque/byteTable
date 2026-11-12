@@ -21,6 +21,7 @@ import { helpText, parseConsoleCommand } from "../../browse/typesense/httpConsol
 import { useTsTabsStore } from "../../browse/typesense/workspaceTabs";
 import type { Workspace } from "../../workspaces/types";
 import type { TermSession } from "../state";
+import { recordHistory, usePendingInput } from "../state";
 import { focusPromptUnlessSelecting } from "../terminalBody";
 
 interface TextLine {
@@ -36,6 +37,7 @@ type Line = TextLine | JsonLine;
 
 export function TypesenseHttpSession({
   workspace,
+  session,
 }: {
   workspace: Workspace;
   session: TermSession;
@@ -64,6 +66,12 @@ export function TypesenseHttpSession({
   const [busy, setBusy] = useState(false);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  // The assistant's "Use in terminal": the command lands on the prompt line,
+  // focused, and is not run until Enter.
+  usePendingInput(workspace.id, session, (text) => {
+    setInput(text);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  });
 
   useEffect(() => {
     if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
@@ -76,6 +84,9 @@ export function TypesenseHttpSession({
     if (!cmd) return;
     out([{ kind: "text", cls: "cli-prompt", text: "$ " + cmd }]);
     setHist((h) => [cmd, ...h]);
+    // Mirrored to the panel session too, so the assistant can explain the
+    // last command (its drawer reads the session's history).
+    recordHistory(workspace.id, session.id, cmd);
     setHi(-1);
 
     const low = cmd.toLowerCase();

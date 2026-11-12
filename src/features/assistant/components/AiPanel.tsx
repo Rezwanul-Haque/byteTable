@@ -37,11 +37,17 @@ import {
   slot,
   startersFor,
   triggerAt,
-  validate,
+  actionsFor,
+  languageOf,
+  validateFor,
   type AiConn,
   type AiKind,
+  type Language,
   type Trigger,
 } from "../logic";
+
+/** Plain text into HTML, for code that isn't SQL (no highlighter for it). */
+const escHtml = (v: string) => v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 import { modelsKey, schemaKey, useAssistantStore, type AiMsg, type Msg } from "../state";
 import { AiFill, AiPromptSummary, AiPromptView, AiRich } from "./AiBits";
 import { AiLockCard } from "./AiLockCard";
@@ -60,19 +66,19 @@ const ACTIONS: Action[] = [
 
 /** The SQL an ask answer leaves as the thread's draft (C9: an unchanged
  *  follow-up keeps the previous one). */
-function draftOf(m: AiMsg): string | null {
+function draftOf(m: AiMsg, lang: Language): string | null {
   if (m.kind !== "ask" || m.st !== "done") return null;
-  const a = parseSqlAnswer(m.raw);
+  const a = parseSqlAnswer(m.raw, lang);
   if (!a.sql) return m.prevSql;
   if (m.prevSql && sameSql(a.sql, m.prevSql)) return m.prevSql;
   return a.sql;
 }
 
-function lastDraft(msgs: Msg[]): string | null {
+function lastDraft(msgs: Msg[], lang: Language): string | null {
   for (let i = msgs.length - 1; i >= 0; i--) {
     const m = msgs[i]!;
     if (m.role === "ai") {
-      const d = draftOf(m);
+      const d = draftOf(m, lang);
       if (d) return d;
     }
   }
@@ -138,6 +144,20 @@ interface AiPanelProps {
   planRequest: PlanRequest | null;
   askRequest: AskRequest | null;
   onAccept: (sql: string) => void;
+  /** "Use in editor" by default; a host whose target is a terminal or a form
+   *  names it ("Use in terminal"). */
+  useLabel?: string;
+  usedLabel?: string;
+  /** A second place an answer can go, offered beside the first when it
+   *  `applies` — MongoDB's "Build in Aggregation tab" for an aggregate. */
+  altAction?: AiAltAction;
+}
+
+export interface AiAltAction {
+  label: string;
+  icon: string;
+  applies: (code: string) => boolean;
+  run: (code: string) => void;
 }
 
 export function AiPanel({
@@ -155,6 +175,9 @@ export function AiPanel({
   planRequest,
   askRequest,
   onAccept,
+  useLabel,
+  usedLabel,
+  altAction,
 }: AiPanelProps) {
   const t = useT();
   const toast = useToast();
@@ -188,7 +211,7 @@ export function AiPanel({
   const threadRef = useRef<HTMLDivElement>(null);
   const sendRef = useRef<HTMLButtonElement>(null);
   const busy = th.streaming !== null || th.preparing;
-  const draft = lastDraft(th.msgs);
+  const draft = lastDraft(th.msgs, languageOf(engine));
   const uid = "ai-in-" + tabId;
 
   // Structure only: names of tables and columns, for the scope chip and the
@@ -289,6 +312,12 @@ export function AiPanel({
   };
 
   const tableNames = all.map((x) => x.name);
+  // What this workspace speaks: SQL keeps the prototype's surfaces; the other
+  // languages get the same drawer in their own words.
+  const lang = languageOf(engine);
+  const actions = ACTIONS.filter((a) => actionsFor(lang).includes(a.id));
+  const noun: "tables" | "collections" | "keys" =
+    lang === "mongo" || lang === "typesense" ? "collections" : lang === "redis" ? "keys" : "tables";
   // Tables the message being typed @-mentions: they, not the ticks, decide
   // what this message sends — the chip says so.
   const mentioned = mentionedTables(text, tableNames);
@@ -329,13 +358,15 @@ export function AiPanel({
   const suggestions: Suggestion[] = (() => {
     if (!trig) return [];
     if (trig.sign === "@") {
+      // Redis key patterns aren't names a message can mention.
+      if (lang === "redis") return [];
       return all
         .filter((tb) => tb.name.toLowerCase().includes(q))
         .sort((a, b) => +!a.name.toLowerCase().startsWith(q) - +!b.name.toLowerCase().startsWith(q))
         .slice(0, 50)
         .map((tb) => ({
           id: "t:" + tb.name,
-          group: t("ai.suggest.tables"),
+          group: noun === "collections" ? t("ai.suggest.collections") : t("ai.suggest.tables"),
           icon: "table",
           label: tb.name,
           hint: t("ai.scope.cols", { count: tb.columns.length }),
@@ -363,8 +394,12 @@ export function AiPanel({
     const quick = !hasSql || busy || !!th.pending;
     const commands: Suggestion[] = [
       command("explain", "menu_book", t("ai.act.explain.t"), () => act(ACTIONS[0]!), quick),
-      command("plan", "account_tree", t("ai.act.plan.t"), () => act(ACTIONS[1]!), quick),
-      command("index", "bolt", t("ai.act.index.t"), () => act(ACTIONS[2]!), quick),
+      ...(lang === "sql"
+        ? [
+            command("plan", "account_tree", t("ai.act.plan.t"), () => act(ACTIONS[1]!), quick),
+            command("index", "bolt", t("ai.act.index.t"), () => act(ACTIONS[2]!), quick),
+          ]
+        : []),
       command("new", "add_comment", t("ai.slash.new"), () => newSession(wsKey)),
       command("history", "history", t("ai.sessions.title"), () => setShowHistory(true)),
       ...(canRows
@@ -432,7 +467,11 @@ export function AiPanel({
       () => toast(t("ai.copyFail"), "err"),
     );
   };
-  const hl = (v: string) => ({ __html: highlightSql(v) });
+  // SQL-family code is highlighted; mongosh / HTTP / Redis lines are shown as
+  // they are (the SQL highlighter would colour their words wrongly).
+  const hl = (v: string) => ({
+    __html: lang === "sql" || lang === "cql" || lang === "partiQl" ? highlightSql(v) : escHtml(v),
+  });
 
   const answer = (m: AiMsg) => {
     if (m.st === "load" && !m.raw)
@@ -485,7 +524,7 @@ export function AiPanel({
       ) : null;
 
     if (m.kind === "ask") {
-      const a = parseSqlAnswer(m.raw);
+      const a = parseSqlAnswer(m.raw, lang);
       const follow = !!m.prevSql;
       const unchanged = !streaming && follow && (!a.sql || sameSql(a.sql, m.prevSql!));
       if (!streaming && !a.sql && !follow)
@@ -496,7 +535,7 @@ export function AiPanel({
           </>
         );
       const sql = unchanged ? m.prevSql! : (a.sql ?? "");
-      const check = streaming || unchanged ? null : validate(sql, all, engine);
+      const check = streaming || unchanged ? null : validateFor(lang, sql, all, engine);
       return (
         <>
           <div className="ai-say">
@@ -552,8 +591,21 @@ export function AiPanel({
                   patchMsg(cur, m.id, { used: true });
                 }}
               >
-                {m.used ? t("ai.ask.inEditor") : t("ai.ask.use")}
+                {m.used ? (usedLabel ?? t("ai.ask.inEditor")) : (useLabel ?? t("ai.ask.use"))}
               </Btn>
+              {altAction?.applies(sql) ? (
+                <Btn
+                  variant="text"
+                  small
+                  icon={altAction.icon}
+                  onClick={() => {
+                    altAction.run(sql);
+                    patchMsg(cur, m.id, { used: true });
+                  }}
+                >
+                  {altAction.label}
+                </Btn>
+              ) : null}
               <Btn variant="text" small icon="content_copy" onClick={() => copy(sql)}>
                 {t("ai.copy")}
               </Btn>
@@ -724,24 +776,33 @@ export function AiPanel({
             {!th.msgs.length && !pending ? (
               <div className="ai-empty">
                 <div className="ai-empty-t">{t("ai.empty.title")}</div>
-                <p>{t("ai.empty.body")}</p>
+                <p>{lang === "sql" ? t("ai.empty.body") : t("ai.empty.bodyOther")}</p>
                 {/* Built from this schema's table and column names, so they are
                     always about tables that exist here; none until it loads. */}
                 <div className="ai-starters">
-                  {startersFor(all).map((st) => {
+                  {startersFor(all, lang).map((st) => {
+                    const docs = noun === "collections";
                     const q =
-                      st.kind === "latest"
-                        ? t("ai.starter.latest", { table: st.table })
-                        : st.kind === "countBy"
-                          ? t("ai.starter.countBy", { table: st.table, column: st.column })
-                          : t("ai.starter.count", { table: st.table });
+                      st.kind === "keys"
+                        ? t("ai.starter.keys", { pattern: st.table })
+                        : st.kind === "latest"
+                          ? docs
+                            ? t("ai.starter.latestDocs", { table: st.table })
+                            : t("ai.starter.latest", { table: st.table })
+                          : st.kind === "countBy"
+                            ? t("ai.starter.countBy", { table: st.table, column: st.column })
+                            : docs
+                              ? t("ai.starter.countDocs", { table: st.table })
+                              : t("ai.starter.count", { table: st.table });
                     return (
                       <button
                         key={st.kind + st.table}
                         type="button"
                         className="ai-starter"
                         disabled={busy}
-                        onClick={() => submit("ask", q, q, undefined, [st.table])}
+                        onClick={() =>
+                          submit("ask", q, q, undefined, st.kind === "keys" ? [] : [st.table])
+                        }
                       >
                         <Icon name="arrow_outward" size={14} /> {q}
                       </button>
@@ -846,7 +907,7 @@ export function AiPanel({
 
           <div className="ai-composer">
             <div className="ai-quick" role="group" aria-label={t("ai.quick.aria")}>
-              {ACTIONS.map((a) => (
+              {actions.map((a) => (
                 <button
                   key={a.id}
                   type="button"
@@ -949,7 +1010,15 @@ export function AiPanel({
                     onClose();
                   }
                 }}
-                placeholder={draft ? t("ai.compose.followUp") : t("ai.compose.placeholder")}
+                placeholder={
+                  draft
+                    ? t("ai.compose.followUp")
+                    : lang === "sql"
+                      ? t("ai.compose.placeholder")
+                      : lang === "redis"
+                        ? t("ai.compose.placeholderRedis")
+                        : t("ai.compose.placeholderOther")
+                }
               />
               <div className="ai-ctx">
                 <div className="ai-pop-anchor">
@@ -965,7 +1034,11 @@ export function AiPanel({
                       {mentioned.length
                         ? mentioned.map((m) => "@" + m).join(", ")
                         : scope === null
-                          ? t("ai.scope.all", { count: all.length })
+                          ? noun === "tables"
+                            ? t("ai.scope.all", { count: all.length })
+                            : noun === "collections"
+                              ? t("ai.scope.allColl", { count: all.length })
+                              : t("ai.scope.allKeys", { count: all.length })
                           : t("ai.scope.some", { n: scope.length, count: all.length })}
                     </b>{" "}
                     <Icon name="expand_less" size={13} />
@@ -1012,11 +1085,21 @@ export function AiPanel({
                           </label>
                         );
                       })}
-                      <div className="ai-scope-f">{t("ai.scope.foot")}</div>
+                      <div className="ai-scope-f">
+                        {noun === "tables"
+                          ? t("ai.scope.foot")
+                          : noun === "collections"
+                            ? t("ai.scope.footColl")
+                            : t("ai.scope.footKeys")}
+                      </div>
                     </div>
                   ) : null}
                 </div>
-                {canRows ? (
+                {lang === "redis" ? (
+                  <span className="ai-chip off" title={t("ai.rows.redisTitle")}>
+                    <Icon name="lock" size={13} /> {t("ai.rows.redis")}
+                  </span>
+                ) : canRows ? (
                   <button
                     type="button"
                     className={"ai-chip" + (rowData ? " warn" : "")}

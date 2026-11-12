@@ -20,10 +20,21 @@ import {
   mongoListCollections,
   mongoListDatabases,
   mongoListIndexes,
+  type FindRequest,
   type MongoDoc,
 } from "../api";
 import { useMongoActiveDbStore, useMongoShellStore, type ShellLine } from "../shellState";
-import { fieldUnion, isDate, isOid, mongoStringify, mType, shortDate } from "../helpers";
+import {
+  fieldUnion,
+  isDate,
+  isOid,
+  mongoStringify,
+  mType,
+  shellCalls,
+  shellJson,
+  shortDate,
+} from "../helpers";
+import { recordHistory } from "../../../console/state";
 
 const BANNER = (server: string, version: string): ShellLine[] => [
   { kind: "text", cls: "term-info", text: "Current Mongosh Log ID: 66a1f2…" },
@@ -86,6 +97,7 @@ export function MongoShellTab({
   serverHost,
   connName,
   onUseDb,
+  injected,
 }: {
   sessionId: string;
   workspaceId: string;
@@ -95,6 +107,9 @@ export function MongoShellTab({
   serverHost: string;
   connName: string;
   onUseDb: (db: string) => void;
+  /** Text handed to the prompt line from outside (the assistant) — set, focused,
+   *  never run. A new `nonce` applies it again. */
+  injected?: { text: string; nonce: number } | null;
 }) {
   const ensure = useMongoShellStore((s) => s.ensure);
   const patch = useMongoShellStore((s) => s.patch);
@@ -109,6 +124,11 @@ export function MongoShellTab({
   const [hi, setHi] = useState(-1);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (!injected) return;
+    setInput(injected.text);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, [injected]);
 
   // Seed the transcript once (restored from the store on reopen).
   useEffect(() => {
@@ -155,6 +175,9 @@ export function MongoShellTab({
     if (!cmd) return;
     out([{ kind: "text", cls: "cli-prompt", text: curDb + "> " + cmd }]);
     patch(sessionId, { history: [cmd, ...(peek()?.history ?? [])] });
+    // Mirrored to the docked panel's session, which the assistant reads to
+    // explain the last command.
+    recordHistory(workspaceId, sessionId, cmd);
     setHi(-1);
     const low = cmd.toLowerCase();
     try {
@@ -177,7 +200,7 @@ export function MongoShellTab({
         out([{ kind: "table", rows: names.map((n) => ({ name: n })), cols: ["name"] }]);
         return;
       }
-      let m = low.match(/^use\s+(\w+)/);
+      const m = low.match(/^use\s+(\w+)/);
       if (m) {
         const target = cmd.split(/\s+/)[1] ?? "";
         const names = await mongoListDatabases(handleId);
@@ -195,15 +218,42 @@ export function MongoShellTab({
         out([{ kind: "text", cls: "term-row", text: colls.map((c) => c.name).join("\n") }]);
         return;
       }
-      m = cmd.match(/^db\.(\w+)\.(\w+)\(([\s\S]*)\)\s*;?\s*$/);
-      if (m) {
-        const collName = m[1] ?? "";
-        const op = m[2] ?? "";
-        const argsRaw = m[3] ?? "";
-        const parseArg = (s: string): unknown => (s.trim() ? JSON.parse(s) : undefined);
+      const chain = shellCalls(cmd);
+      if (chain) {
+        const collName = chain.coll;
+        const [first, ...rest] = chain.calls;
+        const op = first?.name ?? "";
+        const parseArg = (s: string | undefined): unknown => (s?.trim() ? shellJson(s) : undefined);
+        const arg = (k: number): unknown => parseArg(first?.args[k]);
+        /** Chained calls that only shape the output, which the table already does. */
+        const cosmetic = (name: string) => name === "pretty" || name === "toArray";
+        if (op !== "find") {
+          const bad = rest.find((c) => !cosmetic(c.name));
+          if (bad) throw new Error(t("mongo.shell.badChain", { name: bad.name, op }));
+        }
         if (op === "find") {
-          const filter = parseArg(argsRaw.split(/,(?![^{}[\]]*[}\]])/)[0] ?? "") ?? {};
-          const r = await mongoFind(handleId, curDb, collName, { filter, limit: 20 });
+          // Cursor modifiers, as mongosh chains them. The terminal shows 20 by
+          // default; .limit(n) asks for more, capped so a typo can't pull a
+          // whole collection into the scrollback.
+          const req: FindRequest = { filter: arg(0) ?? {}, projection: arg(1), limit: 20 };
+          let count = false;
+          for (const c of rest) {
+            const v = parseArg(c.args[0]);
+            if (c.name === "sort") req.sort = v;
+            else if (c.name === "limit") req.limit = Math.min(Math.max(Number(v) || 20, 1), 1000);
+            else if (c.name === "skip") req.skip = Math.max(Number(v) || 0, 0);
+            else if (c.name === "projection") req.projection = v;
+            else if (c.name === "count" || c.name === "countDocuments") count = true;
+            else if (!cosmetic(c.name))
+              throw new Error(t("mongo.shell.badChain", { name: c.name, op }));
+          }
+          if (count) {
+            const n = await mongoCount(handleId, curDb, collName, req.filter);
+            out([{ kind: "text", cls: "term-row", text: String(n) }]);
+            return;
+          }
+          const shown = req.limit ?? 20;
+          const r = await mongoFind(handleId, curDb, collName, req);
           out([
             docsTable(r.docs),
             {
@@ -211,20 +261,23 @@ export function MongoShellTab({
               cls: "term-meta",
               text:
                 t("mongo.shell.matched", { count: r.matched }) +
-                (r.matched > 20 ? t("mongo.shell.showing") : ""),
+                (r.matched > r.returned
+                  ? t("mongo.shell.showing", { count: r.returned || shown })
+                  : ""),
             },
           ]);
         } else if (op === "findOne") {
           const r = await mongoFind(handleId, curDb, collName, {
-            filter: parseArg(argsRaw) ?? {},
+            filter: arg(0) ?? {},
+            projection: arg(1),
             limit: 1,
           });
           out([{ kind: "json", text: r.docs.length ? mongoStringify(r.docs[0]) : "null" }]);
         } else if (op === "countDocuments" || op === "count") {
-          const n = await mongoCount(handleId, curDb, collName, parseArg(argsRaw) ?? {});
+          const n = await mongoCount(handleId, curDb, collName, arg(0) ?? {});
           out([{ kind: "text", cls: "term-row", text: String(n) }]);
         } else if (op === "aggregate") {
-          const pipeline = (parseArg(argsRaw) as unknown[]) ?? [];
+          const pipeline = (arg(0) as unknown[]) ?? [];
           const r = await mongoAggregate(handleId, curDb, collName, pipeline);
           out([
             docsTable(r.docs),
@@ -250,7 +303,9 @@ export function MongoShellTab({
         },
       ]);
     } catch (e) {
-      out([{ kind: "text", cls: "term-err", text: appErrorMessage(e, t("mongo.shell.cmdFail")) }]);
+      // A local parse error says what's wrong; a backend one comes as an AppError.
+      const msg = e instanceof Error ? e.message : appErrorMessage(e, t("mongo.shell.cmdFail"));
+      out([{ kind: "text", cls: "term-err", text: msg }]);
     }
   }
 

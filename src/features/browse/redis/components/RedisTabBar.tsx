@@ -5,6 +5,7 @@
 // docked console panel). The right-aligned terminal IconBtn toggles that panel
 // (mirrors the SQL TabBar). The dashboard tab is non-closable.
 
+import type { ReactNode } from "react";
 import {
   useEffect,
   useRef,
@@ -52,6 +53,8 @@ interface RedisTabBarProps {
   /** Open (or focus) the Clients tab — the tab-bar tool the other engines
    *  put beside Terminal (M36). */
   onOpenClients: () => void;
+  /** More tools, first in the right-hand group (the assistant's Ask). */
+  extraTools?: ReactNode;
 }
 
 export function RedisTabBar({
@@ -63,6 +66,7 @@ export function RedisTabBar({
   consoleOpen,
   onToggleConsole,
   onOpenClients,
+  extraTools,
 }: RedisTabBarProps) {
   const t = useT();
   const menu = useTabMenu({
@@ -142,6 +146,7 @@ export function RedisTabBar({
         })}
       </div>
       <div className="tabbar-tools">
+        {extraTools}
         <button
           type="button"
           className={"tabbar-tool" + (consoleOpen ? " active" : "")}

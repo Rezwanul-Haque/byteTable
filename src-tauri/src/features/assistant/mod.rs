@@ -19,5 +19,6 @@
 pub mod application;
 pub mod commands;
 pub mod domain;
+pub mod engines;
 pub mod infrastructure;
 pub mod ports;

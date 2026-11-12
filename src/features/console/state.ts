@@ -17,6 +17,7 @@
 // prototype keeps each session's REPL state (lines/history/buffer/timing) on a
 // `tab` object lifted into the parent; this store is that lift, per workspace.
 
+import { useEffect } from "react";
 import { create } from "zustand";
 
 import type { CellValue } from "../../shared/api/engine";
@@ -112,6 +113,10 @@ export interface TermSession {
   history: string[];
   buffer: string;
   timing: boolean;
+  /** Text handed to this session's prompt line from outside (the assistant's
+   *  "Use in terminal"): the shell puts it on its input and clears this. Never
+   *  run — the user presses Enter. `nonce` makes the same text twice count. */
+  pendingInput?: { text: string; nonce: number };
 }
 
 /** One workspace's terminal-panel state. */
@@ -154,6 +159,9 @@ interface PanelFeatureState {
   setHeight: (workspaceId: string, height: number) => void;
   /** Append a new session (`{shellLabel} N`) and make it active. */
   newSession: (workspaceId: string, shellLabel: string) => void;
+  /** Open the panel and put `text` on the active session's prompt line (it is
+   *  not run). Seeds a first session when there is none. */
+  injectInput: (workspaceId: string, shellLabel: string, text: string) => void;
   /**
    * Kill a session. If it was the last one the panel hides (matches the
    * prototype: the panel has no empty state — closing the final session leaves
@@ -227,6 +235,21 @@ export const usePanelStore = create<PanelFeatureState>((set) => ({
   setHeight: (workspaceId, height) =>
     set((state) => patch(state, workspaceId, () => ({ height, maximized: false }))),
 
+  injectInput: (workspaceId, shellLabel, text) =>
+    set((state) =>
+      patch(state, workspaceId, (cur) => {
+        const opened = { ...cur, ...openWith(cur, shellLabel) };
+        const active = opened.activeSessionId ?? opened.sessions[0]?.id ?? null;
+        return {
+          ...opened,
+          activeSessionId: active,
+          sessions: opened.sessions.map((s) =>
+            s.id === active ? { ...s, pendingInput: { text, nonce: Date.now() } } : s,
+          ),
+        };
+      }),
+    ),
+
   newSession: (workspaceId, shellLabel) =>
     set((state) =>
       patch(state, workspaceId, (cur) => {
@@ -278,3 +301,37 @@ useWorkspacesStore.subscribe((ws) => {
   for (const id of stale) delete next[id];
   usePanelStore.setState({ byWorkspace: next });
 });
+
+/**
+ * Put a session's handed-in text (`pendingInput`) on its prompt line, once:
+ * `apply` receives the text, then the field is cleared. Every shell's body
+ * calls this with its own way of setting its input.
+ */
+export function usePendingInput(
+  workspaceId: string,
+  session: TermSession,
+  apply: (text: string) => void,
+): void {
+  const patchSession = usePanelStore((s) => s.patchSession);
+  const nonce = session.pendingInput?.nonce;
+  useEffect(() => {
+    const p = session.pendingInput;
+    if (!p) return;
+    apply(p.text);
+    patchSession(workspaceId, session.id, { pendingInput: undefined });
+    // Keyed on the nonce: each hand-off applies exactly once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nonce]);
+}
+
+/** Record a submitted command at the top of a panel session's history (newest
+ *  first, capped) — for shells that keep their own history too, so every
+ *  shell's last command is readable the same way (the assistant explains it). */
+export function recordHistory(workspaceId: string, sessionId: string, cmd: string): void {
+  const st = usePanelStore.getState();
+  const cur = st.byWorkspace[workspaceId]?.sessions.find((x) => x.id === sessionId);
+  if (!cur) return;
+  st.patchSession(workspaceId, sessionId, {
+    history: [cmd, ...cur.history.filter((h) => h !== cmd)].slice(0, TERM_HISTORY_MAX),
+  });
+}

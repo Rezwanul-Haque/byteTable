@@ -13,6 +13,7 @@ import { MongoShellTab } from "../../browse/mongo/components/MongoShellTab";
 import { useMongoActiveDbStore } from "../../browse/mongo/shellState";
 import type { Workspace } from "../../workspaces/types";
 import type { TermSession } from "../state";
+import { usePendingInput } from "../state";
 
 export function MongoShellSession({
   workspace,
@@ -29,6 +30,9 @@ export function MongoShellSession({
   const selectedDb = useMongoActiveDbStore((s) => s.byWorkspace[workspace.id]);
   const initialDb = selectedDb ?? (params.engine === "mongodb" ? (params.database ?? "") : "");
   const [db, setDb] = useState(initialDb);
+  // The assistant's "Use in terminal", handed down to the REPL's prompt line.
+  const [injected, setInjected] = useState<{ text: string; nonce: number } | null>(null);
+  usePendingInput(workspace.id, session, (text) => setInjected({ text, nonce: Date.now() }));
 
   // If neither the sidebar selection nor a connection default is known yet, land
   // on the first listed database. Render the REPL only once a db is known so its
@@ -60,6 +64,7 @@ export function MongoShellSession({
       serverHost={serverHost}
       connName={workspace.name}
       onUseDb={setDb}
+      injected={injected}
     />
   );
 }

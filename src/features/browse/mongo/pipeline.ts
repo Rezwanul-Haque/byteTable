@@ -5,6 +5,8 @@
 // STAGE_TEMPLATES — the last of which is now placeholder text rather than a
 // seeded body.
 
+import { mongoStringify, shellCalls, shellJson } from "./helpers";
+
 export interface Stage {
   op: string;
   body: string;
@@ -68,7 +70,7 @@ export function restoreStages(saved: Stage[] | undefined): Stage[] {
 export function compilePipeline(stages: Stage[]): unknown[] {
   return stages.map((s, i) => {
     try {
-      return { [s.op]: s.body.trim() === "" ? {} : JSON.parse(s.body) };
+      return { [s.op]: s.body.trim() === "" ? {} : shellJson(s.body) };
     } catch (e) {
       throw new Error(
         "Stage " + (i + 1) + " (" + s.op + "): " + (e instanceof Error ? e.message : String(e)),
@@ -105,4 +107,31 @@ export function copyToClipboard(text: string, onOk: () => void, onFail: () => vo
   } else {
     fallback();
   }
+}
+
+/** The rail for a `db.<coll>.aggregate([…])` command — what the assistant
+ *  writes — one stage per pipeline entry, each body pretty-printed the way the
+ *  rail shows it. Null when the text isn't an aggregate call or its pipeline
+ *  isn't an array of single-operator stages. */
+export function stagesFromCommand(cmd: string): { coll: string; stages: Stage[] } | null {
+  let chain: ReturnType<typeof shellCalls>;
+  let pipeline: unknown;
+  try {
+    chain = shellCalls(cmd);
+    if (!chain || chain.calls[0]?.name !== "aggregate") return null;
+    pipeline = shellJson(chain.calls[0].args[0] || "[]");
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(pipeline) || pipeline.length === 0) return null;
+  const stages: Stage[] = [];
+  for (const entry of pipeline) {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return null;
+    const keys = Object.keys(entry);
+    const op = keys[0];
+    if (keys.length !== 1 || !op?.startsWith("$")) return null;
+    const body = (entry as Record<string, unknown>)[op];
+    stages.push({ op, body: mongoStringify(body) });
+  }
+  return { coll: chain.coll, stages };
 }

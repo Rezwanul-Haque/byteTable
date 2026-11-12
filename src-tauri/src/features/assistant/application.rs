@@ -19,10 +19,9 @@
 //! for rows on production, or an endpoint that is not fully set up → refused.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::Instant;
 
-use futures_util::stream::{self, StreamExt};
+use futures_util::stream::StreamExt;
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
@@ -31,15 +30,14 @@ use crate::features::connections::domain::Env;
 use crate::features::connections::ports::ConnectionRepository;
 use crate::features::connections::secrets::SecretStore;
 use crate::features::settings::domain::AiSettings;
-use crate::shared::engine::{Engine, FetchRowsRequest, TableMeta};
 use crate::shared::error::AppError;
 
 use super::domain::dest::{self, AiState, Dest, HostOf, ProviderKind, KEY_ACCOUNTS};
 use super::domain::prompt::{
-    self, ColumnSnap, IndexSnap, PlanText, Prompt, PromptInput, PromptKind, RowSample,
-    SchemaSnapshot, TableSnap,
+    self, Language, PlanText, Prompt, PromptInput, PromptKind, RowSample, SchemaSnapshot,
 };
 use super::domain::{mask_key, LogEntry};
+use super::engines::Conn;
 use super::infrastructure::{keychain_name, AnthropicProvider, OllamaProvider, OpenAiProvider};
 use super::ports::{KeyIndex, ModelInfo, ModelProvider, PromptLog, ProviderError};
 
@@ -164,8 +162,6 @@ impl Parked {
 /// Schema snapshots are reused for this long (the drawer's table chip and the
 /// next prompt read the same introspection).
 const SNAPSHOT_TTL_SECS: u64 = 30;
-/// Introspect at most this many tables concurrently.
-const META_CONCURRENCY: usize = 8;
 
 /// A short-lived cache of introspected schemas, keyed by handle + schema.
 #[derive(Default)]
@@ -366,60 +362,6 @@ fn rows_refusal() -> AppError {
     AppError::Unsupported("Row data is never sent from a production workspace.".into())
 }
 
-/// The dialect named in `[system]`: `PostgreSQL 16.4`.
-pub fn dialect(engine: Engine, server_version: &str) -> String {
-    let name = match engine {
-        Engine::Postgres => "PostgreSQL",
-        Engine::Mysql => "MySQL",
-        Engine::Sqlite => "SQLite",
-        Engine::Mssql => "SQL Server",
-        Engine::Clickhouse => "ClickHouse",
-        _ => "SQL",
-    };
-    // The first version-looking word, wherever the engine put it.
-    let version = server_version
-        .split_whitespace()
-        .find(|w| w.chars().next().is_some_and(|c| c.is_ascii_digit()))
-        .map(|w| w.trim_end_matches([',', ';']));
-    match version {
-        Some(v) => format!("{name} {v}"),
-        None => name.to_string(),
-    }
-}
-
-/// Convert introspected metadata into the snapshot the prompt prints.
-pub fn table_snap(name: &str, meta: &TableMeta) -> TableSnap {
-    let unique_single = |col: &str| {
-        meta.indexes
-            .iter()
-            .any(|i| i.unique && !i.primary && i.columns.len() == 1 && i.columns[0] == col)
-    };
-    TableSnap {
-        name: name.to_string(),
-        comment: meta.comment.clone(),
-        columns: meta
-            .columns
-            .iter()
-            .map(|c| ColumnSnap {
-                name: c.name.clone(),
-                data_type: c.data_type.clone(),
-                pk: c.pk,
-                unique: !c.pk && unique_single(&c.name),
-                fk: c.fk.as_ref().map(|f| format!("{}.{}", f.table, f.column)),
-                comment: c.comment.clone(),
-            })
-            .collect(),
-        indexes: meta
-            .indexes
-            .iter()
-            .map(|i| IndexSnap {
-                name: i.name.clone(),
-                primary: i.primary,
-            })
-            .collect(),
-    }
-}
-
 fn plan_lines(columns: &[String], rows: &[Vec<serde_json::Value>], text: bool) -> Vec<String> {
     let cell = |v: &serde_json::Value| match v {
         serde_json::Value::Null => "NULL".to_string(),
@@ -452,7 +394,8 @@ fn plan_lines(columns: &[String], rows: &[Vec<serde_json::Value>], text: bool) -
         .collect()
 }
 
-/// Introspect every base table of `schema` (briefly cached unless `fresh`).
+/// Introspect every base table / collection / key pattern of `schema`
+/// (briefly cached unless `fresh`) — whichever engine the handle is.
 pub async fn snapshot(
     manager: &ConnectionManager,
     cache: &SnapshotCache,
@@ -465,34 +408,7 @@ pub async fn snapshot(
             return Ok(snap);
         }
     }
-    let conn = manager.get_sql(handle).await?;
-    let tables = conn.list_tables(schema).await?;
-    // Futures are built up front (owned data only) so the buffered stream
-    // holds no borrowing closure — that keeps the command future `Send`.
-    let futures: Vec<_> = tables
-        .iter()
-        .enumerate()
-        .map(|(i, t)| {
-            let conn = Arc::clone(&conn);
-            let schema = schema.to_string();
-            let name = t.name.clone();
-            async move {
-                // A table whose metadata can't be read still appears by name;
-                // the prompt just lists no columns for it.
-                let meta = conn.table_meta(&schema, &name).await.unwrap_or_default();
-                (i, table_snap(&name, &meta))
-            }
-        })
-        .collect();
-    let mut metas: Vec<(usize, TableSnap)> = stream::iter(futures)
-        .buffer_unordered(META_CONCURRENCY)
-        .collect()
-        .await;
-    metas.sort_by_key(|(i, _)| *i);
-    let snap = SchemaSnapshot {
-        name: schema.to_string(),
-        tables: metas.into_iter().map(|(_, t)| t).collect(),
-    };
+    let snap = Conn::open(manager, handle).await?.snapshot(schema).await?;
     cache.put(handle, &snap).await;
     Ok(snap)
 }
@@ -534,9 +450,21 @@ pub async fn prepare(
     if wants_rows && !dest::rows_allowed(ws.production) {
         return Err(rows_refusal());
     }
-    let conn = manager.get_sql(&req.handle_id).await?;
-    let info = conn.engine_info();
-    let engine = dialect(info.engine, &info.server_version);
+    let conn = Conn::open(manager, &req.handle_id).await?;
+    let lang = conn.language();
+    // Plan and index questions are about a SQL optimizer; the UI doesn't offer
+    // them elsewhere, and a forged request is refused here.
+    if !lang.supports(req.kind) {
+        return Err(AppError::Unsupported(
+            "That question is only available in SQL workspaces.".into(),
+        ));
+    }
+    if wants_rows && lang == Language::Redis {
+        return Err(AppError::Unsupported(
+            "Redis values are never sent to the assistant.".into(),
+        ));
+    }
+    let engine = conn.dialect();
     let schema = snapshot(manager, cache, &req.handle_id, &req.schema, true).await?;
     let focused = prompt::focus_scope(&schema, &req.focus);
     let scope = if focused.is_empty() {
@@ -551,21 +479,10 @@ pub async fn prepare(
         let names = prompt::row_tables_for(&scope, &[&req.request, &req.sql, &prev]);
         let mut out = Vec::new();
         for table in names {
-            let page = conn
-                .fetch_rows(FetchRowsRequest {
-                    schema: req.schema.clone(),
-                    table: table.clone(),
-                    sort: None,
-                    filter: None,
-                    offset: 0,
-                    limit: ai.ai_sample.clamp(1, 50),
-                })
-                .await?;
-            out.push(RowSample {
-                table,
-                total: page.total_rows,
-                rows: page.rows,
-            });
+            out.push(
+                conn.rows(&req.schema, &table, ai.ai_sample.clamp(1, 50))
+                    .await?,
+            );
         }
         Some(out)
     } else {
@@ -599,6 +516,7 @@ pub async fn prepare(
         req.kind,
         &schema,
         &PromptInput {
+            lang,
             engine: &engine,
             scope: &scope,
             request: &req.request,
@@ -858,7 +776,9 @@ pub fn log_clear(log: &dyn PromptLog) -> Result<(), AppError> {
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex};
+
+    use futures_util::stream;
 
     use async_trait::async_trait;
 
@@ -1189,17 +1109,6 @@ mod tests {
         assert_eq!(json["state"], "locked");
         assert_eq!(json["runtime"]["loopback"], false);
         assert!(json["dest"].get("baseUrl").is_none(), "internals stay out");
-    }
-
-    #[test]
-    fn dialect_names_engine_and_version() {
-        assert_eq!(dialect(Engine::Postgres, "16.4"), "PostgreSQL 16.4");
-        assert_eq!(
-            dialect(Engine::Postgres, "PostgreSQL 16.4 on aarch64"),
-            "PostgreSQL 16.4"
-        );
-        assert_eq!(dialect(Engine::Mysql, "8.0.36"), "MySQL 8.0.36");
-        assert_eq!(dialect(Engine::Sqlite, ""), "SQLite");
     }
 
     #[test]

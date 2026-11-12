@@ -92,7 +92,10 @@
   height: 26px;
   border-radius: 7px;
   color: var(--text-faint);
-  background: color-mix(in oklab, var(--bg2) 80%, transparent);
+  /* Solid, with a small lift: it floats over the code, and a selected or
+     highlighted line must not show through it. */
+  background: var(--bg2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   border: 1px solid var(--border);
   opacity: 0;
   transition:
@@ -1410,4 +1413,11 @@
   max-width: 110px;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Glass themes: --bg2 is translucent, so the wand gets an explicit surface. */
+[data-material] .sql-format-fab {
+  background: rgba(24, 26, 34, 0.96);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }

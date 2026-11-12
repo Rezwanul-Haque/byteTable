@@ -110,6 +110,155 @@ export function mongoParse(text: string): MongoDoc {
   return JSON.parse(json) as MongoDoc;
 }
 
+/** One `.method(args)` link of a shell call chain; `args` are the raw
+ *  top-level argument texts, unparsed. */
+export interface ShellCall {
+  name: string;
+  args: string[];
+}
+
+/** Split `db.<coll>.<method>(…)` (or `db.getCollection("…")…`) and any chained
+ *  cursor calls — `.sort(…).limit(20)` — into the collection and the calls,
+ *  matching brackets and skipping strings. Null when the text isn't a
+ *  collection call; throws when its brackets don't close. */
+export function shellCalls(src: string): { coll: string; calls: ShellCall[] } | null {
+  const text = src.trim().replace(/;\s*$/, "");
+  const head = /^db\.(?:getCollection\(\s*(["'])(.+?)\1\s*\)|([\w$-]+))/.exec(text);
+  if (!head) return null;
+  const coll = head[2] ?? head[3] ?? "";
+  const calls: ShellCall[] = [];
+  let i = head[0].length;
+  const n = text.length;
+  while (i < n) {
+    while (i < n && /\s/.test(text[i] ?? "")) i++;
+    if (i >= n) break;
+    const link = /^\.\s*(\w+)\s*\(/.exec(text.slice(i));
+    if (!link) return null;
+    i += link[0].length;
+    const args: string[] = [];
+    let depth = 0;
+    let start = i;
+    let closed = false;
+    while (i < n) {
+      const c = text[i] ?? "";
+      if (c === '"' || c === "'") {
+        i++;
+        while (i < n && text[i] !== c) i += text[i] === "\\" ? 2 : 1;
+        if (i >= n) throw new Error(t("mongo.shell.unclosed"));
+      } else if (c === "{" || c === "[" || c === "(") depth++;
+      else if (c === "}" || c === "]") depth--;
+      else if (c === ")") {
+        if (depth === 0) {
+          closed = true;
+          break;
+        }
+        depth--;
+      } else if (c === "," && depth === 0) {
+        args.push(text.slice(start, i));
+        start = i + 1;
+      }
+      i++;
+    }
+    if (!closed) throw new Error(t("mongo.shell.unclosedCall", { name: link[1] ?? "" }));
+    const last = text.slice(start, i);
+    if (last.trim() || args.length) args.push(last);
+    calls.push({ name: link[1] ?? "", args: args.map((a) => a.trim()) });
+    i++;
+  }
+  return calls.length ? { coll, calls } : null;
+}
+
+const OID_HEX = /^[0-9a-fA-F]{24}$/;
+
+/** Read a shell argument the way mongosh writes it — bare and `$`-prefixed
+ *  keys, single-quoted strings, trailing commas, `ObjectId("…")` and
+ *  `ISODate("…")` / `new Date("…")` — into a value with the `{$oid}`/`{$date}`
+ *  tags. Strict JSON passes through unchanged. Throws with a readable message:
+ *  an ObjectId that isn't 24 hex characters, or text that still isn't JSON. */
+export function shellJson(src: string): unknown {
+  let out = "";
+  let i = 0;
+  const n = src.length;
+  /** The quoted string starting at `i` (either quote), re-emitted as JSON. */
+  const str = (): string => {
+    const q = src[i];
+    let body = "";
+    i++;
+    while (i < n && src[i] !== q) {
+      if (src[i] === "\\" && i + 1 < n) {
+        const next = src[i + 1] ?? "";
+        body += next === "'" ? "'" : "\\" + next;
+        i += 2;
+        continue;
+      }
+      body += src[i] === '"' ? '\\"' : src[i];
+      i++;
+    }
+    if (i >= n) throw new Error(t("mongo.shell.unclosed"));
+    i++;
+    return '"' + body + '"';
+  };
+  const skipWs = () => {
+    while (i < n && /\s/.test(src[i] ?? "")) i++;
+  };
+  while (i < n) {
+    const c = src[i] ?? "";
+    if (c === '"' || c === "'") {
+      out += str();
+      continue;
+    }
+    if (/[A-Za-z_$]/.test(c)) {
+      let j = i;
+      while (j < n && /[\w$.]/.test(src[j] ?? "")) j++;
+      let word = src.slice(i, j);
+      i = j;
+      skipWs();
+      if (word === "new") {
+        const k = i;
+        while (i < n && /\w/.test(src[i] ?? "")) i++;
+        word = src.slice(k, i);
+        skipWs();
+      }
+      const ctor =
+        word === "ObjectId" ? "$oid" : word === "ISODate" || word === "Date" ? "$date" : "";
+      if (ctor && src[i] === "(") {
+        i++;
+        skipWs();
+        if (src[i] !== '"' && src[i] !== "'")
+          throw new Error(t("mongo.shell.ctorArg", { name: word }));
+        const lit = str();
+        skipWs();
+        if (src[i] !== ")") throw new Error(t("mongo.shell.ctorArg", { name: word }));
+        i++;
+        const value = JSON.parse(lit) as string;
+        if (ctor === "$oid" && !OID_HEX.test(value)) {
+          throw new Error(t("mongo.shell.badOid", { value }));
+        }
+        out += JSON.stringify({ [ctor]: value });
+        continue;
+      }
+      // A bare key, or a literal JSON already knows.
+      out += src[i] === ":" ? JSON.stringify(word) : word;
+      continue;
+    }
+    if (c === ",") {
+      let k = i + 1;
+      while (k < n && /\s/.test(src[k] ?? "")) k++;
+      if (src[k] === "}" || src[k] === "]") {
+        i++;
+        continue;
+      }
+    }
+    out += c;
+    i++;
+  }
+  try {
+    return JSON.parse(out);
+  } catch {
+    throw new Error(t("mongo.shell.badArg", { text: src.trim() }));
+  }
+}
+
 /** The tokens the doc editor colours: the `ObjectId("…")` / `ISODate("…")`
  *  constructors `mongoStringify` writes, then plain JSON strings (a key when a
  *  `:` follows), keywords and numbers. */

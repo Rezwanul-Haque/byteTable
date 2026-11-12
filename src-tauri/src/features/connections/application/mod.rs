@@ -83,6 +83,12 @@ pub struct ConnectionManager {
     /// `get_*` accessor keeps working untouched: reads never consult it, and
     /// writes go through [`Self::ensure_writable`].
     read_only: RwLock<std::collections::HashSet<ConnectionHandleId>>,
+    /// The saved-connection id each handle was opened from, when it was opened
+    /// from one. Recorded by the backend at open time so slices that must
+    /// decide by the connection's *saved* properties (the assistant's
+    /// production lock, M44) look it up here instead of trusting an id the
+    /// renderer passes alongside the handle.
+    origins: RwLock<HashMap<ConnectionHandleId, String>>,
 }
 
 impl ConnectionManager {
@@ -109,6 +115,17 @@ impl ConnectionManager {
             self.read_only.write().await.insert(id.clone());
         }
         id
+    }
+
+    /// Record which saved connection `handle` was opened from.
+    pub async fn set_origin(&self, handle: &ConnectionHandleId, saved_id: String) {
+        self.origins.write().await.insert(handle.clone(), saved_id);
+    }
+
+    /// The saved-connection id `handle` was opened from, or `None` for an
+    /// ad-hoc target (an opened SQLite file, a test connection).
+    pub async fn origin(&self, handle: &ConnectionHandleId) -> Option<String> {
+        self.origins.read().await.get(handle).cloned()
     }
 
     /// Whether this handle's session was opened read-only.
@@ -338,6 +355,7 @@ impl ConnectionManager {
         // entry could never be hit, but leaking one per closed connection for
         // the life of the process is still a leak.
         self.read_only.write().await.remove(handle);
+        self.origins.write().await.remove(handle);
         self.open.write().await.remove(handle)
     }
 
@@ -861,6 +879,9 @@ pub async fn open_connection<R: ConnectionRepository + ?Sized, S: SecretStore + 
     let engine_info = connection.engine_info();
     let kind = connection.kind();
     let handle_id = manager.insert_with_mode(connection, read_only).await;
+    if let Some(id) = saved_id {
+        manager.set_origin(&handle_id, id).await;
+    }
     Ok(OpenedConnection {
         handle_id,
         engine_info,

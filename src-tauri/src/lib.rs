@@ -366,6 +366,30 @@ pub fn run() {
             let settings_store = JsonFileSettingsStore::new(config_dir.join("settings.json"));
             app.manage(SettingsState::new(Box::new(settings_store)));
 
+            // Assistant slice (M44): model providers over one HTTP client, API
+            // keys in the OS keychain under their own service, and the local
+            // prompt log beside the other app data.
+            let data_dir = app
+                .path()
+                .app_data_dir()
+                .unwrap_or_else(|_| config_dir.clone());
+            app.manage(features::assistant::commands::AssistantState::new(
+                Box::new(features::assistant::application::HttpProviderFactory::new(
+                    features::assistant::infrastructure::http_client(),
+                )),
+                Arc::new(
+                    features::connections::secrets::KeyringSecretStore::with_service(
+                        features::assistant::infrastructure::KEYCHAIN_SERVICE,
+                    ),
+                ),
+                Box::new(features::assistant::infrastructure::JsonKeyIndex::new(
+                    data_dir.join("assistant-keys.json"),
+                )),
+                Box::new(features::assistant::infrastructure::JsonlPromptLog::new(
+                    data_dir.join("assistant-log.jsonl"),
+                )),
+            ));
+
             // Connections slice: JSON registry + per-engine connectors.
             // Every engine now has a registered connector: SQLite (rusqlite),
             // Postgres (M12 Task 1, sqlx) and MySQL (M12 Task 2, sqlx). An
@@ -554,6 +578,19 @@ pub fn run() {
             features::preferences::commands::prefs_get,
             features::preferences::commands::prefs_set,
             features::settings::commands::settings_load,
+            features::assistant::commands::assistant_describe,
+            features::assistant::commands::assistant_schema,
+            features::assistant::commands::assistant_prepare,
+            features::assistant::commands::assistant_send,
+            features::assistant::commands::assistant_cancel,
+            features::assistant::commands::assistant_discard,
+            features::assistant::commands::assistant_models,
+            features::assistant::commands::assistant_test,
+            features::assistant::commands::assistant_key_info,
+            features::assistant::commands::assistant_key_set,
+            features::assistant::commands::assistant_key_remove,
+            features::assistant::commands::assistant_log_read,
+            features::assistant::commands::assistant_log_clear,
             features::settings::commands::settings_save,
             features::settings::commands::wallpaper_set,
             features::settings::commands::wallpaper_path_get,

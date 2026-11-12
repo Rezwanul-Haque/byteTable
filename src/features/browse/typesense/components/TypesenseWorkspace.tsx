@@ -60,6 +60,9 @@ import { TypesenseDashboard } from "./TypesenseDashboard";
 import { TypesenseSidebar, type TsSectionKind } from "./TypesenseSidebar";
 // Shared chrome the Typesense slice REUSES (importing the owning components' CSS
 // keeps the workspace self-contained in `vite dev` and prod alike).
+import { AiAskTool } from "../../../assistant/components/AiAskTool";
+import { AiStatusChip } from "../../../assistant/components/AiStatusChip";
+import { AiWorkspaceHost } from "../../../assistant/components/AiWorkspaceHost";
 import "../../../workspaces/components/WorkspaceContent.css";
 import "../../../workspaces/components/Sidebar.css";
 import "../../../workspaces/components/TabBar.css";
@@ -425,6 +428,7 @@ export function TypesenseWorkspace({ workspace }: { workspace: Workspace }) {
             <Icon name="add" size={16} />
           </button>
           <div className="tabbar-tools">
+            <AiAskTool workspace={workspace} className="tabbar-tool" />
             <button
               className="tabbar-tool"
               onClick={toggleShell}
@@ -438,6 +442,7 @@ export function TypesenseWorkspace({ workspace }: { workspace: Workspace }) {
         </div>
 
         <div className="tab-content">
+          <AiWorkspaceHost workspace={workspace} scope={""} />
           {error ? (
             <div className="ts-empty">
               <Icon name="error" size={26} style={{ color: "var(--danger)" }} />
@@ -531,6 +536,9 @@ export function TypesenseWorkspace({ workspace }: { workspace: Workspace }) {
             : t("tsx.dash.degraded")}
         </span>
         <ResourceMeter />
+        <AiStatusChip
+          conn={{ id: workspace.saved.id, env: workspace.saved.env, name: workspace.saved.name }}
+        />
         <BuiltByCredit className="status-dim" />
       </div>
     </div>

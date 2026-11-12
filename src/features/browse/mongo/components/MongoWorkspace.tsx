@@ -49,6 +49,12 @@ import { useMongoTabsStore, mongoTabTitle, type MongoWorkspaceTab as Tab } from 
 // its owning component mounts — so a Mongo-first session would be missing them
 // (e.g. the Find tree's flex container collapses). Importing them here makes the
 // Mongo workspace self-contained, like the Dynamo slice, in dev and prod alike.
+import { AiAskTool } from "../../../assistant/components/AiAskTool";
+import { AiStatusChip } from "../../../assistant/components/AiStatusChip";
+import { AiWorkspaceHost } from "../../../assistant/components/AiWorkspaceHost";
+import type { AiAltAction } from "../../../assistant/components/AiPanel";
+import { hostKey, useAssistantStore } from "../../../assistant/state";
+import { stagesFromCommand } from "../pipeline";
 import "../../../workspaces/components/WorkspaceContent.css"; // .tab-content, .empty-state
 import "../../../workspaces/components/Sidebar.css"; // .sidebar, .schema-row/-btn/-pop, .table-item
 import "../../../workspaces/components/TabBar.css"; // .tabbar, .tab, .tab-new
@@ -82,6 +88,7 @@ const nextId = (p: string) => "mg-" + p + "-" + crypto.randomUUID();
 
 export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
   const t = useT();
+  const setAiOpen = useAssistantStore((s) => s.setOpen);
   const closeWorkspace = useWorkspacesStore((state) => state.closeWorkspace);
   const handleId = workspace.handleId;
   const params = workspace.saved.params;
@@ -261,6 +268,27 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
     setTabs((ts) => [...ts, tab]);
     setActiveId(tab.id);
   };
+  // The assistant's aggregate answer, opened as a new Aggregation tab with one
+  // stage per pipeline entry — editable and run from the rail like any other.
+  const aggregateAction: AiAltAction = {
+    label: t("ai.mongo.buildPipeline"),
+    icon: "account_tree",
+    applies: (code) => stagesFromCommand(code) !== null,
+    run: (code) => {
+      const built = stagesFromCommand(code);
+      if (!built) return;
+      const tab: MongoPipelineTabState = {
+        id: nextId("pipeline"),
+        kind: "pipeline",
+        title: "Aggregation · " + built.coll,
+        coll: built.coll,
+        stages: built.stages,
+      };
+      setTabs((ts) => [...ts, tab]);
+      setActiveId(tab.id);
+      setAiOpen(hostKey(workspace.id), false);
+    },
+  };
   const toggleShell = () => togglePanel(workspace.id, termLabel);
   const updateTab = (id: string, patch: Partial<Tab>) =>
     setTabs((ts) => ts.map((t) => (t.id === id ? ({ ...t, ...patch } as Tab) : t)));
@@ -411,6 +439,7 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
             <Icon name="add" size={16} />
           </button>
           <div className="tabbar-tools">
+            <AiAskTool workspace={workspace} className="tabbar-tool" />
             <button className="tabbar-tool" onClick={toggleShell} title="mongosh (⌘` / Ctrl+`)">
               <Icon name="terminal" size={15} />
               <span>mongosh</span>
@@ -431,6 +460,7 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
         </div>
 
         <div className="tab-content">
+          <AiWorkspaceHost workspace={workspace} scope={db} altAction={aggregateAction} />
           {tabs.map((tab) => (
             <div key={tab.id} style={{ display: tab.id === activeId ? "contents" : "none" }}>
               {tab.kind === "dashboard" ? (
@@ -520,6 +550,9 @@ export function MongoWorkspace({ workspace }: { workspace: Workspace }) {
           <Icon name="monitor_heart" size={13} /> {t("mongo.processesLabel")}
         </button>
         <ResourceMeter />
+        <AiStatusChip
+          conn={{ id: workspace.saved.id, env: workspace.saved.env, name: workspace.saved.name }}
+        />
         <BuiltByCredit className="status-dim" />
       </div>
 

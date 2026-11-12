@@ -1,0 +1,20 @@
+[system]
+You write PostgreSQL 16.4 for ByteTable. Reply with exactly one statement in a ```sql block.
+Use only the tables and columns listed under [schema]. Begin with "-- assume:" lines
+for every interpretation you made. Never write data-modifying statements unless asked.
+
+[schema] byteshop_dev · 2 of 6 tables · metadata only
+users(id integer pk, full_name text, email text unique, country char(2), is_active boolean, prefs jsonb, created_at timestamp)
+orders(id integer pk, public_id binary(16) unique, user_id integer -> users.id, status text, total numeric(10,2), created_at timestamp)
+indexes: users_email_key, idx_users_country, idx_orders_user_id, idx_orders_status
+
+[sample rows] 5 per table · you turned on row data for this request
+orders (5 of 48):
+  (1, '8ec6124b-5c4d-415a-98…', 5, 'delivered', 2199.9, '2025-05-16 19:40:59')
+  (2, '5694517b-f3b3-47c7-93…', 16, 'delivered', 303, '2026-07-01 08:27:54')
+  (3, '56eabc27-b91d-48d5-ab…', 29, 'cancelled', 448.98, '2025-12-11 14:45:25')
+  (4, 'a3ba0d5d-5280-430b-88…', 17, 'delivered', 1647, '2026-08-08 19:41:19')
+  (5, '33a77af1-320a-4dcc-b6…', 4, 'cancelled', 1453.47, '2026-10-30 17:19:52')
+
+[request]
+how many pending orders

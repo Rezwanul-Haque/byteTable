@@ -33,7 +33,9 @@ fn columns_of(result: &ChResult) -> Vec<ColumnMeta> {
 
 /// Run an editor query with a row limit + timing. `max_result_rows` is set to
 /// `row_limit + 1` (with `result_overflow_mode=break`) so a truncation is
-/// detectable and reported.
+/// detectable and reported. The editor's schema is the database unqualified
+/// names resolve in — `FROM events` with `analytics` picked reads
+/// `analytics.events`, as `USE` / `search_path` do on the other engines.
 pub async fn run_query(
     http: &ClickHouseHttp,
     sql: &str,
@@ -41,15 +43,14 @@ pub async fn run_query(
 ) -> Result<QueryResult, AppError> {
     let limit = options.row_limit;
     let started = Instant::now();
-    let result = http
-        .query(
-            sql,
-            &[
-                ("max_result_rows", (limit as u64 + 1).to_string()),
-                ("result_overflow_mode", "break".to_string()),
-            ],
-        )
-        .await?;
+    let mut settings = vec![
+        ("max_result_rows", (limit as u64 + 1).to_string()),
+        ("result_overflow_mode", "break".to_string()),
+    ];
+    if let Some(db) = options.schema.as_deref().filter(|s| !s.is_empty()) {
+        settings.push(("database", db.to_string()));
+    }
+    let result = http.query(sql, &settings).await?;
     let elapsed_ms = started.elapsed().as_millis() as u64;
 
     let columns = columns_of(&result);

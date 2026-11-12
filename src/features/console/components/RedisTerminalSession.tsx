@@ -39,7 +39,7 @@ import {
 } from "../../browse/redis/helpers";
 import { useRedisBrowseStore } from "../../browse/redis/state";
 import type { Workspace } from "../../workspaces/types";
-import { usePanelStore, type TermLine, type TermSession } from "../state";
+import { usePendingInput, usePanelStore, type TermLine, type TermSession } from "../state";
 import { focusPromptUnlessSelecting } from "../terminalBody";
 import "./SqlTerminalTab.css";
 
@@ -94,6 +94,12 @@ export function RedisTerminalSession({ workspace, session, embedded }: RedisTerm
 
   const bodyRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // The assistant's "Use in terminal": the command lands on the prompt line,
+  // focused, and is not run until Enter.
+  usePendingInput(workspace.id, session, (text) => {
+    setInput(text);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  });
 
   // Banner: seed on first mount when the session has no lines yet (mirrors the
   // prototype's initial connected-to line + the SQL tab's seeding).

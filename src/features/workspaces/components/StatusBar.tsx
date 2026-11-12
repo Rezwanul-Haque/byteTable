@@ -24,6 +24,8 @@ import { rowCountLabel, useTabMetaStore } from "../tabMeta";
 import { useWorkspacesStore } from "../state";
 import type { Workspace } from "../types";
 import { homeSchema } from "../types";
+import { AiStatusChip } from "../../assistant/components/AiStatusChip";
+import { isAssistantEngine } from "../../assistant/logic";
 import "../../processes/components/ProcessList.css";
 import "./StatusBar.css";
 
@@ -85,6 +87,11 @@ export function StatusBar({ workspace }: { workspace: Workspace }) {
       ) : null}
       <div style={{ flex: 1 }} />
       {context ? <span className="status-dim">{context}</span> : null}
+      {isAssistantEngine(workspace.info.engine) ? (
+        <AiStatusChip
+          conn={{ id: workspace.saved.id, env: workspace.saved.env, name: workspace.saved.name }}
+        />
+      ) : null}
       <button
         type="button"
         className="status-btn"

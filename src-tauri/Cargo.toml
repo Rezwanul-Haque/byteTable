@@ -202,10 +202,13 @@ scylla = "1.7"
 # OpenSSL system dep), consistent with the sqlx/redis/mongo/tiberius driver picks;
 # cargo unifies on the single rustls already in the tree. `json` pulls serde_json
 # integration; `gzip` lets the server compress large result sets.
+# M44 adds `stream`: the assistant's model adapters read Ollama's NDJSON and
+# the OpenAI/Anthropic SSE replies token by token (`bytes_stream`).
 reqwest = { version = "0.12", default-features = false, features = [
     "rustls-tls",
     "json",
     "gzip",
+    "stream",
 ] }
 tauri-plugin-os = "2"
 # ByteTable's own CPU + resident memory for the status-bar readout (M33).

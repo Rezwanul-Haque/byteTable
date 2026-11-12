@@ -1,0 +1,15 @@
+[system]
+You explain PostgreSQL 16.4 queries to a developer in plain English, clause by clause.
+Be concise. Do not rewrite the query unless asked.
+
+[schema] byteshop_dev · 6 tables · metadata only
+users(id integer pk, full_name text, email text unique, country char(2), is_active boolean, prefs jsonb, created_at timestamp)
+products(id integer pk, name text, category text, price numeric(10,2), stock integer, attributes json, created_at timestamp)
+orders(id integer pk, public_id binary(16) unique, user_id integer -> users.id, status text, total numeric(10,2), created_at timestamp)
+order_items(id integer pk, order_id integer -> orders.id, product_id integer -> products.id, quantity integer, unit_price numeric(10,2))
+payments(id integer pk, order_id integer -> orders.id, method text, amount numeric(10,2), status text, paid_at timestamp)
+order_flat_export(id integer pk, order_id integer -> orders.id, customer_id integer -> users.id, customer_name text, customer_email text, customer_phone text, customer_country char(2), customer_segment text, customer_since timestamp, marketing_opt_in boolean, ship_name text, ship_line1 text, ship_line2 text, ship_city text, ship_region text, ship_postcode text, ship_country char(2), ship_method text, ship_cost numeric(10,2), ship_carrier text, ship_tracking text, ship_eta timestamp, shipped_at timestamp, bill_name text, bill_line1 text, bill_city text, bill_region text, bill_postcode text, bill_country char(2), vat_id text, vat_rate numeric(5,2), vat_amount numeric(10,2), pay_method text, pay_provider text, pay_txn_id text, pay_status text, pay_currency char(3), pay_fx_rate numeric(10,6), paid_at timestamp, subtotal numeric(10,2), discount_code text, discount_amount numeric(10,2), tax_total numeric(10,2), grand_total numeric(10,2), refunded_amount numeric(10,2), item_count integer, distinct_products integer, first_sku text, last_sku text, utm_source text, utm_medium text, utm_campaign text, referrer_domain text, device_type text, app_version text, is_gift boolean, gift_message text, is_first_order boolean, fraud_score numeric(4,3), csat_score integer, created_at timestamp, updated_at timestamp, exported_at timestamp)  -- Denormalized nightly export for the BI team
+indexes: users_email_key, idx_users_country, idx_products_category, idx_orders_user_id, idx_orders_status, idx_order_items_order_id, idx_payments_order_id, order_flat_export_order_id_key, idx_flat_customer_country, idx_flat_pay_status, idx_flat_exported_at
+
+[query]
+SELECT * FROM orders WHERE status = 'paid' LIMIT 20;

@@ -1,5 +1,5 @@
-// Settings modal (M20.2–20.5, M31): a 5-tab dialog — Appearance, Fonts & text,
-// Data grid, Language & region, Behavior — editing the global settings
+// Settings modal (M20.2–20.5, M31, M44): a 6-tab dialog — Appearance, Fonts &
+// text, Data grid, Language & region, Behavior, AI assistant — editing the global settings
 // contract. Every change applies + persists immediately through the settings
 // store (no Save button).
 // Ported from the prototype's settings.jsx; the store replaces its useSettings.
@@ -59,6 +59,8 @@ import { renderSqlPreview } from "./sqlPreview";
 import { DEFAULT_WALLPAPER, cachedWallpaperUrl, storeCustomWallpaper } from "../wallpaper";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { useSettingsStore, type SettingsTabId } from "../state";
+import { AiSettingsPane } from "../../assistant/components/AiSettingsPane";
+import { SetRow, SetSeg, SetToggle } from "./SetControls";
 import "./SettingsModal.css";
 
 // Each tab carries the KEY of its label, never the label itself — the nav is
@@ -69,6 +71,7 @@ const TABS: { id: SettingsTabId; key: StringKey; icon: string }[] = [
   { id: "grid", key: "set.tab.grid", icon: "table_rows" },
   { id: "language", key: "set.tab.language", icon: "translate" },
   { id: "behavior", key: "set.tab.behavior", icon: "tune" },
+  { id: "ai", key: "set.tab.ai", icon: "auto_awesome" },
 ];
 
 // The region picker reads its labels through the locale (`set.region.*`) rather
@@ -207,67 +210,6 @@ function WallpaperPicker({
       <button type="button" className="set-wall-pick" onClick={() => void chooseFile()}>
         <Icon name="upload" size={13} /> {customUrl ? "Replace image" : "Choose image"}
       </button>
-    </div>
-  );
-}
-
-function SetRow({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="set-row">
-      <div className="set-row-label">
-        <span>{label}</span>
-        {hint ? <span className="set-row-hint">{hint}</span> : null}
-      </div>
-      <div className="set-row-control">{children}</div>
-    </div>
-  );
-}
-
-function SetToggle({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
-  return (
-    <button
-      type="button"
-      className={"set-switch" + (on ? " on" : "")}
-      role="switch"
-      aria-checked={on}
-      onClick={() => onChange(!on)}
-    >
-      <span className="set-switch-knob" />
-    </button>
-  );
-}
-
-function SetSeg<T extends string | number>({
-  value,
-  options,
-  onChange,
-}: {
-  value: T;
-  options: { value: T; label: string }[];
-  onChange: (value: T) => void;
-}) {
-  return (
-    <div className="set-seg" role="radiogroup">
-      {options.map((o) => (
-        <button
-          key={String(o.value)}
-          type="button"
-          role="radio"
-          aria-checked={value === o.value}
-          className={"set-seg-btn" + (value === o.value ? " active" : "")}
-          onClick={() => onChange(o.value)}
-        >
-          {o.label}
-        </button>
-      ))}
     </div>
   );
 }
@@ -637,6 +579,14 @@ export function SettingsModal({ tab: initialTab, onClose }: SettingsModalProps) 
   // Which tab the opener asked for; changing it afterwards is local state, so
   // clicking through the nav never writes back to the store.
   const [tab, setTab] = useState<SettingsTabId>(initialTab);
+  // An opener that asks for a tab while the modal is already open (the
+  // assistant's status chip, its "Set up in Settings" link) switches to it —
+  // adjusted during render, the way React wants derived resets done.
+  const [askedTab, setAskedTab] = useState<SettingsTabId>(initialTab);
+  if (askedTab !== initialTab) {
+    setAskedTab(initialTab);
+    setTab(initialTab);
+  }
 
   // Narrow helper so each call site stays type-safe per key.
   function setSetting<K extends keyof Settings>(key: K, value: Settings[K]): void {
@@ -950,6 +900,8 @@ export function SettingsModal({ tab: initialTab, onClose }: SettingsModalProps) 
           ) : null}
 
           {tab === "language" ? <LanguagePane settings={settings} setSetting={setSetting} /> : null}
+
+          {tab === "ai" ? <AiSettingsPane /> : null}
 
           {tab === "behavior" ? (
             <>

@@ -1,0 +1,258 @@
+{
+  "tables": [
+    {
+      "name": "users",
+      "comment": null,
+      "total": 32,
+      "columns": [
+        { "name": "id", "type": "INTEGER", "pk": true, "unique": false, "fk": null },
+        { "name": "full_name", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "email", "type": "TEXT", "pk": false, "unique": true, "fk": null },
+        { "name": "country", "type": "CHAR(2)", "pk": false, "unique": false, "fk": null },
+        { "name": "is_active", "type": "BOOLEAN", "pk": false, "unique": false, "fk": null },
+        { "name": "prefs", "type": "JSONB", "pk": false, "unique": false, "fk": null },
+        { "name": "created_at", "type": "TIMESTAMP", "pk": false, "unique": false, "fk": null }
+      ],
+      "indexes": [
+        { "name": "users_pkey", "primary": true, "unique": true, "columns": ["id"] },
+        { "name": "users_email_key", "primary": false, "unique": true, "columns": ["email"] },
+        { "name": "idx_users_country", "primary": false, "unique": false, "columns": ["country"] }
+      ],
+      "rows": []
+    },
+    {
+      "name": "products",
+      "comment": null,
+      "total": 24,
+      "columns": [
+        { "name": "id", "type": "INTEGER", "pk": true, "unique": false, "fk": null },
+        { "name": "name", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "category", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "price", "type": "NUMERIC(10,2)", "pk": false, "unique": false, "fk": null },
+        { "name": "stock", "type": "INTEGER", "pk": false, "unique": false, "fk": null },
+        { "name": "attributes", "type": "JSON", "pk": false, "unique": false, "fk": null },
+        { "name": "created_at", "type": "TIMESTAMP", "pk": false, "unique": false, "fk": null }
+      ],
+      "indexes": [
+        { "name": "products_pkey", "primary": true, "unique": true, "columns": ["id"] },
+        {
+          "name": "idx_products_category",
+          "primary": false,
+          "unique": false,
+          "columns": ["category"]
+        }
+      ],
+      "rows": []
+    },
+    {
+      "name": "orders",
+      "comment": null,
+      "total": 48,
+      "columns": [
+        { "name": "id", "type": "INTEGER", "pk": true, "unique": false, "fk": null },
+        { "name": "public_id", "type": "BINARY(16)", "pk": false, "unique": true, "fk": null },
+        { "name": "user_id", "type": "INTEGER", "pk": false, "unique": false, "fk": "users.id" },
+        { "name": "status", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "total", "type": "NUMERIC(10,2)", "pk": false, "unique": false, "fk": null },
+        { "name": "created_at", "type": "TIMESTAMP", "pk": false, "unique": false, "fk": null }
+      ],
+      "indexes": [
+        { "name": "orders_pkey", "primary": true, "unique": true, "columns": ["id"] },
+        { "name": "idx_orders_user_id", "primary": false, "unique": false, "columns": ["user_id"] },
+        { "name": "idx_orders_status", "primary": false, "unique": false, "columns": ["status"] }
+      ],
+      "rows": [
+        [1, "8ec6124b-5c4d-415a-981f-22c5c67e452e", 5, "delivered", 2199.9, "2025-05-16 19:40:59"],
+        [2, "5694517b-f3b3-47c7-9311-00be31005993", 16, "delivered", 303, "2026-07-01 08:27:54"],
+        [3, "56eabc27-b91d-48d5-ab65-5f94a3e5c16c", 29, "cancelled", 448.98, "2025-12-11 14:45:25"],
+        [4, "a3ba0d5d-5280-430b-88de-c8a990011808", 17, "delivered", 1647, "2026-08-08 19:41:19"],
+        [5, "33a77af1-320a-4dcc-b68a-b23e4db88e56", 4, "cancelled", 1453.47, "2026-10-30 17:19:52"]
+      ]
+    },
+    {
+      "name": "order_items",
+      "comment": null,
+      "total": 117,
+      "columns": [
+        { "name": "id", "type": "INTEGER", "pk": true, "unique": false, "fk": null },
+        { "name": "order_id", "type": "INTEGER", "pk": false, "unique": false, "fk": "orders.id" },
+        {
+          "name": "product_id",
+          "type": "INTEGER",
+          "pk": false,
+          "unique": false,
+          "fk": "products.id"
+        },
+        { "name": "quantity", "type": "INTEGER", "pk": false, "unique": false, "fk": null },
+        { "name": "unit_price", "type": "NUMERIC(10,2)", "pk": false, "unique": false, "fk": null }
+      ],
+      "indexes": [
+        { "name": "order_items_pkey", "primary": true, "unique": true, "columns": ["id"] },
+        {
+          "name": "idx_order_items_order_id",
+          "primary": false,
+          "unique": false,
+          "columns": ["order_id"]
+        }
+      ],
+      "rows": []
+    },
+    {
+      "name": "payments",
+      "comment": null,
+      "total": 39,
+      "columns": [
+        { "name": "id", "type": "INTEGER", "pk": true, "unique": false, "fk": null },
+        { "name": "order_id", "type": "INTEGER", "pk": false, "unique": false, "fk": "orders.id" },
+        { "name": "method", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "amount", "type": "NUMERIC(10,2)", "pk": false, "unique": false, "fk": null },
+        { "name": "status", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "paid_at", "type": "TIMESTAMP", "pk": false, "unique": false, "fk": null }
+      ],
+      "indexes": [
+        { "name": "payments_pkey", "primary": true, "unique": true, "columns": ["id"] },
+        {
+          "name": "idx_payments_order_id",
+          "primary": false,
+          "unique": false,
+          "columns": ["order_id"]
+        }
+      ],
+      "rows": []
+    },
+    {
+      "name": "order_flat_export",
+      "comment": "Denormalized nightly export for the BI team",
+      "total": 24,
+      "columns": [
+        { "name": "id", "type": "INTEGER", "pk": true, "unique": false, "fk": null },
+        { "name": "order_id", "type": "INTEGER", "pk": false, "unique": false, "fk": "orders.id" },
+        {
+          "name": "customer_id",
+          "type": "INTEGER",
+          "pk": false,
+          "unique": false,
+          "fk": "users.id"
+        },
+        { "name": "customer_name", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "customer_email", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "customer_phone", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "customer_country", "type": "CHAR(2)", "pk": false, "unique": false, "fk": null },
+        { "name": "customer_segment", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "customer_since", "type": "TIMESTAMP", "pk": false, "unique": false, "fk": null },
+        { "name": "marketing_opt_in", "type": "BOOLEAN", "pk": false, "unique": false, "fk": null },
+        { "name": "ship_name", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "ship_line1", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "ship_line2", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "ship_city", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "ship_region", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "ship_postcode", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "ship_country", "type": "CHAR(2)", "pk": false, "unique": false, "fk": null },
+        { "name": "ship_method", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "ship_cost", "type": "NUMERIC(10,2)", "pk": false, "unique": false, "fk": null },
+        { "name": "ship_carrier", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "ship_tracking", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "ship_eta", "type": "TIMESTAMP", "pk": false, "unique": false, "fk": null },
+        { "name": "shipped_at", "type": "TIMESTAMP", "pk": false, "unique": false, "fk": null },
+        { "name": "bill_name", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "bill_line1", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "bill_city", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "bill_region", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "bill_postcode", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "bill_country", "type": "CHAR(2)", "pk": false, "unique": false, "fk": null },
+        { "name": "vat_id", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "vat_rate", "type": "NUMERIC(5,2)", "pk": false, "unique": false, "fk": null },
+        { "name": "vat_amount", "type": "NUMERIC(10,2)", "pk": false, "unique": false, "fk": null },
+        { "name": "pay_method", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "pay_provider", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "pay_txn_id", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "pay_status", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "pay_currency", "type": "CHAR(3)", "pk": false, "unique": false, "fk": null },
+        {
+          "name": "pay_fx_rate",
+          "type": "NUMERIC(10,6)",
+          "pk": false,
+          "unique": false,
+          "fk": null
+        },
+        { "name": "paid_at", "type": "TIMESTAMP", "pk": false, "unique": false, "fk": null },
+        { "name": "subtotal", "type": "NUMERIC(10,2)", "pk": false, "unique": false, "fk": null },
+        { "name": "discount_code", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        {
+          "name": "discount_amount",
+          "type": "NUMERIC(10,2)",
+          "pk": false,
+          "unique": false,
+          "fk": null
+        },
+        { "name": "tax_total", "type": "NUMERIC(10,2)", "pk": false, "unique": false, "fk": null },
+        {
+          "name": "grand_total",
+          "type": "NUMERIC(10,2)",
+          "pk": false,
+          "unique": false,
+          "fk": null
+        },
+        {
+          "name": "refunded_amount",
+          "type": "NUMERIC(10,2)",
+          "pk": false,
+          "unique": false,
+          "fk": null
+        },
+        { "name": "item_count", "type": "INTEGER", "pk": false, "unique": false, "fk": null },
+        {
+          "name": "distinct_products",
+          "type": "INTEGER",
+          "pk": false,
+          "unique": false,
+          "fk": null
+        },
+        { "name": "first_sku", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "last_sku", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "utm_source", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "utm_medium", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "utm_campaign", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "referrer_domain", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "device_type", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "app_version", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "is_gift", "type": "BOOLEAN", "pk": false, "unique": false, "fk": null },
+        { "name": "gift_message", "type": "TEXT", "pk": false, "unique": false, "fk": null },
+        { "name": "is_first_order", "type": "BOOLEAN", "pk": false, "unique": false, "fk": null },
+        { "name": "fraud_score", "type": "NUMERIC(4,3)", "pk": false, "unique": false, "fk": null },
+        { "name": "csat_score", "type": "INTEGER", "pk": false, "unique": false, "fk": null },
+        { "name": "created_at", "type": "TIMESTAMP", "pk": false, "unique": false, "fk": null },
+        { "name": "updated_at", "type": "TIMESTAMP", "pk": false, "unique": false, "fk": null },
+        { "name": "exported_at", "type": "TIMESTAMP", "pk": false, "unique": false, "fk": null }
+      ],
+      "indexes": [
+        { "name": "order_flat_export_pkey", "primary": true, "unique": true, "columns": ["id"] },
+        {
+          "name": "order_flat_export_order_id_key",
+          "primary": false,
+          "unique": true,
+          "columns": ["order_id"]
+        },
+        {
+          "name": "idx_flat_customer_country",
+          "primary": false,
+          "unique": false,
+          "columns": ["customer_country", "created_at"]
+        },
+        {
+          "name": "idx_flat_pay_status",
+          "primary": false,
+          "unique": false,
+          "columns": ["pay_status"]
+        },
+        {
+          "name": "idx_flat_exported_at",
+          "primary": false,
+          "unique": false,
+          "columns": ["exported_at"]
+        }
+      ],
+      "rows": []
+    }
+  ]
+}

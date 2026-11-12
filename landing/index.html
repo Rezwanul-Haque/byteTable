@@ -307,12 +307,13 @@
         "Ten database engines in one app: SQLite, MySQL, PostgreSQL, SQL Server, Redis, DynamoDB, MongoDB, Cassandra, ClickHouse, Typesense",
         "SQL editor with schema-aware autocomplete, query parameters, snippets and optional vim keybindings",
         "Virtualized data grid with inline editing and staged, reviewable changes",
-        "Interactive ER schema map and schema diff",
+        "Interactive ER schema map with minimap and smooth pan/zoom, and schema diff",
         "Users, roles and privileges matrix",
         "Scheduled saved queries that write results to a folder",
         "Search a value across every table in a database",
         "Encrypted connection export and import",
-        "Built-in SQL terminal, SSH tunnels, TLS and OS-keychain secrets"
+        "Built-in SQL terminal, SSH tunnels, TLS and OS-keychain secrets",
+        "Opt-in AI assistant with your own model (Ollama, LM Studio, OpenAI-compatible or Anthropic): write, explain and fix SQL, structure-only by default"
       ]
     }
   ]
@@ -487,6 +488,7 @@
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Search a pasted value across every table in a database — right-click it in the sidebar, match exactly or anywhere in a value</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Jump between schemas from a searchable switcher, with system schemas one opt-in away</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Brainstorm board: a free-form canvas per schema for notes, diagrams and draft tables</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Brainstorm board inspector folds into an icon rail with floating drawers — or pin it to dock</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>16 themes including three light ones and two glass materials, plus accent, fonts, size and density</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>8 interface languages — English, বাংলা, Español, Deutsch, 日本語, 简体中文, 繁體中文, العربية</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Full right-to-left layout for Arabic — SQL, data and identifiers stay left-to-right</li>
@@ -522,6 +524,22 @@
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Download query results as CSV — selected rows or all, in the sorted order</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>A failed result tab points straight at the statement that failed</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Open a JSON or binary result cell in a read-only viewer</li>
+        </ul>
+      </div>
+
+      <div class="featgroup">
+        <h3>AI assistant (opt-in)</h3>
+        <ul>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Opt-in and off by default — switched on per connection, and never on with no workspace open</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Bring your own model: Ollama, LM Studio, any OpenAI-compatible URL, or your own Anthropic / OpenAI-compatible key (Groq, OpenRouter, …)</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Write SQL from plain language, then refine it with follow-ups — “only Germany”, “top 5”</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Explain a query or its plan, suggest an index, and fix a failed statement with a one-line diff</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span><code>@table</code> mentions focus what's sent; <code>/</code> opens commands and switches models</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Structure, not data: table and column names only — rows need a per-message switch, and never leave a production workspace</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>See the exact prompt before it's sent, and keep a local log of every prompt</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Generated SQL is checked against your real schema — and nothing runs until you press Run</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Production workspaces stay locked until you allow one by typing its name</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Chat sessions per workspace, with history; API keys live in the OS keychain</li>
         </ul>
       </div>
 
@@ -562,7 +580,9 @@
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Empty a table or drop it outright, behind a confirm that shows the SQL</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Opt in to your engine's foreign-key override — <code>CASCADE</code>, or checks off for the statement</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Empty a schema, or delete the schema itself — type its name to arm it</li>
-          <li><span class="msym"><svg><use href="#chk"/></svg></span>Interactive schema map: draggable ER diagram, movable FK edges, zoom</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Interactive schema map: draggable ER diagram, movable FK edges, fit to view</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Smooth canvas navigation on every map and board — two-finger scroll or drag to pan, pinch or <code>⌘</code>/<code>Ctrl</code>-scroll to zoom around the cursor</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Minimap on every schema map (SQL, DynamoDB, MongoDB, Cassandra) and the brainstorm board — click to jump, drag to pan, hide when you don't need it</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Export the schema map to PNG or SVG</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Group tables into labelled frames on the map, recolour them, and draw edges between groups</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Fit the whole schema to the window, or zoom with <code>⌘</code>/<code>Ctrl</code> plus and minus</li>
@@ -631,6 +651,7 @@
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Local-first: every query runs from the Rust core on your machine</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>The UI only ever sees opaque connection ids — never your credentials</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>No account, no cloud sync, no telemetry</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>The AI assistant is off until you turn it on, runs on a model you choose (local works offline), and sends structure — not data</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Native builds for macOS, Windows and Linux</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Apache 2.0 — and no feature is ever paywalled</li>
         </ul>

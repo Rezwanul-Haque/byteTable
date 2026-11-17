@@ -643,7 +643,7 @@ export function ExplainPanel({
   const kept = a.base && a.final != null ? Math.round((a.final / a.base) * 100) : null;
   const rowsOut = a.final == null ? "—" : (a.truncated ? "≥ " : "") + a.final.toLocaleString();
   const steps = a.steps.map((s, i) =>
-    i === 0 && columnCount != null && s.extra
+    i === 0 && s.kw === "FROM" && columnCount != null && s.extra
       ? { ...s, extra: `${s.extra} ${t("expl.colsCount", { count: columnCount })}` }
       : s,
   );

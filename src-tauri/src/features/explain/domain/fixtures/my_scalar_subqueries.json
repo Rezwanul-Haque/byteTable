@@ -1,0 +1,61 @@
+{
+  "query_block": {
+    "select_id": 1,
+    "message": "No tables used",
+    "select_list_subqueries": [
+      {
+        "dependent": false,
+        "cacheable": true,
+        "query_block": {
+          "select_id": 3,
+          "cost_info": {
+            "query_cost": "0.65"
+          },
+          "table": {
+            "table_name": "cms_roles",
+            "access_type": "ALL",
+            "rows_examined_per_scan": 4,
+            "rows_produced_per_join": 4,
+            "filtered": "100.00",
+            "cost_info": {
+              "read_cost": "0.25",
+              "eval_cost": "0.40",
+              "prefix_cost": "0.65",
+              "data_read_per_join": "3K"
+            },
+            "used_columns": ["id", "deleted_at"]
+          }
+        }
+      }
+    ],
+    "optimized_away_subqueries": [
+      {
+        "dependent": false,
+        "cacheable": true,
+        "query_block": {
+          "select_id": 2,
+          "cost_info": {
+            "query_cost": "1.45"
+          },
+          "table": {
+            "table_name": "cms_users",
+            "access_type": "index",
+            "key": "PRIMARY",
+            "used_key_parts": ["id"],
+            "key_length": "16",
+            "rows_examined_per_scan": 12,
+            "rows_produced_per_join": 12,
+            "filtered": "100.00",
+            "cost_info": {
+              "read_cost": "0.25",
+              "eval_cost": "1.20",
+              "prefix_cost": "1.45",
+              "data_read_per_join": "9K"
+            },
+            "used_columns": ["id", "is_active", "is_super_user"]
+          }
+        }
+      }
+    ]
+  }
+}

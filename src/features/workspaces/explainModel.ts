@@ -314,8 +314,8 @@ function buildPlan(
     );
   } else if (!shape.table) {
     // No FROM at all — a projection over a single synthetic row, which is what
-    // psql calls a Result node. Reachable inside a derived table (`FROM (SELECT
-    // 1) t`); the top level refuses such a statement before it gets here.
+    // psql calls a Result node. Its work, if any, is in the scalar subqueries
+    // of the select list, which only the server's own plan can lay out.
     push({
       depth: scanDepth,
       node: "Result",
@@ -391,9 +391,6 @@ export function analyzeQuery(shape: SelectShape, stats: ExplainStats): Analysis 
   if (shape.subquery && !shape.derived) {
     return { ...empty, error: t("expl.err.derivedUnreadable") };
   }
-  if (!shape.table && !shape.derived) {
-    return { ...empty, error: t("expl.err.noFrom") };
-  }
 
   // A derived table is addressed by its alias; the relation it stands for is
   // the inner plan nested beneath the Subquery Scan node.
@@ -432,11 +429,14 @@ export function analyzeQuery(shape: SelectShape, stats: ExplainStats): Analysis 
     steps.push({ kw: def.kw, labelKey: def.labelKey, descKey: def.descKey, rows, extra });
   };
   const fromLabel = shape.derived ? table + " (derived table)" : table;
-  addStep(
-    "from",
-    base,
-    joins.length ? fromLabel + " + " + joins.map((j) => j.table).join(", ") : fromLabel,
-  );
+  // A SELECT with no FROM reads no relation, so it has no FROM step to show.
+  if (shape.table || shape.derived) {
+    addStep(
+      "from",
+      base,
+      joins.length ? fromLabel + " + " + joins.map((j) => j.table).join(", ") : fromLabel,
+    );
+  }
   if (shape.whereText) addStep("where", afterWhere, shape.whereText);
   if (shape.groupByText) addStep("groupBy", beforeLimit, shape.groupByText);
   if (shape.havingText) addStep("having", null, shape.havingText);

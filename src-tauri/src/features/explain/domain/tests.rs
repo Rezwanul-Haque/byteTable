@@ -50,6 +50,7 @@ const PG_ANALYZE: &str = include_str!("fixtures/pg_analyze.json");
 const PG_DERIVED: &str = include_str!("fixtures/pg_derived.json");
 const MY_PLAN: &str = include_str!("fixtures/my_plan.json");
 const MY_DERIVED: &str = include_str!("fixtures/my_derived.json");
+const MY_SCALAR_SUBQUERIES: &str = include_str!("fixtures/my_scalar_subqueries.json");
 
 #[test]
 fn postgres_reads_node_names_relations_and_depths() {
@@ -243,6 +244,37 @@ fn mysql_nests_a_derived_table_under_the_table_that_reads_it() {
     let inner = plan.nodes.last().unwrap();
     assert_eq!(inner.node, "Seq Scan on orders");
     assert!(inner.depth > plan.nodes[materialize].depth);
+}
+
+/// A SELECT with no FROM has no table of its own — all of its work is in the
+/// scalar subqueries of its select list, which MySQL reports beside the block
+/// rather than under a table — as `optimized_away_subqueries` when it evaluated
+/// them while planning. Reading only tables left this plan a lone `Result`.
+#[test]
+fn mysql_reads_the_scalar_subqueries_of_a_select_with_no_from() {
+    let plan = my(MY_SCALAR_SUBQUERIES);
+    let names: Vec<&str> = plan.nodes.iter().map(|n| n.node.as_str()).collect();
+    assert_eq!(
+        names,
+        [
+            "Result",
+            "Subquery #3",
+            "Seq Scan on cms_roles",
+            "Subquery #2",
+            "Index Scan using PRIMARY on cms_users",
+        ]
+    );
+    let depths: Vec<usize> = plan.nodes.iter().map(|n| n.depth).collect();
+    assert_eq!(depths, [0, 1, 2, 1, 2]);
+    assert!(!plan.nodes[0].subplan);
+    assert!(plan.nodes[1..].iter().all(|n| n.subplan));
+    assert_eq!(plan.nodes[0].detail, "No tables used");
+    assert_eq!(plan.nodes[1].cost, Some(0.65));
+    assert_eq!(plan.nodes[1].detail, "select-list subquery — run once");
+    assert_eq!(
+        plan.nodes[3].detail,
+        "subquery evaluated while planning — run once"
+    );
 }
 
 #[test]

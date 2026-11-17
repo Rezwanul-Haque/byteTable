@@ -3980,7 +3980,6 @@ export const zhHans: StringTable = {
   "expl.err.selectOnly": "执行计划视图分析的是 SELECT 查询——在上方写一条即可查看其执行方式。",
   "expl.err.derivedUnreadable":
     "此 SELECT 从派生表读取，而其中的 SELECT 无法解析。请单独分析内层查询以查看其计划。",
-  "expl.err.noFrom": "没有 FROM 子句——没有可据以构建计划的关系。",
   "expl.warn.filterDiscard":
     "筛选丢弃了读取行的 {pct}%（共 {total}，丢弃 {removed}）。在被筛选的列上建索引可让引擎跳过这些行。",
   "expl.warn.filterDiscardEst":

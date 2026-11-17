@@ -4,6 +4,11 @@
 //! `ordering_operation` wraps `grouping_operation` wraps `duplicates_removal`
 //! wraps either a `nested_loop` array of tables or a single `table`. A derived
 //! table hangs off the table that reads it, as `materialized_from_subquery`.
+//! Subqueries outside FROM sit beside the tables, in a list named for where
+//! they were written (`select_list_subqueries`, `having_subqueries`, …) or, when
+//! the optimizer evaluated them while planning, `optimized_away_subqueries`.
+//! They are the whole plan of a SELECT with no FROM, whose block holds a
+//! `message` ("No tables used") where its table would be.
 //!
 //! Unlike Postgres, MySQL's per-table `read_cost` + `eval_cost` are already
 //! per-node, so no self-vs-inclusive correction is needed here.
@@ -101,11 +106,65 @@ fn walk_block(block: &Value, depth: usize, subplan: bool, nodes: &mut Vec<PlanNo
                 push_table(table, d, subplan, nodes);
             }
         }
-        return;
-    }
-    if let Some(table) = inner.get("table") {
+    } else if let Some(table) = inner.get("table") {
         push_table(table, d, subplan, nodes);
+    } else if let Some(message) = inner.get("message").and_then(Value::as_str) {
+        // No FROM: one synthetic row, which is what psql calls a Result node.
+        let mut node = PlanNode::new("Result", NodeKind::Scan, d, subplan);
+        node.rows = Some(1);
+        node.detail = message.to_string();
+        nodes.push(node);
     }
+
+    // The lists hang off whichever level MySQL attached them to, so both the
+    // block and its innermost operation are read.
+    for (key, origin) in SUBQUERY_LISTS {
+        let lists = [block.get(key), inner.get(key)];
+        let lists = if std::ptr::eq(block, inner) {
+            &lists[..1]
+        } else {
+            &lists[..]
+        };
+        for sub in lists
+            .iter()
+            .filter_map(|l| l.and_then(Value::as_array))
+            .flatten()
+        {
+            push_subquery(sub, origin, d + 1, nodes);
+        }
+    }
+}
+
+/// The subquery lists a block can carry, and how each reads in the tree.
+const SUBQUERY_LISTS: [(&str, &str); 5] = [
+    ("select_list_subqueries", "select-list subquery"),
+    (
+        "optimized_away_subqueries",
+        "subquery evaluated while planning",
+    ),
+    ("having_subqueries", "HAVING subquery"),
+    ("group_by_subqueries", "GROUP BY subquery"),
+    ("order_by_subqueries", "ORDER BY subquery"),
+];
+
+fn push_subquery(sub: &Value, origin: &str, depth: usize, nodes: &mut Vec<PlanNode>) {
+    let Some(block) = sub.get("query_block") else {
+        return;
+    };
+    let name = match block.get("select_id").and_then(Value::as_i64) {
+        Some(id) => format!("Subquery #{id}"),
+        None => "Subquery".to_string(),
+    };
+    let dependent = sub.get("dependent").and_then(Value::as_bool) == Some(true);
+    let mut marker = PlanNode::new(name, NodeKind::Other, depth, true);
+    marker.detail = if dependent {
+        format!("{origin} — dependent, re-run for each outer row")
+    } else {
+        format!("{origin} — run once")
+    };
+    marker.cost = cost(block);
+    nodes.push(marker);
+    walk_block(block, depth + 1, true, nodes);
 }
 
 fn push_op(

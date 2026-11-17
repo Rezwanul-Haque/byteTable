@@ -4169,7 +4169,6 @@ export const en = {
     "The execution-plan view analyzes a SELECT query — write one above to see how it runs.",
   "expl.err.derivedUnreadable":
     "This SELECT reads from a derived table whose own SELECT could not be read. Analyze the inner query on its own to see its plan.",
-  "expl.err.noFrom": "No FROM clause — there is no relation to build a plan over.",
   "expl.warn.filterDiscard":
     "Filter discards {pct}% of rows read ({removed} of {total}). An index on the filtered column would let the engine skip them.",
   "expl.warn.filterDiscardEst":

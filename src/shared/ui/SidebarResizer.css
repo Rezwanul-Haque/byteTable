@@ -24,6 +24,50 @@ body.bt-sidebar-right .sidebar-resizer {
   margin-inline-end: -4px;
 }
 
+/* Collapsed (⌘B / drag shut): the seam widens to fill the narrow rail the
+   grid leaves (--sidebar-rail-w, App.css), and a small tab inside it brings
+   the sidebar back. The whole rail stays draggable. */
+body.bt-sidebar-collapsed .sidebar-resizer {
+  inset-inline-start: 0;
+  margin-inline-start: 0;
+  width: var(--sidebar-rail-w);
+}
+body.bt-sidebar-right.bt-sidebar-collapsed .sidebar-resizer {
+  inset-inline-start: auto;
+  inset-inline-end: 0;
+  margin-inline-end: 0;
+}
+.sidebar-expand {
+  position: absolute;
+  top: 50%;
+  /* Centred in the rail, whatever width a material gives it. */
+  inset-inline-start: calc((var(--sidebar-rail-w) - 12px) / 2);
+  margin-top: -22px;
+  width: 12px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg2);
+  color: var(--text-dim);
+  cursor: pointer;
+  z-index: 1;
+}
+.sidebar-expand:hover {
+  color: var(--accent);
+}
+/* The chevron points toward where the sidebar opens: flipped for a right-side
+   sidebar or an RTL locale, and back again when both apply. */
+body.bt-rtl .sidebar-expand svg,
+body.bt-sidebar-right .sidebar-expand svg {
+  transform: scaleX(-1);
+}
+body.bt-sidebar-right.bt-rtl .sidebar-expand svg {
+  transform: none;
+}
+
 /* The visible 2px line, only tinted on hover / while dragging. */
 .sidebar-resizer::after {
   content: "";

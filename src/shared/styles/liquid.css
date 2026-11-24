@@ -108,6 +108,30 @@
   margin-inline-end: 0;
   margin-inline-start: 8px;
 }
+/* Collapsed sidebar: the frame's 8px pane gap already separates the rail from
+   the content, so the workspace reaches back over it and the collapse rail
+   takes its place — otherwise the reopen tab floats in a gap-plus-rail
+   channel. Mirrored for a right-hand sidebar (over the frame's edge inset). */
+[data-material="liquid"] body.bt-sidebar-collapsed .workspace {
+  --sidebar-rail-w: 16px;
+  margin-inline-start: -8px;
+}
+[data-material="liquid"] body.bt-sidebar-right.bt-sidebar-collapsed .workspace {
+  margin-inline-start: 0;
+  margin-inline-end: -8px;
+}
+/* Keep the floating status bar flush with the content pane above it. */
+[data-material="liquid"] body.bt-sidebar-collapsed .statusbar,
+[data-material="liquid"] body.bt-sidebar-collapsed .redis-statusbar,
+[data-material="liquid"] body.bt-sidebar-collapsed .ddb-statusbar {
+  margin-inline-start: var(--sidebar-rail-w);
+}
+[data-material="liquid"] body.bt-sidebar-right.bt-sidebar-collapsed .statusbar,
+[data-material="liquid"] body.bt-sidebar-right.bt-sidebar-collapsed .redis-statusbar,
+[data-material="liquid"] body.bt-sidebar-right.bt-sidebar-collapsed .ddb-statusbar {
+  margin-inline-start: 8px;
+  margin-inline-end: var(--sidebar-rail-w);
+}
 /* The status bar floats as its own rounded pane; the grid row grows to make
    room for the gap under the panes. */
 [data-material="liquid"] .workspace {

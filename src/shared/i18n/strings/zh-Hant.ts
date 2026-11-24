@@ -39,6 +39,7 @@ export const zhHant: StringTable = {
   "menu.edit.paste": "貼上",
   "menu.view.palette": "命令面板",
   "menu.view.terminal": "顯示/隱藏終端機",
+  "menu.view.sidebar": "顯示/隱藏側邊欄",
   "menu.view.schemaMap": "結構圖",
   "menu.view.processes": "執行中的程序",
   "menu.view.zoomIn": "放大",

@@ -52,6 +52,7 @@ export const zhHans: StringTable = {
   "menu.edit.paste": "粘贴",
   "menu.view.palette": "命令面板",
   "menu.view.terminal": "显示/隐藏终端",
+  "menu.view.sidebar": "显示/隐藏侧边栏",
   "menu.view.schemaMap": "结构图",
   "menu.view.processes": "运行中的进程",
   "menu.view.privileges": "用户与权限",
@@ -204,6 +205,7 @@ export const zhHans: StringTable = {
   "uix.sc.structure.applyPending": "应用待生效的更改",
   "uix.sc.view.zoomIn": "放大",
   "uix.sc.view.zoomOut": "缩小",
+  "uix.sc.view.toggleSidebar": "显示/隐藏侧边栏",
 
   // 批量删除确认（BulkDeleteModal）。行名词由引擎调用方传入；
   // 已知名词映射到复数键，未知名词回退为「名词 + s」。
@@ -245,6 +247,8 @@ export const zhHans: StringTable = {
   // 侧边栏宽度调节器（SidebarResizer）。
   "uix.resize.aria": "调整侧边栏宽度",
   "uix.resize.hint": "拖动调整大小 · 双击重置",
+  "uix.resize.collapsedHint": "拖动或双击以显示侧边栏",
+  "uix.resize.expand": "显示侧边栏",
 
   // shell.* — App.tsx（退出确认 + “文件 ▸ 打开”提示）。
   "shell.quit.title": "关闭 {app}",

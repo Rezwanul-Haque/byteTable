@@ -39,6 +39,7 @@ export const ar: StringTable = {
   "menu.edit.paste": "لصق",
   "menu.view.palette": "لوحة الأوامر",
   "menu.view.terminal": "إظهار/إخفاء الطرفية",
+  "menu.view.sidebar": "إظهار/إخفاء الشريط الجانبي",
   "menu.view.schemaMap": "خريطة المخطط",
   "menu.view.processes": "العمليات الجارية",
   "menu.view.zoomIn": "تكبير",

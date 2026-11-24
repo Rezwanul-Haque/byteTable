@@ -20,6 +20,7 @@ import { useT } from "../../../shared/i18n/useT";
 import { emitCmd } from "../../../shared/ui/btCmd";
 import { Icon } from "../../../shared/ui/Icon";
 import { Kbd } from "../../../shared/ui/Kbd";
+import { toggleSidebar } from "../../../shared/ui/sidebarCollapse";
 import { shellLabel, usePanelStore } from "../../console/state";
 import { tablesKey, useIntrospectionStore } from "../../introspection/state";
 import { isDiffable } from "../../schema_diff/handles";
@@ -155,6 +156,13 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
       label: t("ws.palette.newSql"),
       hint: "⌘T",
       run: openSqlTab,
+    };
+    const sidebar: Command = {
+      id: "cmd-toggle-sidebar",
+      icon: "left_panel_close",
+      label: t("menu.view.sidebar"),
+      hint: "⌘B",
+      run: toggleSidebar,
     };
     const shell = shellLabel(workspace.saved.engine);
     const openTerminal: Command = {
@@ -351,6 +359,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
       newConnection,
       newSql,
       board,
+      sidebar,
       openTerminal,
       schemaMap,
       processes,

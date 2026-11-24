@@ -39,6 +39,7 @@ export const ja: StringTable = {
   "menu.edit.paste": "貼り付け",
   "menu.view.palette": "コマンドパレット",
   "menu.view.terminal": "ターミナルの表示切替",
+  "menu.view.sidebar": "サイドバーの表示切替",
   "menu.view.schemaMap": "スキーママップ",
   "menu.view.processes": "実行中のプロセス",
   "menu.view.zoomIn": "拡大",

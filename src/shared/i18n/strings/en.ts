@@ -59,6 +59,7 @@ export const en = {
   "menu.edit.paste": "Paste",
   "menu.view.palette": "Command Palette",
   "menu.view.terminal": "Toggle Terminal",
+  "menu.view.sidebar": "Toggle Sidebar",
   "menu.view.schemaMap": "Schema Map",
   "menu.view.processes": "Running Processes",
   "menu.view.privileges": "Users & Privileges",
@@ -220,6 +221,7 @@ export const en = {
   "uix.sc.structure.applyPending": "Apply pending changes",
   "uix.sc.view.zoomIn": "Zoom in",
   "uix.sc.view.zoomOut": "Zoom out",
+  "uix.sc.view.toggleSidebar": "Show / hide sidebar",
 
   // Bulk delete confirm (BulkDeleteModal). The row noun arrives from the engine
   // caller as an English string; known nouns map to plural keys, unknown ones
@@ -263,6 +265,8 @@ export const en = {
   // Sidebar resizer (SidebarResizer).
   "uix.resize.aria": "Resize sidebar",
   "uix.resize.hint": "Drag to resize · double-click to reset",
+  "uix.resize.collapsedHint": "Drag or double-click to show the sidebar",
+  "uix.resize.expand": "Show sidebar",
 
   // shell.* — App.tsx (quit confirm + File ▸ Open toasts).
   "shell.quit.title": "Close {app}",

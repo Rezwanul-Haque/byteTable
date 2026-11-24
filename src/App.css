@@ -28,6 +28,7 @@
  * spanning the bottom — restored in M4 now that the StatusBar lands).
  */
 .workspace {
+  --sidebar-rail-w: 14px;
   flex: 1;
   min-height: 0;
   min-width: 0;
@@ -51,6 +52,21 @@ body.bt-sidebar-right .redis-sidebar,
 body.bt-sidebar-right .ddb-sidebar {
   border-right: none;
   border-left: 1px solid var(--border);
+}
+
+/* Collapsed sidebar (⌘B, View → Toggle Sidebar, or dragged shut — see
+   SidebarResizer). The column shrinks to a narrow rail that holds the reopen
+   tab, so the tab never sits over the main column's content (a grid's
+   checkbox gutter). The sidebar itself leaves layout entirely. */
+body.bt-sidebar-collapsed .workspace {
+  grid-template-columns: var(--sidebar-rail-w) 1fr;
+}
+body.bt-sidebar-right.bt-sidebar-collapsed .workspace {
+  grid-template-columns: 1fr var(--sidebar-rail-w);
+}
+body.bt-sidebar-collapsed .workspace > .sidebar,
+body.bt-sidebar-collapsed .workspace > .redis-sidebar {
+  display: none;
 }
 
 .main-col {

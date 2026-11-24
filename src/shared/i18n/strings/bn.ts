@@ -39,6 +39,7 @@ export const bn: StringTable = {
   "menu.edit.paste": "পেস্ট",
   "menu.view.palette": "কমান্ড প্যালেট",
   "menu.view.terminal": "টার্মিনাল দেখান/লুকান",
+  "menu.view.sidebar": "সাইডবার দেখান/লুকান",
   "menu.view.schemaMap": "স্কিমা ম্যাপ",
   "menu.view.processes": "চলমান প্রসেস",
   "menu.view.zoomIn": "জুম ইন",

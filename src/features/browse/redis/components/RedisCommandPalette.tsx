@@ -13,6 +13,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { emitCmd } from "../../../../shared/ui/btCmd";
 import { Icon } from "../../../../shared/ui/Icon";
 import { Kbd } from "../../../../shared/ui/Kbd";
+import { toggleSidebar } from "../../../../shared/ui/sidebarCollapse";
 import { useT } from "../../../../shared/i18n/useT";
 import type { KvDbInfo } from "../../../connections/api";
 import { shellLabel, usePanelStore } from "../../../console/state";
@@ -112,6 +113,13 @@ export function RedisCommandPalette(props: RedisCommandPaletteProps) {
       hint: "⌘T",
       run: () => openPanel(workspaceId, shellLabel("redis")),
     };
+    const sidebar: PaletteCommand = {
+      id: "toggle-sidebar",
+      icon: "left_panel_close",
+      label: t("menu.view.sidebar"),
+      hint: "⌘B",
+      run: toggleSidebar,
+    };
     const dash: PaletteCommand = {
       id: "dashboard",
       icon: cluster ? "lan" : "monitoring",
@@ -163,7 +171,7 @@ export function RedisCommandPalette(props: RedisCommandPaletteProps) {
       hint: workspaceName,
       run: onCloseWorkspace,
     };
-    return [...keyCmds, cli, dash, clients, kickIdle, ...dbCmds, newConnection, close];
+    return [...keyCmds, cli, sidebar, dash, clients, kickIdle, ...dbCmds, newConnection, close];
   }, [
     sampleKeys,
     cluster,

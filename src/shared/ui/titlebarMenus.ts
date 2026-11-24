@@ -24,6 +24,7 @@ import { t } from "../i18n";
 import { runCodeEditorHistory } from "./activeCodeEditor";
 import { requestOpenNotebook } from "../../features/notebooks/openRequest";
 import { emitCmd } from "./btCmd";
+import { toggleSidebar } from "./sidebarCollapse";
 
 /** The product name. Interpolated into labels rather than translated. */
 const APP_NAME = "ByteTable";
@@ -264,6 +265,13 @@ export function buildMenus(m: MenuCtx): Menu[] {
           hint: "⌘K / ⇧⇧",
           enabled: hasPalette,
           run: () => emitCmd("palette"),
+        },
+        {
+          id: "toggle-sidebar",
+          label: t("menu.view.sidebar"),
+          hint: "⌘B",
+          enabled: hasWs,
+          run: toggleSidebar,
         },
         {
           id: "toggle-terminal",

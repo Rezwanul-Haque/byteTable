@@ -38,6 +38,7 @@ export const es: StringTable = {
   "menu.edit.paste": "Pegar",
   "menu.view.palette": "Paleta de comandos",
   "menu.view.terminal": "Mostrar u ocultar la terminal",
+  "menu.view.sidebar": "Mostrar u ocultar la barra lateral",
   "menu.view.schemaMap": "Mapa del esquema",
   "menu.view.processes": "Procesos en ejecución",
   "menu.view.zoomIn": "Acercar",

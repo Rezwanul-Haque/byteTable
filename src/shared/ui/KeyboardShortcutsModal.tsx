@@ -75,6 +75,7 @@ const GROUPS: Group[] = [
     rows: [
       { keys: "⌘+", label: "uix.sc.view.zoomIn" },
       { keys: "⌘-", label: "uix.sc.view.zoomOut" },
+      { keys: "⌘B", label: "uix.sc.view.toggleSidebar" },
     ],
   },
 ];

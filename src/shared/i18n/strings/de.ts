@@ -39,6 +39,7 @@ export const de: StringTable = {
   "menu.edit.paste": "Einfügen",
   "menu.view.palette": "Befehlspalette",
   "menu.view.terminal": "Terminal ein-/ausblenden",
+  "menu.view.sidebar": "Seitenleiste ein-/ausblenden",
   "menu.view.schemaMap": "Schema-Karte",
   "menu.view.processes": "Laufende Prozesse",
   "menu.view.zoomIn": "Vergrößern",

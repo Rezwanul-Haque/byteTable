@@ -413,7 +413,10 @@
     0 6px 16px color-mix(in oklab, var(--danger) 40%, transparent);
 }
 [data-material="liquid"] .btn-tonal,
-[data-material="liquid"] .btn-text {
+[data-material="liquid"] .btn-text,
+/* The connect screen's "Open file" sits in the footer beside them; a squared
+   8px box among capsules read as a different control. */
+[data-material="liquid"] .conn-openfile-btn {
   border-radius: 99px;
 }
 [data-material="liquid"] .add-col-btn {

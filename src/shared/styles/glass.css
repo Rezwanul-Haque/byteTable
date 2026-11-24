@@ -685,6 +685,22 @@
   background: rgba(255, 255, 255, 0.1);
 }
 
+/* The connect screen's "Open file": a button in all but name (it owns a
+   popover, so it is not a <Btn>), and the one control in that footer still
+   painting the flat --bg1 well + hard border while New connection and Compare
+   schemas beside it are glass. A neutral glass fill from the text colour, so it
+   reads on the light materials too; the accent tint on hover / while open. */
+[data-material] .conn-openfile-btn {
+  background: color-mix(in oklab, var(--text) 7%, transparent);
+  border-color: color-mix(in oklab, var(--text) 14%, transparent);
+  box-shadow: var(--glass-hi);
+}
+[data-material] .conn-openfile-btn:hover:not(:disabled),
+[data-material] .conn-openfile-btn.open {
+  background: color-mix(in oklab, var(--accent) 18%, transparent);
+  border-color: color-mix(in oklab, var(--accent) 55%, transparent);
+}
+
 [data-material] ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.18);
 }

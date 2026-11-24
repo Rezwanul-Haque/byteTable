@@ -67,6 +67,8 @@ export interface MenuCtx {
   hasTerminal: boolean;
   /** The app is zoomed away from 100% (font-size setting != base). */
   zoomChanged: boolean;
+  /** Data masking is on (M49): the View item names the opposite action. */
+  masking: boolean;
   /** The active tab is a query notebook (M47): Save / Save as apply. */
   isNotebook: boolean;
   /** This workspace's recent notebooks; `missing` = moved or deleted. */
@@ -118,6 +120,7 @@ export function buildMenus(m: MenuCtx): Menu[] {
     hasPrivileges,
     hasTerminal,
     zoomChanged,
+    masking,
     isNotebook,
     recentNotebooks,
     ctx,
@@ -265,6 +268,13 @@ export function buildMenus(m: MenuCtx): Menu[] {
     {
       label: t("menu.view"),
       items: [
+        {
+          id: "mask",
+          label: t(masking ? "menu.view.unmask" : "menu.view.mask"),
+          hint: "⇧⌘M",
+          enabled: true,
+          run: () => emitCmd("mask"),
+        },
         {
           id: "palette",
           label: t("menu.view.palette"),

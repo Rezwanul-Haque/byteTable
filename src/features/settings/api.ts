@@ -102,6 +102,16 @@ export interface Settings {
   undoKeepEntries: UndoKeepEntries;
   /** Changes touching more rows are logged without values. */
   undoMaxRows: UndoMaxRows;
+  /** Data masking (M49): the switch. Persisted, so it survives a restart. */
+  maskOn: boolean;
+  maskEmail: boolean;
+  maskPhone: boolean;
+  /** Tokens, passwords, keys, hashes. */
+  maskSecret: boolean;
+  /** Names and addresses. */
+  maskPerson: boolean;
+  /** Extra column names, comma separated; `*` = any text. */
+  maskCustom: string;
   restoreTabs: boolean;
   /** Periodically refresh the sidebar object list (+ Redis keyspace). */
   autoRefresh: boolean;
@@ -219,6 +229,12 @@ export const DEFAULTS: Settings = {
   undoKeepDays: 7,
   undoKeepEntries: 500,
   undoMaxRows: 1000,
+  maskOn: false,
+  maskEmail: true,
+  maskPhone: true,
+  maskSecret: true,
+  maskPerson: false,
+  maskCustom: "",
   restoreTabs: true,
   autoRefresh: true,
   autoRefreshSec: 10,

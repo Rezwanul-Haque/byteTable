@@ -1,6 +1,7 @@
 // App shell — frameless window layout per spec §2: global 56px rail on the
 // left, everything right of it swaps with the active workspace.
 
+import { MaskWatcher } from "./features/masking/components/MaskSwitches";
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 
 import { ToastProvider } from "./shared/ui/ToastProvider";
@@ -349,6 +350,9 @@ export function App() {
       {/* Query notebooks (M47): document upkeep, the quit guard, and .md drops.
           Inside the provider because a failed drop-open toasts. */}
       <NotebooksBridge onQuitRequested={openQuitConfirm} />
+      {/* Data masking (M49): ⌘⇧M and the on / off toast, from any route.
+          Inside the provider because it toasts; renders nothing. */}
+      <MaskWatcher />
       <div className="bt-app-root">
         <TitleBar ctx={titleBarCtx} />
         <div className="app-frame">

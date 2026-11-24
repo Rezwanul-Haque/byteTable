@@ -12,6 +12,8 @@
 // EditTarget model (the grid maps `onStage`'s per-column-index changes onto its
 // `stageRealValue` / `stageNewValue`).
 
+import { MaskedText } from "../../../masking/components/MaskedText";
+import { maskShow, maskShowByName, useMask, useMaskStore } from "../../../masking/state";
 import { HistoryRowLink } from "../../../change_history/components/HistoryRowLink";
 import { useWorkspacesStore } from "../../../workspaces/state";
 import { isDataFileWorkspace } from "../../../workspaces/types";
@@ -138,6 +140,31 @@ function RowInspectorField({
       () => toast(t("uix.copy.fail"), "err"),
     );
   };
+
+  // Masking (M49): the field's editor is replaced — the real value is in no
+  // input, title or label. Applies to the primary key too. A draft being typed
+  // is judged by the column name only, so it cannot vanish mid-word.
+  const masked = maskShow(value, col.name) ?? (hasDraft ? maskShowByName(cur, col.name) : null);
+  if (masked) {
+    return (
+      <div className="ri-field" data-ri-field={index}>
+        <div className="ri-field-head">
+          <span className="ri-field-name">{col.name}</span>
+          <span className="ri-field-type">{(col.type || "").toLowerCase()}</span>
+        </div>
+        <div className="ri-masked">
+          <MaskedText text={masked.text} />
+          <button
+            type="button"
+            className="ri-masked-btn"
+            onClick={() => useMaskStore.getState().reveal(col.name, true)}
+          >
+            <Icon name="visibility" size={13} /> {t("mask.showColumn")}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   let body: React.ReactNode;
   if (json) {
@@ -509,6 +536,8 @@ export function RowInspector({
   onDirtyChange,
   historyKey,
 }: RowInspectorProps) {
+  // Masking (M49): one subscription for the drawer; fields read on render.
+  useMask();
   // Recorded changes live per saved connection; data-file workspaces have none.
   const historyConn = useWorkspacesStore((st) => {
     const w = st.workspaces.find((x) => x.handleId === handleId);

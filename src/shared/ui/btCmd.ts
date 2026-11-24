@@ -28,6 +28,8 @@ export type BtCmdId =
   | "brainstorm-board"
   | "processes"
   | "privileges"
+  // Data masking (M49): flip the switch (App-level, like new-connection).
+  | "mask"
   // Change history (M48).
   | "history"
   | "undo-data"

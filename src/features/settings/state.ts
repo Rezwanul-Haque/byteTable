@@ -22,6 +22,7 @@ export type SettingsTabId =
   | "grid"
   | "language"
   | "behavior"
+  | "masking"
   | "history"
   | "ai";
 

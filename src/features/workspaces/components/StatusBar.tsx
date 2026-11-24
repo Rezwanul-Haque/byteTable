@@ -25,6 +25,7 @@ import { useWorkspacesStore } from "../state";
 import type { Workspace } from "../types";
 import { homeSchema, isDataFileWorkspace } from "../types";
 import { HistoryStatusChip } from "../../change_history/components/HistoryStatusChip";
+import { MaskStatusChip } from "../../masking/components/MaskSwitches";
 import { AiStatusChip } from "../../assistant/components/AiStatusChip";
 import { isAssistantEngine } from "../../assistant/logic";
 import "../../processes/components/ProcessList.css";
@@ -96,6 +97,8 @@ export function StatusBar({ workspace }: { workspace: Workspace }) {
       {workspace.kind === "sql" && !isDataFileWorkspace(workspace) ? (
         <HistoryStatusChip connectionId={workspace.saved.id} />
       ) : null}
+      {/* Data masking (M49): the switch, in every SQL workspace. */}
+      {workspace.kind === "sql" ? <MaskStatusChip /> : null}
       <button
         type="button"
         className="status-btn"

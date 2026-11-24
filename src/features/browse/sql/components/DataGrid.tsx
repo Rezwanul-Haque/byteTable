@@ -37,6 +37,8 @@
 //   - M10 FK hop + column insights → the header hosts an insights icon on
 //          hover; FK cells become accent links opening a peek popover.
 
+import { MaskHeadBtn } from "../../../masking/components/MaskHeadBtn";
+import { maskShow, maskText, useMask } from "../../../masking/state";
 import { recordIfOn, viewInHistory } from "../../../change_history/recording";
 import { splitStatements } from "../../../workspaces/sqlStatement";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -394,9 +396,13 @@ const HEAD_ICON_PX = 40;
 /** Rows sampled when measuring cell widths. */
 const WIDTH_SAMPLE_ROWS = 200;
 
-/** Render width of one cell value, mirroring GridCell's text output. */
-function cellTextLength(value: CellValue): number {
+/** Render width of one cell value, mirroring GridCell's text output. A masked
+ *  value measures as its masked text, so a column's width cannot reveal the
+ *  length of what it hides (M49). */
+function cellTextLength(value: CellValue, column: string): number {
   if (value === null) return 4; // "null"
+  const masked = maskShow(value, column);
+  if (masked) return masked.text.length;
   if (typeof value === "number")
     return (Number.isInteger(value) ? String(value) : value.toFixed(2)).length;
   return String(value).length;
@@ -529,6 +535,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   // --- inline edit -----------------------------------------------------
   const toast = useToast();
   const t = useT();
+  // Masking (M49): one subscription for the whole grid; cells read on render.
+  const maskKey = useMask();
   // A read-only workspace makes the whole grid browse-only: no cell editor, no
   // staged rows, no bulk delete. The backend refuses those commands anyway —
   // this is so the UI never invites one. (`workspace`-prefixed to keep it
@@ -1028,10 +1036,13 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         if (!nr) return;
         cur = nr.values[ci] ?? null;
       }
+      // Masking (M49): a masked cell cannot be opened — the editor would put
+      // the real value on screen. Show the column first.
+      if (maskShow(cur, columns[ci]?.name)) return;
       committingRef.current = false;
       setEditing({ target, col: ci, draft: cur === null ? "" : String(cur) });
     },
-    [readOnlyReason, realCellValue, newRows],
+    [readOnlyReason, realCellValue, newRows, columns],
   );
 
   const cancelEdit = useCallback(() => {
@@ -1113,6 +1124,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       let value: CellValue = null;
       if (target.kind === "real") value = realCellValue(target.rowIndex, ci);
       else value = newRows.find((r) => r.key === target.stagedKey)?.values[ci] ?? null;
+      // Masking (M49): the JSON and binary editors would show the real value.
+      if (maskShow(value, col.name)) return;
       const m = colMeta.get(col.name);
       setCellModal({
         kind,
@@ -1189,7 +1202,8 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         .map((name) => {
           const ci = columns.findIndex((c) => c.name === name);
           const v = ci >= 0 ? (values[ci] ?? null) : null;
-          return name + " = " + (v == null ? "null" : String(v));
+          // The header is a render site too: a sensitive key is masked (M49).
+          return name + " = " + (v == null ? "null" : maskText(v, name));
         })
         .join(", ");
     },
@@ -1836,7 +1850,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       let maxCellLen = 0;
       let sampled = 0;
       for (const row of rowCacheRef.current.values()) {
-        const len = cellTextLength(row[ci] ?? null);
+        const len = cellTextLength(row[ci] ?? null, c.name);
         if (len > maxCellLen) maxCellLen = len;
         if (++sampled >= WIDTH_SAMPLE_ROWS) break;
       }
@@ -1852,7 +1866,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     });
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [columns, isHidden, cacheVersion, pageRowCount, offset, colWidths]);
+  }, [columns, isHidden, cacheVersion, pageRowCount, offset, colWidths, maskKey]);
 
   // Column (horizontal) virtualization: a wide table renders only the columns in
   // view. Below the threshold every column renders (windowing gains nothing on a
@@ -2325,6 +2339,18 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
     );
   }
 
+  // Masking (M49): a column with a sensitive-looking name, or values, gets the
+  // header eye. The first loaded rows are its sample.
+  const maskSample = (col: string): CellValue[] => {
+    const ci = columns.findIndex((x) => x.name === col);
+    const out: CellValue[] = [];
+    for (const row of rowCacheRef.current.values()) {
+      if (out.length >= 40) break;
+      out.push(row[ci] ?? null);
+    }
+    return out;
+  };
+
   // The sticky column header.
   const loadedCount = rowCacheRef.current.size;
   const allRowsSelected = hasPk && loadedCount > 0 && selectedRows.size >= loadedCount;
@@ -2368,6 +2394,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
               ) : null}
               {m?.fk ? <Icon name="link" size={12} style={{ color: "var(--text-faint)" }} /> : null}
               <span className="dg-colname">{c.name}</span>
+              <MaskHeadBtn col={c.name} sample={maskSample(c.name)} />
               {c.typeHint ? <span className="dg-coltype">{c.typeHint.toLowerCase()}</span> : null}
               {active ? (
                 <Icon
@@ -2606,6 +2633,7 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
                             value={cellVal}
                             column={c.name}
                             type={c.typeHint}
+                            maskTitle={t("mask.editBlocked")}
                             fk={fk}
                             onFkClick={fk ? (value, e) => onFkClick(fk, value, bin, e) : undefined}
                             /* Opening these is a READ — the modals have their

@@ -614,7 +614,7 @@ function KeyGrid({ columns, rows, onEdit: onEditProp, empty }: KeyGridProps) {
                           }}
                         />
                       ) : (
-                        <CellContent value={cellValue} column={c.name} />
+                        <CellContent value={cellValue} column={c.name} noMask />
                       )}
                     </div>
                   );
@@ -925,7 +925,7 @@ function SetGrid({
                         }}
                       />
                     ) : (
-                      <CellContent value={shown} column="member" />
+                      <CellContent value={shown} column="member" noMask />
                     )}
                   </div>
                   <div className="dg-td rset-remove-cell">

@@ -7,6 +7,7 @@
 // through `files`. This component is the header, the banners, and the cells or
 // the File view.
 
+import { maskOn, maskShow, maskSql, useMask } from "../../masking/state";
 import { Fragment, useEffect, useMemo } from "react";
 
 import { normalizeEnv } from "../../../shared/types";
@@ -33,6 +34,7 @@ import {
   fromMarkdown,
   MAX_SAVED_ROWS,
   newQuery,
+  toMarkdown,
   uid,
   type Cell,
   type QueryCell,
@@ -132,6 +134,21 @@ export function NotebookTab({ workspace, tab }: { workspace: Workspace; tab: Not
   }, [fresh, patch, tab.id]);
 
   const md = useMemo(() => (doc ? markdownOf(doc) : ""), [doc]);
+  // Masking (M49): while it is on, the File view shows a masked copy and is
+  // read-only. Save and Copy still use the real file (`md` / the draft).
+  const maskKey = useMask();
+  const masking = maskOn();
+  const maskedMd = useMemo(
+    () =>
+      doc && masking
+        ? toMarkdown(doc.nb, {
+            results: doc.keep,
+            mask: { value: (v, col) => maskShow(v, col)?.text ?? v, sql: (s) => maskSql(s) },
+          })
+        : "",
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- maskKey: re-mask on a change
+    [doc, masking, maskKey],
+  );
   const dirty = doc ? isDirty(doc) : false;
   const locked = doc?.newerVersion != null;
 
@@ -425,6 +442,11 @@ export function NotebookTab({ workspace, tab }: { workspace: Workspace; tab: Not
               {t("notebook.file.copy")}
             </Btn>
           </div>
+          {masking ? (
+            <div className="nb-file-masked" role="status">
+              <Icon name="visibility_off" size={15} /> {t("mask.nbFile")}
+            </div>
+          ) : null}
           <div className="nb-file-legend">
             <span>
               <i className="k-note" /> {t("notebook.file.legendNotes")}
@@ -443,9 +465,9 @@ export function NotebookTab({ workspace, tab }: { workspace: Workspace; tab: Not
           <textarea
             className="nb-file-text"
             spellCheck={false}
-            readOnly={locked}
+            readOnly={locked || masking}
             aria-label={t("notebook.file.aria", { name: fileName })}
-            value={doc.draft ?? md}
+            value={masking ? maskedMd : (doc.draft ?? md)}
             onChange={(e) => patch(tab.id, () => ({ draft: e.target.value }))}
           />
         </div>

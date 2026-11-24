@@ -7,6 +7,7 @@
 // same columns keeps them (change a WHERE, keep the chart); a different column
 // list starts from a fresh suggestion (task B3).
 
+import { maskShow, useMask } from "../../masking/state";
 import { Fragment, useId, useMemo, useState } from "react";
 
 import type { CellValue, ColumnMeta } from "../../../shared/api/engine";
@@ -95,13 +96,32 @@ export function ResultChart({ columns, rows }: { columns: ColumnMeta[]; rows: Ce
   const useCount = cfg.count || ys.length === 0;
   const colNames = useMemo(() => columns.map((c) => c.name), [columns]);
   const drawn: ChartCfg = { ...cfg, ys, count: useCount };
-  const data = useChartSeries(
+  const series = useChartSeries(
     rows,
     drawn,
     xKind,
     t("chart.rowN", { n: "{n}" }),
     t("chart.rowCount"),
     colNames,
+  );
+  // Masking (M49): labels are masked AFTER grouping, so two different emails
+  // stay two bars; the values are unchanged. Tooltips, the axis and the legend
+  // all read these labels.
+  const maskKey = useMask();
+  const xName = cfg.x == null ? null : (columns[cfg.x]?.name ?? null);
+  const data = useMemo(
+    () =>
+      series && xName != null
+        ? {
+            ...series,
+            points: series.points.map((p) => ({
+              ...p,
+              label: maskShow(p.label, xName)?.text ?? p.label,
+            })),
+          }
+        : series,
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- maskKey: re-mask on a switch
+    [series, xName, maskKey],
   );
 
   if (rows.length === 0) {

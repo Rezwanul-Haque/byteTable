@@ -227,6 +227,39 @@ fn default_ai_sample() -> u32 {
 ///
 /// Secrets are NOT here — API keys live in the OS keychain (`aiCustomKey` only
 /// records that one exists).
+/// Data masking (M49), flattened into [`Settings`] like [`AiSettings`]: the
+/// switch (persisted, so it survives a restart) and the categories to hide.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MaskSettings {
+    #[serde(default)]
+    pub mask_on: bool,
+    #[serde(default = "default_true")]
+    pub mask_email: bool,
+    #[serde(default = "default_true")]
+    pub mask_phone: bool,
+    #[serde(default = "default_true")]
+    pub mask_secret: bool,
+    #[serde(default)]
+    pub mask_person: bool,
+    /// Extra column names, comma separated; `*` = any text.
+    #[serde(default)]
+    pub mask_custom: String,
+}
+
+impl Default for MaskSettings {
+    fn default() -> Self {
+        Self {
+            mask_on: false,
+            mask_email: true,
+            mask_phone: true,
+            mask_secret: true,
+            mask_person: false,
+            mask_custom: String::new(),
+        }
+    }
+}
+
 /// The change history's settings (M48), flattened into [`Settings`] like
 /// [`AiSettings`]: whether to record, and how long / how much / how large.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -456,6 +489,9 @@ pub struct Settings {
     /// The change history's settings (M48), flattened — see [`HistorySettings`].
     #[serde(flatten, default)]
     pub history: HistorySettings,
+    /// Data masking (M49), flattened — see [`MaskSettings`].
+    #[serde(flatten, default)]
+    pub mask: MaskSettings,
 }
 
 impl Default for Settings {
@@ -490,6 +526,7 @@ impl Default for Settings {
             first_day: default_first_day(),
             ai: AiSettings::default(),
             history: HistorySettings::default(),
+            mask: MaskSettings::default(),
         }
     }
 }
@@ -613,6 +650,11 @@ mod tests {
                 undo_record: false,
                 undo_keep_days: 30,
                 ..HistorySettings::default()
+            },
+            mask: MaskSettings {
+                mask_on: true,
+                mask_custom: "salary, *_note".to_string(),
+                ..MaskSettings::default()
             },
         };
         let json = serde_json::to_string(&s).expect("serialize");

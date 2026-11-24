@@ -1,0 +1,173 @@
+/* Data masking (M49), ported from the prototype's "Data masking mode" block. */
+.cell-mask {
+  font-family: var(--mono);
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+  user-select: none;
+  opacity: 0.85;
+}
+/* Screen readers hear "hidden", not a run of bullets. */
+.mask-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.mask-head {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  color: var(--text-dim);
+  flex: none;
+}
+.mask-head:hover {
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+}
+.mask-head.shown {
+  color: var(--warn);
+}
+.mask-chip.on {
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 13%, transparent);
+}
+.tb-mask {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 10px;
+  margin-right: 10px;
+  border-radius: 99px;
+  border: 1px solid color-mix(in oklab, var(--accent) 50%, var(--border));
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+  color: var(--text);
+  font-family: var(--ui);
+  font-size: 11.5px;
+  white-space: nowrap;
+  flex: none;
+  -webkit-app-region: no-drag;
+}
+.tb-mask .msym {
+  color: var(--accent);
+}
+.tb-mask:hover {
+  background: color-mix(in oklab, var(--accent) 24%, transparent);
+}
+.ri-masked {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 30px;
+  padding: 4px 6px 4px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 7px;
+  font-size: 12px;
+}
+.ri-masked .cell-mask {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ri-masked-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: var(--ui);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.ri-masked-btn:hover {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 50%, var(--border));
+}
+.nb-file-masked {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  font-size: 11.5px;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in oklab, var(--accent) 8%, var(--bg1));
+  flex: none;
+}
+.nb-file-masked .msym {
+  color: var(--accent);
+  flex: none;
+}
+[data-material] .nb-file-masked {
+  background: color-mix(in oklab, var(--accent) 12%, rgba(255, 255, 255, 0.05));
+}
+.mask-input {
+  width: 240px;
+  max-width: 100%;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg0);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.mask-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+[data-material] .mask-input {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+.mask-preview {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+[data-material] .mask-preview {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+.mask-preview-row {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr) 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.mask-preview-row:last-child {
+  border-bottom: none;
+}
+.mask-preview-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mask-preview-col {
+  color: var(--text-dim);
+}
+.mask-preview-row .msym {
+  color: var(--text-faint);
+}
+.mask-preview-row .same {
+  color: var(--text-dim);
+  font-family: var(--ui);
+  font-size: 11.5px;
+}

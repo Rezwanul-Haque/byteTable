@@ -10,6 +10,7 @@
 // is the byte-exact `.insight-*` / `.dg-popover` rules from ByteTable.html.
 // Outside-click / Esc close, role=dialog, anchored + viewport-clamped.
 
+import { maskShow, useMask } from "../../../masking/state";
 import { useEffect, useRef, useState } from "react";
 
 import type { ColumnStats, FilterSpec } from "../../../../shared/api/engine";
@@ -62,6 +63,10 @@ export function ColumnInsights({
   const t = useT();
 
   const { column } = anchor;
+  // Masking (M49): min, max and the most frequent values go through the one
+  // entry point, by this column's name. Counts are unchanged.
+  useMask();
+  const shown = (v: unknown) => maskShow(v, column)?.text ?? String(v);
 
   useEffect(() => {
     let alive = true;
@@ -146,13 +151,13 @@ export function ColumnInsights({
             {stats.min !== null ? (
               <div className="insight-stat">
                 <span>{t("grid.statMin")}</span>
-                <b title={String(stats.min)}>{String(stats.min)}</b>
+                <b title={shown(stats.min)}>{shown(stats.min)}</b>
               </div>
             ) : null}
             {stats.max !== null ? (
               <div className="insight-stat">
                 <span>{t("grid.statMax")}</span>
-                <b title={String(stats.max)}>{String(stats.max)}</b>
+                <b title={shown(stats.max)}>{shown(stats.max)}</b>
               </div>
             ) : null}
             {stats.numeric && stats.avg !== null ? (
@@ -169,9 +174,10 @@ export function ColumnInsights({
                 {t("grid.mostFrequent")}
               </div>
               {stats.top.map((entry, i) => {
-                const label = String(entry.value);
+                const label = shown(entry.value);
                 return (
-                  <div className="insight-bar-row" key={label + ":" + i}>
+                  // Index key: masked labels can repeat.
+                  <div className="insight-bar-row" key={i}>
                     <span className="insight-bar-label" title={label}>
                       {truncLabel(label)}
                     </span>

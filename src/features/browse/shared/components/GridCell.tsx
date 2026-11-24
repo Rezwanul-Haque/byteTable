@@ -18,6 +18,8 @@ import { Icon } from "../../../../shared/ui/Icon";
 import { useT } from "../../../../shared/i18n/useT";
 import { formatBinary, isBinaryType, isUuidType, looksUuid } from "../binaryCell";
 import { isJsonType, jsonPreview } from "../jsonCell";
+import { MaskedText } from "../../../masking/components/MaskedText";
+import { maskShow } from "../../../masking/state";
 import "../styles/CellEditors.css";
 
 /** Enum→color map for status/method-like string pills (prototype ui.jsx). */
@@ -54,6 +56,10 @@ interface CellContentProps {
   onJsonClick?: (event: React.MouseEvent<HTMLElement>) => void;
   /** Opens the binary editor (DataGrid only); display-only grids omit it. */
   onBinClick?: (event: React.MouseEvent<HTMLElement>) => void;
+  /** Never mask (M49 scope: grids outside SQL workspaces, e.g. Redis). */
+  noMask?: boolean;
+  /** Tooltip on a masked value (an editable grid explains how to edit). */
+  maskTitle?: string;
 }
 
 /** One cell's rendered value, typed per spec §1.3 / §3.5. */
@@ -65,12 +71,18 @@ export function CellContent({
   type,
   onJsonClick,
   onBinClick,
+  noMask,
+  maskTitle,
 }: CellContentProps) {
   const t = useT();
   if (value === null) {
     // NULL → italic faint small-caps "null" (a NULL FK is not a link).
     return <span className="cell-null">null</span>;
   }
+  // Data masking (M49): BEFORE the binary, JSON and FK branches, so none of
+  // them can draw the value. The view subscribes (`useMask`); this only reads.
+  const masked = noMask ? null : maskShow(value, column);
+  if (masked) return <MaskedText text={masked.text} title={maskTitle} />;
   // Binary (BINARY/VARBINARY/BLOB/BYTEA) → BIN badge + UUID/hex/blob chip; takes
   // precedence over the plain FK link so a binary key shows its UUID. When the
   // column is ALSO an FK, the chip hops on click (single-click → peek, the

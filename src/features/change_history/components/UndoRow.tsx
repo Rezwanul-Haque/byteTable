@@ -5,10 +5,21 @@ import { useT } from "../../../shared/i18n/useT";
 import { Icon } from "../../../shared/ui/Icon";
 import type { CellValue } from "../../../shared/api/engine";
 import type { Change, Verdict } from "../api";
+import { MaskedText } from "../../masking/components/MaskedText";
+import { maskShow } from "../../masking/state";
 import { shown } from "../model";
 
-function Val({ v, strike }: { v: CellValue | undefined; strike?: boolean }) {
+function Val({ v, col, strike }: { v: CellValue | undefined; col: string; strike?: boolean }) {
   const isNull = v === null || v === undefined;
+  // Masking (M49): the one entry point, by this value's column.
+  const masked = maskShow(v, col);
+  if (masked) {
+    return (
+      <span className={"ul-val" + (strike ? " strike" : "")}>
+        <MaskedText text={masked.text} />
+      </span>
+    );
+  }
   return (
     <span
       className={"ul-val" + (isNull ? " null" : "") + (strike ? " strike" : "")}
@@ -18,6 +29,9 @@ function Val({ v, strike }: { v: CellValue | undefined; strike?: boolean }) {
     </span>
   );
 }
+
+/** A value as text for a line of prose (masked when sensitive). */
+const said = (v: unknown, col: string) => maskShow(v, col)?.text ?? shown(v);
 
 const ICON = { ok: "check_circle", conflict: "block", noop: "remove_done" } as const;
 
@@ -50,7 +64,7 @@ export function UndoRow({
   const row = c.before ?? c.after ?? [];
   const preview = c.columns
     .slice(0, 4)
-    .map((col, i) => col + ": " + shown(row[i]))
+    .map((col, i) => col + ": " + said(row[i], col))
     .join(" · ");
   return (
     <div className={"ul-row " + v.state}>
@@ -58,7 +72,7 @@ export function UndoRow({
       <div className="ul-row-main">
         <div className="ul-row-head">
           <span className="ul-row-key">
-            {c.table} · {c.pk.map((k, i) => k + " " + shown(c.key[i])).join(", ")}
+            {c.table} · {c.pk.map((k, i) => k + " " + said(c.key[i], k)).join(", ")}
           </span>
           <span className="ul-row-what">{what}</span>
         </div>
@@ -67,9 +81,9 @@ export function UndoRow({
             {c.cols.map((col) => (
               <div key={col} className="ul-col">
                 <span className="ul-col-name">{col}</span>
-                <Val v={at(from, col)} strike />
+                <Val v={at(from, col)} col={col} strike />
                 <Icon name="arrow_forward" size={12} />
-                <Val v={at(to, col)} />
+                <Val v={at(to, col)} col={col} />
               </div>
             ))}
           </div>
@@ -84,8 +98,8 @@ export function UndoRow({
               <span key={d.col}>
                 {" "}
                 {t("history.why.driftPre")} <code>{d.col}</code> {t("history.why.driftNow")}{" "}
-                <code>{shown(d.now)}</code>
-                {t("history.why.driftWas")} <code>{shown(d.was)}</code>.
+                <code>{said(d.now, d.col)}</code>
+                {t("history.why.driftWas")} <code>{said(d.was, d.col)}</code>.
               </span>
             ))}
           </div>

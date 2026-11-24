@@ -14,6 +14,7 @@
 // goes to the input on open and returns to the opener on close (caller's
 // concern — the keyboard hook in WorkspaceShell toggles `open`).
 
+import { toggleMask } from "../../masking/state";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useT } from "../../../shared/i18n/useT";
@@ -83,6 +84,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
   const openMapTab = useWorkspacesStore((state) => state.openMapTab);
   const openProcessesTab = useWorkspacesStore((state) => state.openProcessesTab);
   const openHistoryTab = useWorkspacesStore((state) => state.openHistoryTab);
+  const masking = useSettingsStore((state) => state.settings.maskOn);
   const openPrivilegesTab = useWorkspacesStore((state) => state.openPrivilegesTab);
   const openDiffTab = useWorkspacesStore((state) => state.openDiffTab);
   const openBoardTab = useWorkspacesStore((state) => state.openBoardTab);
@@ -209,6 +211,14 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
             },
           ]
         : [];
+    // Data masking (M49): names the opposite of the current state.
+    const maskCmd: Command = {
+      id: "cmd-mask",
+      icon: masking ? "visibility" : "visibility_off",
+      label: t(masking ? "mask.palette.off" : "mask.palette.on"),
+      hint: "⇧⌘M",
+      run: () => toggleMask(),
+    };
     const processes: Command = {
       id: "cmd-processes",
       icon: "monitor_heart",
@@ -383,6 +393,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
       openTerminal,
       schemaMap,
       processes,
+      maskCmd,
       ...historyCmds,
       ...privCmds,
       ...valueSearchCmds,
@@ -396,6 +407,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
       ...savedCmds,
     ];
   }, [
+    masking,
     openHistoryTab,
     tablesMap,
     handleId,

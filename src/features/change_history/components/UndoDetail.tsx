@@ -2,6 +2,7 @@
 // what undo does to each row, the exact statements, and the action bar.
 // Ported from the prototype's UndoDetail.
 
+import { maskShow, maskSql, useMask } from "../../masking/state";
 import { useEffect, useState } from "react";
 
 import { fmtNumber } from "../../../shared/i18n";
@@ -46,6 +47,8 @@ export function UndoDetail({ workspace, id }: { workspace: Workspace; id: string
   const [showSql, setShowSql] = useState(false);
   const [busy, setBusy] = useState(false);
   const isProd = normalizeEnv(workspace.saved.env) === "production";
+  // Masking (M49): one subscription for the detail; values read on render.
+  useMask();
 
   useEffect(() => {
     let live = true;
@@ -70,6 +73,19 @@ export function UndoDetail({ workspace, id }: { workspace: Workspace; id: string
   if (!entry) return <div className="ul-detail" />;
 
   const summary = summaryOf(entry);
+  // The SQL shown is masked by literal: the entry's own sensitive values (found
+  // by their columns), plus anything that looks sensitive by itself. Copy,
+  // "Open in a SQL tab" and the undo itself use the real text.
+  const known = new Map<string, string>();
+  for (const c of entry.changes) {
+    for (const row of [c.before, c.after]) {
+      c.columns.forEach((col, i) => {
+        const v = row?.[i];
+        const m = typeof v === "string" ? maskShow(v, col) : null;
+        if (m && typeof v === "string") known.set(v, m.text);
+      });
+    }
+  }
   const status = statusOf(summary);
   const verdict = verdictOf(entry, view);
   const verdicts = view?.verdicts ?? [];
@@ -134,7 +150,10 @@ export function UndoDetail({ workspace, id }: { workspace: Workspace; id: string
       {entry.sql ? (
         <div className="ul-block">
           <div className="ul-block-h">{t("history.detail.ran")}</div>
-          <pre className="ul-sql" dangerouslySetInnerHTML={{ __html: highlightSql(entry.sql) }} />
+          <pre
+            className="ul-sql"
+            dangerouslySetInnerHTML={{ __html: highlightSql(maskSql(entry.sql, known)) }}
+          />
         </div>
       ) : null}
 
@@ -188,7 +207,7 @@ export function UndoDetail({ workspace, id }: { workspace: Workspace; id: string
             <>
               <pre
                 className="ul-sql"
-                dangerouslySetInnerHTML={{ __html: highlightSql(view.sql) }}
+                dangerouslySetInnerHTML={{ __html: highlightSql(maskSql(view.sql, known)) }}
               />
               <div className="ul-sql-actions">
                 <Btn

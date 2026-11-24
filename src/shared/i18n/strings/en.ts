@@ -5386,6 +5386,63 @@ export const en = {
   "history.palette.undoLast": "Undo last change…",
   "history.tableMenu": "Changes to this table",
   "history.recorded": "{count, plural, one {Change recorded} other {# changes recorded}}",
+  // Data masking (M49)
+  "set.tab.masking": "Masking",
+  "menu.view.mask": "Mask Sensitive Data",
+  "menu.view.unmask": "Stop Masking Sensitive Data",
+  "uix.sc.general.mask": "Mask sensitive data",
+  "mask.hidden": "hidden",
+  "mask.cellHint": "Hidden by masking",
+  "mask.editBlocked": "Masked. Show the column (eye icon in its header) to edit it",
+  "mask.kind.email": "email",
+  "mask.kind.phone": "phone number",
+  "mask.kind.secret": "token or secret",
+  "mask.kind.person": "name or address",
+  "mask.kind.custom": "your column list",
+  "mask.head.maskedHint": "Masked ({kind}). Click to show this column",
+  "mask.head.shownHint": "This column is shown in the clear. Click to mask it again",
+  "mask.head.show": "Show masked column {col}",
+  "mask.head.hide": "Mask column {col}",
+  "mask.showColumn": "Show column",
+  "mask.chip.off": "mask",
+  "mask.chip.on": "masking on",
+  "mask.chip.onShown": "masking on · {n} shown",
+  "mask.chip.onHint":
+    "Masking is on: emails, phone numbers and tokens are hidden. Click to turn off (⇧⌘M)",
+  "mask.chip.offHint": "Hide emails, phone numbers and tokens for screen sharing (⇧⌘M)",
+  "mask.pill": "Masking on",
+  "mask.pill.hint": "Sensitive values are hidden on screen. Click to turn masking off (⇧⌘M)",
+  "mask.toast.on": "Masking on · emails, phone numbers and tokens are hidden",
+  "mask.toast.off": "Masking off · values are shown in the clear",
+  "mask.palette.on": "Turn on data masking",
+  "mask.palette.off": "Turn off data masking",
+  "mask.nbFile":
+    "Masking is on, so sensitive values are hidden here and the file cannot be edited in this view. The saved file keeps the real values.",
+  "mask.set.section": "Masking",
+  "mask.set.on": "Mask sensitive data",
+  "mask.set.onHint":
+    "Hides matching values everywhere rows are shown. Stays on until you turn it off, including after a restart. Shortcut ⇧⌘M",
+  "mask.set.what": "What to hide",
+  "mask.set.email": "Emails",
+  "mask.set.emailHint": "Columns named like email, and any value that is an email address",
+  "mask.set.phone": "Phone numbers",
+  "mask.set.phoneHint":
+    "Columns named like phone, mobile or tel, and values written as a phone number",
+  "mask.set.secret": "Tokens and secrets",
+  "mask.set.secretHint":
+    "Columns named like token, password, api_key or hash, and values that look like a key",
+  "mask.set.person": "Names and addresses",
+  "mask.set.personHint":
+    "Columns named like full_name, address or postcode. Off by default, because names are often needed to follow along",
+  "mask.set.custom": "Also hide these columns",
+  "mask.set.customHint":
+    "Column names, separated by commas. Use * for any text, for example salary, *_note",
+  "mask.set.customAria": "Extra columns to hide",
+  "mask.set.preview": "Preview",
+  "mask.set.previewAria": "How values look when masked",
+  "mask.set.same": "shown as is",
+  "mask.set.note":
+    "Masking changes what is on screen, nothing else. Copy, export and saved files keep the real values. Text you type in the SQL editor is not masked. Values inside JSON are only hidden when the whole column is.",
 } as const;
 
 /** Every key the app may ask for. Other locales type-check against this. */

@@ -2,6 +2,7 @@
 // connection, newest first, grouped by day — and on the right, the selected
 // one with what undo would do. Ported from the prototype's UndoLogTab.
 
+import { maskText, useMask } from "../../masking/state";
 import { useEffect, useMemo, useState } from "react";
 
 import { fmtNumber } from "../../../shared/i18n";
@@ -38,6 +39,8 @@ export function ChangeHistoryTab({ workspace, tab }: { workspace: Workspace; tab
   const [q, setQ] = useState("");
   const [armClear, setArmClear] = useState(false);
   const filter = tab.filter ?? null;
+  // Masking (M49): the filter chip names a row by its key.
+  useMask();
   const connOn = recordingMap[connId] ?? true;
   const recording = settings.undoRecord && connOn;
 
@@ -160,7 +163,9 @@ export function ChangeHistoryTab({ workspace, tab }: { workspace: Workspace; tab
                   <Icon name="table" size={12} /> {filter.table}
                   {filter.key
                     ? " · " +
-                      (filter.pk ?? []).map((k, i) => k + " " + String(filter.key?.[i])).join(", ")
+                      (filter.pk ?? [])
+                        .map((k, i) => k + " " + maskText(filter.key?.[i], k))
+                        .join(", ")
                     : ""}
                 </span>
                 <button type="button" onClick={() => openHistoryTab({ filter: null })}>

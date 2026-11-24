@@ -9,6 +9,7 @@
 // byte-exact `.fk-*` / `.dg-popover` / `.dg-pop-*` rules from ByteTable.html.
 // Outside-click / Esc close, role=dialog, anchored + viewport-clamped.
 
+import { maskText, useMask } from "../../../masking/state";
 import { useEffect, useRef, useState } from "react";
 
 import type { CellValue, RowLookup } from "../../../../shared/api/engine";
@@ -91,6 +92,8 @@ export function FkPeek({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const t = useT();
+  // Masking (M49): the peek's cells and its title go through the one entry point.
+  useMask();
 
   const { refSchema, refTable, refColumn, value, binary } = anchor;
 
@@ -161,7 +164,7 @@ export function FkPeek({
         <Icon name="link" size={14} style={{ color: "var(--accent)" }} />
         <span className="dg-pop-mono">{refTable}</span>
         <span className="dg-pop-dim">
-          {t("grid.whereCond", { column: refColumn, value: String(value) })}
+          {t("grid.whereCond", { column: refColumn, value: maskText(value, refColumn) })}
         </span>
         {matchCount > 1 ? (
           <span className="fk-matchcount">{t("grid.matchOneOf", { count: matchCount })}</span>

@@ -11,6 +11,7 @@
 // Three regions: .tb-left (brand wordmark + app menu, or the mac lights),
 // .tb-center (live workspace context), .tb-right (Windows/Linux controls).
 
+import { MaskTitlePill } from "../../features/masking/components/MaskSwitches";
 import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { platform } from "@tauri-apps/plugin-os";
@@ -128,6 +129,7 @@ export function TitleBar({ ctx }: { ctx: TitleBarCtx }) {
     hasPrivileges: isSqlShell && !!ws && ws.saved.engine in PRIV_SOURCES,
     hasTerminal: ws !== null && !isFile,
     zoomChanged: settings.fontSize !== 13,
+    masking: settings.maskOn,
     isNotebook:
       isSqlShell && ws?.ui.tabs?.find((tb) => tb.id === ws.ui.activeTabId)?.kind === "notebook",
     recentNotebooks,
@@ -201,6 +203,8 @@ export function TitleBar({ ctx }: { ctx: TitleBarCtx }) {
       </div>
 
       <div className="bt-titlebar-buttons">
+        {/* Masking (M49): always obvious while on, on every screen. */}
+        <MaskTitlePill />
         {mode === "win" ? (
           <>
             <button

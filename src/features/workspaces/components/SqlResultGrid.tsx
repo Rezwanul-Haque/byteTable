@@ -12,6 +12,8 @@
 // memory. It sorts what the query RETURNED — with a backend row_limit in play
 // that is the returned page, not the whole table.
 
+import { MaskHeadBtn } from "../../masking/components/MaskHeadBtn";
+import { maskShow, useMask } from "../../masking/state";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -84,8 +86,11 @@ const WIDTH_SAMPLE_ROWS = 200;
 /** Render width of one cell value, mirroring CellContent's text output (numbers
  *  print compact — integer as-is, else `toFixed(2)`; everything else its string
  *  form; NULL → "null"). */
-function cellTextLength(value: unknown): number {
+function cellTextLength(value: unknown, column: string): number {
   if (value === null || value === undefined) return 4; // "null"
+  // Masked: measure the masked text, so the width hides the length (M49).
+  const masked = maskShow(value, column);
+  if (masked) return masked.text.length;
   if (typeof value === "number")
     return (Number.isInteger(value) ? String(value) : value.toFixed(2)).length;
   return String(value).length;
@@ -183,6 +188,8 @@ export function SqlResultGrid({
   const { columns, rows } = result;
   const toast = useToast();
   const t = useT();
+  // Masking (M49): one subscription for the whole grid; cells read on render.
+  const maskKey = useMask();
   const controlled = onSort !== undefined;
 
   // The focused cell (single click). Purely presentational — it draws the
@@ -205,6 +212,8 @@ export function SqlResultGrid({
   } | null>(null);
   const beginEdit = (row: number, col: number, value: CellValue) => {
     if (!editing) return;
+    // Masking (M49): the editor would show the real value.
+    if (maskShow(value, columns[col]?.name)) return;
     setEditCell({ row, col });
     setEditText(value === null ? "" : String(value));
   };
@@ -332,7 +341,7 @@ export function SqlResultGrid({
         let maxCellLen = 0;
         const sampleN = Math.min(rows.length, WIDTH_SAMPLE_ROWS);
         for (let r = 0; r < sampleN; r++) {
-          const len = cellTextLength(rows[r]![ci] ?? null);
+          const len = cellTextLength(rows[r]![ci] ?? null, c.name);
           if (len > maxCellLen) maxCellLen = len;
         }
         const cellPx = maxCellLen * CELL_CHAR_PX + CELL_PAD_PX;
@@ -340,7 +349,8 @@ export function SqlResultGrid({
         // A manual override (drag) wins over the auto-measured width.
         return colOverrides[c.name] ?? auto;
       }),
-    [columns, rows, colOverrides],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- maskKey: masked widths
+    [columns, rows, colOverrides, maskKey],
   );
 
   // Drag a header's right-edge handle to set a manual column width (session
@@ -487,6 +497,10 @@ export function SqlResultGrid({
                 >
                   <span className="dg-head">
                     <span className="dg-colname">{c.name}</span>
+                    <MaskHeadBtn
+                      col={c.name}
+                      sample={rows.slice(0, 40).map((r) => r[ci] ?? null)}
+                    />
                     {c.typeHint ? (
                       <span className="dg-coltype">{c.typeHint.toLowerCase()}</span>
                     ) : null}

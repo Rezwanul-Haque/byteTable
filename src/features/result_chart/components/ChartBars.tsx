@@ -24,8 +24,9 @@ export function ChartBars({ data, labelName }: { data: ChartSeries; labelName: s
         marks: t("chart.bars", { count: pts.length }),
       })}
     >
-      {pts.map((p) => (
-        <div key={p.label} className="ch-bar-row">
+      {pts.map((p, i) => (
+        // Index key: masked labels can repeat.
+        <div key={i} className="ch-bar-row">
           <div className="ch-bar-label" title={p.label}>
             {p.label}
           </div>

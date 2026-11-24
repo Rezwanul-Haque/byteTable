@@ -158,7 +158,14 @@ export function splitRow(line: string): string[] {
   return out;
 }
 
-function resultToMd(r: NbResult): string {
+/** Display-only masking of a file text (M49): result values by column, SQL by
+ *  its string literals. Never used for what is saved. */
+export interface MdMask {
+  value: (v: unknown, column: string) => unknown;
+  sql: (text: string) => string;
+}
+
+function resultToMd(r: NbResult, mask?: MdMask): string {
   const shown = r.rows.slice(0, MAX_SAVED_ROWS);
   const head =
     "<!-- bt:result rows=" +
@@ -174,7 +181,11 @@ function resultToMd(r: NbResult): string {
     lines.push("| " + r.columns.map(toCell).join(" | ") + " |");
     lines.push("| " + r.columns.map(() => "---").join(" | ") + " |");
     for (const row of shown) {
-      lines.push("| " + r.columns.map((_, i) => toCell(row[i])).join(" | ") + " |");
+      lines.push(
+        "| " +
+          r.columns.map((col, i) => toCell(mask ? mask.value(row[i], col) : row[i])).join(" | ") +
+          " |",
+      );
     }
   }
   lines.push("<!-- /bt:result -->");
@@ -185,7 +196,8 @@ function resultToMd(r: NbResult): string {
 export const isCurrent = (c: QueryCell) => c.result != null && c.ranSql === c.sql;
 
 /** Notebook → file text. `results: false` leaves every result block out. */
-export function toMarkdown(nb: Notebook, opts?: { results?: boolean }): string {
+export function toMarkdown(nb: Notebook, opts?: { results?: boolean; mask?: MdMask }): string {
+  const mask = opts?.mask;
   const keep = opts?.results !== false;
   const out = [
     "---",
@@ -200,9 +212,10 @@ export function toMarkdown(nb: Notebook, opts?: { results?: boolean }): string {
       const t = (c.text || "").trim();
       if (t) out.push(t, "");
     } else {
-      out.push("```sql", (c.sql || "").replace(/\s+$/, ""), "```", "");
+      const sql = (c.sql || "").replace(/\s+$/, "");
+      out.push("```sql", mask ? mask.sql(sql) : sql, "```", "");
       // A result is only written while it still belongs to the query above it.
-      if (keep && isCurrent(c)) out.push(resultToMd(c.result!), "");
+      if (keep && isCurrent(c)) out.push(resultToMd(c.result!, mask), "");
     }
   }
   return out.join("\n").replace(/\n+$/, "\n");

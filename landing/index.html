@@ -309,7 +309,12 @@
         "Virtualized data grid with inline editing and staged, reviewable changes",
         "Interactive ER schema map with minimap and smooth pan/zoom, and schema diff",
         "Users, roles and privileges matrix",
-        "Scheduled saved queries that write results to a folder",
+        "Scheduled saved queries that write results to a folder, with data checks and failure alerts",
+        "Query debug mode: step through a SELECT in run order and see the rows after each step",
+        "Chart a query result as bars, a line or a donut",
+        "Query notebooks: notes, queries and results in one Markdown file",
+        "Change history: undo or redo data changes even after commit",
+        "Data masking: hide emails, phone numbers and tokens on screen with one switch",
         "Search a value across every table in a database",
         "Encrypted connection export and import",
         "Built-in SQL terminal, SSH tunnels, TLS and OS-keychain secrets",
@@ -489,6 +494,9 @@
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Jump between schemas from a searchable switcher, with system schemas one opt-in away</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Brainstorm board: a free-form canvas per schema for notes, diagrams and draft tables</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Brainstorm board inspector folds into an icon rail with floating drawers — or pin it to dock</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Collapse the left sidebar with <code>⌘B</code> — drag or double-click the edge to bring it back</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Data masking for screen sharing: hide emails, phone numbers and tokens in every grid with <code>⇧⌘M</code></li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Choose what masking hides — names and addresses, or your own column list like <code>salary, *_note</code> — and reveal one column from its header</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>16 themes including three light ones and two glass materials, plus accent, fonts, size and density</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>8 interface languages — English, বাংলা, Español, Deutsch, 日本語, 简体中文, 繁體中文, العربية</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Full right-to-left layout for Arabic — SQL, data and identifiers stay left-to-right</li>
@@ -518,12 +526,29 @@
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Saved queries — global, or scoped to one connection</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Open saved queries from the tab strip; saving updates the one you loaded</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Schedule saved queries — every few minutes, daily, weekly or monthly — and write each result to a folder as CSV or JSON</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Scheduled checks: a query should return no rows, at most or at least N — see the failing rows, get notified only when it starts failing or recovers, and a badge on the rail</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Debug mode: step through a query in the order the database runs it (<code>F10</code>) and see the rows left after each join, filter, group and limit</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Debug explains where rows go — joins that drop or repeat rows, a condition that removes nothing, a <code>LIMIT</code> with no <code>ORDER BY</code></li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Debug an <code>UPDATE</code> or <code>DELETE</code> as a dry run: see exactly which rows it would change, with nothing changed</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Chart a result as bars, a line or a donut — pick the label and value columns, combine repeats with sum, average, min or max</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Explain panel with the engine's real plan — table, tree and raw server output — plus a written-vs-run minimap</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Editor font zoom and ligature toggle</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Sortable query result tables — click a header, NULLs sink to the bottom</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Download query results as CSV — selected rows or all, in the sorted order</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>A failed result tab points straight at the statement that failed</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Open a JSON or binary result cell in a read-only viewer</li>
+        </ul>
+      </div>
+
+      <div class="featgroup">
+        <h3>Notebooks</h3>
+        <ul>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Notes, queries and results in one notebook — saved as a plain Markdown file you can read anywhere</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Markdown notes between query cells; run a cell with <code>⌘↩</code>, or run all from top to bottom</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Run all only reads — statements that change data are skipped, and running one yourself shows how many rows it affects first</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Keep results in the file, so a notebook can be read without connecting</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>The file stores the connection's name, never its password — share it as-is</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>See and edit the raw Markdown file side by side, and start from an example notebook</li>
         </ul>
       </div>
 
@@ -563,6 +588,9 @@
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Row inspector, and copy any cell value</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>Right-click any row to duplicate, copy or export just that row</li>
           <li><span class="msym"><svg><use href="#chk"/></svg></span>New rows come pre-keyed — auto-increment, UUID or <code>BINARY(16)</code></li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Change history: every grid edit and data-changing statement is recorded, and can be undone or redone even after commit</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>Undo shows the exact statements first, runs as one transaction, and leaves alone rows something else has changed since</li>
+          <li><span class="msym"><svg><use href="#chk"/></svg></span>History stays on your machine, with limits on how long and how much to keep, and a recording switch per connection</li>
         </ul>
       </div>
 

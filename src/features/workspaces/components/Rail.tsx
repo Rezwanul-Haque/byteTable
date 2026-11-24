@@ -437,7 +437,7 @@ export function Rail({
         onClick={onAbout}
         title={t("ws.rail.about", { app: "ByteTable" })}
       >
-        v{version ?? "0.0.42"}
+        v{version ?? "0.0.43"}
       </button>
 
       {editPop && editingWs ? (

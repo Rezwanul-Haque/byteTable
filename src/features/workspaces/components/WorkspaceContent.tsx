@@ -39,6 +39,18 @@ import { useSchedulesStore } from "../../schedules/state";
 import type { Snippet } from "../../snippets/api";
 import { SnippetsDrawer } from "../../snippets/components/SnippetsDrawer";
 import { insertSnippetIntoActiveEditor } from "../../../shared/ui/activeCodeEditor";
+import { appErrorMessage } from "../../../shared/api/error";
+import { NotebookTab } from "../../notebooks/components/NotebookTab";
+import { UnsavedNotebooksModal } from "../../notebooks/components/UnsavedNotebooksModal";
+import {
+  baseName,
+  newNotebook,
+  OPEN_NOTEBOOK_EVENT,
+  openExample,
+  openNotebookDialog,
+  openNotebookPath,
+} from "../../notebooks/files";
+import { dirtyNotebookTabs, useNotebooksStore } from "../../notebooks/state";
 import { HistoryDrawer, SavedQueriesDrawer } from "./QueryDrawers";
 import { UnsavedTabsModal, type UnsavedTab } from "./UnsavedTabsModal";
 import { SqlEditorTab } from "./SqlEditorTab";
@@ -75,6 +87,8 @@ function TabBody({
       return <TableTab tab={tab} handleId={workspace.handleId} currentSchema={currentSchema} />;
     case "sql":
       return <SqlEditorTab workspace={workspace} tab={tab} />;
+    case "notebook":
+      return <NotebookTab workspace={workspace} tab={tab} />;
     case "map":
       return <SchemaMap workspace={workspace} schema={tab.schema} />;
     case "board":
@@ -197,6 +211,34 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
     setSavedOpen(true);
   });
   // Claimed here too, not by the SQL tab: the history is the workspace's, so
+  // ---- Query notebooks (M47) ----------------------------------------------
+  // New / Open… / the example, from the tab bar, the palette and the menus.
+  // They open in the schema the workspace is on.
+  const notebookSchema = selectedSchema(workspace) ?? "main";
+  const openNotebookFile = (open: () => Promise<string | null>, name?: string) => {
+    void open().catch((err: unknown) =>
+      toast(
+        appErrorMessage(err, t("notebook.open.failed", { name: name ?? t("notebook.untitled") })),
+        "err",
+      ),
+    );
+  };
+  useBtCmd("new-notebook", () => newNotebook(workspace, notebookSchema));
+  useBtCmd("example-notebook", () => openExample(workspace, notebookSchema));
+  useBtCmd("open-notebook", () =>
+    openNotebookFile(() => openNotebookDialog(workspace, notebookSchema)),
+  );
+  // File ▸ Open recent carries a path, which the command bus cannot: it comes
+  // as a window event instead.
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      const path = (e as CustomEvent<string>).detail;
+      openNotebookFile(() => openNotebookPath(path, workspace, notebookSchema), baseName(path));
+    };
+    window.addEventListener(OPEN_NOTEBOOK_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_NOTEBOOK_EVENT, onOpen);
+  });
+
   // Query ▸ History works with no query tab open — the menu item is enabled
   // for the whole SQL workspace.
   useBtCmd("query-history", () => {
@@ -267,10 +309,30 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
   // routes through the confirm. Clean closes stay instant. The whole set is
   // parked on the seam, not just the dirty ids: confirming has to close the
   // clean tabs of a "Close others" too, and cancelling has to close none.
-  const requestClose = (ids: string[]) => {
+  const proceedClose = (ids: string[]) => {
     if (ids.some((id) => unsaved.has(id))) requestTabClose(ids);
     else ids.forEach(closeTab);
   };
+  // Notebooks with unsaved changes ask Save / Discard / Cancel first (B4);
+  // then the close carries on through the staged-edits confirm as before.
+  const notebookDocs = useNotebooksStore((st) => st.docs);
+  const [notebookClose, setNotebookClose] = useState<string[] | null>(null);
+  const requestClose = (ids: string[]) => {
+    const dirty = dirtyNotebookTabs(notebookDocs);
+    if (ids.some((id) => dirty.has(id))) setNotebookClose(ids);
+    else proceedClose(ids);
+  };
+  const notebookCloseDirty = useMemo(() => {
+    const dirty = dirtyNotebookTabs(notebookDocs);
+    return (notebookClose ?? []).filter((id) => dirty.has(id));
+  }, [notebookClose, notebookDocs]);
+  // Saved some other way while the prompt was up: honour the close.
+  useEffect(() => {
+    if (!notebookClose || notebookCloseDirty.length > 0) return;
+    setNotebookClose(null);
+    proceedClose(notebookClose);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notebookClose, notebookCloseDirty.length]);
   // Tabs still open + still dirty when the prompt renders, with the label the
   // strip shows them under (ordinal included, so "trees (2)" is unambiguous).
   const t = useT();
@@ -371,6 +433,7 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
           onSelect={setActiveTab}
           onClose={requestClose}
           onNewSql={openSqlTab}
+          onNewNotebook={() => newNotebook(workspace, notebookSchema)}
           consoleOpen={consoleOpen}
           onToggleConsole={() => togglePanel(workspace.id, shellLabel(workspace.saved.engine))}
           savedQueriesOpen={savedOpen}
@@ -442,6 +505,18 @@ export function WorkspaceContent({ workspace }: { workspace: Workspace }) {
           }}
         />
       </div>
+      {notebookClose && notebookCloseDirty.length > 0 ? (
+        <UnsavedNotebooksModal
+          intent="close"
+          tabIds={notebookCloseDirty}
+          onDone={() => {
+            const ids = notebookClose;
+            setNotebookClose(null);
+            proceedClose(ids);
+          }}
+          onCancel={() => setNotebookClose(null)}
+        />
+      ) : null}
       {/* Every close entry point funnels here (see `UnsavedTabsModal`). Rendered
           when the parked set still contains a dirty tab — if the last one was
           saved while the prompt was open there is nothing left to warn about. */}

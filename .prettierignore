@@ -12,3 +12,6 @@ landing/
 # Local editor-tooling cache (the impeccable design hook), written into
 # whichever directory the session runs from; git-excluded locally, not source.
 **/.impeccable/
+# The bundled example notebook (M47) is the file format's reference: its exact
+# bytes are what the round-trip test checks, and Prettier would pad its tables.
+src/features/notebooks/example.md

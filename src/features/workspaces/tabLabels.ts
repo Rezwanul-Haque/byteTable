@@ -27,6 +27,7 @@ function tabTitle(tab: Tab, currentSchema: string, t: Translate): string {
     case "table":
       return tab.schema === currentSchema ? tab.table : tab.schema + "." + tab.table;
     case "sql":
+    case "notebook":
       return tab.title;
     case "map":
       return t("ws.tabTitle.map", { schema: tab.schema });

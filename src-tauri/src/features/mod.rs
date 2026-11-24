@@ -17,6 +17,7 @@ pub mod introspection;
 pub mod keyvalue;
 pub mod mongo;
 pub mod mutate;
+pub mod notebooks;
 pub mod preferences;
 pub mod privileges;
 pub mod processes;

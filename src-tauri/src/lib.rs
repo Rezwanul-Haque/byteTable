@@ -320,6 +320,7 @@ pub fn run() {
         // caused was an instant crash on every cold open.
         .manage(features::file_open::PendingOpens::default())
         .manage(features::query_debug::commands::QueryDebugState::default())
+        .manage(features::notebooks::commands::NotebooksState::default())
         .plugin(tauri_plugin_os::init())
         // Single-instance guard (MUST be the first plugin registered): a second
         // launch — e.g. clicking the AppImage again — does not spawn another
@@ -539,7 +540,15 @@ pub fn run() {
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "show" => show_main_window(app),
-                    "quit" => app.exit(0),
+                    // Unsaved notebooks hold the quit for the renderer's
+                    // Save / Discard / Cancel prompt (it calls `app_quit`).
+                    "quit" => {
+                        if features::notebooks::commands::hold_quit(app) {
+                            show_main_window(app);
+                        } else {
+                            app.exit(0);
+                        }
+                    }
                     // A Workspaces item: bring the window forward and tell the
                     // frontend which saved connection was picked (it focuses an
                     // open workspace or opens one from the connection).
@@ -629,6 +638,14 @@ pub fn run() {
             features::query_debug::commands::debug_plan,
             features::query_debug::commands::debug_run_step,
             features::query_debug::commands::debug_cancel,
+            features::notebooks::commands::notebook_query_run,
+            features::notebooks::commands::notebook_query_cancel,
+            features::notebooks::commands::notebook_classify,
+            features::notebooks::commands::notebook_read,
+            features::notebooks::commands::notebook_write,
+            features::notebooks::commands::notebook_stat,
+            features::notebooks::commands::app_set_unsaved,
+            features::notebooks::commands::app_quit,
             features::insights::commands::column_stats,
             features::mutate::commands::row_update,
             features::mutate::commands::rows_delete,
@@ -787,7 +804,13 @@ pub fn run() {
         // during window re-creation. `block_on` (not spawn) so every
         // connection's `close()` completes before the process exits.
         .run(|app_handle, event| match event {
-            tauri::RunEvent::ExitRequested { .. } => {
+            tauri::RunEvent::ExitRequested { ref api, .. } => {
+                // ⌘Q with unsaved notebooks: hold it for the renderer's prompt.
+                if features::notebooks::commands::hold_quit(app_handle) {
+                    api.prevent_exit();
+                    show_main_window(app_handle);
+                    return;
+                }
                 let state = app_handle.state::<ConnectionsState>();
                 tauri::async_runtime::block_on(state.manager().close_all());
             }

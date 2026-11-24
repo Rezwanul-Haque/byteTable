@@ -16,6 +16,7 @@ import { InfoHint } from "../../../shared/ui/InfoHint";
 import { useToast } from "../../../shared/ui/toastContext";
 import { SCOPE_NOUN_KEYS, scopeNoun, scopeNounTitle } from "../scopes";
 import { selectShowConnect, useWorkspacesStore, WORKSPACE_COLORS } from "../state";
+import { guardWorkspaceClose } from "../../notebooks/state";
 import { isDataFileWorkspace, workspaceBadge, type Workspace } from "../types";
 import "./Rail.css";
 
@@ -563,7 +564,8 @@ export function Rail({
             type="button"
             className="ws-edit-remove"
             onClick={() => {
-              closeWorkspace(editPop.id);
+              const id = editPop.id;
+              guardWorkspaceClose(id, () => closeWorkspace(id));
               closeEdit();
             }}
           >

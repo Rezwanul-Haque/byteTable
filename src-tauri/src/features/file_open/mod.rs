@@ -58,6 +58,10 @@ pub enum OpenKind {
     /// A SQL script: load its text into an editor tab. NOT a connection — a
     /// script has no database of its own, which is why it needs one open.
     Script,
+    /// A Markdown file: open it as a query notebook (M47) in the SQL
+    /// workspace that is open. Any Markdown file is accepted; one without
+    /// ```sql blocks simply opens as notes.
+    Notebook,
 }
 
 /// One path the OS asked us to open, with what to do about it.
@@ -84,6 +88,11 @@ const DATABASE_EXTENSIONS: [&str; 4] = ["sqlite", "sqlite3", "db", "db3"];
 /// already exists.
 const SCRIPT_EXTENSIONS: [&str; 1] = ["sql"];
 
+/// Notebook extensions (M47). Registered as an ALTERNATE handler in
+/// `tauri.conf.json`, so ByteTable is offered under "Open With" but never
+/// takes over as the default Markdown app.
+const NOTEBOOK_EXTENSIONS: [&str; 2] = ["md", "markdown"];
+
 /// What `path` is to us, by extension, case-insensitively. `None` for anything
 /// we do not claim.
 fn classify(path: &Path) -> Option<OpenKind> {
@@ -92,6 +101,8 @@ fn classify(path: &Path) -> Option<OpenKind> {
         Some(OpenKind::Database)
     } else if SCRIPT_EXTENSIONS.contains(&ext.as_str()) {
         Some(OpenKind::Script)
+    } else if NOTEBOOK_EXTENSIONS.contains(&ext.as_str()) {
+        Some(OpenKind::Notebook)
     } else {
         None
     }
@@ -173,6 +184,17 @@ mod tests {
     fn classifies_scripts_separately_from_databases() {
         for name in ["a.sql", "a.SQL", "migrations/001_init.sql"] {
             assert_eq!(classify(Path::new(name)), Some(OpenKind::Script), "{name}");
+        }
+    }
+
+    #[test]
+    fn classifies_markdown_as_a_notebook() {
+        for name in ["review.md", "README.MD", "notes.markdown"] {
+            assert_eq!(
+                classify(Path::new(name)),
+                Some(OpenKind::Notebook),
+                "{name}"
+            );
         }
     }
 

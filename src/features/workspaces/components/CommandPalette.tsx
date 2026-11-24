@@ -275,6 +275,33 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
           },
         ]
       : [];
+    // M47: query notebooks — new, open a file, or the worked example. A SQL
+    // workspace surface, available with or without a query tab.
+    const notebookCmds: Command[] =
+      workspace.kind === "sql"
+        ? [
+            {
+              id: "cmd-new-notebook",
+              icon: "menu_book",
+              label: t("notebook.palette.new"),
+              hint: t("notebook.palette.newHint"),
+              run: () => emitCmd("new-notebook"),
+            },
+            {
+              id: "cmd-open-notebook",
+              icon: "folder_open",
+              label: t("notebook.palette.open"),
+              run: () => emitCmd("open-notebook"),
+            },
+            {
+              id: "cmd-example-notebook",
+              icon: "menu_book",
+              label: t("notebook.palette.example"),
+              hint: t("notebook.palette.exampleHint"),
+              run: () => emitCmd("example-notebook"),
+            },
+          ]
+        : [];
     // M45: debug the active SQL tab's statement (palette and Query menu).
     const debugCmds: Command[] = activeIsSql
       ? [
@@ -333,6 +360,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
       savedList,
       queryHistory,
       snippets,
+      ...notebookCmds,
       ...debugCmds,
       ...aiCmds,
       ...savedCmds,

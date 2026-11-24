@@ -1,0 +1,756 @@
+/* Query notebooks (M47) — ported from ByteTable.html's "Query notebooks"
+   block. The prototype's textarea code editor is replaced by the SQL tab's
+   CodeMirror editor, grown to its content (`.nb-code` below). */
+.nb {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg0);
+  container-type: inline-size;
+}
+.nb-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg1);
+  flex: none;
+}
+.nb-title {
+  flex: 0 1 300px;
+  min-width: 90px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--ui);
+  font-size: 14px;
+  font-weight: 600;
+}
+.nb-title:hover {
+  border-color: var(--border);
+}
+.nb-title:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--bg0);
+}
+.nb-file {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.nb-saved {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.nb-saved::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+.nb-saved.dirty {
+  color: var(--warn);
+}
+.nb-saved.dirty::before {
+  background: var(--warn);
+}
+.nb-sub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11.5px;
+  color: var(--text-dim);
+  flex: none;
+}
+.nb-sub b {
+  color: var(--text);
+  font-weight: 500;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.nb-sub .dim {
+  color: var(--text-dim);
+  opacity: 0.8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.nb-keep {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  cursor: pointer;
+  color: var(--text);
+}
+.nb-keep input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+.nb-banner {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 14px;
+  font-size: 12px;
+  color: var(--text);
+  background: color-mix(in oklab, var(--warn) 10%, var(--bg1));
+  border-bottom: 1px solid color-mix(in oklab, var(--warn) 35%, var(--border));
+  flex: none;
+}
+.nb-banner > .msym {
+  color: var(--warn);
+}
+.nb-banner span {
+  flex: 1;
+  min-width: 0;
+}
+
+.nb-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.nb-doc {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 14px 52px 80px 20px;
+}
+.nb-cell {
+  position: relative;
+  border-radius: 10px;
+}
+/* The tools stand 14px clear of the cell's right edge. This invisible strip
+   makes that gap part of the cell, so moving the pointer from a cell to its
+   tools never leaves the cell — which would hide the tools mid-reach. */
+.nb-cell::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 100%;
+  width: 40px;
+}
+.nb-tools {
+  position: absolute;
+  top: 4px;
+  right: -40px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s;
+}
+.nb-cell:hover .nb-tools,
+.nb-cell:focus-within .nb-tools {
+  opacity: 1;
+  pointer-events: auto;
+  z-index: 2;
+}
+/* One cell's tools at a time. A short note is shorter than its column of
+   tools, so two visible columns overlap — and a cell keeps focus-within after
+   one of its tools is clicked. While the pointer is over the document, only
+   the hovered cell shows its tools; hidden tools take no clicks, so they can
+   never swallow one meant for the column under them. */
+.nb-doc:hover .nb-cell:not(:hover) .nb-tools {
+  opacity: 0;
+  pointer-events: none;
+}
+/* …except for the keyboard: tabbing into a cell's tools always shows them,
+   on top. */
+.nb-doc .nb-cell .nb-tools.nb-tools:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+  z-index: 3;
+}
+body.bt-reduce-motion .nb-tools {
+  transition: none;
+}
+
+/* A cell is never shorter than its column of tools, so the tools always sit
+   beside their own cell — a one-line note would otherwise leave its Delete
+   hanging next to the cell below. 4px offset + 26px buttons + 1px gaps: three
+   tools on a note (84px), four on a query (112px). Only cells that have tools
+   (a read-only notebook has none). Fixed heights, so nothing moves on hover. */
+.nb-cell.is-note:has(> .nb-tools) .nb-note-view,
+.nb-cell.is-note:has(> .nb-tools) .nb-note-edit {
+  min-height: 84px;
+}
+.nb-cell.is-query:has(> .nb-tools) .nb-q-body {
+  min-height: 112px;
+}
+
+/* notes */
+/* At rest a note sits in the same box it is edited in: indented to line up
+   with the query editors (the text stays where it always was — the 36px moved
+   from padding to margin). */
+.nb-note-view {
+  margin-left: 36px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: text;
+  border: 1px solid transparent;
+}
+.nb-note-view:hover {
+  border-color: var(--border);
+}
+.nb-note-view:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+.nb-note-view.empty {
+  color: var(--text-dim);
+  font-size: 13px;
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+.nb-md {
+  font-family: var(--ui);
+  font-size: 13.5px;
+  line-height: 1.62;
+  color: var(--text);
+  max-width: 72ch;
+}
+.nb-md > :first-child {
+  margin-top: 0;
+}
+.nb-md > :last-child {
+  margin-bottom: 0;
+}
+.nb-md h2 {
+  font-size: 20px;
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 6px 0 8px;
+}
+.nb-md h3 {
+  font-size: 15px;
+  line-height: 1.3;
+  font-weight: 600;
+  margin: 10px 0 5px;
+}
+.nb-md h4 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 8px 0 4px;
+  color: var(--text-dim);
+}
+.nb-md p {
+  margin: 0 0 8px;
+}
+.nb-md ul,
+.nb-md ol {
+  margin: 0 0 8px;
+  padding-left: 20px;
+}
+.nb-md li {
+  margin: 2px 0;
+}
+.nb-md code {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+}
+.nb-note-edit {
+  margin-left: 36px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--bg1);
+  display: flex;
+  flex-direction: column;
+}
+.nb-note-edit > .nb-grow {
+  flex: 1;
+}
+.nb-grow {
+  display: grid;
+}
+.nb-grow::after {
+  content: attr(data-value);
+  visibility: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.nb-grow::after,
+.nb-grow > textarea {
+  grid-area: 1 / 1;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  padding: 9px 11px;
+  margin: 0;
+  border: none;
+  min-height: 40px;
+}
+.nb-grow > textarea {
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  color: var(--text);
+  outline: none;
+}
+.nb-note-hint {
+  padding: 4px 11px 6px;
+  font-size: 10.5px;
+  color: var(--text-dim);
+  border-top: 1px solid var(--border);
+}
+
+/* queries */
+.nb-q {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.nb-gutter {
+  width: 28px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding-top: 5px;
+}
+.nb-run {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+}
+.nb-run:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.nb-run:disabled {
+  color: var(--text-faint);
+  background: var(--bg2);
+  cursor: default;
+}
+.nb-n {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+}
+.nb-q-body {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg1);
+  overflow: hidden;
+  /* The code area fills any height the box has beyond its content (the
+     tools-tall minimum), so a short query is all editor, not editor + band. */
+  display: flex;
+  flex-direction: column;
+}
+.nb-q-body > .nb-code {
+  flex: 1 0 auto;
+}
+.nb-cell.is-query:focus-within .nb-q-body {
+  border-color: color-mix(in oklab, var(--accent) 55%, var(--border));
+}
+.nb-code {
+  background: var(--bg0);
+  /* CodeMirror scrolls long lines itself; the cell never does. */
+  min-width: 0;
+  overflow: hidden;
+}
+
+.nb-confirm,
+.nb-error,
+.nb-skip,
+.nb-notice {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+.nb-confirm {
+  background: color-mix(in oklab, var(--warn) 10%, var(--bg1));
+}
+.nb-confirm > .msym {
+  color: var(--warn);
+}
+.nb-confirm-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.nb-confirm-text b {
+  font-weight: 600;
+}
+.nb-confirm-text span {
+  color: var(--text-dim);
+}
+.nb-error {
+  align-items: flex-start;
+  background: color-mix(in oklab, var(--error) 9%, var(--bg1));
+}
+.nb-error > .msym {
+  color: var(--error);
+  margin-top: 1px;
+}
+.nb-error div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.nb-error b {
+  font-weight: 600;
+}
+.nb-error span {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+.nb-skip {
+  color: var(--text-dim);
+}
+.nb-notice {
+  color: var(--text);
+}
+.nb-notice > .msym {
+  color: var(--accent);
+}
+
+.nb-result {
+  border-top: 1px solid var(--border);
+}
+.nb-result-bar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 6px 4px 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  min-height: 30px;
+}
+.nb-result-bar .dim {
+  opacity: 0.75;
+}
+.nb-stale {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--warn);
+  font-family: var(--ui);
+  font-size: 11.5px;
+}
+.nb-result.stale .nb-grid,
+.nb-result.stale .nb-chart {
+  opacity: 0.5;
+}
+/* The SQL tab's result grid, in a cell: its toolbar (row count, Export CSV)
+   plus the grid, sized to the rows up to the brief's 286px table. The grid is
+   virtualized, so it needs this definite height to fill. */
+.nb-grid {
+  display: flex;
+  flex-direction: column;
+  height: calc(37px + min(286px, 32px + var(--nb-rows, 1) * 26px));
+  border-top: 1px solid var(--border);
+}
+.nb-chart {
+  height: 340px;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+}
+.nb-more,
+.nb-none {
+  padding: 7px 12px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.nb-more button,
+.nb-undo button {
+  color: var(--accent);
+  font-size: inherit;
+  font-family: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* add-a-cell row + undo */
+.nb-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding-left: 36px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.nb-add:hover,
+.nb-add:focus-within,
+.nb-add.always {
+  opacity: 1;
+}
+.nb-add.always {
+  height: 40px;
+}
+body.bt-reduce-motion .nb-add {
+  transition: none;
+}
+.nb-add-line {
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.nb-add button {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  padding: 0 9px 0 6px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  background: var(--bg1);
+  color: var(--text-dim);
+  font-family: var(--ui);
+  font-size: 11px;
+}
+.nb-add.always button {
+  height: 26px;
+  padding: 0 12px 0 8px;
+  font-size: 12px;
+  color: var(--text);
+}
+.nb-add button:hover {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 55%, var(--border));
+}
+.nb-undo {
+  margin: 4px 0 4px 36px;
+  padding: 6px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.nb-foot {
+  padding: 4px 0 0 36px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* the file itself */
+.nb-filepane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.nb-file-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11.5px;
+  color: var(--text-dim);
+  flex: none;
+}
+.nb-file-name {
+  font-family: var(--mono);
+  color: var(--text);
+}
+.nb-file-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11.5px;
+  color: var(--text-dim);
+  background: var(--bg1);
+  flex: none;
+}
+.nb-file-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.nb-file-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--text-faint);
+}
+.nb-file-legend i.k-sql {
+  background: var(--accent);
+}
+.nb-file-legend i.k-res {
+  background: #5aa7f5;
+}
+.nb-file-legend code {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+}
+.nb-file-text {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  resize: none;
+  border: none;
+  outline: none;
+  padding: 14px 18px;
+  background: var(--bg0);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre;
+  overflow: auto;
+  tab-size: 2;
+}
+[data-material="liquid"] .nb,
+[data-material="liquid"] .nb-file-text,
+[data-material="liquid"] .nb-code {
+  background: transparent;
+}
+
+@container (max-width: 760px) {
+  .nb-file,
+  .nb-sub .dim {
+    display: none;
+  }
+  .nb-doc {
+    padding: 10px 12px 60px 8px;
+  }
+  /* Narrow: the tools are a row under each cell and always shown, so there
+     is nothing to overlap, nothing to hide, and no gap to bridge. */
+  .nb-cell::after {
+    display: none;
+  }
+  .nb-tools,
+  .nb-doc:hover .nb-cell:not(:hover) .nb-tools {
+    position: static;
+    flex-direction: row;
+    justify-content: flex-end;
+    opacity: 1;
+    pointer-events: auto;
+    padding: 2px 0 0;
+  }
+  .nb-note-view {
+    margin-left: 0;
+  }
+  /* The tools are a row under the cell here: no height to match. */
+  .nb-cell.is-note:has(> .nb-tools) .nb-note-view,
+  .nb-cell.is-note:has(> .nb-tools) .nb-note-edit,
+  .nb-cell.is-query:has(> .nb-tools) .nb-q-body {
+    min-height: 0;
+  }
+  .nb-note-edit,
+  .nb-undo {
+    margin-left: 0;
+  }
+  .nb-add,
+  .nb-foot {
+    padding-left: 0;
+  }
+}
+@container (max-width: 520px) {
+  .nb-head {
+    flex-wrap: wrap;
+  }
+  .nb-title {
+    flex: 1 1 100%;
+  }
+  .nb-saved {
+    margin-right: auto;
+  }
+}
+
+/* ---- the SQL editor in a cell: grows with its content, no inner vertical
+   scrollbar; long lines scroll sideways (E4). The SQL tab pins its editor
+   host absolutely to fill the pane and themes the view to 100% height; both
+   are undone here, with selectors specific enough to win over each. ---- */
+.nb-code .sql-cm {
+  position: relative;
+  inset: auto;
+  overflow: visible;
+}
+.nb-code .sql-cm .cm-editor {
+  height: auto;
+  min-height: 42px;
+  background: transparent;
+}
+.nb-code .sql-cm .cm-scroller {
+  overflow-y: hidden;
+  overflow-x: auto;
+}
+.nb-code .sql-cm .cm-editor.cm-focused {
+  outline: none;
+}
+
+/* ---- Run becomes Stop while the cell runs; a ring turns around it (I3) ---- */
+.nb-run {
+  position: relative;
+}
+.nb-run.running {
+  color: var(--text);
+  background: var(--bg2);
+}
+.nb-run.running::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  border-top-color: var(--accent);
+  animation: spin 0.9s linear infinite;
+}
+body.bt-reduce-motion .nb-run.running::after {
+  animation: none;
+  border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+}
+.nb-note-view.ro {
+  cursor: default;
+}
+.nb-note-view.ro:hover {
+  border-color: transparent;
+}
+.nb-banner b {
+  font-family: var(--mono);
+  font-size: 11.5px;
+}

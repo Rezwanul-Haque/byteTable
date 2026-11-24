@@ -51,6 +51,7 @@ import { appErrorMessage } from "../../shared/api/error";
 import { useToast } from "../../shared/ui/toastContext";
 import { useT } from "../../shared/i18n/useT";
 import { engineLabel } from "../../shared/ui/engineMeta";
+import { openNotebookHere } from "../notebooks/files";
 import { useOpenSqliteFile } from "./connect";
 import { useWorkspacesStore } from "./state";
 import { workspaceBadge } from "./types";
@@ -61,7 +62,7 @@ const FILE_OPEN_EVENT = "file-open://pending";
 /** One path the OS handed us. Matches the Rust `PendingOpen`. */
 interface PendingOpen {
   path: string;
-  kind: "database" | "script";
+  kind: "database" | "script" | "notebook";
 }
 
 /** Leaf file name, for the tab title and messages. Handles both separators —
@@ -153,6 +154,19 @@ export function useOsFileOpen(): { viewed: ViewedScript | null; dismiss: () => v
           // Failures are already toasted inside the connect flow.
           const name = await openSqliteFile(item.path);
           if (name) toast(t("shell.fileOpen.opened", { name }), "ok");
+          continue;
+        }
+        if (item.kind === "notebook") {
+          // A notebook, like a script, runs against the SQL workspace on
+          // screen; with none open there is nothing to run it in yet.
+          try {
+            if (!(await openNotebookHere(item.path))) toast(t("notebook.open.needsSql"), "info");
+          } catch (error) {
+            toast(
+              appErrorMessage(error, t("notebook.open.failed", { name: baseName(item.path) })),
+              "err",
+            );
+          }
           continue;
         }
         await openScript(item.path);

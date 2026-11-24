@@ -284,6 +284,12 @@ interface WorkspacesFeatureState {
    * boards per connection are deferred.
    */
   openBoardTab: (schema: string) => void;
+  /** Open a notebook tab (M47) in the active workspace and focus it; returns
+   *  its id (the notebooks store keys the document by it), or null with no
+   *  workspace open. */
+  openNotebookTab: (title: string, schema: string) => string | null;
+  /** The notebook's title changed: the strip follows it as you type. */
+  setNotebookTabTitle: (tabId: string, title: string) => void;
   /** Record a board's own name on its tab, so the strip can label it
    *  `<board name> · board`. Reported by the mounted board. */
   setBoardTabName: (tabId: string, name: string) => void;
@@ -1013,6 +1019,40 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
         return { tabs: [...tabs, tab], activeTabId: tab.id };
       }),
     })),
+
+  openNotebookTab: (title, schema) => {
+    if (get().activeWorkspaceId === null) return null;
+    const tab: Tab = { id: newTabId("notebook"), kind: "notebook", title, schema };
+    set((state) => ({
+      workspaces: patchActiveUi(state, (ui) => ({
+        tabs: [...(ui.tabs ?? []), tab],
+        activeTabId: tab.id,
+      })),
+    }));
+    return tab.id;
+  },
+
+  setNotebookTabTitle: (tabId, title) =>
+    set((state) => {
+      // Same early-out as the board's name: an unchanged title must not mint a
+      // new workspace object (the tab reports it from an effect).
+      const ws = state.workspaces.find((w) => w.ui.tabs?.some((t) => t.id === tabId));
+      const tab = ws?.ui.tabs?.find((t) => t.id === tabId);
+      if (!ws || !tab || tab.kind !== "notebook" || tab.title === title) return state;
+      return {
+        workspaces: state.workspaces.map((w) =>
+          w.id === ws.id
+            ? {
+                ...w,
+                ui: {
+                  ...w.ui,
+                  tabs: (w.ui.tabs ?? []).map((t) => (t.id === tabId ? { ...t, title } : t)),
+                },
+              }
+            : w,
+        ),
+      };
+    }),
 
   setBoardTabName: (tabId, name) =>
     set((state) => {

@@ -1,7 +1,7 @@
 // App shell — frameless window layout per spec §2: global 56px rail on the
 // left, everything right of it swaps with the active workspace.
 
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 
 import { ToastProvider } from "./shared/ui/ToastProvider";
 import { ReadOnlyProvider } from "./shared/ui/ReadOnlyProvider";
@@ -37,6 +37,15 @@ import { useToast } from "./shared/ui/toastContext";
 import { useT } from "./shared/i18n/useT";
 import { isAppErrorPayload } from "./shared/api/error";
 import { useOsFileOpen } from "./features/workspaces/osFileOpen";
+import { quitApp } from "./features/notebooks/api";
+import { UnsavedNotebooksModal } from "./features/notebooks/components/UnsavedNotebooksModal";
+import { useNotebooksLifecycle } from "./features/notebooks/hooks/useNotebooksLifecycle";
+import {
+  dirtyNotebookTabs,
+  dirtyNotebooksIn,
+  guardWorkspaceClose,
+  useNotebooksStore,
+} from "./features/notebooks/state";
 import { SqlFileViewer } from "./features/workspaces/components/SqlFileViewer";
 import { useTrayWorkspaces } from "./features/workspaces/trayMenu";
 import { useHandleReadOnlySync } from "./features/workspaces/hooks/useHandleReadOnlySync";
@@ -186,10 +195,23 @@ export function App() {
 
   // "Close ByteTable" (File menu) → confirm, then hard-exit the app.
   const [quitConfirmOpen, setQuitConfirmOpen] = useState(false);
+  // Through the backend's quit guard (M47): `app_quit` marks the quit as
+  // answered, so unsaved notebooks no longer hold it.
   const confirmQuit = () => {
-    if ("__TAURI_INTERNALS__" in window) void exit(0);
+    if ("__TAURI_INTERNALS__" in window) void quitApp().catch(() => exit(0));
     else setQuitConfirmOpen(false); // plain-browser dev: nothing to exit
   };
+  const openQuitConfirm = useCallback(() => setQuitConfirmOpen(true), [setQuitConfirmOpen]);
+  // Notebooks with unsaved changes turn the quit confirm into Save / Discard /
+  // Cancel for them.
+  const notebookDocs = useNotebooksStore((st) => st.docs);
+  const dirtyNotebooks = quitConfirmOpen ? [...dirtyNotebookTabs(notebookDocs)] : [];
+  // A workspace close parked on unsaved notebooks (see `guardWorkspaceClose`).
+  const pendingWsClose = useNotebooksStore((st) => st.pendingWorkspaceClose);
+  const setPendingWsClose = useNotebooksStore((st) => st.setPendingWorkspaceClose);
+  const pendingWsDirty = pendingWsClose
+    ? dirtyNotebooksIn(notebookDocs, pendingWsClose.workspaceId)
+    : [];
 
   useEffect(() => {
     void loadPreferences();
@@ -269,7 +291,8 @@ export function App() {
   const titleBarCtx: TitleBarCtx = {
     onNewConnection: () => setNewConnOpen(true),
     onCloseWorkspace: () => {
-      if (activeWorkspaceId) closeWorkspace(activeWorkspaceId);
+      const id = activeWorkspaceId;
+      if (id) guardWorkspaceClose(id, () => closeWorkspace(id));
     },
     onCheckUpdates: () => {
       void (async () => {
@@ -323,6 +346,9 @@ export function App() {
       {/* File ▸ Open ▸ Open CSV / Open DB. Inside the provider because both
           flows toast; renders the sheet (CSV) or nothing (the native picker). */}
       <FileOpenBridge request={fileOpenRequest} onDone={() => setFileOpenRequest(null)} />
+      {/* Query notebooks (M47): document upkeep, the quit guard, and .md drops.
+          Inside the provider because a failed drop-open toasts. */}
+      <NotebooksBridge onQuitRequested={openQuitConfirm} />
       <div className="bt-app-root">
         <TitleBar ctx={titleBarCtx} />
         <div className="app-frame">
@@ -447,7 +473,25 @@ export function App() {
         />
       ) : null}
 
-      {quitConfirmOpen ? (
+      {pendingWsClose && pendingWsDirty.length > 0 ? (
+        <UnsavedNotebooksModal
+          intent="close"
+          tabIds={pendingWsDirty}
+          onDone={() => {
+            setPendingWsClose(null);
+            pendingWsClose.close();
+          }}
+          onCancel={() => setPendingWsClose(null)}
+        />
+      ) : null}
+      {quitConfirmOpen && dirtyNotebooks.length > 0 ? (
+        <UnsavedNotebooksModal
+          intent="quit"
+          tabIds={dirtyNotebooks}
+          onDone={confirmQuit}
+          onCancel={() => setQuitConfirmOpen(false)}
+        />
+      ) : quitConfirmOpen ? (
         <Modal
           width={380}
           label={t("shell.quit.title", { app: "ByteTable" })}
@@ -509,6 +553,12 @@ function OsFileOpenBridge() {
  *  `useHandleReadOnlySync`); renders nothing. */
 function ReadOnlySyncBridge() {
   useHandleReadOnlySync();
+  return null;
+}
+
+/** Query notebooks' app-level upkeep (see `useNotebooksLifecycle`). */
+function NotebooksBridge({ onQuitRequested }: { onQuitRequested: () => void }) {
+  useNotebooksLifecycle(onQuitRequested);
   return null;
 }
 

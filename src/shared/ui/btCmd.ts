@@ -33,6 +33,12 @@ export type BtCmdId =
   | "explain"
   | "debug"
   | "result-chart"
+  // Query notebooks (M47).
+  | "new-notebook"
+  | "open-notebook"
+  | "example-notebook"
+  | "notebook-save"
+  | "notebook-save-as"
   | "save-query"
   | "saved-queries"
   | "query-history"

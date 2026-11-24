@@ -55,6 +55,7 @@ import {
   keymap,
   lineNumbers,
   rectangularSelection,
+  tooltips,
 } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { vim } from "@replit/codemirror-vim";
@@ -319,6 +320,25 @@ interface SqlCodeEditorProps {
    * the current debug step is about. Null for none.
    */
   mark?: readonly [number, number] | null;
+  /** Line numbers in the gutter (default on). A notebook cell is a short
+   *  snippet in a document, where a gutter is noise. Fixed at mount. */
+  lineNumbers?: boolean;
+  /** ⇧↩ handler — a notebook cell's "run, then move to the next query". The
+   *  key keeps inserting a newline when this is absent. */
+  onShiftEnter?: () => void;
+  /** ⌥↩ / Alt+↩ handler — a notebook cell's "run, then insert a cell below".
+   *  The key does nothing special when this is absent. */
+  onAltEnter?: () => void;
+  /** Focus the editor once it mounts (a notebook cell just added). */
+  autoFocus?: boolean;
+  /** The editable area's accessible name ("SQL for query 2"). Fixed at mount. */
+  ariaLabel?: string;
+  /**
+   * Draw tooltips (the autocomplete list) on the page body instead of inside
+   * the editor, so a host that clips its overflow — a notebook cell — cannot
+   * cut them off. Fixed at mount.
+   */
+  floatingTooltips?: boolean;
 }
 
 /** Read-only: no edits, and not contenteditable, so no caret is drawn. */
@@ -341,6 +361,12 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
       snippets,
       readOnly = false,
       mark = null,
+      lineNumbers: showLineNumbers = true,
+      onShiftEnter,
+      onAltEnter,
+      autoFocus = false,
+      ariaLabel,
+      floatingTooltips = false,
     },
     ref,
   ) {
@@ -371,6 +397,8 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
     const onFormatRef = useRef(onFormat);
     const onCaretRef = useRef(onCaret);
     const onAllSelectedRef = useRef(onAllSelected);
+    const onShiftEnterRef = useRef(onShiftEnter);
+    const onAltEnterRef = useRef(onAltEnter);
     // Latest schema, read by the completion source on each keystroke (so columns
     // streaming into the cache appear without re-mounting the editor).
     const schemaRef = useRef<EditorSchema>(schema ?? { tables: [] });
@@ -386,6 +414,8 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
     onFormatRef.current = onFormat;
     onCaretRef.current = onCaret;
     onAllSelectedRef.current = onAllSelected;
+    onShiftEnterRef.current = onShiftEnter;
+    onAltEnterRef.current = onAltEnter;
     schemaRef.current = schema ?? { tables: [] };
     engineRef.current = engine;
     snippetsRef.current = snippets ?? [];
@@ -477,6 +507,27 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
         // Format (⇧⌥F) is handled via a physical-key dom handler below, NOT a
         // keymap binding: on macOS Option+F yields a special char as event.key,
         // so a key-based binding never matches and the char gets inserted.
+        // ⇧↩: the host's "run and move on", when it has one. Returning false
+        // otherwise lets the key insert its newline as before.
+        {
+          key: "Shift-Enter",
+          run: () => {
+            const handler = onShiftEnterRef.current;
+            if (!handler) return false;
+            handler();
+            return true;
+          },
+        },
+        {
+          key: "Alt-Enter",
+          preventDefault: true,
+          run: () => {
+            const handler = onAltEnterRef.current;
+            if (!handler) return false;
+            handler();
+            return true;
+          },
+        },
         // Tab accepts the highlighted completion when the popup is open;
         // acceptCompletion returns false otherwise, so Tab falls through to
         // indentWithTab (two-space indent) below.
@@ -492,7 +543,9 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
           extensions: [
             // First, deliberately — see vimFor's comment on handler ordering.
             vimCompartmentRef.current.of(vimFor(editorKeymap)),
-            lineNumbers(),
+            showLineNumbers ? lineNumbers() : [],
+            ariaLabel ? EditorView.contentAttributes.of({ "aria-label": ariaLabel }) : [],
+            floatingTooltips ? tooltips({ parent: document.body, position: "fixed" }) : [],
             history(),
             drawSelection(),
             bracketMatching(),
@@ -604,6 +657,7 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
         }),
       });
       viewRef.current = view;
+      if (autoFocus) view.focus();
       // Register as the editor window-level commands act on (title bar
       // Edit ▸ Undo / Redo) — by the time a menu item runs, focus has left the
       // editor, so those commands need a handle rather than document.focus.

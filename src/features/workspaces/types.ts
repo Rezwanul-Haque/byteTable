@@ -311,6 +311,11 @@ export type Tab =
   // slice (keyed by connection + schema), so the tab carries only its identity
   // and the board's name, reported back by the component for the strip label.
   | { id: string; kind: "board"; schema: string; name?: string }
+  // A query notebook (M47): notes, queries and their results, saved as one
+  // Markdown file. The document lives in the notebooks feature's store, keyed
+  // by this tab's id; the tab carries the title the strip shows (it follows the
+  // notebook's title as you type) and the schema its queries run in.
+  | { id: string; kind: "notebook"; title: string; schema: string }
   // The live server process/session list with kill actions (M26). Singleton;
   // `schema` is the active schema shown in the DB column for a fresh listing.
   | { id: string; kind: "processes"; schema: string }

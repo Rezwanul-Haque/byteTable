@@ -60,6 +60,7 @@ import { useScopeWorkspaces } from "../scopes";
 import { ScopeSplitAction, ScopeSplitHint } from "./ScopeSplitAction";
 import { ScopeSwitcherModal } from "./ScopeSwitcherModal";
 import { useWorkspacesStore } from "../state";
+import { guardWorkspaceClose } from "../../notebooks/state";
 import { useTabMetaStore } from "../tabMeta";
 import type { Workspace } from "../types";
 import { selectedSchema } from "../types";
@@ -556,7 +557,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
           title={t("menu.file.closeWorkspace")}
           size={16}
           danger
-          onClick={() => closeWorkspace(workspace.id)}
+          onClick={() => guardWorkspaceClose(workspace.id, () => closeWorkspace(workspace.id))}
         />
       </div>
 

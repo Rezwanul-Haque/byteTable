@@ -22,6 +22,7 @@
 
 import { t } from "../i18n";
 import { runCodeEditorHistory } from "./activeCodeEditor";
+import { requestOpenNotebook } from "../../features/notebooks/openRequest";
 import { emitCmd } from "./btCmd";
 
 /** The product name. Interpolated into labels rather than translated. */
@@ -65,6 +66,10 @@ export interface MenuCtx {
   hasTerminal: boolean;
   /** The app is zoomed away from 100% (font-size setting != base). */
   zoomChanged: boolean;
+  /** The active tab is a query notebook (M47): Save / Save as apply. */
+  isNotebook: boolean;
+  /** This workspace's recent notebooks; `missing` = moved or deleted. */
+  recentNotebooks: { path: string; title: string; missing: boolean }[];
   ctx: TitleBarCtx;
 }
 
@@ -104,8 +109,18 @@ export function execEdit(cmd: "undo" | "redo" | "cut" | "copy" | "paste"): void 
 }
 
 export function buildMenus(m: MenuCtx): Menu[] {
-  const { hasWs, isSql, hasPalette, hasProcesses, hasPrivileges, hasTerminal, zoomChanged, ctx } =
-    m;
+  const {
+    hasWs,
+    isSql,
+    hasPalette,
+    hasProcesses,
+    hasPrivileges,
+    hasTerminal,
+    zoomChanged,
+    isNotebook,
+    recentNotebooks,
+    ctx,
+  } = m;
 
   return [
     {
@@ -132,6 +147,13 @@ export function buildMenus(m: MenuCtx): Menu[] {
           enabled: isSql,
           run: () => emitCmd("brainstorm-board"),
         },
+        // Query notebooks (M47): a SQL-workspace surface, like the board.
+        {
+          id: "new-notebook",
+          label: t("menu.file.newNotebook"),
+          enabled: isSql,
+          run: () => emitCmd("new-notebook"),
+        },
         // One "Open" parent with a submenu (M35 Task 7). Flat siblings were
         // tried and rejected: the two file entries sat oddly beside the .sql
         // one, and their extension hints wrapped in the shortcut column.
@@ -150,6 +172,12 @@ export function buildMenus(m: MenuCtx): Menu[] {
               run: () => emitCmd("open-sql-file"),
             },
             {
+              id: "open-notebook",
+              label: t("menu.file.openNotebook"),
+              enabled: isSql,
+              run: () => emitCmd("open-notebook"),
+            },
+            {
               id: "open-csv",
               label: t("menu.file.openCsv"),
               enabled: true,
@@ -162,6 +190,33 @@ export function buildMenus(m: MenuCtx): Menu[] {
               run: ctx.onOpenSqliteFile,
             },
           ],
+        },
+        {
+          id: "open-recent-notebook",
+          label: t("menu.file.openRecentNotebook"),
+          enabled: isSql && recentNotebooks.length > 0,
+          sub: recentNotebooks.map((r) => ({
+            id: "recent:" + r.path,
+            label: r.title,
+            // A moved or deleted file is greyed out, not an error (B5).
+            hint: r.missing ? t("menu.file.recentMissing") : r.path.split(/[\\/]/).pop(),
+            enabled: !r.missing,
+            run: () => requestOpenNotebook(r.path),
+          })),
+        },
+        {
+          id: "notebook-save",
+          label: t("menu.file.saveNotebook"),
+          hint: "⌘S",
+          enabled: isNotebook,
+          run: () => emitCmd("notebook-save"),
+        },
+        {
+          id: "notebook-save-as",
+          label: t("menu.file.saveNotebookAs"),
+          hint: "⇧⌘S",
+          enabled: isNotebook,
+          run: () => emitCmd("notebook-save-as"),
         },
         "—",
         {
@@ -342,6 +397,12 @@ export function buildMenus(m: MenuCtx): Menu[] {
       label: t("menu.help"),
       items: [
         { id: "shortcuts", label: t("menu.help.shortcuts"), enabled: true, run: ctx.onShortcuts },
+        {
+          id: "example-notebook",
+          label: t("menu.help.exampleNotebook"),
+          enabled: isSql,
+          run: () => emitCmd("example-notebook"),
+        },
         "—",
         {
           id: "check-updates",

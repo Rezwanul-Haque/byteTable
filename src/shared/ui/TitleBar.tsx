@@ -28,6 +28,7 @@ import { EngineMark } from "./EngineMark";
 import { ENV_COLOR } from "./envColors";
 import { TitleMenuBar } from "./TitleMenuBar";
 import { buildMenus, type MenuCtx, type TitleBarCtx } from "./titlebarMenus";
+import { existingPaths, recentFor, RECENT_EVENT } from "../../features/notebooks/files";
 import "./TitleBar.css";
 
 type Mode = "win" | "mac-native" | "mac-frameless";
@@ -85,6 +86,39 @@ export function TitleBar({ ctx }: { ctx: TitleBarCtx }) {
   // server to list processes for. Excluding it here keeps those items disabled
   // rather than dispatching bt:cmd events nothing is listening for.
   const isFile = ws !== null && isDataFileWorkspace(ws);
+
+  // This workspace's recent notebooks (M47 B5), re-read when the list changes
+  // and checked against the disk so a moved file reads as greyed out.
+  const recentConn = ws?.saved.id ?? null;
+  const [recent, setRecent] = useState<{
+    conn: string;
+    list: MenuCtx["recentNotebooks"];
+  } | null>(null);
+  // Derived, not reset in the effect: another workspace's list never shows.
+  const recentNotebooks = recent && recent.conn === recentConn ? recent.list : [];
+  useEffect(() => {
+    if (!recentConn) return;
+    let alive = true;
+    const load = () => {
+      const list = recentFor(recentConn);
+      void existingPaths(list.map((r) => r.path))
+        .catch(() => new Set(list.map((r) => r.path)))
+        .then((there) => {
+          if (alive) {
+            const items = list.map((r) => ({ ...r, missing: !there.has(r.path) }));
+            setRecent({ conn: recentConn, list: items });
+          }
+        });
+    };
+    load();
+    window.addEventListener(RECENT_EVENT, load);
+    window.addEventListener("focus", load);
+    return () => {
+      alive = false;
+      window.removeEventListener(RECENT_EVENT, load);
+      window.removeEventListener("focus", load);
+    };
+  }, [recentConn]);
   const isSqlShell = ws?.kind === "sql" && !isFile;
   const menuCtx: MenuCtx = {
     hasWs: ws !== null,
@@ -94,6 +128,9 @@ export function TitleBar({ ctx }: { ctx: TitleBarCtx }) {
     hasPrivileges: isSqlShell && !!ws && ws.saved.engine in PRIV_SOURCES,
     hasTerminal: ws !== null && !isFile,
     zoomChanged: settings.fontSize !== 13,
+    isNotebook:
+      isSqlShell && ws?.ui.tabs?.find((tb) => tb.id === ws.ui.activeTabId)?.kind === "notebook",
+    recentNotebooks,
     ctx,
   };
   const menus = buildMenus(menuCtx);

@@ -32,6 +32,17 @@ const GROUPS: Group[] = [
     ],
   },
   {
+    // Query notebooks (M47): Jupyter's keys, in a query or a note cell.
+    title: "uix.sc.group.notebook",
+    rows: [
+      { keys: "⌘↩", label: "uix.sc.notebook.run" },
+      { keys: "⇧↩", label: "uix.sc.notebook.runNext" },
+      { keys: "⌥↩", label: "uix.sc.notebook.runInsert" },
+      { keys: "Esc", label: "uix.sc.notebook.leaveNote" },
+      { keys: "⌘S", label: "uix.sc.notebook.save" },
+    ],
+  },
+  {
     // Multi-cursor gets its own group: two of the four are mouse gestures, and
     // the feature is invisible until you know the modifier.
     title: "uix.sc.group.multiCursor",

@@ -96,6 +96,14 @@
         "description": "SQL script",
         "role": "Editor",
         "mimeType": "application/sql;text/x-sql"
+      },
+      {
+        "ext": ["md", "markdown"],
+        "name": "Query notebook",
+        "description": "Markdown notebook with SQL queries",
+        "role": "Viewer",
+        "rank": "Alternate",
+        "mimeType": "text/markdown"
       }
     ],
     "windows": {

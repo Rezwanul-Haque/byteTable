@@ -31,6 +31,7 @@ const TAB_ICONS: Record<Tab["kind"], string> = {
   sql: "terminal",
   map: "schema",
   board: "draw",
+  notebook: "menu_book",
   processes: "monitor_heart",
   privileges: "admin_panel_settings",
   diff: "difference",
@@ -58,6 +59,8 @@ interface TabBarProps {
    *  once and the caller confirms unsaved work for the whole batch. */
   onClose: (ids: string[]) => void;
   onNewSql: () => void;
+  /** New notebook (M47) — the third new-tab button. */
+  onNewNotebook: () => void;
   /** True when the docked console panel is open (M14) — lights the toggle. */
   consoleOpen: boolean;
   /** Toggle the docked console panel (M14). */
@@ -100,6 +103,7 @@ export function TabBar({
   onSelect,
   onClose,
   onNewSql,
+  onNewNotebook,
   consoleOpen,
   onToggleConsole,
   savedQueriesOpen = false,
@@ -207,14 +211,25 @@ export function TabBar({
         ) : null}
         <button
           type="button"
-          className={"tabbar-tool" + (consoleOpen ? " active" : "")}
+          className={"tabbar-tool tabbar-tool-icon" + (consoleOpen ? " active" : "")}
           title={t("ws.tabs.toggleTerminal")}
           aria-label={t("ws.tabs.toggleTerminal")}
           aria-pressed={consoleOpen}
           onClick={onToggleConsole}
         >
           <Icon name="terminal" size={15} />
-          <span>{t("ws.tabs.terminal")}</span>
+        </button>
+        {/* New notebook (M47), right after Terminal with the other tools. One
+            px smaller: the font draws `menu_book` 10% wider than `terminal`
+            at the same size (13.75 vs 12.5 px at 15), so 14 matches them. */}
+        <button
+          type="button"
+          className="tabbar-tool tabbar-tool-icon"
+          title={t("notebook.newTitle")}
+          aria-label={t("notebook.newTitle")}
+          onClick={onNewNotebook}
+        >
+          <Icon name="menu_book" size={14} />
         </button>
         {/* Beside Terminal: the saved queries are workspace-wide, not a
             property of whichever tab happens to be open, so browsing them

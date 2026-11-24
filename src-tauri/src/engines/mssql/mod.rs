@@ -58,9 +58,9 @@ use crate::features::structure::domain::AlterOp;
 use crate::shared::engine::{
     AlterResult, ColumnStats, ColumnStatsRequest, ConnectSecret, ConnectionParams, Connector,
     DbObjectDefinition, DbObjectInfo, DbObjectKind, DeleteRowsRequest, DeleteRowsResult, Engine,
-    EngineConnection, EngineInfo, FetchRowsRequest, ImportResult, OpenConnection, ProgressCallback,
-    QueryOptions, QueryResult, RowLookup, RowLookupRequest, RowsPage, SchemaInfo, TableInfo,
-    TableMeta, UpdateCellRequest, UpdateResult,
+    EngineConnection, EngineInfo, FetchRowsRequest, ImportResult, OpenConnection, PinnedSession,
+    ProgressCallback, QueryOptions, QueryResult, RowLookup, RowLookupRequest, RowsPage, SchemaInfo,
+    TableInfo, TableMeta, UpdateCellRequest, UpdateResult,
 };
 use crate::shared::error::AppError;
 
@@ -236,6 +236,24 @@ pub struct MssqlEngineConnection {
     _tunnel: Option<SshTunnel>,
 }
 
+/// A pinned session (M48): the connection's one TDS client, held for the
+/// session — so nothing else on this workspace runs in between.
+struct MssqlSession<'a> {
+    client: tokio::sync::MutexGuard<'a, TdsClient>,
+    schema: Option<String>,
+}
+
+#[async_trait]
+impl PinnedSession for MssqlSession<'_> {
+    async fn query(&mut self, sql: &str, row_limit: usize) -> Result<QueryResult, AppError> {
+        let options = QueryOptions {
+            row_limit,
+            schema: self.schema.clone(),
+        };
+        run_query(&mut self.client, sql, options).await
+    }
+}
+
 #[async_trait]
 impl EngineConnection for MssqlEngineConnection {
     fn engine_info(&self) -> EngineInfo {
@@ -311,6 +329,20 @@ impl EngineConnection for MssqlEngineConnection {
     async fn run_query(&self, sql: &str, options: QueryOptions) -> Result<QueryResult, AppError> {
         let mut client = self.client.lock().await;
         run_query(&mut client, sql, options).await
+    }
+
+    async fn pin<'a>(
+        &'a self,
+        schema: Option<String>,
+    ) -> Result<Box<dyn PinnedSession + 'a>, AppError> {
+        Ok(Box::new(MssqlSession {
+            client: self.client.lock().await,
+            schema,
+        }))
+    }
+
+    fn begin_sql(&self) -> &'static str {
+        "BEGIN TRANSACTION"
     }
 
     async fn fetch_rows(&self, req: FetchRowsRequest) -> Result<RowsPage, AppError> {

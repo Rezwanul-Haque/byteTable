@@ -109,9 +109,9 @@ use crate::features::structure::domain::AlterOp;
 use crate::shared::engine::{
     count_statements, AlterResult, ColumnStats, ColumnStatsRequest, ConnectionParams, Connector,
     DbObjectDefinition, DbObjectInfo, DbObjectKind, DeleteRowsRequest, DeleteRowsResult, Engine,
-    EngineConnection, EngineInfo, FetchRowsRequest, ImportResult, OpenConnection, QueryOptions,
-    QueryResult, RowLookup, RowLookupRequest, RowsPage, SchemaInfo, TableInfo, TableMeta,
-    UpdateCellRequest, UpdateResult,
+    EngineConnection, EngineInfo, FetchRowsRequest, ImportResult, OpenConnection, PinnedSession,
+    QueryOptions, QueryResult, RowLookup, RowLookupRequest, RowsPage, SchemaInfo, TableInfo,
+    TableMeta, UpdateCellRequest, UpdateResult,
 };
 use crate::shared::error::AppError;
 
@@ -151,6 +151,26 @@ impl Connector for SqliteConnector {
 pub struct SqliteEngineConnection {
     conn: Arc<Mutex<Connection>>,
     info: EngineInfo,
+}
+
+/// A pinned session (M48). SQLite has ONE connection per open file, so every
+/// statement already shares a session; this just runs them through it in order.
+struct SqliteSession<'a> {
+    conn: &'a SqliteEngineConnection,
+}
+
+#[async_trait]
+impl PinnedSession for SqliteSession<'_> {
+    async fn query(&mut self, sql: &str, row_limit: usize) -> Result<QueryResult, AppError> {
+        let sql = sql.to_string();
+        let options = QueryOptions {
+            row_limit,
+            schema: None,
+        };
+        self.conn
+            .with_conn(move |conn| run_query_blocking(conn, &sql, &options))
+            .await
+    }
 }
 
 #[async_trait]
@@ -217,6 +237,19 @@ impl EngineConnection for SqliteEngineConnection {
         let sql = sql.to_string();
         self.with_conn(move |conn| run_query_blocking(conn, &sql, &options))
             .await
+    }
+
+    async fn pin<'a>(
+        &'a self,
+        _schema: Option<String>,
+    ) -> Result<Box<dyn PinnedSession + 'a>, AppError> {
+        Ok(Box::new(SqliteSession { conn: self }))
+    }
+
+    /// IMMEDIATE takes the write lock up front, so the rows read at the start
+    /// of a recorded write cannot change before the write runs.
+    fn begin_sql(&self) -> &'static str {
+        "BEGIN IMMEDIATE"
     }
 
     async fn fetch_rows(&self, req: FetchRowsRequest) -> Result<RowsPage, AppError> {

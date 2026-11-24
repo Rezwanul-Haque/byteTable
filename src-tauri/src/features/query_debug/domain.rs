@@ -146,6 +146,14 @@ pub struct WriteInfo {
     pub joined: bool,
     /// The UPDATE's new values are shown as `→ column` columns.
     pub preview: bool,
+    /// `SELECT target.* FROM … WHERE …` — the rows the write would change,
+    /// with the target table's columns only (the change history reads the
+    /// before-rows with it, M48). Not sent to the renderer.
+    #[serde(skip)]
+    pub target_sql: String,
+    /// The target table as written (maybe schema-qualified, maybe quoted).
+    #[serde(skip)]
+    pub target: String,
 }
 
 /// Everything needed to step one statement.

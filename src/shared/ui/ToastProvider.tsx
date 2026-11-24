@@ -5,13 +5,14 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { Icon } from "./Icon";
-import { ToastContext, type ToastKind } from "./toastContext";
+import { ToastContext, type ToastAction, type ToastKind } from "./toastContext";
 import "./Toast.css";
 
 interface ToastItem {
   id: string;
   msg: string;
   kind: ToastKind;
+  action?: ToastAction;
 }
 
 const TOAST_ICONS: Record<ToastKind, string> = {
@@ -75,15 +76,23 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const toast = useCallback((msg: string, kind: ToastKind = "info") => {
-    const id = "toast-" + ++toastSeq;
-    setToasts((t) => [...t, { id, msg, kind }]);
-    const timer = setTimeout(() => {
-      timers.current.delete(id);
-      setToasts((t) => t.filter((x) => x.id !== id));
-    }, 3200);
-    timers.current.set(id, timer);
+  const dismiss = useCallback((id: string) => {
+    const timer = timers.current.get(id);
+    if (timer) clearTimeout(timer);
+    timers.current.delete(id);
+    setToasts((t) => t.filter((x) => x.id !== id));
   }, []);
+
+  const toast = useCallback(
+    (msg: string, kind: ToastKind = "info", action?: ToastAction) => {
+      const id = "toast-" + ++toastSeq;
+      setToasts((t) => [...t, { id, msg, kind, action }]);
+      // A toast with a button stays long enough to reach it.
+      const timer = setTimeout(() => dismiss(id), action ? 7000 : 3200);
+      timers.current.set(id, timer);
+    },
+    [dismiss],
+  );
 
   return (
     <ToastContext.Provider value={toast}>
@@ -93,6 +102,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           <div key={t.id} className={"toast toast-" + t.kind}>
             <Icon name={TOAST_ICONS[t.kind]} size={16} />
             <span>{t.msg}</span>
+            {t.action ? (
+              <button
+                type="button"
+                className="toast-action"
+                onClick={() => {
+                  t.action?.onClick();
+                  dismiss(t.id);
+                }}
+              >
+                {t.action.label}
+              </button>
+            ) : null}
           </div>
         ))}
       </div>

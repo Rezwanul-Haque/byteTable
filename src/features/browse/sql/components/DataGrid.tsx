@@ -37,6 +37,8 @@
 //   - M10 FK hop + column insights → the header hosts an insights icon on
 //          hover; FK cells become accent links opening a peek popover.
 
+import { recordIfOn, viewInHistory } from "../../../change_history/recording";
+import { splitStatements } from "../../../workspaces/sqlStatement";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   forwardRef,
@@ -1489,14 +1491,28 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
   const runSave = useCallback(
     (sql: string, nNew: number, nUpdated: number) => {
       setSaving(true);
-      void executeScriptText(handleId, schema, sql)
-        .then(() => {
+      // Change history (M48): when recording, the save runs through the
+      // recorder as ONE transaction (all or nothing, like the script) and is
+      // listed as a grid edit.
+      void (async () => {
+        const rec = await recordIfOn(handleId, schema, splitStatements(sql), "grid");
+        if (!rec) {
+          await executeScriptText(handleId, schema, sql);
+          return false;
+        }
+        return rec.entries.length > 0;
+      })()
+        .then((recorded) => {
           setPendingEdits(new Map());
           setNewRows([]);
           const parts: string[] = [];
           if (nNew) parts.push(t("grid.insertedCount", { count: nNew }));
           if (nUpdated) parts.push(t("grid.updatedCount", { count: nUpdated }));
-          toast(t("grid.committed", { table, parts: parts.join(", ") }), "ok");
+          toast(
+            t("grid.committed", { table, parts: parts.join(", ") }),
+            "ok",
+            recorded ? viewInHistory() : undefined,
+          );
           // Re-fetch so the committed rows replace the staged ones.
           useTabMetaStore.getState().requestRefetch(tabId);
         })
@@ -1926,10 +1942,42 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
       if (pk) rows.push(pk);
     }
     if (!rows.length) return;
-    const res = await rowsDelete(handleId, { schema, table, rows });
-    toast(t("grid.deletedRows", { count: res.deleted, table }), "ok");
+    // Change history (M48): when recording, the delete runs as DELETEs by key
+    // through the recorder, so the rows can be put back.
+    const qi = (n: string) => quoteIdent(n, engine);
+    const litCol = (v: CellValue, colName: string) =>
+      v !== null && isBinaryType(colMeta.get(colName)?.dataType)
+        ? binaryLiteral(v, engine)
+        : sqlLiteral(v, engine);
+    const deletes = rows.map(
+      (pk) =>
+        "DELETE FROM " +
+        qi(schema) +
+        "." +
+        qi(table) +
+        " WHERE " +
+        pk.map((p) => qi(p.column) + " = " + litCol(p.value, p.column)).join(" AND "),
+    );
+    let deleted: number;
+    let recorded = false;
+    const rec = await recordIfOn(handleId, schema, deletes, "grid").catch((err: unknown) => {
+      toast(appErrorMessage(err, t("grid.saveFail")), "err");
+      return undefined;
+    });
+    if (rec === undefined) return;
+    if (rec) {
+      deleted = rec.outcomes.reduce((n, o) => n + (o.result?.rowCount ?? 0), 0);
+      recorded = rec.entries.length > 0;
+    } else {
+      deleted = (await rowsDelete(handleId, { schema, table, rows })).deleted;
+    }
+    toast(
+      t("grid.deletedRows", { count: deleted, table }),
+      "ok",
+      recorded ? viewInHistory() : undefined,
+    );
     useTabMetaStore.getState().requestRefetch(tabId);
-  }, [selectedRows, buildPk, handleId, schema, table, tabId, toast, t]);
+  }, [selectedRows, buildPk, handleId, schema, table, tabId, toast, t, engine, colMeta]);
 
   /** The values behind a row key ("r"+absIndex, or "s"+stagedKey), if loaded. */
   const valuesForKey = useCallback(
@@ -2135,6 +2183,10 @@ export const DataGrid = forwardRef<DataGridHandle, DataGridProps>(function DataG
         focusColumn={inspectCol}
         isStagedNew={inspect?.kind === "staged"}
         pkLabel={inspectValues ? pkLabelOf(inspectValues) : ""}
+        historyKey={(() => {
+          const pk = inspect?.kind !== "staged" && inspectValues ? buildPk(inspectValues) : null;
+          return pk ? { pk: pk.map((p) => p.column), key: pk.map((p) => p.value) } : null;
+        })()}
         position={inspectPos + 1}
         total={inspectOrder.length}
         canPrev={inspectPos > 0}

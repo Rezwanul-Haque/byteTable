@@ -82,6 +82,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
   const openSqlTabWith = useWorkspacesStore((state) => state.openSqlTabWith);
   const openMapTab = useWorkspacesStore((state) => state.openMapTab);
   const openProcessesTab = useWorkspacesStore((state) => state.openProcessesTab);
+  const openHistoryTab = useWorkspacesStore((state) => state.openHistoryTab);
   const openPrivilegesTab = useWorkspacesStore((state) => state.openPrivilegesTab);
   const openDiffTab = useWorkspacesStore((state) => state.openDiffTab);
   const openBoardTab = useWorkspacesStore((state) => state.openBoardTab);
@@ -189,6 +190,25 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
       hint: t("ws.palette.mapHint"),
       run: () => openMapTab(schemaName),
     };
+    // Change history (M48): SQL workspaces only.
+    const historyCmds: Command[] =
+      workspace.kind === "sql"
+        ? [
+            {
+              id: "cmd-history",
+              icon: "history",
+              label: t("history.palette.open"),
+              run: () => openHistoryTab(),
+            },
+            {
+              id: "cmd-undo-last",
+              icon: "undo",
+              label: t("history.palette.undoLast"),
+              hint: "⌥⌘Z",
+              run: () => openHistoryTab({ focus: "undoable" }),
+            },
+          ]
+        : [];
     const processes: Command = {
       id: "cmd-processes",
       icon: "monitor_heart",
@@ -363,6 +383,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
       openTerminal,
       schemaMap,
       processes,
+      ...historyCmds,
       ...privCmds,
       ...valueSearchCmds,
       ...diffCmds,
@@ -375,6 +396,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
       ...savedCmds,
     ];
   }, [
+    openHistoryTab,
     tablesMap,
     handleId,
     schemaName,

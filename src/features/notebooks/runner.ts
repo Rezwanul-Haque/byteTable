@@ -20,6 +20,9 @@ import { debugCancel, debugPlan, debugRunStep } from "../workspaces/debugServer"
 import { cancelCell, classify, runCell, type StatementKind } from "./api";
 import { MAX_SHOWN_ROWS, stamp, type QueryCell } from "./format";
 import { useNotebooksStore } from "./state";
+import { historyRecord } from "../change_history/api";
+import { currentLimits, recordingFor } from "../change_history/recording";
+import { useHistoryStore } from "../change_history/state";
 
 /** What a run needs from the workspace it runs in. */
 export interface RunContext {
@@ -27,6 +30,9 @@ export interface RunContext {
   schema: string;
   readOnly: boolean;
   prod: boolean;
+  /** Saved connection id for the change history; null = never recorded
+   *  (a data file's scratch database). */
+  connectionId: string | null;
 }
 
 let runSeq = 0;
@@ -188,8 +194,41 @@ export async function confirmWrite(tabId: string, cellId: string, ctx: RunContex
     notice: null,
   });
   try {
+    // Change history (M48): a recorded write runs through the recorder, which
+    // reads the rows it touches in the write's own transaction. (It has no
+    // cancel token: Stop does not reach it.)
+    if (await recordingFor(ctx.connectionId)) {
+      const rec = await historyRecord(
+        ctx.handleId,
+        ctx.connectionId ?? "",
+        [cell.sql],
+        ctx.schema,
+        "statement",
+        currentLimits(),
+      );
+      const out = rec.outcomes[0];
+      if (out?.error) throw new Error(out.error);
+      const n = out?.result?.rowCount;
+      if (rec.entries.length) useHistoryStore.getState().bump();
+      store().patchCell(tabId, cellId, {
+        running: false,
+        runId: undefined,
+        result: null,
+        ranSql: null,
+        recorded: rec.entries.length > 0,
+        notice:
+          n == null && rows == null
+            ? t("notebook.write.appliedNoCount", { verb })
+            : t("notebook.write.applied", {
+                verb,
+                rows: t("notebook.rows", { count: n ?? rows ?? 0 }),
+              }),
+      });
+      return;
+    }
     const run = await runCell(ctx.handleId, runId, cell.sql, ctx.schema);
     store().patchCell(tabId, cellId, {
+      recorded: false,
       running: false,
       runId: undefined,
       result: null,

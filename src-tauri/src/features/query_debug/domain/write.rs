@@ -213,7 +213,9 @@ pub(super) fn plan_write(
         // The first relation of the target list: its alias, else its name.
         let (_, alias) = relation_extent(toks, target.0, target.1);
         let table = text(target.0, target.0).to_string();
-        let q = alias.map_or_else(|| table.clone(), |a| text(a, a).to_string());
+        // Unaliased, the select list names it by its LAST part: `orders.*`, not
+        // `public.orders.*`, which SQLite rejects.
+        let q = alias.map_or_else(|| last_part(&table).to_string(), |a| text(a, a).to_string());
         (q, table)
     };
     let joined = source.len() > 1
@@ -264,40 +266,48 @@ pub(super) fn plan_write(
     }
 
     // ---- the SELECT -----------------------------------------------------------
-    let mut synth = Synth::new(sql.len());
-    if verb > first {
-        synth.take(sql, start(first), stop(verb - 1));
-        synth.lit("\n");
-    }
-    synth.lit("SELECT ");
-    if let Some((a, b)) = top_n {
-        synth.take(sql, start(a), stop(b));
-        synth.lit(" ");
-    }
-    synth.lit(&select_list);
-    synth.lit("\nFROM ");
-    for (k, &(a, b)) in source.iter().enumerate() {
-        if k > 0 {
-            synth.lit(", ");
+    // Built from the user's own slices, around a given select list: once with
+    // the preview columns (the dry run), once with just the target's columns
+    // (`target_sql`, which the change history reads the rows with).
+    let build = |select_list: &str| -> Synth {
+        let mut synth = Synth::new(sql.len());
+        if verb > first {
+            synth.take(sql, start(first), stop(verb - 1));
+            synth.lit("\n");
         }
-        synth.take(sql, start(a), stop(b));
-    }
-    // WHERE, ORDER BY and LIMIT as written; RETURNING / OUTPUT / OPTION are
-    // about the write, not the rows, and are left out.
-    let tail_from = find("where", body_start)
-        .or_else(|| find("order", body_start))
-        .or_else(|| find("limit", body_start));
-    if let Some(t0) = tail_from {
-        let mut k = t0;
-        while k < end {
-            let (_, last) = after(k);
-            if matches!(top(k), Some("where" | "order" | "limit")) {
-                synth.lit("\n");
-                synth.take(sql, start(k), stop(last));
+        synth.lit("SELECT ");
+        if let Some((a, b)) = top_n {
+            synth.take(sql, start(a), stop(b));
+            synth.lit(" ");
+        }
+        synth.lit(select_list);
+        synth.lit("\nFROM ");
+        for (k, &(a, b)) in source.iter().enumerate() {
+            if k > 0 {
+                synth.lit(", ");
             }
-            k = last + 1;
+            synth.take(sql, start(a), stop(b));
         }
-    }
+        // WHERE, ORDER BY and LIMIT as written; RETURNING / OUTPUT / OPTION
+        // are about the write, not the rows, and are left out.
+        let tail_from = find("where", body_start)
+            .or_else(|| find("order", body_start))
+            .or_else(|| find("limit", body_start));
+        if let Some(t0) = tail_from {
+            let mut k = t0;
+            while k < end {
+                let (_, last) = after(k);
+                if matches!(top(k), Some("where" | "order" | "limit")) {
+                    synth.lit("\n");
+                    synth.take(sql, start(k), stop(last));
+                }
+                k = last + 1;
+            }
+        }
+        synth
+    };
+    let synth = build(&select_list);
+    let target_sql = build(&format!("{q}.*")).text;
 
     let mut sub = plan_select(&synth.text, engine, sample)?;
     for st in &mut sub.steps {
@@ -378,6 +388,8 @@ pub(super) fn plan_write(
     });
     sub.write = Some(WriteInfo {
         kind: if is_update { "update" } else { "delete" }.into(),
+        target_sql,
+        target: target_table.clone(),
         table: super::bare_name(&target_table),
         joined,
         preview,
@@ -415,4 +427,23 @@ fn resolve_alias(sql: &str, toks: &[Lexed], a: usize, b: usize, alias: &str) -> 
         }
     }
     None
+}
+
+/// The last part of a dotted name, quotes and all: `"main"."t"` → `"t"`.
+fn last_part(name: &str) -> &str {
+    let mut quote: Option<u8> = None;
+    let mut cut = 0;
+    for (i, c) in name.bytes().enumerate() {
+        match quote {
+            Some(q) if c == q => quote = None,
+            Some(_) => {}
+            None => match c {
+                b'"' | b'`' => quote = Some(c),
+                b'[' => quote = Some(b']'),
+                b'.' => cut = i + 1,
+                _ => {}
+            },
+        }
+    }
+    &name[cut..]
 }

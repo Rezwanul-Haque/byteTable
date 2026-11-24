@@ -28,6 +28,9 @@ export type BtCmdId =
   | "brainstorm-board"
   | "processes"
   | "privileges"
+  // Change history (M48).
+  | "history"
+  | "undo-data"
   | "run"
   | "format"
   | "explain"

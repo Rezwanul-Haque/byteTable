@@ -316,6 +316,19 @@ export type Tab =
   // by this tab's id; the tab carries the title the strip shows (it follows the
   // notebook's title as you type) and the schema its queries run in.
   | { id: string; kind: "notebook"; title: string; schema: string }
+  // Change history (M48): changes made through ByteTable on this connection,
+  // each with the statements that reverse it. Singleton per workspace.
+  // `filter` narrows it to a table or one row (from the table menu or the row
+  // inspector); `focus` asks it to select the newest entry (`latest`, after a
+  // write) or the newest that can still be undone (`undoable`, ⌥⌘Z), and
+  // `nonce` makes a repeated request apply again.
+  | {
+      id: string;
+      kind: "history";
+      filter?: HistoryFilter | null;
+      focus?: "latest" | "undoable" | null;
+      nonce?: number;
+    }
   // The live server process/session list with kill actions (M26). Singleton;
   // `schema` is the active schema shown in the DB column for a fresh listing.
   | { id: string; kind: "processes"; schema: string }
@@ -359,6 +372,15 @@ export type Tab =
        *  switch away and back. */
       view: TableOverviewView;
     };
+
+/** The change history narrowed to a table, or one row of it (M48). */
+export interface HistoryFilter {
+  table: string;
+  /** The row's key values, in `pk` order; absent = the whole table. */
+  key?: CellValue[] | null;
+  /** The key column names, for the "Showing changes to" strip. */
+  pk?: string[] | null;
+}
 
 /** The table overview's two layouts. */
 export type TableOverviewView = "table" | "cards";

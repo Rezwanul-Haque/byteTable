@@ -23,7 +23,8 @@ import { useT } from "../../../shared/i18n/useT";
 import { rowCountLabel, useTabMetaStore } from "../tabMeta";
 import { useWorkspacesStore } from "../state";
 import type { Workspace } from "../types";
-import { homeSchema } from "../types";
+import { homeSchema, isDataFileWorkspace } from "../types";
+import { HistoryStatusChip } from "../../change_history/components/HistoryStatusChip";
 import { AiStatusChip } from "../../assistant/components/AiStatusChip";
 import { isAssistantEngine } from "../../assistant/logic";
 import "../../processes/components/ProcessList.css";
@@ -91,6 +92,9 @@ export function StatusBar({ workspace }: { workspace: Workspace }) {
         <AiStatusChip
           conn={{ id: workspace.saved.id, env: workspace.saved.env, name: workspace.saved.name }}
         />
+      ) : null}
+      {workspace.kind === "sql" && !isDataFileWorkspace(workspace) ? (
+        <HistoryStatusChip connectionId={workspace.saved.id} />
       ) : null}
       <button
         type="button"

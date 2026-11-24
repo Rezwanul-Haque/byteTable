@@ -21,6 +21,7 @@ import type { ParamDef } from "./sqlParams";
 import { t } from "../../shared/i18n";
 import type {
   DataFileRef,
+  HistoryFilter,
   SqlHistoryEntry,
   SqlRun,
   Tab,
@@ -288,6 +289,12 @@ interface WorkspacesFeatureState {
    *  its id (the notebooks store keys the document by it), or null with no
    *  workspace open. */
   openNotebookTab: (title: string, schema: string) => string | null;
+  /** Open (or focus) the workspace's Change history tab (M48), optionally
+   *  filtered to a table or row, or asked to select an entry. */
+  openHistoryTab: (opts?: {
+    filter?: HistoryFilter | null;
+    focus?: "latest" | "undoable" | null;
+  }) => void;
   /** The notebook's title changed: the strip follows it as you type. */
   setNotebookTabTitle: (tabId: string, title: string) => void;
   /** Record a board's own name on its tab, so the strip can label it
@@ -1031,6 +1038,28 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
     }));
     return tab.id;
   },
+
+  openHistoryTab: (opts = {}) =>
+    set((state) => ({
+      workspaces: patchActiveUi(state, (ui) => {
+        const tabs = ui.tabs ?? [];
+        const nonce = Date.now();
+        const existing = tabs.find((t) => t.kind === "history");
+        const patch = {
+          filter: opts.filter ?? null,
+          focus: opts.focus ?? null,
+          nonce,
+        };
+        if (existing) {
+          return {
+            tabs: tabs.map((t) => (t.id === existing.id ? { ...t, ...patch } : t)),
+            activeTabId: existing.id,
+          };
+        }
+        const tab: Tab = { id: newTabId("history"), kind: "history", ...patch };
+        return { tabs: [...tabs, tab], activeTabId: tab.id };
+      }),
+    })),
 
   setNotebookTabTitle: (tabId, title) =>
     set((state) => {

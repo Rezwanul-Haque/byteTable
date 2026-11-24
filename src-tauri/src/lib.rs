@@ -379,6 +379,12 @@ pub fn run() {
                 .path()
                 .app_data_dir()
                 .unwrap_or_else(|_| config_dir.clone());
+            // The change history (M48): a local file, never sent anywhere.
+            app.manage(features::change_history::commands::HistoryState {
+                store: features::change_history::store::HistoryStore::open(
+                    &data_dir.join("change-history.db"),
+                )?,
+            });
             app.manage(features::assistant::commands::AssistantState::new(
                 Box::new(features::assistant::application::HttpProviderFactory::new(
                     features::assistant::infrastructure::http_client(),
@@ -646,6 +652,17 @@ pub fn run() {
             features::notebooks::commands::notebook_stat,
             features::notebooks::commands::app_set_unsaved,
             features::notebooks::commands::app_quit,
+            features::change_history::commands::history_record,
+            features::change_history::commands::history_truncate,
+            features::change_history::commands::history_list,
+            features::change_history::commands::history_get,
+            features::change_history::commands::history_check,
+            features::change_history::commands::history_apply,
+            features::change_history::commands::history_clear,
+            features::change_history::commands::history_prune,
+            features::change_history::commands::history_totals,
+            features::change_history::commands::history_set_recording,
+            features::change_history::commands::history_recording,
             features::insights::commands::column_stats,
             features::mutate::commands::row_update,
             features::mutate::commands::rows_delete,

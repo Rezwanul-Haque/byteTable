@@ -71,6 +71,8 @@ export interface QueryCell {
   runId?: string;
   error?: string | null;
   notice?: string | null;
+  /** The write behind `notice` was recorded in the change history (M48). */
+  recorded?: boolean;
   confirm?: WriteConfirm | null;
   skipped?: boolean;
 }

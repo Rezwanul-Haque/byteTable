@@ -54,3 +54,21 @@
     transform: none;
   }
 }
+
+/* One button on a toast — "View in history" (M48). The stack ignores the
+   pointer so it never blocks the UI under it; the button opts back in. */
+.toast-action {
+  flex: none;
+  margin-left: 6px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in oklab, var(--accent) 50%, var(--border));
+  color: var(--accent);
+  font-family: var(--ui);
+  font-size: 11.5px;
+  white-space: nowrap;
+  pointer-events: auto;
+}
+.toast-action:hover {
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+}

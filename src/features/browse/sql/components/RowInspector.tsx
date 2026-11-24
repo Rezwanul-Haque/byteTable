@@ -12,6 +12,9 @@
 // EditTarget model (the grid maps `onStage`'s per-column-index changes onto its
 // `stageRealValue` / `stageNewValue`).
 
+import { HistoryRowLink } from "../../../change_history/components/HistoryRowLink";
+import { useWorkspacesStore } from "../../../workspaces/state";
+import { isDataFileWorkspace } from "../../../workspaces/types";
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -432,6 +435,9 @@ function RowInspectorField({
 
 interface RowInspectorProps {
   open: boolean;
+  /** The row's key, for the change-history link (M48); absent = no link
+   *  (a staged row, or a table without a key). */
+  historyKey?: { pk: string[]; key: CellValue[] } | null;
   columns: InspectorColumn[];
   /** Displayed base values aligned to `columns`; null when no row is targeted. */
   values: CellValue[] | null;
@@ -501,7 +507,13 @@ export function RowInspector({
   onCopyRow,
   onStage,
   onDirtyChange,
+  historyKey,
 }: RowInspectorProps) {
+  // Recorded changes live per saved connection; data-file workspaces have none.
+  const historyConn = useWorkspacesStore((st) => {
+    const w = st.workspaces.find((x) => x.handleId === handleId);
+    return w && w.kind === "sql" && !isDataFileWorkspace(w) ? w.saved.id : null;
+  });
   // Drafts keyed by column index; a present key (incl. a null value) is an
   // active draft, an absent key means "unchanged".
   const [drafts, setDrafts] = useState<Map<number, CellValue>>(new Map());
@@ -651,6 +663,14 @@ export function RowInspector({
                 {isStagedNew ? " · " + t("ins.stagedRow") : ""}
               </span>
             </div>
+            {historyKey && historyConn ? (
+              <HistoryRowLink
+                connectionId={historyConn}
+                table={tableName}
+                pk={historyKey.pk}
+                keyVal={historyKey.key}
+              />
+            ) : null}
             <div className="ri-nav">
               <button
                 type="button"

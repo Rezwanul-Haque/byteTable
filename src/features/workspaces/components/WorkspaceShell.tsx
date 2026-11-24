@@ -29,6 +29,7 @@ export function WorkspaceShell({ workspace }: { workspace: Workspace }) {
   const closeTab = useWorkspacesStore((state) => state.closeTab);
   const openMapTab = useWorkspacesStore((state) => state.openMapTab);
   const openBoardTab = useWorkspacesStore((state) => state.openBoardTab);
+  const openHistoryTab = useWorkspacesStore((state) => state.openHistoryTab);
   const openProcessesTab = useWorkspacesStore((state) => state.openProcessesTab);
   const openPrivilegesTab = useWorkspacesStore((state) => state.openPrivilegesTab);
   const togglePanel = usePanelStore((state) => state.togglePanel);
@@ -52,6 +53,9 @@ export function WorkspaceShell({ workspace }: { workspace: Workspace }) {
   useBtCmd("processes", () => {
     openProcessesTab(home);
   });
+  // Change history (M48).
+  useBtCmd("history", () => openHistoryTab());
+  useBtCmd("undo-data", () => openHistoryTab({ focus: "undoable" }));
   useBtCmd("privileges", () => {
     openPrivilegesTab(home);
   });
@@ -74,6 +78,13 @@ export function WorkspaceShell({ workspace }: { workspace: Workspace }) {
       }
       const mod = event.metaKey || event.ctrlKey;
       if (!mod) return;
+      // ⌥⌘Z / Ctrl+Alt+Z: review the last data change (M48). By `code`: on
+      // macOS ⌥ turns the key into "Ω".
+      if (event.altKey && event.code === "KeyZ" && workspace.kind === "sql") {
+        event.preventDefault();
+        openHistoryTab({ focus: "undoable" });
+        return;
+      }
       const key = event.key.toLowerCase();
       // ⌃⇧P (⌘⇧P on macOS) opens the Processes tab — only for engines with a
       // server process list, matching the tab-bar toggle's gating.
@@ -111,7 +122,9 @@ export function WorkspaceShell({ workspace }: { workspace: Workspace }) {
     workspace.ui,
     togglePanel,
     openProcessesTab,
+    openHistoryTab,
     workspace.id,
+    workspace.kind,
     workspace.saved.engine,
     home,
     workspace.ui.activeTabId,

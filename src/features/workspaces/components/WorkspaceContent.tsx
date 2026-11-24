@@ -41,6 +41,7 @@ import { SnippetsDrawer } from "../../snippets/components/SnippetsDrawer";
 import { insertSnippetIntoActiveEditor } from "../../../shared/ui/activeCodeEditor";
 import { appErrorMessage } from "../../../shared/api/error";
 import { NotebookTab } from "../../notebooks/components/NotebookTab";
+import { ChangeHistoryTab } from "../../change_history/components/ChangeHistoryTab";
 import { UnsavedNotebooksModal } from "../../notebooks/components/UnsavedNotebooksModal";
 import {
   baseName,
@@ -89,6 +90,8 @@ function TabBody({
       return <SqlEditorTab workspace={workspace} tab={tab} />;
     case "notebook":
       return <NotebookTab workspace={workspace} tab={tab} />;
+    case "history":
+      return <ChangeHistoryTab workspace={workspace} tab={tab} />;
     case "map":
       return <SchemaMap workspace={workspace} schema={tab.schema} />;
     case "board":

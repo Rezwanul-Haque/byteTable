@@ -5,6 +5,7 @@ pub mod app_metrics;
 pub mod assistant;
 pub mod browse;
 pub mod cassandra;
+pub mod change_history;
 pub mod connection_bundle;
 pub mod connections;
 pub mod dynamo;

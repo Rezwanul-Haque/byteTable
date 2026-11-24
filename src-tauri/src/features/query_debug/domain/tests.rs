@@ -550,7 +550,7 @@ fn sql_server_top_and_output_on_a_write() {
     assert_eq!(plan_keys(&p), ["from", "where", "limit", "write"]);
     let last = get(&p.steps, "write");
     assert!(
-        last.sql.starts_with("SELECT TOP (10) dbo.logs.*"),
+        last.sql.starts_with("SELECT TOP (10) logs.*"),
         "{}",
         last.sql
     );

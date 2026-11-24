@@ -994,6 +994,41 @@ pub(super) async fn column_stats(
     })
 }
 
+/// A pinned session (M48): one pooled connection held for a sequence of
+/// statements, with `USE schema` applied once. Returned to the pool on drop;
+/// the caller ends any transaction it opened first.
+pub(super) struct MySqlSession {
+    conn: sqlx::pool::PoolConnection<sqlx::MySql>,
+}
+
+pub(super) async fn pin(
+    pool: &MySqlPool,
+    schema: Option<String>,
+) -> Result<MySqlSession, AppError> {
+    let mut conn = pool.acquire().await.map_err(map_query_error)?;
+    apply_schema(&mut conn, schema.as_deref()).await;
+    Ok(MySqlSession { conn })
+}
+
+#[async_trait::async_trait]
+impl PinnedSession for MySqlSession {
+    async fn query(&mut self, sql: &str, row_limit: usize) -> Result<QueryResult, AppError> {
+        let options = QueryOptions {
+            row_limit,
+            schema: None,
+        };
+        match run_on_conn(&mut self.conn, sql, &options).await {
+            Ok(r) => Ok(r),
+            Err(RunFailure::Statement(e)) => Err(e),
+            // Inside a held transaction there is no fresh connection to retry
+            // on: the session (and its transaction) is gone.
+            Err(RunFailure::ConnectionLost) => Err(AppError::Database(
+                "The database session ended mid-transaction; nothing was changed.".into(),
+            )),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

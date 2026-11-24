@@ -30,6 +30,7 @@ import type { Engine } from "../../../shared/types";
 import { useIntrospectionStore } from "../../introspection/state";
 import { useSettingsStore } from "../../settings/state";
 import { truncateFkOverride, truncateSql } from "../fkOverride";
+import { truncateIfOn, viewInHistory } from "../../change_history/recording";
 import "./TruncateModal.css";
 
 const DANGER = "#e06c75";
@@ -79,12 +80,20 @@ export function TruncateModal({
     setError(null);
     void (async () => {
       try {
-        const { affected } = await truncateTable(handleId, schemaName, table, force && !!fk);
+        const forced = force && !!fk;
+        // Change history (M48): when recording, the rows are kept first.
+        const rec = await truncateIfOn(handleId, schemaName, table, forced);
+        const affected =
+          rec?.affected ?? (await truncateTable(handleId, schemaName, table, forced)).affected;
         // Refresh sidebar counts (force drops the schema's cached lists/metas)
         // and let the caller re-fetch the open grid for this table.
         void loadTables(handleId, schemaName, { force: true });
         onDone?.();
-        toast(t("io.truncated", { table, count: affected }), "ok");
+        toast(
+          t("io.truncated", { table, count: affected }),
+          "ok",
+          rec?.recorded ? viewInHistory() : undefined,
+        );
         onClose();
       } catch (err) {
         // Keep the modal open and show the §5 message where the action was.

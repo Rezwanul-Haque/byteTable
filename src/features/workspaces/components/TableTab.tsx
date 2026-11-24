@@ -61,6 +61,7 @@ export function TableTab({
   const setTableTabMode = useWorkspacesStore((state) => state.setTableTabMode);
   // Open the filter panel's generated query in a new SQL tab (Show query strip).
   const openSqlTabWith = useWorkspacesStore((state) => state.openSqlTabWith);
+  const openHistoryTab = useWorkspacesStore((state) => state.openHistoryTab);
   // Narrow selector: only this tab's meta, so other tabs' fetches don't
   // re-render the toolbar.
   const meta = useTabMetaStore((state) => state.meta[tab.id]);
@@ -496,6 +497,19 @@ export function TableTab({
                     onClick={() => doExport("tableSql")}
                   >
                     <Icon name="code" size={15} /> Export as SQL (schema + data)
+                  </button>
+                  {/* Change history (M48): viewing is allowed even read-only. */}
+                  <div className="ctx-sep" />
+                  <button
+                    type="button"
+                    className="ctx-item"
+                    role="menuitem"
+                    onClick={() => {
+                      setActionsOpen(false);
+                      openHistoryTab({ filter: { table: tab.table }, focus: "latest" });
+                    }}
+                  >
+                    <Icon name="history" size={15} /> {t("history.tableMenu")}
                   </button>
                   {/* Export stays; everything that writes goes away in a
                       read-only workspace. */}

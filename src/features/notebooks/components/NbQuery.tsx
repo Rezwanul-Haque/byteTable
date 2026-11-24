@@ -19,6 +19,7 @@ import { SqlCodeEditor } from "../../workspaces/components/SqlCodeEditor";
 import { SqlResultGrid } from "../../workspaces/components/SqlResultGrid";
 import { MAX_SHOWN_ROWS, type QueryCell } from "../format";
 import { ranWhen } from "../when";
+import { openLatest } from "../../change_history/recording";
 
 export function NbQuery({
   cell,
@@ -169,6 +170,11 @@ export function NbQuery({
         {cell.notice ? (
           <div className="nb-notice" role="status">
             <Icon name="check_circle" size={15} /> {cell.notice}
+            {cell.recorded ? (
+              <button type="button" className="nb-notice-link" onClick={openLatest}>
+                {t("history.viewInHistory")}
+              </button>
+            ) : null}
           </div>
         ) : null}
 

@@ -62,6 +62,14 @@ export type Accent = "auto" | string;
 /** Curated mono key or a probed `"sys:<Family>"` id. */
 export type MonoFont = MonoFontId | string;
 
+/** Change history retention and size choices (M48). */
+export const UNDO_KEEP_DAYS = [1, 7, 30, 90] as const;
+export type UndoKeepDays = (typeof UNDO_KEEP_DAYS)[number];
+export const UNDO_KEEP_ENTRIES = [100, 500, 2000] as const;
+export type UndoKeepEntries = (typeof UNDO_KEEP_ENTRIES)[number];
+export const UNDO_MAX_ROWS = [100, 1000, 10000] as const;
+export type UndoMaxRows = (typeof UNDO_MAX_ROWS)[number];
+
 export interface Settings {
   theme: ThemeId;
   accent: Accent;
@@ -86,6 +94,14 @@ export interface Settings {
   sqlHistoryMax: number;
   /** Keybinding set for the SQL editor. */
   editorKeymap: EditorKeymap;
+  /** Change history (M48): record changes made through ByteTable. Global;
+   *  each connection also has its own switch, kept with the history. */
+  undoRecord: boolean;
+  undoKeepDays: UndoKeepDays;
+  /** Per connection. */
+  undoKeepEntries: UndoKeepEntries;
+  /** Changes touching more rows are logged without values. */
+  undoMaxRows: UndoMaxRows;
   restoreTabs: boolean;
   /** Periodically refresh the sidebar object list (+ Redis keyspace). */
   autoRefresh: boolean;
@@ -199,6 +215,10 @@ export const DEFAULTS: Settings = {
   defaultLimit: 300,
   sqlHistoryMax: 30,
   editorKeymap: "default",
+  undoRecord: true,
+  undoKeepDays: 7,
+  undoKeepEntries: 500,
+  undoMaxRows: 1000,
   restoreTabs: true,
   autoRefresh: true,
   autoRefreshSec: 10,
@@ -282,6 +302,10 @@ export function mergeSettings(stored: unknown): Settings {
   if (!REGION_IDS.has(merged.region)) merged.region = DEFAULTS.region;
   if (!FIRST_DAYS.has(merged.firstDay)) merged.firstDay = DEFAULTS.firstDay;
   if (!EDITOR_KEYMAPS.has(merged.editorKeymap)) merged.editorKeymap = DEFAULTS.editorKeymap;
+  if (!UNDO_KEEP_DAYS.includes(merged.undoKeepDays)) merged.undoKeepDays = DEFAULTS.undoKeepDays;
+  if (!UNDO_KEEP_ENTRIES.includes(merged.undoKeepEntries))
+    merged.undoKeepEntries = DEFAULTS.undoKeepEntries;
+  if (!UNDO_MAX_ROWS.includes(merged.undoMaxRows)) merged.undoMaxRows = DEFAULTS.undoMaxRows;
   // The assistant's choice keys are closed sets, and `aiAllowed` must be a
   // plain map: `typeof null === "object"` would otherwise let a null through.
   if (!AI_PROVIDERS.has(merged.aiProvider)) merged.aiProvider = DEFAULTS.aiProvider;

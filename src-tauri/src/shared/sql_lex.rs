@@ -77,6 +77,33 @@ pub fn lex(sql: &str) -> Vec<Lexed> {
                 }
                 i += 1;
             }
+            // A quoted identifier that starts a dotted path (`"main"."orders"`,
+            // `[dbo].[t]`, `"s".t`) is one unit, like `public.orders` below.
+            if close != b'\'' {
+                while bytes.get(i) == Some(&b'.') {
+                    let n = bytes.get(i + 1).copied().unwrap_or(0);
+                    if matches!(n, b'"' | b'`' | b'[') {
+                        let close = if n == b'[' { b']' } else { n };
+                        i += 2;
+                        while i < bytes.len() && bytes[i] != close {
+                            i += 1;
+                        }
+                        i = (i + 1).min(bytes.len());
+                    } else if n.is_ascii_alphabetic() || n == b'_' || n >= 0x80 {
+                        i += 1;
+                        while i < bytes.len()
+                            && (bytes[i].is_ascii_alphanumeric()
+                                || bytes[i] == b'_'
+                                || bytes[i] == b'$'
+                                || bytes[i] >= 0x80)
+                        {
+                            i += 1;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+            }
             out.push(Lexed {
                 tok: Tok::Opaque,
                 start,

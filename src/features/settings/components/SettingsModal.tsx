@@ -61,6 +61,7 @@ import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { useSettingsStore, type SettingsTabId } from "../state";
 import { AiSettingsPane } from "../../assistant/components/AiSettingsPane";
 import { AiAlphaTag } from "../../assistant/components/AiBits";
+import { HistorySettingsPane } from "../../change_history/components/HistorySettingsPane";
 import { SetRow, SetSeg, SetToggle } from "./SetControls";
 import "./SettingsModal.css";
 
@@ -72,6 +73,7 @@ const TABS: { id: SettingsTabId; key: StringKey; icon: string }[] = [
   { id: "grid", key: "set.tab.grid", icon: "table_rows" },
   { id: "language", key: "set.tab.language", icon: "translate" },
   { id: "behavior", key: "set.tab.behavior", icon: "tune" },
+  { id: "history", key: "set.tab.history", icon: "history" },
   { id: "ai", key: "set.tab.ai", icon: "auto_awesome" },
 ];
 
@@ -911,6 +913,8 @@ export function SettingsModal({ tab: initialTab, onClose }: SettingsModalProps) 
           {tab === "language" ? <LanguagePane settings={settings} setSetting={setSetting} /> : null}
 
           {tab === "ai" ? <AiSettingsPane /> : null}
+
+          {tab === "history" ? <HistorySettingsPane /> : null}
 
           {tab === "behavior" ? (
             <>

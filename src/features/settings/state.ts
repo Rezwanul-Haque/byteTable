@@ -16,7 +16,14 @@ import { applyZoom } from "./zoom";
 
 /** The Settings modal's tabs. Lives here, not in the component, so any surface
  *  can ask for a specific one (the sidebar's language chip opens "language"). */
-export type SettingsTabId = "appearance" | "fonts" | "grid" | "language" | "behavior" | "ai";
+export type SettingsTabId =
+  | "appearance"
+  | "fonts"
+  | "grid"
+  | "language"
+  | "behavior"
+  | "history"
+  | "ai";
 
 interface SettingsFeatureState {
   settings: Settings;

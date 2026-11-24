@@ -125,6 +125,7 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
   const t = useT();
   const toast = useToast();
   const closeWorkspace = useWorkspacesStore((state) => state.closeWorkspace);
+  const openHistoryTab = useWorkspacesStore((state) => state.openHistoryTab);
   const patchWorkspaceUi = useWorkspacesStore((state) => state.patchWorkspaceUi);
   const setWorkspaceSchemas = useWorkspacesStore((state) => state.setWorkspaceSchemas);
   const openTableTab = useWorkspacesStore((state) => state.openTableTab);
@@ -1050,6 +1051,20 @@ export function Sidebar({ workspace }: { workspace: Workspace }) {
           >
             <Icon name="code" size={15} /> {t("ws.sb.exportSql")}
           </button>
+          {workspace.kind === "sql" ? (
+            <button
+              type="button"
+              className="ctx-item"
+              role="menuitem"
+              onClick={() => {
+                const tb = ctxMenu.table;
+                closeCtxMenu(false);
+                openHistoryTab({ filter: { table: tb }, focus: "latest" });
+              }}
+            >
+              <Icon name="history" size={15} /> {t("history.tableMenu")}
+            </button>
+          ) : null}
           {/* Same read-only rule as the schema menu: a catalog table is
               browsable and exportable, never writable from here. */}
           {!noWrites ? (

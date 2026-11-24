@@ -247,6 +247,15 @@ export function buildMenus(m: MenuCtx): Menu[] {
       items: [
         { id: "undo", label: t("menu.edit.undo"), enabled: true, run: () => execEdit("undo") },
         { id: "redo", label: t("menu.edit.redo"), enabled: true, run: () => execEdit("redo") },
+        // Change history (M48): opens the newest undoable change for review —
+        // never undoes on its own.
+        {
+          id: "undo-data",
+          label: t("menu.edit.undoData"),
+          hint: "⌥⌘Z",
+          enabled: isSql,
+          run: () => emitCmd("undo-data"),
+        },
         "—",
         { id: "cut", label: t("menu.edit.cut"), enabled: true, run: () => execEdit("cut") },
         { id: "copy", label: t("menu.edit.copy"), enabled: true, run: () => execEdit("copy") },
@@ -285,6 +294,12 @@ export function buildMenus(m: MenuCtx): Menu[] {
           label: t("menu.view.schemaMap"),
           enabled: isSql,
           run: () => emitCmd("schema-map"),
+        },
+        {
+          id: "history",
+          label: t("menu.view.history"),
+          enabled: isSql,
+          run: () => emitCmd("history"),
         },
         {
           id: "processes",

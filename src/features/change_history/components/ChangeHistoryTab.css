@@ -1,0 +1,704 @@
+/* Change history (M48), ported from the prototype's ByteTable.html block.
+   .ri-hist (row inspector) and .nb-notice-link (notebook notice) live here
+   too: they are its entry points and this sheet always loads. */
+.ul {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg0);
+  container-type: inline-size;
+}
+.ul-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg1);
+  flex: none;
+}
+.ul-head-t {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.ul-head-t b {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.ul-head-t > span {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ul .mono {
+  font-family: var(--mono);
+  font-size: 0.95em;
+}
+.ul-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg0);
+  color: var(--text-dim);
+  flex: 0 1 200px;
+  min-width: 110px;
+}
+.ul-search:focus-within {
+  border-color: var(--accent);
+}
+.ul-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--ui);
+  font-size: 12px;
+}
+.ul-rec {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.ul-rec input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+.ul-paused {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  font-size: 12px;
+  background: color-mix(in oklab, var(--warn) 10%, var(--bg1));
+  border-bottom: 1px solid color-mix(in oklab, var(--warn) 35%, var(--border));
+  flex: none;
+}
+.ul-paused .msym {
+  color: var(--warn);
+}
+
+.ul-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.ul-list {
+  width: 330px;
+  flex: none;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  background: var(--bg1);
+  padding: 4px 6px 12px;
+}
+.ul-day {
+  padding: 10px 8px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+.ul-item {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  color: var(--text);
+  font-family: var(--ui);
+}
+.ul-item:hover {
+  background: var(--bg2);
+}
+.ul-item.on {
+  background: color-mix(in oklab, var(--accent) 12%, var(--bg2));
+  border-color: color-mix(in oklab, var(--accent) 40%, var(--border));
+}
+.ul-item-time {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  padding-top: 2px;
+  flex: none;
+  width: 54px;
+}
+.ul-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.ul-item-title {
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+.ul-item.s-undone .ul-item-title {
+  text-decoration: line-through;
+  color: var(--text-dim);
+}
+.ul-item-sub {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.ul-badge {
+  font-size: 10.5px;
+  padding: 1px 7px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.ul-badge.undone {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+}
+.ul-badge.partial {
+  color: var(--warn);
+  border-color: color-mix(in oklab, var(--warn) 45%, var(--border));
+}
+.ul-nomatch {
+  padding: 14px 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.ul-detail {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 16px 20px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.ul-d-head h3 {
+  margin: 0 0 5px;
+  font-size: 17px;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.ul-d-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.ul-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ul-block-h {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+.ul-block-h span {
+  font-weight: 400;
+}
+.ul-sql {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg1);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 220px;
+  overflow: auto;
+  color: var(--text);
+}
+.ul-sql-actions {
+  display: flex;
+  gap: 4px;
+}
+.ul-verdict {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  border: 1px solid var(--border);
+  background: var(--bg1);
+}
+.ul-verdict .msym {
+  flex: none;
+  margin-top: 1px;
+  color: var(--text-dim);
+}
+.ul-verdict.ok {
+  border-color: color-mix(in oklab, var(--accent) 40%, var(--border));
+  background: color-mix(in oklab, var(--accent) 8%, var(--bg1));
+}
+.ul-verdict.ok .msym {
+  color: var(--accent);
+}
+.ul-verdict.warn {
+  border-color: color-mix(in oklab, var(--warn) 45%, var(--border));
+  background: color-mix(in oklab, var(--warn) 9%, var(--bg1));
+}
+.ul-verdict.warn .msym {
+  color: var(--warn);
+}
+.ul-verdict.cant .msym {
+  color: var(--danger);
+}
+
+.ul-rows {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  overflow: hidden;
+  background: var(--bg1);
+}
+.ul-row {
+  display: flex;
+  gap: 10px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.ul-row:last-child {
+  border-bottom: none;
+}
+.ul-row > .msym {
+  flex: none;
+  margin-top: 1px;
+  color: var(--accent);
+}
+.ul-row.conflict > .msym {
+  color: var(--warn);
+}
+.ul-row.noop > .msym,
+.ul-row.done > .msym {
+  color: var(--text-faint);
+}
+.ul-row.done {
+  opacity: 0.7;
+}
+.ul-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.ul-row-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.ul-row-key {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+}
+.ul-row-what {
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.ul-cols {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.ul-col {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.ul-col .msym {
+  color: var(--text-faint);
+}
+.ul-col-name {
+  color: var(--text-dim);
+  min-width: 70px;
+}
+.ul-val {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: color-mix(in oklab, var(--accent) 13%, transparent);
+  color: var(--text);
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ul-val.strike {
+  background: color-mix(in oklab, var(--danger) 12%, transparent);
+  text-decoration: line-through;
+  color: var(--text-dim);
+}
+.ul-val.null {
+  font-style: italic;
+}
+.ul-preview {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ul-why {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.ul-why b {
+  color: var(--text);
+  font-weight: 600;
+}
+.ul-why code {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--bg2);
+  color: var(--text);
+}
+.ul-disc {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  font-family: var(--ui);
+  font-size: 12px;
+  color: var(--text);
+  padding: 3px 6px 3px 0;
+  border-radius: 6px;
+}
+.ul-disc span {
+  color: var(--text-dim);
+  margin-left: 6px;
+}
+.ul-disc:hover {
+  color: var(--accent);
+}
+.ul-hist {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.6;
+}
+.ul-actions {
+  position: sticky;
+  bottom: 0;
+  margin: auto -20px 0;
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  background: var(--bg1);
+}
+.ul-actions-note {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ul-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 30px;
+  text-align: center;
+  color: var(--text-dim);
+}
+.ul-empty div {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.ul-empty p {
+  margin: 0;
+  max-width: 46ch;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.ul-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg1);
+  font-size: 11px;
+  color: var(--text-dim);
+  flex: none;
+}
+.ul-foot-note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ul-foot button {
+  font-family: var(--ui);
+  font-size: 11px;
+  color: var(--text);
+  padding: 2px 8px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.ul-foot button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.ul-foot button.danger {
+  color: var(--danger);
+  border-color: color-mix(in oklab, var(--danger) 50%, var(--border));
+}
+[data-material="liquid"] .ul {
+  background: transparent;
+}
+.ul-filter {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 2px 2px;
+  padding: 7px 9px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.ul-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: 99px;
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.ul-filter button {
+  margin-left: auto;
+  font-family: var(--ui);
+  font-size: 11.5px;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+/* entry points: toast action, row inspector link, notebook notice link */
+.ri-hist {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.ri-hist:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 50%, var(--border));
+}
+.ri-hist:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.ul-paused span {
+  flex: 1;
+  min-width: 0;
+}
+.ul-paused button {
+  color: var(--accent);
+  font-family: var(--ui);
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  white-space: nowrap;
+}
+.ul-set-arm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.nb-notice-link {
+  margin-left: auto;
+  color: var(--accent);
+  font-family: var(--ui);
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+@container (max-width: 760px) {
+  .ul-body {
+    flex-direction: column;
+  }
+  .ul-list {
+    width: auto;
+    max-height: 38%;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .ul-head-t > span {
+    display: none;
+  }
+  .ul-detail {
+    padding: 12px 12px 0;
+  }
+  .ul-actions {
+    margin: auto -12px 0;
+    padding: 8px 12px;
+    flex-wrap: wrap;
+  }
+  .ul-foot {
+    flex-wrap: wrap;
+  }
+  .ul-foot-note {
+    white-space: normal;
+  }
+}
+.ul-d-error {
+  color: var(--danger);
+  font-size: 12.5px;
+  padding-bottom: 16px;
+}
+
+/* ================= Glass materials =================
+   Under Frosted / Liquid the flat `--bg1` / `--bg2` fills read as slabs (in
+   Liquid they are opaque). Same tiers as the structure view: the list and the
+   head / foot / action bars are frosted panes over the wallpaper; the cards on
+   them — entries, verdict, rows, SQL — lift with a tint and the specular lip,
+   no second blur (glass.css, "Cards INSIDE a glass surface"). */
+[data-material] .ul,
+[data-material] .ul-detail {
+  background: transparent;
+}
+[data-material] .ul-list,
+[data-material] .ul-head,
+[data-material] .ul-foot,
+[data-material] .ul-actions {
+  background: rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+/* Each entry is a standing card, like the structure rail's index cards
+   (`.structure-card`): tint, hairline border, specular lip, a gap between. */
+[data-material] .ul-list {
+  padding: 4px 8px 12px;
+}
+[data-material] .ul-item {
+  margin-bottom: 7px;
+  padding: 9px 12px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow: var(--glass-hi);
+}
+[data-material] .ul-item:hover {
+  background: rgba(255, 255, 255, 0.11);
+}
+[data-material] .ul-item.on {
+  background: color-mix(in oklab, var(--accent) 10%, rgba(255, 255, 255, 0.08));
+  border-color: color-mix(in oklab, var(--accent) 55%, rgba(255, 255, 255, 0.16));
+}
+/* Liquid's cards are a lighter tint, matching its .structure-card. */
+[data-material="liquid"] .ul-item {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+[data-material="liquid"] .ul-item:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+[data-material="liquid"] .ul-item.on {
+  background: color-mix(in oklab, var(--accent) 8%, rgba(255, 255, 255, 0.06));
+  border-color: color-mix(in oklab, var(--accent) 55%, rgba(255, 255, 255, 0.12));
+}
+[data-material="liquid"] .ul-verdict,
+[data-material="liquid"] .ul-rows,
+[data-material="liquid"] .ul-sql,
+[data-material="liquid"] .ul-filter {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+[data-material] .ul-verdict,
+[data-material] .ul-rows,
+[data-material] .ul-sql,
+[data-material] .ul-filter {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow: var(--glass-hi);
+}
+[data-material] .ul-row {
+  border-bottom-color: rgba(255, 255, 255, 0.1);
+}
+[data-material] .ul-verdict.ok {
+  background: color-mix(in oklab, var(--accent) 12%, rgba(255, 255, 255, 0.06));
+  border-color: color-mix(in oklab, var(--accent) 40%, rgba(255, 255, 255, 0.14));
+}
+[data-material] .ul-verdict.warn {
+  background: color-mix(in oklab, var(--warn) 12%, rgba(255, 255, 255, 0.06));
+  border-color: color-mix(in oklab, var(--warn) 45%, rgba(255, 255, 255, 0.14));
+}
+[data-material] .ul-paused {
+  background: color-mix(in oklab, var(--warn) 14%, rgba(255, 255, 255, 0.06));
+}
+[data-material] .ul-search {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+[data-material] .ul-why code,
+[data-material] .ul-badge {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* The note takes the free space, so the footer's buttons sit together at the
+   far right. */
+.ul-foot-note {
+  flex: 1;
+}

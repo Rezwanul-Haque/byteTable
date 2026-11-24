@@ -46,6 +46,18 @@ pub(super) async fn run_query(
             .await;
     }
 
+    run_on_conn(&mut conn, sql, options.row_limit, started).await
+}
+
+/// Run one statement on an already-acquired connection and decode its rows:
+/// the body of [`run_query`], shared with the pinned session (M48), which runs
+/// several statements on one connection inside a transaction.
+pub(super) async fn run_on_conn(
+    conn: &mut sqlx::PgConnection,
+    sql: &str,
+    row_limit: usize,
+    started: Instant,
+) -> Result<QueryResult, AppError> {
     // Read one extra row to detect truncation (matches the SQLite adapter).
     let rows = sqlx::query(sql)
         .fetch_all(&mut *conn)
@@ -77,7 +89,7 @@ pub(super) async fn run_query(
     let mut out_rows: Vec<Vec<serde_json::Value>> = Vec::new();
     let mut truncated = false;
     for row in &rows {
-        if out_rows.len() >= options.row_limit {
+        if out_rows.len() >= row_limit {
             truncated = true;
             break;
         }
@@ -668,6 +680,31 @@ pub(super) fn bind_all<'q>(
         query = bind_value(query, value);
     }
     query
+}
+
+/// A pinned session (M48): one pooled connection held for a sequence of
+/// statements, with the schema applied once. Returned to the pool on drop; the
+/// caller ends any transaction it opened first.
+pub(super) struct PgSession {
+    pub(super) conn: sqlx::pool::PoolConnection<sqlx::Postgres>,
+}
+
+pub(super) async fn pin(pool: &PgPool, schema: Option<String>) -> Result<PgSession, AppError> {
+    let mut conn = pool.acquire().await.map_err(map_query_error)?;
+    if let Some(schema) = &schema {
+        use sqlx::Executor as _;
+        let _ = conn
+            .execute(format!("SET search_path TO {}", quote_ident(schema)).as_str())
+            .await;
+    }
+    Ok(PgSession { conn })
+}
+
+#[async_trait::async_trait]
+impl PinnedSession for PgSession {
+    async fn query(&mut self, sql: &str, row_limit: usize) -> Result<QueryResult, AppError> {
+        run_on_conn(&mut self.conn, sql, row_limit, Instant::now()).await
+    }
 }
 
 #[cfg(test)]

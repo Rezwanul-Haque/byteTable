@@ -133,8 +133,44 @@ pub trait Connector: Send + Sync {
 ///
 /// All errors carry human messages per DESIGN_SPEC §5 — adapters map driver
 /// errors before they cross this boundary.
+/// One database session held for a sequence of statements (M48): every
+/// statement runs on the SAME connection, in order, so a `BEGIN` … `COMMIT`
+/// the caller issues spans them, and rows read with `FOR UPDATE` stay locked
+/// until it ends. The change-history recorder uses it to read the rows a write
+/// will touch, run the write, and read them again, all in one transaction —
+/// and to undo inside a transaction that re-checks the rows first.
+///
+/// The caller owns the transaction: it sends `BEGIN` / `COMMIT` / `ROLLBACK`
+/// itself (see [`EngineConnection::begin_sql`]) and must end any transaction
+/// it opened before dropping the session — a pooled connection goes back to
+/// the pool when the session is dropped.
+#[async_trait]
+pub trait PinnedSession: Send {
+    /// Run one statement on the pinned connection. `row_limit` caps the rows
+    /// read (the adapter reads one extra to set `truncated`).
+    async fn query(&mut self, sql: &str, row_limit: usize) -> Result<QueryResult, AppError>;
+}
+
 #[async_trait]
 pub trait EngineConnection: Send + Sync {
+    /// Pin one session for a sequence of statements (see [`PinnedSession`]),
+    /// with `schema` applied for unqualified names. Engines without real
+    /// transactions (ClickHouse) report `Unsupported`, and the change history
+    /// then logs their writes without row values.
+    async fn pin<'a>(
+        &'a self,
+        _schema: Option<String>,
+    ) -> Result<Box<dyn PinnedSession + 'a>, AppError> {
+        Err(AppError::Unsupported(
+            "This engine cannot hold a session across statements.".into(),
+        ))
+    }
+
+    /// The statement that opens a transaction on a pinned session.
+    fn begin_sql(&self) -> &'static str {
+        "BEGIN"
+    }
+
     /// What `open` learned about the target (engine + version).
     fn engine_info(&self) -> EngineInfo;
 

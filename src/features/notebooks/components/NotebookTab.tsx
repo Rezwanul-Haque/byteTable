@@ -25,6 +25,7 @@ import { selectSnippetsForEngine, useSnippetsStore } from "../../snippets/state"
 import { useWorkspacesStore } from "../../workspaces/state";
 import type { EditorSchema } from "../../workspaces/sqlCompletion";
 import type { Tab, Workspace } from "../../workspaces/types";
+import { isDataFileWorkspace } from "../../workspaces/types";
 import { baseName, checkDisk, keepMine, reloadFromDisk, saveNotebook } from "../files";
 import {
   blank,
@@ -73,6 +74,7 @@ export function NotebookTab({ workspace, tab }: { workspace: Workspace; tab: Not
     schema: tab.schema,
     readOnly: workspace.readOnly,
     prod: normalizeEnv(workspace.saved.env) === "production",
+    connectionId: isDataFileWorkspace(workspace) ? null : workspace.saved.id,
   };
 
   // Autocomplete: the schema's tables and whatever columns are cached (E4).

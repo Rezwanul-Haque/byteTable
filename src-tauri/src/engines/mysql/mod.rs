@@ -95,9 +95,9 @@ use crate::features::structure::domain::AlterOp;
 use crate::shared::engine::{
     AlterResult, ColumnStats, ColumnStatsRequest, ConnectSecret, ConnectionParams, Connector,
     DbObjectDefinition, DbObjectInfo, DbObjectKind, DeleteRowsRequest, DeleteRowsResult, Engine,
-    EngineConnection, EngineInfo, FetchRowsRequest, ImportResult, OpenConnection, QueryOptions,
-    QueryResult, RowLookup, RowLookupRequest, RowsPage, SchemaInfo, StatementOutcome, TableInfo,
-    TableMeta, UpdateCellRequest, UpdateResult,
+    EngineConnection, EngineInfo, FetchRowsRequest, ImportResult, OpenConnection, PinnedSession,
+    QueryOptions, QueryResult, RowLookup, RowLookupRequest, RowsPage, SchemaInfo, StatementOutcome,
+    TableInfo, TableMeta, UpdateCellRequest, UpdateResult,
 };
 use crate::shared::error::AppError;
 
@@ -262,6 +262,13 @@ impl EngineConnection for MysqlEngineConnection {
         options: QueryOptions,
     ) -> Result<Vec<StatementOutcome>, AppError> {
         run_batch(&self.pool, statements, options).await
+    }
+
+    async fn pin<'a>(
+        &'a self,
+        schema: Option<String>,
+    ) -> Result<Box<dyn PinnedSession + 'a>, AppError> {
+        Ok(Box::new(query::pin(&self.pool, schema).await?))
     }
 
     async fn fetch_rows(&self, req: FetchRowsRequest) -> Result<RowsPage, AppError> {

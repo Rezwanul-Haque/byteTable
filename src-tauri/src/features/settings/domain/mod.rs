@@ -227,6 +227,47 @@ fn default_ai_sample() -> u32 {
 ///
 /// Secrets are NOT here — API keys live in the OS keychain (`aiCustomKey` only
 /// records that one exists).
+/// The change history's settings (M48), flattened into [`Settings`] like
+/// [`AiSettings`]: whether to record, and how long / how much / how large.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistorySettings {
+    /// Record changes made through ByteTable (global; each connection also
+    /// has its own switch, kept with the history).
+    #[serde(default = "default_true")]
+    pub undo_record: bool,
+    /// 1 | 7 | 30 | 90.
+    #[serde(default = "default_undo_keep_days")]
+    pub undo_keep_days: u32,
+    /// Per connection: 100 | 500 | 2000.
+    #[serde(default = "default_undo_keep_entries")]
+    pub undo_keep_entries: u32,
+    /// Larger changes are logged without row values: 100 | 1000 | 10000.
+    #[serde(default = "default_undo_max_rows")]
+    pub undo_max_rows: u32,
+}
+
+fn default_undo_keep_days() -> u32 {
+    7
+}
+fn default_undo_keep_entries() -> u32 {
+    500
+}
+fn default_undo_max_rows() -> u32 {
+    1000
+}
+
+impl Default for HistorySettings {
+    fn default() -> Self {
+        Self {
+            undo_record: true,
+            undo_keep_days: default_undo_keep_days(),
+            undo_keep_entries: default_undo_keep_entries(),
+            undo_max_rows: default_undo_max_rows(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AiSettings {
@@ -412,6 +453,9 @@ pub struct Settings {
     /// The assistant's keys (M44), flattened — see [`AiSettings`].
     #[serde(flatten, default)]
     pub ai: AiSettings,
+    /// The change history's settings (M48), flattened — see [`HistorySettings`].
+    #[serde(flatten, default)]
+    pub history: HistorySettings,
 }
 
 impl Default for Settings {
@@ -445,6 +489,7 @@ impl Default for Settings {
             hour12: false,
             first_day: default_first_day(),
             ai: AiSettings::default(),
+            history: HistorySettings::default(),
         }
     }
 }
@@ -563,6 +608,11 @@ mod tests {
                 ai_sample: 20,
                 ai_allowed: BTreeMap::from([("conn-1".to_string(), true)]),
                 ..AiSettings::default()
+            },
+            history: HistorySettings {
+                undo_record: false,
+                undo_keep_days: 30,
+                ..HistorySettings::default()
             },
         };
         let json = serde_json::to_string(&s).expect("serialize");

@@ -41,6 +41,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { QueryResult } from "../../../shared/api/engine";
 import { queryRun, queryRunBatch, readTextFile } from "../../../shared/api/engine";
+import { historyRecord } from "../../change_history/api";
+import { currentLimits, recordingOn, viewInHistory } from "../../change_history/recording";
+import { useHistoryStore } from "../../change_history/state";
+import { isWrite } from "../../change_history/writes";
 import { appErrorMessage } from "../../../shared/api/error";
 import type { StringKey } from "../../../shared/i18n";
 import { useT } from "../../../shared/i18n/useT";
@@ -700,7 +704,30 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
       // stuck in "Running…" with no way back except switching tabs (which
       // remounts the component and resets the local flag).
       try {
-        if (!useBatch) {
+        // Change history (M48): when recording, a run with any write goes
+        // through the recorder instead — one pinned session, like a batch,
+        // that also reads the rows each write touches in its own transaction.
+        const recorded =
+          statements.some(isWrite) && (await recordingOn(workspace))
+            ? await historyRecord(
+                workspace.handleId,
+                workspace.saved.id,
+                statements,
+                schemaName,
+                "statement",
+                currentLimits(),
+              ).catch((err: unknown) => {
+                record(0, source, null, appErrorMessage(err, t("ws.sql.queryFailed")));
+                return null;
+              })
+            : undefined;
+        if (recorded !== undefined) {
+          recorded?.outcomes.forEach((o, i) => record(i, o.sql, o.result, o.error));
+          if (recorded?.entries.length) {
+            useHistoryStore.getState().bump();
+            toast(t("history.recorded", { count: recorded.entries.length }), "ok", viewInHistory());
+          }
+        } else if (!useBatch) {
           // One statement, not forced: nothing to carry across, so the plain
           // single-statement path (unchanged from before).
           const stmt = statements[0]!;

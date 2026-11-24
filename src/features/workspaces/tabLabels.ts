@@ -40,6 +40,8 @@ function tabTitle(tab: Tab, currentSchema: string, t: Translate): string {
       return t("ws.tabTitle.privileges");
     case "diff":
       return t("ws.tabTitle.diff");
+    case "history":
+      return t("history.tabTitle");
     case "object":
       return tab.schema === currentSchema ? tab.name : tab.schema + "." + tab.name;
     case "objexplorer":

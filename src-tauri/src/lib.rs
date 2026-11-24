@@ -346,6 +346,10 @@ pub fn run() {
         // desktop-only (no-op target on mobile, which we don't ship).
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        // OS notifications for scheduled checks. Sent from Rust only (the
+        // schedules slice's `run_one`), so the renderer is granted no
+        // notification permission.
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             // Composition root: the only place concrete adapters are chosen.
             let config_dir = app.path().app_config_dir()?;

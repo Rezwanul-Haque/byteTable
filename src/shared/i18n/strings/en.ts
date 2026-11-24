@@ -277,6 +277,8 @@ export const en = {
   "ws.rail.new": "New workspace",
   "ws.rail.settings": "Settings (⌘,)",
   "ws.rail.schedules": "Scheduled queries",
+  "ws.rail.schedulesFailing":
+    "{count, plural, one {# schedule failing} other {# schedules failing}}",
   "ws.rail.report": "Report an issue",
   "ws.rail.updateAvailable": "Update available — click to install",
   "ws.rail.updateSkipped": "Update available (skipped) — click to view",
@@ -4520,6 +4522,32 @@ export const en = {
   "sched.dow.thu": "Thursday",
   "sched.dow.fri": "Friday",
   "sched.dow.sat": "Saturday",
+  // Checks — a schedule with a rule its result must meet.
+  "sched.check": "Check",
+  "sched.check.none": "None — just save the result",
+  "sched.check.noRows": "Should return no rows",
+  "sched.check.atMost": "Should return at most",
+  "sched.check.atLeast": "Should return at least",
+  "sched.check.rows": "rows",
+  "sched.checkHint":
+    "Write the query to find the bad rows — orders with no customer, users with no email. A result that breaks the rule marks the run as failing.",
+  "sched.writeFile": "Also save the result to a file",
+  "sched.notify": "Notify me when it starts failing or recovers",
+  "sched.notifyHint":
+    "Scheduled runs only, and once per change — not again on every run that keeps failing.",
+  "sched.desc.noRows": "Expects no rows",
+  "sched.desc.atMost": "≤ {rows} rows",
+  "sched.desc.atLeast": "≥ {rows} rows",
+  "sched.failing": "Failing",
+  "sched.passing": "Passing",
+  "sched.passedRows": "Passed · {rows} rows",
+  "sched.noFile": "No file",
+  "sched.showRows": "Show rows",
+  "sched.hideRows": "Hide rows",
+  "sched.checkPassed": "“{name}” passed its check.",
+  "sched.checkFailed": "“{name}” failed its check: {reason}",
+  "sched.alert.failing": "“{name}” is failing: {reason}",
+  "sched.alert.recovered": "“{name}” is passing again.",
   // ---- AI assistant (M44). The four rules every surface repeats: off until
   // you turn it on; structure, not data; you see what is sent; it proposes,
   // you run.

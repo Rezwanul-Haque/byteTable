@@ -89,6 +89,9 @@ interface RailProps {
    *  rail rather than only in the Query menu because a schedule names its own
    *  connection: it runs, and is worth checking on, with no workspace open. */
   onSchedules?: () => void;
+  /** Active schedules whose latest run is failing — a count badge on the
+   *  clock, so a check that broke overnight is visible without opening it. */
+  schedulesFailing?: number;
   /** Bug button click — opens the Report an issue modal (M24). */
   onReportIssue?: () => void;
   /** Running app version (no leading `v`), shown under the donate button. */
@@ -103,6 +106,7 @@ export function Rail({
   onAbout,
   onSettings,
   onSchedules,
+  schedulesFailing = 0,
   onReportIssue,
   version,
 }: RailProps) {
@@ -346,10 +350,23 @@ export function Rail({
           type="button"
           className="rail-schedules"
           onClick={onSchedules}
-          title={t("ws.rail.schedules")}
-          aria-label={t("ws.rail.schedules")}
+          title={
+            schedulesFailing > 0
+              ? t("ws.rail.schedulesFailing", { count: schedulesFailing })
+              : t("ws.rail.schedules")
+          }
+          aria-label={
+            schedulesFailing > 0
+              ? `${t("ws.rail.schedules")} — ${t("ws.rail.schedulesFailing", { count: schedulesFailing })}`
+              : t("ws.rail.schedules")
+          }
         >
           <Icon name="schedule" size={20} />
+          {schedulesFailing > 0 ? (
+            <span className="rail-schedules-badge" aria-hidden="true">
+              {schedulesFailing > 9 ? "9+" : schedulesFailing}
+            </span>
+          ) : null}
         </button>
       ) : null}
 

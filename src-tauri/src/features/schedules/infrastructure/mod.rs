@@ -192,6 +192,9 @@ mod tests {
             sql: "SELECT 1".into(),
             recurrence: Recurrence::Daily { hour: 3, minute: 0 },
             format: OutputFormat::Csv,
+            check: None,
+            write_file: true,
+            notify: false,
             directory: "/tmp".into(),
             filename: "{{name}}_{{date}}".into(),
             keep: 30,
@@ -211,6 +214,8 @@ mod tests {
             row_count: 1,
             truncated: false,
             error: None,
+            check_failure: None,
+            sample: None,
         }
     }
 

@@ -99,6 +99,20 @@
   background: color-mix(in oklab, var(--warn) 16%, transparent);
 }
 
+/* A check's rule, and its verdict. Passing is the one state where a check
+   speaks up with good news — it is what its owner opened the list to read. */
+.sched-chip-check {
+  color: var(--text-dim);
+  background: color-mix(in oklab, var(--text-dim) 12%, transparent);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.sched-chip-ok {
+  color: var(--success);
+  background: color-mix(in oklab, var(--success) 16%, transparent);
+}
+
 /* In flight. The accent rather than a status colour: this is not an outcome,
    it is the row doing the thing it exists to do. */
 .sched-chip-running {
@@ -263,6 +277,76 @@
   text-decoration: underline;
 }
 
+.sched-run-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.sched-run-sample-toggle {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  flex: none;
+  transition: color 0.12s;
+}
+
+.sched-run-sample-toggle:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+/* The rows that tripped a check. Scrolls sideways inside the row rather than
+   widening the modal: a sample is as wide as the query made it. */
+.sched-sample {
+  overflow-x: auto;
+  margin: 0 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.sched-sample table {
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  width: max-content;
+  min-width: 100%;
+}
+
+.sched-sample th,
+.sched-sample td {
+  padding: 3px 8px;
+  text-align: start;
+  white-space: nowrap;
+  max-width: 32ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-bottom: 1px solid var(--border);
+}
+
+.sched-sample th {
+  color: var(--text-dim);
+  background: var(--bg2);
+  font-weight: 600;
+}
+
+.sched-sample td {
+  color: var(--text);
+}
+
+.sched-sample tr:last-child td {
+  border-bottom: none;
+}
+
+.sched-sample-null {
+  color: var(--text-faint) !important;
+  font-style: italic;
+}
+
 /* ---------- empty state ---------- */
 
 .sched-empty {
@@ -319,6 +403,21 @@
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-faint);
+}
+
+.sched-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.sched-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  cursor: pointer;
 }
 
 .sched-hint {

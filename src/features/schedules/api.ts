@@ -25,6 +25,17 @@ export type RecurrenceKind = Recurrence["kind"];
 /** What a scheduled run writes. No SQL dump — a query result has no DDL. */
 export type OutputFormat = "csv" | "json";
 
+/**
+ * What a check expects of a run's result, by row count. Mirrors Rust's tagged
+ * `CheckRule` enum. A failing result is a SUCCESSFUL run with a
+ * `checkFailure` — the query ran fine and found rows it should not have.
+ */
+export type CheckRule =
+  | { kind: "noRows" }
+  | { kind: "atMost"; rows: number }
+  /** `rows` ≥ 1 — at least 0 always passes, and the backend refuses it. */
+  | { kind: "atLeast"; rows: number };
+
 /** Why a run happened. */
 export type RunTrigger = "scheduled" | "manual";
 
@@ -60,6 +71,18 @@ export interface Schedule {
   sql: string;
   recurrence: Recurrence;
   format: OutputFormat;
+  /** The rule the result must meet, or null for a plain report. */
+  check?: CheckRule | null;
+  /**
+   * Whether a run writes its result to a file. Only a schedule with a `check`
+   * may turn it off; the output fields below are kept while it is off.
+   */
+  writeFile: boolean;
+  /**
+   * OS notification when a SCHEDULED run starts failing or recovers — on the
+   * change only, never on every failing run.
+   */
+  notify: boolean;
   /** Absolute path of the output folder. */
   directory: string;
   /** Filename stem pattern, tokens included, WITHOUT an extension. */
@@ -76,7 +99,17 @@ export interface Schedule {
   nextRunAt: number;
 }
 
-/** One entry in a schedule's history. `path` on success, `error` on failure. */
+/** The first rows of a result that failed its check, cells cut short. */
+export interface ResultSample {
+  columns: string[];
+  rows: unknown[][];
+}
+
+/**
+ * One entry in a schedule's history. `error` when the run itself failed;
+ * otherwise `path` names the file written (if the schedule writes one) and
+ * `checkFailure` says why the result failed its check.
+ */
 export interface RunRecord {
   scheduleId: string;
   startedAt: number;
@@ -87,6 +120,9 @@ export interface RunRecord {
   /** The row limit cut the result short. */
   truncated: boolean;
   error?: string | null;
+  /** "Returned 12 rows; expected none." — null when it passed or has no check. */
+  checkFailure?: string | null;
+  sample?: ResultSample | null;
 }
 
 /** Run history keyed by schedule id, newest LAST within each list. */
@@ -107,6 +143,22 @@ export const RUN_FINISHED_EVENT = "schedules://run-finished";
  * long one started from another window — is invisible until it ends.
  */
 export const RUN_STARTED_EVENT = "schedules://run-started";
+
+/**
+ * Emitted when a scheduled run changes a notifying schedule's health — it
+ * started failing, or it recovered. The backend decides that (and raises the
+ * OS notification when the window is not focused), so the renderer only
+ * toasts. Payload: {@link ScheduleAlert}.
+ */
+export const ALERT_EVENT = "schedules://alert";
+
+/** {@link ALERT_EVENT}'s payload. */
+export interface ScheduleAlert {
+  scheduleId: string;
+  name: string;
+  isCheck: boolean;
+  alert: { kind: "failing"; reason: string } | { kind: "recovered" };
+}
 
 /** {@link RUN_STARTED_EVENT}'s payload. */
 export interface RunStarted {

@@ -29,6 +29,8 @@ import { selectShowConnect, useWorkspacesStore } from "./features/workspaces/sta
 import { isDataFileWorkspace, selectedSchema } from "./features/workspaces/types";
 import { SchedulesModal } from "./features/schedules/components/SchedulesModal";
 import { useSchedulesStore } from "./features/schedules/state";
+import { failingCount } from "./features/schedules/check";
+import { useScheduleEvents } from "./features/schedules/hooks/useScheduleEvents";
 import { pickSqliteFile } from "./features/connections/dialog";
 import { useOpenSqliteFile } from "./features/workspaces/connect";
 import { useToast } from "./shared/ui/toastContext";
@@ -116,6 +118,10 @@ export function App() {
   // settings tab is: three surfaces open it, one of them deep in a workspace.
   const schedulesOpen = useSchedulesStore((state) => state.managerOpen);
   const openSchedules = useSchedulesStore((state) => state.openManager);
+  // Schedules whose latest run failed (an error, or a failed check) — the
+  // rail clock's badge. Kept current by ScheduleEventsBridge with the manager
+  // closed.
+  const schedulesFailing = useSchedulesStore((state) => failingCount(state.schedules, state.runs));
   // Title-bar menu dispatch targets that act on global app state.
   const closeWorkspace = useWorkspacesStore((state) => state.closeWorkspace);
   const settings = useSettingsStore((state) => state.settings);
@@ -310,6 +316,10 @@ export function App() {
       {/* Keeps the active workspace's read-only mode on its backend handle.
           Inside the provider because it toasts if the push fails. */}
       <ReadOnlySyncBridge />
+      {/* Scheduled runs and their alerts, app-wide: the rail badge and the
+          check toasts must work with the schedules manager closed. Inside the
+          provider because it toasts; renders nothing. */}
+      <ScheduleEventsBridge />
       {/* File ▸ Open ▸ Open CSV / Open DB. Inside the provider because both
           flows toast; renders the sheet (CSV) or nothing (the native picker). */}
       <FileOpenBridge request={fileOpenRequest} onDone={() => setFileOpenRequest(null)} />
@@ -324,6 +334,7 @@ export function App() {
             onAbout={() => setAboutOpen(true)}
             onSettings={() => openSettings()}
             onSchedules={() => openSchedules()}
+            schedulesFailing={schedulesFailing}
             onReportIssue={() => setBugOpen(true)}
             version={version}
           />
@@ -498,6 +509,11 @@ function OsFileOpenBridge() {
  *  `useHandleReadOnlySync`); renders nothing. */
 function ReadOnlySyncBridge() {
   useHandleReadOnlySync();
+  return null;
+}
+
+function ScheduleEventsBridge() {
+  useScheduleEvents();
   return null;
 }
 

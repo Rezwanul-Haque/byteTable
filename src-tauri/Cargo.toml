@@ -221,6 +221,10 @@ tauri-plugin-os = "2"
 # past this package's 1.89. 0.38.4's MSRV is 1.88, the newest line that still
 # builds on the pinned toolchain.
 sysinfo = { version = "0.38", default-features = false, features = ["system"] }
+# OS notifications for scheduled checks: a failing check alerts from Rust,
+# because close-to-tray means the usual 3am run has no window to toast in. The
+# MSRV-aware resolver holds this at 2.4.0; the newest line needs rustc 1.90.
+tauri-plugin-notification = "2"
 
 [dev-dependencies]
 tempfile = "3"

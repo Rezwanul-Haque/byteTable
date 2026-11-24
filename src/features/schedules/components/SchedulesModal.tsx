@@ -1,5 +1,6 @@
 // Scheduled queries manager (M41) — the list of schedules, their next and
-// last runs, and the editor form.
+// last runs, and the editor form. A schedule can also carry a check ("should
+// return no rows"), which turns it into a data-quality alert.
 //
 // Hosted as a MODAL rather than as a fourth right-side drawer beside saved
 // queries / history / snippets. Those three are "pick one and put it in the
@@ -10,11 +11,12 @@
 // Connected to the global schedules store itself (rather than taking a list),
 // so no opener has to own the store wiring.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { appErrorMessage } from "../../../shared/api/error";
 import { useT } from "../../../shared/i18n/useT";
 import { Btn } from "../../../shared/ui/Btn";
+import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Icon } from "../../../shared/ui/Icon";
 import { IconBtn } from "../../../shared/ui/IconBtn";
 import { Modal, ModalTitle } from "../../../shared/ui/Modal";
@@ -26,15 +28,24 @@ import {
   DEFAULT_KEEP,
   DEFAULT_ROW_LIMIT,
   MIN_EVERY_MINUTES,
-  RUN_FINISHED_EVENT,
-  RUN_STARTED_EVENT,
   scheduleReveal,
   type OutputFormat,
   type RecurrenceKind,
+  type ResultSample,
   type RunRecord,
-  type RunStarted,
   type Schedule,
 } from "../api";
+import {
+  CHECK_CHOICES,
+  checkChoice,
+  checkRows,
+  describeCheck,
+  isFailing,
+  sampleCell,
+  withCheckChoice,
+  withCheckRows,
+  type CheckChoice,
+} from "../check";
 import { FILENAME_TOKENS, previewFilename, SQL_TOKENS } from "../filename";
 import { baseName, shortenPath } from "../path";
 import {
@@ -62,6 +73,9 @@ function emptySchedule(connectionId: string): Schedule {
     sql: "",
     recurrence: { kind: "daily", hour: 3, minute: 0 },
     format: "csv",
+    check: null,
+    writeFile: true,
+    notify: false,
     directory: "",
     filename: "{{name}}_{{date}}",
     keep: DEFAULT_KEEP,
@@ -104,8 +118,6 @@ export function SchedulesModal({
   const remove = useSchedulesStore((s) => s.remove);
   const setEnabled = useSchedulesStore((s) => s.setEnabled);
   const runNow = useSchedulesStore((s) => s.runNow);
-  const applyRun = useSchedulesStore((s) => s.applyRun);
-  const markRunning = useSchedulesStore((s) => s.markRunning);
   const seed = useSchedulesStore((s) => s.seed);
   const onClose = useSchedulesStore((s) => s.closeManager);
 
@@ -114,9 +126,6 @@ export function SchedulesModal({
   const savedQueries = useSavedQueriesStore((s) => s.savedQueries);
   const loadSavedQueries = useSavedQueriesStore((s) => s.load);
 
-  // The schedule being edited, or null while browsing. An empty `id` is a new
-  // one; otherwise it edits that entry in place.
-  const [draft, setDraft] = useState<Schedule | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   // Which schedule's history is expanded in the list.
   const [openHistory, setOpenHistory] = useState<string | null>(null);
@@ -129,55 +138,35 @@ export function SchedulesModal({
     [savedConnections],
   );
 
+  // The schedule being edited, or null while browsing. An empty `id` is a new
+  // one; otherwise it edits that entry in place.
+  //
+  // Opened from "Schedule this query…" it starts as a prefilled form, since
+  // browsing the list is not what that caller asked for. A lazy initializer,
+  // so it is built exactly once from the first render's values: the store's
+  // saved-query list arriving a tick later must not rebuild the draft over
+  // edits the user has already started making.
+  const [draft, setDraft] = useState<Schedule | null>(() =>
+    seed
+      ? {
+          ...emptySchedule(defaultConnectionId ?? connectionOptions[0]?.value ?? ""),
+          sql: seed.sql,
+          savedQueryId: seed.savedQueryId ?? null,
+          schema: seed.schema ?? defaultSchema ?? null,
+          name: savedQueries.find((q) => q.id === seed.savedQueryId)?.name ?? "",
+        }
+      : null,
+  );
+
   useEffect(() => {
     void load();
     void loadConnections();
     void loadSavedQueries();
   }, [load, loadConnections, loadSavedQueries]);
 
-  // A run that starts or finishes ANYWHERE — the 3am one, or one begun before
-  // this modal opened — drives the list without a reload. Both halves matter:
-  // a run against a real server takes time, and without the start event the
-  // row would sit still and then change with no explanation.
-  useEffect(() => {
-    const disposers: (() => void)[] = [];
-    let cancelled = false;
-    void (async () => {
-      try {
-        const { listen } = await import("@tauri-apps/api/event");
-        const unlisten = await Promise.all([
-          listen<RunStarted>(RUN_STARTED_EVENT, (event) => markRunning(event.payload.scheduleId)),
-          listen<RunRecord>(RUN_FINISHED_EVENT, (event) => applyRun(event.payload)),
-        ]);
-        // Mounted and unmounted before the listeners attached: drop them now.
-        if (cancelled) unlisten.forEach((off) => off());
-        else disposers.push(...unlisten);
-      } catch {
-        // Plain browser dev — no Tauri, so no events. The list is static.
-      }
-    })();
-    return () => {
-      cancelled = true;
-      disposers.forEach((off) => off());
-    };
-  }, [applyRun, markRunning]);
-
-  // Opened from "Schedule this query…": straight into a prefilled form, since
-  // browsing the list is not what that caller asked for. Guarded by a ref so
-  // the store's saved-query list arriving a tick later does not rebuild the
-  // draft over edits the user has already started making.
-  const prefilled = useRef(false);
-  useEffect(() => {
-    if (prefilled.current || !seed) return;
-    prefilled.current = true;
-    setDraft({
-      ...emptySchedule(defaultConnectionId ?? connectionOptions[0]?.value ?? ""),
-      sql: seed.sql,
-      savedQueryId: seed.savedQueryId ?? null,
-      schema: seed.schema ?? defaultSchema ?? null,
-      name: savedQueries.find((q) => q.id === seed.savedQueryId)?.name ?? "",
-    });
-  }, [seed, defaultConnectionId, defaultSchema, connectionOptions, savedQueries]);
+  // Runs that start or finish while this is open — the 3am one, or one begun
+  // before it opened — reach the list through the store, which the app-wide
+  // `useScheduleEvents` keeps current from the backend's run events.
 
   const startNew = () => {
     setFormError(null);
@@ -203,6 +192,9 @@ export function SchedulesModal({
     try {
       const record = await runNow(schedule.id);
       if (record.error) toast(t("sched.runFailed", { name: schedule.name }), "err");
+      else if (record.checkFailure)
+        toast(t("sched.checkFailed", { name: schedule.name, reason: record.checkFailure }), "err");
+      else if (schedule.check) toast(t("sched.checkPassed", { name: schedule.name }), "ok");
       else toast(t("sched.ranOk", { rows: record.rowCount, name: schedule.name }), "ok");
       setOpenHistory(schedule.id);
     } catch (error) {
@@ -296,8 +288,24 @@ export function SchedulesModal({
                       </span>
                     ) : null}
                     <span className="sched-chip">{describeRecurrence(schedule.recurrence, t)}</span>
-                    <span className="sched-chip sched-chip-format">{schedule.format}</span>
-                    {last?.error ? (
+                    {schedule.check ? (
+                      <span className="sched-chip sched-chip-check">
+                        {describeCheck(schedule.check, t)}
+                      </span>
+                    ) : null}
+                    {schedule.writeFile ? (
+                      <span className="sched-chip sched-chip-format">{schedule.format}</span>
+                    ) : null}
+                    {/* A check reports its health either way — "Passing" is
+                        the answer its owner opened the list to read. A plain
+                        report only speaks up when its run failed. */}
+                    {schedule.check && last ? (
+                      isFailing(last) ? (
+                        <span className="sched-chip sched-chip-bad">{t("sched.failing")}</span>
+                      ) : (
+                        <span className="sched-chip sched-chip-ok">{t("sched.passing")}</span>
+                      )
+                    ) : last?.error ? (
                       <span className="sched-chip sched-chip-bad">{t("sched.lastFailed")}</span>
                     ) : null}
                     {last?.truncated ? (
@@ -312,15 +320,19 @@ export function SchedulesModal({
                     <span>
                       {t("sched.last")}: {running ? t("sched.runningNow") : stamp(last?.startedAt)}
                     </span>
-                    <button
-                      type="button"
-                      className="sched-path"
-                      title={schedule.directory}
-                      onClick={() => void reveal(schedule.directory)}
-                    >
-                      <Icon name="folder_open" size={12} />
-                      {shortenPath(schedule.directory)}
-                    </button>
+                    {schedule.writeFile ? (
+                      <button
+                        type="button"
+                        className="sched-path"
+                        title={schedule.directory}
+                        onClick={() => void reveal(schedule.directory)}
+                      >
+                        <Icon name="folder_open" size={12} />
+                        {shortenPath(schedule.directory)}
+                      </button>
+                    ) : (
+                      <span>{t("sched.noFile")}</span>
+                    )}
                   </div>
                 </div>
 
@@ -363,6 +375,7 @@ export function SchedulesModal({
                 {expanded ? (
                   <History
                     records={historyNewestFirst(runs, schedule.id)}
+                    hasCheck={!!schedule.check}
                     onReveal={(path) => void reveal(path)}
                   />
                 ) : null}
@@ -378,37 +391,86 @@ export function SchedulesModal({
 /** A schedule's past runs, newest first. */
 function History({
   records,
+  hasCheck,
   onReveal,
 }: {
   records: RunRecord[];
+  hasCheck: boolean;
   onReveal: (path: string) => void;
 }) {
   const t = useT();
+  // Which run's sample rows are showing, by `startedAt`.
+  const [openSample, setOpenSample] = useState<number | null>(null);
   if (records.length === 0) return <div className="sched-history-empty">{t("sched.noRuns")}</div>;
   return (
     <div className="sched-history">
-      {records.map((record) => (
-        <div
-          key={`${record.startedAt}-${record.trigger}`}
-          className={"sched-run" + (record.error ? " sched-run-bad" : "")}
-        >
-          <span className="sched-run-when">{stamp(record.startedAt)}</span>
-          <span className="sched-run-trigger">{record.trigger}</span>
-          <span className="sched-run-detail">
-            {record.error ?? t("sched.wroteRows", { rows: record.rowCount })}
-          </span>
-          {record.path ? (
-            <button
-              type="button"
-              className="sched-run-path"
-              title={record.path}
-              onClick={() => void onReveal(record.path!)}
-            >
-              {baseName(record.path)}
-            </button>
-          ) : null}
-        </div>
-      ))}
+      {records.map((record) => {
+        const sampleOpen = openSample === record.startedAt;
+        return (
+          <div key={`${record.startedAt}-${record.trigger}`} className="sched-run-wrap">
+            <div className={"sched-run" + (isFailing(record) ? " sched-run-bad" : "")}>
+              <span className="sched-run-when">{stamp(record.startedAt)}</span>
+              <span className="sched-run-trigger">{record.trigger}</span>
+              <span className="sched-run-detail">
+                {record.error ??
+                  record.checkFailure ??
+                  (hasCheck
+                    ? t("sched.passedRows", { rows: record.rowCount })
+                    : t("sched.wroteRows", { rows: record.rowCount }))}
+              </span>
+              {record.sample ? (
+                <button
+                  type="button"
+                  className="sched-run-sample-toggle"
+                  aria-expanded={sampleOpen}
+                  onClick={() => setOpenSample(sampleOpen ? null : record.startedAt)}
+                >
+                  {sampleOpen ? t("sched.hideRows") : t("sched.showRows")}
+                </button>
+              ) : null}
+              {record.path ? (
+                <button
+                  type="button"
+                  className="sched-run-path"
+                  title={record.path}
+                  onClick={() => void onReveal(record.path!)}
+                >
+                  {baseName(record.path)}
+                </button>
+              ) : null}
+            </div>
+            {sampleOpen && record.sample ? <Sample sample={record.sample} /> : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** The first rows of a result that failed its check. */
+function Sample({ sample }: { sample: ResultSample }) {
+  return (
+    <div className="sched-sample">
+      <table>
+        <thead>
+          <tr>
+            {sample.columns.map((column, i) => (
+              <th key={i}>{column}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {sample.rows.map((row, r) => (
+            <tr key={r}>
+              {row.map((cell, c) => (
+                <td key={c} className={cell === null ? "sched-sample-null" : undefined}>
+                  {sampleCell(cell)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -448,6 +510,19 @@ function ScheduleForm({
     value: String(n),
     label: weekdayLabel(n, t),
   }));
+  const checkOptions: SelectOption<CheckChoice>[] = CHECK_CHOICES.map((choice) => ({
+    value: choice,
+    label: t(
+      choice === "none"
+        ? "sched.check.none"
+        : choice === "noRows"
+          ? "sched.check.noRows"
+          : choice === "atMost"
+            ? "sched.check.atMost"
+            : "sched.check.atLeast",
+    ),
+  }));
+  const rows = checkRows(draft.check);
   const formatOptions: SelectOption<OutputFormat>[] = [
     { value: "csv", label: "CSV" },
     { value: "json", label: "JSON" },
@@ -613,100 +688,152 @@ function ScheduleForm({
         </div>
 
         <div className="sched-field">
-          <label className="sched-label" htmlFor="sched-dir">
-            {t("sched.folder")}
-          </label>
+          <span className="sched-label">{t("sched.check")}</span>
           <div className="sched-when">
-            <input
-              id="sched-dir"
-              className="sched-input"
-              value={draft.directory}
-              onChange={(e) => onChange({ ...draft, directory: e.target.value })}
-              placeholder={t("sched.folderPlaceholder")}
-            />
-            <Btn small icon="folder_open" onClick={() => void pickFolder()}>
-              {t("sched.browse")}
-            </Btn>
-          </div>
-        </div>
-
-        <div className="sched-grid">
-          <div className="sched-field">
-            <label className="sched-label" htmlFor="sched-filename">
-              {t("sched.filename")}
-            </label>
-            <input
-              id="sched-filename"
-              className="sched-input"
-              value={draft.filename}
-              onChange={(e) => onChange({ ...draft, filename: e.target.value })}
-            />
-          </div>
-          <div className="sched-field">
-            <span className="sched-label">{t("sched.format")}</span>
             <Select
               className="sched-select"
               mono={false}
-              value={draft.format}
-              options={formatOptions}
-              onChange={(format) => onChange({ ...draft, format })}
-              aria-label={t("sched.format")}
+              value={checkChoice(draft.check)}
+              options={checkOptions}
+              onChange={(choice) => onChange(withCheckChoice(draft, choice))}
+              aria-label={t("sched.check")}
             />
+            {rows !== undefined ? (
+              <>
+                <input
+                  className="sched-input sched-num"
+                  type="number"
+                  min={draft.check?.kind === "atLeast" ? 1 : 0}
+                  value={rows}
+                  onChange={(e) => onChange(withCheckRows(draft, Number(e.target.value)))}
+                  aria-label={t("sched.check.rows")}
+                />
+                <span className="sched-unit">{t("sched.check.rows")}</span>
+              </>
+            ) : null}
           </div>
+          {draft.check ? <div className="sched-hint">{t("sched.checkHint")}</div> : null}
         </div>
 
-        <div className="sched-hint">
-          {t("sched.writes")}{" "}
-          <code>
-            {previewFilename(
-              draft.filename,
-              draft.format,
-              // Preview `{{name}}` against the SAME text the empty name field
-              // is showing. Resolving it to "" is accurate but useless: a
-              // brand-new schedule previewed as `_20261026.csv`, which reads
-              // like a bug in the token rather than an unfilled field. The
-              // name is required to save, so this is a preview of the only
-              // outcome that can actually happen.
-              draft.name.trim() || t("sched.namePlaceholder"),
-              env,
-            )}
-          </code>
-          <br />
-          {t("sched.filenameHint")} <code>{FILENAME_TOKENS.join("  ")}</code>
+        <div className="sched-toggles">
+          {draft.check ? (
+            <label className="sched-toggle">
+              <Checkbox
+                checked={draft.writeFile}
+                onChange={(e) => onChange({ ...draft, writeFile: e.target.checked })}
+              />
+              {t("sched.writeFile")}
+            </label>
+          ) : null}
+          <label className="sched-toggle">
+            <Checkbox
+              checked={draft.notify}
+              onChange={(e) => onChange({ ...draft, notify: e.target.checked })}
+            />
+            {t("sched.notify")}
+          </label>
+          {draft.notify ? <div className="sched-hint">{t("sched.notifyHint")}</div> : null}
         </div>
 
-        <div className="sched-grid">
-          <div className="sched-field">
-            <label className="sched-label" htmlFor="sched-keep">
-              {t("sched.keep")}
-            </label>
-            <input
-              id="sched-keep"
-              className="sched-input sched-num-cell"
-              type="number"
-              min={1}
-              value={draft.keep}
-              onChange={(e) =>
-                onChange({ ...draft, keep: Math.max(1, Number(e.target.value) || 1) })
-              }
-            />
-          </div>
-          <div className="sched-field">
-            <label className="sched-label" htmlFor="sched-rows">
-              {t("sched.rowLimit")}
-            </label>
-            <input
-              id="sched-rows"
-              className="sched-input sched-num-cell"
-              type="number"
-              min={1}
-              value={draft.rowLimit}
-              onChange={(e) =>
-                onChange({ ...draft, rowLimit: Math.max(1, Number(e.target.value) || 1) })
-              }
-            />
-          </div>
-        </div>
+        {draft.writeFile ? (
+          <>
+            <div className="sched-field">
+              <label className="sched-label" htmlFor="sched-dir">
+                {t("sched.folder")}
+              </label>
+              <div className="sched-when">
+                <input
+                  id="sched-dir"
+                  className="sched-input"
+                  value={draft.directory}
+                  onChange={(e) => onChange({ ...draft, directory: e.target.value })}
+                  placeholder={t("sched.folderPlaceholder")}
+                />
+                <Btn small icon="folder_open" onClick={() => void pickFolder()}>
+                  {t("sched.browse")}
+                </Btn>
+              </div>
+            </div>
+
+            <div className="sched-grid">
+              <div className="sched-field">
+                <label className="sched-label" htmlFor="sched-filename">
+                  {t("sched.filename")}
+                </label>
+                <input
+                  id="sched-filename"
+                  className="sched-input"
+                  value={draft.filename}
+                  onChange={(e) => onChange({ ...draft, filename: e.target.value })}
+                />
+              </div>
+              <div className="sched-field">
+                <span className="sched-label">{t("sched.format")}</span>
+                <Select
+                  className="sched-select"
+                  mono={false}
+                  value={draft.format}
+                  options={formatOptions}
+                  onChange={(format) => onChange({ ...draft, format })}
+                  aria-label={t("sched.format")}
+                />
+              </div>
+            </div>
+
+            <div className="sched-hint">
+              {t("sched.writes")}{" "}
+              <code>
+                {previewFilename(
+                  draft.filename,
+                  draft.format,
+                  // Preview `{{name}}` against the SAME text the empty name field
+                  // is showing. Resolving it to "" is accurate but useless: a
+                  // brand-new schedule previewed as `_20261026.csv`, which reads
+                  // like a bug in the token rather than an unfilled field. The
+                  // name is required to save, so this is a preview of the only
+                  // outcome that can actually happen.
+                  draft.name.trim() || t("sched.namePlaceholder"),
+                  env,
+                )}
+              </code>
+              <br />
+              {t("sched.filenameHint")} <code>{FILENAME_TOKENS.join("  ")}</code>
+            </div>
+
+            <div className="sched-grid">
+              <div className="sched-field">
+                <label className="sched-label" htmlFor="sched-keep">
+                  {t("sched.keep")}
+                </label>
+                <input
+                  id="sched-keep"
+                  className="sched-input sched-num-cell"
+                  type="number"
+                  min={1}
+                  value={draft.keep}
+                  onChange={(e) =>
+                    onChange({ ...draft, keep: Math.max(1, Number(e.target.value) || 1) })
+                  }
+                />
+              </div>
+              <div className="sched-field">
+                <label className="sched-label" htmlFor="sched-rows">
+                  {t("sched.rowLimit")}
+                </label>
+                <input
+                  id="sched-rows"
+                  className="sched-input sched-num-cell"
+                  type="number"
+                  min={1}
+                  value={draft.rowLimit}
+                  onChange={(e) =>
+                    onChange({ ...draft, rowLimit: Math.max(1, Number(e.target.value) || 1) })
+                  }
+                />
+              </div>
+            </div>
+          </>
+        ) : null}
 
         {error ? <div className="sched-error">{error}</div> : null}
       </div>

@@ -12,6 +12,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::features::connections::commands::{connect_timeout, ConnectionsState};
@@ -19,7 +20,7 @@ use crate::features::settings::commands::SettingsState;
 use crate::shared::error::AppError;
 
 use super::application::{self, RunDeps};
-use super::domain::{RunRecord, RunTrigger, Schedule};
+use super::domain::{Alert, RunRecord, RunTrigger, Schedule};
 use super::ports::{RunLogRepository, ScheduleRepository};
 
 /// The event the renderer listens on so an open manager updates the moment a
@@ -34,6 +35,24 @@ pub const RUN_FINISHED_EVENT: &str = "schedules://run-finished";
 /// whole run — which can take minutes against a real server — is invisible, and
 /// the row simply changes without explanation when it ends.
 pub const RUN_STARTED_EVENT: &str = "schedules://run-started";
+
+/// Announced when a SCHEDULED run changes a notifying schedule's health —
+/// it started failing, or it recovered — so a visible window can toast it.
+/// Payload: [`ScheduleAlert`].
+///
+/// Decided here, not in the renderer, so there is one definition of "worth an
+/// alert" ([`Alert::between`]) behind both the toast and the OS notification.
+pub const ALERT_EVENT: &str = "schedules://alert";
+
+/// [`ALERT_EVENT`]'s payload.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduleAlert {
+    pub schedule_id: String,
+    pub name: String,
+    pub is_check: bool,
+    pub alert: Alert,
+}
 
 /// [`RUN_STARTED_EVENT`]'s payload.
 #[derive(Clone, serde::Serialize)]
@@ -177,6 +196,7 @@ pub async fn schedule_reveal(
     let target = std::path::Path::new(&path);
     let owned = application::list_schedules(state.schedules())?
         .iter()
+        .filter(|schedule| schedule.write_file)
         .any(|schedule| {
             let directory = std::path::Path::new(&schedule.directory);
             target == directory || target.starts_with(directory)
@@ -237,12 +257,52 @@ pub async fn run_one(
         runs: state.runs(),
         timeout,
     };
+    // Read BEFORE the run appends its own record, or the comparison would be
+    // the run against itself.
+    let previous = application::last_run(state.runs(), &schedule.id);
     let record =
         application::run_schedule(&deps, schedule, trigger, application::now_local()).await;
     // Best-effort: with no window open there is nobody listening, and that is
     // the normal case for a 3am run.
     let _ = app.emit(RUN_FINISHED_EVENT, &record);
+    // Only scheduled runs alert: a manual run is one the user is watching, and
+    // the manager already toasts its outcome.
+    if schedule.notify && trigger == RunTrigger::Scheduled {
+        if let Some(alert) = Alert::between(previous.as_ref(), &record) {
+            raise_alert(app, schedule, alert);
+        }
+    }
     record
+}
+
+/// Tell the user a schedule's health changed: a toast in a focused window, an
+/// OS notification otherwise.
+///
+/// Never both. A focused window already shows the toast, and a banner on top
+/// of it says the same thing twice. Unfocused — hidden to the tray, minimized,
+/// or behind another app — the toast would go unseen, which is the case the OS
+/// notification is for. The event is emitted either way so the open manager
+/// and the rail badge stay current; the renderer toasts only when focused.
+fn raise_alert(app: &AppHandle, schedule: &Schedule, alert: Alert) {
+    let focused = app
+        .get_webview_window("main")
+        .and_then(|window| window.is_focused().ok())
+        .unwrap_or(false);
+    if !focused {
+        let (title, body) = alert.notification(schedule);
+        // Best-effort: notifications denied in System Settings must not turn
+        // into a failed run — the history still records the failure.
+        let _ = app.notification().builder().title(title).body(body).show();
+    }
+    let _ = app.emit(
+        ALERT_EVENT,
+        ScheduleAlert {
+            schedule_id: schedule.id.clone(),
+            name: schedule.name.clone(),
+            is_check: schedule.check.is_some(),
+            alert,
+        },
+    );
 }
 
 /// Resolve the managed state the scheduler loop needs, or `None` when the app

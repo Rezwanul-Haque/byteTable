@@ -1,6 +1,8 @@
 //! Domain model for the schedules slice (M41, `MILESTONE_41_SCHEDULED_QUERIES.md`):
 //! what a scheduled report IS, when it is next due, what its output file is
-//! called, and how a result set becomes CSV or JSON text.
+//! called, and how a result set becomes CSV or JSON text — plus the optional
+//! check a schedule can carry ("should return zero rows") and when a run's
+//! outcome is worth an alert.
 //!
 //! Everything here is pure — no clock of its own (the caller passes `now`), no
 //! filesystem, no engine. That is what makes the recurrence math, which is the
@@ -35,6 +37,15 @@ pub const DEFAULT_KEEP: u32 = 30;
 /// Run records kept per schedule. The history is a diagnostic, not an audit
 /// log; twenty runs is enough to see a pattern of failures.
 pub const MAX_HISTORY: usize = 20;
+
+/// Rows of a failing check's result kept in its run record, so the history can
+/// show WHAT tripped it without anyone re-running the query.
+pub const SAMPLE_ROWS: usize = 5;
+
+/// Characters a sampled cell keeps before it is cut. The sample is a hint for
+/// a person, stored in a local JSON file; a megabyte of JSON in one cell has no
+/// business in either.
+const SAMPLE_CELL_CHARS: usize = 200;
 
 /// Longest filename stem this slice will produce, in characters. Comfortably
 /// under every filesystem's 255-BYTE component limit even when every character
@@ -259,6 +270,116 @@ fn local_at(date: NaiveDate, hour: u32, minute: u32) -> Option<DateTime<chrono::
     None
 }
 
+/// What a check expects of a run's result, by row count.
+///
+/// Row counts only, on purpose: "the first cell should be 0" is the same check
+/// as "this query should return no rows" with the condition moved into the
+/// `WHERE`, and the row form is the one that can show the offending rows.
+///
+/// Serde-tagged like [`Recurrence`], so a value-based rule can be added later
+/// without a format break.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum CheckRule {
+    /// Any row at all is a failure — the data-quality case: "orders without a
+    /// customer", "users with a NULL email".
+    NoRows,
+    /// More than `rows` rows is a failure.
+    AtMost { rows: u32 },
+    /// Fewer than `rows` rows is a failure — "today's import landed".
+    AtLeast { rows: u32 },
+}
+
+impl CheckRule {
+    /// What is wrong with this rule, or `None`.
+    pub fn validation_error(&self) -> Option<&'static str> {
+        match *self {
+            Self::AtLeast { rows: 0 } => {
+                Some("A check for at least 0 rows always passes — set a minimum of 1 or more.")
+            }
+            _ => None,
+        }
+    }
+
+    /// The fewest rows a run has to read for this rule's verdict to be exact.
+    ///
+    /// "No rows" is settled by the first row and "at most N" by row N + 1, so
+    /// a check that only checks never has to pull a large result set.
+    pub fn rows_needed(&self) -> u32 {
+        match *self {
+            Self::NoRows => 1,
+            Self::AtMost { rows } => rows.saturating_add(1),
+            Self::AtLeast { rows } => rows,
+        }
+    }
+
+    /// Why a result of `row_count` rows fails this rule, or `None` when it
+    /// passes. `truncated` means the run stopped reading at `row_count`, so the
+    /// real count is at least that.
+    pub fn failure(&self, row_count: u64, truncated: bool) -> Option<String> {
+        let got = rows_text(row_count, truncated);
+        match *self {
+            Self::NoRows if row_count > 0 => Some(format!("Returned {got}; expected none.")),
+            Self::AtMost { rows } if row_count > u64::from(rows) => {
+                Some(format!("Returned {got}; expected at most {rows}."))
+            }
+            Self::AtLeast { rows } if row_count < u64::from(rows) => {
+                Some(format!("Returned {got}; expected at least {rows}."))
+            }
+            _ => None,
+        }
+    }
+}
+
+/// "1 row", "3 rows", or "at least 5 rows" for a count the run stopped at.
+fn rows_text(count: u64, truncated: bool) -> String {
+    let noun = if count == 1 { "row" } else { "rows" };
+    if truncated {
+        format!("at least {count} {noun}")
+    } else {
+        format!("{count} {noun}")
+    }
+}
+
+/// The first few rows of a failing check's result, as the history shows them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResultSample {
+    pub columns: Vec<String>,
+    pub rows: Vec<Vec<serde_json::Value>>,
+}
+
+impl ResultSample {
+    /// The first [`SAMPLE_ROWS`] rows, each cell cut to [`SAMPLE_CELL_CHARS`].
+    ///
+    /// A long string is cut with an ellipsis; an object or array (a JSON
+    /// column) is flattened to its text first, so the cap applies to it too.
+    pub fn from_rows(columns: &[String], rows: &[Vec<serde_json::Value>]) -> Self {
+        Self {
+            columns: columns.to_vec(),
+            rows: rows
+                .iter()
+                .take(SAMPLE_ROWS)
+                .map(|row| row.iter().map(sample_cell).collect())
+                .collect(),
+        }
+    }
+}
+
+fn sample_cell(value: &serde_json::Value) -> serde_json::Value {
+    let text = match value {
+        serde_json::Value::String(text) => text.clone(),
+        serde_json::Value::Array(_) | serde_json::Value::Object(_) => value.to_string(),
+        _ => return value.clone(),
+    };
+    if text.chars().count() <= SAMPLE_CELL_CHARS {
+        return serde_json::Value::String(text);
+    }
+    let mut cut: String = text.chars().take(SAMPLE_CELL_CHARS).collect();
+    cut.push('…');
+    serde_json::Value::String(cut)
+}
+
 /// One scheduled report.
 ///
 /// `sql` is a RESOLVED SNAPSHOT, not a pointer into the saved query. Query
@@ -293,6 +414,21 @@ pub struct Schedule {
     pub sql: String,
     pub recurrence: Recurrence,
     pub format: OutputFormat,
+    /// What the result must look like for the run to pass. `None` = a plain
+    /// report, which fails only when the run itself does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub check: Option<CheckRule>,
+    /// Whether a run writes its result to a file. Only a schedule with a
+    /// `check` may turn this off — otherwise it would do nothing at all. The
+    /// output fields below are kept while it is off, so turning it back on
+    /// restores them.
+    #[serde(default = "default_write_file")]
+    pub write_file: bool,
+    /// Raise an OS notification when a SCHEDULED run starts failing, and again
+    /// when it recovers — on the change, never on every failing run, so a
+    /// five-minute check broken overnight is one alert, not a hundred.
+    #[serde(default)]
+    pub notify: bool,
     /// Absolute path of the directory the output lands in.
     pub directory: String,
     /// Filename STEM pattern, tokens included, WITHOUT an extension — the
@@ -315,6 +451,9 @@ pub struct Schedule {
 }
 
 fn default_enabled() -> bool {
+    true
+}
+fn default_write_file() -> bool {
     true
 }
 fn default_keep() -> u32 {
@@ -340,22 +479,57 @@ impl Schedule {
         if !sql_only_reads(&self.sql) {
             return Some(WRITE_REFUSED);
         }
-        if self.directory.trim().is_empty() {
-            return Some("Pick an output folder.");
+        if !self.write_file && self.check.is_none() {
+            return Some(
+                "This schedule has nothing to do — add a check or save the result to a file.",
+            );
         }
-        if self.filename.trim().is_empty() {
-            return Some("Output filename is required.");
+        if let Some(message) = self.check.as_ref().and_then(CheckRule::validation_error) {
+            return Some(message);
+        }
+        if self.write_file {
+            if self.directory.trim().is_empty() {
+                return Some("Pick an output folder.");
+            }
+            if self.filename.trim().is_empty() {
+                return Some("Output filename is required.");
+            }
         }
         if let Some(message) = self.recurrence.validation_error() {
             return Some(message);
         }
-        if self.keep == 0 {
-            return Some("Keep at least one output file.");
-        }
-        if self.row_limit == 0 {
-            return Some("Row limit must be at least 1.");
+        if self.write_file {
+            if self.keep == 0 {
+                return Some("Keep at least one output file.");
+            }
+            if self.row_limit == 0 {
+                return Some("Row limit must be at least 1.");
+            }
+            // A file-writing run reads up to `row_limit`, and the check judges
+            // what was read — so a limit below the check's threshold would cut
+            // the result short of the very row that fails it.
+            if let Some(check) = self.check {
+                if self.row_limit < check.rows_needed() {
+                    return Some(
+                        "Row limit must be above the check's row count, or a cut result \
+                         could hide a failure.",
+                    );
+                }
+            }
         }
         None
+    }
+
+    /// Rows a run reads before it stops.
+    ///
+    /// A file-writing run reads `row_limit`. A check that writes no file reads
+    /// only what its verdict needs — plus enough for the sample, so a failing
+    /// "no rows" check still shows a handful of the offending rows.
+    pub fn run_row_limit(&self) -> u32 {
+        match self.check {
+            Some(check) if !self.write_file => check.rows_needed().max(SAMPLE_ROWS as u32),
+            _ => self.row_limit,
+        }
     }
 
     /// The output file's name — pattern tokens resolved, sanitized, extension
@@ -441,10 +615,10 @@ pub enum RunTrigger {
 
 /// One entry in a schedule's history.
 ///
-/// Exactly one of `path` / `error` is meaningful: `path` on success (so the
-/// manager can reveal the file), `error` on failure (the §5 message, stored as
-/// text because an `AppError` is not what the history is for — it is read by a
-/// person).
+/// `error` is set when the run itself failed (the §5 message, stored as text
+/// because an `AppError` is not what the history is for — it is read by a
+/// person). Otherwise `path` names the file it wrote, if the schedule writes
+/// one, and `check_failure` says why the result failed the schedule's check.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RunRecord {
@@ -463,12 +637,82 @@ pub struct RunRecord {
     pub truncated: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// Why the result failed the schedule's check — "Returned 12 rows;
+    /// expected none." `None` when it passed or there is no check.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub check_failure: Option<String>,
+    /// The first rows of a result that failed its check.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sample: Option<ResultSample>,
 }
 
 impl RunRecord {
-    /// Whether this run produced a file.
+    /// Whether the run itself completed — the query ran (and the file, if
+    /// any, was written). A check that ran and found bad rows SUCCEEDED: it
+    /// is a working check doing its job. See [`Self::failing`].
     pub fn succeeded(&self) -> bool {
         self.error.is_none()
+    }
+
+    /// Whether this run is a problem someone should hear about: it errored,
+    /// or its result failed the check. For a check schedule an error counts,
+    /// because the rule could not be verified.
+    pub fn failing(&self) -> bool {
+        self.error.is_some() || self.check_failure.is_some()
+    }
+
+    /// The one-line reason this run is failing, if it is.
+    pub fn failure_reason(&self) -> Option<&str> {
+        self.check_failure.as_deref().or(self.error.as_deref())
+    }
+}
+
+/// A change in a schedule's health worth telling someone about.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum Alert {
+    /// It was fine (or had never run) and now it is not.
+    Failing { reason: String },
+    /// It was failing and now it is not.
+    Recovered,
+}
+
+impl Alert {
+    /// The alert `latest` warrants after `previous`, or `None` when nothing
+    /// changed.
+    ///
+    /// On the TRANSITION only. A schedule that keeps failing is already
+    /// known to be failing, and repeating that every five minutes is how an
+    /// alert gets muted. A first-ever run that passes is not news either.
+    pub fn between(previous: Option<&RunRecord>, latest: &RunRecord) -> Option<Self> {
+        let was_failing = previous.is_some_and(RunRecord::failing);
+        match (was_failing, latest.failure_reason()) {
+            (false, Some(reason)) => Some(Self::Failing {
+                reason: reason.to_string(),
+            }),
+            (true, None) => Some(Self::Recovered),
+            _ => None,
+        }
+    }
+
+    /// The OS notification's title and body. English only: the string tables
+    /// live in the renderer, and a 3am notification is raised with no
+    /// renderer in the loop.
+    pub fn notification(&self, schedule: &Schedule) -> (String, String) {
+        let what = if schedule.check.is_some() {
+            "Check"
+        } else {
+            "Scheduled query"
+        };
+        match self {
+            Self::Failing { reason } => {
+                (format!("{what} failing: {}", schedule.name), reason.clone())
+            }
+            Self::Recovered => (
+                format!("{what} passing again: {}", schedule.name),
+                "The latest run succeeded.".to_string(),
+            ),
+        }
     }
 }
 
@@ -754,6 +998,9 @@ mod tests {
             sql: "SELECT 1".into(),
             recurrence: Recurrence::Daily { hour: 3, minute: 0 },
             format: OutputFormat::Csv,
+            check: None,
+            write_file: true,
+            notify: false,
             directory: "/tmp/reports".into(),
             filename: "{{name}}_{{date}}".into(),
             keep: DEFAULT_KEEP,
@@ -1247,6 +1494,10 @@ mod tests {
         assert_eq!(parsed.next_run_at, 0);
         assert_eq!(parsed.schema, None);
         assert_eq!(parsed.saved_query_id, None);
+        // A schedule from before checks existed is a plain report.
+        assert_eq!(parsed.check, None);
+        assert!(parsed.write_file);
+        assert!(!parsed.notify);
     }
 
     #[test]
@@ -1260,6 +1511,8 @@ mod tests {
             row_count: 3,
             truncated: false,
             error: None,
+            check_failure: None,
+            sample: None,
         };
         let json = serde_json::to_value(&ok).expect("ser");
         assert_eq!(json["trigger"], json!("manual"));
@@ -1276,5 +1529,227 @@ mod tests {
         assert!(!failed.succeeded());
         let back: RunRecord = serde_json::from_value(json).expect("de");
         assert_eq!(back, failed);
+    }
+
+    // --- checks -----------------------------------------------------------
+
+    fn record(error: Option<&str>, check_failure: Option<&str>) -> RunRecord {
+        RunRecord {
+            schedule_id: "s1".into(),
+            started_at: 1,
+            duration_ms: 1,
+            trigger: RunTrigger::Scheduled,
+            path: None,
+            row_count: 0,
+            truncated: false,
+            error: error.map(Into::into),
+            check_failure: check_failure.map(Into::into),
+            sample: None,
+        }
+    }
+
+    #[test]
+    fn check_rules_judge_the_row_count() {
+        assert_eq!(CheckRule::NoRows.failure(0, false), None);
+        assert_eq!(
+            CheckRule::NoRows.failure(1, false).as_deref(),
+            Some("Returned 1 row; expected none.")
+        );
+        // A run that stopped reading says so rather than pretending to know.
+        assert_eq!(
+            CheckRule::NoRows.failure(5, true).as_deref(),
+            Some("Returned at least 5 rows; expected none.")
+        );
+
+        let at_most = CheckRule::AtMost { rows: 3 };
+        assert_eq!(at_most.failure(3, false), None);
+        assert_eq!(
+            at_most.failure(4, false).as_deref(),
+            Some("Returned 4 rows; expected at most 3.")
+        );
+
+        let at_least = CheckRule::AtLeast { rows: 10 };
+        assert_eq!(at_least.failure(10, false), None);
+        assert_eq!(
+            at_least.failure(0, false).as_deref(),
+            Some("Returned 0 rows; expected at least 10.")
+        );
+    }
+
+    #[test]
+    fn a_check_reads_only_what_its_verdict_needs() {
+        assert_eq!(CheckRule::NoRows.rows_needed(), 1);
+        assert_eq!(CheckRule::AtMost { rows: 10 }.rows_needed(), 11);
+        assert_eq!(CheckRule::AtLeast { rows: 10 }.rows_needed(), 10);
+        assert_eq!(CheckRule::AtMost { rows: u32::MAX }.rows_needed(), u32::MAX);
+
+        let check_only = Schedule {
+            check: Some(CheckRule::NoRows),
+            write_file: false,
+            ..schedule()
+        };
+        // Enough for the sample, not the 100k a report reads.
+        assert_eq!(check_only.run_row_limit(), SAMPLE_ROWS as u32);
+        let big = Schedule {
+            check: Some(CheckRule::AtMost { rows: 50 }),
+            ..check_only.clone()
+        };
+        assert_eq!(big.run_row_limit(), 51);
+        // Writing a file: the schedule's own limit, as before.
+        let writing = Schedule {
+            write_file: true,
+            ..check_only
+        };
+        assert_eq!(writing.run_row_limit(), DEFAULT_ROW_LIMIT);
+    }
+
+    #[test]
+    fn a_check_only_schedule_needs_no_output_fields_but_must_do_something() {
+        let check_only = Schedule {
+            check: Some(CheckRule::NoRows),
+            write_file: false,
+            directory: "".into(),
+            filename: "".into(),
+            keep: 0,
+            ..schedule()
+        };
+        assert_eq!(check_only.validation_error(), None);
+
+        let idle = Schedule {
+            check: None,
+            ..check_only.clone()
+        };
+        assert!(idle
+            .validation_error()
+            .expect("refused")
+            .contains("nothing to do"));
+
+        let pointless = Schedule {
+            check: Some(CheckRule::AtLeast { rows: 0 }),
+            ..check_only
+        };
+        assert!(pointless
+            .validation_error()
+            .expect("refused")
+            .contains("always passes"));
+    }
+
+    #[test]
+    fn a_row_limit_that_could_hide_a_failure_is_refused() {
+        let hiding = Schedule {
+            check: Some(CheckRule::AtMost { rows: 100 }),
+            row_limit: 100,
+            ..schedule()
+        };
+        assert!(hiding
+            .validation_error()
+            .expect("refused")
+            .contains("Row limit"));
+        let fine = Schedule {
+            row_limit: 101,
+            ..hiding
+        };
+        assert_eq!(fine.validation_error(), None);
+    }
+
+    #[test]
+    fn the_sample_keeps_a_few_rows_and_cuts_long_cells() {
+        let columns = vec!["id".to_string(), "note".to_string(), "meta".to_string()];
+        let long = "x".repeat(SAMPLE_CELL_CHARS + 50);
+        let rows: Vec<Vec<serde_json::Value>> = (0..8)
+            .map(|i| vec![json!(i), json!(long.clone()), json!({"k": "v"})])
+            .collect();
+        let sample = ResultSample::from_rows(&columns, &rows);
+        assert_eq!(sample.columns, columns);
+        assert_eq!(sample.rows.len(), SAMPLE_ROWS);
+        assert_eq!(sample.rows[0][0], json!(0));
+        let cut = sample.rows[0][1].as_str().expect("string");
+        assert_eq!(cut.chars().count(), SAMPLE_CELL_CHARS + 1);
+        assert!(cut.ends_with('…'));
+        // A JSON column is flattened to text.
+        assert_eq!(sample.rows[0][2], json!("{\"k\":\"v\"}"));
+    }
+
+    #[test]
+    fn a_failing_check_is_failing_but_still_succeeded() {
+        let tripped = record(None, Some("Returned 2 rows; expected none."));
+        assert!(tripped.succeeded());
+        assert!(tripped.failing());
+        assert_eq!(
+            tripped.failure_reason(),
+            Some("Returned 2 rows; expected none.")
+        );
+        let errored = record(Some("boom"), None);
+        assert!(!errored.succeeded());
+        assert!(errored.failing());
+        assert!(!record(None, None).failing());
+    }
+
+    #[test]
+    fn alerts_fire_on_the_change_not_on_every_failing_run() {
+        let ok = record(None, None);
+        let bad = record(None, Some("Returned 2 rows; expected none."));
+        let broke = record(Some("connection refused"), None);
+
+        assert_eq!(Alert::between(None, &ok), None, "a first pass is not news");
+        assert_eq!(
+            Alert::between(None, &bad),
+            Some(Alert::Failing {
+                reason: "Returned 2 rows; expected none.".into()
+            })
+        );
+        assert_eq!(
+            Alert::between(Some(&ok), &broke),
+            Some(Alert::Failing {
+                reason: "connection refused".into()
+            })
+        );
+        assert_eq!(Alert::between(Some(&bad), &bad), None, "still failing");
+        assert_eq!(Alert::between(Some(&bad), &broke), None, "still failing");
+        assert_eq!(Alert::between(Some(&bad), &ok), Some(Alert::Recovered));
+        assert_eq!(Alert::between(Some(&ok), &ok), None);
+    }
+
+    #[test]
+    fn notifications_name_the_schedule_and_say_what_kind_it_is() {
+        let check = Schedule {
+            name: "Orphan orders".into(),
+            check: Some(CheckRule::NoRows),
+            ..schedule()
+        };
+        let failing = Alert::Failing {
+            reason: "Returned 2 rows; expected none.".into(),
+        };
+        assert_eq!(
+            failing.notification(&check),
+            (
+                "Check failing: Orphan orders".to_string(),
+                "Returned 2 rows; expected none.".to_string()
+            )
+        );
+        assert_eq!(
+            Alert::Recovered.notification(&schedule()).0,
+            "Scheduled query passing again: Nightly orders"
+        );
+    }
+
+    #[test]
+    fn a_check_round_trips_on_the_wire() {
+        let check = Schedule {
+            check: Some(CheckRule::AtMost { rows: 3 }),
+            write_file: false,
+            notify: true,
+            ..schedule()
+        };
+        let json = serde_json::to_value(&check).expect("ser");
+        assert_eq!(json["check"], json!({"kind": "atMost", "rows": 3}));
+        assert_eq!(json["writeFile"], json!(false));
+        assert_eq!(json["notify"], json!(true));
+        assert_eq!(
+            serde_json::to_value(CheckRule::NoRows).expect("ser"),
+            json!({"kind": "noRows"})
+        );
+        let back: Schedule = serde_json::from_value(json).expect("de");
+        assert_eq!(back, check);
     }
 }

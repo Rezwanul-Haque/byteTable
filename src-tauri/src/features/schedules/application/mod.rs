@@ -31,8 +31,8 @@ use crate::shared::engine::QueryOptions;
 use crate::shared::error::AppError;
 
 use super::domain::{
-    resolve_sql_tokens, rows_to_csv, rows_to_json, sql_only_reads, OutputFormat, RunRecord,
-    RunTrigger, Schedule, WRITE_REFUSED,
+    resolve_sql_tokens, rows_to_csv, rows_to_json, sql_only_reads, OutputFormat, ResultSample,
+    RunRecord, RunTrigger, Schedule, WRITE_REFUSED,
 };
 use super::ports::{RunLogRepository, ScheduleRepository};
 
@@ -126,6 +126,14 @@ pub fn run_history(
     runs.all()
 }
 
+/// A schedule's most recent run, if it has one — what the next run's outcome
+/// is compared against to decide whether it is news ([`Alert::between`]).
+///
+/// [`Alert::between`]: super::domain::Alert::between
+pub fn last_run(runs: &dyn RunLogRepository, schedule_id: &str) -> Option<RunRecord> {
+    runs.all().ok()?.remove(schedule_id)?.pop()
+}
+
 /// The ids of the schedules due to run at `now`.
 ///
 /// A disabled schedule is never due. A schedule whose `next_run_at` is 0 has
@@ -191,6 +199,10 @@ pub fn next_run_at(schedule: &Schedule, now: DateTime<Local>) -> u64 {
 /// this path writes to a file and never goes near IPC. `truncated` is recorded
 /// so a report quietly losing rows to the schedule's own limit is visible in
 /// the history.
+///
+/// A schedule with a check is judged on the rows it read: a failing result is
+/// a SUCCESSFUL run with a `check_failure` (and a sample of the rows), and the
+/// file — if the schedule writes one — is written either way.
 pub async fn run_schedule(
     deps: &RunDeps<'_>,
     schedule: &Schedule,
@@ -207,10 +219,12 @@ pub async fn run_schedule(
             started_at: epoch_ms(now),
             duration_ms,
             trigger,
-            path: Some(success.path),
+            path: success.path,
             row_count: success.row_count,
             truncated: success.truncated,
             error: None,
+            check_failure: success.check_failure,
+            sample: success.sample,
         },
         Err(err) => RunRecord {
             schedule_id: schedule.id.clone(),
@@ -221,6 +235,8 @@ pub async fn run_schedule(
             row_count: 0,
             truncated: false,
             error: Some(err.to_string()),
+            check_failure: None,
+            sample: None,
         },
     };
     // A history write that fails must not turn a successful run into a failed
@@ -231,9 +247,12 @@ pub async fn run_schedule(
 
 /// What a successful run produced.
 struct RunSuccess {
-    path: String,
+    /// The file written, when the schedule writes one.
+    path: Option<String>,
     row_count: u64,
     truncated: bool,
+    check_failure: Option<String>,
+    sample: Option<ResultSample>,
 }
 
 /// The run itself, as a `Result` so every step can use `?`. Wrapped by
@@ -284,13 +303,13 @@ async fn execute(
     // Everything from here on must close the handle, success or not — a leaked
     // handle is a connection held open until the app quits.
     let result =
-        query_and_write(deps, schedule, now, env_label(saved.env), &opened.handle_id).await;
+        query_check_and_write(deps, schedule, now, env_label(saved.env), &opened.handle_id).await;
     let _ = connections_app::close_connection(deps.manager, &opened.handle_id).await;
     result
 }
 
-/// Run the SQL, format it, write it, prune old output.
-async fn query_and_write(
+/// Run the SQL, judge it against the check, then format, write and prune.
+async fn query_check_and_write(
     deps: &RunDeps<'_>,
     schedule: &Schedule,
     now: DateTime<Local>,
@@ -303,13 +322,35 @@ async fn query_and_write(
         handle,
         &sql,
         QueryOptions {
-            row_limit: schedule.row_limit as usize,
+            row_limit: schedule.run_row_limit() as usize,
             schema: schedule.schema.clone(),
         },
     )
     .await?;
 
     let columns: Vec<String> = result.columns.iter().map(|c| c.name.clone()).collect();
+    let row_count = result.row_count as u64;
+    let check_failure = schedule
+        .check
+        .and_then(|check| check.failure(row_count, result.truncated));
+    let sample = match check_failure {
+        Some(_) if !result.rows.is_empty() => Some(ResultSample::from_rows(&columns, &result.rows)),
+        _ => None,
+    };
+
+    if !schedule.write_file {
+        return Ok(RunSuccess {
+            path: None,
+            row_count,
+            // Not "truncated" in the sense the history warns about: a check
+            // that writes no file stops reading on purpose, once it has seen
+            // enough to decide (see `Schedule::run_row_limit`).
+            truncated: false,
+            check_failure,
+            sample,
+        });
+    }
+
     let text = match schedule.format {
         OutputFormat::Csv => rows_to_csv(&columns, &result.rows),
         OutputFormat::Json => rows_to_json(&columns, &result.rows),
@@ -332,9 +373,11 @@ async fn query_and_write(
     prune_outputs(schedule, directory, env);
 
     Ok(RunSuccess {
-        path: path_text,
-        row_count: result.row_count as u64,
+        path: Some(path_text),
+        row_count,
         truncated: result.truncated,
+        check_failure,
+        sample,
     })
 }
 
@@ -426,7 +469,7 @@ mod tests {
     use crate::features::connections::domain::SavedConnection;
     use crate::features::connections::infrastructure::JsonFileConnectionRepository;
     use crate::features::connections::secrets::InMemorySecretStore;
-    use crate::features::schedules::domain::{OutputFormat, Recurrence};
+    use crate::features::schedules::domain::{CheckRule, OutputFormat, Recurrence};
     use crate::features::schedules::infrastructure::{
         JsonFileRunLogRepository, JsonFileScheduleRepository,
     };
@@ -510,6 +553,9 @@ mod tests {
             sql: "SELECT 1".into(),
             recurrence: Recurrence::Daily { hour: 3, minute: 0 },
             format: OutputFormat::Csv,
+            check: None,
+            write_file: true,
+            notify: false,
             directory: "/tmp/reports".into(),
             filename: "{{name}}_{{date}}".into(),
             keep: 3,
@@ -626,6 +672,8 @@ mod tests {
             row_count: 0,
             truncated: false,
             error: Some("boom".into()),
+            check_failure: None,
+            sample: None,
         })
         .expect("record");
 
@@ -1011,5 +1059,113 @@ mod tests {
         .await;
         assert!(record.succeeded(), "run failed: {:?}", record.error);
         assert!(nested.exists());
+    }
+
+    // --- checks -----------------------------------------------------------
+
+    #[tokio::test]
+    async fn a_failing_check_is_recorded_with_its_reason_and_a_sample() {
+        let rig = Rig::new();
+        let schedule = Schedule {
+            check: Some(CheckRule::NoRows),
+            write_file: false,
+            ..rig.schedule("SELECT id, note FROM orders ORDER BY id", OutputFormat::Csv)
+        };
+        let record = run_schedule(
+            &rig.deps(),
+            &schedule,
+            RunTrigger::Scheduled,
+            at(2026, 10, 26, 3, 0),
+        )
+        .await;
+
+        assert!(record.succeeded(), "run failed: {:?}", record.error);
+        assert!(record.failing());
+        assert_eq!(
+            record.check_failure.as_deref(),
+            Some("Returned 2 rows; expected none.")
+        );
+        let sample = record.sample.expect("sample");
+        assert_eq!(sample.columns, vec!["id".to_string(), "note".to_string()]);
+        assert_eq!(sample.rows.len(), 2);
+        assert_eq!(sample.rows[0][1], serde_json::json!("first"));
+        // No file, and no folder created for one.
+        assert!(record.path.is_none());
+        assert!(!rig.out_dir.exists());
+        assert!(!record.truncated);
+        // The history keeps the failure.
+        let history = run_history(&rig.runs).expect("history");
+        assert_eq!(history["s1"][0].check_failure, record.check_failure);
+    }
+
+    #[tokio::test]
+    async fn a_passing_check_records_no_failure_and_no_sample() {
+        let rig = Rig::new();
+        let schedule = Schedule {
+            check: Some(CheckRule::NoRows),
+            write_file: false,
+            ..rig.schedule(
+                "SELECT id FROM orders WHERE note IS NULL",
+                OutputFormat::Csv,
+            )
+        };
+        let record = run_schedule(
+            &rig.deps(),
+            &schedule,
+            RunTrigger::Manual,
+            at(2026, 10, 26, 3, 0),
+        )
+        .await;
+
+        assert!(record.succeeded(), "run failed: {:?}", record.error);
+        assert!(!record.failing());
+        assert_eq!(record.row_count, 0);
+        assert!(record.sample.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_check_that_also_writes_a_file_writes_it_even_when_failing() {
+        let rig = Rig::new();
+        let schedule = Schedule {
+            check: Some(CheckRule::AtMost { rows: 1 }),
+            ..rig.schedule("SELECT id FROM orders ORDER BY id", OutputFormat::Csv)
+        };
+        let record = run_schedule(
+            &rig.deps(),
+            &schedule,
+            RunTrigger::Manual,
+            at(2026, 10, 26, 3, 0),
+        )
+        .await;
+
+        assert_eq!(
+            record.check_failure.as_deref(),
+            Some("Returned 2 rows; expected at most 1.")
+        );
+        let written = std::fs::read_to_string(record.path.expect("path")).expect("read");
+        assert_eq!(written, "id\n1\n2\n");
+    }
+
+    #[test]
+    fn last_run_is_the_newest_record_for_that_schedule() {
+        let runs = FakeRuns::default();
+        assert!(last_run(&runs, "s1").is_none());
+        for started_at in [1, 2] {
+            runs.record(&RunRecord {
+                schedule_id: "s1".into(),
+                started_at,
+                duration_ms: 1,
+                trigger: RunTrigger::Scheduled,
+                path: None,
+                row_count: 0,
+                truncated: false,
+                error: None,
+                check_failure: None,
+                sample: None,
+            })
+            .expect("record");
+        }
+        assert_eq!(last_run(&runs, "s1").expect("run").started_at, 2);
+        assert!(last_run(&runs, "other").is_none());
     }
 }

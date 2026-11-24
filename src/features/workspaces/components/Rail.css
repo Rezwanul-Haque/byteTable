@@ -316,6 +316,7 @@
    neutral hover rather than a tinted one: it opens a manager, like Settings
    does, where the bug's red says "you are reporting a problem". */
 .rail-schedules {
+  position: relative;
   width: 38px;
   height: 38px;
   border-radius: 11px;
@@ -336,6 +337,28 @@
 .rail-schedules:hover {
   color: var(--text);
   background: var(--bg3);
+}
+
+/* Failing schedules (an errored run or a failed check). A count rather than
+   the update button's bare dot: "2 checks failing" is a different morning
+   from "1", and the number is the whole message. The error colour, ringed in
+   the rail's own background so it reads as sitting on the icon's corner. */
+.rail-schedules-badge {
+  position: absolute;
+  top: 3px;
+  inset-inline-end: 2px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--error);
+  color: #fff;
+  border: 1.5px solid var(--bg1);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 12px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Report an issue (M24) — sits below the settings gear. Idle faint; hover

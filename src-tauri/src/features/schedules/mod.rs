@@ -1,6 +1,9 @@
 //! Schedules slice (M41, `MILESTONE_41_SCHEDULED_QUERIES.md`): run a saved
 //! report on a recurrence and drop the result into a folder as CSV or JSON,
-//! with nobody at the keyboard.
+//! with nobody at the keyboard. A schedule may also carry a CHECK ("should
+//! return no rows"), with or without the file, which turns it into a local
+//! data-quality alert: a failing result is recorded with a sample of the rows,
+//! and a notifying schedule raises an OS notification when its health changes.
 //!
 //! Layering (dependencies point left): domain ← application ←
 //! (infrastructure | commands | scheduler).

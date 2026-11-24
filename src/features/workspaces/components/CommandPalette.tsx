@@ -275,6 +275,17 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
           },
         ]
       : [];
+    // M45: debug the active SQL tab's statement (palette and Query menu).
+    const debugCmds: Command[] = activeIsSql
+      ? [
+          {
+            id: "cmd-debug",
+            icon: "bug_report",
+            label: t("debug.palette"),
+            run: () => emitCmd("debug"),
+          },
+        ]
+      : [];
     const snippets: Command = {
       id: "cmd-snippets",
       icon: "bolt",
@@ -316,6 +327,7 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
       savedList,
       queryHistory,
       snippets,
+      ...debugCmds,
       ...aiCmds,
       ...savedCmds,
     ];

@@ -48,6 +48,7 @@ import {
 } from "@codemirror/language";
 import { Compartment, EditorSelection, EditorState, Prec } from "@codemirror/state";
 import {
+  Decoration,
   EditorView,
   crosshairCursor,
   drawSelection,
@@ -308,6 +309,21 @@ interface SqlCodeEditorProps {
    * available in an open editor without re-mounting. Defaults to none.
    */
   snippets?: Snippet[];
+  /**
+   * Make the buffer inert: no typing and no text caret (query debug mode,
+   * where the steps are cut from this exact text). Scrolling still works.
+   */
+  readOnly?: boolean;
+  /**
+   * Highlight `[from, to)` with `.dbg-mark` and keep it in view — the clause
+   * the current debug step is about. Null for none.
+   */
+  mark?: readonly [number, number] | null;
+}
+
+/** Read-only: no edits, and not contenteditable, so no caret is drawn. */
+function readOnlyExt(on: boolean) {
+  return on ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : [];
 }
 
 export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>(
@@ -323,6 +339,8 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
       schema,
       engine,
       snippets,
+      readOnly = false,
+      mark = null,
     },
     ref,
   ) {
@@ -339,6 +357,9 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
     // a compartment so flipping the setting reconfigures the open view.
     const editorKeymap = useSettingsStore((state) => state.settings.editorKeymap);
     const vimCompartmentRef = useRef(new Compartment());
+    // Debug mode's read-only switch and clause highlight, reconfigured live.
+    const readOnlyCompartmentRef = useRef(new Compartment());
+    const markCompartmentRef = useRef(new Compartment());
     // What the view was built with, so the swap effect below can skip the
     // mount pass (where the state is already seeded with the right value).
     const mountedKeymapRef = useRef(editorKeymap);
@@ -556,6 +577,8 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
             // live; seeded from the persisted value. Placed after sqlTheme so
             // its `&` fontSize wins.
             fontCompartmentRef.current.of(fontSizeTheme(fontPxRef.current)),
+            readOnlyCompartmentRef.current.of(readOnlyExt(readOnly)),
+            markCompartmentRef.current.of([]),
             EditorState.tabSize.of(2),
             // Tab inserts two spaces (spec §3.7), via indentWithTab + a 2-space
             // indent unit (so Tab/Shift-Tab indent in two-space steps).
@@ -606,6 +629,36 @@ export const SqlCodeEditor = forwardRef<SqlCodeEditorHandle, SqlCodeEditorProps>
         effects: vimCompartmentRef.current.reconfigure(vimFor(editorKeymap)),
       });
     }, [editorKeymap]);
+
+    useEffect(() => {
+      const view = viewRef.current;
+      if (!view) return;
+      view.dispatch({ effects: readOnlyCompartmentRef.current.reconfigure(readOnlyExt(readOnly)) });
+    }, [readOnly]);
+
+    // The clause highlight follows the step; a range past the end of the
+    // document (the text changed under a stale plan) is dropped, not clamped.
+    const markFrom = mark?.[0] ?? -1;
+    const markTo = mark?.[1] ?? -1;
+    useEffect(() => {
+      const view = viewRef.current;
+      if (!view) return;
+      const valid = markFrom >= 0 && markTo > markFrom && markTo <= view.state.doc.length;
+      view.dispatch({
+        effects: [
+          markCompartmentRef.current.reconfigure(
+            valid
+              ? EditorView.decorations.of(
+                  Decoration.set([Decoration.mark({ class: "dbg-mark" }).range(markFrom, markTo)]),
+                )
+              : [],
+          ),
+          ...(valid
+            ? [EditorView.scrollIntoView(EditorSelection.range(markFrom, markTo), { y: "nearest" })]
+            : []),
+        ],
+      });
+    }, [markFrom, markTo]);
 
     // Reconcile external `value` changes (snippet / history / saved-query load)
     // into the view. Skip when the doc already matches — typing updates `value`

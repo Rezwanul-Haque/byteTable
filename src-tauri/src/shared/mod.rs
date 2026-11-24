@@ -5,6 +5,7 @@
 
 pub mod error;
 pub mod readonly;
+pub mod sql_lex;
 
 // Engine port families are grouped under `ports/`; re-exported here at their
 // historical paths so `crate::shared::engine` (= the SQL family) /

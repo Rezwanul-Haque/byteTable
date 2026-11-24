@@ -319,6 +319,7 @@ pub fn run() {
         // `panic = "abort"` in the release profile, the `state()` panic that
         // caused was an instant crash on every cold open.
         .manage(features::file_open::PendingOpens::default())
+        .manage(features::query_debug::commands::QueryDebugState::default())
         .plugin(tauri_plugin_os::init())
         // Single-instance guard (MUST be the first plugin registered): a second
         // launch — e.g. clicking the AppImage again — does not spawn another
@@ -625,6 +626,9 @@ pub fn run() {
             features::explain::commands::explain_measure,
             features::explain::commands::explain_plan,
             features::explain::commands::explain_raw,
+            features::query_debug::commands::debug_plan,
+            features::query_debug::commands::debug_run_step,
+            features::query_debug::commands::debug_cancel,
             features::insights::commands::column_stats,
             features::mutate::commands::row_update,
             features::mutate::commands::rows_delete,

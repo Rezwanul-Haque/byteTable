@@ -31,6 +31,7 @@ export type BtCmdId =
   | "run"
   | "format"
   | "explain"
+  | "debug"
   | "save-query"
   | "saved-queries"
   | "query-history"

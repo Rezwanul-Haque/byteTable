@@ -60,6 +60,16 @@ import { useBtCmd } from "../../../shared/ui/btCmd";
 import type { SqlRun, Tab, Workspace } from "../types";
 import { homeSchema } from "../types";
 import { ExecutionMinimap, ExplainPanel } from "./explain";
+import { DebugBigTable, DebugCannot, DebugPlanning, DebugView } from "./DebugView";
+import {
+  clauseCounts,
+  focusOf,
+  lastStepOfClause,
+  maxCount,
+  stagesOf,
+  type Sampling,
+} from "../debugModel";
+import { useQueryDebug } from "../hooks/useQueryDebug";
 import { detectedTable } from "../explainClauses";
 import { formatSql } from "../formatSql";
 import { previewHtml } from "../sqlPreview";
@@ -218,6 +228,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
 
   const clearSqlRuns = useWorkspacesStore((s) => s.clearSqlRuns);
   const setSqlEditorHeight = useWorkspacesStore((s) => s.setSqlEditorHeight);
+  const openSqlTabWith = useWorkspacesStore((s) => s.openSqlTabWith);
 
   const setSqlSavedLink = useWorkspacesStore((s) => s.setSqlSavedLink);
   const setSqlParams = useWorkspacesStore((s) => s.setSqlParams);
@@ -251,10 +262,12 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   // True when the editor's whole buffer is selected (Mod-A) — flips Run to
   // "Run All" so it's clear the entire buffer (every statement) will run.
   const [allSelected, setAllSelected] = useState(false);
-  // Transient view toggle: the results area shows either the query result
-  // ('result') or the execution-order teaching panel ('explain'). Local —
-  // it's a view flip, not buffer/result state, so it need not survive a switch.
-  const [view, setView] = useState<"result" | "explain">("result");
+  // Transient view toggle: the results area shows the query result
+  // ('result'), the execution-order teaching panel ('explain') or the query
+  // debugger ('debug'). Local — it's a view flip, not buffer/result state, so
+  // it need not survive a switch.
+  const [view, setView] = useState<"result" | "explain" | "debug">("result");
+  const debugging = view === "debug";
   // The parameter prompt, when open: the run it is gathering values for.
   // `source` is the SQL that run will use (the caret statement, a selection, or
   // the whole buffer), captured when the prompt opened so the dialog cannot
@@ -494,6 +507,45 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
     return (table: string) => byName.get(table) ?? null;
   }, [tableEntries]);
 
+  // --- Query debug mode (M45) -------------------------------------------------
+  // The steps run one at a time (useQueryDebug); `dbgIdx` is the step on show.
+  // Until the user moves, the view follows the run and, once it is done, lands
+  // on the step where the rows run out (or the biggest drop).
+  const qdbg = useQueryDebug({
+    handleId: workspace.handleId,
+    schema: schemaName,
+    approxRows,
+    failMessage: t("ws.sql.queryFailed"),
+  });
+  const [dbgIdx, setDbgIdxRaw] = useState(0);
+  const dbgMoved = useRef(false);
+  const setDbgIdx = (i: number) => {
+    dbgMoved.current = true;
+    setDbgIdxRaw(i);
+  };
+  const dbgPlan = qdbg.state.plan;
+  const dbgStages = useMemo(
+    () =>
+      dbgPlan && qdbg.state.phase !== "confirm"
+        ? stagesOf(dbgPlan, qdbg.state.outcomes, qdbg.state.runningIdx)
+        : [],
+    [dbgPlan, qdbg.state.phase, qdbg.state.outcomes, qdbg.state.runningIdx],
+  );
+  const dbgFocus = focusOf(dbgStages);
+  const dbgCur = Math.min(dbgIdx, Math.max(0, dbgStages.length - 1));
+  const dbgStage = dbgStages[dbgCur] ?? null;
+  const dbgRunning = qdbg.state.phase === "running";
+  const dbgSampling: Sampling | null =
+    dbgPlan?.sampled != null ? { rows: dbgPlan.sampled, table: dbgPlan.sources[0] ?? "" } : null;
+  useEffect(() => {
+    if (dbgMoved.current) return;
+    if (qdbg.state.phase === "running" && qdbg.state.runningIdx != null) {
+      setDbgIdxRaw(qdbg.state.runningIdx);
+    } else if (qdbg.state.phase === "done") {
+      setDbgIdxRaw(Math.max(0, dbgFocus.zeroAt));
+    }
+  }, [qdbg.state.phase, qdbg.state.runningIdx, dbgFocus.zeroAt]);
+
   // Ensure the table list exists even if the sidebar hasn't fetched it yet
   // (cache-first — a no-op once warmed).
   useEffect(() => {
@@ -579,6 +631,8 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   ) => {
     const raw = (override ?? text).trim();
     if (running || raw === "") return;
+    // Run leaves debug mode: the result is what comes next.
+    if (debugging) stopDebugView();
 
     // Resolve `:placeholders` FIRST, so everything downstream — the statement
     // split, the result tabs, the history entries and the backend's read-only
@@ -819,10 +873,62 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
       setView("result");
       return;
     }
+    if (debugging) qdbg.exit();
     setExplainSql(editorRef.current?.pickStatement() ?? text);
     setExplainActiveIdx(0);
     setView("explain");
   };
+
+  // Enter debug mode on the editor's statement. Clears popovers and the
+  // completion popup, and un-minimizes the results area; nothing in the buffer
+  // or the previous result is touched, so leaving puts everything back.
+  const startDebug = () => {
+    setPop(null);
+    editorRef.current?.dismissCompletion();
+    setResultsMin(false);
+    dbgMoved.current = false;
+    setDbgIdxRaw(0);
+    setView("debug");
+    qdbg.start(text);
+  };
+  /** Leave debug (or Explain) for the result view, without running anything. */
+  function stopDebugView() {
+    qdbg.exit();
+    setView("result");
+  }
+  const toggleDebug = () => (debugging ? stopDebugView() : startDebug());
+  // Finish: leave debug mode and run the full query (B5). An UPDATE / DELETE
+  // was a dry run, and Run has no production confirm, so its last step is
+  // Done instead: leave without running — applying it is a deliberate Run.
+  const dbgIsWrite = dbgPlan?.write != null;
+  const finishDebug = () => {
+    stopDebugView();
+    if (!dbgIsWrite) run(text);
+  };
+
+  // F10 next / Shift+F10 previous / Esc exits — only for this (the visible)
+  // SQL tab, and Esc only when focus is not in the assistant drawer, a modal
+  // or an editor popover, which own their own Esc.
+  useEffect(() => {
+    if (!debugging) return;
+    const onKey = (e: KeyboardEvent) => {
+      const n = dbgStages.length;
+      if (e.key === "F10") {
+        e.preventDefault();
+        if (!e.shiftKey && n > 0 && dbgCur >= n - 1 && !dbgRunning) finishDebug();
+        else if (n > 0) setDbgIdx(Math.max(0, Math.min(n - 1, dbgCur + (e.shiftKey ? -1 : 1))));
+      } else if (e.key === "Escape") {
+        const target = e.target as HTMLElement | null;
+        if (target?.closest?.(".ai-panel, .modal, .modal-scrim, .editor-pop, .cm-tooltip")) return;
+        e.preventDefault();
+        stopDebugView();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // The handlers read the latest step state through these deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debugging, dbgStages.length, dbgCur, dbgRunning]);
 
   // Title-bar Query/File/View menu commands (bt:cmd bus). Only the ACTIVE SQL
   // tab is mounted (WorkspaceContent renders just the active tab), so exactly
@@ -830,6 +936,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   useBtCmd("run", () => run());
   useBtCmd("format", format);
   useBtCmd("explain", runExplain);
+  useBtCmd("debug", toggleDebug);
   useBtCmd("save-query", () => setPop("save"));
   useBtCmd("open-sql-file", openFile);
   // The palette's assistant requests (this tab on screen, or opened to receive
@@ -909,7 +1016,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   // at least one run, or the Explain view. Otherwise the editor grows to fill
   // the tab (no placeholder pane). Prompt 5: a minimized pane also lets the
   // editor reclaim the space.
-  const resultsShown = view === "explain" || runs.length > 0;
+  const resultsShown = view !== "result" || runs.length > 0;
   const editorGrows = !resultsShown || resultsMin;
   const minBtn = (
     <button
@@ -943,6 +1050,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
             if (view === "explain") {
               setView("result");
             } else {
+              if (debugging) qdbg.exit();
               // Capture the statement at the caret — or, when text spanning
               // several statements is selected, that whole selection (matching
               // Run / ⌘↩). A multi-statement capture becomes one explain tab per
@@ -955,6 +1063,16 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
           title={t("ws.sql.explainTitle")}
         >
           {allSelected ? t("ws.sql.explainAll") : t("ws.sql.explain")}
+        </Btn>
+        <Btn
+          icon="bug_report"
+          variant={debugging ? "filled" : "tonal"}
+          small
+          aria-pressed={debugging}
+          onClick={toggleDebug}
+          title={t("debug.btnTitle")}
+        >
+          {t("debug.btn")}
         </Btn>
         {/* Only for a parameterized buffer: the way to revisit values that are
             already filled in, since a plain run just uses them. */}
@@ -1094,13 +1212,23 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
       ) : null}
 
       <div
-        className={"sql-editor-wrap" + (editorGrows ? " grow" : "")}
+        className={"sql-editor-wrap" + (editorGrows ? " grow" : "") + (debugging ? " dbg-on" : "")}
         ref={editorWrapRef}
         // Inline height only when the editor is NOT in grow mode (no results /
-        // minimized), so it never overrides the `.grow` rule's flex fill.
-        style={!editorGrows && tab.editorHeight != null ? { height: tab.editorHeight } : undefined}
+        // minimized), so it never overrides the `.grow` rule's flex fill. Not
+        // while debugging either: the step view takes the room (`.dbg-on`).
+        style={
+          !editorGrows && !debugging && tab.editorHeight != null
+            ? { height: tab.editorHeight }
+            : undefined
+        }
       >
         <div className="sql-editor-main">
+          {debugging ? (
+            <div className="dbg-lock">
+              <Icon name="lock" size={12} /> {t("debug.lock")}
+            </div>
+          ) : null}
           {aiUndo !== null ? (
             <button
               type="button"
@@ -1143,9 +1271,26 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
             schema={editorSchema}
             engine={workspace.info.engine}
             snippets={editorSnippets}
+            readOnly={debugging}
+            mark={debugging && dbgStage ? dbgStage.step.range : null}
           />
         </div>
-        <ExecutionMinimap sql={text} caret={caret} />
+        <ExecutionMinimap
+          sql={text}
+          caret={caret}
+          debug={
+            debugging && dbgStage
+              ? {
+                  clause: dbgStage.step.clause,
+                  counts: clauseCounts(dbgStages),
+                  onPick: (clause) => {
+                    const at = lastStepOfClause(dbgStages, clause);
+                    if (at >= 0) setDbgIdx(at);
+                  },
+                }
+              : null
+          }
+        />
       </div>
 
       {/* Drag handle between editor and results. Only meaningful when the
@@ -1163,13 +1308,17 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
       ) : null}
 
       {resultsShown ? (
-        <div className={"sql-results" + (resultsMin ? " minimized" : "")}>
+        <div
+          className={
+            "sql-results" + (resultsMin ? " minimized" : "") + (debugging ? " dbg-host" : "")
+          }
+        >
           {/* One result tab per executed statement (only worth showing for a
               multi-statement run). Same design as the terminal's session tabs:
               click focuses that statement's outcome, the × closes it. The first
               is focused after each run. A failed statement is badged with a red
               cross (and a red title) so it stands out in a strip of ticks. */}
-          {view !== "explain" && runs.length > 1 && !resultsMin ? (
+          {view === "result" && runs.length > 1 && !resultsMin ? (
             <div className="sqlres-tabs">
               {runs.map((r, i) => {
                 const active = r.id === activeRun?.id;
@@ -1210,7 +1359,131 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
               {resultMenu.element}
             </div>
           ) : null}
-          {view === "explain" ? (
+          {debugging ? (
+            <>
+              <div className="sql-result-bar dbg-bar">
+                {minBtn}
+                <span className="result-tab active dbg-tab">
+                  <Icon name="bug_report" size={13} />{" "}
+                  <span className="dbg-wide">{t("debug.tab")}</span>
+                </span>
+                {dbgStages.length ? (
+                  <>
+                    <span className="dbg-ctl">
+                      <button
+                        type="button"
+                        className="dbg-ctl-btn"
+                        disabled={dbgCur <= 0}
+                        onClick={() => setDbgIdx(Math.max(0, dbgCur - 1))}
+                        title={t("debug.prev")}
+                        aria-label={t("debug.prevAria")}
+                      >
+                        <Icon name="skip_previous" size={16} />
+                      </button>
+                      <span className="dbg-ctl-pos" aria-live="polite">
+                        <span className="dbg-wide">
+                          {t("debug.posLong", { n: dbgCur + 1, total: dbgStages.length })}
+                        </span>
+                        <span className="dbg-narrow">
+                          {t("debug.posShort", { n: dbgCur + 1, total: dbgStages.length })}
+                        </span>
+                      </span>
+                      {dbgCur >= dbgStages.length - 1 && !dbgRunning ? (
+                        <button
+                          type="button"
+                          className="dbg-ctl-btn next finish"
+                          onClick={finishDebug}
+                          title={dbgIsWrite ? t("debug.doneTitle") : t("debug.finishTitle")}
+                        >
+                          <Icon name="check" size={16} />{" "}
+                          {dbgIsWrite ? t("debug.done") : t("debug.finish")}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="dbg-ctl-btn next"
+                          disabled={dbgCur >= dbgStages.length - 1}
+                          onClick={() => setDbgIdx(Math.min(dbgStages.length - 1, dbgCur + 1))}
+                          title={t("debug.stepTitle")}
+                        >
+                          <Icon name="skip_next" size={16} /> {t("debug.step")}{" "}
+                          <span className="kbd">F10</span>
+                        </button>
+                      )}
+                    </span>
+                    {dbgRunning ? (
+                      <button
+                        type="button"
+                        className="dbg-ctl-btn"
+                        onClick={qdbg.stop}
+                        title={t("debug.stopTitle")}
+                      >
+                        <Icon name="stop" size={14} /> {t("debug.stop")}
+                      </button>
+                    ) : dbgFocus.zeroAt >= 0 ? (
+                      <button
+                        type="button"
+                        className="dbg-jump warn"
+                        onClick={() => setDbgIdx(dbgFocus.zeroAt)}
+                      >
+                        <Icon name="warning" size={13} />{" "}
+                        <span className="dbg-wide">
+                          {t("debug.jump.zero", { n: dbgFocus.zeroAt + 1 })}
+                        </span>
+                        <span className="dbg-narrow">
+                          {t("debug.jump.short", { n: dbgFocus.zeroAt + 1 })}
+                        </span>
+                      </button>
+                    ) : dbgFocus.drop >= 0 ? (
+                      <button
+                        type="button"
+                        className="dbg-jump"
+                        onClick={() => setDbgIdx(dbgFocus.drop)}
+                      >
+                        <Icon name="trending_down" size={13} />{" "}
+                        <span className="dbg-wide">
+                          {t("debug.jump.drop", { n: dbgFocus.drop + 1 })}
+                        </span>
+                        <span className="dbg-narrow">
+                          {t("debug.jump.short", { n: dbgFocus.drop + 1 })}
+                        </span>
+                      </button>
+                    ) : null}
+                  </>
+                ) : null}
+                <div style={{ flex: 1 }} />
+                <span className="dim">{schemaName}</span>
+                <button
+                  type="button"
+                  className="result-tab dbg-exit"
+                  onClick={stopDebugView}
+                  title={t("debug.exitTitle")}
+                  aria-label={t("debug.exit")}
+                >
+                  <Icon name="close" size={13} />{" "}
+                  <span className="dbg-wide">{t("debug.exit")}</span>
+                </button>
+              </div>
+              {resultsMin ? null : qdbg.state.phase === "cannot" && qdbg.state.cannot ? (
+                <DebugCannot cannot={qdbg.state.cannot} />
+              ) : qdbg.state.phase === "confirm" && qdbg.state.ask ? (
+                <DebugBigTable ask={qdbg.state.ask} onRun={qdbg.confirm} onCancel={stopDebugView} />
+              ) : dbgStages.length ? (
+                <DebugView
+                  stages={dbgStages}
+                  idx={dbgCur}
+                  setIdx={setDbgIdx}
+                  max={maxCount(dbgStages)}
+                  running={dbgRunning}
+                  sampling={dbgSampling}
+                  write={dbgPlan?.write ?? null}
+                  onOpenQuery={(sql) => openSqlTabWith(sql)}
+                />
+              ) : (
+                <DebugPlanning />
+              )}
+            </>
+          ) : view === "explain" ? (
             <>
               <div className="sql-result-bar explain-bar">
                 {minBtn}

@@ -27,6 +27,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { appErrorMessage } from "../../../shared/api/error";
+import { fmtNumber } from "../../../shared/i18n";
 import { useT } from "../../../shared/i18n/useT";
 import { CopyButton } from "../../../shared/ui/CopyButton";
 import { Icon } from "../../../shared/ui/Icon";
@@ -79,7 +80,26 @@ import { statementContextAt } from "../sqlStatement";
  * "Statement N of M" label; the label is hidden when there is a single
  * statement.
  */
-export function ExecutionMinimap({ sql, caret = 0 }: { sql: string; caret?: number }) {
+/**
+ * The query debugger's hold on the Clause-order column (M45): the Run column
+ * becomes a stepper. `counts` holds the rows after each clause (joins fold
+ * into FROM), `clause` is the current step's, and `onPick` moves to a clause.
+ */
+export interface MinimapDebug {
+  clause: string;
+  counts: Record<string, number>;
+  onPick: (clause: string) => void;
+}
+
+export function ExecutionMinimap({
+  sql,
+  caret = 0,
+  debug = null,
+}: {
+  sql: string;
+  caret?: number;
+  debug?: MinimapDebug | null;
+}) {
   const t = useT();
   const stmt = statementContextAt(sql, caret);
   const c = detectClauses(stmt.text);
@@ -87,7 +107,13 @@ export function ExecutionMinimap({ sql, caret = 0 }: { sql: string; caret?: numb
   // `nest` marks the column where a nested clause (JOIN … ON, written inside
   // FROM) is shown indented and unnumbered — it is not a top-level clause there.
   // In the run column it is a step like any other and takes its own number.
-  const renderCol = (label: string, sub: string, orderKeys: StepKey[], nest: boolean) => {
+  const renderCol = (
+    label: string,
+    sub: string,
+    orderKeys: StepKey[],
+    nest: boolean,
+    runCol = false,
+  ) => {
     let n = 0;
     return (
       <div className="exec-mini-col">
@@ -98,6 +124,23 @@ export function ExecutionMinimap({ sql, caret = 0 }: { sql: string; caret?: numb
           const on = clausePresent(c, key);
           if (on && !nested) n += 1;
           const def = stepByKey(key);
+          const count = debug && runCol && on ? debug.counts[key] : undefined;
+          if (debug && count !== undefined) {
+            return (
+              <button
+                type="button"
+                key={key}
+                className={"exec-mini-step on dbg-pick" + (debug.clause === key ? " cur" : "")}
+                title={t(def.descKey)}
+                aria-current={debug.clause === key ? "step" : undefined}
+                onClick={() => debug.onPick(key)}
+              >
+                <span className="exec-mini-num">{n}</span>
+                <span className="exec-mini-kw">{def.kw}</span>
+                <span className="exec-mini-rows">{fmtNumber(count)}</span>
+              </button>
+            );
+          }
           return (
             <div
               key={key}
@@ -118,8 +161,12 @@ export function ExecutionMinimap({ sql, caret = 0 }: { sql: string; caret?: numb
   return (
     <div className="exec-minimap">
       <div className="exec-mini-title">
-        <Icon name="account_tree" size={13} style={{ color: "var(--accent)" }} />{" "}
-        {t("expl.clauseOrder")}
+        <Icon
+          name={debug ? "bug_report" : "account_tree"}
+          size={13}
+          style={{ color: "var(--accent)" }}
+        />{" "}
+        {debug ? t("debug.mini.title") : t("expl.clauseOrder")}
       </div>
       {stmt.count > 1 ? (
         <div className="exec-mini-stmt">
@@ -130,7 +177,13 @@ export function ExecutionMinimap({ sql, caret = 0 }: { sql: string; caret?: numb
       ) : null}
       <div className="exec-mini-cols">
         {renderCol(t("expl.written"), t("expl.writtenSub"), WRITTEN_ORDER, true)}
-        {renderCol(t("expl.run"), t("expl.runSub"), RUN_ORDER, false)}
+        {renderCol(
+          t("expl.run"),
+          debug ? t("debug.mini.runSub") : t("expl.runSub"),
+          RUN_ORDER,
+          false,
+          true,
+        )}
       </div>
       <div className="exec-mini-foot">
         {c.outerJoin ? <>{t("expl.mini.outerJoin")}</> : <>{t("expl.mini.clause")}</>}

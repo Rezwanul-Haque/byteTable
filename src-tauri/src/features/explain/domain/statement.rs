@@ -50,6 +50,8 @@ pub fn count_probes(sql: &str) -> Option<CountProbes> {
     })
 }
 
+use crate::shared::sql_lex::{lex, Lexed, Tok};
+
 /// Byte offsets of the parts of a SELECT the probes need.
 #[derive(Debug, PartialEq, Eq)]
 struct ClauseExtent {
@@ -61,22 +63,6 @@ struct ClauseExtent {
     where_end: Option<usize>,
     /// Whether a JOIN follows the base relation.
     has_join: bool,
-}
-
-/// One lexical unit. Only what the scan needs to tell apart.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum Tok {
-    Word(String),
-    Punct(char),
-    /// A string literal or quoted identifier — inert, but it holds a position.
-    Opaque,
-}
-
-struct Lexed {
-    tok: Tok,
-    start: usize,
-    end: usize,
-    depth: usize,
 }
 
 /// Clause keywords that end the WHERE predicate at the top level.
@@ -214,133 +200,6 @@ fn clause_extent(sql: &str) -> Option<ClauseExtent> {
         where_end,
         has_join,
     })
-}
-
-/// Lex far enough to find clauses: comments and quoted text become inert, and
-/// every token records its paren depth so only top-level keywords count.
-fn lex(sql: &str) -> Vec<Lexed> {
-    let bytes = sql.as_bytes();
-    let mut out = Vec::new();
-    let mut depth = 0usize;
-    let mut i = 0usize;
-
-    while i < bytes.len() {
-        let c = bytes[i];
-        // Whitespace.
-        if c.is_ascii_whitespace() {
-            i += 1;
-            continue;
-        }
-        // `-- line comment`
-        if c == b'-' && bytes.get(i + 1) == Some(&b'-') {
-            while i < bytes.len() && bytes[i] != b'\n' {
-                i += 1;
-            }
-            continue;
-        }
-        // `/* block comment */`
-        if c == b'/' && bytes.get(i + 1) == Some(&b'*') {
-            i += 2;
-            while i < bytes.len() && !(bytes[i] == b'*' && bytes.get(i + 1) == Some(&b'/')) {
-                i += 1;
-            }
-            i = (i + 2).min(bytes.len());
-            continue;
-        }
-        // String literal / quoted identifier — inert, doubled quote escapes.
-        if let Some(close) = match c {
-            b'\'' => Some(b'\''),
-            b'"' => Some(b'"'),
-            b'`' => Some(b'`'),
-            b'[' => Some(b']'),
-            _ => None,
-        } {
-            let start = i;
-            i += 1;
-            while i < bytes.len() {
-                if bytes[i] == close {
-                    if close != b']' && bytes.get(i + 1) == Some(&close) {
-                        i += 2;
-                        continue;
-                    }
-                    i += 1;
-                    break;
-                }
-                i += 1;
-            }
-            out.push(Lexed {
-                tok: Tok::Opaque,
-                start,
-                end: i,
-                depth,
-            });
-            continue;
-        }
-        // A word, possibly a dotted path — `public.orders` is one unit.
-        // Bytes at or above 0x80 are the continuation of a multi-byte character
-        // and belong to the word: identifiers are not ASCII-only, and stepping
-        // over one byte at a time would land mid-character and panic on slice.
-        if c.is_ascii_alphabetic() || c == b'_' || c >= 0x80 {
-            let start = i;
-            while i < bytes.len() {
-                let ch = bytes[i];
-                if ch.is_ascii_alphanumeric()
-                    || ch == b'_'
-                    || ch == b'$'
-                    || ch == b'.'
-                    || ch >= 0x80
-                {
-                    i += 1;
-                } else if ch == b'"' || ch == b'`' || ch == b'[' {
-                    // A quoted part of a dotted path (`public."my table"`).
-                    let close = if ch == b'[' { b']' } else { ch };
-                    i += 1;
-                    while i < bytes.len() && bytes[i] != close {
-                        i += 1;
-                    }
-                    i = (i + 1).min(bytes.len());
-                } else {
-                    break;
-                }
-            }
-            let word = sql[start..i].to_ascii_lowercase();
-            out.push(Lexed {
-                tok: Tok::Word(word),
-                start,
-                end: i,
-                depth,
-            });
-            continue;
-        }
-        // Punctuation. Parens carry the OUTER depth so a `(` reads as top-level.
-        let start = i;
-        if c == b'(' {
-            out.push(Lexed {
-                tok: Tok::Punct('('),
-                start,
-                end: i + 1,
-                depth,
-            });
-            depth += 1;
-        } else if c == b')' {
-            depth = depth.saturating_sub(1);
-            out.push(Lexed {
-                tok: Tok::Punct(')'),
-                start,
-                end: i + 1,
-                depth,
-            });
-        } else {
-            out.push(Lexed {
-                tok: Tok::Punct(c as char),
-                start,
-                end: i + 1,
-                depth,
-            });
-        }
-        i += 1;
-    }
-    out
 }
 
 #[cfg(test)]

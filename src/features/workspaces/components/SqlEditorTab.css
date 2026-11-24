@@ -1421,3 +1421,53 @@
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
+
+/* ---- Query debug mode (M45): the editor side. The debug view itself is
+   styled in DebugView.css. ---- */
+/* The clause the current step is about, drawn in the read-only editor. */
+.sql-cm .dbg-mark {
+  background: color-mix(in oklab, var(--accent) 20%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent) 55%, transparent);
+  border-radius: 3px;
+}
+.dbg-lock {
+  position: absolute;
+  top: 8px;
+  right: 48px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 7px;
+  font-size: 11px;
+  color: var(--text-dim);
+  background: color-mix(in oklab, var(--bg2) 90%, transparent);
+  border: 1px solid var(--border);
+  pointer-events: none;
+}
+/* While debugging the editor gives up height to the step view (E3). */
+.sql-editor-wrap.dbg-on:not(.grow) {
+  height: 30%;
+  min-height: 92px;
+}
+/* The Clause-order column as a stepper. */
+button.exec-mini-step.dbg-pick {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+button.exec-mini-step.dbg-pick:hover {
+  background: var(--bg2);
+}
+.exec-mini-step.dbg-pick.cur {
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.exec-mini-rows {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-dim);
+}

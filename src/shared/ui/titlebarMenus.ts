@@ -288,6 +288,12 @@ export function buildMenus(m: MenuCtx): Menu[] {
           enabled: isSql,
           run: () => emitCmd("debug"),
         },
+        {
+          id: "result-chart",
+          label: t("menu.query.chart"),
+          enabled: isSql,
+          run: () => emitCmd("result-chart"),
+        },
         "—",
         {
           id: "save-query",

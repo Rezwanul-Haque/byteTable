@@ -86,6 +86,8 @@ import { type EditorSchema } from "../sqlCompletion";
 import { ParamBar, ParamPrompt } from "./QueryParams";
 import { SqlCodeEditor, type SqlCodeEditorHandle } from "./SqlCodeEditor";
 import { SqlResultGrid } from "./SqlResultGrid";
+import { ResultChart } from "../../result_chart/components/ResultChart";
+import { SegSwitch } from "../../../shared/ui/SegSwitch";
 import { AiFix } from "../../assistant/components/AiFix";
 import { openAiSettings } from "../../assistant/openSettings";
 import { AiPanel, type AskRequest, type PlanRequest } from "../../assistant/components/AiPanel";
@@ -228,6 +230,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
 
   const clearSqlRuns = useWorkspacesStore((s) => s.clearSqlRuns);
   const setSqlEditorHeight = useWorkspacesStore((s) => s.setSqlEditorHeight);
+  const setSqlResultView = useWorkspacesStore((s) => s.setSqlResultView);
   const openSqlTabWith = useWorkspacesStore((s) => s.openSqlTabWith);
 
   const setSqlSavedLink = useWorkspacesStore((s) => s.setSqlSavedLink);
@@ -937,6 +940,14 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   useBtCmd("format", format);
   useBtCmd("explain", runExplain);
   useBtCmd("debug", toggleDebug);
+  // Show the result as a chart (palette / Query menu): leaves Explain or Debug
+  // for the result, and un-minimizes it.
+  useBtCmd("result-chart", () => {
+    if (debugging) qdbg.exit();
+    setView("result");
+    setResultsMin(false);
+    setSqlResultView(tab.id, "chart");
+  });
   useBtCmd("save-query", () => setPop("save"));
   useBtCmd("open-sql-file", openFile);
   // The palette's assistant requests (this tab on screen, or opened to receive
@@ -1010,6 +1021,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
     actions: [{ label: t("ws.sql.goToStmt"), icon: "my_location", onSelect: goToStatement }],
   });
   const result = activeRun?.result ?? null;
+  const resultView = tab.resultView ?? "table";
   const error = activeRun?.error ?? null;
 
   // Prompt 4: the results pane only exists once there's something to show —
@@ -1641,6 +1653,27 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
                   </>
                 )}
                 <div style={{ flex: 1 }} />
+                {/* Table / Chart (M46): only for a result with columns — a
+                    DML/DDL acknowledgement has nothing to chart. */}
+                {result.columns.length > 0 ? (
+                  <SegSwitch
+                    ariaLabel={t("chart.view.aria")}
+                    value={resultView}
+                    onChange={(v) => {
+                      setSqlResultView(tab.id, v);
+                      if (v === "chart") setResultsMin(false);
+                    }}
+                    options={[
+                      { value: "table", label: t("chart.view.table"), icon: "table_rows" },
+                      {
+                        value: "chart",
+                        label: t("chart.view.chart"),
+                        icon: "bar_chart",
+                        title: t("chart.view.chartTitle"),
+                      },
+                    ]}
+                  />
+                ) : null}
                 <IconBtn
                   icon="close"
                   size={14}
@@ -1648,11 +1681,13 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
                   onClick={() => clearSqlRuns(tab.id)}
                 />
               </div>
-              {resultsMin || result.columns.length === 0 ? null : (
-                // A SELECT with columns renders the grid even with zero rows, so
-                // the column headers stay visible (the status row above already
-                // reports the row count). Only a column-less result (DML/DDL) has
-                // no grid to show.
+              {/* A SELECT with columns renders the grid even with zero rows, so
+                  the column headers stay visible (the status row above already
+                  reports the row count). Only a column-less result (DML/DDL)
+                  has no grid to show — and nothing to chart. */}
+              {resultsMin || result.columns.length === 0 ? null : resultView === "chart" ? (
+                <ResultChart columns={result.columns} rows={result.rows} />
+              ) : (
                 <SqlResultGrid result={result} />
               )}
             </>

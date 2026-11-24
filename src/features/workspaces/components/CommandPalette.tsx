@@ -284,6 +284,12 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
             label: t("debug.palette"),
             run: () => emitCmd("debug"),
           },
+          {
+            id: "cmd-result-chart",
+            icon: "bar_chart",
+            label: t("chart.palette"),
+            run: () => emitCmd("result-chart"),
+          },
         ]
       : [];
     const snippets: Command = {

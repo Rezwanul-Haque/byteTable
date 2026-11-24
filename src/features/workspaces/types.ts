@@ -226,6 +226,12 @@ export interface SqlTabState {
    *  default (38%). Per-tab so each query keeps its own split. */
   editorHeight: number | null;
   /**
+   * How the result is shown: the grid or a chart of its rows (M46). On the
+   * tab, not the result, so a re-run keeps Chart; absent = table, so a new
+   * tab (and a session saved by an earlier build) starts on Table.
+   */
+  resultView?: "table" | "chart";
+  /**
    * The saved query this buffer came from — set when one is loaded and after
    * a save, so saving again UPDATES that entry instead of piling up
    * near-duplicates. Absent/null = unlinked: a fresh tab, a snippet chip, an

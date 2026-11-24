@@ -1,0 +1,33 @@
+/* The compact view switch on a result bar (ported from ByteTable.html's
+   "Chart from a result" block). */
+.ch-switch {
+  display: inline-flex;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 1px;
+  gap: 1px;
+  margin-right: 4px;
+}
+.ch-switch button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 5px;
+  font-family: var(--ui);
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.ch-switch button:hover {
+  color: var(--text);
+}
+.ch-switch button.on {
+  background: var(--bg3);
+  color: var(--text);
+}
+.ch-switch button.on .msym {
+  color: var(--accent);
+}

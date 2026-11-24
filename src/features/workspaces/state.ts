@@ -417,6 +417,8 @@ interface WorkspacesFeatureState {
   /** Set the editor-pane height (px) from the editor/results splitter; null
    *  resets to the CSS default. */
   setSqlEditorHeight: (tabId: string, height: number | null) => void;
+  /** Show the result as the grid or a chart (M46). */
+  setSqlResultView: (tabId: string, view: "table" | "chart") => void;
   /**
    * Push a run onto the WORKSPACE's history (see {@link withHistoryEntry}).
    * Takes the workspace id rather than reading the active one: a long query
@@ -1340,6 +1342,11 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
   setSqlEditorHeight: (tabId, height) =>
     set((state) => ({
       workspaces: patchSqlTab(state, tabId, () => ({ editorHeight: height })),
+    })),
+
+  setSqlResultView: (tabId, view) =>
+    set((state) => ({
+      workspaces: patchSqlTab(state, tabId, () => ({ resultView: view })),
     })),
 
   pushSqlHistory: (workspaceId, entry) =>

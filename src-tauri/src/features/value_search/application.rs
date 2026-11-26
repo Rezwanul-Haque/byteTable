@@ -208,6 +208,7 @@ pub async fn run_search(
         let table_started = Instant::now();
         let page = sql
             .fetch_rows(FetchRowsRequest {
+                skip_count: false,
                 schema: schema.clone(),
                 table: table.clone(),
                 sort: None,

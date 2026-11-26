@@ -154,6 +154,16 @@
 .fk-open-btn:hover {
   background: color-mix(in oklab, var(--accent) 22%, var(--bg3));
 }
+/* Row lineage (M50): "Trace this row", under "Open in {table}". */
+.fk-trace-btn {
+  margin-top: 5px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+.fk-trace-btn:hover {
+  background: var(--bg2);
+}
 
 .insight-btn {
   display: none;

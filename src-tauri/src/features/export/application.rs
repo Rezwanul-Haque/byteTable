@@ -620,6 +620,7 @@ async fn fetch_page(
 ) -> Result<crate::shared::engine::RowsPage, AppError> {
     connection
         .fetch_rows(FetchRowsRequest {
+            skip_count: false,
             schema: schema.to_string(),
             table: table.to_string(),
             sort: None,

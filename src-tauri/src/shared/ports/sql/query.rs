@@ -262,6 +262,11 @@ pub struct FetchRowsRequest {
     pub offset: u64,
     /// Maximum rows in the page. Adapters clamp this to their page ceiling.
     pub limit: u32,
+    /// Skip the `COUNT(*)`: `RowsPage::total_rows` comes back `None`. For a
+    /// reader that wants only the first rows (row lineage's stacks) and must
+    /// not wait on a count over a large match set before getting them.
+    #[serde(default)]
+    pub skip_count: bool,
 }
 
 /// One page of rows from a table: column metadata, JSON-mapped values, the

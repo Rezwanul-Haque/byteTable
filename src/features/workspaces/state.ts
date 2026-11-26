@@ -22,6 +22,7 @@ import { t } from "../../shared/i18n";
 import type {
   DataFileRef,
   HistoryFilter,
+  LineageStop,
   SqlHistoryEntry,
   SqlRun,
   Tab,
@@ -295,6 +296,11 @@ interface WorkspacesFeatureState {
     filter?: HistoryFilter | null;
     focus?: "latest" | "undoable" | null;
   }) => void;
+  /** Open (or focus) the lineage tab that started from `table`'s row `key`
+   *  (M50). One tab per starting row. */
+  openLineageTab: (schema: string, table: string, key: CellValue) => void;
+  /** A lineage tab walked: its trail and which stop is the centre. */
+  setLineageTrail: (tabId: string, trail: LineageStop[], at: number) => void;
   /** The notebook's title changed: the strip follows it as you type. */
   setNotebookTabTitle: (tabId: string, title: string) => void;
   /** Record a board's own name on its tab, so the strip can label it
@@ -1059,6 +1065,46 @@ export const useWorkspacesStore = create<WorkspacesFeatureState>((set, get) => (
         const tab: Tab = { id: newTabId("history"), kind: "history", ...patch };
         return { tabs: [...tabs, tab], activeTabId: tab.id };
       }),
+    })),
+
+  openLineageTab: (schema, table, key) =>
+    set((state) => ({
+      workspaces: patchActiveUi(state, (ui) => {
+        const tabs = ui.tabs ?? [];
+        const existing = tabs.find(
+          (t) =>
+            t.kind === "lineage" &&
+            t.schema === schema &&
+            t.trail[0]?.table === table &&
+            String(t.trail[0]?.key) === String(key),
+        );
+        if (existing) return { activeTabId: existing.id };
+        const tab: Tab = {
+          id: newTabId("lineage"),
+          kind: "lineage",
+          schema,
+          trail: [{ table, key }],
+          at: 0,
+        };
+        return { tabs: [...tabs, tab], activeTabId: tab.id };
+      }),
+    })),
+
+  setLineageTrail: (tabId, trail, at) =>
+    set((state) => ({
+      workspaces: state.workspaces.map((w) =>
+        w.ui.tabs?.some((t) => t.id === tabId)
+          ? {
+              ...w,
+              ui: {
+                ...w.ui,
+                tabs: (w.ui.tabs ?? []).map((t) =>
+                  t.id === tabId && t.kind === "lineage" ? { ...t, trail, at } : t,
+                ),
+              },
+            }
+          : w,
+      ),
     })),
 
   setNotebookTabTitle: (tabId, title) =>

@@ -143,13 +143,18 @@ pub(super) fn fetch_rows_blocking(
     // `total_rows` matches the result set ("n of N rows", §3.5). The WHERE
     // params bind first; the count query has no limit/offset.
     let count_sql = format!("SELECT count(*) FROM {qualified}{where_sql}");
-    let total_rows = conn
-        .query_row(
-            &count_sql,
-            rusqlite::params_from_iter(where_clause.params.iter()),
-            |row| row.get::<_, u64>(0),
+    let total_rows = if req.skip_count {
+        None
+    } else {
+        Some(
+            conn.query_row(
+                &count_sql,
+                rusqlite::params_from_iter(where_clause.params.iter()),
+                |row| row.get::<_, u64>(0),
+            )
+            .map_err(|err| map_query_error(conn, err))?,
         )
-        .map_err(|err| map_query_error(conn, err))?;
+    };
 
     // Build order: WHERE, then ORDER BY, then LIMIT/OFFSET. The WHERE params
     // bind first, then limit, then offset (positional `?` placeholders).
@@ -199,7 +204,7 @@ pub(super) fn fetch_rows_blocking(
         rows: out_rows,
         offset: req.offset,
         limit,
-        total_rows: Some(total_rows),
+        total_rows,
         elapsed_ms: started.elapsed().as_millis() as u64,
     })
 }
@@ -597,6 +602,7 @@ mod tests {
     /// Convenience: pull the single-column integer/text value of a cell.
     fn req(schema: &str, table: &str, offset: u64, limit: u32) -> FetchRowsRequest {
         FetchRowsRequest {
+            skip_count: false,
             schema: schema.into(),
             table: table.into(),
             sort: None,
@@ -633,6 +639,21 @@ mod tests {
         assert_eq!(page.rows[0][1], serde_json::json!("ada"));
         assert_eq!(page.rows[0][3], serde_json::json!("0xc0ffee"));
         assert_eq!(page.rows[1][2], serde_json::Value::Null);
+    }
+
+    #[tokio::test]
+    async fn fetch_rows_skip_count_returns_the_page_without_a_total() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let conn = open_fixture(&dir).await;
+        let page = conn
+            .fetch_rows(FetchRowsRequest {
+                skip_count: true,
+                ..req("main", "users", 0, 2)
+            })
+            .await
+            .expect("fetch rows");
+        assert_eq!(page.rows.len(), 2);
+        assert_eq!(page.total_rows, None);
     }
 
     #[tokio::test]

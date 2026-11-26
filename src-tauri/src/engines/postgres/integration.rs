@@ -260,6 +260,7 @@ async fn fetch_rows_paging_sort_filter_and_total() {
     // Sorted page, no filter → total 4.
     let page = conn
         .fetch_rows(FetchRowsRequest {
+            skip_count: false,
             schema: schema.into(),
             table: "books".into(),
             sort: Some(SortSpec {
@@ -279,6 +280,7 @@ async fn fetch_rows_paging_sort_filter_and_total() {
     // Filtered: in_print = true → 3 rows; bound boolean value.
     let filtered = conn
         .fetch_rows(FetchRowsRequest {
+            skip_count: false,
             schema: schema.into(),
             table: "books".into(),
             sort: None,
@@ -313,6 +315,7 @@ async fn fetch_rows_paging_sort_filter_and_total() {
     for (op, value) in ops {
         let r = conn
             .fetch_rows(FetchRowsRequest {
+                skip_count: false,
                 schema: schema.into(),
                 table: "books".into(),
                 sort: None,
@@ -336,6 +339,7 @@ async fn fetch_rows_paging_sort_filter_and_total() {
     // LIKE family on a text column.
     let like = conn
         .fetch_rows(FetchRowsRequest {
+            skip_count: false,
             schema: schema.into(),
             table: "books".into(),
             sort: None,
@@ -358,6 +362,7 @@ async fn fetch_rows_paging_sort_filter_and_total() {
     // Injection inertness: a payload binds as a literal → matches nothing.
     let inj = conn
         .fetch_rows(FetchRowsRequest {
+            skip_count: false,
             schema: schema.into(),
             table: "books".into(),
             sort: None,
@@ -1356,6 +1361,7 @@ async fn uuid_columns_decode_and_are_editable() {
     let conn = open_conn(&params, &secret).await;
 
     let fetch = |filter: Option<FilterSpec>| FetchRowsRequest {
+        skip_count: false,
         schema: schema.into(),
         table: "t".into(),
         offset: 0,
@@ -1477,6 +1483,7 @@ async fn undecodable_types_come_back_as_text_with_their_real_type_hint() {
 
     let page = conn
         .fetch_rows(FetchRowsRequest {
+            skip_count: false,
             schema: schema.into(),
             table: "t".into(),
             offset: 0,

@@ -637,6 +637,7 @@ fn sort_direction_serializes_lowercase_and_maps_to_sql_keywords() {
 #[test]
 fn fetch_rows_request_wire_shape_is_camel_case_and_round_trips() {
     let req = FetchRowsRequest {
+        skip_count: false,
         schema: "main".into(),
         table: "users".into(),
         sort: Some(SortSpec {
@@ -656,7 +657,8 @@ fn fetch_rows_request_wire_shape_is_camel_case_and_round_trips() {
             "sort": { "column": "name", "direction": "desc" },
             "filter": null,
             "offset": 100,
-            "limit": 50
+            "limit": 50,
+            "skipCount": false
         })
     );
     let back: FetchRowsRequest = serde_json::from_value(json).unwrap();

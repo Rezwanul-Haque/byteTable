@@ -323,6 +323,7 @@ async fn schemas_tables_and_counts() {
         );
         let page = conn
             .fetch_rows(FetchRowsRequest {
+                skip_count: false,
                 schema: "information_schema".into(),
                 table: table.into(),
                 sort: None,
@@ -476,6 +477,7 @@ async fn fetch_rows_paging_sort_filter_and_total() {
     // Sorted page, no filter → total 4.
     let page = conn
         .fetch_rows(FetchRowsRequest {
+            skip_count: false,
             schema: schema.into(),
             table: "books".into(),
             sort: Some(SortSpec {
@@ -495,6 +497,7 @@ async fn fetch_rows_paging_sort_filter_and_total() {
     // Filtered: in_print = 1 → 3 rows; bound integer value (bool-as-0/1).
     let filtered = conn
         .fetch_rows(FetchRowsRequest {
+            skip_count: false,
             schema: schema.into(),
             table: "books".into(),
             sort: None,
@@ -529,6 +532,7 @@ async fn fetch_rows_paging_sort_filter_and_total() {
     for (op, value) in ops {
         let r = conn
             .fetch_rows(FetchRowsRequest {
+                skip_count: false,
                 schema: schema.into(),
                 table: "books".into(),
                 sort: None,
@@ -552,6 +556,7 @@ async fn fetch_rows_paging_sort_filter_and_total() {
     // LIKE family on a text column.
     let like = conn
         .fetch_rows(FetchRowsRequest {
+            skip_count: false,
             schema: schema.into(),
             table: "books".into(),
             sort: None,
@@ -574,6 +579,7 @@ async fn fetch_rows_paging_sort_filter_and_total() {
     // Injection inertness: a payload binds as a literal → matches nothing.
     let inj = conn
         .fetch_rows(FetchRowsRequest {
+            skip_count: false,
             schema: schema.into(),
             table: "books".into(),
             sort: None,
@@ -1515,6 +1521,7 @@ async fn binary_collation_text_decodes_as_text_not_hex() {
     // --- browse: the catalog type decides ---
     let page = conn
         .fetch_rows(FetchRowsRequest {
+            skip_count: false,
             schema: schema.into(),
             table: "settings".into(),
             sort: None,

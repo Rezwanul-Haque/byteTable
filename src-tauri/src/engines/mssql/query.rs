@@ -106,21 +106,27 @@ pub(super) async fn fetch_rows(
 
     // Exact filtered COUNT for "n of N rows" (§3.5). COUNT_BIG → bigint.
     let count_sql = format!("SELECT COUNT_BIG(*) AS n FROM {qualified}{where_sql}");
-    let mut count_query = Query::new(&count_sql);
-    for value in &where_clause.params {
-        bind_query(&mut count_query, value);
-    }
-    let count_rows = count_query
-        .query(&mut *client)
-        .await
-        .map_err(map_query_error)?
-        .into_first_result()
-        .await
-        .map_err(map_query_error)?;
-    let total_rows: i64 = count_rows
-        .first()
-        .and_then(|r| r.try_get("n").ok().flatten())
-        .unwrap_or(0);
+    let total_rows: Option<i64> = if req.skip_count {
+        None
+    } else {
+        let mut count_query = Query::new(&count_sql);
+        for value in &where_clause.params {
+            bind_query(&mut count_query, value);
+        }
+        let count_rows = count_query
+            .query(&mut *client)
+            .await
+            .map_err(map_query_error)?
+            .into_first_result()
+            .await
+            .map_err(map_query_error)?;
+        Some(
+            count_rows
+                .first()
+                .and_then(|r| r.try_get("n").ok().flatten())
+                .unwrap_or(0),
+        )
+    };
 
     // Page query: WHERE params first (numbered @P1..), then OFFSET/FETCH as
     // the two trailing placeholders.
@@ -162,7 +168,7 @@ pub(super) async fn fetch_rows(
         rows: out_rows,
         offset: req.offset,
         limit,
-        total_rows: Some(total_rows.max(0) as u64),
+        total_rows: total_rows.map(|n| n.max(0) as u64),
         elapsed_ms: started.elapsed().as_millis() as u64,
     })
 }

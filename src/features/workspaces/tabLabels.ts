@@ -5,6 +5,7 @@
 // component module may only export components (react-refresh rule).
 
 import type { t as T } from "../../shared/i18n";
+import { keyText } from "../lineage/model";
 import type { Tab } from "./types";
 
 /** The translate function, passed in rather than imported: these are module
@@ -42,6 +43,11 @@ function tabTitle(tab: Tab, currentSchema: string, t: Translate): string {
       return t("ws.tabTitle.diff");
     case "history":
       return t("history.tabTitle");
+    case "lineage": {
+      // "{table} {key}" of the row at the centre, following each walk.
+      const stop = tab.trail[tab.at] ?? tab.trail[0];
+      return stop ? stop.table + " " + keyText(stop.key) : t("lineage.title");
+    }
     case "object":
       return tab.schema === currentSchema ? tab.name : tab.schema + "." + tab.name;
     case "objexplorer":

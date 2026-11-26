@@ -294,6 +294,9 @@ export interface FetchRowsRequest {
   offset: number;
   /** Maximum rows in the page. The backend clamps this to its page ceiling. */
   limit: number;
+  /** Skip the `COUNT(*)` (`totalRows` comes back null), for a reader that
+   *  wants only the first rows and must not wait on a large count. */
+  skipCount?: boolean;
 }
 
 /** One page of rows from a table: column metadata, values, window, timing. */

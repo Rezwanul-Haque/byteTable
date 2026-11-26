@@ -329,6 +329,10 @@ export type Tab =
       focus?: "latest" | "undoable" | null;
       nonce?: number;
     }
+  // Row lineage (M50): one row and the rows linked to it by declared foreign
+  // keys. One tab per STARTING row (`trail[0]`); walking appends to `trail` and
+  // moves `at`, and lives on the tab because only the active tab is mounted.
+  | { id: string; kind: "lineage"; schema: string; trail: LineageStop[]; at: number }
   // The live server process/session list with kill actions (M26). Singleton;
   // `schema` is the active schema shown in the DB column for a fresh listing.
   | { id: string; kind: "processes"; schema: string }
@@ -372,6 +376,12 @@ export type Tab =
        *  switch away and back. */
       view: TableOverviewView;
     };
+
+/** One row on a lineage tab's trail (M50): a table and its primary-key value. */
+export interface LineageStop {
+  table: string;
+  key: CellValue;
+}
 
 /** The change history narrowed to a table, or one row of it (M48). */
 export interface HistoryFilter {

@@ -113,6 +113,7 @@ mod tests {
 
     fn sample_request() -> FetchRowsRequest {
         FetchRowsRequest {
+            skip_count: false,
             schema: "main".into(),
             table: "users".into(),
             sort: None,

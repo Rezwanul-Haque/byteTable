@@ -98,7 +98,11 @@ pub async fn fetch_rows(
     let result = http.query(&page_sql, &[]).await?;
 
     let count_sql = format!("SELECT count() FROM {target}{where_sql}");
-    let total_rows = http.scalar(&count_sql).await?.and_then(|v| as_u64(&v));
+    let total_rows = if req.skip_count {
+        None
+    } else {
+        http.scalar(&count_sql).await?.and_then(|v| as_u64(&v))
+    };
 
     let elapsed_ms = started.elapsed().as_millis() as u64;
     Ok(RowsPage {

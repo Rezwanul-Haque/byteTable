@@ -33,6 +33,7 @@ const TAB_ICONS: Record<Tab["kind"], string> = {
   board: "draw",
   notebook: "menu_book",
   history: "history",
+  lineage: "hub",
   processes: "monitor_heart",
   privileges: "admin_panel_settings",
   diff: "difference",

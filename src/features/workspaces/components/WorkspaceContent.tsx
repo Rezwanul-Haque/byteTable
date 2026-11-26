@@ -42,6 +42,7 @@ import { insertSnippetIntoActiveEditor } from "../../../shared/ui/activeCodeEdit
 import { appErrorMessage } from "../../../shared/api/error";
 import { NotebookTab } from "../../notebooks/components/NotebookTab";
 import { ChangeHistoryTab } from "../../change_history/components/ChangeHistoryTab";
+import { LineageTab } from "../../lineage/components/LineageTab";
 import { UnsavedNotebooksModal } from "../../notebooks/components/UnsavedNotebooksModal";
 import {
   baseName,
@@ -92,6 +93,8 @@ function TabBody({
       return <NotebookTab workspace={workspace} tab={tab} />;
     case "history":
       return <ChangeHistoryTab workspace={workspace} tab={tab} />;
+    case "lineage":
+      return <LineageTab workspace={workspace} tab={tab} />;
     case "map":
       return <SchemaMap workspace={workspace} schema={tab.schema} />;
     case "board":

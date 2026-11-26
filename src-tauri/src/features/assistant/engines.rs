@@ -132,6 +132,7 @@ impl Conn {
             Self::Sql(c) => {
                 let page = c
                     .fetch_rows(FetchRowsRequest {
+                        skip_count: false,
                         schema: scope.to_string(),
                         table: table.to_string(),
                         sort: None,

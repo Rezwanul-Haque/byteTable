@@ -1,0 +1,1262 @@
+/* Row lineage (M50) — ported from the "Row lineage" block in the prototype's
+   ByteTable.html (`.ln-*`). The zoom bar reuses the board's `.bb-zoom`
+   (Board.css). What the prototype has no rule for is marked NEW: the loading
+   skeleton and shimmers, a stack's error with Retry, and the glass rules
+   (the prototype's `[data-theme="liquid"]` is `[data-material]` here). */
+.ln {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg0);
+  container-type: inline-size;
+}
+.ln .mono {
+  font-family: var(--mono);
+}
+.ln-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg1);
+  flex: none;
+}
+.ln-head-ic {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+}
+.ln-trail {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ln-trail::-webkit-scrollbar {
+  display: none;
+}
+.ln-back {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  color: var(--text-dim);
+}
+.ln-back:hover:not(:disabled) {
+  background: var(--bg2);
+  color: var(--text);
+}
+.ln-back:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.ln-sep {
+  color: var(--text-faint);
+  flex: none;
+}
+.ln-crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  height: 26px;
+  padding: 0 10px 0 8px;
+  border-radius: 99px;
+  border: 1px solid transparent;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.ln-crumb i,
+.ln-hop i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--tc);
+  flex: none;
+}
+.ln-crumb b {
+  font-weight: 500;
+  color: var(--text);
+}
+.ln-crumb:hover {
+  background: var(--bg2);
+}
+.ln-crumb.on {
+  background: var(--bg2);
+  border-color: var(--border);
+  color: var(--text);
+}
+.ln-stats {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.ln-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 99px;
+  background: var(--bg2);
+  font-size: 11.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.ln-stat b {
+  font-family: var(--mono);
+  font-weight: 600;
+  color: var(--text);
+}
+.ln-stat.warn {
+  background: color-mix(in oklab, var(--warn) 16%, transparent);
+  color: var(--text);
+}
+.ln-stat.warn .msym {
+  color: var(--warn);
+}
+
+.ln-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+/* a movable canvas, like the brainstorm board: the dot grid follows the pan and zoom */
+.ln-view {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  cursor: grab;
+  background-color: var(--bg0);
+  background-image: radial-gradient(
+    circle,
+    color-mix(in oklab, var(--text-faint) 30%, transparent) 1px,
+    transparent 1.3px
+  );
+}
+.ln-view.pan {
+  cursor: grabbing;
+}
+.ln-view.node,
+.ln-view.node * {
+  cursor: grabbing !important;
+}
+.ln-stage {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  animation: ln-in 0.25s ease-out;
+}
+@keyframes ln-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.ln-node,
+.ln-deck {
+  cursor: pointer;
+}
+.ln-zoom .ln-zoom-pct {
+  width: auto;
+  min-width: 44px;
+  padding: 0 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.ln-hint {
+  position: absolute;
+  right: 12px;
+  bottom: 14px;
+  padding: 4px 10px;
+  border-radius: 99px;
+  background: color-mix(in oklab, var(--bg1) 88%, transparent);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-dim);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.ln-glow {
+  position: absolute;
+  left: var(--cx);
+  top: var(--cy);
+  width: 620px;
+  height: 620px;
+  margin: -310px 0 0 -310px;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(
+    closest-side,
+    color-mix(in oklab, var(--fc) 24%, transparent),
+    color-mix(in oklab, var(--fc) 7%, transparent) 55%,
+    transparent
+  );
+}
+.ln-wires {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+.ln-orbit {
+  fill: none;
+  stroke: color-mix(in oklab, var(--fc) 26%, var(--border));
+  stroke-width: 1;
+  stroke-dasharray: 2 7;
+  opacity: 0.7;
+}
+.ln-orbit.inner {
+  opacity: 0.45;
+}
+.ln-wire path {
+  fill: none;
+  stroke-linecap: round;
+}
+.ln-wire-base {
+  stroke: color-mix(in oklab, var(--tc) 42%, var(--border));
+  opacity: 0.75;
+  transition:
+    opacity 0.15s,
+    stroke 0.15s;
+}
+.ln-wire-flow {
+  stroke: var(--tc);
+  stroke-dasharray: 1 16;
+  animation: ln-flow 1.5s linear infinite;
+  opacity: 0.9;
+}
+@keyframes ln-flow {
+  to {
+    stroke-dashoffset: -34;
+  }
+}
+.ln-wire.hot .ln-wire-base {
+  stroke: var(--tc);
+  opacity: 1;
+}
+.ln-wire-end {
+  fill: var(--bg0);
+  stroke: color-mix(in oklab, var(--tc) 70%, var(--border));
+  stroke-width: 1.5;
+}
+.ln-wire.hot .ln-wire-end {
+  fill: var(--tc);
+  stroke: var(--tc);
+}
+.ln-wire.null .ln-wire-end {
+  stroke: var(--border);
+}
+.ln-wire.missing .ln-wire-end {
+  stroke: var(--warn);
+}
+.ln-wire.null .ln-wire-base {
+  stroke: var(--border);
+  stroke-dasharray: 3 6;
+}
+.ln-wire.missing .ln-wire-base {
+  stroke: var(--warn);
+  stroke-dasharray: 6 6;
+  opacity: 1;
+}
+.ln-edge {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  padding: 1px 8px;
+  border-radius: 99px;
+  background: var(--bg0);
+  border: 1px solid color-mix(in oklab, var(--tc) 35%, var(--border));
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  pointer-events: none;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+}
+.ln-edge.hot {
+  color: var(--text);
+  border-color: var(--tc);
+}
+.ln-edge.missing {
+  border-color: var(--warn);
+  color: var(--text);
+}
+.ln-side-h {
+  position: absolute;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 5px 0 8px;
+  border-radius: 99px;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.ln-side-h .msym {
+  color: var(--text-dim);
+}
+.ln-side-h b {
+  min-width: 18px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 99px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg2);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+.ln-ghost {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 190px;
+  padding: 12px;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-dim);
+  text-align: center;
+  background: color-mix(in oklab, var(--bg0) 70%, transparent);
+}
+.bt-reduce-motion .ln-stage,
+.bt-reduce-motion .ln-wire-flow {
+  animation: none;
+}
+.bt-reduce-motion .ln-wire-flow {
+  display: none;
+}
+
+/* nodes */
+.ln-node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  font-family: var(--ui);
+  color: var(--text);
+  border: 1px solid color-mix(in oklab, var(--tc) 30%, var(--border));
+  border-radius: 16px;
+  background: var(--bg1);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.16),
+    0 14px 30px -18px rgba(0, 0, 0, 0.65);
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s,
+    transform 0.15s;
+}
+.bt-light .ln-node {
+  box-shadow:
+    0 1px 2px rgba(20, 30, 50, 0.07),
+    0 14px 30px -20px rgba(20, 30, 50, 0.35);
+}
+.ln-node:hover {
+  border-color: color-mix(in oklab, var(--tc) 70%, var(--border));
+}
+.ln-node.sel {
+  border-color: var(--tc);
+  box-shadow:
+    0 0 0 3px color-mix(in oklab, var(--tc) 22%, transparent),
+    0 14px 30px -18px rgba(0, 0, 0, 0.65);
+}
+.ln-node:focus-visible,
+.ln-node-main:focus-visible,
+.ln-node-go:focus-visible,
+.ln-row:focus-visible,
+.ln-crumb:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.bt-reduce-motion .ln-node {
+  transition: none;
+}
+.ln-pn {
+  width: 206px;
+}
+.ln-pn > .ln-node-main,
+button.ln-pn,
+.ln-cl {
+  padding: 11px 13px;
+}
+.ln-node-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  font-family: var(--ui);
+  color: var(--text);
+  border-radius: 16px;
+  min-width: 0;
+}
+.ln-node-go {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  background: var(--bg2);
+  opacity: 0;
+  transition:
+    opacity 0.15s,
+    color 0.15s,
+    background 0.15s;
+}
+.ln-node:hover .ln-node-go,
+.ln-node-go:focus-visible,
+.ln-node.sel .ln-node-go {
+  opacity: 1;
+}
+.ln-node-go:hover {
+  color: var(--on-accent);
+  background: var(--tc);
+}
+.ln-node-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding-right: 26px;
+}
+.ln-cl .ln-node-top,
+button.ln-pn .ln-node-top {
+  padding-right: 0;
+}
+.ln-badge {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--tc);
+  background: color-mix(in oklab, var(--tc) 18%, transparent);
+  border: 1px solid color-mix(in oklab, var(--tc) 38%, transparent);
+}
+.ln-badge.lg {
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  font-size: 12.5px;
+}
+.ln-badge.xl {
+  width: 46px;
+  height: 46px;
+  border-radius: 15px;
+  font-size: 16px;
+  color: var(--on-accent);
+  background: var(--tc);
+  border-color: transparent;
+  box-shadow: 0 8px 20px -8px var(--tc);
+}
+.ln-t {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ln-k {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 400;
+  padding: 1px 7px;
+  border-radius: 99px;
+  background: var(--bg2);
+  color: var(--text-dim);
+  flex: none;
+  white-space: nowrap;
+}
+.ln-count {
+  margin-left: auto;
+  min-width: 24px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 99px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--on-accent);
+  background: var(--tc);
+  flex: none;
+}
+.ln-label {
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ln-note {
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.ln-hops {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.ln-hop {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  height: 20px;
+  padding: 0 8px 0 7px;
+  border-radius: 99px;
+  background: var(--bg2);
+  font-size: 11px;
+}
+.ln-hop-t {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  flex: none;
+}
+.ln-hop b {
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ln-node.is-null {
+  border-style: dashed;
+  background: color-mix(in oklab, var(--bg1) 60%, transparent);
+  box-shadow: none;
+}
+.ln-node.is-broken {
+  border-color: color-mix(in oklab, var(--warn) 60%, var(--border));
+  background: color-mix(in oklab, var(--warn) 10%, var(--bg1));
+}
+.ln-node.is-broken .msym {
+  color: var(--warn);
+}
+.ln-node.is-broken .ln-note {
+  color: var(--text);
+}
+
+/* a table's rows as a stack of cards */
+.ln-cl {
+  width: 214px;
+}
+/* a deck: the top card is the table, the cards under it are its other rows */
+.ln-deck {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 214px;
+}
+.ln-deck > .ln-cl {
+  position: relative;
+  left: auto;
+  top: auto;
+  transform: none;
+  width: 100%;
+}
+.ln-deck-card {
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  border: 1px solid color-mix(in oklab, var(--tc) 55%, var(--border));
+  background: color-mix(in oklab, var(--tc) 14%, var(--bg2));
+  box-shadow: 0 10px 22px -14px rgba(0, 0, 0, 0.7);
+  transform: translateY(12px) scaleX(0.93);
+  transition: transform 0.2s ease-out;
+}
+.ln-deck-card.back {
+  transform: translateY(24px) scaleX(0.86);
+  border-color: color-mix(in oklab, var(--tc) 38%, var(--border));
+  background: color-mix(in oklab, var(--tc) 9%, var(--bg1));
+}
+.ln-deck:hover .ln-deck-card,
+.ln-deck.sel .ln-deck-card {
+  transform: translateY(16px) scaleX(0.94);
+}
+.ln-deck:hover .ln-deck-card.back,
+.ln-deck.sel .ln-deck-card.back {
+  transform: translateY(32px) scaleX(0.88);
+}
+.bt-reduce-motion .ln-deck-card {
+  transition: none;
+}
+.ln-cl-prev {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--text);
+  min-width: 0;
+}
+.ln-cl-prev span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ln-cl-prev .more {
+  color: var(--text-dim);
+  font-size: 11.5px;
+}
+
+/* the row at the centre */
+.ln-hero {
+  width: 244px;
+  align-items: center;
+  text-align: center;
+  gap: 7px;
+  padding: 20px 18px 18px;
+  border-radius: 24px;
+  border-color: color-mix(in oklab, var(--tc) 55%, var(--border));
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--tc) 14%, var(--bg1)),
+    var(--bg1) 70%
+  );
+  box-shadow:
+    0 0 0 6px color-mix(in oklab, var(--tc) 10%, transparent),
+    0 26px 50px -24px color-mix(in oklab, var(--tc) 55%, #000);
+}
+.ln-hero.sel {
+  box-shadow:
+    0 0 0 6px color-mix(in oklab, var(--tc) 22%, transparent),
+    0 26px 50px -24px color-mix(in oklab, var(--tc) 55%, #000);
+}
+.ln-hero-t {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-width: 0;
+  gap: 7px;
+  margin-top: 4px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.ln-hero-label {
+  max-width: 100%;
+  font-size: 19px;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  overflow-wrap: anywhere;
+}
+.ln-hero-facts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 5px;
+  margin-top: 3px;
+}
+.ln-hero-facts > span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 99px;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.ln-hero-facts em {
+  font-style: normal;
+  color: var(--text-dim);
+}
+
+/* side panel */
+.ln-panel {
+  width: 300px;
+  flex: none;
+  overflow-y: auto;
+  border-left: 1px solid var(--border);
+  background: var(--bg1);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ln-panel > * {
+  flex: none;
+} /* the panel scrolls; its blocks never squash to fit */
+.ln-panel-h {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.ln-panel-h > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.ln-panel-h .ln-t {
+  font-size: 14px;
+}
+.ln-sub {
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.ln-panel code {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--bg2);
+  color: var(--text);
+}
+.ln-panel-title {
+  font-size: 17px;
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+.ln-panel-p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+.ln-panel-p b {
+  color: var(--text);
+  font-weight: 600;
+}
+.ln-panel-p.warn {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  color: var(--text);
+  background: color-mix(in oklab, var(--warn) 11%, var(--bg1));
+  border: 1px solid color-mix(in oklab, var(--warn) 45%, var(--border));
+}
+.ln-panel-p.warn .msym {
+  color: var(--warn);
+  flex: none;
+  margin-top: 2px;
+}
+.ln-panel-note {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.ln-panel-foot {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 7px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.ln-panel-foot .msym {
+  flex: none;
+  margin-top: 2px;
+}
+.ln-fields {
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  background: var(--bg0);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.ln-field {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 10px;
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.ln-field:last-child {
+  border-bottom: none;
+}
+.ln-field {
+  position: relative;
+}
+.ln-copy {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  margin-top: -11px;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  opacity: 0;
+  transition:
+    opacity 0.12s,
+    color 0.12s;
+}
+.ln-field:hover .ln-copy,
+.ln-copy:focus-visible,
+.ln-copy.copied {
+  opacity: 1;
+}
+.ln-copy:hover {
+  color: var(--accent);
+  border-color: color-mix(in oklab, var(--accent) 50%, var(--border));
+}
+.ln-copy.copied {
+  color: var(--accent);
+}
+.ln-copy:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.ln-field:hover {
+  background: color-mix(in oklab, var(--bg2) 55%, transparent);
+}
+.bt-reduce-motion .ln-copy {
+  transition: none;
+}
+.ln-field-n {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: 104px;
+  flex: none;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ln-field-n .msym {
+  color: var(--text-faint);
+}
+.ln-field-v {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ln-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ln-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 -8px;
+}
+.ln-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 8px;
+  border-radius: 10px;
+  text-align: left;
+  font-family: var(--ui);
+  color: var(--text);
+  min-width: 0;
+}
+.ln-row:hover:not(:disabled) {
+  background: var(--bg2);
+}
+.ln-row:disabled {
+  cursor: default;
+}
+.ln-row > .ln-k {
+  min-width: 30px;
+  text-align: center;
+  margin-top: 1px;
+}
+.ln-go {
+  color: var(--text-faint);
+  flex: none;
+  margin-top: 3px;
+  transition:
+    color 0.15s,
+    transform 0.15s;
+}
+.ln-row:hover:not(:disabled) .ln-go {
+  color: var(--tc, var(--accent));
+  transform: translate(1px, -1px);
+}
+.bt-reduce-motion .ln-go {
+  transition: none;
+}
+.ln-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ln-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.ln-facts > span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.ln-gone {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 30px;
+  text-align: center;
+  color: var(--text-dim);
+}
+.ln-gone div {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.ln-gone p {
+  margin: 0;
+  max-width: 46ch;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+/* the trail's pills: each sits with its separator chevron */
+.ln-crumb-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+}
+.ln-view:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+/* the live region announcing broken references */
+.ln-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* NEW — loading: a skeleton centre card while the row loads, a shimmer on
+   each stack (and parent) until its queries return */
+.ln-skel {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 244px;
+  padding: 20px 18px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  border-radius: 24px;
+  border: 1px solid var(--border);
+  background: var(--bg1);
+}
+.ln-skel-badge {
+  width: 46px;
+  height: 46px;
+  border-radius: 15px;
+}
+.ln-skel-line,
+.ln-shimmer {
+  display: block;
+  height: 10px;
+  border-radius: 99px;
+}
+.ln-skel-line.tall {
+  height: 18px;
+}
+.ln-skel-badge,
+.ln-skel-line,
+.ln-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--bg2) 0%,
+    color-mix(in oklab, var(--text-faint) 22%, var(--bg2)) 50%,
+    var(--bg2) 100%
+  );
+  background-size: 200% 100%;
+  animation: ln-shimmer 1.3s ease-in-out infinite;
+}
+.w40 {
+  width: 40%;
+}
+.w60 {
+  width: 60%;
+}
+.w70 {
+  width: 70%;
+}
+.w80 {
+  width: 80%;
+}
+@keyframes ln-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+.ln-cl-prev .ln-shimmer {
+  width: auto;
+}
+.ln-cl-prev .ln-shimmer.w80 {
+  width: 80%;
+}
+.ln-cl-prev .ln-shimmer.w60 {
+  width: 60%;
+}
+.ln-node.is-loading {
+  padding: 11px 13px;
+  cursor: default;
+}
+.ln-wire.pending .ln-wire-base {
+  stroke: var(--border);
+  stroke-dasharray: 2 5;
+}
+.ln-wire.pending .ln-wire-end {
+  stroke: var(--border);
+}
+.bt-reduce-motion .ln-skel-badge,
+.bt-reduce-motion .ln-skel-line,
+.bt-reduce-motion .ln-shimmer {
+  animation: none;
+}
+
+/* NEW — a stack or parent whose queries failed, with Retry under the card */
+.ln-node.is-failed {
+  border-style: dashed;
+  border-color: color-mix(in oklab, var(--error, var(--warn)) 50%, var(--border));
+}
+.ln-node.is-failed .msym {
+  color: var(--error, var(--warn));
+}
+.ln-cl-err {
+  white-space: normal !important;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--text-dim);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ln-retry {
+  position: absolute;
+  left: 50%;
+  bottom: -34px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 99px;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  font-size: 11.5px;
+  color: var(--text);
+  white-space: nowrap;
+}
+.ln-retry:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.ln-retry:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* glass themes: the canvas shows the backdrop, cards get a blur */
+[data-material] .ln,
+[data-material] .ln-edge,
+[data-material] .ln-view {
+  background-color: transparent;
+}
+[data-material] .ln-node,
+[data-material] .ln-edge,
+[data-material] .ln-skel {
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+[data-material] .ln-head,
+[data-material] .ln-panel {
+  background: rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+/* not wide enough for graph and panel side by side: the panel goes under the canvas and uses its width */
+@container (max-width: 1180px) {
+  .ln-main {
+    flex-direction: column;
+  }
+  .ln-view {
+    flex: 1 1 0;
+    min-height: 260px;
+  }
+  .ln-panel {
+    width: auto;
+    flex: 0 1 auto;
+    max-height: 46%;
+    border-left: none;
+    border-top: 1px solid var(--border);
+    padding: 14px 16px;
+  }
+  .ln-panel .ln-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  }
+  .ln-panel .ln-field {
+    border-bottom: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+    border-right: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+    margin: 0 -1px -1px 0;
+  }
+  .ln-panel .ln-rows {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 2px 10px;
+  }
+  .ln-panel-foot {
+    margin-top: 0;
+  }
+}
+@container (max-width: 980px) {
+  .ln-stats .ln-stat:not(.warn) {
+    display: none;
+  }
+  .ln-hint {
+    display: none;
+  }
+}
+
+/* a key pill never pushes past its card: long keys are cut in the text
+   (keyText) and, as a last guard, here */
+.ln-k {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* the centre card: a transparent button under the content selects it, so the
+   id's copy button can sit on top */
+.ln-hero-hit {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+.ln-hero-hit:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.ln-hero > :not(.ln-hero-hit) {
+  position: relative;
+  pointer-events: none;
+}
+.ln-key-copy {
+  pointer-events: auto;
+  width: 20px;
+  height: 20px;
+  margin-left: -3px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  color: var(--text-faint);
+  transition:
+    color 0.12s,
+    background 0.12s;
+}
+.ln-hero:hover .ln-key-copy {
+  color: var(--text-dim);
+}
+.ln-key-copy:hover {
+  color: var(--tc);
+  background: var(--bg2);
+}
+.ln-key-copy.copied {
+  color: var(--tc);
+}
+.ln-key-copy:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.bt-reduce-motion .ln-key-copy {
+  transition: none;
+}

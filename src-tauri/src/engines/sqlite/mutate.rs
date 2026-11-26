@@ -1009,6 +1009,7 @@ mod tests {
         assert_eq!(affected, 3);
         let page = conn
             .fetch_rows(FetchRowsRequest {
+                skip_count: false,
                 schema: "main".into(),
                 table: "users".into(),
                 sort: None,

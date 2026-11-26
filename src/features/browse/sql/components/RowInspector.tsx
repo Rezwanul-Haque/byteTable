@@ -15,6 +15,7 @@
 import { MaskedText } from "../../../masking/components/MaskedText";
 import { maskShow, maskShowByName, useMask, useMaskStore } from "../../../masking/state";
 import { HistoryRowLink } from "../../../change_history/components/HistoryRowLink";
+import { LineageLink } from "../../../lineage/components/LineageLink";
 import { useWorkspacesStore } from "../../../workspaces/state";
 import { isDataFileWorkspace } from "../../../workspaces/types";
 import { createPortal } from "react-dom";
@@ -692,6 +693,15 @@ export function RowInspector({
                 {isStagedNew ? " · " + t("ins.stagedRow") : ""}
               </span>
             </div>
+            {historyKey && handleId && !isStagedNew ? (
+              <LineageLink
+                handleId={handleId}
+                schema={schemaName}
+                table={tableName}
+                pk={historyKey.pk}
+                keyVal={historyKey.key}
+              />
+            ) : null}
             {historyKey && historyConn ? (
               <HistoryRowLink
                 connectionId={historyConn}

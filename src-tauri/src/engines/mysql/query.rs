@@ -304,15 +304,21 @@ pub(super) async fn fetch_rows(
 
     // Exact filtered COUNT(*) for "n of N rows" (§3.5).
     let count_sql = format!("SELECT count(*) AS n FROM {qualified}{where_sql}");
-    let mut count_query = sqlx::query(&count_sql);
-    for value in &where_clause.params {
-        count_query = bind_value(count_query, value);
-    }
-    let total_rows: i64 = count_query
-        .fetch_one(pool)
-        .await
-        .map_err(map_query_error)?
-        .get("n");
+    let total_rows: Option<i64> = if req.skip_count {
+        None
+    } else {
+        let mut count_query = sqlx::query(&count_sql);
+        for value in &where_clause.params {
+            count_query = bind_value(count_query, value);
+        }
+        Some(
+            count_query
+                .fetch_one(pool)
+                .await
+                .map_err(map_query_error)?
+                .get("n"),
+        )
+    };
 
     // Page query: WHERE params first (in order), then LIMIT/OFFSET as the
     // trailing `?` binds.
@@ -357,7 +363,7 @@ pub(super) async fn fetch_rows(
         rows: out_rows,
         offset: req.offset,
         limit,
-        total_rows: Some(total_rows.max(0) as u64),
+        total_rows: total_rows.map(|n| n.max(0) as u64),
         elapsed_ms: started.elapsed().as_millis() as u64,
     })
 }

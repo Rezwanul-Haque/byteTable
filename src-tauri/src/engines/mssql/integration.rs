@@ -197,6 +197,7 @@ async fn mssql_full_roundtrip() {
     // fetch_rows: total count + paging + filter (author_id = 1 → 2 books).
     let page = conn
         .fetch_rows(FetchRowsRequest {
+            skip_count: false,
             schema: "dbo".into(),
             table: "bt_it_books".into(),
             sort: Some(SortSpec {
@@ -224,6 +225,7 @@ async fn mssql_full_roundtrip() {
     // 0/1; `price` decimal round-trips.
     let all = conn
         .fetch_rows(FetchRowsRequest {
+            skip_count: false,
             schema: "dbo".into(),
             table: "bt_it_books".into(),
             sort: Some(SortSpec {

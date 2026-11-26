@@ -18,6 +18,8 @@ import { appErrorMessage } from "../../../../shared/api/error";
 import { CopyButton } from "../../../../shared/ui/CopyButton";
 import { Icon } from "../../../../shared/ui/Icon";
 import { useT } from "../../../../shared/i18n/useT";
+import { useLineageTable } from "../../../lineage/hooks/useLineageTable";
+import { useWorkspacesStore } from "../../../workspaces/state";
 import { binaryClipboardText, formatBinary, isBinaryType } from "../../shared/binaryCell";
 import { CellContent } from "../../shared/components/GridCell";
 import "./Popovers.css";
@@ -150,6 +152,12 @@ export function FkPeek({
   const pos = popoverPos(anchor.rect, 300, 240);
   const row = result?.row ?? null;
   const cols = result?.columns ?? [];
+  // Row lineage (M50 B3): the peeked row's own key, when its table takes part
+  // in a foreign key (the referenced column is usually that key already).
+  const lineagePk = useLineageTable(handleId, refSchema, refTable);
+  const pkAt = lineagePk ? cols.findIndex((c) => c.name === lineagePk) : -1;
+  const lineageKey: CellValue | null =
+    lineagePk === refColumn ? value : row && pkAt >= 0 ? (row[pkAt] ?? null) : null;
   const matchCount = result?.matchCount ?? 0;
 
   return (
@@ -215,6 +223,18 @@ export function FkPeek({
       <button type="button" className="fk-open-btn" onClick={() => onOpenInTable(anchor)}>
         <Icon name="open_in_new" size={13} /> {t("grid.openIn", { table: refTable })}
       </button>
+      {row && lineageKey !== null ? (
+        <button
+          type="button"
+          className="fk-open-btn fk-trace-btn"
+          onClick={() => {
+            useWorkspacesStore.getState().openLineageTab(refSchema, refTable, lineageKey);
+            onClose();
+          }}
+        >
+          <Icon name="hub" size={13} /> {t("lineage.trace")}
+        </button>
+      ) : null}
     </div>
   );
 }

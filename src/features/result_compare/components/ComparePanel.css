@@ -1,0 +1,504 @@
+/* Result compare (M51) — ported from ByteTable.html's "Result compare" block.
+   The view switch reuses `.ch-switch`; the header reuses `.sql-result-bar` and
+   `.result-tab`. A is red and B accent: the A / B tags and the 2px bars carry
+   the side as well, so a changed cell can be told apart without colour. */
+.cmp {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px 14px;
+  container-type: inline-size;
+  --cmp-a: var(--error);
+  --cmp-b: var(--accent);
+}
+.cmp > * {
+  flex: none;
+}
+.cmp-setup {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+.cmp-q {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg1);
+  overflow: hidden;
+}
+.cmp-q.err {
+  border-color: color-mix(in oklab, var(--error) 55%, var(--border));
+}
+.cmp-q-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  min-width: 0;
+}
+.cmp-q-h b {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.cmp-q-meta {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.cmp-tag {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+}
+.cmp-tag.a {
+  color: var(--cmp-a);
+  background: color-mix(in oklab, var(--cmp-a) 16%, transparent);
+  border: 1px solid color-mix(in oklab, var(--cmp-a) 40%, transparent);
+}
+.cmp-tag.b {
+  color: var(--cmp-b);
+  background: color-mix(in oklab, var(--cmp-b) 16%, transparent);
+  border: 1px solid color-mix(in oklab, var(--cmp-b) 40%, transparent);
+}
+.cmp-tag.sm {
+  width: 16px;
+  height: 16px;
+  font-size: 9.5px;
+  border-radius: 5px;
+  vertical-align: -3px;
+}
+.cmp-src {
+  flex: 1 1 120px;
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg0);
+  color: var(--text);
+  font-family: var(--ui);
+  font-size: 11.5px;
+}
+.cmp-sql {
+  margin: 0;
+  padding: 9px 12px;
+  flex: 1 1 auto;
+  min-height: 78px;
+  max-height: 124px;
+  overflow: auto;
+  background: var(--bg0);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre;
+  tab-size: 2;
+  border: none;
+}
+.cmp-sql-in {
+  resize: none;
+  outline: none;
+  width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.cmp-code {
+  display: grid;
+  flex: 1 1 auto;
+  min-height: 78px;
+  max-height: 124px;
+  overflow: auto;
+  background: var(--bg0);
+}
+.cmp-code:focus-within {
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.cmp-code > .cmp-sql {
+  grid-area: 1 / 1;
+  min-height: 78px;
+  max-height: none;
+  overflow: hidden;
+  background: transparent;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.cmp-code > .cmp-hl {
+  pointer-events: none;
+}
+.cmp-code > .cmp-sql-in {
+  color: transparent;
+  caret-color: var(--accent);
+}
+.cmp-sql-in::placeholder {
+  color: var(--text-faint);
+}
+.cmp-q-err {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text);
+  background: color-mix(in oklab, var(--error) 9%, var(--bg1));
+  overflow-wrap: anywhere;
+}
+.cmp-q-err .msym {
+  color: var(--error);
+  flex: none;
+  margin-top: 1px;
+}
+
+.cmp-opts {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+}
+.cmp-opts-l {
+  color: var(--text-dim);
+}
+.cmp-opts-note {
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.cmp-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.cmp-key-chip {
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  background: var(--bg1);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.cmp-key-chip:hover {
+  color: var(--text);
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+}
+.cmp-key-chip.on {
+  color: var(--text);
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+  border-color: color-mix(in oklab, var(--accent) 60%, var(--border));
+}
+.cmp-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cmp-check input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+.cmp .ch-switch button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.cmp-verdict {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg1);
+}
+.cmp-verdict > .msym {
+  flex: none;
+  margin-top: 1px;
+}
+.cmp-verdict div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.cmp-verdict b {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.cmp-verdict span {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.cmp-verdict.ok {
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+  background: color-mix(in oklab, var(--accent) 8%, var(--bg1));
+}
+.cmp-verdict.ok > .msym {
+  color: var(--accent);
+}
+.cmp-verdict.diff {
+  border-color: color-mix(in oklab, var(--warn) 45%, var(--border));
+  background: color-mix(in oklab, var(--warn) 8%, var(--bg1));
+}
+.cmp-verdict.diff > .msym {
+  color: var(--warn);
+}
+.cmp-note,
+.cmp-stale {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.cmp-note .msym,
+.cmp-stale .msym {
+  flex: none;
+  margin-top: 2px;
+}
+.cmp-note b {
+  color: var(--text);
+  font-weight: 600;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.cmp-note.warn .msym,
+.cmp-stale {
+  color: var(--warn);
+}
+.cmp-note.warn {
+  color: var(--text);
+}
+
+.cmp-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cmp-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  padding: 0 6px 0 11px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  background: var(--bg1);
+  color: var(--text-dim);
+  font-family: var(--ui);
+  font-size: 12px;
+}
+.cmp-tab b {
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 99px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg2);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+}
+.cmp-tab:hover {
+  color: var(--text);
+}
+.cmp-tab.on {
+  color: var(--text);
+  border-color: var(--text-dim);
+  background: var(--bg2);
+}
+.cmp-tab.on b {
+  background: var(--bg3);
+}
+.cmp-tab.onlyA b {
+  color: var(--cmp-a);
+}
+.cmp-tab.onlyB b {
+  color: var(--cmp-b);
+}
+.cmp-tab.changed b {
+  color: var(--warn);
+}
+
+.cmp-table-wrap {
+  max-height: 340px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg1);
+}
+.cmp-table-wrap:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 1px;
+}
+.cmp-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-family: var(--mono);
+  font-size: var(--grid-fs, 12px);
+  width: max-content;
+  min-width: 100%;
+}
+.cmp-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-dim);
+  background: var(--bg1);
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.cmp-table th .msym {
+  color: var(--accent);
+  margin-right: 4px;
+  vertical-align: -1px;
+}
+.cmp-table td {
+  padding: 5px 12px;
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+  white-space: nowrap;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cmp-side-h {
+  width: 28px;
+}
+.cmp-side {
+  width: 28px;
+  padding: 5px 0 5px 10px !important;
+  font-weight: 600;
+  color: var(--text-faint);
+}
+.is-a .cmp-side {
+  color: var(--cmp-a);
+}
+.is-b .cmp-side {
+  color: var(--cmp-b);
+}
+.cmp-pair tr.is-a td {
+  border-bottom-color: transparent;
+}
+.cmp-pair tr.is-b td {
+  border-bottom: 1px solid var(--border);
+}
+.cmp-dim {
+  opacity: 0.5;
+}
+.cmp-del {
+  background: color-mix(in oklab, var(--cmp-a) 16%, transparent);
+  box-shadow: inset 2px 0 0 var(--cmp-a);
+}
+.cmp-add {
+  background: color-mix(in oklab, var(--cmp-b) 16%, transparent);
+  box-shadow: inset 2px 0 0 var(--cmp-b);
+}
+tr.is-a.only td {
+  background: color-mix(in oklab, var(--cmp-a) 7%, transparent);
+}
+tr.is-b.only td {
+  background: color-mix(in oklab, var(--cmp-b) 7%, transparent);
+}
+.cmp-none,
+.cmp-more {
+  padding: 10px 2px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.cmp-empty {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 26px;
+  text-align: center;
+  color: var(--text-dim);
+}
+.cmp-empty div {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.cmp-empty p {
+  margin: 0;
+  max-width: 52ch;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.cmp-foot {
+  display: flex;
+  gap: 7px;
+  padding-top: 2px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.cmp-foot .msym {
+  flex: none;
+  margin-top: 2px;
+}
+@container (max-width: 720px) {
+  .cmp-setup {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.cmp-spin,
+.btn.cmp-busy .msym {
+  animation: cmp-spin 0.8s linear infinite;
+}
+@keyframes cmp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* SQL token colours (highlightSql output), the drawer palette. No weight
+   change: B's colours sit under a text box and must keep its advance widths. */
+.cmp-sql .sql-kw {
+  color: var(--accent);
+}
+.cmp-sql .sql-string {
+  color: #e5c07b;
+}
+.cmp-sql .sql-num {
+  color: #7fb8e8;
+}
+.cmp-sql .sql-func {
+  color: #c678dd;
+}
+.cmp-sql .sql-comment {
+  color: var(--text-faint);
+  font-style: italic;
+}
+.cmp-running {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}

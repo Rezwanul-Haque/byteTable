@@ -152,6 +152,15 @@ pub fn sql_is_read_only(sql: &str) -> bool {
     true
 }
 
+/// How many non-blank `;`-separated statements `sql` holds, with comments and
+/// quoted spans ignored (so `SELECT ';'` is one).
+pub fn statement_count(sql: &str) -> usize {
+    strip_literals_and_comments(sql)
+        .split(';')
+        .filter(|s| !s.trim().is_empty())
+        .count()
+}
+
 /// One identifier/keyword from a statement, lowercased, plus whether it is
 /// immediately followed by `(` — i.e. used as a function call.
 struct Token {

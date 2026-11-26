@@ -1647,3 +1647,60 @@ async fn privileges_resolve_role_inheritance_and_public_grants() {
     }
     let _ = conn.close().await;
 }
+
+/// Result compare (M51 A8): inside the snapshot transaction, a row another
+/// session inserts between query A and query B is not seen by B.
+#[tokio::test]
+async fn compare_snapshot_hides_a_row_inserted_between_the_two_queries() {
+    let Some((params, secret)) = gate("compare_snapshot") else {
+        return;
+    };
+    let pool = raw_pool(&params, &secret).await;
+    for stmt in [
+        "DROP TABLE IF EXISTS public.bt_compare_snap",
+        "CREATE TABLE public.bt_compare_snap (id int PRIMARY KEY)",
+        "INSERT INTO public.bt_compare_snap VALUES (1), (2)",
+    ] {
+        sqlx::query(stmt).execute(&pool).await.expect(stmt);
+    }
+    let conn = open_conn(&params, &secret).await;
+    let begin = crate::features::result_compare::application::snapshot_begin(Engine::Postgres)
+        .expect("postgres has a snapshot");
+    let mut session = conn.pin(Some("public".into())).await.expect("pin");
+    for stmt in begin {
+        session.query(stmt, 1).await.expect("begin snapshot");
+    }
+    let sql = "SELECT id FROM bt_compare_snap";
+    let a = session.query(sql, 100).await.expect("query A");
+    sqlx::query("INSERT INTO public.bt_compare_snap VALUES (3)")
+        .execute(&pool)
+        .await
+        .expect("concurrent insert");
+    let b = session.query(sql, 100).await.expect("query B");
+    // Read-only: a write inside the snapshot is refused by the server too.
+    assert!(session
+        .query("INSERT INTO bt_compare_snap VALUES (4)", 1)
+        .await
+        .is_err());
+    session.query("ROLLBACK", 1).await.expect("rollback");
+    drop(session);
+    assert_eq!(a.rows.len(), 2);
+    assert_eq!(b.rows.len(), 2, "B must read A's snapshot");
+
+    // And the whole run reports the snapshot.
+    let out = crate::features::result_compare::application::run(
+        &*conn,
+        "SELECT id FROM public.bt_compare_snap",
+        "SELECT id FROM public.bt_compare_snap WHERE id > 1",
+        None,
+        &tokio_util::sync::CancellationToken::new(),
+    )
+    .await;
+    assert!(out.snapshot);
+    assert_eq!(out.a.result.expect("A").rows.len(), 3);
+    assert_eq!(out.b.result.expect("B").rows.len(), 2);
+    sqlx::query("DROP TABLE public.bt_compare_snap")
+        .execute(&pool)
+        .await
+        .ok();
+}

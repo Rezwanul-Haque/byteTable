@@ -141,10 +141,15 @@ export function DataFileSqlTab({
           aria-label={t("dfile.sqlAria", { name: doc.name })}
         />
         <div className="csvv-sql-actions">
-          <Btn icon="play_arrow" variant="filled" disabled={running} onClick={() => run()}>
+          <Btn
+            icon="play_arrow"
+            variant="filled"
+            disabled={running}
+            onClick={() => run()}
+            title={t("dfile.runTitle")}
+          >
             {running ? t("ws.sql.running") : t("menu.query.run")}
           </Btn>
-          <span className="csvv-sql-hint">⌘↩ / Ctrl+Enter</span>
         </div>
       </div>
 

@@ -350,6 +350,13 @@ export function CommandPalette({ workspace, onClose }: CommandPaletteProps) {
             run: () => emitCmd("debug"),
           },
           {
+            id: "cmd-compare",
+            icon: "compare_arrows",
+            label: t("compare.palette"),
+            hint: t("compare.paletteHint"),
+            run: () => emitCmd("compare"),
+          },
+          {
             id: "cmd-result-chart",
             icon: "bar_chart",
             label: t("chart.palette"),

@@ -37,6 +37,8 @@ export type BtCmdId =
   | "format"
   | "explain"
   | "debug"
+  // Result compare (M51).
+  | "compare"
   | "result-chart"
   // Query notebooks (M47).
   | "new-notebook"

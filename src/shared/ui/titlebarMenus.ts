@@ -377,6 +377,12 @@ export function buildMenus(m: MenuCtx): Menu[] {
           run: () => emitCmd("debug"),
         },
         {
+          id: "compare",
+          label: t("menu.query.compare"),
+          enabled: isSql,
+          run: () => emitCmd("compare"),
+        },
+        {
           id: "result-chart",
           label: t("menu.query.chart"),
           enabled: isSql,

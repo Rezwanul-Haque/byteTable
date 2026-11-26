@@ -320,6 +320,7 @@ pub fn run() {
         // caused was an instant crash on every cold open.
         .manage(features::file_open::PendingOpens::default())
         .manage(features::query_debug::commands::QueryDebugState::default())
+        .manage(features::result_compare::commands::CompareState::default())
         .manage(features::notebooks::commands::NotebooksState::default())
         .plugin(tauri_plugin_os::init())
         // Single-instance guard (MUST be the first plugin registered): a second
@@ -644,6 +645,8 @@ pub fn run() {
             features::query_debug::commands::debug_plan,
             features::query_debug::commands::debug_run_step,
             features::query_debug::commands::debug_cancel,
+            features::result_compare::commands::compare_run,
+            features::result_compare::commands::compare_cancel,
             features::notebooks::commands::notebook_query_run,
             features::notebooks::commands::notebook_query_cancel,
             features::notebooks::commands::notebook_classify,

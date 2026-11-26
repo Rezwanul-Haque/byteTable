@@ -612,11 +612,6 @@
   gap: 6px;
   align-items: flex-end;
 }
-.csvv-sql-hint {
-  font-family: var(--mono);
-  font-size: 9.5px;
-  color: var(--text-faint);
-}
 
 /* The results area owns the leftover height so its grid can scroll. */
 .csvv-sql-results {

@@ -92,6 +92,7 @@ import { SqlCodeEditor, type SqlCodeEditorHandle } from "./SqlCodeEditor";
 import { SqlResultGrid } from "./SqlResultGrid";
 import { ResultChart } from "../../result_chart/components/ResultChart";
 import { SegSwitch } from "../../../shared/ui/SegSwitch";
+import { ComparePanel } from "../../result_compare/components/ComparePanel";
 import { AiFix } from "../../assistant/components/AiFix";
 import { openAiSettings } from "../../assistant/openSettings";
 import { AiPanel, type AskRequest, type PlanRequest } from "../../assistant/components/AiPanel";
@@ -270,10 +271,10 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   // "Run All" so it's clear the entire buffer (every statement) will run.
   const [allSelected, setAllSelected] = useState(false);
   // Transient view toggle: the results area shows the query result
-  // ('result'), the execution-order teaching panel ('explain') or the query
-  // debugger ('debug'). Local — it's a view flip, not buffer/result state, so
-  // it need not survive a switch.
-  const [view, setView] = useState<"result" | "explain" | "debug">("result");
+  // ('result'), the execution-order teaching panel ('explain'), the query
+  // debugger ('debug') or result compare ('compare', M51). Local — it's a view
+  // flip, not buffer/result state, so it need not survive a switch.
+  const [view, setView] = useState<"result" | "explain" | "debug" | "compare">("result");
   const debugging = view === "debug";
   // The parameter prompt, when open: the run it is gathering values for.
   // `source` is the SQL that run will use (the caret statement, a selection, or
@@ -455,8 +456,8 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   // and are copied to the saved query on save.
   const engine = workspace.info.engine;
   const detectedParams = useMemo(() => detectParams(text, engine), [text, engine]);
-  const paramValues = tab.params ?? {};
-  const paramDefs = tab.paramDefs ?? [];
+  const paramValues = useMemo(() => tab.params ?? {}, [tab.params]);
+  const paramDefs = useMemo(() => tab.paramDefs ?? [], [tab.paramDefs]);
   const hasParams = detectedParams.length > 0;
 
   // --- Snippets -------------------------------------------------------------
@@ -638,8 +639,9 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   ) => {
     const raw = (override ?? text).trim();
     if (running || raw === "") return;
-    // Run leaves debug mode: the result is what comes next.
+    // Run leaves debug mode and Compare: the result is what comes next.
     if (debugging) stopDebugView();
+    if (view === "compare") setView("result");
 
     // Resolve `:placeholders` FIRST, so everything downstream — the statement
     // split, the result tabs, the history entries and the backend's read-only
@@ -903,6 +905,8 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
       setView("result");
       return;
     }
+    // Nothing to explain, as Run has nothing to run (menu / palette path).
+    if (text.trim() === "") return;
     if (debugging) qdbg.exit();
     setExplainSql(editorRef.current?.pickStatement() ?? text);
     setExplainActiveIdx(0);
@@ -927,6 +931,30 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
     setView("result");
   }
   const toggleDebug = () => (debugging ? stopDebugView() : startDebug());
+
+  // Result compare (M51): open the Compare view, un-minimizing the results
+  // area. The toolbar icon toggles it; the menu and palette only open it.
+  const openCompare = () => {
+    setPop(null);
+    editorRef.current?.dismissCompletion();
+    if (debugging) qdbg.exit();
+    setResultsMin(false);
+    setView("compare");
+  };
+  const toggleCompare = () => (view === "compare" ? setView("result") : openCompare());
+  // A is the editor's statement at the caret (the whole buffer when it holds
+  // one), with its parameters resolved — live, so editing the editor updates
+  // the A card at once.
+  const compareA = useMemo(() => {
+    if (view !== "compare") return "";
+    const ranges = statementRanges(text);
+    const hit =
+      ranges.find((r) => caret >= r.from && caret <= r.to) ??
+      ranges.filter((r) => r.from <= caret).pop() ??
+      ranges[0];
+    const stmt = hit ? text.slice(hit.from, hit.to) : text;
+    return applyParams(stmt, paramValues, paramDefs, engine);
+  }, [view, text, caret, paramValues, paramDefs, engine]);
   // Finish: leave debug mode and run the full query (B5). An UPDATE / DELETE
   // was a dry run, and Run has no production confirm, so its last step is
   // Done instead: leave without running — applying it is a deliberate Run.
@@ -967,6 +995,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
   useBtCmd("format", format);
   useBtCmd("explain", runExplain);
   useBtCmd("debug", toggleDebug);
+  useBtCmd("compare", openCompare);
   // Show the result as a chart (palette / Query menu): leaves Explain or Debug
   // for the result, and un-minimizes it.
   useBtCmd("result-chart", () => {
@@ -1078,6 +1107,7 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
           onClick={() => run(editorRef.current?.pickStatement())}
           disabled={runDisabled}
           small
+          title={allSelected ? t("ws.sql.runAllTitle") : t("ws.sql.runTitle")}
         >
           {running ? t("ws.sql.running") : allSelected ? t("ws.sql.runAll") : t("menu.query.run")}
         </Btn>
@@ -1085,6 +1115,9 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
           icon="account_tree"
           variant={view === "explain" ? "filled" : "tonal"}
           small
+          // Disabled like Run on an empty buffer — but an open Explain view
+          // can always be closed from here.
+          disabled={view !== "explain" && text.trim() === ""}
           onClick={() => {
             if (view === "explain") {
               setView("result");
@@ -1103,16 +1136,22 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
         >
           {allSelected ? t("ws.sql.explainAll") : t("ws.sql.explain")}
         </Btn>
-        <Btn
+        <IconBtn
           icon="bug_report"
-          variant={debugging ? "filled" : "tonal"}
-          small
+          active={debugging}
           aria-pressed={debugging}
+          aria-label={t("debug.btn")}
           onClick={toggleDebug}
           title={t("debug.btnTitle")}
-        >
-          {t("debug.btn")}
-        </Btn>
+        />
+        <IconBtn
+          icon="compare_arrows"
+          active={view === "compare"}
+          aria-pressed={view === "compare"}
+          aria-label={t("compare.btnAria")}
+          onClick={toggleCompare}
+          title={t("compare.btnTitle")}
+        />
         {/* Only for a parameterized buffer: the way to revisit values that are
             already filled in, since a plain run just uses them. */}
         {hasParams ? (
@@ -1123,7 +1162,6 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
             onClick={promptForRun}
           />
         ) : null}
-        <span className="sql-hint">⌘↩ / Ctrl+Enter</span>
         <div className="sql-snippets">
           {snippets.map((s) => (
             <button
@@ -1522,6 +1560,16 @@ export function SqlEditorTab({ workspace, tab }: { workspace: Workspace; tab: Sq
                 <DebugPlanning />
               )}
             </>
+          ) : view === "compare" ? (
+            <ComparePanel
+              sqlA={compareA}
+              handleId={workspace.handleId}
+              schemaName={schemaName}
+              history={workspace.ui.history ?? []}
+              minBtn={minBtn}
+              resultsMin={resultsMin}
+              onClose={() => setView("result")}
+            />
           ) : view === "explain" ? (
             <>
               <div className="sql-result-bar explain-bar">

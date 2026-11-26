@@ -1021,8 +1021,8 @@ export function LineageTab({ workspace, tab }: { workspace: Workspace; tab: Line
             </>
           ) : (
             <>
-              <div className="ln-panel-h" style={hueStyle(g.table)}>
-                <LnBadge table={g.table} size="lg" />
+              <div className="ln-panel-h" style={ACCENT}>
+                <LnBadge table={g.table} size="lg" accent />
                 <div>
                   <span className="ln-t">{g.table}</span>
                   <span className="ln-sub">

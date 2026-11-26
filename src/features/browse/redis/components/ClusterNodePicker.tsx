@@ -92,7 +92,7 @@ export function ClusterNodePicker({
   };
 
   return (
-    <div className="cl-np" role="dialog" aria-label={t("redis.np.aria")}>
+    <div className="schema-pop cl-np" role="dialog" aria-label={t("redis.np.aria")}>
       <div className="cl-np-head">
         <Icon name="lan" size={14} style={{ color: "var(--accent)" }} />
         {t("redis.np.title")}

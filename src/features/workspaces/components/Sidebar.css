@@ -566,6 +566,15 @@
   color: var(--text);
   outline: none;
 }
+/* An item with nothing to act on — dimmed, and inert on hover so it does not
+   look clickable. */
+.ctx-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.ctx-item:disabled:hover {
+  background: none;
+}
 
 /* Destructive context-menu item + section label + separator (M15 Task 2),
    ported byte-exact from ByteTable.html. Shared by the sidebar context menu

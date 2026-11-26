@@ -289,7 +289,7 @@ export function DynamoSidebar({
 
       {ctxMenu ? (
         <div
-          className="ddb-ctx-menu"
+          className="ctx-menu"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -301,7 +301,7 @@ export function DynamoSidebar({
               {readOnly ? null : (
                 <button
                   type="button"
-                  className="ddb-ctx-item ctx-item-accent"
+                  className="ctx-item ctx-item-accent"
                   onClick={() => {
                     setCtxMenu(null);
                     onCreateTable();
@@ -312,7 +312,7 @@ export function DynamoSidebar({
               )}
               <button
                 type="button"
-                className="ddb-ctx-item"
+                className="ctx-item"
                 onClick={() => {
                   setCtxMenu(null);
                   onExportAll();
@@ -327,10 +327,10 @@ export function DynamoSidebar({
                   single-table versions live on a table's own right-click menu. */}
               {readOnly ? null : (
                 <>
-                  <div className="ddb-ctx-sep" />
+                  <div className="ctx-sep" />
                   <button
                     type="button"
-                    className="ddb-ctx-item danger"
+                    className="ctx-item danger"
                     disabled={tables.length === 0}
                     onClick={() => {
                       setCtxMenu(null);
@@ -341,7 +341,7 @@ export function DynamoSidebar({
                   </button>
                   <button
                     type="button"
-                    className="ddb-ctx-item danger"
+                    className="ctx-item danger"
                     disabled={tables.length === 0}
                     onClick={() => {
                       setCtxMenu(null);
@@ -357,7 +357,7 @@ export function DynamoSidebar({
             <>
               <button
                 type="button"
-                className="ddb-ctx-item"
+                className="ctx-item"
                 onClick={() => {
                   if (ctxMenu.table) onOpenTable(ctxMenu.table);
                   setCtxMenu(null);
@@ -367,7 +367,7 @@ export function DynamoSidebar({
               </button>
               <button
                 type="button"
-                className="ddb-ctx-item"
+                className="ctx-item"
                 onClick={() => {
                   const tbl = ctxMenu.table;
                   setCtxMenu(null);
@@ -378,7 +378,7 @@ export function DynamoSidebar({
               </button>
               <button
                 type="button"
-                className="ddb-ctx-item"
+                className="ctx-item"
                 onClick={() => {
                   onOpenMap();
                   setCtxMenu(null);
@@ -386,10 +386,10 @@ export function DynamoSidebar({
               >
                 <Icon name="schema" size={15} /> {t("dyn.ctx.showMap")}
               </button>
-              <div className="ddb-ctx-sep" />
+              <div className="ctx-sep" />
               <button
                 type="button"
-                className="ddb-ctx-item"
+                className="ctx-item"
                 onClick={() => {
                   const tbl = ctxMenu.table;
                   setCtxMenu(null);
@@ -403,7 +403,7 @@ export function DynamoSidebar({
                 <>
                   <button
                     type="button"
-                    className="ddb-ctx-item"
+                    className="ctx-item"
                     onClick={() => {
                       const tbl = ctxMenu.table;
                       setCtxMenu(null);
@@ -414,10 +414,10 @@ export function DynamoSidebar({
                   </button>
                   {/* Destructive last, behind a separator — the same placement
                       the SQL, Cassandra and Mongo sidebars use. */}
-                  <div className="ddb-ctx-sep" />
+                  <div className="ctx-sep" />
                   <button
                     type="button"
-                    className="ddb-ctx-item danger"
+                    className="ctx-item danger"
                     onClick={() => {
                       const tbl = ctxMenu.table;
                       setCtxMenu(null);
@@ -428,7 +428,7 @@ export function DynamoSidebar({
                   </button>
                   <button
                     type="button"
-                    className="ddb-ctx-item danger"
+                    className="ctx-item danger"
                     onClick={() => {
                       const tbl = ctxMenu.table;
                       setCtxMenu(null);

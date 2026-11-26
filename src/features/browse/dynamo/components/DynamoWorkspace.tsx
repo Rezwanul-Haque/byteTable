@@ -45,6 +45,10 @@ import { AiAskTool } from "../../../assistant/components/AiAskTool";
 import { AiStatusChip } from "../../../assistant/components/AiStatusChip";
 import { AiWorkspaceHost } from "../../../assistant/components/AiWorkspaceHost";
 import "./Dynamo.css";
+// The shared menus: .ctx-menu / .ctx-item / .ctx-sep, and the table-actions
+// dropdown anchoring — so the glass themes style them like every engine's.
+import "../../../workspaces/components/Sidebar.css";
+import "../../../workspaces/components/TableTab.css";
 // Grid family + shared ddb bits (reused by Mongo/Cassandra) — load last to keep
 // the datagrid cascade order it had as one file.
 import "../../shared/styles/dynamoShared.css";

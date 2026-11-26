@@ -799,7 +799,7 @@ export function DynamoTableTab({
             onClick={() => setCreating(true)}
           />
         ) : null}
-        <div className="ddb-table-actions" style={{ position: "relative" }}>
+        <div className="ddb-table-actions table-actions" style={{ position: "relative" }}>
           <IconBtn
             icon="more_vert"
             title={tr("dyn.tt.tableActions")}
@@ -807,10 +807,10 @@ export function DynamoTableTab({
             onClick={() => setActionsOpen((o) => !o)}
           />
           {actionsOpen ? (
-            <div className="ddb-ctx-menu ddb-table-actions-menu">
+            <div className="ctx-menu table-actions-menu">
               <button
                 type="button"
-                className="ddb-ctx-item"
+                className="ctx-item"
                 onClick={() => {
                   setActionsOpen(false);
                   onExport(t.name);
@@ -823,7 +823,7 @@ export function DynamoTableTab({
                 <>
                   <button
                     type="button"
-                    className="ddb-ctx-item"
+                    className="ctx-item"
                     onClick={() => {
                       setActionsOpen(false);
                       onImport(t.name);
@@ -833,10 +833,10 @@ export function DynamoTableTab({
                   </button>
                   {/* Destructive last, behind a separator — same order as the
                     sidebar's per-table menu. */}
-                  <div className="ddb-ctx-sep" />
+                  <div className="ctx-sep" />
                   <button
                     type="button"
-                    className="ddb-ctx-item danger"
+                    className="ctx-item danger"
                     onClick={() => {
                       setActionsOpen(false);
                       onTruncate(t.name);
@@ -846,7 +846,7 @@ export function DynamoTableTab({
                   </button>
                   <button
                     type="button"
-                    className="ddb-ctx-item danger"
+                    className="ctx-item danger"
                     onClick={() => {
                       setActionsOpen(false);
                       onDelete(t.name);

@@ -641,17 +641,19 @@
   color: var(--accent) !important;
 }
 
-/* ---------- node picker popover ---------- */
-.cl-np {
-  position: absolute;
+/* ---------- node picker popover ----------
+   The cluster-mode twin of the database switcher (`schema-pop rdb-pop`), so it
+   is a `.schema-pop` too: the surface, shadow and every theme's glass come from
+   there. Only the geometry is its own — wider than the sidebar, and padded for
+   a header and grouped rows — scoped to beat `.redis-sidebar .schema-pop`. */
+.redis-sidebar .schema-pop.cl-np {
+  left: auto;
+  right: auto;
   inset-inline-start: 0;
   top: calc(100% + 6px);
   width: min(330px, calc(100vw - 32px));
-  z-index: 40;
-  background: var(--bg1);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.5);
+  min-width: 0;
+  max-width: none;
   padding: 11px;
 }
 .cl-np-head {
